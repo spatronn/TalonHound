@@ -103,6 +103,17 @@ def ensure_dir(p):
     os.makedirs(p, exist_ok=True)
 
 
+def write_run_stat(day_dir: str, now: datetime, hm: str, status: str, msg: str = "", news_count: int = 0):
+    ensure_dir(day_dir)
+    p = os.path.join(day_dir, "run_status.csv")
+    exists = os.path.exists(p)
+    with open(p, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if not exists:
+            w.writerow(["run_time_utc3", "slot", "status", "news_count", "message"])
+        w.writerow([now.strftime("%Y-%m-%d %H:%M:%S"), hm, status, news_count, msg[:500]])
+
+
 def main():
     now = datetime.now(TZ)
     day = now.strftime("%Y-%m-%d")
@@ -112,8 +123,16 @@ def main():
     day_dir = os.path.join(BASE_DIR, day)
     ensure_dir(run_dir)
 
-    raw = fetch(RSS_URL)
-    items = parse_rss(raw)
+    try:
+        raw = fetch(RSS_URL)
+        items = parse_rss(raw)
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        with open(os.path.join(run_dir, "error.txt"), "w", encoding="utf-8") as f:
+            f.write(err + "\n")
+        write_run_stat(day_dir, now, hm, "FAIL", err, 0)
+        print(f"FAIL {run_dir} {err}")
+        return
 
     with open(os.path.join(run_dir, "raw_rss.xml"), "w", encoding="utf-8") as f:
         f.write(raw)
@@ -224,6 +243,28 @@ def main():
     report.append("\n## Son 20 Benzersiz Başlık")
     for t in unique_titles[-20:]:
         report.append(f"- {t}")
+
+    # run statistics + health summary
+    write_run_stat(day_dir, now, hm, "OK", "", len(items))
+
+    status_csv = os.path.join(day_dir, "run_status.csv")
+    ok = fail = 0
+    last_fail = ""
+    if os.path.exists(status_csv):
+        with open(status_csv, "r", encoding="utf-8") as sf:
+            rr = csv.DictReader(sf)
+            for row in rr:
+                if row.get("status") == "OK":
+                    ok += 1
+                else:
+                    fail += 1
+                    last_fail = f"{row.get('run_time_utc3')} {row.get('message')}"
+
+    report.append("\n## Job Sağlık İstatistiği")
+    report.append(f"- Başarılı run: {ok}")
+    report.append(f"- Başarısız run: {fail}")
+    if last_fail:
+        report.append(f"- Son hata: {last_fail}")
 
     with open(os.path.join(day_dir, "daily_report.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(report) + "\n")
