@@ -179,9 +179,21 @@ def main():
                 seen.add(row["title"])
                 unique_titles.append(row["title"])
 
+    # read 15-minute summaries for daily narrative
+    run_summaries = []
+    for name in sorted(os.listdir(day_dir)):
+        p = os.path.join(day_dir, name, "summary.txt")
+        if re.match(r"^\d{2}-\d{2}$", name) and os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8") as sf:
+                    run_summaries.append((name, sf.read()))
+            except Exception:
+                pass
+
     report = [
         f"# Milliyet Günlük Rapor ({day})",
         f"Güncelleme zamanı (UTC+3): {now.strftime('%Y-%m-%d %H:%M')}",
+        f"Toplanan 15 dk slot sayısı: {len(run_summaries)}",
         "",
         "## Top 10 Kategori (gün boyu birikimli)",
     ]
@@ -193,6 +205,21 @@ def main():
         top = ", ".join([f"{k} ({v})" for k, v in agg.most_common(3)])
         report.append(f"Bugün öne çıkan başlık kümeleri: {top}.")
     report.append(f"Toplam benzersiz başlık: {len(unique_titles)}")
+
+    report.append("\n## 15 Dakikalık Özetlerden Beslenen Zaman Akışı")
+    for slot, text in run_summaries[-24:]:  # last 6 hours (24 x 15dk)
+        first_line = ""
+        for ln in text.splitlines():
+            if ln.startswith("Toplam haber:"):
+                first_line = ln
+                break
+        top_line = ""
+        lines = text.splitlines()
+        for i, ln in enumerate(lines):
+            if ln.strip() == "Top 10 Kategori:" and i + 1 < len(lines):
+                top_line = lines[i + 1].strip()
+                break
+        report.append(f"- {slot}: {first_line} | {top_line}")
 
     report.append("\n## Son 20 Benzersiz Başlık")
     for t in unique_titles[-20:]:
