@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -47,6 +47,7 @@ function Dashboard() {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_source: [] });
   const [submitting, setSubmitting] = useState(false);
+  const iocFormRef = useRef(null);
 
   async function loadData() {
     const [listRes, summaryRes] = await Promise.all([
@@ -66,7 +67,7 @@ function Dashboard() {
     if (submitting) return;
     setSubmitting(true);
 
-    const formEl = e.currentTarget;
+    const formEl = iocFormRef.current || e.currentTarget;
     const form = new FormData(formEl);
     const payload = {
       ip: String(form.get('ip') || '').trim(),
@@ -81,7 +82,7 @@ function Dashboard() {
       const res = await api.post('/ioc/ip', payload);
       const data = res?.data;
 
-      formEl.reset();
+      formEl?.reset?.();
       if (data?.id) {
         setRows((prev) => [data, ...prev]);
       }
@@ -126,7 +127,7 @@ function Dashboard() {
         </div>
       </div>
 
-      <form onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
+      <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
         <input name="ip" placeholder="IP (örn 1.2.3.4)" required />
         <input name="source_name" placeholder="Kaynak adı" required />
         <input name="source_url" placeholder="Kaynak linki" />
