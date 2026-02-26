@@ -52,31 +52,51 @@ function AppShell({ children }) {
     navigate('/login');
   }
 
-  const linkStyle = (path) => ({
-    padding: '8px 12px',
+  const isActive = (path) => location.pathname === path;
+  const isOpsActive = location.pathname.startsWith('/ioc');
+
+  const menuStyle = (active) => ({
+    display: 'block',
+    padding: '10px 12px',
     borderRadius: 6,
     textDecoration: 'none',
-    color: location.pathname === path ? '#fff' : '#111',
-    background: location.pathname === path ? '#111' : '#eee'
+    color: active ? '#fff' : '#111',
+    background: active ? '#111' : 'transparent',
+    fontWeight: active ? 600 : 500
+  });
+
+  const subMenuStyle = (active) => ({
+    display: 'block',
+    padding: '8px 10px',
+    marginLeft: 8,
+    borderRadius: 6,
+    textDecoration: 'none',
+    color: active ? '#fff' : '#333',
+    background: active ? '#333' : 'transparent',
+    fontSize: 14
   });
 
   return (
-    <div style={{ maxWidth: 1100, margin: '24px auto', fontFamily: 'sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Link to="/dashboard" style={linkStyle('/dashboard')}>Dashboard</Link>
-          <div style={{ display: 'flex', gap: 6, padding: '6px 8px', borderRadius: 6, background: '#f3f3f3' }}>
-            <span style={{ fontWeight: 600, marginRight: 6 }}>Operations:</span>
-            <Link to="/ioc" style={linkStyle('/ioc')}>IOC List</Link>
-            <Link to="/ioc/new" style={linkStyle('/ioc/new')}>Add IOC</Link>
+    <div style={{ maxWidth: 1200, margin: '24px auto', fontFamily: 'sans-serif', display: 'flex', gap: 20 }}>
+      <aside style={{ width: 240, border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content' }}>
+        <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
+
+        <nav>
+          <Link to="/dashboard" style={menuStyle(isActive('/dashboard'))}>1. Dashboard</Link>
+
+          <div style={{ marginTop: 8 }}>
+            <div style={menuStyle(isOpsActive)}>2. Operations</div>
+            <Link to="/ioc" style={subMenuStyle(isActive('/ioc'))}>IOC List</Link>
+            <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
           </div>
-        </div>
-        <div>
-          <span style={{ marginRight: 12 }}>User: <b>{user || 'demo user'}</b></span>
-          <button onClick={logout}>Logout</button>
-        </div>
-      </div>
-      {children}
+        </nav>
+
+        <button onClick={logout} style={{ marginTop: 16, width: '100%', padding: 9 }}>Logout</button>
+      </aside>
+
+      <main style={{ flex: 1 }}>
+        {children}
+      </main>
     </div>
   );
 }
