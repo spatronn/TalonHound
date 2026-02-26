@@ -12,14 +12,14 @@
 - Auth: password-based login (secret not stored here)
 
 ## 3) Preflight Checklist
-- [ ] OS reachable via SSH
-- [ ] `sudo` access confirmed
-- [ ] Disk free space checked
-- [ ] Time sync OK (`timedatectl`)
-- [ ] Docker installed
-- [ ] Docker Compose plugin installed
-- [ ] Required ports free (80/443/3000/8080 as needed)
-- [ ] Swap configured (recommended for low-memory setups)
+- [x] OS reachable via SSH
+- [x] `sudo` access confirmed
+- [x] Disk free space checked
+- [x] Time sync OK (`timedatectl`)
+- [x] Docker installed
+- [x] Docker Compose plugin installed
+- [x] Required ports free (80/443/3000/8080 as needed)
+- [x] Swap configured (recommended for low-memory setups)
 
 ## 4) Install & Setup (to fill during execution)
 ### 4.1 Base packages
@@ -43,34 +43,38 @@
 - Verification:
 
 ## 5) App Deployment (Compose)
-- [ ] Pull/build images
-- [ ] Start services
-- [ ] Check container health
-- [ ] Check logs for fatal errors
+- [x] Pull/build images
+- [x] Start services
+- [x] Check container health
+- [x] Check logs for fatal errors
 
 Commands:
 ```bash
-# to be filled
+cd /opt/demo-runbook
+git pull
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100
 ```
 
 ## 6) Test Plan (Smoke)
 ### 6.1 Infra
-- [ ] VM reachable
-- [ ] Docker daemon healthy
-- [ ] All required containers running
+- [x] VM reachable
+- [x] Docker daemon healthy
+- [x] All required containers running
 
 ### 6.2 Backend
-- [ ] `/health` returns 200
-- [ ] Auth endpoint reachable
+- [x] `/health` returns 200
+- [x] Auth endpoint reachable
 
 ### 6.3 Frontend
-- [ ] Login page loads
-- [ ] Login success path works
-- [ ] Protected route redirects correctly
+- [x] Login page loads
+- [x] Login success path works
+- [x] Protected route redirects correctly
 
 ### 6.4 End-to-end
-- [ ] Login -> dashboard flow works
-- [ ] API calls through reverse proxy (`/api`) work
+- [x] Login -> dashboard flow works
+- [x] API calls through reverse proxy (`/api`) work
 
 ## 7) Troubleshooting Notes
 - Symptom:
@@ -95,3 +99,4 @@ Commands:
 ## 9) Change Log
 - 2026-02-26: Initial runbook created.
 - 2026-02-26: Added minimal demo stack (React login frontend + Express auth backend + Docker Compose).
+- 2026-02-26: Completed preflight, deployment, and smoke tests on demo VM (192.168.1.251).
