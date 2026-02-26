@@ -261,7 +261,7 @@ function IOCListPage() {
             <th>
               <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
             </th>
-            <th>#</th><th>IP</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th><th>Actions</th>
+            <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -276,6 +276,8 @@ function IOCListPage() {
               </td>
               <td>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
               <td>{r.ip}</td>
+              <td>{r.asn ?? '-'}</td>
+              <td>{r.country_code || '-'}</td>
               <td>{r.source_name}</td>
               <td>{r.confidence}</td>
               <td>{r.category || '-'}</td>
@@ -367,7 +369,7 @@ function IOCAddPage() {
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-            <th>#</th><th>IP</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
+            <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
           </tr>
         </thead>
         <tbody>
@@ -375,6 +377,8 @@ function IOCAddPage() {
             <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
               <td>{idx + 1}</td>
               <td>{r.ip}</td>
+              <td>{r.asn ?? '-'}</td>
+              <td>{r.country_code || '-'}</td>
               <td>{r.source_name}</td>
               <td>{r.confidence}</td>
               <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>

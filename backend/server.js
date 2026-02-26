@@ -101,9 +101,21 @@ app.get('/api/ioc/ip', async (req, res) => {
     const total = countRows[0]?.total || 0;
 
     const listQ = `
-      SELECT * FROM ioc_ips
-      ${where}
-      ORDER BY created_at DESC
+      SELECT
+        i.*,
+        a.asn,
+        a.country_code,
+        a.as_name
+      FROM ioc_ips i
+      LEFT JOIN LATERAL (
+        SELECT an.asn, an.country_code, an.as_name
+        FROM asn_networks an
+        WHERE i.ip << an.network
+        ORDER BY masklen(an.network::inet) DESC
+        LIMIT 1
+      ) a ON TRUE
+      ${where.replace(/\bcreated_at\b/g, 'i.created_at').replace(/\bsource_name\b/g, 'i.source_name').replace(/\bconfidence\b/g, 'i.confidence').replace(/\bcategory\b/g, 'i.category').replace(/\bip\b/g, 'i.ip')}
+      ORDER BY i.created_at DESC
       LIMIT $${params.length + 1}
       OFFSET $${params.length + 2}
     `;
