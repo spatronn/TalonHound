@@ -75,47 +75,53 @@ app.get('/api/ioc/ip', async (req, res) => {
   const params = [];
 
   if (day === 'today') {
-    filters.push(`created_at::date = CURRENT_DATE`);
+    filters.push(`i.created_at::date = CURRENT_DATE`);
   }
 
   if (source_name) {
     params.push(source_name);
-    filters.push(`source_name ILIKE $${params.length}`);
+    filters.push(`i.source_name ILIKE $${params.length}`);
   }
 
   if (confidence) {
     params.push(confidence);
-    filters.push(`confidence = $${params.length}`);
+    filters.push(`i.confidence = $${params.length}`);
   }
 
   if (q) {
     params.push(`%${q}%`);
-    filters.push(`(CAST(ip AS TEXT) ILIKE $${params.length} OR source_name ILIKE $${params.length} OR COALESCE(category, '') ILIKE $${params.length})`);
+    filters.push(`(CAST(i.ip AS TEXT) ILIKE $${params.length} OR i.source_name ILIKE $${params.length} OR COALESCE(i.category, '') ILIKE $${params.length})`);
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
   try {
-    const countQ = `SELECT COUNT(*)::int AS total FROM ioc_ips ${where}`;
+    const countQ = `SELECT COUNT(*)::int AS total FROM ioc_ips i ${where}`;
     const { rows: countRows } = await pool.query(countQ, params);
     const total = countRows[0]?.total || 0;
 
     const listQ = `
       SELECT
         i.*,
-        a.asn::bigint AS asn,
+        a.asn,
         a.country_code,
         a.as_name
       FROM ioc_ips i
+      CROSS JOIN LATERAL (
+        SELECT
+          ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
+          + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
+          + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
+          +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
+      ) ipn
       LEFT JOIN LATERAL (
-        SELECT ar.asn, ar.country_code, ar.as_name
-        FROM asn_networks_raw ar
-        WHERE i.ip::inet >= ar.range_start::inet
-          AND i.ip::inet <= ar.range_end::inet
-          AND ar.asn ~ '^[0-9]+$'
+        SELECT r.asn, r.country_code, r.as_name
+        FROM asn_ipv4_ranges r
+        WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
         LIMIT 1
       ) a ON TRUE
-      ${where.replace(/\bcreated_at\b/g, 'i.created_at').replace(/\bsource_name\b/g, 'i.source_name').replace(/\bconfidence\b/g, 'i.confidence').replace(/\bcategory\b/g, 'i.category').replace(/\bip\b/g, 'i.ip')}
+      ${where}
       ORDER BY i.created_at DESC
       LIMIT $${params.length + 1}
       OFFSET $${params.length + 2}
