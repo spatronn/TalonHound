@@ -65,7 +65,8 @@ function AppShell({ children }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 8 }}>
           <Link to="/dashboard" style={linkStyle('/dashboard')}>Dashboard</Link>
-          <Link to="/ioc" style={linkStyle('/ioc')}>IOC Records</Link>
+          <Link to="/ioc" style={linkStyle('/ioc')}>IOC List</Link>
+          <Link to="/ioc/new" style={linkStyle('/ioc/new')}>Add IOC</Link>
         </div>
         <div>
           <span style={{ marginRight: 12 }}>User: <b>{user || 'demo user'}</b></span>
@@ -86,14 +87,12 @@ function DashboardPage() {
   );
 }
 
-function IOCPage() {
+function IOCListPage() {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_source: [] });
-  const [submitting, setSubmitting] = useState(false);
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
-  const iocFormRef = useRef(null);
 
   async function loadData(targetPage = page, targetSize = pageSize) {
     const [listRes, summaryRes] = await Promise.all([
@@ -109,39 +108,9 @@ function IOCPage() {
     loadData(page, pageSize).catch(() => {});
   }, [page, pageSize]);
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    if (submitting) return;
-    setSubmitting(true);
-
-    const formEl = iocFormRef.current || e.currentTarget;
-    const form = new FormData(formEl);
-    const payload = {
-      ip: String(form.get('ip') || '').trim(),
-      source_name: String(form.get('source_name') || '').trim(),
-      source_url: String(form.get('source_url') || '').trim(),
-      confidence: form.get('confidence'),
-      category: String(form.get('category') || '').trim(),
-      note: String(form.get('note') || '').trim()
-    };
-
-    try {
-      await api.post('/ioc/ip', payload);
-      formEl?.reset?.();
-      setPage(1);
-      loadData(1, pageSize).catch(() => {});
-      alert('IOC saved successfully');
-    } catch (err) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
-      alert(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <AppShell>
-      <h2>IOC Records</h2>
+      <h2>IOC List</h2>
 
       <div style={{ marginBottom: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
         <b>Total records today:</b> {summary.total}
@@ -151,22 +120,6 @@ function IOCPage() {
           ))}
         </div>
       </div>
-
-      <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
-        <input name="ip" placeholder="IP (e.g. 1.2.3.4)" required />
-        <input name="source_name" placeholder="Source name" required />
-        <input name="source_url" placeholder="Source URL" />
-        <select name="confidence" defaultValue="medium">
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
-        <input name="category" placeholder="Category" />
-        <input name="note" placeholder="Note" />
-        <button type="submit" disabled={submitting} style={{ gridColumn: '1 / 4', padding: 10, opacity: submitting ? 0.7 : 1 }}>
-          {submitting ? 'Saving...' : 'Save IOC'}
-        </button>
-      </form>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div>
@@ -222,6 +175,60 @@ function IOCPage() {
   );
 }
 
+function IOCAddPage() {
+  const [submitting, setSubmitting] = useState(false);
+  const iocFormRef = useRef(null);
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+
+    const formEl = iocFormRef.current || e.currentTarget;
+    const form = new FormData(formEl);
+    const payload = {
+      ip: String(form.get('ip') || '').trim(),
+      source_name: String(form.get('source_name') || '').trim(),
+      source_url: String(form.get('source_url') || '').trim(),
+      confidence: form.get('confidence'),
+      category: String(form.get('category') || '').trim(),
+      note: String(form.get('note') || '').trim()
+    };
+
+    try {
+      await api.post('/ioc/ip', payload);
+      formEl?.reset?.();
+      alert('IOC saved successfully');
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
+      alert(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AppShell>
+      <h2>Add IOC</h2>
+      <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
+        <input name="ip" placeholder="IP (e.g. 1.2.3.4)" required />
+        <input name="source_name" placeholder="Source name" required />
+        <input name="source_url" placeholder="Source URL" />
+        <select name="confidence" defaultValue="medium">
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <input name="category" placeholder="Category" />
+        <input name="note" placeholder="Note" />
+        <button type="submit" disabled={submitting} style={{ gridColumn: '1 / 4', padding: 10, opacity: submitting ? 0.7 : 1 }}>
+          {submitting ? 'Saving...' : 'Save IOC'}
+        </button>
+      </form>
+    </AppShell>
+  );
+}
+
 function Protected({ children }) {
   if (!isAuthed()) return <Navigate to="/login" replace />;
   return children;
@@ -233,7 +240,8 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
-        <Route path="/ioc" element={<Protected><IOCPage /></Protected>} />
+        <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
+        <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
         <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
