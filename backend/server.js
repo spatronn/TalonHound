@@ -118,6 +118,37 @@ app.get('/api/ioc/ip', async (req, res) => {
   }
 });
 
+app.delete('/api/ioc/ip/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ message: 'Invalid id' });
+  }
+
+  try {
+    const result = await pool.query('DELETE FROM ioc_ips WHERE id = $1 RETURNING id', [id]);
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Record not found' });
+    }
+    return res.json({ deleted: 1, ids: [id] });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to delete record', detail: err.message });
+  }
+});
+
+app.post('/api/ioc/ip/bulk-delete', async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+  if (!ids.length) {
+    return res.status(400).json({ message: 'ids array is required' });
+  }
+
+  try {
+    const result = await pool.query('DELETE FROM ioc_ips WHERE id = ANY($1::bigint[]) RETURNING id', [ids]);
+    return res.json({ deleted: result.rowCount || 0, ids: result.rows.map((r) => r.id) });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to bulk delete records', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/summary/today', async (_req, res) => {
   try {
     const total = await pool.query(`SELECT COUNT(*)::int AS count FROM ioc_ips WHERE created_at::date = CURRENT_DATE`);

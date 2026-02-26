@@ -116,13 +116,16 @@ function IOCListPage() {
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
+  const [selectedIds, setSelectedIds] = useState([]);
 
   async function loadData(targetPage = page, targetSize = pageSize) {
     const [listRes, summaryRes] = await Promise.all([
       api.get('/ioc/ip', { params: { page: targetPage, page_size: targetSize } }),
       api.get('/ioc/summary/today')
     ]);
-    setRows(listRes.data.items || []);
+    const items = listRes.data.items || [];
+    setRows(items);
+    setSelectedIds((prev) => prev.filter((id) => items.some((r) => r.id === id)));
     setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
     setSummary(summaryRes.data);
   }
@@ -130,6 +133,46 @@ function IOCListPage() {
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
   }, [page, pageSize]);
+
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
+
+  function toggleSelectAllOnPage() {
+    if (allOnPageSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !rows.some((r) => r.id === id)));
+      return;
+    }
+    setSelectedIds((prev) => Array.from(new Set([...prev, ...rows.map((r) => r.id)])));
+  }
+
+  function toggleRow(id) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function deleteOne(id) {
+    const ok = window.confirm('Delete this IOC record?');
+    if (!ok) return;
+
+    try {
+      await api.delete(`/ioc/ip/${id}`);
+      await loadData(page, pageSize);
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Failed to delete record');
+    }
+  }
+
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
+    const ok = window.confirm(`Delete ${selectedIds.length} selected record(s)?`);
+    if (!ok) return;
+
+    try {
+      await api.post('/ioc/ip/bulk-delete', { ids: selectedIds });
+      setSelectedIds([]);
+      await loadData(page, pageSize);
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Failed to bulk delete records');
+    }
+  }
 
   return (
     <AppShell>
@@ -145,7 +188,7 @@ function IOCListPage() {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <label>Page size: </label>
           <select
             value={pageSize}
@@ -159,6 +202,10 @@ function IOCListPage() {
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
+
+          <button onClick={deleteSelected} disabled={!selectedIds.length}>
+            Delete selected ({selectedIds.length})
+          </button>
         </div>
         <div style={{ fontSize: 14 }}>
           Total: <b>{pagination.total}</b> | Page: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
@@ -168,18 +215,31 @@ function IOCListPage() {
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-            <th>#</th><th>IP</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th>
+            <th>
+              <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
+            </th>
+            <th>#</th><th>IP</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, idx) => (
             <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(r.id)}
+                  onChange={() => toggleRow(r.id)}
+                />
+              </td>
               <td>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
               <td>{r.ip}</td>
               <td>{r.source_name}</td>
               <td>{r.confidence}</td>
               <td>{r.category || '-'}</td>
               <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+              <td>
+                <button onClick={() => deleteOne(r.id)}>Delete</button>
+              </td>
             </tr>
           ))}
         </tbody>
