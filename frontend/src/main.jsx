@@ -166,12 +166,13 @@ function Dashboard() {
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-            <th>IP</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th>
+            <th>#</th><th>IP</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {rows.map((r, idx) => (
             <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <td>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
               <td>{r.ip}</td>
               <td>{r.source_name}</td>
               <td>{r.confidence}</td>
