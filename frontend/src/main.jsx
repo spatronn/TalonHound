@@ -47,20 +47,24 @@ function Dashboard() {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_source: [] });
   const [submitting, setSubmitting] = useState(false);
+  const [pageSize, setPageSize] = useState(5);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
   const iocFormRef = useRef(null);
 
-  async function loadData() {
+  async function loadData(targetPage = page, targetSize = pageSize) {
     const [listRes, summaryRes] = await Promise.all([
-      api.get('/ioc/ip'),
+      api.get('/ioc/ip', { params: { page: targetPage, page_size: targetSize } }),
       api.get('/ioc/summary/today')
     ]);
-    setRows(listRes.data);
+    setRows(listRes.data.items || []);
+    setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
     setSummary(summaryRes.data);
   }
 
   useEffect(() => {
-    loadData().catch(() => {});
-  }, []);
+    loadData(page, pageSize).catch(() => {});
+  }, [page, pageSize]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -79,16 +83,11 @@ function Dashboard() {
     };
 
     try {
-      const res = await api.post('/ioc/ip', payload);
-      const data = res?.data;
+      await api.post('/ioc/ip', payload);
 
       formEl?.reset?.();
-      if (data?.id) {
-        setRows((prev) => [data, ...prev]);
-      }
-      setSummary((prev) => ({ ...prev, total: (prev.total || 0) + 1 }));
-
-      loadData().catch((refreshErr) => {
+      setPage(1);
+      loadData(1, pageSize).catch((refreshErr) => {
         console.warn('Background refresh failed:', refreshErr?.message || refreshErr);
       });
 
@@ -143,6 +142,27 @@ function Dashboard() {
         </button>
       </form>
 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div>
+          <label>Sayfa başına: </label>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              const nextSize = Number(e.target.value);
+              setPageSize(nextSize);
+              setPage(1);
+            }}
+          >
+            {[5, 10, 25, 100].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ fontSize: 14 }}>
+          Toplam: <b>{pagination.total}</b> | Sayfa: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
+        </div>
+      </div>
+
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
@@ -161,6 +181,16 @@ function Dashboard() {
           ))}
         </tbody>
       </table>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+        <button disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Önceki</button>
+        <button
+          disabled={pagination.page >= pagination.total_pages}
+          onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))}
+        >
+          Sonraki
+        </button>
+      </div>
     </div>
   );
 }

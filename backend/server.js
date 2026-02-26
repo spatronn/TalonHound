@@ -64,7 +64,13 @@ app.post('/api/ioc/ip', async (req, res) => {
 });
 
 app.get('/api/ioc/ip', async (req, res) => {
-  const { source_name, confidence, day = 'today' } = req.query;
+  const { source_name, confidence, day = 'today', page = '1', page_size = '5' } = req.query;
+  const allowedSizes = [5, 10, 25, 100];
+  const size = Number(page_size);
+  const currentPage = Math.max(Number(page) || 1, 1);
+  const limit = allowedSizes.includes(size) ? size : 5;
+  const offset = (currentPage - 1) * limit;
+
   const filters = [];
   const params = [];
 
@@ -83,11 +89,30 @@ app.get('/api/ioc/ip', async (req, res) => {
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const q = `SELECT * FROM ioc_ips ${where} ORDER BY created_at DESC LIMIT 500`;
 
   try {
-    const { rows } = await pool.query(q, params);
-    return res.json(rows);
+    const countQ = `SELECT COUNT(*)::int AS total FROM ioc_ips ${where}`;
+    const { rows: countRows } = await pool.query(countQ, params);
+    const total = countRows[0]?.total || 0;
+
+    const listQ = `
+      SELECT * FROM ioc_ips
+      ${where}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `;
+    const { rows } = await pool.query(listQ, [...params, limit, offset]);
+
+    return res.json({
+      items: rows,
+      pagination: {
+        page: currentPage,
+        page_size: limit,
+        total,
+        total_pages: Math.max(Math.ceil(total / limit), 1)
+      }
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Liste alınamadı', detail: err.message });
   }
