@@ -190,7 +190,27 @@ docker compose logs --tail=200
 - [ ] Re-check Docker and volumes
 - [ ] Re-run smoke tests
 
-## 12) Change Log
+## 12) Technologies & Integrations
+
+### Core stack
+- Frontend: React + Vite
+- Backend: Node.js + Express
+- Database: PostgreSQL 16
+- Runtime/Orchestration: Docker + Docker Compose
+- Reverse proxy/static serving: Nginx (frontend container)
+
+### Data sources / integrations
+- ASN + Country enrichment source: https://iptoasn.com/
+  - Import format: TSV/TSV.GZ
+  - Imported into PostgreSQL (`asn_networks_raw` + optimized `asn_ipv4_ranges`)
+
+### Internal API modules implemented
+- Auth: `/api/auth/login`
+- IOC create/list/delete/bulk-delete: `/api/ioc/*`
+- Daily summary: `/api/ioc/summary/today`
+- IOC filters: query/source/confidence/asn/country + subnet search
+
+## 13) Change Log
 - 2026-02-26: Initial runbook created.
 - 2026-02-26: Added minimal demo stack (React login frontend + Express auth backend + Docker Compose).
 - 2026-02-26: Completed preflight, deployment, and smoke tests on demo VM (192.168.1.251).
