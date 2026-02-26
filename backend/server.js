@@ -39,14 +39,14 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  return res.status(401).json({ message: 'Email veya şifre hatalı' });
+  return res.status(401).json({ message: 'Invalid email or password' });
 });
 
 app.post('/api/ioc/ip', async (req, res) => {
   const { ip, source_name, source_url, confidence = 'medium', category = null, note = null } = req.body || {};
 
   if (!ip || !source_name) {
-    return res.status(400).json({ message: 'ip ve source_name zorunlu' });
+    return res.status(400).json({ message: 'ip and source_name are required' });
   }
 
   try {
@@ -59,7 +59,7 @@ app.post('/api/ioc/ip', async (req, res) => {
     const { rows } = await pool.query(q, values);
     return res.status(201).json(rows[0]);
   } catch (err) {
-    return res.status(500).json({ message: 'Kayıt eklenemedi', detail: err.message });
+    return res.status(500).json({ message: 'Failed to create record', detail: err.message });
   }
 });
 
@@ -114,7 +114,7 @@ app.get('/api/ioc/ip', async (req, res) => {
       }
     });
   } catch (err) {
-    return res.status(500).json({ message: 'Liste alınamadı', detail: err.message });
+    return res.status(500).json({ message: 'Failed to fetch records', detail: err.message });
   }
 });
 
@@ -134,7 +134,7 @@ app.get('/api/ioc/summary/today', async (_req, res) => {
       by_source: bySource.rows
     });
   } catch (err) {
-    res.status(500).json({ message: 'Özet alınamadı', detail: err.message });
+    res.status(500).json({ message: 'Failed to fetch summary', detail: err.message });
   }
 });
 

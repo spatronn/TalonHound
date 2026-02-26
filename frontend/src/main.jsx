@@ -24,7 +24,7 @@ function LoginPage() {
       localStorage.setItem('demo_user', data.user.email);
       navigate('/dashboard');
     } catch {
-      alert('Email veya şifre hatalı');
+      alert('Invalid email or password');
     }
   }
 
@@ -33,10 +33,10 @@ function LoginPage() {
       <h2>Demo Login</h2>
       <form onSubmit={onSubmit}>
         <input name="email" type="email" placeholder="email" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
-        <input name="password" type="password" placeholder="şifre" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
-        <button type="submit" style={{ width: '100%', padding: 10 }}>Giriş Yap</button>
+        <input name="password" type="password" placeholder="password" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
+        <button type="submit" style={{ width: '100%', padding: 10 }}>Sign In</button>
       </form>
-      <p style={{ fontSize: 12, color: '#555' }}>Demo kullanıcı: demo@demo.local / Password1!</p>
+      <p style={{ fontSize: 12, color: '#555' }}>Demo user: demo@demo.local / Password1!</p>
     </div>
   );
 }
@@ -91,9 +91,9 @@ function Dashboard() {
         console.warn('Background refresh failed:', refreshErr?.message || refreshErr);
       });
 
-      alert('IOC kaydedildi');
+      alert('IOC saved successfully');
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Kayıt eklenemedi';
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
       alert(msg);
       console.error('IOC submit error:', err?.response?.status, err?.response?.data || err?.message);
     } finally {
@@ -112,13 +112,13 @@ function Dashboard() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>IOC Dashboard</h2>
         <div>
-          <span style={{ marginRight: 12 }}>Kullanıcı: <b>{user || 'demo user'}</b></span>
-          <button onClick={logout}>Çıkış</button>
+          <span style={{ marginRight: 12 }}>User: <b>{user || 'demo user'}</b></span>
+          <button onClick={logout}>Logout</button>
         </div>
       </div>
 
       <div style={{ marginBottom: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
-        <b>Bugün toplam kayıt:</b> {summary.total}
+        <b>Total records today:</b> {summary.total}
         <div style={{ marginTop: 6, fontSize: 14 }}>
           {summary.by_source.map((s) => (
             <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: {s.count}</span>
@@ -127,24 +127,24 @@ function Dashboard() {
       </div>
 
       <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
-        <input name="ip" placeholder="IP (örn 1.2.3.4)" required />
-        <input name="source_name" placeholder="Kaynak adı" required />
-        <input name="source_url" placeholder="Kaynak linki" />
+        <input name="ip" placeholder="IP (e.g. 1.2.3.4)" required />
+        <input name="source_name" placeholder="Source name" required />
+        <input name="source_url" placeholder="Source URL" />
         <select name="confidence" defaultValue="medium">
           <option value="low">low</option>
           <option value="medium">medium</option>
           <option value="high">high</option>
         </select>
-        <input name="category" placeholder="Kategori" />
-        <input name="note" placeholder="Not" />
+        <input name="category" placeholder="Category" />
+        <input name="note" placeholder="Note" />
         <button type="submit" disabled={submitting} style={{ gridColumn: '1 / 4', padding: 10, opacity: submitting ? 0.7 : 1 }}>
-          {submitting ? 'Kaydediliyor...' : 'IOC Kaydet'}
+          {submitting ? 'Saving...' : 'Save IOC'}
         </button>
       </form>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div>
-          <label>Sayfa başına: </label>
+          <label>Page size: </label>
           <select
             value={pageSize}
             onChange={(e) => {
@@ -159,14 +159,14 @@ function Dashboard() {
           </select>
         </div>
         <div style={{ fontSize: 14 }}>
-          Toplam: <b>{pagination.total}</b> | Sayfa: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
+          Total: <b>{pagination.total}</b> | Page: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
         </div>
       </div>
 
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-            <th>IP</th><th>Kaynak</th><th>Confidence</th><th>Kategori</th><th>Zaman</th>
+            <th>IP</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th>
           </tr>
         </thead>
         <tbody>
@@ -183,12 +183,12 @@ function Dashboard() {
       </table>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-        <button disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Önceki</button>
+        <button disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
         <button
           disabled={pagination.page >= pagination.total_pages}
           onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))}
         >
-          Sonraki
+          Next
         </button>
       </div>
     </div>
