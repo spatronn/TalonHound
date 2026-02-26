@@ -103,15 +103,16 @@ app.get('/api/ioc/ip', async (req, res) => {
     const listQ = `
       SELECT
         i.*,
-        a.asn,
+        a.asn::bigint AS asn,
         a.country_code,
         a.as_name
       FROM ioc_ips i
       LEFT JOIN LATERAL (
-        SELECT an.asn, an.country_code, an.as_name
-        FROM asn_networks an
-        WHERE i.ip << an.network
-        ORDER BY masklen(an.network::inet) DESC
+        SELECT ar.asn, ar.country_code, ar.as_name
+        FROM asn_networks_raw ar
+        WHERE i.ip::inet >= ar.range_start::inet
+          AND i.ip::inet <= ar.range_end::inet
+          AND ar.asn ~ '^[0-9]+$'
         LIMIT 1
       ) a ON TRUE
       ${where.replace(/\bcreated_at\b/g, 'i.created_at').replace(/\bsource_name\b/g, 'i.source_name').replace(/\bconfidence\b/g, 'i.confidence').replace(/\bcategory\b/g, 'i.category').replace(/\bip\b/g, 'i.ip')}
