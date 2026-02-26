@@ -64,20 +64,29 @@ function Dashboard() {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const payload = {
-      ip: form.get('ip'),
-      source_name: form.get('source_name'),
-      source_url: form.get('source_url'),
+      ip: String(form.get('ip') || '').trim(),
+      source_name: String(form.get('source_name') || '').trim(),
+      source_url: String(form.get('source_url') || '').trim(),
       confidence: form.get('confidence'),
-      category: form.get('category'),
-      note: form.get('note')
+      category: String(form.get('category') || '').trim(),
+      note: String(form.get('note') || '').trim()
     };
 
     try {
-      await api.post('/ioc/ip', payload);
+      const { data } = await api.post('/ioc/ip', payload);
       e.currentTarget.reset();
-      await loadData();
+      setRows((prev) => [data, ...prev]);
+      setSummary((prev) => ({ ...prev, total: (prev.total || 0) + 1 }));
+
+      // refresh data in background; do not show false error if only refresh fails
+      loadData().catch((refreshErr) => {
+        console.warn('Background refresh failed:', refreshErr?.message || refreshErr);
+      });
+
+      alert('IOC kaydedildi');
     } catch (err) {
-      alert(err?.response?.data?.message || 'Kayıt eklenemedi');
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || 'Kayıt eklenemedi';
+      alert(msg);
     }
   }
 
