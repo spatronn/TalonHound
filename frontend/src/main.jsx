@@ -202,7 +202,7 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto auto', gap: 8, marginBottom: 10 }}>
         <input
           placeholder="Search IP / subnet (e.g. 1.2.3.0/24) / source / category"
           value={search}
@@ -247,6 +247,7 @@ function IOCListPage() {
           <option value="medium">medium</option>
           <option value="high">high</option>
         </select>
+        <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
         <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setPage(1); }}>Clear</button>
       </div>
 
@@ -271,7 +272,7 @@ function IOCListPage() {
           </button>
         </div>
         <div style={{ fontSize: 14 }}>
-          Total: <b>{pagination.total}</b> | Page: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
+          Found <b>{pagination.total}</b> IOC(s) | Page: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
         </div>
       </div>
 
