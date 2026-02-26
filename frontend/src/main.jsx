@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -44,6 +44,42 @@ function LoginPage() {
 function Dashboard() {
   const navigate = useNavigate();
   const user = localStorage.getItem('demo_user');
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState({ total: 0, by_source: [] });
+
+  async function loadData() {
+    const [listRes, summaryRes] = await Promise.all([
+      api.get('/ioc/ip'),
+      api.get('/ioc/summary/today')
+    ]);
+    setRows(listRes.data);
+    setSummary(summaryRes.data);
+  }
+
+  useEffect(() => {
+    loadData().catch(() => {});
+  }, []);
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const payload = {
+      ip: form.get('ip'),
+      source_name: form.get('source_name'),
+      source_url: form.get('source_url'),
+      confidence: form.get('confidence'),
+      category: form.get('category'),
+      note: form.get('note')
+    };
+
+    try {
+      await api.post('/ioc/ip', payload);
+      e.currentTarget.reset();
+      await loadData();
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Kayıt eklenemedi');
+    }
+  }
 
   function logout() {
     localStorage.removeItem('demo_token');
@@ -52,10 +88,56 @@ function Dashboard() {
   }
 
   return (
-    <div style={{ maxWidth: 600, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h2>Dashboard</h2>
-      <p>Hoş geldin: <b>{user || 'demo user'}</b></p>
-      <button onClick={logout}>Çıkış</button>
+    <div style={{ maxWidth: 1000, margin: '24px auto', fontFamily: 'sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>IOC Dashboard</h2>
+        <div>
+          <span style={{ marginRight: 12 }}>Kullanıcı: <b>{user || 'demo user'}</b></span>
+          <button onClick={logout}>Çıkış</button>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+        <b>Bugün toplam kayıt:</b> {summary.total}
+        <div style={{ marginTop: 6, fontSize: 14 }}>
+          {summary.by_source.map((s) => (
+            <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: {s.count}</span>
+          ))}
+        </div>
+      </div>
+
+      <form onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
+        <input name="ip" placeholder="IP (örn 1.2.3.4)" required />
+        <input name="source_name" placeholder="Kaynak adı" required />
+        <input name="source_url" placeholder="Kaynak linki" />
+        <select name="confidence" defaultValue="medium">
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <input name="category" placeholder="Kategori" />
+        <input name="note" placeholder="Not" />
+        <button type="submit" style={{ gridColumn: '1 / 4', padding: 10 }}>IOC Kaydet</button>
+      </form>
+
+      <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
+            <th>IP</th><th>Kaynak</th><th>Confidence</th><th>Kategori</th><th>Zaman</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <td>{r.ip}</td>
+              <td>{r.source_name}</td>
+              <td>{r.confidence}</td>
+              <td>{r.category || '-'}</td>
+              <td>{new Date(r.created_at).toLocaleString('tr-TR', { timeZone: 'UTC' })}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

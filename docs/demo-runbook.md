@@ -195,3 +195,4 @@ docker compose logs --tail=200
 - 2026-02-26: Added minimal demo stack (React login frontend + Express auth backend + Docker Compose).
 - 2026-02-26: Completed preflight, deployment, and smoke tests on demo VM (192.168.1.251).
 - 2026-02-26: Expanded runbook with troubleshooting, rollback commands, demo presentation flow, and test evidence summary.
+- 2026-02-26: Switched persistence to PostgreSQL and added IOC IP/source data flow.
