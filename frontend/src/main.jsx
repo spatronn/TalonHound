@@ -66,7 +66,8 @@ function Dashboard() {
     if (submitting) return;
     setSubmitting(true);
 
-    const form = new FormData(e.currentTarget);
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
     const payload = {
       ip: String(form.get('ip') || '').trim(),
       source_name: String(form.get('source_name') || '').trim(),
@@ -80,7 +81,7 @@ function Dashboard() {
       const res = await api.post('/ioc/ip', payload);
       const data = res?.data;
 
-      e.currentTarget.reset();
+      formEl.reset();
       if (data?.id) {
         setRows((prev) => [data, ...prev]);
       }
