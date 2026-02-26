@@ -38,3 +38,11 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 ---
 
 Add whatever helps you do your job. This is your cheat sheet.
+
+## Demo VM
+
+- VM IP: `192.168.1.251`
+- SSH user: `spatronn`
+- SSH port: `22`
+- Auth: password-based login (password not stored in this file)
+- Notes: same subnet demo target
