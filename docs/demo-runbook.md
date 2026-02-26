@@ -93,4 +93,5 @@ Commands:
 - [ ] Re-run smoke tests
 
 ## 9) Change Log
-- YYYY-MM-DD: Initial runbook created.
+- 2026-02-26: Initial runbook created.
+- 2026-02-26: Added minimal demo stack (React login frontend + Express auth backend + Docker Compose).

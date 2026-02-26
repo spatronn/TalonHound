@@ -1,0 +1,18 @@
+services:
+  backend:
+    build: ./backend
+    container_name: demo-backend
+    environment:
+      - PORT=3000
+      - DEMO_EMAIL=demo@demo.local
+      - DEMO_PASSWORD=Password1!
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: demo-frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
