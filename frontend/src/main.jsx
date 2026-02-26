@@ -63,10 +63,13 @@ function AppShell({ children }) {
   return (
     <div style={{ maxWidth: 1100, margin: '24px auto', fontFamily: 'sans-serif' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Link to="/dashboard" style={linkStyle('/dashboard')}>Dashboard</Link>
-          <Link to="/ioc" style={linkStyle('/ioc')}>IOC List</Link>
-          <Link to="/ioc/new" style={linkStyle('/ioc/new')}>Add IOC</Link>
+          <div style={{ display: 'flex', gap: 6, padding: '6px 8px', borderRadius: 6, background: '#f3f3f3' }}>
+            <span style={{ fontWeight: 600, marginRight: 6 }}>Operations:</span>
+            <Link to="/ioc" style={linkStyle('/ioc')}>IOC List</Link>
+            <Link to="/ioc/new" style={linkStyle('/ioc/new')}>Add IOC</Link>
+          </div>
         </div>
         <div>
           <span style={{ marginRight: 12 }}>User: <b>{user || 'demo user'}</b></span>
@@ -177,7 +180,17 @@ function IOCListPage() {
 
 function IOCAddPage() {
   const [submitting, setSubmitting] = useState(false);
+  const [recentRows, setRecentRows] = useState([]);
   const iocFormRef = useRef(null);
+
+  async function loadRecent() {
+    const res = await api.get('/ioc/ip', { params: { page: 1, page_size: 10, day: 'all' } });
+    setRecentRows(res.data?.items || []);
+  }
+
+  useEffect(() => {
+    loadRecent().catch(() => {});
+  }, []);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -198,6 +211,7 @@ function IOCAddPage() {
     try {
       await api.post('/ioc/ip', payload);
       formEl?.reset?.();
+      loadRecent().catch(() => {});
       alert('IOC saved successfully');
     } catch (err) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
@@ -225,6 +239,26 @@ function IOCAddPage() {
           {submitting ? 'Saving...' : 'Save IOC'}
         </button>
       </form>
+
+      <h3>Last 10 IOC entries</h3>
+      <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
+            <th>#</th><th>IP</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {recentRows.map((r, idx) => (
+            <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <td>{idx + 1}</td>
+              <td>{r.ip}</td>
+              <td>{r.source_name}</td>
+              <td>{r.confidence}</td>
+              <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </AppShell>
   );
 }
