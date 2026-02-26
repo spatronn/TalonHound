@@ -115,12 +115,23 @@ function IOCListPage() {
   const [summary, setSummary] = useState({ total: 0, by_source: [] });
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [confidenceFilter, setConfidenceFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
   const [selectedIds, setSelectedIds] = useState([]);
 
   async function loadData(targetPage = page, targetSize = pageSize) {
     const [listRes, summaryRes] = await Promise.all([
-      api.get('/ioc/ip', { params: { page: targetPage, page_size: targetSize } }),
+      api.get('/ioc/ip', {
+        params: {
+          page: targetPage,
+          page_size: targetSize,
+          q: search || undefined,
+          source_name: sourceFilter || undefined,
+          confidence: confidenceFilter || undefined
+        }
+      }),
       api.get('/ioc/summary/today')
     ]);
     const items = listRes.data.items || [];
@@ -132,7 +143,7 @@ function IOCListPage() {
 
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
-  }, [page, pageSize]);
+  }, [page, pageSize, search, sourceFilter, confidenceFilter]);
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
 
@@ -185,6 +196,38 @@ function IOCListPage() {
             <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: {s.count}</span>
           ))}
         </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, marginBottom: 10 }}>
+        <input
+          placeholder="Search IP / source / category"
+          value={search}
+          onChange={(e) => {
+            setPage(1);
+            setSearch(e.target.value);
+          }}
+        />
+        <input
+          placeholder="Filter by source"
+          value={sourceFilter}
+          onChange={(e) => {
+            setPage(1);
+            setSourceFilter(e.target.value);
+          }}
+        />
+        <select
+          value={confidenceFilter}
+          onChange={(e) => {
+            setPage(1);
+            setConfidenceFilter(e.target.value);
+          }}
+        >
+          <option value="">All confidence</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setPage(1); }}>Clear</button>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

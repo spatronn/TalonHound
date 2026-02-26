@@ -64,7 +64,7 @@ app.post('/api/ioc/ip', async (req, res) => {
 });
 
 app.get('/api/ioc/ip', async (req, res) => {
-  const { source_name, confidence, day = 'today', page = '1', page_size = '5' } = req.query;
+  const { source_name, confidence, q, day = 'today', page = '1', page_size = '5' } = req.query;
   const allowedSizes = [5, 10, 25, 100];
   const size = Number(page_size);
   const currentPage = Math.max(Number(page) || 1, 1);
@@ -80,12 +80,17 @@ app.get('/api/ioc/ip', async (req, res) => {
 
   if (source_name) {
     params.push(source_name);
-    filters.push(`source_name = $${params.length}`);
+    filters.push(`source_name ILIKE $${params.length}`);
   }
 
   if (confidence) {
     params.push(confidence);
     filters.push(`confidence = $${params.length}`);
+  }
+
+  if (q) {
+    params.push(`%${q}%`);
+    filters.push(`(CAST(ip AS TEXT) ILIKE $${params.length} OR source_name ILIKE $${params.length} OR COALESCE(category, '') ILIKE $${params.length})`);
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
