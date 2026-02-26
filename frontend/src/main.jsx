@@ -118,6 +118,8 @@ function IOCListPage() {
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [confidenceFilter, setConfidenceFilter] = useState('');
+  const [asnFilter, setAsnFilter] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
   const [selectedIds, setSelectedIds] = useState([]);
 
@@ -129,7 +131,9 @@ function IOCListPage() {
           page_size: targetSize,
           q: search || undefined,
           source_name: sourceFilter || undefined,
-          confidence: confidenceFilter || undefined
+          confidence: confidenceFilter || undefined,
+          asn: asnFilter || undefined,
+          country: countryFilter || undefined
         }
       }),
       api.get('/ioc/summary/today')
@@ -143,7 +147,7 @@ function IOCListPage() {
 
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
-  }, [page, pageSize, search, sourceFilter, confidenceFilter]);
+  }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter]);
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
 
@@ -198,9 +202,9 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: 8, marginBottom: 10 }}>
         <input
-          placeholder="Search IP / source / category"
+          placeholder="Search IP / subnet (e.g. 1.2.3.0/24) / source / category"
           value={search}
           onChange={(e) => {
             setPage(1);
@@ -215,6 +219,22 @@ function IOCListPage() {
             setSourceFilter(e.target.value);
           }}
         />
+        <input
+          placeholder="ASN (e.g. 15169)"
+          value={asnFilter}
+          onChange={(e) => {
+            setPage(1);
+            setAsnFilter(e.target.value.replace(/[^0-9]/g, ''));
+          }}
+        />
+        <input
+          placeholder="Country (e.g. US)"
+          value={countryFilter}
+          onChange={(e) => {
+            setPage(1);
+            setCountryFilter(e.target.value);
+          }}
+        />
         <select
           value={confidenceFilter}
           onChange={(e) => {
@@ -227,7 +247,7 @@ function IOCListPage() {
           <option value="medium">medium</option>
           <option value="high">high</option>
         </select>
-        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setPage(1); }}>Clear</button>
+        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setPage(1); }}>Clear</button>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
