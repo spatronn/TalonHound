@@ -46,6 +46,7 @@ function Dashboard() {
   const user = localStorage.getItem('demo_user');
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_source: [] });
+  const [submitting, setSubmitting] = useState(false);
 
   async function loadData() {
     const [listRes, summaryRes] = await Promise.all([
@@ -62,6 +63,9 @@ function Dashboard() {
 
   async function onSubmit(e) {
     e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+
     const form = new FormData(e.currentTarget);
     const payload = {
       ip: String(form.get('ip') || '').trim(),
@@ -73,20 +77,26 @@ function Dashboard() {
     };
 
     try {
-      const { data } = await api.post('/ioc/ip', payload);
+      const res = await api.post('/ioc/ip', payload);
+      const data = res?.data;
+
       e.currentTarget.reset();
-      setRows((prev) => [data, ...prev]);
+      if (data?.id) {
+        setRows((prev) => [data, ...prev]);
+      }
       setSummary((prev) => ({ ...prev, total: (prev.total || 0) + 1 }));
 
-      // refresh data in background; do not show false error if only refresh fails
       loadData().catch((refreshErr) => {
         console.warn('Background refresh failed:', refreshErr?.message || refreshErr);
       });
 
       alert('IOC kaydedildi');
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || 'Kayıt eklenemedi';
+      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Kayıt eklenemedi';
       alert(msg);
+      console.error('IOC submit error:', err?.response?.status, err?.response?.data || err?.message);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -126,7 +136,9 @@ function Dashboard() {
         </select>
         <input name="category" placeholder="Kategori" />
         <input name="note" placeholder="Not" />
-        <button type="submit" style={{ gridColumn: '1 / 4', padding: 10 }}>IOC Kaydet</button>
+        <button type="submit" disabled={submitting} style={{ gridColumn: '1 / 4', padding: 10, opacity: submitting ? 0.7 : 1 }}>
+          {submitting ? 'Kaydediliyor...' : 'IOC Kaydet'}
+        </button>
       </form>
 
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
