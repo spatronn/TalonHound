@@ -21,26 +21,51 @@
 - [x] Required ports free (80/443/3000/8080 as needed)
 - [x] Swap configured (recommended for low-memory setups)
 
-## 4) Install & Setup (to fill during execution)
+## 4) Install & Setup
 ### 4.1 Base packages
 - Command(s):
-- Expected output:
-- Verification:
+  ```bash
+  sudo apt update
+  sudo apt install -y ca-certificates curl gnupg lsb-release
+  ```
+- Expected output: package install completed without errors
+- Verification: `apt update` and package install return code `0`
 
 ### 4.2 Docker/Compose
 - Command(s):
-- Expected output:
+  ```bash
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  sudo apt update
+  sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  sudo systemctl enable --now docker
+  ```
+- Expected output: docker service active, compose installed
 - Verification:
+  ```bash
+  docker --version
+  docker compose version
+  docker run --rm hello-world
+  ```
 
 ### 4.3 Project bootstrap
 - Command(s):
-- Expected output:
-- Verification:
+  ```bash
+  cd /opt
+  git clone https://github.com/spatronn/demo-runbook.git
+  cd /opt/demo-runbook
+  ```
+- Expected output: repo cloned successfully
+- Verification: `ls -la /opt/demo-runbook`
 
 ### 4.4 Environment variables
-- Command(s):
-- Expected output:
-- Verification:
+- Command(s): runtime env passed via `docker-compose.yml` (DEMO_EMAIL/DEMO_PASSWORD)
+- Expected output: backend starts and listens on `:3000`
+- Verification: `docker compose logs --tail=100`
 
 ## 5) App Deployment (Compose)
 - [x] Pull/build images
@@ -77,26 +102,96 @@ docker compose logs --tail=100
 - [x] API calls through reverse proxy (`/api`) work
 
 ## 7) Troubleshooting Notes
-- Symptom:
-- Likely cause:
+### Issue 1: `dpkg was interrupted`
+- Symptom: `E: dpkg was interrupted, you must manually run 'sudo dpkg --configure -a'`
+- Likely cause: previous apt operation unfinished
 - Fix:
+  ```bash
+  sudo dpkg --configure -a
+  sudo apt --fix-broken install -y
+  sudo apt update
+  ```
 
-## 8) Export / Import Procedure
-### 8.1 Before export
+### Issue 2: `file:/cdrom jammy Release` error
+- Symptom: `The repository 'file:/cdrom jammy Release' no longer has a Release file`
+- Likely cause: installer CD-ROM repo still enabled
+- Fix:
+  ```bash
+  sudo sed -i 's/^deb cdrom/# deb cdrom/g' /etc/apt/sources.list
+  sudo apt update
+  ```
+
+### Issue 3: GitHub clone via SSH fails
+- Symptom: `git@github.com: Permission denied (publickey)`
+- Likely cause: VM SSH key not registered in GitHub
+- Fix options:
+  1) Clone with HTTPS + Fine-grained PAT (used in this demo)
+  2) Register VM public key to GitHub and use SSH clone
+
+### Issue 4: Docker service inactive after install
+- Symptom: `docker.service ... Active: inactive (dead)`
+- Fix:
+  ```bash
+  sudo systemctl enable --now docker
+  sudo systemctl start docker
+  docker run --rm hello-world
+  ```
+
+## 8) Rollback & Operational Commands
+### 8.1 Restart stack
+```bash
+cd /opt/demo-runbook
+docker compose down
+docker compose up -d --build
+docker compose ps
+```
+
+### 8.2 Stop stack
+```bash
+cd /opt/demo-runbook
+docker compose down
+```
+
+### 8.3 Check logs
+```bash
+cd /opt/demo-runbook
+docker compose logs --tail=200
+```
+
+## 9) Demo Script (Presentation Flow)
+1. Open `http://<VM_IP>`
+2. Show login screen
+3. Try wrong password and show validation
+4. Login with demo user (`demo@demo.local / Password1!`)
+5. Show dashboard access
+6. Logout and verify redirect back to login
+
+## 10) Test Evidence (Summary)
+- VM reachable over subnet (`192.168.1.251`)
+- Docker installed and validated (`hello-world` successful)
+- Compose stack running:
+  - `demo-backend` up
+  - `demo-frontend` up (`0.0.0.0:80->80`)
+- Backend log confirms: `Backend listening on :3000`
+- Frontend reachable and login flow validated end-to-end
+
+## 11) Export / Import Procedure
+### 11.1 Before export
 - [ ] Create snapshot: `clean-base`
 - [ ] Create snapshot: `demo-ready`
 - [ ] Stop app services if needed
 
-### 8.2 Export
+### 11.2 Export
 - [ ] Export as OVA
 - [ ] Record VM settings (CPU/RAM/Disk/Network)
 
-### 8.3 After import
+### 11.3 After import
 - [ ] Re-check NIC/network
 - [ ] Re-check Docker and volumes
 - [ ] Re-run smoke tests
 
-## 9) Change Log
+## 12) Change Log
 - 2026-02-26: Initial runbook created.
 - 2026-02-26: Added minimal demo stack (React login frontend + Express auth backend + Docker Compose).
 - 2026-02-26: Completed preflight, deployment, and smoke tests on demo VM (192.168.1.251).
+- 2026-02-26: Expanded runbook with troubleshooting, rollback commands, demo presentation flow, and test evidence summary.
