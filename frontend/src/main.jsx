@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
@@ -41,9 +41,52 @@ function LoginPage() {
   );
 }
 
-function Dashboard() {
+function AppShell({ children }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = localStorage.getItem('demo_user');
+
+  function logout() {
+    localStorage.removeItem('demo_token');
+    localStorage.removeItem('demo_user');
+    navigate('/login');
+  }
+
+  const linkStyle = (path) => ({
+    padding: '8px 12px',
+    borderRadius: 6,
+    textDecoration: 'none',
+    color: location.pathname === path ? '#fff' : '#111',
+    background: location.pathname === path ? '#111' : '#eee'
+  });
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '24px auto', fontFamily: 'sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Link to="/dashboard" style={linkStyle('/dashboard')}>Dashboard</Link>
+          <Link to="/ioc" style={linkStyle('/ioc')}>IOC Records</Link>
+        </div>
+        <div>
+          <span style={{ marginRight: 12 }}>User: <b>{user || 'demo user'}</b></span>
+          <button onClick={logout}>Logout</button>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DashboardPage() {
+  return (
+    <AppShell>
+      <h2>Dashboard</h2>
+      <p>Dashboard content will be added in the next phase.</p>
+    </AppShell>
+  );
+}
+
+function IOCPage() {
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_source: [] });
   const [submitting, setSubmitting] = useState(false);
@@ -84,38 +127,21 @@ function Dashboard() {
 
     try {
       await api.post('/ioc/ip', payload);
-
       formEl?.reset?.();
       setPage(1);
-      loadData(1, pageSize).catch((refreshErr) => {
-        console.warn('Background refresh failed:', refreshErr?.message || refreshErr);
-      });
-
+      loadData(1, pageSize).catch(() => {});
       alert('IOC saved successfully');
     } catch (err) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
       alert(msg);
-      console.error('IOC submit error:', err?.response?.status, err?.response?.data || err?.message);
     } finally {
       setSubmitting(false);
     }
   }
 
-  function logout() {
-    localStorage.removeItem('demo_token');
-    localStorage.removeItem('demo_user');
-    navigate('/login');
-  }
-
   return (
-    <div style={{ maxWidth: 1000, margin: '24px auto', fontFamily: 'sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>IOC Dashboard</h2>
-        <div>
-          <span style={{ marginRight: 12 }}>User: <b>{user || 'demo user'}</b></span>
-          <button onClick={logout}>Logout</button>
-        </div>
-      </div>
+    <AppShell>
+      <h2>IOC Records</h2>
 
       <div style={{ marginBottom: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
         <b>Total records today:</b> {summary.total}
@@ -177,7 +203,7 @@ function Dashboard() {
               <td>{r.source_name}</td>
               <td>{r.confidence}</td>
               <td>{r.category || '-'}</td>
-              <td>{new Date(r.created_at).toLocaleString('tr-TR', { timeZone: 'UTC' })}</td>
+              <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
             </tr>
           ))}
         </tbody>
@@ -192,7 +218,7 @@ function Dashboard() {
           Next
         </button>
       </div>
-    </div>
+    </AppShell>
   );
 }
 
@@ -206,7 +232,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+        <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+        <Route path="/ioc" element={<Protected><IOCPage /></Protected>} />
         <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
