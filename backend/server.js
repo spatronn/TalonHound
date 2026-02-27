@@ -377,7 +377,7 @@ app.get('/api/ioc/map/countries', async (req, res) => {
       WITH ip_geo AS (
         SELECT DISTINCT
           i.ip,
-          COALESCE(a.country_code, 'UN') AS country_code
+          COALESCE(NULLIF(UPPER(TRIM(a.country_code)), ''), 'UN') AS country_code
         FROM ioc_ips i
         CROSS JOIN LATERAL (
           SELECT

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -199,6 +199,7 @@ function AppShell({ children }) {
 function DashboardPage() {
   const [mapData, setMapData] = useState({ total: 0, countries: [] });
   const [hoverInfo, setHoverInfo] = useState(null);
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     api.get('/ioc/map/countries', { params: { day: 'all' } })
@@ -206,8 +207,10 @@ function DashboardPage() {
       .catch(() => setMapData({ total: 0, countries: [] }));
   }, []);
 
+  const normalizeCode = (value) => String(value || '').trim().toUpperCase();
+
   const countryCounts = mapData.countries.reduce((acc, row) => {
-    acc[row.country_code] = row.total;
+    acc[normalizeCode(row.country_code)] = row.total;
     return acc;
   }, {});
   const maxCount = Math.max(...Object.values(countryCounts), 0);
@@ -222,6 +225,20 @@ function DashboardPage() {
     return '#ef4444';
   };
 
+  const resolveIso2 = (geo) => {
+    const p = geo.properties || {};
+    return normalizeCode(
+      p.ISO_A2
+      || p.iso_a2
+      || p['ISO3166-1-Alpha-2']
+      || p.ISO2
+      || p.ADM0_A2
+      || p.WB_A2
+      || p.gu_a2
+      || p.brk_a2
+    );
+  };
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
@@ -230,39 +247,48 @@ function DashboardPage() {
           Total malicious IPs in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
         </div>
 
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <button onClick={() => setZoom((z) => Math.max(1, Number((z - 0.2).toFixed(2))))}>- Zoom out</button>
+          <button onClick={() => setZoom((z) => Math.min(4, Number((z + 0.2).toFixed(2))))}>+ Zoom in</button>
+          <button onClick={() => setZoom(1)}>Reset</button>
+        </div>
+
         <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc', padding: 8, position: 'relative' }}>
-          <ComposableMap projectionConfig={{ scale: 140 }} width={980} height={460} style={{ width: '100%', height: 'auto' }}>
-            <Geographies geography="https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson">
-              {({ geographies }) => geographies.map((geo) => {
-                const iso2 = geo.properties?.ISO_A2 || geo.properties?.iso_a2;
-                const count = countryCounts[iso2] || 0;
-                return (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    fill={countryColor(count)}
-                    stroke="#94a3b8"
-                    strokeWidth={0.35}
-                    onMouseEnter={() => setHoverInfo({
-                      name: geo.properties?.ADMIN || geo.properties?.name || 'Unknown',
-                      countryCount: count,
-                      globalTotal: mapData.total
-                    })}
-                    onMouseLeave={() => setHoverInfo(null)}
-                    style={{
-                      default: { outline: 'none' },
-                      hover: { outline: 'none', opacity: 0.85 },
-                      pressed: { outline: 'none' }
-                    }}
-                  />
-                );
-              })}
-            </Geographies>
+          <ComposableMap projectionConfig={{ scale: 160 }} width={1080} height={560} style={{ width: '100%', height: 'auto' }}>
+            <ZoomableGroup zoom={zoom} center={[0, 12]}>
+              <Geographies geography="https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson">
+                {({ geographies }) => geographies.map((geo) => {
+                  const iso2 = resolveIso2(geo);
+                  const count = countryCounts[iso2] || 0;
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      fill={countryColor(count)}
+                      stroke="#94a3b8"
+                      strokeWidth={0.35}
+                      onMouseEnter={() => setHoverInfo({
+                        name: geo.properties?.ADMIN || geo.properties?.name || 'Unknown',
+                        countryCount: count,
+                        globalTotal: mapData.total,
+                        code: iso2 || '-'
+                      })}
+                      onMouseLeave={() => setHoverInfo(null)}
+                      style={{
+                        default: { outline: 'none' },
+                        hover: { outline: 'none', opacity: 0.85 },
+                        pressed: { outline: 'none' }
+                      }}
+                    />
+                  );
+                })}
+              </Geographies>
+            </ZoomableGroup>
           </ComposableMap>
 
           {hoverInfo && (
             <div style={{ position: 'absolute', right: 10, top: 10, background: '#0f172a', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-              <div><b>{hoverInfo.name}</b></div>
+              <div><b>{hoverInfo.name} ({hoverInfo.code})</b></div>
               <div>Total in malicious DB: <b>{hoverInfo.globalTotal}</b></div>
               <div>Country count: <b>{hoverInfo.countryCount}</b></div>
             </div>
