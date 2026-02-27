@@ -83,7 +83,7 @@ app.get('/api/ioc/ip', async (req, res) => {
   }
 
   if (source_name) {
-    params.push(source_name);
+    params.push(`%${source_name}%`);
     filters.push(`i.source_name ILIKE $${params.length}`);
   }
 
@@ -102,54 +102,51 @@ app.get('/api/ioc/ip', async (req, res) => {
     }
   }
 
-  if (asn) {
-    params.push(Number(asn));
-    filters.push(`a.asn = $${params.length}`);
-  }
-
-  if (country) {
-    params.push(`%${country}%`);
-    filters.push(`a.country_code ILIKE $${params.length}`);
-  }
-
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
   try {
     const countQ = `
-      SELECT COUNT(*)::int AS total
-      FROM ioc_ips i
-      CROSS JOIN LATERAL (
-        SELECT
-          ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
-          + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
-          + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
-          +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
-      ) ipn
-      LEFT JOIN LATERAL (
-        SELECT r.asn, r.country_code, r.as_name
-        FROM asn_ipv4_ranges r
-        WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-        LIMIT 1
-      ) a ON TRUE
-      ${where}
+      WITH filtered AS (
+        SELECT i.ip
+        FROM ioc_ips i
+        ${where}
+      )
+      SELECT COUNT(DISTINCT ip)::int AS total
+      FROM filtered
     `;
     const { rows: countRows } = await pool.query(countQ, params);
     const total = countRows[0]?.total || 0;
 
     const listQ = `
+      WITH filtered AS (
+        SELECT i.*
+        FROM ioc_ips i
+        ${where}
+      ), grouped AS (
+        SELECT
+          MAX(id) AS id,
+          ip,
+          MIN(created_at) AS first_seen_at,
+          MAX(created_at) AS last_seen_at,
+          COUNT(*)::int AS source_count,
+          ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
+          ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
+          ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set
+        FROM filtered
+        GROUP BY ip
+      )
       SELECT
-        i.*,
+        g.*,
         a.asn,
         a.country_code,
         a.as_name
-      FROM ioc_ips i
+      FROM grouped g
       CROSS JOIN LATERAL (
         SELECT
-          ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
-          + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
-          + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
-          +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
+          ((split_part(host(g.ip::inet), '.', 1)::bigint << 24)
+          + (split_part(host(g.ip::inet), '.', 2)::bigint << 16)
+          + (split_part(host(g.ip::inet), '.', 3)::bigint << 8)
+          +  split_part(host(g.ip::inet), '.', 4)::bigint) AS ip_num
       ) ipn
       LEFT JOIN LATERAL (
         SELECT r.asn, r.country_code, r.as_name
@@ -158,20 +155,55 @@ app.get('/api/ioc/ip', async (req, res) => {
         ORDER BY (r.end_ip_num - r.start_ip_num) ASC
         LIMIT 1
       ) a ON TRUE
-      ${where}
-      ORDER BY i.created_at DESC
-      LIMIT $${params.length + 1}
-      OFFSET $${params.length + 2}
+      WHERE ($${params.length + 1}::int IS NULL OR a.asn = $${params.length + 1})
+        AND ($${params.length + 2}::text IS NULL OR a.country_code ILIKE $${params.length + 2})
+      ORDER BY g.last_seen_at DESC
+      LIMIT $${params.length + 3}
+      OFFSET $${params.length + 4}
     `;
-    const { rows } = await pool.query(listQ, [...params, limit, offset]);
+
+    const asnValue = asn ? Number(asn) : null;
+    const countryValue = country ? `%${country}%` : null;
+    const listParams = [...params, asnValue, countryValue, limit, offset];
+    const { rows } = await pool.query(listQ, listParams);
+
+    const countWithGeoQ = `
+      WITH filtered AS (
+        SELECT i.ip
+        FROM ioc_ips i
+        ${where}
+      ), grouped AS (
+        SELECT DISTINCT ip FROM filtered
+      )
+      SELECT COUNT(*)::int AS total
+      FROM grouped g
+      CROSS JOIN LATERAL (
+        SELECT
+          ((split_part(host(g.ip::inet), '.', 1)::bigint << 24)
+          + (split_part(host(g.ip::inet), '.', 2)::bigint << 16)
+          + (split_part(host(g.ip::inet), '.', 3)::bigint << 8)
+          +  split_part(host(g.ip::inet), '.', 4)::bigint) AS ip_num
+      ) ipn
+      LEFT JOIN LATERAL (
+        SELECT r.asn, r.country_code, r.as_name
+        FROM asn_ipv4_ranges r
+        WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+        LIMIT 1
+      ) a ON TRUE
+      WHERE ($${params.length + 1}::int IS NULL OR a.asn = $${params.length + 1})
+        AND ($${params.length + 2}::text IS NULL OR a.country_code ILIKE $${params.length + 2})
+    `;
+    const { rows: totalGeoRows } = await pool.query(countWithGeoQ, [...params, asnValue, countryValue]);
+    const finalTotal = (asn || country) ? (totalGeoRows[0]?.total || 0) : total;
 
     return res.json({
       items: rows,
       pagination: {
         page: currentPage,
         page_size: limit,
-        total,
-        total_pages: Math.max(Math.ceil(total / limit), 1)
+        total: finalTotal,
+        total_pages: Math.max(Math.ceil(finalTotal / limit), 1)
       }
     });
   } catch (err) {
@@ -179,32 +211,61 @@ app.get('/api/ioc/ip', async (req, res) => {
   }
 });
 
-app.delete('/api/ioc/ip/:id', async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ message: 'Invalid id' });
+app.get('/api/ioc/ip/sources', async (req, res) => {
+  const { ip } = req.query;
+  if (!ip) {
+    return res.status(400).json({ message: 'ip is required' });
   }
 
   try {
-    const result = await pool.query('DELETE FROM ioc_ips WHERE id = $1 RETURNING id', [id]);
+    const detailsQ = `
+      SELECT
+        id,
+        ip,
+        source_name,
+        source_url,
+        confidence,
+        category,
+        note,
+        created_at
+      FROM ioc_ips
+      WHERE ip = $1::inet
+      ORDER BY created_at DESC
+    `;
+    const { rows } = await pool.query(detailsQ, [ip]);
+    return res.json({ ip, sources: rows });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch source details', detail: err.message });
+  }
+});
+
+app.delete('/api/ioc/ip/:ip', async (req, res) => {
+  const { ip } = req.params;
+  if (!ip) {
+    return res.status(400).json({ message: 'Invalid ip' });
+  }
+
+  try {
+    const result = await pool.query('DELETE FROM ioc_ips WHERE ip = $1::inet RETURNING id', [ip]);
     if (!result.rowCount) {
       return res.status(404).json({ message: 'Record not found' });
     }
-    return res.json({ deleted: 1, ids: [id] });
+    return res.json({ deleted: result.rowCount, ip });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete record', detail: err.message });
   }
 });
 
 app.post('/api/ioc/ip/bulk-delete', async (req, res) => {
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
-  if (!ids.length) {
-    return res.status(400).json({ message: 'ids array is required' });
+  const ips = Array.isArray(req.body?.ips) ? req.body.ips.map((x) => String(x).trim()).filter(Boolean) : [];
+  if (!ips.length) {
+    return res.status(400).json({ message: 'ips array is required' });
   }
 
   try {
-    const result = await pool.query('DELETE FROM ioc_ips WHERE id = ANY($1::bigint[]) RETURNING id', [ids]);
-    return res.json({ deleted: result.rowCount || 0, ids: result.rows.map((r) => r.id) });
+    const result = await pool.query('DELETE FROM ioc_ips WHERE ip = ANY($1::inet[]) RETURNING ip', [ips]);
+    const uniqueIps = Array.from(new Set(result.rows.map((r) => r.ip)));
+    return res.json({ deleted: result.rowCount || 0, ips: uniqueIps });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to bulk delete records', detail: err.message });
   }

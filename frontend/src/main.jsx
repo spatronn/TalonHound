@@ -122,7 +122,10 @@ function IOCListPage() {
   const [countryFilter, setCountryFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
   const [timeRange, setTimeRange] = useState('today');
-  const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedIps, setSelectedIps] = useState([]);
+  const [detailIp, setDetailIp] = useState('');
+  const [detailSources, setDetailSources] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   async function loadData(targetPage = page, targetSize = pageSize) {
     const [listRes, summaryRes] = await Promise.all([
@@ -142,7 +145,7 @@ function IOCListPage() {
     ]);
     const items = listRes.data.items || [];
     setRows(items);
-    setSelectedIds((prev) => prev.filter((id) => items.some((r) => r.id === id)));
+    setSelectedIps((prev) => prev.filter((ip) => items.some((r) => r.ip === ip)));
     setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
     setSummary(summaryRes.data);
   }
@@ -151,26 +154,40 @@ function IOCListPage() {
     loadData(page, pageSize).catch(() => {});
   }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter, timeRange]);
 
-  const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIps.includes(r.ip));
 
   function toggleSelectAllOnPage() {
     if (allOnPageSelected) {
-      setSelectedIds((prev) => prev.filter((id) => !rows.some((r) => r.id === id)));
+      setSelectedIps((prev) => prev.filter((ip) => !rows.some((r) => r.ip === ip)));
       return;
     }
-    setSelectedIds((prev) => Array.from(new Set([...prev, ...rows.map((r) => r.id)])));
+    setSelectedIps((prev) => Array.from(new Set([...prev, ...rows.map((r) => r.ip)])));
   }
 
-  function toggleRow(id) {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  function toggleRow(ip) {
+    setSelectedIps((prev) => (prev.includes(ip) ? prev.filter((x) => x !== ip) : [...prev, ip]));
   }
 
-  async function deleteOne(id) {
-    const ok = window.confirm('Delete this IOC record?');
+  async function openSourceDetails(ip) {
+    setDetailIp(ip);
+    setDetailSources([]);
+    setDetailLoading(true);
+    try {
+      const res = await api.get('/ioc/ip/sources', { params: { ip } });
+      setDetailSources(res.data?.sources || []);
+    } catch {
+      setDetailSources([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function deleteOne(ip) {
+    const ok = window.confirm(`Delete IOC ${ip} and all linked sources?`);
     if (!ok) return;
 
     try {
-      await api.delete(`/ioc/ip/${id}`);
+      await api.delete(`/ioc/ip/${encodeURIComponent(ip)}`);
       await loadData(page, pageSize);
     } catch (err) {
       alert(err?.response?.data?.message || 'Failed to delete record');
@@ -178,13 +195,13 @@ function IOCListPage() {
   }
 
   async function deleteSelected() {
-    if (!selectedIds.length) return;
-    const ok = window.confirm(`Delete ${selectedIds.length} selected record(s)?`);
+    if (!selectedIps.length) return;
+    const ok = window.confirm(`Delete ${selectedIps.length} selected IOC(s) with all linked sources?`);
     if (!ok) return;
 
     try {
-      await api.post('/ioc/ip/bulk-delete', { ids: selectedIds });
-      setSelectedIds([]);
+      await api.post('/ioc/ip/bulk-delete', { ips: selectedIps });
+      setSelectedIps([]);
       await loadData(page, pageSize);
     } catch (err) {
       alert(err?.response?.data?.message || 'Failed to bulk delete records');
@@ -323,8 +340,8 @@ function IOCListPage() {
             ))}
           </select>
 
-          <button onClick={deleteSelected} disabled={!selectedIds.length}>
-            Delete selected ({selectedIds.length})
+          <button onClick={deleteSelected} disabled={!selectedIps.length}>
+            Delete selected ({selectedIps.length})
           </button>
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>
@@ -364,24 +381,28 @@ function IOCListPage() {
           </thead>
           <tbody>
             {rows.map((r, idx) => (
-              <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <tr key={r.ip} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td>
                   <input
                     type="checkbox"
-                    checked={selectedIds.includes(r.id)}
-                    onChange={() => toggleRow(r.id)}
+                    checked={selectedIps.includes(r.ip)}
+                    onChange={() => toggleRow(r.ip)}
                   />
                 </td>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ip}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{r.asn ?? '-'}</td>
                 <td>{r.country_code || '-'}</td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.source_name}</td>
-                <td><span style={confidenceBadgeStyle(r.confidence)}>{r.confidence}</span></td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.category || '-'}</td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit' }}>
+                    {(r.source_names && r.source_names[0]) || '-'}{r.source_count > 1 ? ` +${r.source_count - 1}` : ''}
+                  </button>
+                </td>
+                <td><span style={confidenceBadgeStyle((r.confidence_set && r.confidence_set[0]) || 'low')}>{(r.confidence_set && r.confidence_set[0]) || 'low'}</span></td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.category_set && r.category_set[0]) || '-'}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{new Date(r.last_seen_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
                 <td>
-                  <button onClick={() => deleteOne(r.id)}>Delete</button>
+                  <button onClick={() => deleteOne(r.ip)}>Delete</button>
                 </td>
               </tr>
             ))}
@@ -399,6 +420,35 @@ function IOCListPage() {
           Next
         </button>
       </div>
+
+      {detailIp && (
+        <div style={{ marginTop: 14, border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#f8fafc' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <b>Sources for {detailIp}</b>
+            <button onClick={() => { setDetailIp(''); setDetailSources([]); }}>Close</button>
+          </div>
+          {detailLoading ? <div>Loading...</div> : (
+            <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
+                  <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Reported At (UTC)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailSources.map((s) => (
+                  <tr key={s.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td>{s.source_name}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{s.source_url || '-'}</td>
+                    <td>{s.confidence || '-'}</td>
+                    <td>{s.category || '-'}</td>
+                    <td>{new Date(s.created_at).toLocaleString('en-GB', { timeZone: 'UTC', month: 'short' })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
       </section>
     </AppShell>
   );
