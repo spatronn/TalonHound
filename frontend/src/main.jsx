@@ -585,7 +585,7 @@ function IOCAddPage() {
   const iocFormRef = useRef(null);
 
   async function loadRecent() {
-    const res = await api.get('/ioc/ip', { params: { page: 1, page_size: 10, day: 'all' } });
+    const res = await api.get('/ioc/ip/recent-raw', { params: { limit: 10 } });
     setRecentRows(res.data?.items || []);
   }
 
