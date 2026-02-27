@@ -20,6 +20,56 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
+let geoCacheRefreshInProgress = false;
+
+async function refreshGeoCache(limit = 20000) {
+  if (geoCacheRefreshInProgress) return;
+  geoCacheRefreshInProgress = true;
+  try {
+    const q = `
+      WITH missing AS (
+        SELECT DISTINCT i.ip
+        FROM ioc_ips i
+        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
+        WHERE c.ip IS NULL
+        LIMIT $1
+      ), with_num AS (
+        SELECT
+          m.ip,
+          ((split_part(host(m.ip::inet), '.', 1)::bigint << 24)
+          + (split_part(host(m.ip::inet), '.', 2)::bigint << 16)
+          + (split_part(host(m.ip::inet), '.', 3)::bigint << 8)
+          +  split_part(host(m.ip::inet), '.', 4)::bigint) AS ip_num
+        FROM missing m
+      )
+      INSERT INTO ioc_ip_geo_cache (ip, country_code, asn, as_name, updated_at)
+      SELECT
+        w.ip,
+        COALESCE(NULLIF(UPPER(TRIM(a.country_code)), ''), 'UN') AS country_code,
+        a.asn,
+        a.as_name,
+        NOW()
+      FROM with_num w
+      LEFT JOIN LATERAL (
+        SELECT r.asn, r.country_code, r.as_name
+        FROM asn_ipv4_ranges r
+        WHERE w.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+        LIMIT 1
+      ) a ON TRUE
+      ON CONFLICT (ip)
+      DO UPDATE SET
+        country_code = EXCLUDED.country_code,
+        asn = EXCLUDED.asn,
+        as_name = EXCLUDED.as_name,
+        updated_at = NOW()
+    `;
+    await pool.query(q, [limit]);
+  } finally {
+    geoCacheRefreshInProgress = false;
+  }
+}
+
 async function ensureSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS user_preferences (
@@ -29,8 +79,19 @@ async function ensureSchema() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ioc_ip_geo_cache (
+      ip INET PRIMARY KEY,
+      country_code TEXT NOT NULL DEFAULT 'UN',
+      asn BIGINT,
+      as_name TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_ip_created_at ON ioc_ips (ip, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_created_at ON ioc_ips (created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ip_geo_cache_country_code ON ioc_ip_geo_cache (country_code)`);
 }
 
 app.get('/health', async (_req, res) => {
@@ -113,6 +174,7 @@ app.post('/api/ioc/ip', async (req, res) => {
     `;
     const values = [ip, source_name, source_url || null, confidence, category, note];
     const { rows } = await pool.query(q, values);
+    refreshGeoCache(1000).catch(() => {});
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
@@ -417,31 +479,20 @@ app.get('/api/ioc/map/countries', async (req, res) => {
   }
 
   try {
+    refreshGeoCache(50000).catch(() => {});
+
     const q = `
-      WITH ip_geo AS (
-        SELECT DISTINCT
-          i.ip,
-          COALESCE(NULLIF(UPPER(TRIM(a.country_code)), ''), 'UN') AS country_code
+      WITH filtered_ips AS (
+        SELECT DISTINCT i.ip
         FROM ioc_ips i
-        CROSS JOIN LATERAL (
-          SELECT
-            ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
-            + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
-            + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
-            +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
-        ) ipn
-        LEFT JOIN LATERAL (
-          SELECT r.asn, r.country_code, r.as_name
-          FROM asn_ipv4_ranges r
-          WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-          ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-          LIMIT 1
-        ) a ON TRUE
         WHERE ${timeFilter}
       )
-      SELECT country_code, COUNT(*)::int AS total
-      FROM ip_geo
-      GROUP BY country_code
+      SELECT
+        COALESCE(c.country_code, 'UN') AS country_code,
+        COUNT(*)::int AS total
+      FROM filtered_ips f
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = f.ip
+      GROUP BY COALESCE(c.country_code, 'UN')
       ORDER BY total DESC
     `;
 
@@ -508,6 +559,10 @@ ensureSchema()
   .then(() => {
     app.listen(port, () => {
       console.log(`Backend listening on :${port}`);
+      refreshGeoCache(100000).catch(() => {});
+      setInterval(() => {
+        refreshGeoCache(20000).catch(() => {});
+      }, 60_000);
     });
   })
   .catch((err) => {
