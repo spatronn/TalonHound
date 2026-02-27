@@ -121,6 +121,7 @@ function IOCListPage() {
   const [asnFilter, setAsnFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
+  const [timeRange, setTimeRange] = useState('today');
   const [selectedIds, setSelectedIds] = useState([]);
 
   async function loadData(targetPage = page, targetSize = pageSize) {
@@ -133,7 +134,8 @@ function IOCListPage() {
           source_name: sourceFilter || undefined,
           confidence: confidenceFilter || undefined,
           asn: asnFilter || undefined,
-          country: countryFilter || undefined
+          country: countryFilter || undefined,
+          day: timeRange || 'today'
         }
       }),
       api.get('/ioc/summary/today')
@@ -147,7 +149,7 @@ function IOCListPage() {
 
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
-  }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter]);
+  }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter, timeRange]);
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.includes(r.id));
 
@@ -202,7 +204,7 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto auto', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto auto', gap: 8, marginBottom: 10 }}>
         <input
           placeholder="Search IP / subnet (e.g. 1.2.3.0/24) / source / category"
           value={search}
@@ -247,8 +249,20 @@ function IOCListPage() {
           <option value="medium">medium</option>
           <option value="high">high</option>
         </select>
+        <select
+          value={timeRange}
+          onChange={(e) => {
+            setPage(1);
+            setTimeRange(e.target.value);
+          }}
+        >
+          <option value="today">Today</option>
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7d</option>
+          <option value="all">All (may be slower)</option>
+        </select>
         <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
-        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setPage(1); }}>Clear</button>
+        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setTimeRange('today'); setPage(1); }}>Clear</button>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -275,6 +289,12 @@ function IOCListPage() {
           Found <b>{pagination.total}</b> IOC(s) | Page: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
         </div>
       </div>
+
+      {rows.length === 0 && (
+        <div style={{ marginBottom: 10, padding: 10, background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 6 }}>
+          No IOC records found for selected time range. Try <b>Last 7d</b> or <b>All</b>.
+        </div>
+      )}
 
       <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
         <thead>

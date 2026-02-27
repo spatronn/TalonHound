@@ -76,6 +76,10 @@ app.get('/api/ioc/ip', async (req, res) => {
 
   if (day === 'today') {
     filters.push(`i.created_at::date = CURRENT_DATE`);
+  } else if (day === '24h') {
+    filters.push(`i.created_at >= NOW() - INTERVAL '24 hours'`);
+  } else if (day === '7d') {
+    filters.push(`i.created_at >= NOW() - INTERVAL '7 days'`);
   }
 
   if (source_name) {
