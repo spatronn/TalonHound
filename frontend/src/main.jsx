@@ -154,7 +154,7 @@ function AppShell({ children }) {
   });
 
   return (
-    <div style={{ maxWidth: 1240, margin: '24px auto', fontFamily: 'sans-serif', display: 'flex', gap: 20, alignItems: 'flex-start', padding: '0 12px' }}>
+    <div style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
 
