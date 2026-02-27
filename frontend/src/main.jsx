@@ -441,7 +441,7 @@ function IOCListPage() {
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{s.source_url || '-'}</td>
                     <td>{s.confidence || '-'}</td>
                     <td>{s.category || '-'}</td>
-                    <td>{new Date(s.created_at).toLocaleString('en-GB', { timeZone: 'UTC', month: 'short' })}</td>
+                    <td>{new Date(s.created_at).toLocaleString('en-GB', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</td>
                   </tr>
                 ))}
               </tbody>
