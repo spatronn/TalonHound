@@ -5,6 +5,39 @@ import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
 
+api.interceptors.request.use((config) => {
+  const email = localStorage.getItem('demo_user');
+  if (email) {
+    config.headers = config.headers || {};
+    config.headers['x-user-email'] = email;
+  }
+  return config;
+});
+
+const COMMON_TIMEZONES = [
+  'UTC',
+  'Europe/Istanbul',
+  'Europe/Berlin',
+  'Europe/London',
+  'America/New_York',
+  'Asia/Dubai'
+];
+
+function formatUserDateTime(value) {
+  if (!value) return '-';
+  const timeZone = localStorage.getItem('demo_timezone') || 'UTC';
+  return new Date(value).toLocaleString('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+}
+
 function isAuthed() {
   return Boolean(localStorage.getItem('demo_token'));
 }
@@ -22,6 +55,7 @@ function LoginPage() {
       const { data } = await api.post('/auth/login', { email, password });
       localStorage.setItem('demo_token', data.token);
       localStorage.setItem('demo_user', data.user.email);
+      localStorage.removeItem('demo_timezone');
       navigate('/dashboard');
     } catch {
       alert('Invalid email or password');
@@ -45,10 +79,52 @@ function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const user = localStorage.getItem('demo_user');
+  const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
+  const [needsTimezoneSelection, setNeedsTimezoneSelection] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadPreference() {
+      try {
+        const { data } = await api.get('/users/me/preferences');
+        if (!mounted) return;
+
+        if (data?.timezone) {
+          localStorage.setItem('demo_timezone', data.timezone);
+          setTimezone(data.timezone);
+          setNeedsTimezoneSelection(false);
+        } else {
+          setNeedsTimezoneSelection(true);
+        }
+      } catch {
+        if (!localStorage.getItem('demo_timezone')) {
+          setNeedsTimezoneSelection(true);
+        }
+      }
+    }
+
+    loadPreference();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function saveTimezone(value) {
+    try {
+      const { data } = await api.put('/users/me/preferences', { timezone: value });
+      const tz = data?.timezone || value;
+      localStorage.setItem('demo_timezone', tz);
+      setTimezone(tz);
+      setNeedsTimezoneSelection(false);
+    } catch {
+      alert('Failed to save timezone');
+    }
+  }
 
   function logout() {
     localStorage.removeItem('demo_token');
     localStorage.removeItem('demo_user');
+    localStorage.removeItem('demo_timezone');
     navigate('/login');
   }
 
@@ -89,14 +165,32 @@ function AppShell({ children }) {
             <Link to="/ioc" style={subMenuStyle(isActive('/ioc'))}>IOC List</Link>
             <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
           </div>
+
+          <div style={{ marginTop: 8 }}>
+            <Link to="/settings" style={menuStyle(isActive('/settings'))}>3. Settings</Link>
+          </div>
         </nav>
 
-        <button onClick={logout} style={{ marginTop: 16, width: '100%', padding: 9 }}>Logout</button>
+        <div style={{ marginTop: 16, fontSize: 12, color: '#475569' }}>Timezone: <b>{timezone}</b></div>
+        <button onClick={logout} style={{ marginTop: 10, width: '100%', padding: 9 }}>Logout</button>
       </aside>
 
       <main style={{ flex: 1, minWidth: 0 }}>
         {children}
       </main>
+
+      {needsTimezoneSelection && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ width: 420, maxWidth: '92vw', background: '#fff', borderRadius: 12, padding: 16, border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0 }}>Select Timezone</h3>
+            <p style={{ fontSize: 14, color: '#475569' }}>This is required once. You can change it later from Settings.</p>
+            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 10 }}>
+              {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
+            <button onClick={() => saveTimezone(timezone)} style={{ width: '100%', padding: 10, fontWeight: 600 }}>Save Timezone</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -106,6 +200,37 @@ function DashboardPage() {
     <AppShell>
       <h2>Dashboard</h2>
       <p>Dashboard content will be added in the next phase.</p>
+    </AppShell>
+  );
+}
+
+function SettingsPage() {
+  const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const { data } = await api.put('/users/me/preferences', { timezone });
+      localStorage.setItem('demo_timezone', data?.timezone || timezone);
+      alert('Timezone updated');
+    } catch {
+      alert('Failed to update timezone');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, maxWidth: 520 }}>
+        <h2 style={{ marginTop: 0 }}>Settings</h2>
+        <label style={{ display: 'block', fontSize: 14, marginBottom: 6 }}>Timezone</label>
+        <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 12 }}>
+          {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+        </select>
+        <button onClick={save} disabled={saving} style={{ padding: '10px 14px' }}>{saving ? 'Saving...' : 'Save'}</button>
+      </section>
     </AppShell>
   );
 }
@@ -400,7 +525,7 @@ function IOCListPage() {
                 </td>
                 <td><span style={confidenceBadgeStyle((r.confidence_set && r.confidence_set[0]) || 'low')}>{(r.confidence_set && r.confidence_set[0]) || 'low'}</span></td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.category_set && r.category_set[0]) || '-'}</td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{new Date(r.last_seen_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(r.last_seen_at)}</td>
                 <td>
                   <button onClick={() => deleteOne(r.ip)}>Delete</button>
                 </td>
@@ -431,7 +556,7 @@ function IOCListPage() {
             <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
-                  <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Reported At (UTC)</th>
+                  <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Reported At</th>
                 </tr>
               </thead>
               <tbody>
@@ -441,7 +566,7 @@ function IOCListPage() {
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{s.source_url || '-'}</td>
                     <td>{s.confidence || '-'}</td>
                     <td>{s.category || '-'}</td>
-                    <td>{new Date(s.created_at).toLocaleString('en-GB', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</td>
+                    <td>{formatUserDateTime(s.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -534,7 +659,7 @@ function IOCAddPage() {
                 <td>{r.country_code || '-'}</td>
                 <td>{r.source_name}</td>
                 <td>{r.confidence}</td>
-                <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+                <td>{formatUserDateTime(r.created_at)}</td>
               </tr>
             ))}
           </tbody>
@@ -558,6 +683,7 @@ function App() {
         <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
         <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
         <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
+        <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
         <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>

@@ -20,6 +20,16 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
+async function ensureSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      email TEXT PRIMARY KEY,
+      timezone TEXT NOT NULL DEFAULT 'UTC',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -40,6 +50,49 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   return res.status(401).json({ message: 'Invalid email or password' });
+});
+
+app.get('/api/users/me/preferences', async (req, res) => {
+  const email = String(req.headers['x-user-email'] || '').trim();
+  if (!email) {
+    return res.status(400).json({ message: 'x-user-email header is required' });
+  }
+
+  try {
+    const { rows } = await pool.query('SELECT email, timezone FROM user_preferences WHERE email = $1', [email]);
+    if (!rows.length) {
+      return res.json({ email, timezone: null });
+    }
+    return res.json(rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch preferences', detail: err.message });
+  }
+});
+
+app.put('/api/users/me/preferences', async (req, res) => {
+  const email = String(req.headers['x-user-email'] || '').trim();
+  const timezone = String(req.body?.timezone || '').trim();
+
+  if (!email) {
+    return res.status(400).json({ message: 'x-user-email header is required' });
+  }
+  if (!timezone) {
+    return res.status(400).json({ message: 'timezone is required' });
+  }
+
+  try {
+    const q = `
+      INSERT INTO user_preferences (email, timezone, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (email)
+      DO UPDATE SET timezone = EXCLUDED.timezone, updated_at = NOW()
+      RETURNING email, timezone
+    `;
+    const { rows } = await pool.query(q, [email, timezone]);
+    return res.json(rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to save preferences', detail: err.message });
+  }
 });
 
 app.post('/api/ioc/ip', async (req, res) => {
@@ -310,6 +363,13 @@ app.get('/api/ioc/summary/today', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Backend listening on :${port}`);
-});
+ensureSchema()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`Backend listening on :${port}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize schema', err);
+    process.exit(1);
+  });
