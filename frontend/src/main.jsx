@@ -241,7 +241,7 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto auto', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: 8 }}>
         <input
           placeholder="Search IP / subnet (e.g. 1.2.3.0/24) / source / category"
           value={search}
@@ -249,6 +249,7 @@ function IOCListPage() {
             setPage(1);
             setSearch(e.target.value);
           }}
+          style={{ gridColumn: 'span 2' }}
         />
         <input
           placeholder="Filter by source"
@@ -298,6 +299,9 @@ function IOCListPage() {
           <option value="7d">Last 7d</option>
           <option value="all">All (may be slower)</option>
         </select>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
         <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
         <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setTimeRange('today'); setPage(1); }}>Clear</button>
       </div>
