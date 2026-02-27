@@ -77,8 +77,8 @@ function AppShell({ children }) {
   });
 
   return (
-    <div style={{ maxWidth: 1200, margin: '24px auto', fontFamily: 'sans-serif', display: 'flex', gap: 20 }}>
-      <aside style={{ width: 240, border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content' }}>
+    <div style={{ maxWidth: 1240, margin: '24px auto', fontFamily: 'sans-serif', display: 'flex', gap: 20, alignItems: 'flex-start', padding: '0 12px' }}>
+      <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
 
         <nav>
@@ -94,7 +94,7 @@ function AppShell({ children }) {
         <button onClick={logout} style={{ marginTop: 16, width: '100%', padding: 9 }}>Logout</button>
       </aside>
 
-      <main style={{ flex: 1 }}>
+      <main style={{ flex: 1, minWidth: 0 }}>
         {children}
       </main>
     </div>
@@ -210,6 +210,7 @@ function IOCListPage() {
 
   return (
     <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
@@ -378,6 +379,7 @@ function IOCListPage() {
           Next
         </button>
       </div>
+      </section>
     </AppShell>
   );
 }
@@ -427,8 +429,9 @@ function IOCAddPage() {
 
   return (
     <AppShell>
-      <h2>Add IOC</h2>
-      <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+      <h2 style={{ marginTop: 0 }}>Add IOC</h2>
+      <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 20 }}>
         <input name="ip" placeholder="IP (e.g. 1.2.3.4)" required />
         <input name="source_name" placeholder="Source name" required />
         <input name="source_url" placeholder="Source URL" />
@@ -439,32 +442,35 @@ function IOCAddPage() {
         </select>
         <input name="category" placeholder="Category" />
         <input name="note" placeholder="Note" />
-        <button type="submit" disabled={submitting} style={{ gridColumn: '1 / 4', padding: 10, opacity: submitting ? 0.7 : 1 }}>
+        <button type="submit" disabled={submitting} style={{ gridColumn: '1 / -1', padding: 10, opacity: submitting ? 0.7 : 1 }}>
           {submitting ? 'Saving...' : 'Save IOC'}
         </button>
       </form>
 
       <h3>Last 10 IOC entries</h3>
-      <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-            <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {recentRows.map((r, idx) => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-              <td>{idx + 1}</td>
-              <td>{r.ip}</td>
-              <td>{r.asn ?? '-'}</td>
-              <td>{r.country_code || '-'}</td>
-              <td>{r.source_name}</td>
-              <td>{r.confidence}</td>
-              <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+      <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 760, background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+              <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {recentRows.map((r, idx) => (
+              <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                <td>{idx + 1}</td>
+                <td><code>{r.ip}</code></td>
+                <td>{r.asn ?? '-'}</td>
+                <td>{r.country_code || '-'}</td>
+                <td>{r.source_name}</td>
+                <td>{r.confidence}</td>
+                <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      </section>
     </AppShell>
   );
 }
