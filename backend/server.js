@@ -210,20 +210,39 @@ app.post('/api/ioc/ip/bulk-delete', async (req, res) => {
   }
 });
 
-app.get('/api/ioc/summary/today', async (_req, res) => {
+app.get('/api/ioc/summary/today', async (req, res) => {
+  const { day = 'today' } = req.query;
+  let timeFilter = `created_at::date = CURRENT_DATE`;
+
+  if (day === '24h') {
+    timeFilter = `created_at >= NOW() - INTERVAL '24 hours'`;
+  } else if (day === '7d') {
+    timeFilter = `created_at >= NOW() - INTERVAL '7 days'`;
+  } else if (day === 'all') {
+    timeFilter = `TRUE`;
+  }
+
   try {
-    const total = await pool.query(`SELECT COUNT(*)::int AS count FROM ioc_ips WHERE created_at::date = CURRENT_DATE`);
+    const total = await pool.query(`SELECT COUNT(*)::int AS count FROM ioc_ips WHERE ${timeFilter}`);
     const bySource = await pool.query(`
       SELECT source_name, COUNT(*)::int AS count
       FROM ioc_ips
-      WHERE created_at::date = CURRENT_DATE
+      WHERE ${timeFilter}
       GROUP BY source_name
+      ORDER BY count DESC
+    `);
+    const byConfidence = await pool.query(`
+      SELECT confidence, COUNT(*)::int AS count
+      FROM ioc_ips
+      WHERE ${timeFilter}
+      GROUP BY confidence
       ORDER BY count DESC
     `);
 
     res.json({
       total: total.rows[0].count,
-      by_source: bySource.rows
+      by_source: bySource.rows,
+      by_confidence: byConfidence.rows
     });
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch summary', detail: err.message });

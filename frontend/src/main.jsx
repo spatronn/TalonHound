@@ -112,7 +112,7 @@ function DashboardPage() {
 
 function IOCListPage() {
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState({ total: 0, by_source: [] });
+  const [summary, setSummary] = useState({ total: 0, by_source: [], by_confidence: [] });
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -138,7 +138,7 @@ function IOCListPage() {
           day: timeRange || 'today'
         }
       }),
-      api.get('/ioc/summary/today')
+      api.get('/ioc/summary/today', { params: { day: timeRange || 'today' } })
     ]);
     const items = listRes.data.items || [];
     setRows(items);
@@ -191,16 +191,52 @@ function IOCListPage() {
     }
   }
 
+  const confidenceCounts = {
+    high: summary.by_confidence.find((x) => x.confidence === 'high')?.count || 0,
+    medium: summary.by_confidence.find((x) => x.confidence === 'medium')?.count || 0,
+    low: summary.by_confidence.find((x) => x.confidence === 'low')?.count || 0
+  };
+
+  const confidenceBadgeStyle = (confidence) => ({
+    display: 'inline-block',
+    borderRadius: 999,
+    padding: '4px 10px',
+    fontSize: 12,
+    fontWeight: 700,
+    textTransform: 'capitalize',
+    background: confidence === 'high' ? '#fee2e2' : confidence === 'medium' ? '#fef3c7' : '#dcfce7',
+    color: confidence === 'high' ? '#991b1b' : confidence === 'medium' ? '#92400e' : '#166534'
+  });
+
   return (
     <AppShell>
-      <h2>IOC List</h2>
+      <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
-      <div style={{ marginBottom: 16, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
-        <b>Total records today:</b> {summary.total}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', background: '#f8fafc' }}>
+          <div style={{ fontSize: 12, color: '#64748b' }}>Total</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{summary.total}</div>
+        </div>
+        <div style={{ border: '1px solid #fecaca', borderRadius: 10, padding: '10px 12px', background: '#fff1f2' }}>
+          <div style={{ fontSize: 12, color: '#9f1239' }}>High</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#9f1239' }}>{confidenceCounts.high}</div>
+        </div>
+        <div style={{ border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', background: '#fffbeb' }}>
+          <div style={{ fontSize: 12, color: '#92400e' }}>Medium</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#92400e' }}>{confidenceCounts.medium}</div>
+        </div>
+        <div style={{ border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px', background: '#f0fdf4' }}>
+          <div style={{ fontSize: 12, color: '#166534' }}>Low</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#166534' }}>{confidenceCounts.low}</div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff' }}>
+        <div style={{ fontSize: 13, color: '#475569', marginBottom: 6 }}>Top sources</div>
         <div style={{ marginTop: 6, fontSize: 14 }}>
-          {summary.by_source.map((s) => (
-            <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: {s.count}</span>
-          ))}
+          {summary.by_source.length ? summary.by_source.slice(0, 6).map((s) => (
+            <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: <b>{s.count}</b></span>
+          )) : <span style={{ color: '#94a3b8' }}>No data</span>}
         </div>
       </div>
 
@@ -296,40 +332,42 @@ function IOCListPage() {
         </div>
       )}
 
-      <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
-            <th>
-              <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
-            </th>
-            <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, idx) => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(r.id)}
-                  onChange={() => toggleRow(r.id)}
-                />
-              </td>
-              <td>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
-              <td>{r.ip}</td>
-              <td>{r.asn ?? '-'}</td>
-              <td>{r.country_code || '-'}</td>
-              <td>{r.source_name}</td>
-              <td>{r.confidence}</td>
-              <td>{r.category || '-'}</td>
-              <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
-              <td>
-                <button onClick={() => deleteOne(r.id)}>Delete</button>
-              </td>
+      <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+              <th>
+                <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
+              </th>
+              <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th><th>Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, idx) => (
+              <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(r.id)}
+                    onChange={() => toggleRow(r.id)}
+                  />
+                </td>
+                <td>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
+                <td><code>{r.ip}</code></td>
+                <td>{r.asn ?? '-'}</td>
+                <td>{r.country_code || '-'}</td>
+                <td>{r.source_name}</td>
+                <td><span style={confidenceBadgeStyle(r.confidence)}>{r.confidence}</span></td>
+                <td>{r.category || '-'}</td>
+                <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+                <td>
+                  <button onClick={() => deleteOne(r.id)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
         <button disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
