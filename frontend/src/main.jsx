@@ -341,13 +341,25 @@ function IOCListPage() {
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 14 }}>
+        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+          <colgroup>
+            <col style={{ width: 38 }} />
+            <col style={{ width: 52 }} />
+            <col style={{ width: '19%' }} />
+            <col style={{ width: 84 }} />
+            <col style={{ width: 72 }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: 170 }} />
+            <col style={{ width: 92 }} />
+          </colgroup>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
               <th>
                 <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
               </th>
-              <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp (UTC)</th><th>Actions</th>
+              <th>#</th><th>IP</th><th>ASN</th><th>CC</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -361,13 +373,13 @@ function IOCListPage() {
                   />
                 </td>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
-                <td><code style={{ fontSize: 13 }}>{r.ip}</code></td>
-                <td style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{r.asn ?? '-'}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ip}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{r.asn ?? '-'}</td>
                 <td>{r.country_code || '-'}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.source_name}</td>
                 <td><span style={confidenceBadgeStyle(r.confidence)}>{r.confidence}</span></td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.category || '-'}</td>
-                <td style={{ fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
                 <td>
                   <button onClick={() => deleteOne(r.id)}>Delete</button>
                 </td>
