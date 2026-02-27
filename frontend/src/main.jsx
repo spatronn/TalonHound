@@ -306,9 +306,9 @@ function IOCListPage() {
         <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setTimeRange('today'); setPage(1); }}>Clear</button>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label>Page size: </label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 14, color: '#334155' }}>Page size:</label>
           <select
             value={pageSize}
             onChange={(e) => {
@@ -316,6 +316,7 @@ function IOCListPage() {
               setPageSize(nextSize);
               setPage(1);
             }}
+            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', fontWeight: 600 }}
           >
             {[5, 10, 25, 100].map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -326,8 +327,10 @@ function IOCListPage() {
             Delete selected ({selectedIds.length})
           </button>
         </div>
-        <div style={{ fontSize: 14 }}>
-          Found <b>{pagination.total}</b> IOC(s) | Page: <b>{pagination.page}</b> / <b>{pagination.total_pages}</b>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>
+          Found <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span> IOC(s)
+          <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
+          Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
         </div>
       </div>
 
@@ -338,7 +341,7 @@ function IOCListPage() {
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff' }}>
+        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 14 }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
               <th>
@@ -357,14 +360,14 @@ function IOCListPage() {
                     onChange={() => toggleRow(r.id)}
                   />
                 </td>
-                <td>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
-                <td><code>{r.ip}</code></td>
-                <td>{r.asn ?? '-'}</td>
+                <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
+                <td><code style={{ fontSize: 13 }}>{r.ip}</code></td>
+                <td style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{r.asn ?? '-'}</td>
                 <td>{r.country_code || '-'}</td>
-                <td>{r.source_name}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.source_name}</td>
                 <td><span style={confidenceBadgeStyle(r.confidence)}>{r.confidence}</span></td>
-                <td>{r.category || '-'}</td>
-                <td>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.category || '-'}</td>
+                <td style={{ fontVariantNumeric: 'tabular-nums', fontSize: 13 }}>{new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'UTC' })}</td>
                 <td>
                   <button onClick={() => deleteOne(r.id)}>Delete</button>
                 </td>
@@ -375,8 +378,9 @@ function IOCListPage() {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-        <button disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
+        <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
         <button
+          style={{ minWidth: 92, fontWeight: 600 }}
           disabled={pagination.page >= pagination.total_pages}
           onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))}
         >
