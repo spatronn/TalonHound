@@ -226,9 +226,14 @@ function DashboardPage() {
       if (n) countryNameCounts[normalizeName(n)] = count;
     } catch {}
   }
+  countryNameCounts.unitedstates = countryCounts.US || 0;
   countryNameCounts.unitedstatesofamerica = countryCounts.US || 0;
+  countryNameCounts.russia = countryCounts.RU || 0;
   countryNameCounts.russianfederation = countryCounts.RU || 0;
+  countryNameCounts.iran = countryCounts.IR || 0;
   countryNameCounts.iranislamicrepublicof = countryCounts.IR || 0;
+  countryNameCounts.southkorea = countryCounts.KR || 0;
+  countryNameCounts.republicofkorea = countryCounts.KR || 0;
   countryNameCounts.korearepublicof = countryCounts.KR || 0;
 
   const maxCount = Math.max(...Object.values(countryCounts), 0);
