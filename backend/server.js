@@ -28,6 +28,9 @@ async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_ip_created_at ON ioc_ips (ip, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_created_at ON ioc_ips (created_at DESC)`);
 }
 
 app.get('/health', async (_req, res) => {
@@ -158,19 +161,7 @@ app.get('/api/ioc/ip', async (req, res) => {
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
   try {
-    const countQ = `
-      WITH filtered AS (
-        SELECT i.ip
-        FROM ioc_ips i
-        ${where}
-      )
-      SELECT COUNT(DISTINCT ip)::int AS total
-      FROM filtered
-    `;
-    const { rows: countRows } = await pool.query(countQ, params);
-    const total = countRows[0]?.total || 0;
-
-    const listQ = `
+    const groupedBase = `
       WITH filtered AS (
         SELECT i.*
         FROM ioc_ips i
@@ -188,6 +179,65 @@ app.get('/api/ioc/ip', async (req, res) => {
         FROM filtered
         GROUP BY ip
       )
+    `;
+
+    const asnValue = asn ? Number(asn) : null;
+    const countryValue = country ? `%${country}%` : null;
+
+    if (!asnValue && !countryValue) {
+      const countQ = `
+        ${groupedBase}
+        SELECT COUNT(*)::int AS total
+        FROM grouped
+      `;
+      const { rows: countRows } = await pool.query(countQ, params);
+      const total = countRows[0]?.total || 0;
+
+      const listQ = `
+        ${groupedBase}, paged AS (
+          SELECT *
+          FROM grouped
+          ORDER BY last_seen_at DESC
+          LIMIT $${params.length + 1}
+          OFFSET $${params.length + 2}
+        )
+        SELECT
+          p.*,
+          a.asn,
+          a.country_code,
+          a.as_name
+        FROM paged p
+        CROSS JOIN LATERAL (
+          SELECT
+            ((split_part(host(p.ip::inet), '.', 1)::bigint << 24)
+            + (split_part(host(p.ip::inet), '.', 2)::bigint << 16)
+            + (split_part(host(p.ip::inet), '.', 3)::bigint << 8)
+            +  split_part(host(p.ip::inet), '.', 4)::bigint) AS ip_num
+        ) ipn
+        LEFT JOIN LATERAL (
+          SELECT r.asn, r.country_code, r.as_name
+          FROM asn_ipv4_ranges r
+          WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+          ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+          LIMIT 1
+        ) a ON TRUE
+        ORDER BY p.last_seen_at DESC
+      `;
+      const { rows } = await pool.query(listQ, [...params, limit, offset]);
+
+      return res.json({
+        items: rows,
+        pagination: {
+          page: currentPage,
+          page_size: limit,
+          total,
+          total_pages: Math.max(Math.ceil(total / limit), 1)
+        }
+      });
+    }
+
+    const listQWithGeo = `
+      ${groupedBase}
       SELECT
         g.*,
         a.asn,
@@ -215,19 +265,8 @@ app.get('/api/ioc/ip', async (req, res) => {
       OFFSET $${params.length + 4}
     `;
 
-    const asnValue = asn ? Number(asn) : null;
-    const countryValue = country ? `%${country}%` : null;
-    const listParams = [...params, asnValue, countryValue, limit, offset];
-    const { rows } = await pool.query(listQ, listParams);
-
-    const countWithGeoQ = `
-      WITH filtered AS (
-        SELECT i.ip
-        FROM ioc_ips i
-        ${where}
-      ), grouped AS (
-        SELECT DISTINCT ip FROM filtered
-      )
+    const countQWithGeo = `
+      ${groupedBase}
       SELECT COUNT(*)::int AS total
       FROM grouped g
       CROSS JOIN LATERAL (
@@ -247,16 +286,21 @@ app.get('/api/ioc/ip', async (req, res) => {
       WHERE ($${params.length + 1}::int IS NULL OR a.asn = $${params.length + 1})
         AND ($${params.length + 2}::text IS NULL OR a.country_code ILIKE $${params.length + 2})
     `;
-    const { rows: totalGeoRows } = await pool.query(countWithGeoQ, [...params, asnValue, countryValue]);
-    const finalTotal = (asn || country) ? (totalGeoRows[0]?.total || 0) : total;
+
+    const [listResult, countResult] = await Promise.all([
+      pool.query(listQWithGeo, [...params, asnValue, countryValue, limit, offset]),
+      pool.query(countQWithGeo, [...params, asnValue, countryValue])
+    ]);
+
+    const total = countResult.rows[0]?.total || 0;
 
     return res.json({
-      items: rows,
+      items: listResult.rows,
       pagination: {
         page: currentPage,
         page_size: limit,
-        total: finalTotal,
-        total_pages: Math.max(Math.ceil(finalTotal / limit), 1)
+        total,
+        total_pages: Math.max(Math.ceil(total / limit), 1)
       }
     });
   } catch (err) {
