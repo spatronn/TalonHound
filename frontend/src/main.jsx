@@ -208,11 +208,29 @@ function DashboardPage() {
   }, []);
 
   const normalizeCode = (value) => String(value || '').trim().toUpperCase();
+  const normalizeName = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
   const countryCounts = mapData.countries.reduce((acc, row) => {
     acc[normalizeCode(row.country_code)] = row.total;
     return acc;
   }, {});
+
+  const displayNames = typeof Intl !== 'undefined' && Intl.DisplayNames
+    ? new Intl.DisplayNames(['en'], { type: 'region' })
+    : null;
+
+  const countryNameCounts = {};
+  for (const [code, count] of Object.entries(countryCounts)) {
+    try {
+      const n = displayNames?.of(code);
+      if (n) countryNameCounts[normalizeName(n)] = count;
+    } catch {}
+  }
+  countryNameCounts.unitedstatesofamerica = countryCounts.US || 0;
+  countryNameCounts.russianfederation = countryCounts.RU || 0;
+  countryNameCounts.iranislamicrepublicof = countryCounts.IR || 0;
+  countryNameCounts.korearepublicof = countryCounts.KR || 0;
+
   const maxCount = Math.max(...Object.values(countryCounts), 0);
 
   const countryColor = (count) => {
@@ -225,18 +243,10 @@ function DashboardPage() {
     return '#ef4444';
   };
 
-  const resolveIso2 = (geo) => {
+  const resolveCountryCount = (geo) => {
     const p = geo.properties || {};
-    return normalizeCode(
-      p.ISO_A2
-      || p.iso_a2
-      || p['ISO3166-1-Alpha-2']
-      || p.ISO2
-      || p.ADM0_A2
-      || p.WB_A2
-      || p.gu_a2
-      || p.brk_a2
-    );
+    const geoName = p.name || p.ADMIN || 'Unknown';
+    return countryNameCounts[normalizeName(geoName)] || 0;
   };
 
   return (
@@ -256,10 +266,9 @@ function DashboardPage() {
         <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc', padding: 8, position: 'relative' }}>
           <ComposableMap projectionConfig={{ scale: 155 }} width={1080} height={420} style={{ width: '100%', height: 'auto', display: 'block' }}>
             <ZoomableGroup zoom={zoom} center={[0, 12]}>
-              <Geographies geography="/countries.geojson">
+              <Geographies geography="/world-lite.geojson">
                 {({ geographies }) => geographies.map((geo) => {
-                  const iso2 = resolveIso2(geo);
-                  const count = countryCounts[iso2] || 0;
+                  const count = resolveCountryCount(geo);
                   return (
                     <Geography
                       key={geo.rsmKey}
@@ -268,10 +277,9 @@ function DashboardPage() {
                       stroke="#94a3b8"
                       strokeWidth={0.35}
                       onMouseEnter={() => setHoverInfo({
-                        name: geo.properties?.ADMIN || geo.properties?.name || 'Unknown',
+                        name: geo.properties?.name || geo.properties?.ADMIN || 'Unknown',
                         countryCount: count,
-                        globalTotal: mapData.total,
-                        code: iso2 || '-'
+                        globalTotal: mapData.total
                       })}
                       onMouseLeave={() => setHoverInfo(null)}
                       style={{
@@ -288,7 +296,7 @@ function DashboardPage() {
 
           {hoverInfo && (
             <div style={{ position: 'absolute', right: 10, top: 10, background: '#0f172a', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-              <div><b>{hoverInfo.name} ({hoverInfo.code})</b></div>
+              <div><b>{hoverInfo.name}</b></div>
               <div>Total in malicious DB: <b>{hoverInfo.globalTotal}</b></div>
               <div>Country count: <b>{hoverInfo.countryCount}</b></div>
             </div>
