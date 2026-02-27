@@ -254,7 +254,7 @@ function DashboardPage() {
         </div>
 
         <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc', padding: 8, position: 'relative' }}>
-          <ComposableMap projectionConfig={{ scale: 160 }} width={1080} height={560} style={{ width: '100%', height: 'auto' }}>
+          <ComposableMap projectionConfig={{ scale: 155 }} width={1080} height={420} style={{ width: '100%', height: 'auto', display: 'block' }}>
             <ZoomableGroup zoom={zoom} center={[0, 12]}>
               <Geographies geography="https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson">
                 {({ geographies }) => geographies.map((geo) => {
