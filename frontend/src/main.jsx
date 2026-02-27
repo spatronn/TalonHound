@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -196,10 +197,84 @@ function AppShell({ children }) {
 }
 
 function DashboardPage() {
+  const [mapData, setMapData] = useState({ total: 0, countries: [] });
+  const [hoverInfo, setHoverInfo] = useState(null);
+
+  useEffect(() => {
+    api.get('/ioc/map/countries', { params: { day: 'all' } })
+      .then(({ data }) => setMapData({ total: data?.total || 0, countries: data?.countries || [] }))
+      .catch(() => setMapData({ total: 0, countries: [] }));
+  }, []);
+
+  const countryCounts = mapData.countries.reduce((acc, row) => {
+    acc[row.country_code] = row.total;
+    return acc;
+  }, {});
+  const maxCount = Math.max(...Object.values(countryCounts), 0);
+
+  const countryColor = (count) => {
+    if (!count || maxCount === 0) return '#f8fafc';
+    const ratio = count / maxCount;
+    if (ratio <= 0.2) return '#fde047';
+    if (ratio <= 0.4) return '#facc15';
+    if (ratio <= 0.6) return '#fb923c';
+    if (ratio <= 0.8) return '#f97316';
+    return '#ef4444';
+  };
+
   return (
     <AppShell>
-      <h2>Dashboard</h2>
-      <p>Dashboard content will be added in the next phase.</p>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Threat World Map</h2>
+        <div style={{ marginBottom: 12, fontSize: 15 }}>
+          Total malicious IPs in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
+        </div>
+
+        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc', padding: 8, position: 'relative' }}>
+          <ComposableMap projectionConfig={{ scale: 140 }} width={980} height={460} style={{ width: '100%', height: 'auto' }}>
+            <Geographies geography="https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson">
+              {({ geographies }) => geographies.map((geo) => {
+                const iso2 = geo.properties?.ISO_A2 || geo.properties?.iso_a2;
+                const count = countryCounts[iso2] || 0;
+                return (
+                  <Geography
+                    key={geo.rsmKey}
+                    geography={geo}
+                    fill={countryColor(count)}
+                    stroke="#94a3b8"
+                    strokeWidth={0.35}
+                    onMouseEnter={() => setHoverInfo({
+                      name: geo.properties?.ADMIN || geo.properties?.name || 'Unknown',
+                      countryCount: count,
+                      globalTotal: mapData.total
+                    })}
+                    onMouseLeave={() => setHoverInfo(null)}
+                    style={{
+                      default: { outline: 'none' },
+                      hover: { outline: 'none', opacity: 0.85 },
+                      pressed: { outline: 'none' }
+                    }}
+                  />
+                );
+              })}
+            </Geographies>
+          </ComposableMap>
+
+          {hoverInfo && (
+            <div style={{ position: 'absolute', right: 10, top: 10, background: '#0f172a', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
+              <div><b>{hoverInfo.name}</b></div>
+              <div>Total in malicious DB: <b>{hoverInfo.globalTotal}</b></div>
+              <div>Country count: <b>{hoverInfo.countryCount}</b></div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, fontSize: 13, color: '#475569' }}>
+          <span>Low</span>
+          <div style={{ height: 10, width: 180, background: 'linear-gradient(90deg, #fde047 0%, #fb923c 50%, #ef4444 100%)', borderRadius: 999 }} />
+          <span>High</span>
+        </div>
+      </section>
     </AppShell>
   );
 }

@@ -360,6 +360,67 @@ app.post('/api/ioc/ip/bulk-delete', async (req, res) => {
   }
 });
 
+app.get('/api/ioc/map/countries', async (req, res) => {
+  const { day = 'all' } = req.query;
+  let timeFilter = `TRUE`;
+
+  if (day === 'today') {
+    timeFilter = `i.created_at::date = CURRENT_DATE`;
+  } else if (day === '24h') {
+    timeFilter = `i.created_at >= NOW() - INTERVAL '24 hours'`;
+  } else if (day === '7d') {
+    timeFilter = `i.created_at >= NOW() - INTERVAL '7 days'`;
+  }
+
+  try {
+    const q = `
+      WITH ip_geo AS (
+        SELECT DISTINCT
+          i.ip,
+          COALESCE(a.country_code, 'UN') AS country_code
+        FROM ioc_ips i
+        CROSS JOIN LATERAL (
+          SELECT
+            ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
+            + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
+            + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
+            +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
+        ) ipn
+        LEFT JOIN LATERAL (
+          SELECT r.asn, r.country_code, r.as_name
+          FROM asn_ipv4_ranges r
+          WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+          ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+          LIMIT 1
+        ) a ON TRUE
+        WHERE ${timeFilter}
+      )
+      SELECT country_code, COUNT(*)::int AS total
+      FROM ip_geo
+      GROUP BY country_code
+      ORDER BY total DESC
+    `;
+
+    const totalQ = `
+      SELECT COUNT(DISTINCT ip)::int AS total
+      FROM ioc_ips i
+      WHERE ${timeFilter}
+    `;
+
+    const [{ rows: byCountry }, { rows: totals }] = await Promise.all([
+      pool.query(q),
+      pool.query(totalQ)
+    ]);
+
+    return res.json({
+      total: totals[0]?.total || 0,
+      countries: byCountry
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch map data', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/summary/today', async (req, res) => {
   const { day = 'today' } = req.query;
   let timeFilter = `created_at::date = CURRENT_DATE`;
