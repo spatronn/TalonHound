@@ -623,7 +623,7 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
 
     const totalsQ = `
       SELECT COUNT(*)::int AS total_records,
-             COUNT(DISTINCT observable)::int FILTER (WHERE observable_type = 'ip') AS unique_ips
+             (COUNT(DISTINCT observable) FILTER (WHERE observable_type = 'ip'))::int AS unique_ips
       FROM ioc_items
     `;
 
