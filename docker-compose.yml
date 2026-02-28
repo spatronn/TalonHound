@@ -50,6 +50,8 @@ services:
       - SCHEDULER_CRON=0 * * * *
       - SOURCE_NAME=EmergingThreats:blockrules
       - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
+      - USOM_SOURCE_NAME=USOM:TR-CERT
+      - USOM_API_URL=https://www.usom.gov.tr/api/address/index
     depends_on:
       - db
       - redis
@@ -70,6 +72,8 @@ services:
       - WORKER_CONCURRENCY=1
       - SOURCE_NAME=EmergingThreats:blockrules
       - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
+      - USOM_SOURCE_NAME=USOM:TR-CERT
+      - USOM_API_URL=https://www.usom.gov.tr/api/address/index
     depends_on:
       - db
       - redis

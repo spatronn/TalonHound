@@ -53,6 +53,45 @@ function inferConfidence(fileName) {
   return 'medium';
 }
 
+function mapUsomConfidence(level) {
+  const n = Number(level);
+  if (Number.isNaN(n)) return 'medium';
+  if (n <= 3) return 'high';
+  if (n <= 6) return 'medium';
+  return 'low';
+}
+
+async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
+  const dedupKey = `${ip}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
+  const dedup = await client.query(
+    `INSERT INTO import_dedup (source_name, external_id)
+     VALUES ($1, $2)
+     ON CONFLICT (source_name, external_id) DO NOTHING
+     RETURNING source_name`,
+    [dedupSource, dedupKey]
+  );
+
+  if (!dedup.rowCount) return false;
+
+  const ins = await client.query(
+    `INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
+     SELECT $1, $2, $3, $4, $5, $6, NOW(), NOW()
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM ioc_ips
+       WHERE ip = $1::inet
+         AND source_name = $2
+         AND confidence = $4
+         AND COALESCE(category, '') = COALESCE($5, '')
+         AND COALESCE(source_url, '') = COALESCE($3, '')
+     )
+     RETURNING id`,
+    [ip, sourceName, sourceUrl, confidence, category, note]
+  );
+
+  return Boolean(ins.rowCount);
+}
+
 export async function runHourlyImport() {
   const client = await pool.connect();
   const startedAt = new Date();
@@ -93,34 +132,17 @@ export async function runHourlyImport() {
       const category = inferCategory(file);
 
       for (const ip of ips) {
-        const dedupKey = `${ip}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
-        const dedup = await client.query(
-          `INSERT INTO import_dedup (source_name, external_id)
-           VALUES ($1, $2)
-           ON CONFLICT (source_name, external_id) DO NOTHING
-           RETURNING source_name`,
-          [config.sourceName, dedupKey]
-        );
+        const ok = await insertIoc(client, {
+          ip,
+          sourceName,
+          sourceUrl,
+          confidence,
+          category,
+          note: `Auto-imported from ET blockrules (${file})`,
+          dedupSource: config.sourceName
+        });
 
-        if (!dedup.rowCount) continue;
-
-        const ins = await client.query(
-          `INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
-           SELECT $1, $2, $3, $4, $5, $6, NOW(), NOW()
-           WHERE NOT EXISTS (
-             SELECT 1
-             FROM ioc_ips
-             WHERE ip = $1::inet
-               AND source_name = $2
-               AND confidence = $4
-               AND COALESCE(category, '') = COALESCE($5, '')
-               AND COALESCE(source_url, '') = COALESCE($3, '')
-           )
-           RETURNING id`,
-          [ip, sourceName, sourceUrl, confidence, category, `Auto-imported from ET blockrules (${file})`]
-        );
-
-        if (ins.rowCount) inserted += 1;
+        if (ok) inserted += 1;
       }
     }
 
@@ -157,6 +179,109 @@ export async function runHourlyImport() {
   } finally {
     try {
       await client.query('SELECT pg_advisory_unlock(942001)');
+    } catch {
+      // ignore
+    }
+    client.release();
+  }
+}
+
+export async function runUsomImport() {
+  const client = await pool.connect();
+  const startedAt = new Date();
+  let runId = null;
+
+  try {
+    await client.query('BEGIN');
+
+    const lockResult = await client.query('SELECT pg_try_advisory_lock(942002) AS acquired');
+    if (!lockResult.rows[0]?.acquired) {
+      await client.query('ROLLBACK');
+      return { skipped: true, reason: 'lock_not_acquired' };
+    }
+
+    const runInsert = await client.query(
+      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
+       VALUES ('usom_import', 'running', NOW(), 'scheduler')
+       RETURNING id`
+    );
+    runId = runInsert.rows[0].id;
+
+    let page = 0;
+    let pageCount = 1;
+    let inserted = 0;
+
+    while (page < pageCount) {
+      const url = new URL(config.usomApiUrl);
+      url.searchParams.set('type', 'ip');
+      url.searchParams.set('page', String(page));
+
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`USOM API request failed: ${res.status}`);
+      const data = await res.json();
+
+      pageCount = Number(data?.pageCount || 1);
+      const models = Array.isArray(data?.models) ? data.models : [];
+
+      for (const m of models) {
+        const ip = String(m?.url || '').trim();
+        if (!ip) continue;
+
+        const sourceName = config.usomSourceName;
+        const sourceUrl = 'https://www.usom.gov.tr/api/address/index';
+        const confidence = mapUsomConfidence(m?.criticality_level);
+        const category = m?.desc ? String(m.desc).toLowerCase().replace(/\s+/g, '-').slice(0, 100) : 'threat-intel';
+
+        const ok = await insertIoc(client, {
+          ip,
+          sourceName,
+          sourceUrl,
+          confidence,
+          category,
+          note: `Auto-imported from USOM API (id=${m?.id ?? '-'}, type=${m?.type ?? '-'})`,
+          dedupSource: config.usomSourceName
+        });
+
+        if (ok) inserted += 1;
+      }
+
+      page += 1;
+      if (page > 1000) break;
+    }
+
+    await client.query(
+      `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+      [config.usomSourceName, startedAt.toISOString()]
+    );
+
+    await client.query(
+      `UPDATE integration_runs
+       SET status='success', finished_at=NOW(), records_processed=$2
+       WHERE id=$1`,
+      [runId, inserted]
+    );
+
+    await client.query('COMMIT');
+    return { ok: true, runId, recordsProcessed: inserted };
+  } catch (err) {
+    await client.query('ROLLBACK');
+
+    if (runId) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='failed', finished_at=NOW(), error_message=$2
+         WHERE id=$1`,
+        [runId, String(err.message).slice(0, 4000)]
+      );
+    }
+
+    throw err;
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(942002)');
     } catch {
       // ignore
     }

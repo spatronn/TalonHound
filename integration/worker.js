@@ -1,18 +1,24 @@
 import { Worker } from 'bullmq';
 import { config } from './config.js';
 import { redis } from './queue.js';
-import { runHourlyImport } from './importer.js';
+import { runHourlyImport, runUsomImport } from './importer.js';
 
 const worker = new Worker(
   config.queueName,
   async (job) => {
-    if (job.name !== 'hourly-import') {
-      return { skipped: true, reason: 'unknown_job' };
+    if (job.name === 'hourly-import') {
+      const result = await runHourlyImport();
+      console.log(`[worker] completed job id=${job.id} result=${JSON.stringify(result)}`);
+      return result;
     }
 
-    const result = await runHourlyImport();
-    console.log(`[worker] completed job id=${job.id} result=${JSON.stringify(result)}`);
-    return result;
+    if (job.name === 'usom-import') {
+      const result = await runUsomImport();
+      console.log(`[worker] completed job id=${job.id} result=${JSON.stringify(result)}`);
+      return result;
+    }
+
+    return { skipped: true, reason: 'unknown_job' };
   },
   {
     connection: redis,

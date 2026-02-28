@@ -10,5 +10,7 @@ export const config = {
     database: process.env.DB_NAME || 'demo'
   },
   sourceName: process.env.SOURCE_NAME || 'EmergingThreats:blockrules',
-  sourceIndexUrl: process.env.SOURCE_INDEX_URL || 'http://rules.emergingthreats.net/blockrules/'
+  sourceIndexUrl: process.env.SOURCE_INDEX_URL || 'http://rules.emergingthreats.net/blockrules/',
+  usomSourceName: process.env.USOM_SOURCE_NAME || 'USOM:TR-CERT',
+  usomApiUrl: process.env.USOM_API_URL || 'https://www.usom.gov.tr/api/address/index'
 };

@@ -110,7 +110,11 @@ app.get('/api/integrations', async (_req, res) => {
         l.error_message AS last_error
       FROM integration_feeds f
       LEFT JOIN latest l
-        ON l.job_type = CASE WHEN f.key = 'et-blockrules' THEN 'hourly_import' ELSE f.key END
+        ON l.job_type = CASE
+          WHEN f.key = 'et-blockrules' THEN 'hourly_import'
+          WHEN f.key = 'usom-trcert' THEN 'usom_import'
+          ELSE f.key
+        END
       WHERE f.active = TRUE
       ORDER BY f.name ASC
     `;
@@ -123,11 +127,23 @@ app.get('/api/integrations', async (_req, res) => {
         r.started_at,
         r.finished_at,
         r.records_processed,
-        COALESCE(f.key, CASE WHEN r.job_type = 'hourly_import' THEN 'et-blockrules' ELSE r.job_type END) AS integration_key,
-        COALESCE(f.name, CASE WHEN r.job_type = 'hourly_import' THEN 'EmergingThreats Blockrules' ELSE r.job_type END) AS integration_name
+        COALESCE(f.key, CASE
+          WHEN r.job_type = 'hourly_import' THEN 'et-blockrules'
+          WHEN r.job_type = 'usom_import' THEN 'usom-trcert'
+          ELSE r.job_type
+        END) AS integration_key,
+        COALESCE(f.name, CASE
+          WHEN r.job_type = 'hourly_import' THEN 'EmergingThreats Blockrules'
+          WHEN r.job_type = 'usom_import' THEN 'USOM TR-CERT'
+          ELSE r.job_type
+        END) AS integration_name
       FROM integration_runs r
       LEFT JOIN integration_feeds f
-        ON f.key = CASE WHEN r.job_type = 'hourly_import' THEN 'et-blockrules' ELSE r.job_type END
+        ON f.key = CASE
+          WHEN r.job_type = 'hourly_import' THEN 'et-blockrules'
+          WHEN r.job_type = 'usom_import' THEN 'usom-trcert'
+          ELSE r.job_type
+        END
       ORDER BY r.started_at DESC
       LIMIT 20
     `;
@@ -147,7 +163,8 @@ app.get('/api/integrations', async (_req, res) => {
 });
 
 const INTEGRATION_JOBS = {
-  'et-blockrules': 'hourly-import'
+  'et-blockrules': 'hourly-import',
+  'usom-trcert': 'usom-import'
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);

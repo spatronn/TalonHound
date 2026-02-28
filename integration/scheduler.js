@@ -11,7 +11,16 @@ async function main() {
     }
   );
 
-  console.log(`[scheduler] repeat job set with cron=${config.schedulerCron}`);
+  await importQueue.add(
+    'usom-import',
+    { triggeredBy: 'scheduler' },
+    {
+      jobId: 'usom-import',
+      repeat: { pattern: config.schedulerCron }
+    }
+  );
+
+  console.log(`[scheduler] repeat jobs set with cron=${config.schedulerCron}`);
 
   setInterval(async () => {
     await importQueue.add(
@@ -19,6 +28,15 @@ async function main() {
       { triggeredBy: 'scheduler' },
       {
         jobId: 'hourly-import',
+        repeat: { pattern: config.schedulerCron }
+      }
+    );
+
+    await importQueue.add(
+      'usom-import',
+      { triggeredBy: 'scheduler' },
+      {
+        jobId: 'usom-import',
         repeat: { pattern: config.schedulerCron }
       }
     );

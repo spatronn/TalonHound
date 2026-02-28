@@ -6,8 +6,8 @@ Current source policy: import `.rules` and `.txt`, but skip `*.suricata.rules` t
 
 ## Components
 
-- `scheduler.js`: registers repeatable `hourly-import` job (default `0 * * * *`)
-- `worker.js`: consumes queue jobs and runs ET blockrules import
+- `scheduler.js`: registers repeatable `hourly-import` and `usom-import` jobs (default `0 * * * *`)
+- `worker.js`: consumes queue jobs and runs ET blockrules + USOM TR-CERT imports
 - `importer.js`: import logic, DB lock, run logs, checkpoint + dedup
 
 ## Env vars
