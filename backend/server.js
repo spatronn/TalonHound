@@ -619,10 +619,11 @@ app.get('/api/ioc/list', async (req, res) => {
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const fullScan = Boolean(source_name || confidence || q || asn || country);
 
   try {
-    const combinedBase = `
-      WITH combined AS (
+    const combinedSource = fullScan
+      ? `
         SELECT
           host(i.ip::inet) AS observable,
           'ip'::text AS observable_type,
@@ -640,6 +641,38 @@ app.get('/api/ioc/list', async (req, res) => {
           o.category,
           o.created_at
         FROM ioc_observables o
+      `
+      : `
+        SELECT * FROM (
+          SELECT
+            host(i.ip::inet) AS observable,
+            'ip'::text AS observable_type,
+            i.source_name,
+            i.confidence,
+            i.category,
+            i.created_at
+          FROM ioc_ips i
+          ORDER BY i.created_at DESC
+          LIMIT 1000
+        ) ip_recent
+        UNION ALL
+        SELECT * FROM (
+          SELECT
+            o.observable,
+            o.observable_type,
+            o.source_name,
+            o.confidence,
+            o.category,
+            o.created_at
+          FROM ioc_observables o
+          ORDER BY o.created_at DESC
+          LIMIT 1000
+        ) obs_recent
+      `;
+
+    const combinedBase = `
+      WITH combined AS (
+        ${combinedSource}
       ), filtered AS (
         SELECT *
         FROM combined
