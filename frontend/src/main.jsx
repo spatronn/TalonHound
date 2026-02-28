@@ -532,7 +532,7 @@ function IntegrationsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th>ID</th><th>Integration</th><th>Status</th><th>Started</th><th>Finished</th><th>Records</th>
+                <th>ID</th><th>Integration</th><th>Status</th><th>Started</th><th>Finished</th><th>Imported</th>
               </tr>
             </thead>
             <tbody>
