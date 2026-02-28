@@ -193,21 +193,34 @@ docker compose logs --tail=200
 ## 12) Technologies & Integrations
 
 ### Core stack
-- Frontend: React + Vite
-- Backend: Node.js + Express
+- Frontend: React 18 + Vite 5 + React Router 6
+- Backend: Node.js (ESM) + Express
 - Database: PostgreSQL 16
 - Runtime/Orchestration: Docker + Docker Compose
 - Reverse proxy/static serving: Nginx (frontend container)
+- Map rendering: `react-simple-maps` + local lightweight GeoJSON (`frontend/public/world-lite.geojson`)
 
 ### Data sources / integrations
 - ASN + Country enrichment source: https://iptoasn.com/
   - Import format: TSV/TSV.GZ
   - Imported into PostgreSQL (`asn_networks_raw` + optimized `asn_ipv4_ranges`)
+- Threat intel rules feed (blocklists): **Emerging Threats**
+  - Source index: `http://rules.emergingthreats.net/blockrules/`
+  - Example feed: `threatview_CS_c2.rules`
+  - Parser/import scripts:
+    - `scripts/prepare-et-blockrules-import.mjs`
+    - `scripts/import-ioc-csv-via-api.mjs`
 
 ### Internal API modules implemented
 - Auth: `/api/auth/login`
+- User preferences (timezone):
+  - `GET /api/users/me/preferences`
+  - `PUT /api/users/me/preferences`
 - IOC create/list/delete/bulk-delete: `/api/ioc/*`
-- Daily summary: `/api/ioc/summary/today`
+- IOC source detail view: `/api/ioc/ip/sources`
+- Raw recent IOC feed (Add IOC table): `/api/ioc/ip/recent-raw`
+- Daily/period summary: `/api/ioc/summary/today?day=today|24h|7d|all`
+- Threat map country aggregation: `/api/ioc/map/countries?day=today|24h|7d|all`
 - IOC filters: query/source/confidence/asn/country + subnet search
 
 ## 13) Change Log
@@ -216,3 +229,4 @@ docker compose logs --tail=200
 - 2026-02-26: Completed preflight, deployment, and smoke tests on demo VM (192.168.1.251).
 - 2026-02-26: Expanded runbook with troubleshooting, rollback commands, demo presentation flow, and test evidence summary.
 - 2026-02-26: Switched persistence to PostgreSQL and added IOC IP/source data flow.
+- 2026-02-28: Updated technology stack section (map layer, timezone preferences, map APIs) and documented Emerging Threats blockrules integration.
