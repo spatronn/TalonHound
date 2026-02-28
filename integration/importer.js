@@ -92,6 +92,38 @@ async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, catego
   return Boolean(ins.rowCount);
 }
 
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
+  const dedupKey = `${observableType}|${observable}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
+  const dedup = await client.query(
+    `INSERT INTO import_dedup (source_name, external_id)
+     VALUES ($1, $2)
+     ON CONFLICT (source_name, external_id) DO NOTHING
+     RETURNING source_name`,
+    [dedupSource, dedupKey]
+  );
+
+  if (!dedup.rowCount) return false;
+
+  const ins = await client.query(
+    `INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+     SELECT $1, $2, $3, $4, $5, $6, $7
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM ioc_observables
+       WHERE observable = $1
+         AND observable_type = $2
+         AND source_name = $3
+         AND confidence = $5
+         AND COALESCE(category, '') = COALESCE($6, '')
+         AND COALESCE(source_url, '') = COALESCE($4, '')
+     )
+     RETURNING id`,
+    [observable, observableType, sourceName, sourceUrl, confidence, category, note]
+  );
+
+  return Boolean(ins.rowCount);
+}
+
 export async function runHourlyImport() {
   const client = await pool.connect();
   const startedAt = new Date();
@@ -211,42 +243,63 @@ export async function runUsomImport() {
     let pageCount = 1;
     let inserted = 0;
 
-    while (page < pageCount) {
-      const url = new URL(config.usomApiUrl);
-      url.searchParams.set('type', 'ip');
-      url.searchParams.set('page', String(page));
+    const usomTypes = ['ip', 'domain', 'url', 'ip6', 'ip6net'];
 
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error(`USOM API request failed: ${res.status}`);
-      const data = await res.json();
+    for (const usomType of usomTypes) {
+      page = 0;
+      pageCount = 1;
 
-      pageCount = Number(data?.pageCount || 1);
-      const models = Array.isArray(data?.models) ? data.models : [];
+      while (page < pageCount) {
+        const url = new URL(config.usomApiUrl);
+        url.searchParams.set('type', usomType);
+        url.searchParams.set('page', String(page));
 
-      for (const m of models) {
-        const ip = String(m?.url || '').trim();
-        if (!ip) continue;
+        const res = await fetch(url.toString());
+        if (!res.ok) throw new Error(`USOM API request failed (${usomType}): ${res.status}`);
+        const data = await res.json();
 
-        const sourceName = config.usomSourceName;
-        const sourceUrl = 'https://www.usom.gov.tr/api/address/index';
-        const confidence = mapUsomConfidence(m?.criticality_level);
-        const category = m?.desc ? String(m.desc).toLowerCase().replace(/\s+/g, '-').slice(0, 100) : 'threat-intel';
+        pageCount = Number(data?.pageCount || 1);
+        const models = Array.isArray(data?.models) ? data.models : [];
 
-        const ok = await insertIoc(client, {
-          ip,
-          sourceName,
-          sourceUrl,
-          confidence,
-          category,
-          note: `Auto-imported from USOM API (id=${m?.id ?? '-'}, type=${m?.type ?? '-'})`,
-          dedupSource: config.usomSourceName
-        });
+        for (const m of models) {
+          const observable = String(m?.url || '').trim();
+          if (!observable) continue;
 
-        if (ok) inserted += 1;
+          const sourceName = config.usomSourceName;
+          const sourceUrl = 'https://www.usom.gov.tr/api/address/index';
+          const confidence = mapUsomConfidence(m?.criticality_level);
+          const category = m?.desc ? String(m.desc).toLowerCase().replace(/\s+/g, '-').slice(0, 100) : 'threat-intel';
+          const note = `Auto-imported from USOM API (id=${m?.id ?? '-'}, type=${m?.type ?? usomType})`;
+
+          const okObs = await insertObservable(client, {
+            observable,
+            observableType: usomType,
+            sourceName,
+            sourceUrl,
+            confidence,
+            category,
+            note,
+            dedupSource: config.usomSourceName
+          });
+
+          if (okObs) inserted += 1;
+
+          if (usomType === 'ip') {
+            await insertIoc(client, {
+              ip: observable,
+              sourceName,
+              sourceUrl,
+              confidence,
+              category,
+              note,
+              dedupSource: `${config.usomSourceName}:ip-db`
+            });
+          }
+        }
+
+        page += 1;
+        if (page > 1000) break;
       }
-
-      page += 1;
-      if (page > 1000) break;
     }
 
     await client.query(
