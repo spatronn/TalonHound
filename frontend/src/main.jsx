@@ -202,15 +202,15 @@ function AppShell({ children }) {
 }
 
 function DashboardPage() {
-  const [mapData, setMapData] = useState({ total: 0, countries: [] });
+  const [mapData, setMapData] = useState({ total: 0, unique_ips: 0, countries: [] });
   const [hoverInfo, setHoverInfo] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState([0, 12]);
 
   useEffect(() => {
     api.get('/ioc/map/countries', { params: { day: 'all' } })
-      .then(({ data }) => setMapData({ total: data?.total || 0, countries: data?.countries || [] }))
-      .catch(() => setMapData({ total: 0, countries: [] }));
+      .then(({ data }) => setMapData({ total: data?.total || 0, unique_ips: data?.unique_ips || 0, countries: data?.countries || [] }))
+      .catch(() => setMapData({ total: 0, unique_ips: 0, countries: [] }));
   }, []);
 
   const normalizeCode = (value) => String(value || '').trim().toUpperCase();
@@ -279,7 +279,8 @@ function DashboardPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
         <h2 style={{ marginTop: 0 }}>Threat World Map</h2>
         <div style={{ marginBottom: 12, fontSize: 15 }}>
-          Total malicious IPs in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
+          Total records in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
+          <span style={{ marginLeft: 10, color: '#94a3b8' }}>| Unique IPs: <b>{mapData.unique_ips}</b></span>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -550,7 +551,7 @@ function SettingsPage() {
 
 function IOCListPage() {
   const [rows, setRows] = useState([]);
-  const [summary, setSummary] = useState({ total: 0, by_source: [], by_confidence: [] });
+  const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -750,10 +751,14 @@ function IOCListPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
         <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>Total</div>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Records</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Unique IPs</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.unique_ips || 0}</div>
         </div>
         <div style={{ border: '1px solid #7f1d1d', borderRadius: 10, padding: '10px 12px', background: '#2a0f14' }}>
           <div style={{ fontSize: 12, color: '#fda4af' }}>High</div>
@@ -865,7 +870,7 @@ function IOCListPage() {
           </button>
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
-          Found <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span> IOC(s)
+          Listed Items <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
           <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
           Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
         </div>

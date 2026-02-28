@@ -595,18 +595,19 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
       ORDER BY total DESC
     `;
 
-    const totalQ = `
-      SELECT COUNT(*)::int AS total
+    const totalsQ = `
+      SELECT COUNT(*)::int AS total_records, COUNT(DISTINCT ip)::int AS unique_ips
       FROM ioc_ips
     `;
 
     const [{ rows: byCountry }, { rows: totals }] = await Promise.all([
       pool.query(q),
-      pool.query(totalQ)
+      pool.query(totalsQ)
     ]);
 
     return res.json({
-      total: totals[0]?.total || 0,
+      total: totals[0]?.total_records || 0,
+      unique_ips: totals[0]?.unique_ips || 0,
       countries: byCountry
     });
   } catch (err) {
@@ -628,6 +629,7 @@ app.get('/api/ioc/summary/today', async (req, res) => {
 
   try {
     const total = await pool.query(`SELECT COUNT(*)::int AS count FROM ioc_ips WHERE ${timeFilter}`);
+    const uniqueIps = await pool.query(`SELECT COUNT(DISTINCT ip)::int AS count FROM ioc_ips WHERE ${timeFilter}`);
     const bySource = await pool.query(`
       SELECT source_name, COUNT(*)::int AS count
       FROM ioc_ips
@@ -645,6 +647,7 @@ app.get('/api/ioc/summary/today', async (req, res) => {
 
     res.json({
       total: total.rows[0].count,
+      unique_ips: uniqueIps.rows[0].count,
       by_source: bySource.rows,
       by_confidence: byConfidence.rows
     });
