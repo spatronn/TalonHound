@@ -348,7 +348,33 @@ app.post('/api/ioc/ip', async (req, res) => {
     return res.status(400).json({ message: 'ip and source_name are required' });
   }
 
+  const value = String(ip).trim();
+  const isUrl = /^https?:\/\//i.test(value);
+  const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(value);
+  const inferredType = isUrl ? 'url' : (isIpv4 ? 'ip' : 'domain');
+
   try {
+    if (inferredType !== 'ip') {
+      const qObs = `
+        INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+        SELECT $1, $2, $3, $4, $5, $6, $7
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM ioc_observables
+          WHERE observable = $1
+            AND observable_type = $2
+            AND source_name = $3
+            AND confidence = $5
+            AND COALESCE(category, '') = COALESCE($6, '')
+            AND COALESCE(source_url, '') = COALESCE($4, '')
+        )
+        RETURNING *
+      `;
+      const { rows } = await pool.query(qObs, [value, inferredType, source_name, source_url || null, confidence, category, note]);
+      if (!rows.length) return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
+      return res.status(201).json(rows[0]);
+    }
+
     const q = `
       INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note)
       SELECT $1, $2, $3, $4, $5, $6
@@ -363,7 +389,7 @@ app.post('/api/ioc/ip', async (req, res) => {
       )
       RETURNING *
     `;
-    const values = [ip, source_name, source_url || null, confidence, category, note];
+    const values = [value, source_name, source_url || null, confidence, category, note];
     const { rows } = await pool.query(q, values);
 
     if (!rows.length) {

@@ -1080,7 +1080,7 @@ function IOCAddPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>Add IOC</h2>
       <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 20 }}>
-        <input name="ip" placeholder="IP (e.g. 1.2.3.4)" required />
+        <input name="ip" placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)" required />
         <input name="source_name" placeholder="Source name" required />
         <input name="source_url" placeholder="Source URL" />
         <select name="confidence" defaultValue="medium">
