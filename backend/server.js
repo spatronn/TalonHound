@@ -35,10 +35,10 @@ async function refreshGeoCache(limit = 20000) {
   try {
     const q = `
       WITH missing AS (
-        SELECT DISTINCT i.ip
-        FROM ioc_ips i
-        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
-        WHERE c.ip IS NULL
+        SELECT DISTINCT i.observable::inet AS ip
+        FROM ioc_items i
+        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.observable::inet
+        WHERE i.observable_type = 'ip' AND c.ip IS NULL
         LIMIT $1
       ), with_num AS (
         SELECT
@@ -110,10 +110,10 @@ app.get('/api/integrations', async (_req, res) => {
         COALESCE(l.records_processed, 0) AS last_records_processed,
         CASE
           WHEN f.key = 'et-blockrules' THEN (
-            SELECT COUNT(*)::int FROM ioc_ips i WHERE i.source_name LIKE 'EmergingThreats:%'
+            SELECT COUNT(*)::int FROM ioc_items i WHERE i.source_name LIKE 'EmergingThreats:%'
           )
           WHEN f.key = 'usom-trcert' THEN (
-            SELECT COUNT(*)::int FROM ioc_observables o WHERE o.source_name = 'USOM:TR-CERT'
+            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'USOM:TR-CERT'
           )
           ELSE 0
         END AS total_records,
@@ -356,11 +356,11 @@ app.post('/api/ioc/ip', async (req, res) => {
   try {
     if (inferredType !== 'ip') {
       const qObs = `
-        INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+        INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
         SELECT $1, $2, $3, $4, $5, $6, $7
         WHERE NOT EXISTS (
           SELECT 1
-          FROM ioc_observables
+          FROM ioc_items
           WHERE observable = $1
             AND observable_type = $2
             AND source_name = $3
@@ -376,12 +376,13 @@ app.post('/api/ioc/ip', async (req, res) => {
     }
 
     const q = `
-      INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note)
-      SELECT $1, $2, $3, $4, $5, $6
+      INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
+      SELECT $1, 'ip', $2, $3, $4, $5, $6
       WHERE NOT EXISTS (
         SELECT 1
-        FROM ioc_ips
-        WHERE ip = $1::inet
+        FROM ioc_items
+        WHERE observable = $1
+          AND observable_type = 'ip'
           AND source_name = $2
           AND confidence = $4
           AND COALESCE(category, '') = COALESCE($5, '')
@@ -400,195 +401,6 @@ app.post('/api/ioc/ip', async (req, res) => {
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
-  }
-});
-
-app.get('/api/ioc/ip', async (req, res) => {
-  const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
-  const allowedSizes = [5, 10, 25, 100];
-  const size = Number(page_size);
-  const currentPage = Math.max(Number(page) || 1, 1);
-  const limit = allowedSizes.includes(size) ? size : 5;
-  const offset = (currentPage - 1) * limit;
-
-  const filters = [];
-  const params = [];
-
-  if (day === 'today') {
-    filters.push(`i.created_at::date = CURRENT_DATE`);
-  } else if (day === '24h') {
-    filters.push(`i.created_at >= NOW() - INTERVAL '24 hours'`);
-  } else if (day === '7d') {
-    filters.push(`i.created_at >= NOW() - INTERVAL '7 days'`);
-  }
-
-  if (source_name) {
-    params.push(`%${source_name}%`);
-    filters.push(`i.source_name ILIKE $${params.length}`);
-  }
-
-  if (confidence) {
-    params.push(confidence);
-    filters.push(`i.confidence = $${params.length}`);
-  }
-
-  if (q) {
-    if (String(q).includes('/')) {
-      params.push(q);
-      filters.push(`i.ip << $${params.length}::cidr`);
-    } else {
-      params.push(`%${q}%`);
-      filters.push(`(CAST(i.ip AS TEXT) ILIKE $${params.length} OR i.source_name ILIKE $${params.length} OR COALESCE(i.category, '') ILIKE $${params.length})`);
-    }
-  }
-
-  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-
-  try {
-    const groupedBase = `
-      WITH filtered AS (
-        SELECT i.*
-        FROM ioc_ips i
-        ${where}
-      ), grouped AS (
-        SELECT
-          MAX(id) AS id,
-          ip,
-          MIN(created_at) AS first_seen_at,
-          MAX(created_at) AS last_seen_at,
-          COUNT(*)::int AS source_count,
-          ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
-          ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
-          ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set
-        FROM filtered
-        GROUP BY ip
-      )
-    `;
-
-    const asnValue = asn ? Number(asn) : null;
-    const countryValue = country ? `%${country}%` : null;
-
-    if (!asnValue && !countryValue) {
-      const countQ = `
-        ${groupedBase}
-        SELECT COUNT(*)::int AS total
-        FROM grouped
-      `;
-      const { rows: countRows } = await pool.query(countQ, params);
-      const total = countRows[0]?.total || 0;
-
-      const listQ = `
-        ${groupedBase}, paged AS (
-          SELECT *
-          FROM grouped
-          ORDER BY last_seen_at DESC
-          LIMIT $${params.length + 1}
-          OFFSET $${params.length + 2}
-        )
-        SELECT
-          p.*,
-          a.asn,
-          a.country_code,
-          a.as_name
-        FROM paged p
-        CROSS JOIN LATERAL (
-          SELECT
-            ((split_part(host(p.ip::inet), '.', 1)::bigint << 24)
-            + (split_part(host(p.ip::inet), '.', 2)::bigint << 16)
-            + (split_part(host(p.ip::inet), '.', 3)::bigint << 8)
-            +  split_part(host(p.ip::inet), '.', 4)::bigint) AS ip_num
-        ) ipn
-        LEFT JOIN LATERAL (
-          SELECT r.asn, r.country_code, r.as_name
-          FROM asn_ipv4_ranges r
-          WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-          ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-          LIMIT 1
-        ) a ON TRUE
-        ORDER BY p.last_seen_at DESC
-      `;
-      const { rows } = await pool.query(listQ, [...params, limit, offset]);
-
-      return res.json({
-        items: rows,
-        pagination: {
-          page: currentPage,
-          page_size: limit,
-          total,
-          total_pages: Math.max(Math.ceil(total / limit), 1)
-        }
-      });
-    }
-
-    const listQWithGeo = `
-      ${groupedBase}
-      SELECT
-        g.*,
-        a.asn,
-        a.country_code,
-        a.as_name
-      FROM grouped g
-      CROSS JOIN LATERAL (
-        SELECT
-          ((split_part(host(g.ip::inet), '.', 1)::bigint << 24)
-          + (split_part(host(g.ip::inet), '.', 2)::bigint << 16)
-          + (split_part(host(g.ip::inet), '.', 3)::bigint << 8)
-          +  split_part(host(g.ip::inet), '.', 4)::bigint) AS ip_num
-      ) ipn
-      LEFT JOIN LATERAL (
-        SELECT r.asn, r.country_code, r.as_name
-        FROM asn_ipv4_ranges r
-        WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-        LIMIT 1
-      ) a ON TRUE
-      WHERE ($${params.length + 1}::int IS NULL OR a.asn = $${params.length + 1})
-        AND ($${params.length + 2}::text IS NULL OR a.country_code ILIKE $${params.length + 2})
-      ORDER BY g.last_seen_at DESC
-      LIMIT $${params.length + 3}
-      OFFSET $${params.length + 4}
-    `;
-
-    const countQWithGeo = `
-      ${groupedBase}
-      SELECT COUNT(*)::int AS total
-      FROM grouped g
-      CROSS JOIN LATERAL (
-        SELECT
-          ((split_part(host(g.ip::inet), '.', 1)::bigint << 24)
-          + (split_part(host(g.ip::inet), '.', 2)::bigint << 16)
-          + (split_part(host(g.ip::inet), '.', 3)::bigint << 8)
-          +  split_part(host(g.ip::inet), '.', 4)::bigint) AS ip_num
-      ) ipn
-      LEFT JOIN LATERAL (
-        SELECT r.asn, r.country_code, r.as_name
-        FROM asn_ipv4_ranges r
-        WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-        LIMIT 1
-      ) a ON TRUE
-      WHERE ($${params.length + 1}::int IS NULL OR a.asn = $${params.length + 1})
-        AND ($${params.length + 2}::text IS NULL OR a.country_code ILIKE $${params.length + 2})
-    `;
-
-    const [listResult, countResult] = await Promise.all([
-      pool.query(listQWithGeo, [...params, asnValue, countryValue, limit, offset]),
-      pool.query(countQWithGeo, [...params, asnValue, countryValue])
-    ]);
-
-    const total = countResult.rows[0]?.total || 0;
-
-    return res.json({
-      items: listResult.rows,
-      pagination: {
-        page: currentPage,
-        page_size: limit,
-        total,
-        total_pages: Math.max(Math.ceil(total / limit), 1)
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to fetch records', detail: err.message });
   }
 });
 
@@ -622,60 +434,18 @@ app.get('/api/ioc/list', async (req, res) => {
   const fullScan = Boolean(source_name || confidence || q || asn || country);
 
   try {
-    const combinedSource = fullScan
-      ? `
-        SELECT
-          host(i.ip::inet) AS observable,
-          'ip'::text AS observable_type,
-          i.source_name,
-          i.confidence,
-          i.category,
-          i.created_at
-        FROM ioc_ips i
-        UNION ALL
-        SELECT
-          o.observable,
-          o.observable_type,
-          o.source_name,
-          o.confidence,
-          o.category,
-          o.created_at
-        FROM ioc_observables o
-      `
-      : `
-        SELECT * FROM (
-          SELECT
-            host(i.ip::inet) AS observable,
-            'ip'::text AS observable_type,
-            i.source_name,
-            i.confidence,
-            i.category,
-            i.created_at
-          FROM ioc_ips i
-          ORDER BY i.created_at DESC
-          LIMIT 1000
-        ) ip_recent
-        UNION ALL
-        SELECT * FROM (
-          SELECT
-            o.observable,
-            o.observable_type,
-            o.source_name,
-            o.confidence,
-            o.category,
-            o.created_at
-          FROM ioc_observables o
-          ORDER BY o.created_at DESC
-          LIMIT 1000
-        ) obs_recent
-      `;
+    const sourceSql = fullScan
+      ? `SELECT observable, observable_type, source_name, confidence, category, created_at FROM ioc_items`
+      : `SELECT observable, observable_type, source_name, confidence, category, created_at
+         FROM ioc_items
+         ORDER BY created_at DESC
+         LIMIT 2000`;
 
-    const combinedBase = `
+    const base = `
       WITH combined AS (
-        ${combinedSource}
+        ${sourceSql}
       ), filtered AS (
-        SELECT *
-        FROM combined
+        SELECT * FROM combined
         ${where}
       ), grouped AS (
         SELECT
@@ -696,7 +466,7 @@ app.get('/api/ioc/list', async (req, res) => {
     const countryValue = country ? `%${country}%` : null;
 
     const countQ = `
-      ${combinedBase}
+      ${base}
       SELECT COUNT(*)::int AS total
       FROM grouped g
       LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END
@@ -705,7 +475,7 @@ app.get('/api/ioc/list', async (req, res) => {
     `;
 
     const listQ = `
-      ${combinedBase}
+      ${base}
       SELECT
         g.*,
         g.observable AS ip,
@@ -752,15 +522,15 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
     const detailsQ = `
       SELECT
         id,
-        ip,
+        observable AS ip,
         source_name,
         source_url,
         confidence,
         category,
         note,
         created_at
-      FROM ioc_ips
-      WHERE ip = $1::inet
+      FROM ioc_items
+      WHERE observable_type='ip' AND observable = $1
       ORDER BY created_at DESC
     `;
     const { rows } = await pool.query(detailsQ, [ip]);
@@ -775,84 +545,27 @@ app.get('/api/ioc/recent', async (req, res) => {
 
   try {
     const q = `
-      WITH ip_recent AS (
-        SELECT
-          i.id,
-          host(i.ip::inet) AS observable,
-          'ip'::text AS observable_type,
-          i.source_name,
-          i.confidence,
-          i.category,
-          i.created_at,
-          c.asn,
-          c.country_code,
-          c.as_name
-        FROM ioc_ips i
-        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
-        ORDER BY i.created_at DESC
-        LIMIT ($1 * 5)
-      ), obs_recent AS (
-        SELECT
-          o.id,
-          o.observable,
-          o.observable_type,
-          o.source_name,
-          o.confidence,
-          o.category,
-          o.created_at,
-          NULL::bigint AS asn,
-          NULL::text AS country_code,
-          NULL::text AS as_name
-        FROM ioc_observables o
-        ORDER BY o.created_at DESC
-        LIMIT ($1 * 5)
-      )
-      SELECT *
-      FROM (
-        SELECT * FROM ip_recent
-        UNION ALL
-        SELECT * FROM obs_recent
-      ) all_items
-      ORDER BY created_at DESC
-      LIMIT $1
+      SELECT
+        i.id,
+        i.observable,
+        i.observable_type,
+        i.source_name,
+        i.confidence,
+        i.category,
+        i.created_at,
+        c.asn,
+        c.country_code,
+        c.as_name
+      FROM ioc_items i
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN i.observable_type = 'ip' THEN i.observable::inet ELSE NULL END
+      ORDER BY i.created_at DESC
+      LIMIT ($1)
     `;
 
     const { rows } = await pool.query(q, [limit]);
     return res.json({ items: rows });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch recent IOC records', detail: err.message });
-  }
-});
-
-app.delete('/api/ioc/ip/:ip', async (req, res) => {
-  const { ip } = req.params;
-  if (!ip) {
-    return res.status(400).json({ message: 'Invalid ip' });
-  }
-
-  try {
-    const result = await pool.query('DELETE FROM ioc_ips WHERE ip = $1::inet RETURNING id', [ip]);
-    if (!result.rowCount) {
-      return res.status(404).json({ message: 'Record not found' });
-    }
-    return res.json({ deleted: result.rowCount, ip });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to delete record', detail: err.message });
-  }
-});
-
-app.post('/api/ioc/ip/bulk-delete', async (req, res) => {
-  const ips = Array.isArray(req.body?.ips) ? req.body.ips.map((x) => String(x).trim()).filter(Boolean) : [];
-  if (!ips.length) {
-    return res.status(400).json({ message: 'ips array is required' });
-  }
-
-  try {
-    const result = await pool.query('DELETE FROM ioc_ips WHERE ip = ANY($1::inet[]) RETURNING ip', [ips]);
-    const uniqueIps = Array.from(new Set(result.rows.map((r) => r.ip)));
-    return res.json({ deleted: result.rowCount || 0, ips: uniqueIps });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to bulk delete records', detail: err.message });
   }
 });
 
@@ -864,15 +577,17 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
       SELECT
         COALESCE(c.country_code, 'UN') AS country_code,
         COUNT(*)::int AS total
-      FROM ioc_ips i
-      LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
+      FROM ioc_items i
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.observable::inet
+      WHERE i.observable_type = 'ip'
       GROUP BY COALESCE(c.country_code, 'UN')
       ORDER BY total DESC
     `;
 
     const totalsQ = `
-      SELECT COUNT(*)::int AS total_records, COUNT(DISTINCT ip)::int AS unique_ips
-      FROM ioc_ips
+      SELECT COUNT(*)::int AS total_records,
+             COUNT(DISTINCT observable)::int FILTER (WHERE observable_type = 'ip') AS unique_ips
+      FROM ioc_items
     `;
 
     const [{ rows: byCountry }, { rows: totals }] = await Promise.all([
@@ -895,14 +610,10 @@ app.get('/api/ioc/summary/today', async (req, res) => {
 
   try {
     const base = `
-      WITH combined AS (
-        SELECT host(i.ip::inet) AS observable, 'ip'::text AS observable_type, i.source_name, i.confidence, i.created_at
-        FROM ioc_ips i
-        UNION ALL
-        SELECT o.observable, o.observable_type, o.source_name, o.confidence, o.created_at
-        FROM ioc_observables o
-      ), filtered AS (
-        SELECT * FROM combined WHERE ${timeFilter}
+      WITH filtered AS (
+        SELECT observable, observable_type, source_name, confidence, created_at
+        FROM ioc_items
+        WHERE ${timeFilter}
       )
     `;
 

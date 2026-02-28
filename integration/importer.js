@@ -98,12 +98,13 @@ async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, catego
   if (!dedup.rowCount) return false;
 
   const ins = await client.query(
-    `INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
-     SELECT $1, $2, $3, $4, $5, $6, NOW(), NOW()
+    `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
+     SELECT $1, 'ip', $2, $3, $4, $5, $6, NOW(), NOW()
      WHERE NOT EXISTS (
        SELECT 1
-       FROM ioc_ips
-       WHERE ip = $1::inet
+       FROM ioc_items
+       WHERE observable = $1
+         AND observable_type = 'ip'
          AND source_name = $2
          AND confidence = $4
          AND COALESCE(category, '') = COALESCE($5, '')
@@ -129,11 +130,11 @@ async function insertObservable(client, { observable, observableType, sourceName
   if (!dedup.rowCount) return false;
 
   const ins = await client.query(
-    `INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+    `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
      SELECT $1, $2, $3, $4, $5, $6, $7
      WHERE NOT EXISTS (
        SELECT 1
-       FROM ioc_observables
+       FROM ioc_items
        WHERE observable = $1
          AND observable_type = $2
          AND source_name = $3
@@ -331,17 +332,6 @@ export async function runUsomImport() {
 
           if (okObs) inserted += 1;
 
-          if (observableType === 'ip') {
-            await insertIoc(client, {
-              ip: observable,
-              sourceName,
-              sourceUrl,
-              confidence,
-              category,
-              note,
-              dedupSource: `${config.usomSourceName}:ip-db`
-            });
-          }
         }
         await client.query('COMMIT');
       } catch (e) {
