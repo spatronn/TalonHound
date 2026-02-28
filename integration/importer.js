@@ -61,30 +61,6 @@ function mapUsomConfidence(level) {
   return 'low';
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchJsonWithRetry(url, { attempts = 6, baseDelayMs = 1500 } = {}) {
-  let lastErr = null;
-  for (let i = 0; i < attempts; i += 1) {
-    const res = await fetch(url);
-    if (res.ok) return res.json();
-
-    if (res.status === 429 || res.status >= 500) {
-      const retryAfter = Number(res.headers.get('retry-after') || 0);
-      const waitMs = retryAfter > 0 ? retryAfter * 1000 : baseDelayMs * (i + 1);
-      await sleep(waitMs);
-      lastErr = new Error(`HTTP ${res.status}`);
-      continue;
-    }
-
-    throw new Error(`USOM API request failed: ${res.status}`);
-  }
-
-  throw new Error(`USOM API request failed after retries: ${lastErr?.message || 'unknown'}`);
-}
-
 async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
   const dedupKey = `${ip}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
   const dedup = await client.query(
@@ -278,7 +254,10 @@ export async function runUsomImport() {
         url.searchParams.set('type', usomType);
         url.searchParams.set('page', String(page));
 
-        const data = await fetchJsonWithRetry(url.toString());
+        const res = await fetch(url.toString());
+        if (!res.ok) throw new Error(`USOM API request failed (${usomType}): ${res.status}`);
+        const data = await res.json();
+
         pageCount = Number(data?.pageCount || 1);
         const models = Array.isArray(data?.models) ? data.models : [];
 
@@ -320,10 +299,7 @@ export async function runUsomImport() {
 
         page += 1;
         if (page > 1000) break;
-        await sleep(350);
       }
-
-      await sleep(1000);
     }
 
     await client.query(
