@@ -404,7 +404,7 @@ app.post('/api/ioc/ip', async (req, res) => {
 });
 
 app.get('/api/ioc/ip', async (req, res) => {
-  const { source_name, confidence, q, asn, country, day = 'today', page = '1', page_size = '5' } = req.query;
+  const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
   const allowedSizes = [5, 10, 25, 100];
   const size = Number(page_size);
   const currentPage = Math.max(Number(page) || 1, 1);
@@ -593,7 +593,7 @@ app.get('/api/ioc/ip', async (req, res) => {
 });
 
 app.get('/api/ioc/list', async (req, res) => {
-  const { source_name, confidence, q, asn, country, day = 'today', page = '1', page_size = '5' } = req.query;
+  const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
   const allowedSizes = [5, 10, 25, 100];
   const size = Number(page_size);
   const currentPage = Math.max(Number(page) || 1, 1);
@@ -602,14 +602,6 @@ app.get('/api/ioc/list', async (req, res) => {
 
   const filters = [];
   const params = [];
-
-  if (day === 'today') {
-    filters.push(`created_at::date = CURRENT_DATE`);
-  } else if (day === '24h') {
-    filters.push(`created_at >= NOW() - INTERVAL '24 hours'`);
-  } else if (day === '7d') {
-    filters.push(`created_at >= NOW() - INTERVAL '7 days'`);
-  }
 
   if (source_name) {
     params.push(`%${source_name}%`);
@@ -866,16 +858,7 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
 });
 
 app.get('/api/ioc/summary/today', async (req, res) => {
-  const { day = 'today' } = req.query;
-  let timeFilter = `created_at::date = CURRENT_DATE`;
-
-  if (day === '24h') {
-    timeFilter = `created_at >= NOW() - INTERVAL '24 hours'`;
-  } else if (day === '7d') {
-    timeFilter = `created_at >= NOW() - INTERVAL '7 days'`;
-  } else if (day === 'all') {
-    timeFilter = `TRUE`;
-  }
+  let timeFilter = `TRUE`;
 
   try {
     const base = `

@@ -734,7 +734,6 @@ function IOCListPage() {
   const [asnFilter, setAsnFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
-  const [timeRange, setTimeRange] = useState('today');
   const [selectedIps, setSelectedIps] = useState([]);
   const [detailIp, setDetailIp] = useState('');
   const [detailSources, setDetailSources] = useState([]);
@@ -751,10 +750,9 @@ function IOCListPage() {
           confidence: confidenceFilter || undefined,
           asn: asnFilter || undefined,
           country: countryFilter || undefined,
-          day: timeRange || 'today'
         }
       }),
-      api.get('/ioc/summary/today', { params: { day: timeRange || 'today' } })
+      api.get('/ioc/summary/today')
     ]);
     const items = listRes.data.items || [];
     setRows(items);
@@ -993,23 +991,11 @@ function IOCListPage() {
           <option value="medium">medium</option>
           <option value="high">high</option>
         </select>
-        <select
-          value={timeRange}
-          onChange={(e) => {
-            setPage(1);
-            setTimeRange(e.target.value);
-          }}
-        >
-          <option value="today">Today</option>
-          <option value="24h">Last 24h</option>
-          <option value="7d">Last 7d</option>
-          <option value="all">All (may be slower)</option>
-        </select>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
         <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
-        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setTimeRange('today'); setPage(1); }}>Clear</button>
+        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setPage(1); }}>Clear</button>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
