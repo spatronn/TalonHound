@@ -244,7 +244,7 @@ function DashboardPage() {
   const maxCount = Math.max(...Object.values(countryCounts), 0);
 
   const countryColor = (count) => {
-    if (!count || maxCount === 0) return '#f8fafc';
+    if (!count || maxCount === 0) return '#0f172a';
     const ratio = count / maxCount;
     if (ratio <= 0.2) return '#fde047';
     if (ratio <= 0.4) return '#facc15';
@@ -287,7 +287,7 @@ function DashboardPage() {
           <button onClick={() => setZoom(1)}>Reset</button>
         </div>
 
-        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc', padding: 8, position: 'relative' }}>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: 8, position: 'relative' }}>
           <ComposableMap projectionConfig={{ scale: 155 }} width={1080} height={420} style={{ width: '100%', height: 'auto', display: 'block' }}>
             <ZoomableGroup zoom={zoom} center={[0, 12]}>
               <Geographies geography="/world-lite.geojson">
@@ -298,7 +298,7 @@ function DashboardPage() {
                       key={geo.rsmKey}
                       geography={geo}
                       fill={countryColor(count)}
-                      stroke="#94a3b8"
+                      stroke="#475569"
                       strokeWidth={0.35}
                       onMouseEnter={() => setHoverInfo({
                         name: geo.properties?.name || geo.properties?.ADMIN || 'Unknown',
