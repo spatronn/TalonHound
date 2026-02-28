@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
+import IORedis from 'ioredis';
+import { Queue } from 'bullmq';
 
 const { Pool } = pg;
 
@@ -16,6 +18,11 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || 'demo123',
   database: process.env.DB_NAME || 'demo'
 });
+
+const redisUrl = process.env.REDIS_URL || 'redis://redis:6379';
+const queueName = process.env.QUEUE_NAME || 'integration-imports';
+const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+const importQueue = new Queue(queueName, { connection: redis });
 
 app.use(cors());
 app.use(express.json());
@@ -190,6 +197,15 @@ app.get('/api/integrations', async (_req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch integrations', detail: err.message });
+  }
+});
+
+app.post('/api/integrations/et-blockrules/run-now', async (_req, res) => {
+  try {
+    const job = await importQueue.add('hourly-import', { triggeredBy: 'manual-ui' });
+    return res.status(202).json({ ok: true, queued: true, job_id: job.id });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
   }
 });
 

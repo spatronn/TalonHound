@@ -341,6 +341,7 @@ function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
   const [recentRuns, setRecentRuns] = useState([]);
+  const [runningNow, setRunningNow] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -360,6 +361,20 @@ function IntegrationsPage() {
     load().catch(() => {});
   }, []);
 
+  async function runNow() {
+    if (runningNow) return;
+    setRunningNow(true);
+    try {
+      await api.post('/integrations/et-blockrules/run-now');
+      await load();
+      alert('Run queued');
+    } catch {
+      alert('Failed to queue run');
+    } finally {
+      setRunningNow(false);
+    }
+  }
+
   const statusColor = (status) => {
     if (status === 'success') return '#166534';
     if (status === 'failed') return '#991b1b';
@@ -372,7 +387,10 @@ function IntegrationsPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations</h2>
-          <button onClick={() => load().catch(() => {})}>Refresh</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={runNow} disabled={runningNow}>{runningNow ? 'Queueing...' : 'Run now'}</button>
+            <button onClick={() => load().catch(() => {})}>Refresh</button>
+          </div>
         </div>
 
         {loading ? <div>Loading...</div> : (

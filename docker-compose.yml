@@ -28,8 +28,11 @@ services:
       - DB_USER=demo
       - DB_PASSWORD=demo123
       - DB_NAME=demo
+      - REDIS_URL=redis://redis:6379
+      - QUEUE_NAME=integration-imports
     depends_on:
       - db
+      - redis
     restart: unless-stopped
 
   integration-scheduler:
