@@ -99,6 +99,7 @@ app.get('/api/integrations', async (_req, res) => {
       )
       SELECT
         f.key,
+        f.integration_id,
         f.name,
         f.source_url,
         f.schedule_cron AS schedule,
@@ -177,9 +178,18 @@ app.get('/api/integrations', async (_req, res) => {
           GROUP BY status
         `),
         pool.query(`
-          SELECT job_id AS id, integration_key, job_name AS name, status AS state, queued_at AS timestamp, error_message AS failed_reason
-          FROM integration_queue_jobs
-          ORDER BY queued_at DESC
+          SELECT
+            q.job_id AS id,
+            q.integration_key,
+            COALESCE(f.name, q.integration_key) AS integration_name,
+            f.integration_id,
+            q.job_name AS name,
+            q.status AS state,
+            q.queued_at AS timestamp,
+            q.error_message AS failed_reason
+          FROM integration_queue_jobs q
+          LEFT JOIN integration_feeds f ON f.key = q.integration_key
+          ORDER BY q.queued_at DESC
           LIMIT 30
         `)
       ]);

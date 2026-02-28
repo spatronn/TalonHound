@@ -355,7 +355,7 @@ function IntegrationsPage() {
   const [runningKeys, setRunningKeys] = useState({});
   const [tableSort, setTableSort] = useState({ integrations: { key: null, dir: null }, queue: { key: null, dir: null }, runs: { key: null, dir: null } });
   const [tableWidths, setTableWidths] = useState({
-    i_name: 180, i_source: 260, i_added: 150, i_schedule: 120, i_trust: 140, i_status: 110, i_last: 150, i_total: 120, i_action: 110,
+    i_name: 170, i_uuid: 210, i_source: 240, i_added: 150, i_schedule: 120, i_trust: 140, i_status: 110, i_last: 150, i_total: 120, i_action: 110,
     q_id: 120, q_integration: 160, q_name: 130, q_state: 90, q_queued: 150, q_reason: 230,
     r_id: 80, r_integration: 180, r_status: 100, r_started: 150, r_finished: 150, r_imported: 110
   });
@@ -505,6 +505,7 @@ function IntegrationsPage() {
 
   const sortedIntegrations = useMemo(() => applySort(integrations, 'integrations', (x, k) => {
     if (k === 'name') return x.name;
+    if (k === 'integration_id') return x.integration_id || '';
     if (k === 'source') return x.source_url;
     if (k === 'added') return new Date(x.created_at || 0).getTime();
     if (k === 'schedule') return humanSchedule(x.schedule);
@@ -517,7 +518,7 @@ function IntegrationsPage() {
 
   const sortedQueue = useMemo(() => applySort(queue.jobs || [], 'queue', (x, k) => {
     if (k === 'id') return String(x.id || '');
-    if (k === 'integration') return x.integration_key || '';
+    if (k === 'integration') return x.integration_name || x.integration_key || '';
     if (k === 'name') return x.name;
     if (k === 'state') return x.state;
     if (k === 'queued') return new Date(x.timestamp || 0).getTime();
@@ -550,11 +551,12 @@ function IntegrationsPage() {
           <div style={{ overflowX: 'auto' }}>
             <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
               <colgroup>
-                <col style={{ width: tableWidths.i_name }} /><col style={{ width: tableWidths.i_source }} /><col style={{ width: tableWidths.i_added }} /><col style={{ width: tableWidths.i_schedule }} /><col style={{ width: tableWidths.i_trust }} /><col style={{ width: tableWidths.i_status }} /><col style={{ width: tableWidths.i_last }} /><col style={{ width: tableWidths.i_total }} /><col style={{ width: tableWidths.i_action }} />
+                <col style={{ width: tableWidths.i_name }} /><col style={{ width: tableWidths.i_uuid }} /><col style={{ width: tableWidths.i_source }} /><col style={{ width: tableWidths.i_added }} /><col style={{ width: tableWidths.i_schedule }} /><col style={{ width: tableWidths.i_trust }} /><col style={{ width: tableWidths.i_status }} /><col style={{ width: tableWidths.i_last }} /><col style={{ width: tableWidths.i_total }} /><col style={{ width: tableWidths.i_action }} />
               </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                   <th onClick={() => toggleSort('integrations','name')} style={{ position: 'relative', cursor: 'pointer' }}>Name{indicator('integrations','name')}<div onMouseDown={(e) => startResize('i_name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th onClick={() => toggleSort('integrations','integration_id')} style={{ position: 'relative', cursor: 'pointer' }}>Integration ID{indicator('integrations','integration_id')}<div onMouseDown={(e) => startResize('i_uuid', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th onClick={() => toggleSort('integrations','source')} style={{ position: 'relative', cursor: 'pointer' }}>Source{indicator('integrations','source')}<div onMouseDown={(e) => startResize('i_source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th onClick={() => toggleSort('integrations','added')} style={{ position: 'relative', cursor: 'pointer' }}>Added At{indicator('integrations','added')}<div onMouseDown={(e) => startResize('i_added', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th onClick={() => toggleSort('integrations','schedule')} style={{ position: 'relative', cursor: 'pointer' }}>Schedule{indicator('integrations','schedule')}<div onMouseDown={(e) => startResize('i_schedule', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
@@ -569,6 +571,7 @@ function IntegrationsPage() {
                 {sortedIntegrations.map((i) => (
                   <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td>{i.name}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.integration_id || '-'}</td>
                     <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
                     <td>{formatUserDateTime(i.created_at)}</td>
                     <td>{humanSchedule(i.schedule)}</td>
@@ -626,11 +629,11 @@ function IntegrationsPage() {
               {sortedQueue.length ? sortedQueue.map((j) => (
                 <tr key={String(j.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.id}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.integration_key || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.integration_name || j.integration_key || '-'}</td>
                   <td>{j.name}</td>
                   <td>{j.state}</td>
                   <td>{formatUserDateTime(j.timestamp)}</td>
-                  <td style={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.failed_reason || '-'}</td>
+                  <td style={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.failed_reason || (j.state === 'success' ? 'Completed successfully' : '-')}</td>
                 </tr>
               )) : (
                 <tr><td colSpan={6} style={{ color: '#64748b' }}>No queued jobs</td></tr>
@@ -654,7 +657,7 @@ function IntegrationsPage() {
                 <th onClick={() => toggleSort('runs','status')} style={{ position: 'relative', cursor: 'pointer' }}>Status{indicator('runs','status')}<div onMouseDown={(e) => startResize('r_status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th onClick={() => toggleSort('runs','started')} style={{ position: 'relative', cursor: 'pointer' }}>Started{indicator('runs','started')}<div onMouseDown={(e) => startResize('r_started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th onClick={() => toggleSort('runs','finished')} style={{ position: 'relative', cursor: 'pointer' }}>Finished{indicator('runs','finished')}<div onMouseDown={(e) => startResize('r_finished', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('runs','imported')} style={{ position: 'relative', cursor: 'pointer' }}>Imported{indicator('runs','imported')}<div onMouseDown={(e) => startResize('r_imported', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th onClick={() => toggleSort('runs','imported')} style={{ position: 'relative', cursor: 'pointer' }}>Imported IOCs{indicator('runs','imported')}<div onMouseDown={(e) => startResize('r_imported', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
