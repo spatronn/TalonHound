@@ -599,27 +599,54 @@ app.get('/api/ioc/ip/recent-raw', async (req, res) => {
 
   try {
     const q = `
-      SELECT
-        i.*,
-        a.asn,
-        a.country_code,
-        a.as_name
-      FROM ioc_ips i
-      CROSS JOIN LATERAL (
+      WITH ip_items AS (
         SELECT
-          ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
-          + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
-          + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
-          +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
-      ) ipn
-      LEFT JOIN LATERAL (
-        SELECT r.asn, r.country_code, r.as_name
-        FROM asn_ipv4_ranges r
-        WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-        LIMIT 1
-      ) a ON TRUE
-      ORDER BY i.created_at DESC
+          i.id,
+          host(i.ip::inet) AS observable,
+          'ip'::text AS observable_type,
+          i.source_name,
+          i.confidence,
+          i.category,
+          i.created_at,
+          a.asn,
+          a.country_code,
+          a.as_name
+        FROM ioc_ips i
+        CROSS JOIN LATERAL (
+          SELECT
+            ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
+            + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
+            + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
+            +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
+        ) ipn
+        LEFT JOIN LATERAL (
+          SELECT r.asn, r.country_code, r.as_name
+          FROM asn_ipv4_ranges r
+          WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+          ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+          LIMIT 1
+        ) a ON TRUE
+      ), obs_items AS (
+        SELECT
+          o.id,
+          o.observable,
+          o.observable_type,
+          o.source_name,
+          o.confidence,
+          o.category,
+          o.created_at,
+          NULL::bigint AS asn,
+          NULL::text AS country_code,
+          NULL::text AS as_name
+        FROM ioc_observables o
+      )
+      SELECT *
+      FROM (
+        SELECT * FROM ip_items
+        UNION ALL
+        SELECT * FROM obs_items
+      ) all_items
+      ORDER BY created_at DESC
       LIMIT $1
     `;
 

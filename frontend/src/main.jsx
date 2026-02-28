@@ -1097,17 +1097,18 @@ function IOCAddPage() {
 
       <h3>Last 10 IOC entries</h3>
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 760, background: '#fff' }}>
+        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 860, background: '#fff' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-              <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
+              <th>#</th><th>Observable</th><th>Type</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
             </tr>
           </thead>
           <tbody>
             {recentRows.map((r, idx) => (
-              <tr key={r.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+              <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
                 <td>{idx + 1}</td>
-                <td><code>{r.ip}</code></td>
+                <td><code>{r.observable}</code></td>
+                <td>{r.observable_type || '-'}</td>
                 <td>{r.asn ?? '-'}</td>
                 <td>{r.country_code || '-'}</td>
                 <td>{r.source_name}</td>
