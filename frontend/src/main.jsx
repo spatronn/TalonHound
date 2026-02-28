@@ -716,25 +716,18 @@ function IOCListPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [columnWidths, setColumnWidths] = useState({
-    select: 38,
     index: 52,
-    ip: 220,
+    ip: 260,
     asn: 84,
     country: 90,
-    source: 190,
+    source: 220,
     confidence: 120,
-    category: 150,
-    timestamp: 170,
-    action: 92
+    category: 120,
+    timestamp: 170
   });
   const [sortState, setSortState] = useState({ key: null, dir: null });
   const [resizeState, setResizeState] = useState(null);
-  const [sourceFilter, setSourceFilter] = useState('');
-  const [confidenceFilter, setConfidenceFilter] = useState('');
-  const [asnFilter, setAsnFilter] = useState('');
-  const [countryFilter, setCountryFilter] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
-  const [selectedIps, setSelectedIps] = useState([]);
   const [detailIp, setDetailIp] = useState('');
   const [detailSources, setDetailSources] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -746,24 +739,19 @@ function IOCListPage() {
           page: targetPage,
           page_size: targetSize,
           q: search || undefined,
-          source_name: sourceFilter || undefined,
-          confidence: confidenceFilter || undefined,
-          asn: asnFilter || undefined,
-          country: countryFilter || undefined,
         }
       }),
       api.get('/ioc/summary/today')
     ]);
     const items = listRes.data.items || [];
     setRows(items);
-    setSelectedIps((prev) => prev.filter((ip) => items.some((r) => r.ip === ip)));
     setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
     setSummary(summaryRes.data);
   }
 
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
-  }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter]);
+  }, [page, pageSize, search]);
 
   useEffect(() => {
     if (!resizeState) return undefined;
@@ -833,21 +821,6 @@ function IOCListPage() {
     return copy;
   }, [rows, sortState]);
 
-  const ipRowsOnPage = rows.filter((r) => (r.observable_type || 'ip') === 'ip');
-  const allOnPageSelected = ipRowsOnPage.length > 0 && ipRowsOnPage.every((r) => selectedIps.includes(r.ip));
-
-  function toggleSelectAllOnPage() {
-    if (allOnPageSelected) {
-      setSelectedIps((prev) => prev.filter((ip) => !ipRowsOnPage.some((r) => r.ip === ip)));
-      return;
-    }
-    setSelectedIps((prev) => Array.from(new Set([...prev, ...ipRowsOnPage.map((r) => r.ip)])));
-  }
-
-  function toggleRow(ip) {
-    setSelectedIps((prev) => (prev.includes(ip) ? prev.filter((x) => x !== ip) : [...prev, ip]));
-  }
-
   async function openSourceDetails(ip) {
     setDetailIp(ip);
     setDetailSources([]);
@@ -859,32 +832,6 @@ function IOCListPage() {
       setDetailSources([]);
     } finally {
       setDetailLoading(false);
-    }
-  }
-
-  async function deleteOne(ip) {
-    const ok = window.confirm(`Delete IOC ${ip} and all linked sources?`);
-    if (!ok) return;
-
-    try {
-      await api.delete(`/ioc/ip/${encodeURIComponent(ip)}`);
-      await loadData(page, pageSize);
-    } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to delete record');
-    }
-  }
-
-  async function deleteSelected() {
-    if (!selectedIps.length) return;
-    const ok = window.confirm(`Delete ${selectedIps.length} selected IOC(s) with all linked sources?`);
-    if (!ok) return;
-
-    try {
-      await api.post('/ioc/ip/bulk-delete', { ips: selectedIps });
-      setSelectedIps([]);
-      await loadData(page, pageSize);
-    } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to bulk delete records');
     }
   }
 
@@ -945,57 +892,9 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: 8 }}>
-        <input
-          placeholder="Search IP / subnet (e.g. 1.2.3.0/24) / source / category"
-          value={search}
-          onChange={(e) => {
-            setPage(1);
-            setSearch(e.target.value);
-          }}
-          style={{ gridColumn: 'span 2' }}
-        />
-        <input
-          placeholder="Filter by source"
-          value={sourceFilter}
-          onChange={(e) => {
-            setPage(1);
-            setSourceFilter(e.target.value);
-          }}
-        />
-        <input
-          placeholder="ASN (e.g. 15169)"
-          value={asnFilter}
-          onChange={(e) => {
-            setPage(1);
-            setAsnFilter(e.target.value.replace(/[^0-9]/g, ''));
-          }}
-        />
-        <input
-          placeholder="Country (e.g. US)"
-          value={countryFilter}
-          onChange={(e) => {
-            setPage(1);
-            setCountryFilter(e.target.value);
-          }}
-        />
-        <select
-          value={confidenceFilter}
-          onChange={(e) => {
-            setPage(1);
-            setConfidenceFilter(e.target.value);
-          }}
-        >
-          <option value="">All confidence</option>
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
-      </div>
-
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
         <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
-        <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setPage(1); }}>Clear</button>
+        <button onClick={() => { setSearch(''); setPage(1); }}>Clear</button>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
@@ -1015,9 +914,6 @@ function IOCListPage() {
             ))}
           </select>
 
-          <button onClick={deleteSelected} disabled={!selectedIps.length}>
-            Delete selected ({selectedIps.length})
-          </button>
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
           Listed Items <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
@@ -1028,14 +924,13 @@ function IOCListPage() {
 
       {rows.length === 0 && (
         <div style={{ marginBottom: 10, padding: 10, background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 6 }}>
-          No IOC records found for selected time range. Try <b>Last 7d</b> or <b>All</b>.
+          No IOC records found.
         </div>
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
         <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
-            <col style={{ width: columnWidths.select }} />
             <col style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
             <col style={{ width: columnWidths.asn }} />
@@ -1044,14 +939,9 @@ function IOCListPage() {
             <col style={{ width: columnWidths.confidence }} />
             <col style={{ width: columnWidths.category }} />
             <col style={{ width: columnWidths.timestamp }} />
-            <col style={{ width: columnWidths.action }} />
           </colgroup>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-              <th style={{ position: 'relative' }}>
-                <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
-                <div onMouseDown={(e) => startResize('select', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
-              </th>
               <th style={{ position: 'relative' }}>
                 #
                 <div onMouseDown={(e) => startResize('index', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
@@ -1063,20 +953,11 @@ function IOCListPage() {
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
             {sortedRows.map((r, idx) => (
               <tr key={`${r.observable_type || 'ip'}:${r.observable || r.ip}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={selectedIps.includes(r.ip)}
-                    onChange={() => toggleRow(r.ip)}
-                    disabled={(r.observable_type || 'ip') !== 'ip'}
-                  />
-                </td>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable || r.ip}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{r.asn ?? '-'}</td>
@@ -1093,9 +974,6 @@ function IOCListPage() {
                 <td><span style={confidenceBadgeStyle((r.confidence_set && r.confidence_set[0]) || 'low')}>{(r.confidence_set && r.confidence_set[0]) || 'low'}</span></td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(r.last_seen_at)}</td>
-                <td>
-                  <button onClick={() => deleteOne(r.ip)} disabled={(r.observable_type || 'ip') !== 'ip'}>Delete</button>
-                </td>
               </tr>
             ))}
           </tbody>
