@@ -1076,17 +1076,49 @@ function Protected({ children }) {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
-        <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
-        <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
-        <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
-        <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
-        <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
-      </Routes>
-    </BrowserRouter>
+    <>
+      <style>{`
+        :root { color-scheme: dark; }
+        html, body, #root {
+          background: #0b1220 !important;
+          color: #e2e8f0 !important;
+        }
+        * { scrollbar-color: #334155 #0b1220; }
+        aside, section, main, table, thead, tbody, tr, th, td, div {
+          border-color: #334155 !important;
+        }
+        section, aside, table, .card, [style*='background: #fff'], [style*='background: #ffffff'], [style*='background: #f8fafc'] {
+          background: #111827 !important;
+          color: #e2e8f0 !important;
+        }
+        input, select, textarea {
+          background: #0f172a !important;
+          color: #e2e8f0 !important;
+          border: 1px solid #334155 !important;
+        }
+        button {
+          background: #1f2937 !important;
+          color: #e2e8f0 !important;
+          border: 1px solid #475569 !important;
+        }
+        button:hover { background: #334155 !important; }
+        a { color: #93c5fd !important; }
+        thead tr { background: #1f2937 !important; }
+        tbody tr { background: #111827 !important; }
+        code { color: #93c5fd !important; }
+      `}</style>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+          <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
+          <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
+          <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
+          <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
+        </Routes>
+      </BrowserRouter>
+    </>
   );
 }
 
