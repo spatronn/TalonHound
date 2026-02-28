@@ -892,7 +892,15 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+        <input
+          placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)"
+          value={search}
+          onChange={(e) => {
+            setPage(1);
+            setSearch(e.target.value);
+          }}
+        />
         <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
         <button onClick={() => { setSearch(''); setPage(1); }}>Clear</button>
       </div>
