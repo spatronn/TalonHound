@@ -763,7 +763,7 @@ function IOCListPage() {
 
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
-  }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter, timeRange]);
+  }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter]);
 
   useEffect(() => {
     if (!resizeState) return undefined;
