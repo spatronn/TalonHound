@@ -804,8 +804,6 @@ function IOCListPage() {
 
     const val = (r) => {
       if (sortState.key === 'ip') return String(r.ip || '');
-      if (sortState.key === 'asn') return Number(r.asn ?? -1);
-      if (sortState.key === 'country') return String(r.country_code || '');
       if (sortState.key === 'source') return String((r.source_names && r.source_names[0]) || '');
       if (sortState.key === 'confidence') return String((r.confidence_set && r.confidence_set[0]) || '');
       if (sortState.key === 'category') return String(r.observable_type || 'ip');
@@ -949,8 +947,6 @@ function IOCListPage() {
           <colgroup>
             <col style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
-            <col style={{ width: columnWidths.asn }} />
-            <col style={{ width: columnWidths.country }} />
             <col style={{ width: columnWidths.source }} />
             <col style={{ width: columnWidths.confidence }} />
             <col style={{ width: columnWidths.category }} />
@@ -962,12 +958,10 @@ function IOCListPage() {
                 #
                 <div onMouseDown={(e) => startResize('index', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
               </th>
-              <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Observable{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('asn')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>ASN{sortIndicator('asn')}<div onMouseDown={(e) => startResize('asn', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('country')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Country{sortIndicator('country')}<div onMouseDown={(e) => startResize('country', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
@@ -976,8 +970,6 @@ function IOCListPage() {
               <tr key={`${r.observable_type || 'ip'}:${r.observable || r.ip}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable || r.ip}</td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{r.asn ?? '-'}</td>
-                <td>{r.country_code || '-'}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {(r.observable_type || 'ip') === 'ip' ? (
                     <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit' }}>
@@ -1044,7 +1036,7 @@ function IOCAddPage() {
   const [submitting, setSubmitting] = useState(false);
   const [recentRows, setRecentRows] = useState([]);
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
-  const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 260, type: 90, asn: 90, country: 90, source: 170, confidence: 110, ts: 170 });
+  const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 320, type: 110, source: 200, confidence: 110, ts: 170 });
   const [recentResize, setRecentResize] = useState(null);
   const iocFormRef = useRef(null);
 
@@ -1099,8 +1091,6 @@ function IOCAddPage() {
     const value = (r, k) => {
       if (k === 'observable') return r.observable;
       if (k === 'type') return r.observable_type;
-      if (k === 'asn') return Number(r.asn ?? -1);
-      if (k === 'country') return r.country_code || '';
       if (k === 'source') return r.source_name || '';
       if (k === 'confidence') return r.confidence || '';
       if (k === 'ts') return new Date(r.created_at || 0).getTime();
@@ -1168,15 +1158,13 @@ function IOCAddPage() {
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
         <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 860, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
-            <col style={{ width: recentWidths.idx }} /><col style={{ width: recentWidths.observable }} /><col style={{ width: recentWidths.type }} /><col style={{ width: recentWidths.asn }} /><col style={{ width: recentWidths.country }} /><col style={{ width: recentWidths.source }} /><col style={{ width: recentWidths.confidence }} /><col style={{ width: recentWidths.ts }} />
+            <col style={{ width: recentWidths.idx }} /><col style={{ width: recentWidths.observable }} /><col style={{ width: recentWidths.type }} /><col style={{ width: recentWidths.source }} /><col style={{ width: recentWidths.confidence }} /><col style={{ width: recentWidths.ts }} />
           </colgroup>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
               <th style={{ position: 'relative' }}>#<div onMouseDown={(e) => startRecentResize('idx', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-              <th onClick={() => toggleRecentSort('observable')} style={{ position: 'relative', cursor:'pointer' }}>Observable{recentIndicator('observable')}<div onMouseDown={(e) => startRecentResize('observable', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-              <th onClick={() => toggleRecentSort('type')} style={{ position: 'relative', cursor:'pointer' }}>Type{recentIndicator('type')}<div onMouseDown={(e) => startRecentResize('type', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-              <th onClick={() => toggleRecentSort('asn')} style={{ position: 'relative', cursor:'pointer' }}>ASN{recentIndicator('asn')}<div onMouseDown={(e) => startRecentResize('asn', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-              <th onClick={() => toggleRecentSort('country')} style={{ position: 'relative', cursor:'pointer' }}>Country{recentIndicator('country')}<div onMouseDown={(e) => startRecentResize('country', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+              <th onClick={() => toggleRecentSort('observable')} style={{ position: 'relative', cursor:'pointer' }}>IOC{recentIndicator('observable')}<div onMouseDown={(e) => startRecentResize('observable', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+              <th onClick={() => toggleRecentSort('type')} style={{ position: 'relative', cursor:'pointer' }}>IOC Type{recentIndicator('type')}<div onMouseDown={(e) => startRecentResize('type', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               <th onClick={() => toggleRecentSort('source')} style={{ position: 'relative', cursor:'pointer' }}>Source{recentIndicator('source')}<div onMouseDown={(e) => startRecentResize('source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               <th onClick={() => toggleRecentSort('confidence')} style={{ position: 'relative', cursor:'pointer' }}>Confidence{recentIndicator('confidence')}<div onMouseDown={(e) => startRecentResize('confidence', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               <th onClick={() => toggleRecentSort('ts')} style={{ position: 'relative', cursor:'pointer' }}>Timestamp{recentIndicator('ts')}<div onMouseDown={(e) => startRecentResize('ts', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
@@ -1188,8 +1176,6 @@ function IOCAddPage() {
                 <td>{idx + 1}</td>
                 <td><code>{r.observable}</code></td>
                 <td>{r.observable_type || '-'}</td>
-                <td>{r.asn ?? '-'}</td>
-                <td>{r.country_code || '-'}</td>
                 <td>{r.source_name}</td>
                 <td>{r.confidence}</td>
                 <td>{formatUserDateTime(r.created_at)}</td>
