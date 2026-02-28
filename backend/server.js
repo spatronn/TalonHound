@@ -351,7 +351,7 @@ app.post('/api/ioc/ip', async (req, res) => {
   const value = String(ip).trim();
   const isUrl = /^https?:\/\//i.test(value);
   const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(value);
-  const inferredType = isUrl ? 'url' : (isIpv4 ? 'ip' : 'domain');
+  const inferredType = (isUrl || value.includes('/')) ? 'url' : (isIpv4 ? 'ip' : 'domain');
 
   try {
     if (inferredType !== 'ip') {

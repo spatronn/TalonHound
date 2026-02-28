@@ -71,7 +71,7 @@ function classifyUsomObservable(rawObservable) {
   const normalizedIp = observable.endsWith('/') ? observable.slice(0, -1) : observable;
 
   let observableType = 'domain';
-  if (/^https?:\/\//i.test(observable)) observableType = 'url';
+  if (/^https?:\/\//i.test(observable) || observable.includes('/')) observableType = 'url';
   else if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
   else if (observable.includes(':')) observableType = 'ip6';
 
