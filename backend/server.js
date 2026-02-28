@@ -60,6 +60,7 @@ async function refreshGeoCache(limit = 20000) {
           + (split_part(host(m.ip::inet), '.', 3)::bigint << 8)
           +  split_part(host(m.ip::inet), '.', 4)::bigint) AS ip_num
         FROM missing m
+        WHERE m.ip IS NOT NULL
       )
       INSERT INTO ioc_ip_geo_cache (ip, country_code, asn, as_name, updated_at)
       SELECT
