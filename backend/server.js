@@ -878,22 +878,37 @@ app.get('/api/ioc/summary/today', async (req, res) => {
   }
 
   try {
-    const total = await pool.query(`SELECT COUNT(*)::int AS count FROM ioc_ips WHERE ${timeFilter}`);
-    const uniqueIps = await pool.query(`SELECT COUNT(DISTINCT ip)::int AS count FROM ioc_ips WHERE ${timeFilter}`);
-    const bySource = await pool.query(`
+    const base = `
+      WITH combined AS (
+        SELECT host(i.ip::inet) AS observable, 'ip'::text AS observable_type, i.source_name, i.confidence, i.created_at
+        FROM ioc_ips i
+        UNION ALL
+        SELECT o.observable, o.observable_type, o.source_name, o.confidence, o.created_at
+        FROM ioc_observables o
+      ), filtered AS (
+        SELECT * FROM combined WHERE ${timeFilter}
+      )
+    `;
+
+    const totalQ = `${base} SELECT COUNT(*)::int AS count FROM filtered`;
+    const uniqueIpsQ = `${base} SELECT COUNT(DISTINCT observable)::int AS count FROM filtered WHERE observable_type = 'ip'`;
+    const bySourceQ = `${base}
       SELECT source_name, COUNT(*)::int AS count
-      FROM ioc_ips
-      WHERE ${timeFilter}
+      FROM filtered
       GROUP BY source_name
-      ORDER BY count DESC
-    `);
-    const byConfidence = await pool.query(`
+      ORDER BY count DESC`;
+    const byConfidenceQ = `${base}
       SELECT confidence, COUNT(*)::int AS count
-      FROM ioc_ips
-      WHERE ${timeFilter}
+      FROM filtered
       GROUP BY confidence
-      ORDER BY count DESC
-    `);
+      ORDER BY count DESC`;
+
+    const [total, uniqueIps, bySource, byConfidence] = await Promise.all([
+      pool.query(totalQ),
+      pool.query(uniqueIpsQ),
+      pool.query(bySourceQ),
+      pool.query(byConfidenceQ)
+    ]);
 
     res.json({
       total: total.rows[0].count,
