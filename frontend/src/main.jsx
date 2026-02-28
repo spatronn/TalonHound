@@ -341,7 +341,8 @@ function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
   const [recentRuns, setRecentRuns] = useState([]);
-  const [runningNow, setRunningNow] = useState(false);
+  const [runningNowAll, setRunningNowAll] = useState(false);
+  const [runningKeys, setRunningKeys] = useState({});
 
   async function load() {
     setLoading(true);
@@ -361,25 +362,54 @@ function IntegrationsPage() {
     load().catch(() => {});
   }, []);
 
-  async function runNow() {
-    if (runningNow) return;
-    setRunningNow(true);
+  async function runNowAll() {
+    if (runningNowAll) return;
+    setRunningNowAll(true);
     try {
-      await api.post('/integrations/et-blockrules/run-now');
+      await api.post('/integrations/run-now');
       await load();
-      alert('Run queued');
+      alert('All integrations queued');
     } catch {
-      alert('Failed to queue run');
+      alert('Failed to queue integrations');
     } finally {
-      setRunningNow(false);
+      setRunningNowAll(false);
+    }
+  }
+
+  async function runNowOne(key) {
+    if (runningKeys[key]) return;
+    setRunningKeys((prev) => ({ ...prev, [key]: true }));
+    try {
+      await api.post(`/integrations/${encodeURIComponent(key)}/run-now`);
+      await load();
+      alert(`${key} queued`);
+    } catch {
+      alert(`Failed to queue ${key}`);
+    } finally {
+      setRunningKeys((prev) => ({ ...prev, [key]: false }));
     }
   }
 
   const statusColor = (status) => {
     if (status === 'success') return '#166534';
-    if (status === 'failed') return '#991b1b';
+    if (status === 'failed' || status === 'fail') return '#991b1b';
     if (status === 'running') return '#92400e';
     return '#334155';
+  };
+
+  const statusLabel = (status) => {
+    if (status === 'success') return 'success';
+    if (status === 'failed' || status === 'fail') return 'fail';
+    if (status === 'running') return 'running';
+    return 'never';
+  };
+
+  const humanSchedule = (cron) => {
+    const c = String(cron || '').trim();
+    if (c === '0 * * * *') return 'Every hour';
+    if (c === '*/30 * * * *') return 'Every 30 minutes';
+    if (c === '*/15 * * * *') return 'Every 15 minutes';
+    return c || '-';
   };
 
   return (
@@ -388,7 +418,7 @@ function IntegrationsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations</h2>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={runNow} disabled={runningNow}>{runningNow ? 'Queueing...' : 'Run now'}</button>
+            <button onClick={runNowAll} disabled={runningNowAll}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
           </div>
         </div>
@@ -398,7 +428,7 @@ function IntegrationsPage() {
             <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th>Name</th><th>Source</th><th>Schedule</th><th>Last status</th><th>Last run start</th><th>Records</th>
+                  <th>Name</th><th>Source</th><th>Schedule</th><th>Last status</th><th>Last run start</th><th>Records</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -406,10 +436,15 @@ function IntegrationsPage() {
                   <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td>{i.name}</td>
                     <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
-                    <td><code>{i.schedule}</code></td>
-                    <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{i.last_status}</td>
+                    <td>{humanSchedule(i.schedule)}</td>
+                    <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(i.last_status)}</td>
                     <td>{formatUserDateTime(i.last_started_at)}</td>
                     <td>{i.last_records_processed ?? 0}</td>
+                    <td>
+                      <button onClick={() => runNowOne(i.key)} disabled={Boolean(runningKeys[i.key])}>
+                        {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -424,21 +459,20 @@ function IntegrationsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th>ID</th><th>Status</th><th>Started</th><th>Finished</th><th>Records</th><th>Error</th>
+                <th>ID</th><th>Status</th><th>Started</th><th>Finished</th><th>Records</th>
               </tr>
             </thead>
             <tbody>
               {recentRuns.length ? recentRuns.map((r) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td>{r.id}</td>
-                  <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{r.status}</td>
+                  <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.status)}</td>
                   <td>{formatUserDateTime(r.started_at)}</td>
                   <td>{formatUserDateTime(r.finished_at)}</td>
                   <td>{r.records_processed ?? 0}</td>
-                  <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.error_message || '-'}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>
+                <tr><td colSpan={5} style={{ color: '#64748b' }}>No runs yet</td></tr>
               )}
             </tbody>
           </table>

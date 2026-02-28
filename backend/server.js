@@ -145,10 +145,30 @@ app.get('/api/integrations', async (_req, res) => {
   }
 });
 
-app.post('/api/integrations/et-blockrules/run-now', async (_req, res) => {
+const INTEGRATION_JOBS = {
+  'et-blockrules': 'hourly-import'
+};
+
+app.post('/api/integrations/run-now', async (_req, res) => {
   try {
-    const job = await importQueue.add('hourly-import', { triggeredBy: 'manual-ui' });
-    return res.status(202).json({ ok: true, queued: true, job_id: job.id });
+    const keys = Object.keys(INTEGRATION_JOBS);
+    const jobs = await Promise.all(keys.map((key) => importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key })));
+    return res.status(202).json({ ok: true, queued: true, count: jobs.length, job_ids: jobs.map((j) => j.id) });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to queue integrations', detail: err.message });
+  }
+});
+
+app.post('/api/integrations/:key/run-now', async (req, res) => {
+  const { key } = req.params;
+  const jobName = INTEGRATION_JOBS[key];
+  if (!jobName) {
+    return res.status(404).json({ message: 'Integration not found' });
+  }
+
+  try {
+    const job = await importQueue.add(jobName, { triggeredBy: 'manual-ui-one', integration_key: key });
+    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
   }
