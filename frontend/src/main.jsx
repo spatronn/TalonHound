@@ -843,9 +843,9 @@ function IOCListPage() {
         <button onClick={() => { setSearch(''); setSourceFilter(''); setConfidenceFilter(''); setAsnFilter(''); setCountryFilter(''); setTimeRange('today'); setPage(1); }}>Clear</button>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#f8fafc' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <label style={{ fontSize: 14, color: '#334155' }}>Page size:</label>
+          <label style={{ fontSize: 14, color: '#cbd5e1' }}>Page size:</label>
           <select
             value={pageSize}
             onChange={(e) => {
@@ -853,7 +853,7 @@ function IOCListPage() {
               setPageSize(nextSize);
               setPage(1);
             }}
-            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', fontWeight: 600 }}
+            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0' }}
           >
             {[5, 10, 25, 100].map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -864,7 +864,7 @@ function IOCListPage() {
             Delete selected ({selectedIps.length})
           </button>
         </div>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
           Found <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span> IOC(s)
           <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
           Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
