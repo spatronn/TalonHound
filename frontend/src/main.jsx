@@ -742,7 +742,7 @@ function IOCListPage() {
 
   async function loadData(targetPage = page, targetSize = pageSize) {
     const [listRes, summaryRes] = await Promise.all([
-      api.get('/ioc/ip', {
+      api.get('/ioc/list', {
         params: {
           page: targetPage,
           page_size: targetSize,
@@ -818,7 +818,7 @@ function IOCListPage() {
       if (sortState.key === 'country') return String(r.country_code || '');
       if (sortState.key === 'source') return String((r.source_names && r.source_names[0]) || '');
       if (sortState.key === 'confidence') return String((r.confidence_set && r.confidence_set[0]) || '');
-      if (sortState.key === 'category') return String((r.category_set && r.category_set[0]) || '');
+      if (sortState.key === 'category') return String(r.observable_type || 'ip');
       if (sortState.key === 'timestamp') return new Date(r.last_seen_at || 0).getTime();
       return '';
     };
@@ -835,14 +835,15 @@ function IOCListPage() {
     return copy;
   }, [rows, sortState]);
 
-  const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIps.includes(r.ip));
+  const ipRowsOnPage = rows.filter((r) => (r.observable_type || 'ip') === 'ip');
+  const allOnPageSelected = ipRowsOnPage.length > 0 && ipRowsOnPage.every((r) => selectedIps.includes(r.ip));
 
   function toggleSelectAllOnPage() {
     if (allOnPageSelected) {
-      setSelectedIps((prev) => prev.filter((ip) => !rows.some((r) => r.ip === ip)));
+      setSelectedIps((prev) => prev.filter((ip) => !ipRowsOnPage.some((r) => r.ip === ip)));
       return;
     }
-    setSelectedIps((prev) => Array.from(new Set([...prev, ...rows.map((r) => r.ip)])));
+    setSelectedIps((prev) => Array.from(new Set([...prev, ...ipRowsOnPage.map((r) => r.ip)])));
   }
 
   function toggleRow(ip) {
@@ -1069,40 +1070,45 @@ function IOCListPage() {
                 #
                 <div onMouseDown={(e) => startResize('index', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
               </th>
-              <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IP{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Observable{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('asn')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>ASN{sortIndicator('asn')}<div onMouseDown={(e) => startResize('asn', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('country')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Country{sortIndicator('country')}<div onMouseDown={(e) => startResize('country', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Category{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
             {sortedRows.map((r, idx) => (
-              <tr key={r.ip} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <tr key={`${r.observable_type || 'ip'}:${r.observable || r.ip}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td>
                   <input
                     type="checkbox"
                     checked={selectedIps.includes(r.ip)}
                     onChange={() => toggleRow(r.ip)}
+                    disabled={(r.observable_type || 'ip') !== 'ip'}
                   />
                 </td>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.ip}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable || r.ip}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{r.asn ?? '-'}</td>
                 <td>{r.country_code || '-'}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit' }}>
-                    {(r.source_names && r.source_names[0]) || '-'}{r.source_count > 1 ? ` +${r.source_count - 1}` : ''}
-                  </button>
+                  {(r.observable_type || 'ip') === 'ip' ? (
+                    <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit' }}>
+                      {(r.source_names && r.source_names[0]) || '-'}{r.source_count > 1 ? ` +${r.source_count - 1}` : ''}
+                    </button>
+                  ) : (
+                    <span>{(r.source_names && r.source_names[0]) || '-'}</span>
+                  )}
                 </td>
                 <td><span style={confidenceBadgeStyle((r.confidence_set && r.confidence_set[0]) || 'low')}>{(r.confidence_set && r.confidence_set[0]) || 'low'}</span></td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.category_set && r.category_set[0]) || '-'}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(r.last_seen_at)}</td>
                 <td>
-                  <button onClick={() => deleteOne(r.ip)}>Delete</button>
+                  <button onClick={() => deleteOne(r.ip)} disabled={(r.observable_type || 'ip') !== 'ip'}>Delete</button>
                 </td>
               </tr>
             ))}

@@ -592,6 +592,131 @@ app.get('/api/ioc/ip', async (req, res) => {
   }
 });
 
+app.get('/api/ioc/list', async (req, res) => {
+  const { source_name, confidence, q, asn, country, day = 'today', page = '1', page_size = '5' } = req.query;
+  const allowedSizes = [5, 10, 25, 100];
+  const size = Number(page_size);
+  const currentPage = Math.max(Number(page) || 1, 1);
+  const limit = allowedSizes.includes(size) ? size : 5;
+  const offset = (currentPage - 1) * limit;
+
+  const filters = [];
+  const params = [];
+
+  if (day === 'today') {
+    filters.push(`created_at::date = CURRENT_DATE`);
+  } else if (day === '24h') {
+    filters.push(`created_at >= NOW() - INTERVAL '24 hours'`);
+  } else if (day === '7d') {
+    filters.push(`created_at >= NOW() - INTERVAL '7 days'`);
+  }
+
+  if (source_name) {
+    params.push(`%${source_name}%`);
+    filters.push(`source_name ILIKE $${params.length}`);
+  }
+
+  if (confidence) {
+    params.push(confidence);
+    filters.push(`confidence = $${params.length}`);
+  }
+
+  if (q) {
+    params.push(`%${q}%`);
+    filters.push(`(observable ILIKE $${params.length} OR source_name ILIKE $${params.length} OR COALESCE(category, '') ILIKE $${params.length})`);
+  }
+
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+  try {
+    const combinedBase = `
+      WITH combined AS (
+        SELECT
+          host(i.ip::inet) AS observable,
+          'ip'::text AS observable_type,
+          i.source_name,
+          i.confidence,
+          i.category,
+          i.created_at
+        FROM ioc_ips i
+        UNION ALL
+        SELECT
+          o.observable,
+          o.observable_type,
+          o.source_name,
+          o.confidence,
+          o.category,
+          o.created_at
+        FROM ioc_observables o
+      ), filtered AS (
+        SELECT *
+        FROM combined
+        ${where}
+      ), grouped AS (
+        SELECT
+          observable,
+          observable_type,
+          MIN(created_at) AS first_seen_at,
+          MAX(created_at) AS last_seen_at,
+          COUNT(*)::int AS source_count,
+          ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
+          ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
+          ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set
+        FROM filtered
+        GROUP BY observable, observable_type
+      )
+    `;
+
+    const asnValue = asn ? Number(asn) : null;
+    const countryValue = country ? `%${country}%` : null;
+
+    const countQ = `
+      ${combinedBase}
+      SELECT COUNT(*)::int AS total
+      FROM grouped g
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END
+      WHERE ($${params.length + 1}::int IS NULL OR c.asn = $${params.length + 1})
+        AND ($${params.length + 2}::text IS NULL OR c.country_code ILIKE $${params.length + 2})
+    `;
+
+    const listQ = `
+      ${combinedBase}
+      SELECT
+        g.*,
+        g.observable AS ip,
+        c.asn,
+        c.country_code,
+        c.as_name
+      FROM grouped g
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END
+      WHERE ($${params.length + 1}::int IS NULL OR c.asn = $${params.length + 1})
+        AND ($${params.length + 2}::text IS NULL OR c.country_code ILIKE $${params.length + 2})
+      ORDER BY g.last_seen_at DESC
+      LIMIT $${params.length + 3}
+      OFFSET $${params.length + 4}
+    `;
+
+    const [countRes, listRes] = await Promise.all([
+      pool.query(countQ, [...params, asnValue, countryValue]),
+      pool.query(listQ, [...params, asnValue, countryValue, limit, offset])
+    ]);
+
+    const total = countRes.rows[0]?.total || 0;
+
+    return res.json({
+      items: listRes.rows,
+      pagination: {
+        page: currentPage,
+        page_size: limit,
+        total,
+        total_pages: Math.max(Math.ceil(total / limit), 1)
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch IOC list', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/ip/sources', async (req, res) => {
   const { ip } = req.query;
   if (!ip) {
