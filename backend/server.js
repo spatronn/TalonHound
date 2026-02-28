@@ -133,7 +133,7 @@ async function ensureSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_created_at ON integration_runs (created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_status ON integration_runs (status)`);
   await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_ips_dedup_tuple
+    CREATE INDEX IF NOT EXISTS idx_ioc_ips_dedup_lookup
     ON ioc_ips (
       ip,
       source_name,

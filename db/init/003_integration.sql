@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS import_dedup (
   PRIMARY KEY (source_name, external_id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_ips_dedup_tuple
+CREATE INDEX IF NOT EXISTS idx_ioc_ips_dedup_lookup
 ON ioc_ips (
   ip,
   source_name,
