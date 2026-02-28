@@ -1,0 +1,15 @@
+{
+  "name": "demo-integration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scheduler": "node scheduler.js",
+    "worker": "node worker.js"
+  },
+  "dependencies": {
+    "bullmq": "^5.10.3",
+    "ioredis": "^5.4.1",
+    "pg": "^8.16.3"
+  }
+}
