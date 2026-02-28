@@ -98,36 +98,37 @@ app.get('/api/integrations', async (_req, res) => {
         ORDER BY job_type, started_at DESC
       )
       SELECT
-        'et-blockrules'::text AS key,
-        'EmergingThreats Blockrules'::text AS name,
-        'http://rules.emergingthreats.net/blockrules/'::text AS source_url,
-        '0 * * * *'::text AS schedule,
+        f.key,
+        f.name,
+        f.source_url,
+        f.schedule_cron AS schedule,
+        f.trust_level,
         COALESCE(l.status, 'never') AS last_status,
         l.started_at AS last_started_at,
         l.finished_at AS last_finished_at,
         COALESCE(l.records_processed, 0) AS last_records_processed,
         l.error_message AS last_error
-      FROM latest l
-      WHERE l.job_type = 'hourly_import'
-      UNION ALL
-      SELECT
-        'et-blockrules'::text AS key,
-        'EmergingThreats Blockrules'::text AS name,
-        'http://rules.emergingthreats.net/blockrules/'::text AS source_url,
-        '0 * * * *'::text AS schedule,
-        'never'::text AS last_status,
-        NULL::timestamptz AS last_started_at,
-        NULL::timestamptz AS last_finished_at,
-        0::int AS last_records_processed,
-        NULL::text AS last_error
-      WHERE NOT EXISTS (SELECT 1 FROM latest WHERE job_type = 'hourly_import')
+      FROM integration_feeds f
+      LEFT JOIN latest l
+        ON l.job_type = CASE WHEN f.key = 'et-blockrules' THEN 'hourly_import' ELSE f.key END
+      WHERE f.active = TRUE
+      ORDER BY f.name ASC
     `;
 
     const recentQ = `
-      SELECT id, job_type, status, started_at, finished_at, records_processed, error_message
-      FROM integration_runs
-      WHERE job_type = 'hourly_import'
-      ORDER BY started_at DESC
+      SELECT
+        r.id,
+        r.job_type,
+        r.status,
+        r.started_at,
+        r.finished_at,
+        r.records_processed,
+        COALESCE(f.key, CASE WHEN r.job_type = 'hourly_import' THEN 'et-blockrules' ELSE r.job_type END) AS integration_key,
+        COALESCE(f.name, CASE WHEN r.job_type = 'hourly_import' THEN 'EmergingThreats Blockrules' ELSE r.job_type END) AS integration_name
+      FROM integration_runs r
+      LEFT JOIN integration_feeds f
+        ON f.key = CASE WHEN r.job_type = 'hourly_import' THEN 'et-blockrules' ELSE r.job_type END
+      ORDER BY r.started_at DESC
       LIMIT 20
     `;
 
@@ -148,6 +149,8 @@ app.get('/api/integrations', async (_req, res) => {
 const INTEGRATION_JOBS = {
   'et-blockrules': 'hourly-import'
 };
+
+const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
 
 app.post('/api/integrations/run-now', async (_req, res) => {
   try {
@@ -171,6 +174,33 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
     return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
+  }
+});
+
+app.put('/api/integrations/:key/trust-level', async (req, res) => {
+  const { key } = req.params;
+  const trustLevel = String(req.body?.trust_level || '').trim();
+
+  if (!TRUST_LEVELS.has(trustLevel)) {
+    return res.status(400).json({ message: 'Invalid trust_level' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET trust_level = $2, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, trust_level`,
+      [key, trustLevel]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update trust level', detail: err.message });
   }
 });
 

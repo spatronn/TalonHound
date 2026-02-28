@@ -390,11 +390,26 @@ function IntegrationsPage() {
     }
   }
 
+  async function updateTrustLevel(key, trustLevel) {
+    try {
+      await api.put(`/integrations/${encodeURIComponent(key)}/trust-level`, { trust_level: trustLevel });
+      setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, trust_level: trustLevel } : i)));
+    } catch {
+      alert('Failed to update trust level');
+    }
+  }
+
   const statusColor = (status) => {
     if (status === 'success') return '#166534';
     if (status === 'failed' || status === 'fail') return '#991b1b';
     if (status === 'running') return '#92400e';
     return '#334155';
+  };
+
+  const trustLevelLabel = (value) => {
+    if (value === 'guvenilir') return 'Güvenilir';
+    if (value === 'orta') return 'Orta';
+    return 'Not Categorized';
   };
 
   const statusLabel = (status) => {
@@ -428,7 +443,7 @@ function IntegrationsPage() {
             <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th>Name</th><th>Source</th><th>Schedule</th><th>Last status</th><th>Last run start</th><th>Records</th><th>Action</th>
+                  <th>Name</th><th>Source</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Records</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -437,6 +452,17 @@ function IntegrationsPage() {
                     <td>{i.name}</td>
                     <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
                     <td>{humanSchedule(i.schedule)}</td>
+                    <td>
+                      <select
+                        value={i.trust_level || 'not_categorized'}
+                        onChange={(e) => updateTrustLevel(i.key, e.target.value)}
+                        style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+                      >
+                        <option value="guvenilir">Güvenilir</option>
+                        <option value="orta">Orta</option>
+                        <option value="not_categorized">Not Categorized</option>
+                      </select>
+                    </td>
                     <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(i.last_status)}</td>
                     <td>{formatUserDateTime(i.last_started_at)}</td>
                     <td>{i.last_records_processed ?? 0}</td>
@@ -459,20 +485,21 @@ function IntegrationsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th>ID</th><th>Status</th><th>Started</th><th>Finished</th><th>Records</th>
+                <th>ID</th><th>Integration</th><th>Status</th><th>Started</th><th>Finished</th><th>Records</th>
               </tr>
             </thead>
             <tbody>
               {recentRuns.length ? recentRuns.map((r) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td>{r.id}</td>
+                  <td>{r.integration_name || r.integration_key || '-'}</td>
                   <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.status)}</td>
                   <td>{formatUserDateTime(r.started_at)}</td>
                   <td>{formatUserDateTime(r.finished_at)}</td>
                   <td>{r.records_processed ?? 0}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} style={{ color: '#64748b' }}>No runs yet</td></tr>
+                <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>
               )}
             </tbody>
           </table>
