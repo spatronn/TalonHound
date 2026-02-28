@@ -579,7 +579,7 @@ function IntegrationsPage() {
                       <select
                         value={i.trust_level || 'not_categorized'}
                         onChange={(e) => updateTrustLevel(i.key, e.target.value)}
-                        style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
                       >
                         <option value="guvenilir">Reliable</option>
                         <option value="orta">Medium</option>
