@@ -21,8 +21,10 @@ function isIPv4(value) {
 
 function isCIDR(value) {
   const [ip, mask] = value.split('/');
-  if (!ip || mask == null) return false;
-  return isIPv4(ip) && Number.isInteger(Number(mask)) && Number(mask) >= 0 && Number(mask) <= 32;
+  if (!ip || mask == null || mask === '') return false;
+  if (!/^\d{1,2}$/.test(mask)) return false;
+  const n = Number(mask);
+  return isIPv4(ip) && Number.isInteger(n) && n >= 0 && n <= 32;
 }
 
 function extractIPs(text) {
@@ -250,11 +252,16 @@ export async function runUsomImport() {
       .map((x) => x.trim())
       .filter((x) => x && !x.startsWith('#'));
 
-    for (const observable of rows) {
+    for (const rawObservable of rows) {
+      const observable = rawObservable.trim();
+      const normalizedIp = observable.endsWith('/') ? observable.slice(0, -1) : observable;
+
       let observableType = 'domain';
-      if (isIPv4(observable) || isCIDR(observable)) observableType = 'ip';
+      if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
       else if (observable.includes(':')) observableType = 'ip6';
       else if (/^https?:\/\//i.test(observable)) observableType = 'url';
+
+      const finalObservable = observableType === 'ip' ? normalizedIp : observable;
 
       const sourceName = config.usomSourceName;
       const sourceUrl = config.usomApiUrl;
@@ -263,7 +270,7 @@ export async function runUsomImport() {
       const note = 'Auto-imported from USOM URL list';
 
       const okObs = await insertObservable(client, {
-        observable,
+        observable: finalObservable,
         observableType,
         sourceName,
         sourceUrl,
@@ -277,7 +284,7 @@ export async function runUsomImport() {
 
       if (observableType === 'ip') {
         await insertIoc(client, {
-          ip: observable,
+          ip: finalObservable,
           sourceName,
           sourceUrl,
           confidence,
