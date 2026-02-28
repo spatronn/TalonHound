@@ -806,7 +806,7 @@ function IOCListPage() {
               <th>
                 <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
               </th>
-              <th>#</th><th>IP</th><th>ASN</th><th>CC</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp</th><th>Action</th>
+              <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
