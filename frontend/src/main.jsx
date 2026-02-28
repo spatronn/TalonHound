@@ -959,21 +959,21 @@ function IOCListPage() {
       </div>
 
       {detailIp && (
-        <div style={{ marginTop: 14, border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#f8fafc' }}>
+        <div style={{ marginTop: 14, border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <b>Sources for {detailIp}</b>
             <button onClick={() => { setDetailIp(''); setDetailSources([]); }}>Close</button>
           </div>
           {detailLoading ? <div>Loading...</div> : (
-            <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+            <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13, background: '#0f172a', color: '#e2e8f0' }}>
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#111827' }}>
                   <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Reported At</th>
                 </tr>
               </thead>
               <tbody>
                 {detailSources.map((s) => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <tr key={s.id} style={{ borderBottom: '1px solid #334155' }}>
                     <td>{s.source_name}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{s.source_url || '-'}</td>
                     <td>{s.confidence || '-'}</td>
