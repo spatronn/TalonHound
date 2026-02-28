@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "migrate": "node migrate.js",
+    "start": "node migrate.js && node server.js"
   },
   "dependencies": {
     "bullmq": "^5.10.3",

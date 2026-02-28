@@ -77,72 +77,7 @@ async function refreshGeoCache(limit = 20000) {
   }
 }
 
-async function ensureSchema() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS user_preferences (
-      email TEXT PRIMARY KEY,
-      timezone TEXT NOT NULL DEFAULT 'UTC',
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS ioc_ip_geo_cache (
-      ip INET PRIMARY KEY,
-      country_code TEXT NOT NULL DEFAULT 'UN',
-      asn BIGINT,
-      as_name TEXT,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS integration_runs (
-      id BIGSERIAL PRIMARY KEY,
-      job_type TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
-      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      finished_at TIMESTAMPTZ,
-      records_processed INT NOT NULL DEFAULT 0,
-      error_message TEXT,
-      triggered_by TEXT NOT NULL DEFAULT 'scheduler',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS integration_checkpoints (
-      source_name TEXT PRIMARY KEY,
-      last_cursor TEXT,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS import_dedup (
-      source_name TEXT NOT NULL,
-      external_id TEXT NOT NULL,
-      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (source_name, external_id)
-    )
-  `);
-
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_ip_created_at ON ioc_ips (ip, created_at DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_created_at ON ioc_ips (created_at DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ip_geo_cache_country_code ON ioc_ip_geo_cache (country_code)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_created_at ON integration_runs (created_at DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_status ON integration_runs (status)`);
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_ioc_ips_dedup_lookup
-    ON ioc_ips (
-      ip,
-      source_name,
-      confidence,
-      COALESCE(category, ''),
-      COALESCE(source_url, '')
-    )
-  `);
-}
+// schema migrations are handled by migrate.js
 
 app.get('/health', async (_req, res) => {
   try {
@@ -685,17 +620,10 @@ app.get('/api/ioc/summary/today', async (req, res) => {
   }
 });
 
-ensureSchema()
-  .then(() => {
-    app.listen(port, () => {
-      console.log(`Backend listening on :${port}`);
-      refreshGeoCache(100000).catch(() => {});
-      setInterval(() => {
-        refreshGeoCache(20000).catch(() => {});
-      }, 60_000);
-    });
-  })
-  .catch((err) => {
-    console.error('Failed to initialize schema', err);
-    process.exit(1);
-  });
+app.listen(port, () => {
+  console.log(`Backend listening on :${port}`);
+  refreshGeoCache(100000).catch(() => {});
+  setInterval(() => {
+    refreshGeoCache(20000).catch(() => {});
+  }, 60_000);
+});
