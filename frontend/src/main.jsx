@@ -751,26 +751,26 @@ function IOCListPage() {
       <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
-        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', background: '#f8fafc' }}>
-          <div style={{ fontSize: 12, color: '#64748b' }}>Total</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{summary.total}</div>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Total</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total}</div>
         </div>
-        <div style={{ border: '1px solid #fecaca', borderRadius: 10, padding: '10px 12px', background: '#fff1f2' }}>
-          <div style={{ fontSize: 12, color: '#9f1239' }}>High</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#9f1239' }}>{confidenceCounts.high}</div>
+        <div style={{ border: '1px solid #7f1d1d', borderRadius: 10, padding: '10px 12px', background: '#2a0f14' }}>
+          <div style={{ fontSize: 12, color: '#fda4af' }}>High</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#fda4af' }}>{confidenceCounts.high}</div>
         </div>
-        <div style={{ border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', background: '#fffbeb' }}>
-          <div style={{ fontSize: 12, color: '#92400e' }}>Medium</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#92400e' }}>{confidenceCounts.medium}</div>
+        <div style={{ border: '1px solid #854d0e', borderRadius: 10, padding: '10px 12px', background: '#2b1f0d' }}>
+          <div style={{ fontSize: 12, color: '#fcd34d' }}>Medium</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#fcd34d' }}>{confidenceCounts.medium}</div>
         </div>
-        <div style={{ border: '1px solid #bbf7d0', borderRadius: 10, padding: '10px 12px', background: '#f0fdf4' }}>
-          <div style={{ fontSize: 12, color: '#166534' }}>Low</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#166534' }}>{confidenceCounts.low}</div>
+        <div style={{ border: '1px solid #14532d', borderRadius: 10, padding: '10px 12px', background: '#0f1f17' }}>
+          <div style={{ fontSize: 12, color: '#86efac' }}>Low</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{confidenceCounts.low}</div>
         </div>
       </div>
 
-      <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff' }}>
-        <div style={{ fontSize: 13, color: '#475569', marginBottom: 6 }}>Top sources</div>
+      <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
+        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Top sources</div>
         <div style={{ marginTop: 6, fontSize: 14 }}>
           {summary.by_source.length ? summary.by_source.slice(0, 6).map((s) => (
             <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: <b>{s.count}</b></span>
