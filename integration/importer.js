@@ -164,7 +164,7 @@ export async function runHourlyImport() {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('hourly_import', 'running', NOW(), 'scheduler')
+       VALUES ('hourly_import', 'running', clock_timestamp(), 'scheduler')
        RETURNING id`
     );
     runId = runInsert.rows[0].id;
@@ -212,7 +212,7 @@ export async function runHourlyImport() {
 
     await client.query(
       `UPDATE integration_runs
-       SET status='success', finished_at=NOW(), records_processed=$2
+       SET status='success', finished_at=clock_timestamp(), records_processed=$2
        WHERE id=$1`,
       [runId, inserted]
     );
@@ -225,7 +225,7 @@ export async function runHourlyImport() {
     if (runId) {
       await client.query(
         `UPDATE integration_runs
-         SET status='failed', finished_at=NOW(), error_message=$2
+         SET status='failed', finished_at=clock_timestamp(), error_message=$2
          WHERE id=$1`,
         [runId, String(err.message).slice(0, 4000)]
       );
@@ -258,7 +258,7 @@ export async function runUsomImport() {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('usom_import', 'running', NOW(), 'scheduler')
+       VALUES ('usom_import', 'running', clock_timestamp(), 'scheduler')
        RETURNING id`
     );
     runId = runInsert.rows[0].id;
@@ -291,7 +291,7 @@ export async function runUsomImport() {
     if (previousHash === currentHash) {
       await client.query(
         `UPDATE integration_runs
-         SET status='success', finished_at=NOW(), records_processed=0
+         SET status='success', finished_at=clock_timestamp(), records_processed=0
          WHERE id=$1`,
         [runId]
       );
@@ -362,7 +362,7 @@ export async function runUsomImport() {
 
     await client.query(
       `UPDATE integration_runs
-       SET status='success', finished_at=NOW(), records_processed=$2
+       SET status='success', finished_at=clock_timestamp(), records_processed=$2
        WHERE id=$1`,
       [runId, inserted]
     );
@@ -375,7 +375,7 @@ export async function runUsomImport() {
     if (runId) {
       await client.query(
         `UPDATE integration_runs
-         SET status='failed', finished_at=NOW(), error_message=$2
+         SET status='failed', finished_at=clock_timestamp(), error_message=$2
          WHERE id=$1`,
         [runId, String(err.message).slice(0, 4000)]
       );
