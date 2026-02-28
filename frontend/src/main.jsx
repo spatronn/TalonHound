@@ -253,7 +253,14 @@ function DashboardPage() {
     const geoName = p.name || p.ADMIN || 'Unknown';
     const key = normalizeName(geoName);
 
-    if (key.includes('unitedstates')) return countryCounts.US || 0;
+    if (
+      key === 'us'
+      || key === 'usa'
+      || key === 'unitedstates'
+      || key === 'unitedstatesofamerica'
+      || key.includes('unitedstates')
+    ) return countryCounts.US || 0;
+
     if (key.includes('russia') || key.includes('russianfederation')) return countryCounts.RU || 0;
     if (key.includes('iran')) return countryCounts.IR || 0;
     if (key.includes('korea')) return countryCounts.KR || 0;
