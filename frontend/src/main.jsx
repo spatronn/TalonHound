@@ -375,7 +375,8 @@ function IntegrationsPage() {
   }, []);
 
   async function runNowAll() {
-    if (runningNowAll) return;
+    const ok = window.confirm('All integrations will be queued now. Do you want to continue?');
+    if (!ok || runningNowAll) return;
     setRunningNowAll(true);
     try {
       await api.post('/integrations/run-now');
@@ -388,8 +389,9 @@ function IntegrationsPage() {
     }
   }
 
-  async function runNowOne(key) {
-    if (runningKeys[key]) return;
+  async function runNowOne(key, name) {
+    const ok = window.confirm(`Queue run for ${name || key} now?`);
+    if (!ok || runningKeys[key]) return;
     setRunningKeys((prev) => ({ ...prev, [key]: true }));
     try {
       await api.post(`/integrations/${encodeURIComponent(key)}/run-now`);
@@ -479,7 +481,7 @@ function IntegrationsPage() {
                     <td>{formatUserDateTime(i.last_started_at)}</td>
                     <td>{i.last_records_processed ?? 0}</td>
                     <td>
-                      <button onClick={() => runNowOne(i.key)} disabled={Boolean(runningKeys[i.key])}>
+                      <button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>
                         {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
                       </button>
                     </td>
