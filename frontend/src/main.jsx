@@ -886,7 +886,7 @@ function IOCListPage() {
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+        <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
             <col style={{ width: columnWidths.select }} />
             <col style={{ width: columnWidths.index }} />
@@ -1122,6 +1122,8 @@ function App() {
         thead tr { background: #1f2937 !important; }
         tbody tr { background: #111827 !important; }
         code { color: #93c5fd !important; }
+        .ioc-table th, .ioc-table td { border-right: 1px solid #334155; }
+        .ioc-table th:last-child, .ioc-table td:last-child { border-right: none; }
       `}</style>
       <BrowserRouter>
         <Routes>
