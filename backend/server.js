@@ -35,9 +35,21 @@ async function refreshGeoCache(limit = 20000) {
   try {
     const q = `
       WITH missing AS (
-        SELECT DISTINCT i.observable::inet AS ip
+        SELECT DISTINCT
+          CASE
+            WHEN i.observable_type = 'ip'
+              AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
+            THEN i.observable::inet
+            ELSE NULL
+          END AS ip
         FROM ioc_items i
-        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.observable::inet
+        LEFT JOIN ioc_ip_geo_cache c
+          ON c.ip = CASE
+            WHEN i.observable_type = 'ip'
+              AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
+            THEN i.observable::inet
+            ELSE NULL
+          END
         WHERE i.observable_type = 'ip' AND c.ip IS NULL
         LIMIT $1
       ), with_num AS (
@@ -596,7 +608,13 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
         COALESCE(c.country_code, 'UN') AS country_code,
         COUNT(*)::int AS total
       FROM ioc_items i
-      LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.observable::inet
+      LEFT JOIN ioc_ip_geo_cache c
+        ON c.ip = CASE
+          WHEN i.observable_type = 'ip'
+            AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
+          THEN i.observable::inet
+          ELSE NULL
+        END
       WHERE i.observable_type = 'ip'
       GROUP BY COALESCE(c.country_code, 'UN')
       ORDER BY total DESC
