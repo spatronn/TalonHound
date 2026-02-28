@@ -257,9 +257,9 @@ export async function runUsomImport() {
       const normalizedIp = observable.endsWith('/') ? observable.slice(0, -1) : observable;
 
       let observableType = 'domain';
-      if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
+      if (/^https?:\/\//i.test(observable)) observableType = 'url';
+      else if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
       else if (observable.includes(':')) observableType = 'ip6';
-      else if (/^https?:\/\//i.test(observable)) observableType = 'url';
 
       const finalObservable = observableType === 'ip' ? normalizedIp : observable;
 
