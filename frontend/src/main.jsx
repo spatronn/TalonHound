@@ -356,7 +356,7 @@ function IntegrationsPage() {
   const [tableSort, setTableSort] = useState({ integrations: { key: null, dir: null }, queue: { key: null, dir: null }, runs: { key: null, dir: null } });
   const [tableWidths, setTableWidths] = useState({
     i_name: 180, i_source: 260, i_added: 150, i_schedule: 120, i_trust: 140, i_status: 110, i_last: 150, i_total: 120, i_action: 110,
-    q_id: 140, q_name: 130, q_state: 90, q_queued: 150, q_reason: 260,
+    q_id: 120, q_integration: 160, q_name: 130, q_state: 90, q_queued: 150, q_reason: 230,
     r_id: 80, r_integration: 180, r_status: 100, r_started: 150, r_finished: 150, r_imported: 110
   });
   const [resizeState, setResizeState] = useState(null);
@@ -517,6 +517,7 @@ function IntegrationsPage() {
 
   const sortedQueue = useMemo(() => applySort(queue.jobs || [], 'queue', (x, k) => {
     if (k === 'id') return String(x.id || '');
+    if (k === 'integration') return x.integration_key || '';
     if (k === 'name') return x.name;
     if (k === 'state') return x.state;
     if (k === 'queued') return new Date(x.timestamp || 0).getTime();
@@ -609,11 +610,12 @@ function IntegrationsPage() {
         <div style={{ overflowX: 'auto' }}>
           <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
             <colgroup>
-              <col style={{ width: tableWidths.q_id }} /><col style={{ width: tableWidths.q_name }} /><col style={{ width: tableWidths.q_state }} /><col style={{ width: tableWidths.q_queued }} /><col style={{ width: tableWidths.q_reason }} />
+              <col style={{ width: tableWidths.q_id }} /><col style={{ width: tableWidths.q_integration }} /><col style={{ width: tableWidths.q_name }} /><col style={{ width: tableWidths.q_state }} /><col style={{ width: tableWidths.q_queued }} /><col style={{ width: tableWidths.q_reason }} />
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                 <th onClick={() => toggleSort('queue','id')} style={{ position: 'relative', cursor: 'pointer' }}>Job ID{indicator('queue','id')}<div onMouseDown={(e) => startResize('q_id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th onClick={() => toggleSort('queue','integration')} style={{ position: 'relative', cursor: 'pointer' }}>Integration{indicator('queue','integration')}<div onMouseDown={(e) => startResize('q_integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th onClick={() => toggleSort('queue','name')} style={{ position: 'relative', cursor: 'pointer' }}>Name{indicator('queue','name')}<div onMouseDown={(e) => startResize('q_name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th onClick={() => toggleSort('queue','state')} style={{ position: 'relative', cursor: 'pointer' }}>State{indicator('queue','state')}<div onMouseDown={(e) => startResize('q_state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th onClick={() => toggleSort('queue','queued')} style={{ position: 'relative', cursor: 'pointer' }}>Queued At{indicator('queue','queued')}<div onMouseDown={(e) => startResize('q_queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
@@ -624,13 +626,14 @@ function IntegrationsPage() {
               {sortedQueue.length ? sortedQueue.map((j) => (
                 <tr key={String(j.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.id}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.integration_key || '-'}</td>
                   <td>{j.name}</td>
                   <td>{j.state}</td>
                   <td>{formatUserDateTime(j.timestamp)}</td>
                   <td style={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.failed_reason || '-'}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} style={{ color: '#64748b' }}>No queued jobs</td></tr>
+                <tr><td colSpan={6} style={{ color: '#64748b' }}>No queued jobs</td></tr>
               )}
             </tbody>
           </table>

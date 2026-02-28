@@ -177,7 +177,7 @@ app.get('/api/integrations', async (_req, res) => {
           GROUP BY status
         `),
         pool.query(`
-          SELECT job_id AS id, job_name AS name, status AS state, queued_at AS timestamp, error_message AS failed_reason
+          SELECT job_id AS id, integration_key, job_name AS name, status AS state, queued_at AS timestamp, error_message AS failed_reason
           FROM integration_queue_jobs
           ORDER BY queued_at DESC
           LIMIT 30
