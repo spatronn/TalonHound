@@ -1,6 +1,7 @@
-INSERT INTO integration_feeds (key, name, source_url, schedule_cron, trust_level, active)
+INSERT INTO integration_feeds (key, integration_id, name, source_url, schedule_cron, trust_level, active)
 VALUES (
   'urlhaus-abusech',
+  gen_random_uuid(),
   'URLhaus abuse.ch',
   'https://urlhaus.abuse.ch/downloads/text/',
   '0 * * * *',
