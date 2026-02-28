@@ -599,7 +599,7 @@ app.get('/api/ioc/ip/recent-raw', async (req, res) => {
 
   try {
     const q = `
-      WITH ip_items AS (
+      WITH ip_recent AS (
         SELECT
           i.id,
           host(i.ip::inet) AS observable,
@@ -608,25 +608,14 @@ app.get('/api/ioc/ip/recent-raw', async (req, res) => {
           i.confidence,
           i.category,
           i.created_at,
-          a.asn,
-          a.country_code,
-          a.as_name
+          c.asn,
+          c.country_code,
+          c.as_name
         FROM ioc_ips i
-        CROSS JOIN LATERAL (
-          SELECT
-            ((split_part(host(i.ip::inet), '.', 1)::bigint << 24)
-            + (split_part(host(i.ip::inet), '.', 2)::bigint << 16)
-            + (split_part(host(i.ip::inet), '.', 3)::bigint << 8)
-            +  split_part(host(i.ip::inet), '.', 4)::bigint) AS ip_num
-        ) ipn
-        LEFT JOIN LATERAL (
-          SELECT r.asn, r.country_code, r.as_name
-          FROM asn_ipv4_ranges r
-          WHERE ipn.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-          ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-          LIMIT 1
-        ) a ON TRUE
-      ), obs_items AS (
+        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
+        ORDER BY i.created_at DESC
+        LIMIT ($1 * 5)
+      ), obs_recent AS (
         SELECT
           o.id,
           o.observable,
@@ -639,12 +628,14 @@ app.get('/api/ioc/ip/recent-raw', async (req, res) => {
           NULL::text AS country_code,
           NULL::text AS as_name
         FROM ioc_observables o
+        ORDER BY o.created_at DESC
+        LIMIT ($1 * 5)
       )
       SELECT *
       FROM (
-        SELECT * FROM ip_items
+        SELECT * FROM ip_recent
         UNION ALL
-        SELECT * FROM obs_items
+        SELECT * FROM obs_recent
       ) all_items
       ORDER BY created_at DESC
       LIMIT $1
