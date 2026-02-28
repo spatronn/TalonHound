@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { createHash } from 'node:crypto';
 import { config } from './config.js';
 
 const { Pool } = pg;
@@ -61,6 +62,27 @@ function mapUsomConfidence(level) {
   if (n <= 3) return 'high';
   if (n <= 6) return 'medium';
   return 'low';
+}
+
+function classifyUsomObservable(rawObservable) {
+  const observable = String(rawObservable || '').trim();
+  if (!observable || observable.startsWith('#')) return null;
+
+  const normalizedIp = observable.endsWith('/') ? observable.slice(0, -1) : observable;
+
+  let observableType = 'domain';
+  if (/^https?:\/\//i.test(observable)) observableType = 'url';
+  else if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
+  else if (observable.includes(':')) observableType = 'ip6';
+
+  return {
+    observable: observableType === 'ip' ? normalizedIp : observable,
+    observableType
+  };
+}
+
+function hashEntries(entries) {
+  return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
 }
 
 async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
@@ -247,22 +269,49 @@ export async function runUsomImport() {
     if (!res.ok) throw new Error(`USOM URL list request failed: ${res.status}`);
     const txt = await res.text();
 
-    const rows = txt
+    const entries = txt
       .split(/\r?\n/)
-      .map((x) => x.trim())
-      .filter((x) => x && !x.startsWith('#'));
+      .map((line) => classifyUsomObservable(line))
+      .filter(Boolean)
+      .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
 
-    for (const rawObservable of rows) {
-      const observable = rawObservable.trim();
-      const normalizedIp = observable.endsWith('/') ? observable.slice(0, -1) : observable;
+    const currentHash = hashEntries(entries);
 
-      let observableType = 'domain';
-      if (/^https?:\/\//i.test(observable)) observableType = 'url';
-      else if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
-      else if (observable.includes(':')) observableType = 'ip6';
+    const prevState = await client.query(
+      `SELECT content_hash, items_json
+       FROM integration_source_state
+       WHERE source_name = $1`,
+      [config.usomSourceName]
+    );
 
-      const finalObservable = observableType === 'ip' ? normalizedIp : observable;
+    const previousHash = prevState.rows[0]?.content_hash || null;
+    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
+    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
 
+    if (previousHash === currentHash) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='success', finished_at=NOW(), records_processed=0
+         WHERE id=$1`,
+        [runId]
+      );
+
+      await client.query(
+        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (source_name)
+         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+        [config.usomSourceName, `hash:${currentHash}`]
+      );
+
+      await client.query('COMMIT');
+      return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
+    }
+
+    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+
+    for (const entry of addedEntries) {
+      const { observable, observableType } = entry;
       const sourceName = config.usomSourceName;
       const sourceUrl = config.usomApiUrl;
       const confidence = 'medium';
@@ -270,7 +319,7 @@ export async function runUsomImport() {
       const note = 'Auto-imported from USOM URL list';
 
       const okObs = await insertObservable(client, {
-        observable: finalObservable,
+        observable,
         observableType,
         sourceName,
         sourceUrl,
@@ -284,7 +333,7 @@ export async function runUsomImport() {
 
       if (observableType === 'ip') {
         await insertIoc(client, {
-          ip: finalObservable,
+          ip: observable,
           sourceName,
           sourceUrl,
           confidence,
@@ -294,6 +343,14 @@ export async function runUsomImport() {
         });
       }
     }
+
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+      [config.usomSourceName, currentHash, JSON.stringify(entries)]
+    );
 
     await client.query(
       `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)

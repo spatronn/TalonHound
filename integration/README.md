@@ -4,6 +4,7 @@ Queue + worker based hourly import service.
 
 Current source policy: import `.rules` and `.txt`, but skip `*.suricata.rules` to reduce duplicate data.
 USOM policy: import indicators from `https://www.usom.gov.tr/url-list.txt` into `ioc_observables`; IPv4 entries are also mirrored into `ioc_ips` for existing IOC map/list screens.
+USOM optimization: source hash + diff ingest (`integration_source_state`) — unchanged feed is skipped, changed feed ingests only newly added indicators.
 
 ## Components
 
