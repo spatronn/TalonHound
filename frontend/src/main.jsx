@@ -454,7 +454,7 @@ function IntegrationsPage() {
 
         {loading ? <div>Loading...</div> : (
           <div style={{ overflowX: 'auto' }}>
-            <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
+            <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                   <th>Name</th><th>Source</th><th>Added At</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Total Records</th><th>Action</th>
@@ -503,7 +503,7 @@ function IntegrationsPage() {
           <span>Failed: <b>{queue.counts?.failed || 0}</b></span>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
+          <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                 <th>Job ID</th><th>Name</th><th>State</th><th>Queued At</th><th>Reason</th>
@@ -529,7 +529,7 @@ function IntegrationsPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
         <h3 style={{ marginTop: 0 }}>Recent runs</h3>
         <div style={{ overflowX: 'auto' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
+          <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                 <th>ID</th><th>Integration</th><th>Status</th><th>Started</th><th>Finished</th><th>Imported</th>
@@ -1097,7 +1097,7 @@ function IOCAddPage() {
 
       <h3>Last 10 IOC entries</h3>
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 860, background: '#fff' }}>
+        <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 860, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
               <th>#</th><th>Observable</th><th>Type</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Timestamp (UTC)</th>
