@@ -426,7 +426,15 @@ app.get('/api/ioc/list', async (req, res) => {
   }
 
   if (q) {
-    params.push(`%${q}%`);
+    const qv = String(q).trim();
+    if (qv.length < 3) {
+      return res.json({
+        items: [],
+        pagination: { page: currentPage, page_size: limit, total: 0, total_pages: 1 },
+        note: 'Search term must be at least 3 characters'
+      });
+    }
+    params.push(`%${qv}%`);
     filters.push(`(observable ILIKE $${params.length} OR source_name ILIKE $${params.length} OR COALESCE(category, '') ILIKE $${params.length})`);
   }
 
