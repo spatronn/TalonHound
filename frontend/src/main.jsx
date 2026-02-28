@@ -457,7 +457,7 @@ function IntegrationsPage() {
             <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th>Name</th><th>Source</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Records</th><th>Action</th>
+                  <th>Name</th><th>Source</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Total Records</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -479,7 +479,7 @@ function IntegrationsPage() {
                     </td>
                     <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(i.last_status)}</td>
                     <td>{formatUserDateTime(i.last_started_at)}</td>
-                    <td>{i.last_records_processed ?? 0}</td>
+                    <td>{i.total_records ?? 0}</td>
                     <td>
                       <button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>
                         {runningKeys[i.key] ? 'Queueing...' : 'Run now'}

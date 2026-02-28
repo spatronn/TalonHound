@@ -107,6 +107,15 @@ app.get('/api/integrations', async (_req, res) => {
         l.started_at AS last_started_at,
         l.finished_at AS last_finished_at,
         COALESCE(l.records_processed, 0) AS last_records_processed,
+        CASE
+          WHEN f.key = 'et-blockrules' THEN (
+            SELECT COUNT(*)::int FROM ioc_ips i WHERE i.source_name LIKE 'EmergingThreats:%'
+          )
+          WHEN f.key = 'usom-trcert' THEN (
+            SELECT COUNT(*)::int FROM ioc_observables o WHERE o.source_name = 'USOM:TR-CERT'
+          )
+          ELSE 0
+        END AS total_records,
         l.error_message AS last_error
       FROM integration_feeds f
       LEFT JOIN latest l
