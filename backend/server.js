@@ -637,19 +637,26 @@ app.get('/api/ioc/summary/today', async (req, res) => {
       FROM filtered
       GROUP BY confidence
       ORDER BY count DESC`;
+    const byTypeQ = `${base}
+      SELECT observable_type, COUNT(*)::int AS count
+      FROM filtered
+      GROUP BY observable_type
+      ORDER BY count DESC`;
 
-    const [total, uniqueIps, bySource, byConfidence] = await Promise.all([
+    const [total, uniqueIps, bySource, byConfidence, byType] = await Promise.all([
       pool.query(totalQ),
       pool.query(uniqueIpsQ),
       pool.query(bySourceQ),
-      pool.query(byConfidenceQ)
+      pool.query(byConfidenceQ),
+      pool.query(byTypeQ)
     ]);
 
     res.json({
       total: total.rows[0].count,
       unique_ips: uniqueIps.rows[0].count,
       by_source: bySource.rows,
-      by_confidence: byConfidence.rows
+      by_confidence: byConfidence.rows,
+      by_type: byType.rows
     });
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch summary', detail: err.message });

@@ -835,10 +835,11 @@ function IOCListPage() {
     }
   }
 
-  const confidenceCounts = {
-    high: summary.by_confidence.find((x) => x.confidence === 'high')?.count || 0,
-    medium: summary.by_confidence.find((x) => x.confidence === 'medium')?.count || 0,
-    low: summary.by_confidence.find((x) => x.confidence === 'low')?.count || 0
+  const typeCounts = {
+    ip: summary.by_type?.find((x) => x.observable_type === 'ip')?.count || 0,
+    url: summary.by_type?.find((x) => x.observable_type === 'url')?.count || 0,
+    domain: summary.by_type?.find((x) => x.observable_type === 'domain')?.count || 0,
+    ip6: summary.by_type?.find((x) => x.observable_type === 'ip6')?.count || 0
   };
 
   const confidenceBadgeStyle = (confidence) => ({
@@ -863,20 +864,20 @@ function IOCListPage() {
           <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total}</div>
         </div>
         <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>Unique IPs</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.unique_ips || 0}</div>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>IP</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.ip}</div>
         </div>
-        <div style={{ border: '1px solid #7f1d1d', borderRadius: 10, padding: '10px 12px', background: '#2a0f14' }}>
-          <div style={{ fontSize: 12, color: '#fda4af' }}>High</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#fda4af' }}>{confidenceCounts.high}</div>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>URL</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.url}</div>
         </div>
-        <div style={{ border: '1px solid #854d0e', borderRadius: 10, padding: '10px 12px', background: '#2b1f0d' }}>
-          <div style={{ fontSize: 12, color: '#fcd34d' }}>Medium</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#fcd34d' }}>{confidenceCounts.medium}</div>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Domain</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.domain}</div>
         </div>
-        <div style={{ border: '1px solid #14532d', borderRadius: 10, padding: '10px 12px', background: '#0f1f17' }}>
-          <div style={{ fontSize: 12, color: '#86efac' }}>Low</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{confidenceCounts.low}</div>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>IPv6</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.ip6}</div>
         </div>
       </div>
 
