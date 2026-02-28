@@ -407,8 +407,8 @@ function IntegrationsPage() {
   };
 
   const trustLevelLabel = (value) => {
-    if (value === 'guvenilir') return 'Güvenilir';
-    if (value === 'orta') return 'Orta';
+    if (value === 'guvenilir') return 'Reliable';
+    if (value === 'orta') return 'Medium';
     return 'Not Categorized';
   };
 
@@ -458,8 +458,8 @@ function IntegrationsPage() {
                         onChange={(e) => updateTrustLevel(i.key, e.target.value)}
                         style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1' }}
                       >
-                        <option value="guvenilir">Güvenilir</option>
-                        <option value="orta">Orta</option>
+                        <option value="guvenilir">Reliable</option>
+                        <option value="orta">Medium</option>
                         <option value="not_categorized">Not Categorized</option>
                       </select>
                     </td>
