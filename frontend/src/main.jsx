@@ -350,6 +350,7 @@ function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
   const [recentRuns, setRecentRuns] = useState([]);
+  const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
 
@@ -359,9 +360,11 @@ function IntegrationsPage() {
       const { data } = await api.get('/integrations');
       setIntegrations(data?.integrations || []);
       setRecentRuns(data?.recent_runs || []);
+      setQueue(data?.queue || { counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
     } catch {
       setIntegrations([]);
       setRecentRuns([]);
+      setQueue({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
     } finally {
       setLoading(false);
     }
@@ -486,6 +489,37 @@ function IntegrationsPage() {
             </table>
           </div>
         )}
+      </section>
+
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
+        <h3 style={{ marginTop: 0 }}>Queue status</h3>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, fontSize: 14 }}>
+          <span>Waiting: <b>{queue.counts?.waiting || 0}</b></span>
+          <span>Active: <b>{queue.counts?.active || 0}</b></span>
+          <span>Delayed: <b>{queue.counts?.delayed || 0}</b></span>
+          <span>Failed: <b>{queue.counts?.failed || 0}</b></span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+                <th>Job ID</th><th>Name</th><th>State</th><th>Queued At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {queue.jobs?.length ? queue.jobs.map((j) => (
+                <tr key={String(j.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td>{j.id}</td>
+                  <td>{j.name}</td>
+                  <td>{j.state}</td>
+                  <td>{formatUserDateTime(j.timestamp)}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={4} style={{ color: '#64748b' }}>No queued jobs</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>

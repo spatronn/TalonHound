@@ -153,9 +153,35 @@ app.get('/api/integrations', async (_req, res) => {
       pool.query(recentQ)
     ]);
 
+    let queue = {
+      counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 },
+      jobs: []
+    };
+
+    try {
+      const [counts, jobs] = await Promise.all([
+        importQueue.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed'),
+        importQueue.getJobs(['waiting', 'active', 'delayed'], 0, 20, true)
+      ]);
+
+      queue = {
+        counts,
+        jobs: jobs.map((j) => ({
+          id: j.id,
+          name: j.name,
+          state: j.finishedOn ? 'completed' : (j.processedOn ? 'active' : 'waiting'),
+          timestamp: j.timestamp,
+          data: j.data || {}
+        }))
+      };
+    } catch {
+      // queue telemetry optional
+    }
+
     return res.json({
       integrations: integrationsRes.rows,
-      recent_runs: recentRes.rows
+      recent_runs: recentRes.rows,
+      queue
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch integrations', detail: err.message });
