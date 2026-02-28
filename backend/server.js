@@ -581,40 +581,23 @@ app.post('/api/ioc/ip/bulk-delete', async (req, res) => {
   }
 });
 
-app.get('/api/ioc/map/countries', async (req, res) => {
-  const { day = 'all' } = req.query;
-  let timeFilter = `TRUE`;
-
-  if (day === 'today') {
-    timeFilter = `i.created_at::date = CURRENT_DATE`;
-  } else if (day === '24h') {
-    timeFilter = `i.created_at >= NOW() - INTERVAL '24 hours'`;
-  } else if (day === '7d') {
-    timeFilter = `i.created_at >= NOW() - INTERVAL '7 days'`;
-  }
-
+app.get('/api/ioc/map/countries', async (_req, res) => {
   try {
     refreshGeoCache(50000).catch(() => {});
 
     const q = `
-      WITH filtered_ips AS (
-        SELECT DISTINCT i.ip
-        FROM ioc_ips i
-        WHERE ${timeFilter}
-      )
       SELECT
         COALESCE(c.country_code, 'UN') AS country_code,
         COUNT(*)::int AS total
-      FROM filtered_ips f
-      LEFT JOIN ioc_ip_geo_cache c ON c.ip = f.ip
+      FROM ioc_ips i
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
       GROUP BY COALESCE(c.country_code, 'UN')
       ORDER BY total DESC
     `;
 
     const totalQ = `
-      SELECT COUNT(DISTINCT ip)::int AS total
-      FROM ioc_ips i
-      WHERE ${timeFilter}
+      SELECT COUNT(*)::int AS total
+      FROM ioc_ips
     `;
 
     const [{ rows: byCountry }, { rows: totals }] = await Promise.all([
