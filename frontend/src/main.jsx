@@ -714,6 +714,7 @@ function IOCListPage() {
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [columnWidths, setColumnWidths] = useState({
     index: 52,
@@ -896,14 +897,17 @@ function IOCListPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
         <input
           placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)"
-          value={search}
-          onChange={(e) => {
-            setPage(1);
-            setSearch(e.target.value);
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              setPage(1);
+              setSearch(searchInput.trim());
+            }
           }}
         />
-        <button onClick={() => { setPage(1); loadData(1, pageSize).catch(() => {}); }}>Search</button>
-        <button onClick={() => { setSearch(''); setPage(1); }}>Clear</button>
+        <button onClick={() => { setPage(1); setSearch(searchInput.trim()); }}>Search</button>
+        <button onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }}>Clear</button>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
