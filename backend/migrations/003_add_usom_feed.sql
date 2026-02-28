@@ -2,7 +2,7 @@ INSERT INTO integration_feeds (key, name, source_url, schedule_cron, trust_level
 VALUES (
   'usom-trcert',
   'USOM TR-CERT',
-  'https://www.usom.gov.tr/api/address/index',
+  'https://www.usom.gov.tr/url-list.txt',
   '0 * * * *',
   'guvenilir',
   TRUE

@@ -239,66 +239,52 @@ export async function runUsomImport() {
     );
     runId = runInsert.rows[0].id;
 
-    let page = 0;
-    let pageCount = 1;
     let inserted = 0;
 
-    const usomTypes = ['ip', 'domain', 'url', 'ip6', 'ip6net'];
+    const res = await fetch(config.usomApiUrl);
+    if (!res.ok) throw new Error(`USOM URL list request failed: ${res.status}`);
+    const txt = await res.text();
 
-    for (const usomType of usomTypes) {
-      page = 0;
-      pageCount = 1;
+    const rows = txt
+      .split(/\r?\n/)
+      .map((x) => x.trim())
+      .filter((x) => x && !x.startsWith('#'));
 
-      while (page < pageCount) {
-        const url = new URL(config.usomApiUrl);
-        url.searchParams.set('type', usomType);
-        url.searchParams.set('page', String(page));
+    for (const observable of rows) {
+      let observableType = 'domain';
+      if (isIPv4(observable) || isCIDR(observable)) observableType = 'ip';
+      else if (observable.includes(':')) observableType = 'ip6';
+      else if (/^https?:\/\//i.test(observable)) observableType = 'url';
 
-        const res = await fetch(url.toString());
-        if (!res.ok) throw new Error(`USOM API request failed (${usomType}): ${res.status}`);
-        const data = await res.json();
+      const sourceName = config.usomSourceName;
+      const sourceUrl = config.usomApiUrl;
+      const confidence = 'medium';
+      const category = 'threat-intel';
+      const note = 'Auto-imported from USOM URL list';
 
-        pageCount = Number(data?.pageCount || 1);
-        const models = Array.isArray(data?.models) ? data.models : [];
+      const okObs = await insertObservable(client, {
+        observable,
+        observableType,
+        sourceName,
+        sourceUrl,
+        confidence,
+        category,
+        note,
+        dedupSource: config.usomSourceName
+      });
 
-        for (const m of models) {
-          const observable = String(m?.url || '').trim();
-          if (!observable) continue;
+      if (okObs) inserted += 1;
 
-          const sourceName = config.usomSourceName;
-          const sourceUrl = 'https://www.usom.gov.tr/api/address/index';
-          const confidence = mapUsomConfidence(m?.criticality_level);
-          const category = m?.desc ? String(m.desc).toLowerCase().replace(/\s+/g, '-').slice(0, 100) : 'threat-intel';
-          const note = `Auto-imported from USOM API (id=${m?.id ?? '-'}, type=${m?.type ?? usomType})`;
-
-          const okObs = await insertObservable(client, {
-            observable,
-            observableType: usomType,
-            sourceName,
-            sourceUrl,
-            confidence,
-            category,
-            note,
-            dedupSource: config.usomSourceName
-          });
-
-          if (okObs) inserted += 1;
-
-          if (usomType === 'ip') {
-            await insertIoc(client, {
-              ip: observable,
-              sourceName,
-              sourceUrl,
-              confidence,
-              category,
-              note,
-              dedupSource: `${config.usomSourceName}:ip-db`
-            });
-          }
-        }
-
-        page += 1;
-        if (page > 1000) break;
+      if (observableType === 'ip') {
+        await insertIoc(client, {
+          ip: observable,
+          sourceName,
+          sourceUrl,
+          confidence,
+          category,
+          note,
+          dedupSource: `${config.usomSourceName}:ip-db`
+        });
       }
     }
 
