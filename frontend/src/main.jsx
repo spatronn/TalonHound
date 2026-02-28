@@ -775,10 +775,13 @@ function IOCListPage() {
       </div>
 
       <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
-        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 6 }}>Top sources</div>
-        <div style={{ marginTop: 6, fontSize: 14 }}>
-          {summary.by_source.length ? summary.by_source.slice(0, 6).map((s) => (
-            <span key={s.source_name} style={{ marginRight: 12 }}>{s.source_name}: <b>{s.count}</b></span>
+        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Top 5 sources</div>
+        <div style={{ marginTop: 6, fontSize: 14, display: 'grid', gap: 6 }}>
+          {summary.by_source.length ? summary.by_source.slice(0, 5).map((s, idx) => (
+            <div key={s.source_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>
+              <span style={{ color: '#cbd5e1' }}>{idx + 1}. {s.source_name}</span>
+              <b style={{ color: '#e2e8f0' }}>{s.count}</b>
+            </div>
           )) : <span style={{ color: '#94a3b8' }}>No data</span>}
         </div>
       </div>
