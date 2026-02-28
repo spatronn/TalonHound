@@ -457,7 +457,7 @@ function IntegrationsPage() {
             <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th>Name</th><th>Source</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Total Records</th><th>Action</th>
+                  <th>Name</th><th>Source</th><th>Added At</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Total Records</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -465,6 +465,7 @@ function IntegrationsPage() {
                   <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td>{i.name}</td>
                     <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
+                    <td>{formatUserDateTime(i.created_at)}</td>
                     <td>{humanSchedule(i.schedule)}</td>
                     <td>
                       <select

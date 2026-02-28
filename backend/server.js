@@ -103,6 +103,7 @@ app.get('/api/integrations', async (_req, res) => {
         f.source_url,
         f.schedule_cron AS schedule,
         f.trust_level,
+        f.created_at,
         COALESCE(l.status, 'never') AS last_status,
         l.started_at AS last_started_at,
         l.finished_at AS last_finished_at,
