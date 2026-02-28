@@ -244,15 +244,11 @@ export async function runHourlyImport() {
 
 export async function runUsomImport() {
   const client = await pool.connect();
-  const startedAt = new Date();
   let runId = null;
 
   try {
-    await client.query('BEGIN');
-
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942002) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
-      await client.query('ROLLBACK');
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
@@ -304,43 +300,53 @@ export async function runUsomImport() {
         [config.usomSourceName, `hash:${currentHash}`]
       );
 
-      await client.query('COMMIT');
       return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
     }
 
     const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    const batchSize = Number(process.env.USOM_BATCH_SIZE || 1000);
 
-    for (const entry of addedEntries) {
-      const { observable, observableType } = entry;
-      const sourceName = config.usomSourceName;
-      const sourceUrl = config.usomApiUrl;
-      const confidence = 'medium';
-      const category = 'threat-intel';
-      const note = 'Auto-imported from USOM URL list';
+    for (let i = 0; i < addedEntries.length; i += batchSize) {
+      const batch = addedEntries.slice(i, i + batchSize);
+      await client.query('BEGIN');
+      try {
+        for (const entry of batch) {
+          const { observable, observableType } = entry;
+          const sourceName = config.usomSourceName;
+          const sourceUrl = config.usomApiUrl;
+          const confidence = 'medium';
+          const category = 'threat-intel';
+          const note = 'Auto-imported from USOM URL list';
 
-      const okObs = await insertObservable(client, {
-        observable,
-        observableType,
-        sourceName,
-        sourceUrl,
-        confidence,
-        category,
-        note,
-        dedupSource: config.usomSourceName
-      });
+          const okObs = await insertObservable(client, {
+            observable,
+            observableType,
+            sourceName,
+            sourceUrl,
+            confidence,
+            category,
+            note,
+            dedupSource: config.usomSourceName
+          });
 
-      if (okObs) inserted += 1;
+          if (okObs) inserted += 1;
 
-      if (observableType === 'ip') {
-        await insertIoc(client, {
-          ip: observable,
-          sourceName,
-          sourceUrl,
-          confidence,
-          category,
-          note,
-          dedupSource: `${config.usomSourceName}:ip-db`
-        });
+          if (observableType === 'ip') {
+            await insertIoc(client, {
+              ip: observable,
+              sourceName,
+              sourceUrl,
+              confidence,
+              category,
+              note,
+              dedupSource: `${config.usomSourceName}:ip-db`
+            });
+          }
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
       }
     }
 
@@ -357,7 +363,7 @@ export async function runUsomImport() {
        VALUES ($1, $2, NOW())
        ON CONFLICT (source_name)
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-      [config.usomSourceName, startedAt.toISOString()]
+      [config.usomSourceName, `hash:${currentHash}`]
     );
 
     await client.query(
@@ -367,11 +373,8 @@ export async function runUsomImport() {
       [runId, inserted]
     );
 
-    await client.query('COMMIT');
     return { ok: true, runId, recordsProcessed: inserted };
   } catch (err) {
-    await client.query('ROLLBACK');
-
     if (runId) {
       await client.query(
         `UPDATE integration_runs
