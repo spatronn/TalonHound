@@ -594,7 +594,7 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
   }
 });
 
-app.get('/api/ioc/ip/recent-raw', async (req, res) => {
+app.get('/api/ioc/recent', async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 100);
 
   try {
