@@ -161,7 +161,7 @@ app.get('/api/integrations', async (_req, res) => {
     try {
       const [counts, jobs] = await Promise.all([
         importQueue.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed'),
-        importQueue.getJobs(['waiting', 'active', 'delayed'], 0, 20, true)
+        importQueue.getJobs(['waiting', 'active', 'delayed', 'failed'], 0, 30, true)
       ]);
 
       queue = {
@@ -169,8 +169,9 @@ app.get('/api/integrations', async (_req, res) => {
         jobs: jobs.map((j) => ({
           id: j.id,
           name: j.name,
-          state: j.finishedOn ? 'completed' : (j.processedOn ? 'active' : 'waiting'),
+          state: j.failedReason ? 'failed' : (j.finishedOn ? 'completed' : (j.processedOn ? 'active' : 'waiting')),
           timestamp: j.timestamp,
+          failed_reason: j.failedReason || null,
           data: j.data || {}
         }))
       };

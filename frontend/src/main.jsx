@@ -503,7 +503,7 @@ function IntegrationsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th>Job ID</th><th>Name</th><th>State</th><th>Queued At</th>
+                <th>Job ID</th><th>Name</th><th>State</th><th>Queued At</th><th>Reason</th>
               </tr>
             </thead>
             <tbody>
@@ -513,9 +513,10 @@ function IntegrationsPage() {
                   <td>{j.name}</td>
                   <td>{j.state}</td>
                   <td>{formatUserDateTime(j.timestamp)}</td>
+                  <td style={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.failed_reason || '-'}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={4} style={{ color: '#64748b' }}>No queued jobs</td></tr>
+                <tr><td colSpan={5} style={{ color: '#64748b' }}>No queued jobs</td></tr>
               )}
             </tbody>
           </table>
