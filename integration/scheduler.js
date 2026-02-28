@@ -20,6 +20,16 @@ async function main() {
     }
   );
 
+
+  await importQueue.add(
+    'urlhaus-import',
+    { triggeredBy: 'scheduler' },
+    {
+      jobId: 'urlhaus-import',
+      repeat: { pattern: config.schedulerCron }
+    }
+  );
+
   console.log(`[scheduler] repeat jobs set with cron=${config.schedulerCron}`);
 
   setInterval(async () => {
@@ -40,6 +50,16 @@ async function main() {
         repeat: { pattern: config.schedulerCron }
       }
     );
+
+    await importQueue.add(
+      'urlhaus-import',
+      { triggeredBy: 'scheduler' },
+      {
+        jobId: 'urlhaus-import',
+        repeat: { pattern: config.schedulerCron }
+      }
+    );
+
   }, 10 * 60 * 1000);
 }
 

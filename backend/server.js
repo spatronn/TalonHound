@@ -129,6 +129,9 @@ app.get('/api/integrations', async (_req, res) => {
           WHEN f.key = 'usom-trcert' THEN (
             SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'USOM:TR-CERT'
           )
+          WHEN f.key = 'urlhaus-abusech' THEN (
+            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'URLhaus:abuse.ch'
+          )
           ELSE 0
         END AS total_records,
         l.error_message AS last_error
@@ -137,6 +140,7 @@ app.get('/api/integrations', async (_req, res) => {
         ON l.job_type = CASE
           WHEN f.key = 'et-blockrules' THEN 'hourly_import'
           WHEN f.key = 'usom-trcert' THEN 'usom_import'
+          WHEN f.key = 'urlhaus-abusech' THEN 'urlhaus_import'
           ELSE f.key
         END
       WHERE f.active = TRUE
@@ -154,11 +158,13 @@ app.get('/api/integrations', async (_req, res) => {
         COALESCE(f.key, CASE
           WHEN r.job_type = 'hourly_import' THEN 'et-blockrules'
           WHEN r.job_type = 'usom_import' THEN 'usom-trcert'
+          WHEN r.job_type = 'urlhaus_import' THEN 'urlhaus-abusech'
           ELSE r.job_type
         END) AS integration_key,
         COALESCE(f.name, CASE
           WHEN r.job_type = 'hourly_import' THEN 'EmergingThreats Blockrules'
           WHEN r.job_type = 'usom_import' THEN 'USOM TR-CERT'
+          WHEN r.job_type = 'urlhaus_import' THEN 'URLhaus abuse.ch'
           ELSE r.job_type
         END) AS integration_name
       FROM integration_runs r
@@ -166,6 +172,7 @@ app.get('/api/integrations', async (_req, res) => {
         ON f.key = CASE
           WHEN r.job_type = 'hourly_import' THEN 'et-blockrules'
           WHEN r.job_type = 'usom_import' THEN 'usom-trcert'
+          WHEN r.job_type = 'urlhaus_import' THEN 'urlhaus-abusech'
           ELSE r.job_type
         END
       ORDER BY r.started_at DESC
@@ -235,7 +242,8 @@ app.get('/api/integrations', async (_req, res) => {
 
 const INTEGRATION_JOBS = {
   'et-blockrules': 'hourly-import',
-  'usom-trcert': 'usom-import'
+  'usom-trcert': 'usom-import',
+  'urlhaus-abusech': 'urlhaus-import'
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);

@@ -52,6 +52,8 @@ services:
       - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
       - USOM_SOURCE_NAME=USOM:TR-CERT
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
+      - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
+      - URLHAUS_URL=https://urlhaus.abuse.ch/downloads/text/
     depends_on:
       - db
       - redis
@@ -74,6 +76,8 @@ services:
       - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
       - USOM_SOURCE_NAME=USOM:TR-CERT
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
+      - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
+      - URLHAUS_URL=https://urlhaus.abuse.ch/downloads/text/
     depends_on:
       - db
       - redis

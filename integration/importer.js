@@ -384,3 +384,145 @@ export async function runUsomImport() {
     client.release();
   }
 }
+
+
+export async function runUrlhausImport() {
+  const client = await pool.connect();
+  let runId = null;
+
+  try {
+    const lockResult = await client.query('SELECT pg_try_advisory_lock(942003) AS acquired');
+    if (!lockResult.rows[0]?.acquired) {
+      return { skipped: true, reason: 'lock_not_acquired' };
+    }
+
+    const runInsert = await client.query(
+      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
+       VALUES ('urlhaus_import', 'running', clock_timestamp(), 'scheduler')
+       RETURNING id`
+    );
+    runId = runInsert.rows[0].id;
+
+    let inserted = 0;
+
+    const res = await fetch(config.urlhausUrl);
+    if (!res.ok) throw new Error(`URLhaus list request failed: ${res.status}`);
+    const txt = await res.text();
+
+    const entries = txt
+      .split(/\r?\n/)
+      .map((line) => classifyUsomObservable(line))
+      .filter(Boolean)
+      .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
+
+    const currentHash = hashEntries(entries);
+
+    const prevState = await client.query(
+      `SELECT content_hash, items_json
+       FROM integration_source_state
+       WHERE source_name = $1`,
+      [config.urlhausSourceName]
+    );
+
+    const previousHash = prevState.rows[0]?.content_hash || null;
+    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
+    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
+
+    if (previousHash === currentHash) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='success', finished_at=clock_timestamp(), records_processed=0
+         WHERE id=$1`,
+        [runId]
+      );
+
+      await client.query(
+        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (source_name)
+         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+        [config.urlhausSourceName, `hash:${currentHash}`]
+      );
+
+      return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
+    }
+
+    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
+
+    for (let i = 0; i < addedEntries.length; i += batchSize) {
+      const batch = addedEntries.slice(i, i + batchSize);
+      await client.query('BEGIN');
+      try {
+        for (const entry of batch) {
+          const { observable, observableType } = entry;
+          const sourceName = config.urlhausSourceName;
+          const sourceUrl = config.urlhausUrl;
+          const confidence = 'high';
+          const category = 'malware-url';
+          const note = 'Auto-imported from URLhaus text list';
+
+          const okObs = await insertObservable(client, {
+            observable,
+            observableType,
+            sourceName,
+            sourceUrl,
+            confidence,
+            category,
+            note,
+            dedupSource: config.urlhausSourceName
+          });
+
+          if (okObs) inserted += 1;
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      }
+    }
+
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+      [config.urlhausSourceName, currentHash, JSON.stringify(entries)]
+    );
+
+    await client.query(
+      `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+      [config.urlhausSourceName, `hash:${currentHash}`]
+    );
+
+    await client.query(
+      `UPDATE integration_runs
+       SET status='success', finished_at=clock_timestamp(), records_processed=$2
+       WHERE id=$1`,
+      [runId, inserted]
+    );
+
+    return { ok: true, runId, recordsProcessed: inserted };
+  } catch (err) {
+    if (runId) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='failed', finished_at=clock_timestamp(), error_message=$2
+         WHERE id=$1`,
+        [runId, String(err.message).slice(0, 4000)]
+      );
+    }
+
+    throw err;
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(942003)');
+    } catch {
+      // ignore
+    }
+    client.release();
+  }
+}
