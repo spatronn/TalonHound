@@ -159,21 +159,32 @@ app.get('/api/integrations', async (_req, res) => {
     };
 
     try {
-      const [counts, jobs] = await Promise.all([
-        importQueue.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed'),
-        importQueue.getJobs(['waiting', 'active', 'delayed', 'failed'], 0, 30, true)
+      const [countRows, jobsRows] = await Promise.all([
+        pool.query(`
+          SELECT status, COUNT(*)::int AS cnt
+          FROM integration_queue_jobs
+          WHERE queued_at >= NOW() - INTERVAL '14 days'
+          GROUP BY status
+        `),
+        pool.query(`
+          SELECT job_id AS id, job_name AS name, status AS state, queued_at AS timestamp, error_message AS failed_reason
+          FROM integration_queue_jobs
+          ORDER BY queued_at DESC
+          LIMIT 30
+        `)
       ]);
 
+      const mapped = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 };
+      for (const r of countRows.rows) {
+        if (r.status === 'queued') mapped.waiting += r.cnt;
+        else if (r.status === 'running') mapped.active += r.cnt;
+        else if (r.status === 'failed') mapped.failed += r.cnt;
+        else if (r.status === 'success') mapped.completed += r.cnt;
+      }
+
       queue = {
-        counts,
-        jobs: jobs.map((j) => ({
-          id: j.id,
-          name: j.name,
-          state: j.failedReason ? 'failed' : (j.finishedOn ? 'completed' : (j.processedOn ? 'active' : 'waiting')),
-          timestamp: j.timestamp,
-          failed_reason: j.failedReason || null,
-          data: j.data || {}
-        }))
+        counts: mapped,
+        jobs: jobsRows.rows
       };
     } catch {
       // queue telemetry optional
@@ -200,6 +211,15 @@ app.post('/api/integrations/run-now', async (_req, res) => {
   try {
     const keys = Object.keys(INTEGRATION_JOBS);
     const jobs = await Promise.all(keys.map((key) => importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key })));
+
+    await Promise.all(jobs.map((j, idx) => pool.query(
+      `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+       VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
+       ON CONFLICT (job_id)
+       DO UPDATE SET status='queued', updated_at=NOW()`,
+      [String(j.id), keys[idx], INTEGRATION_JOBS[keys[idx]]]
+    )));
+
     return res.status(202).json({ ok: true, queued: true, count: jobs.length, job_ids: jobs.map((j) => j.id) });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integrations', detail: err.message });
@@ -215,6 +235,13 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
 
   try {
     const job = await importQueue.add(jobName, { triggeredBy: 'manual-ui-one', integration_key: key });
+    await pool.query(
+      `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+       VALUES ($1, $2, $3, 'queued', 'manual-ui-one', NOW(), NOW())
+       ON CONFLICT (job_id)
+       DO UPDATE SET status='queued', updated_at=NOW()`,
+      [String(job.id), key, jobName]
+    );
     return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
