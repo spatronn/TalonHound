@@ -205,6 +205,7 @@ function DashboardPage() {
   const [mapData, setMapData] = useState({ total: 0, countries: [] });
   const [hoverInfo, setHoverInfo] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [center, setCenter] = useState([0, 12]);
 
   useEffect(() => {
     api.get('/ioc/map/countries', { params: { day: 'all' } })
@@ -284,12 +285,19 @@ function DashboardPage() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
           <button onClick={() => setZoom((z) => Math.max(1, Number((z - 0.2).toFixed(2))))}>- Zoom out</button>
           <button onClick={() => setZoom((z) => Math.min(4, Number((z + 0.2).toFixed(2))))}>+ Zoom in</button>
-          <button onClick={() => setZoom(1)}>Reset</button>
+          <button onClick={() => { setZoom(1); setCenter([0, 12]); }}>Reset</button>
         </div>
 
         <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: 8, position: 'relative' }}>
           <ComposableMap projectionConfig={{ scale: 155 }} width={1080} height={420} style={{ width: '100%', height: 'auto', display: 'block' }}>
-            <ZoomableGroup zoom={zoom} center={[0, 12]}>
+            <ZoomableGroup
+              zoom={zoom}
+              center={center}
+              onMoveEnd={({ zoom: nextZoom, coordinates }) => {
+                setZoom(nextZoom);
+                setCenter(coordinates);
+              }}
+            >
               <Geographies geography="/world-lite.geojson">
                 {({ geographies }) => geographies.map((geo) => {
                   const count = resolveCountryCount(geo);
