@@ -138,8 +138,8 @@ function AppShell({ children }) {
     padding: '10px 12px',
     borderRadius: 6,
     textDecoration: 'none',
-    color: active ? '#fff' : '#111',
-    background: active ? '#111' : 'transparent',
+    color: active ? '#e2e8f0' : '#cbd5e1',
+    background: active ? '#334155' : 'transparent',
     fontWeight: active ? 600 : 500
   });
 
@@ -149,8 +149,8 @@ function AppShell({ children }) {
     marginLeft: 8,
     borderRadius: 6,
     textDecoration: 'none',
-    color: active ? '#fff' : '#333',
-    background: active ? '#333' : 'transparent',
+    color: active ? '#e2e8f0' : '#94a3b8',
+    background: active ? '#1e293b' : 'transparent',
     fontSize: 14
   });
 
