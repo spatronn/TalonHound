@@ -6,7 +6,11 @@ const pool = new Pool(config.db);
 
 function parseLinks(html) {
   const links = [...html.matchAll(/href="\.\/([^"]+)"/g)].map((m) => m[1]);
-  return links.filter((name) => /\.(rules|txt)$/i.test(name));
+  return links.filter((name) => {
+    if (!/\.(rules|txt)$/i.test(name)) return false;
+    if (/\.suricata\.rules$/i.test(name)) return false;
+    return true;
+  });
 }
 
 function isIPv4(value) {

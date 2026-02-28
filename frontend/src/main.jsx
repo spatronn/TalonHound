@@ -131,6 +131,7 @@ function AppShell({ children }) {
 
   const isActive = (path) => location.pathname === path;
   const isOpsActive = location.pathname.startsWith('/ioc');
+  const isIntegrationsActive = location.pathname.startsWith('/integrations');
 
   const menuStyle = (active) => ({
     display: 'block',
@@ -168,7 +169,11 @@ function AppShell({ children }) {
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/settings" style={menuStyle(isActive('/settings'))}>3. Settings</Link>
+            <Link to="/integrations" style={menuStyle(isIntegrationsActive)}>3. Integrations</Link>
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            <Link to="/settings" style={menuStyle(isActive('/settings'))}>4. Settings</Link>
           </div>
         </nav>
 
@@ -326,6 +331,99 @@ function DashboardPage() {
           <span>Low</span>
           <div style={{ height: 10, width: 180, background: 'linear-gradient(90deg, #fde047 0%, #fb923c 50%, #ef4444 100%)', borderRadius: 999 }} />
           <span>High</span>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+function IntegrationsPage() {
+  const [loading, setLoading] = useState(true);
+  const [integrations, setIntegrations] = useState([]);
+  const [recentRuns, setRecentRuns] = useState([]);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/integrations');
+      setIntegrations(data?.integrations || []);
+      setRecentRuns(data?.recent_runs || []);
+    } catch {
+      setIntegrations([]);
+      setRecentRuns([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, []);
+
+  const statusColor = (status) => {
+    if (status === 'success') return '#166534';
+    if (status === 'failed') return '#991b1b';
+    if (status === 'running') return '#92400e';
+    return '#334155';
+  };
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations</h2>
+          <button onClick={() => load().catch(() => {})}>Refresh</button>
+        </div>
+
+        {loading ? <div>Loading...</div> : (
+          <div style={{ overflowX: 'auto' }}>
+            <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+                  <th>Name</th><th>Source</th><th>Schedule</th><th>Last status</th><th>Last run start</th><th>Records</th>
+                </tr>
+              </thead>
+              <tbody>
+                {integrations.map((i) => (
+                  <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td>{i.name}</td>
+                    <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
+                    <td><code>{i.schedule}</code></td>
+                    <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{i.last_status}</td>
+                    <td>{formatUserDateTime(i.last_started_at)}</td>
+                    <td>{i.last_records_processed ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Recent runs</h3>
+        <div style={{ overflowX: 'auto' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+                <th>ID</th><th>Status</th><th>Started</th><th>Finished</th><th>Records</th><th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentRuns.length ? recentRuns.map((r) => (
+                <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td>{r.id}</td>
+                  <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{r.status}</td>
+                  <td>{formatUserDateTime(r.started_at)}</td>
+                  <td>{formatUserDateTime(r.finished_at)}</td>
+                  <td>{r.records_processed ?? 0}</td>
+                  <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.error_message || '-'}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </AppShell>
@@ -811,6 +909,7 @@ function App() {
         <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
         <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
         <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
+        <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
         <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
         <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
       </Routes>

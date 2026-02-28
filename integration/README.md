@@ -2,6 +2,8 @@
 
 Queue + worker based hourly import service.
 
+Current source policy: import `.rules` and `.txt`, but skip `*.suricata.rules` to reduce duplicate data.
+
 ## Components
 
 - `scheduler.js`: registers repeatable `hourly-import` job (default `0 * * * *`)

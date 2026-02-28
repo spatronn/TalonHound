@@ -89,9 +89,42 @@ async function ensureSchema() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS integration_runs (
+      id BIGSERIAL PRIMARY KEY,
+      job_type TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('running', 'success', 'failed')),
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      records_processed INT NOT NULL DEFAULT 0,
+      error_message TEXT,
+      triggered_by TEXT NOT NULL DEFAULT 'scheduler',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS integration_checkpoints (
+      source_name TEXT PRIMARY KEY,
+      last_cursor TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_dedup (
+      source_name TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (source_name, external_id)
+    )
+  `);
+
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_ip_created_at ON ioc_ips (ip, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ips_created_at ON ioc_ips (created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ip_geo_cache_country_code ON ioc_ip_geo_cache (country_code)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_created_at ON integration_runs (created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_status ON integration_runs (status)`);
 }
 
 app.get('/health', async (_req, res) => {
@@ -100,6 +133,63 @@ app.get('/health', async (_req, res) => {
     res.json({ ok: true, service: 'backend', db: 'up' });
   } catch {
     res.status(500).json({ ok: false, service: 'backend', db: 'down' });
+  }
+});
+
+app.get('/api/integrations', async (_req, res) => {
+  try {
+    const q = `
+      WITH latest AS (
+        SELECT DISTINCT ON (job_type)
+          job_type, status, started_at, finished_at, records_processed, error_message
+        FROM integration_runs
+        ORDER BY job_type, started_at DESC
+      )
+      SELECT
+        'et-blockrules'::text AS key,
+        'EmergingThreats Blockrules'::text AS name,
+        'http://rules.emergingthreats.net/blockrules/'::text AS source_url,
+        '0 * * * *'::text AS schedule,
+        COALESCE(l.status, 'never') AS last_status,
+        l.started_at AS last_started_at,
+        l.finished_at AS last_finished_at,
+        COALESCE(l.records_processed, 0) AS last_records_processed,
+        l.error_message AS last_error
+      FROM latest l
+      WHERE l.job_type = 'hourly_import'
+      UNION ALL
+      SELECT
+        'et-blockrules'::text AS key,
+        'EmergingThreats Blockrules'::text AS name,
+        'http://rules.emergingthreats.net/blockrules/'::text AS source_url,
+        '0 * * * *'::text AS schedule,
+        'never'::text AS last_status,
+        NULL::timestamptz AS last_started_at,
+        NULL::timestamptz AS last_finished_at,
+        0::int AS last_records_processed,
+        NULL::text AS last_error
+      WHERE NOT EXISTS (SELECT 1 FROM latest WHERE job_type = 'hourly_import')
+    `;
+
+    const recentQ = `
+      SELECT id, job_type, status, started_at, finished_at, records_processed, error_message
+      FROM integration_runs
+      WHERE job_type = 'hourly_import'
+      ORDER BY started_at DESC
+      LIMIT 20
+    `;
+
+    const [integrationsRes, recentRes] = await Promise.all([
+      pool.query(q),
+      pool.query(recentQ)
+    ]);
+
+    return res.json({
+      integrations: integrationsRes.rows,
+      recent_runs: recentRes.rows
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch integrations', detail: err.message });
   }
 });
 

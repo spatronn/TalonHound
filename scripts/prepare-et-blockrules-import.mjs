@@ -10,7 +10,7 @@ function nowStamp() {
 
 function parseLinks(html) {
   const links = [...html.matchAll(/href="\.\/([^"]+)"/g)].map((m) => m[1]);
-  return links.filter((name) => /\.(rules|txt)$/i.test(name));
+  return links.filter((name) => /\.(rules|txt)$/i.test(name) && !/\.suricata\.rules$/i.test(name));
 }
 
 function isIPv4(value) {
