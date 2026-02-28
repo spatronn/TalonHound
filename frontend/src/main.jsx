@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -546,6 +546,20 @@ function IOCListPage() {
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [columnWidths, setColumnWidths] = useState({
+    select: 38,
+    index: 52,
+    ip: 220,
+    asn: 84,
+    country: 90,
+    source: 190,
+    confidence: 120,
+    category: 150,
+    timestamp: 170,
+    action: 92
+  });
+  const [sortState, setSortState] = useState({ key: null, dir: null });
+  const [resizeState, setResizeState] = useState(null);
   const [sourceFilter, setSourceFilter] = useState('');
   const [confidenceFilter, setConfidenceFilter] = useState('');
   const [asnFilter, setAsnFilter] = useState('');
@@ -583,6 +597,74 @@ function IOCListPage() {
   useEffect(() => {
     loadData(page, pageSize).catch(() => {});
   }, [page, pageSize, search, sourceFilter, confidenceFilter, asnFilter, countryFilter, timeRange]);
+
+  useEffect(() => {
+    if (!resizeState) return undefined;
+
+    function onMove(e) {
+      const delta = e.clientX - resizeState.startX;
+      const next = Math.max(60, resizeState.startWidth + delta);
+      setColumnWidths((prev) => ({ ...prev, [resizeState.key]: next }));
+    }
+
+    function onUp() {
+      setResizeState(null);
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [resizeState]);
+
+  function startResize(key, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizeState({ key, startX: e.clientX, startWidth: columnWidths[key] || 120 });
+  }
+
+  function nextSort(key) {
+    setSortState((prev) => {
+      if (prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      if (prev.dir === 'desc') return { key: null, dir: null };
+      return { key, dir: 'asc' };
+    });
+  }
+
+  function sortIndicator(key) {
+    if (sortState.key !== key || !sortState.dir) return '';
+    return sortState.dir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  const sortedRows = useMemo(() => {
+    if (!sortState.key || !sortState.dir) return rows;
+
+    const val = (r) => {
+      if (sortState.key === 'ip') return String(r.ip || '');
+      if (sortState.key === 'asn') return Number(r.asn ?? -1);
+      if (sortState.key === 'country') return String(r.country_code || '');
+      if (sortState.key === 'source') return String((r.source_names && r.source_names[0]) || '');
+      if (sortState.key === 'confidence') return String((r.confidence_set && r.confidence_set[0]) || '');
+      if (sortState.key === 'category') return String((r.category_set && r.category_set[0]) || '');
+      if (sortState.key === 'timestamp') return new Date(r.last_seen_at || 0).getTime();
+      return '';
+    };
+
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const av = val(a);
+      const bv = val(b);
+      const cmp = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
+      return sortState.dir === 'asc' ? cmp : -cmp;
+    });
+    return copy;
+  }, [rows, sortState]);
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIps.includes(r.ip));
 
@@ -790,27 +872,39 @@ function IOCListPage() {
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
         <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
-            <col style={{ width: 38 }} />
-            <col style={{ width: 52 }} />
-            <col style={{ width: '19%' }} />
-            <col style={{ width: 84 }} />
-            <col style={{ width: 72 }} />
-            <col style={{ width: '15%' }} />
-            <col style={{ width: 110 }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: 170 }} />
-            <col style={{ width: 92 }} />
+            <col style={{ width: columnWidths.select }} />
+            <col style={{ width: columnWidths.index }} />
+            <col style={{ width: columnWidths.ip }} />
+            <col style={{ width: columnWidths.asn }} />
+            <col style={{ width: columnWidths.country }} />
+            <col style={{ width: columnWidths.source }} />
+            <col style={{ width: columnWidths.confidence }} />
+            <col style={{ width: columnWidths.category }} />
+            <col style={{ width: columnWidths.timestamp }} />
+            <col style={{ width: columnWidths.action }} />
           </colgroup>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-              <th>
+              <th style={{ position: 'relative' }}>
                 <input type="checkbox" checked={allOnPageSelected} onChange={toggleSelectAllOnPage} />
+                <div onMouseDown={(e) => startResize('select', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
               </th>
-              <th>#</th><th>IP</th><th>ASN</th><th>Country</th><th>Source</th><th>Confidence</th><th>Category</th><th>Timestamp</th><th>Action</th>
+              <th style={{ position: 'relative' }}>
+                #
+                <div onMouseDown={(e) => startResize('index', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
+              </th>
+              <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IP{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('asn')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>ASN{sortIndicator('asn')}<div onMouseDown={(e) => startResize('asn', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('country')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Country{sortIndicator('country')}<div onMouseDown={(e) => startResize('country', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Category{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, idx) => (
+            {sortedRows.map((r, idx) => (
               <tr key={r.ip} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td>
                   <input
