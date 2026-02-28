@@ -93,7 +93,7 @@ export async function runHourlyImport() {
       const category = inferCategory(file);
 
       for (const ip of ips) {
-        const dedupKey = `${sourceName}|${ip}`;
+        const dedupKey = `${ip}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
         const dedup = await client.query(
           `INSERT INTO import_dedup (source_name, external_id)
            VALUES ($1, $2)
@@ -104,12 +104,23 @@ export async function runHourlyImport() {
 
         if (!dedup.rowCount) continue;
 
-        await client.query(
+        const ins = await client.query(
           `INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+           SELECT $1, $2, $3, $4, $5, $6, NOW(), NOW()
+           WHERE NOT EXISTS (
+             SELECT 1
+             FROM ioc_ips
+             WHERE ip = $1::inet
+               AND source_name = $2
+               AND confidence = $4
+               AND COALESCE(category, '') = COALESCE($5, '')
+               AND COALESCE(source_url, '') = COALESCE($3, '')
+           )
+           RETURNING id`,
           [ip, sourceName, sourceUrl, confidence, category, `Auto-imported from ET blockrules (${file})`]
         );
-        inserted += 1;
+
+        if (ins.rowCount) inserted += 1;
       }
     }
 

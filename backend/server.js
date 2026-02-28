@@ -132,6 +132,16 @@ async function ensureSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ioc_ip_geo_cache_country_code ON ioc_ip_geo_cache (country_code)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_created_at ON integration_runs (created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_integration_runs_status ON integration_runs (status)`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_ips_dedup_tuple
+    ON ioc_ips (
+      ip,
+      source_name,
+      confidence,
+      COALESCE(category, ''),
+      COALESCE(source_url, '')
+    )
+  `);
 }
 
 app.get('/health', async (_req, res) => {
@@ -275,11 +285,25 @@ app.post('/api/ioc/ip', async (req, res) => {
   try {
     const q = `
       INSERT INTO ioc_ips (ip, source_name, source_url, confidence, category, note)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      SELECT $1, $2, $3, $4, $5, $6
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM ioc_ips
+        WHERE ip = $1::inet
+          AND source_name = $2
+          AND confidence = $4
+          AND COALESCE(category, '') = COALESCE($5, '')
+          AND COALESCE(source_url, '') = COALESCE($3, '')
+      )
       RETURNING *
     `;
     const values = [ip, source_name, source_url || null, confidence, category, note];
     const { rows } = await pool.query(q, values);
+
+    if (!rows.length) {
+      return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
+    }
+
     refreshGeoCache(1000).catch(() => {});
     return res.status(201).json(rows[0]);
   } catch (err) {

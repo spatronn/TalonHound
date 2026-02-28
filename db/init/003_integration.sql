@@ -25,3 +25,12 @@ CREATE TABLE IF NOT EXISTS import_dedup (
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (source_name, external_id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_ips_dedup_tuple
+ON ioc_ips (
+  ip,
+  source_name,
+  confidence,
+  COALESCE(category, ''),
+  COALESCE(source_url, '')
+);
