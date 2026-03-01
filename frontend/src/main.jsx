@@ -352,14 +352,20 @@ function DashboardPage() {
 function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [sources, setSources] = useState([]);
+  const [rawEvents, setRawEvents] = useState([]);
 
   async function loadSources() {
     setLoading(true);
     try {
-      const { data } = await api.get('/analytics/data-sources');
-      setSources(data?.sources || []);
+      const [{ data: sourceData }, { data: rawData }] = await Promise.all([
+        api.get('/analytics/data-sources'),
+        api.get('/analytics/raw-events', { params: { limit: 10 } })
+      ]);
+      setSources(sourceData?.sources || []);
+      setRawEvents(rawData?.items || []);
     } catch {
       setSources([]);
+      setRawEvents([]);
     } finally {
       setLoading(false);
     }
@@ -412,6 +418,42 @@ function AnalyticsPage() {
                 </tr>
               )) : (
                 <tr><td colSpan={4} style={{ color: '#94a3b8' }}>No data sources connected yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: 16, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
+            Last 10 Raw Events
+          </div>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#111827' }}>
+                <th style={{ width: 80 }}>ID</th>
+                <th>Time</th>
+                <th>Host</th>
+                <th>Process</th>
+                <th>Destination</th>
+                <th style={{ width: 90 }}>Port</th>
+                <th style={{ width: 110 }}>Protocol</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading raw events...</td></tr>
+              ) : rawEvents.length ? rawEvents.map((evt) => (
+                <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
+                  <td>{evt.id}</td>
+                  <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
+                  <td>{evt.host_name || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.process_name || '-'}</td>
+                  <td>{evt.destination_ip || '-'}</td>
+                  <td>{evt.destination_port || '-'}</td>
+                  <td>{evt.protocol || '-'}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No raw events yet.</td></tr>
               )}
             </tbody>
           </table>

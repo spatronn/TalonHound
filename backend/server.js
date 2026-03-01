@@ -152,6 +152,24 @@ app.get('/api/analytics/data-sources', async (_req, res) => {
   }
 });
 
+app.get('/api/analytics/raw-events', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 100);
+    const q = await pool.query(
+      `SELECT id, source_key, event_time, host_name, process_name, destination_ip, destination_port, protocol, created_at, raw
+       FROM signal_events
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    return res.json({ total: q.rowCount, items: q.rows });
+  } catch (err) {
+    console.error('[analytics-raw-events] failed', err);
+    return res.status(500).json({ total: 0, items: [] });
+  }
+});
+
 app.get('/api/integrations', async (_req, res) => {
   try {
     const q = `
