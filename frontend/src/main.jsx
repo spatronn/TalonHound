@@ -161,7 +161,11 @@ function AppShell({ children }) {
 
         <nav>
           <Link to="/dashboard" style={menuStyle(isActive('/dashboard'))}>1. Dashboard</Link>
-          <Link to="/analytics" style={menuStyle(isActive('/analytics'))}>2. Analytics</Link>
+          <div style={{ marginTop: 8 }}>
+            <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
+            <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
+            <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
+          </div>
           <Link to="/incident" style={menuStyle(isActive('/incident'))}>3. Incident</Link>
 
           <div style={{ marginTop: 8 }}>
@@ -511,6 +515,19 @@ function AnalyticsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+function AnalyticsStatisticsPage() {
+  return (
+    <AppShell>
+      <section style={{ border: '1px dashed #334155', borderRadius: 12, background: '#111827', padding: 24, minHeight: 220, display: 'grid', placeItems: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Analytics Statistics</h2>
+          <p style={{ margin: 0, color: '#94a3b8' }}>Page is ready. Waiting for your next instructions.</p>
         </div>
       </section>
     </AppShell>
@@ -1418,6 +1435,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
+          <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
