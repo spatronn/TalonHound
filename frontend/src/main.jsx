@@ -130,6 +130,7 @@ function AppShell({ children }) {
   }
 
   const isActive = (path) => location.pathname === path;
+  const isOpsActive = location.pathname.startsWith('/ioc');
   const isIntegrationsActive = location.pathname.startsWith('/integrations');
 
   const menuStyle = (active) => ({
@@ -142,21 +143,39 @@ function AppShell({ children }) {
     fontWeight: active ? 600 : 500
   });
 
+  const subMenuStyle = (active) => ({
+    display: 'block',
+    padding: '8px 10px',
+    marginLeft: 8,
+    borderRadius: 6,
+    textDecoration: 'none',
+    color: active ? '#e2e8f0' : '#94a3b8',
+    background: active ? '#1e293b' : 'transparent',
+    fontSize: 14
+  });
+
   return (
     <div style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
 
         <nav>
-          <Link to="/analytics" style={menuStyle(isActive('/analytics'))}>1. Analytics</Link>
-          <Link to="/incident" style={menuStyle(isActive('/incident'))}>2. Incident</Link>
+          <Link to="/dashboard" style={menuStyle(isActive('/dashboard'))}>1. Dashboard</Link>
+          <Link to="/analytics" style={menuStyle(isActive('/analytics'))}>2. Analytics</Link>
+          <Link to="/incident" style={menuStyle(isActive('/incident'))}>3. Incident</Link>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/integrations" style={menuStyle(isIntegrationsActive)}>3. Integrations</Link>
+            <div style={menuStyle(isOpsActive)}>4. Operations</div>
+            <Link to="/ioc" style={subMenuStyle(isActive('/ioc'))}>IOC List</Link>
+            <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/settings" style={menuStyle(isActive('/settings'))}>4. Settings</Link>
+            <Link to="/integrations" style={menuStyle(isIntegrationsActive)}>5. Integrations</Link>
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            <Link to="/settings" style={menuStyle(isActive('/settings'))}>6. Settings</Link>
           </div>
         </nav>
 
@@ -1127,6 +1146,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
