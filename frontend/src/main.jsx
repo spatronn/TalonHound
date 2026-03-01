@@ -350,21 +350,43 @@ function DashboardPage() {
 
 
 function AnalyticsPage() {
-  const dataSources = [
-    { name: 'Sysmon', platform: 'Windows', status: 'active' }
-  ];
+  const [loading, setLoading] = useState(true);
+  const [sources, setSources] = useState([]);
+
+  async function loadSources() {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/analytics/data-sources');
+      setSources(data?.sources || []);
+    } catch {
+      setSources([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSources().catch(() => {});
+  }, []);
 
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Analytics</h2>
-        <p style={{ color: '#94a3b8', marginTop: 0 }}>Current telemetry coverage overview.</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 6 }}>Analytics</h2>
+            <p style={{ color: '#94a3b8', margin: 0 }}>Current telemetry coverage overview.</p>
+          </div>
+          <button onClick={() => loadSources().catch(() => {})}>Refresh</button>
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginTop: 12 }}>
           <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 14, background: '#0f172a' }}>
             <div style={{ fontSize: 13, color: '#94a3b8' }}>Connected Data Sources</div>
-            <div style={{ fontSize: 34, fontWeight: 800, marginTop: 6 }}>{dataSources.length}</div>
-            <div style={{ fontSize: 13, color: '#cbd5e1', marginTop: 4 }}>Sysmon (Windows) active</div>
+            <div style={{ fontSize: 34, fontWeight: 800, marginTop: 6 }}>{loading ? '-' : sources.length}</div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', marginTop: 4 }}>
+              {loading ? 'Loading...' : (sources.length ? `${sources[0].name} (${sources[0].platform}) ${sources[0].status}` : 'No active source')}
+            </div>
           </div>
         </div>
 
@@ -375,16 +397,22 @@ function AnalyticsPage() {
                 <th>Source</th>
                 <th>Platform</th>
                 <th>Status</th>
+                <th>Last Seen</th>
               </tr>
             </thead>
             <tbody>
-              {dataSources.map((source) => (
-                <tr key={source.name} style={{ borderTop: '1px solid #334155' }}>
+              {loading ? (
+                <tr><td colSpan={4} style={{ color: '#94a3b8' }}>Loading data sources...</td></tr>
+              ) : sources.length ? sources.map((source) => (
+                <tr key={source.key} style={{ borderTop: '1px solid #334155' }}>
                   <td>{source.name}</td>
                   <td>{source.platform}</td>
-                  <td style={{ color: '#22c55e', fontWeight: 700 }}>{source.status}</td>
+                  <td style={{ color: source.status === 'active' ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>{source.status}</td>
+                  <td>{formatUserDateTime(source.last_seen_at)}</td>
                 </tr>
-              ))}
+              )) : (
+                <tr><td colSpan={4} style={{ color: '#94a3b8' }}>No data sources connected yet.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
