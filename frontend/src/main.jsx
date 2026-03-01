@@ -359,7 +359,7 @@ function AnalyticsPage() {
   async function loadIocMatches() {
     setIocLoading(true);
     try {
-      const { data } = await api.get('/analytics/ioc-matches', { params: { limit: 10, hours: 24 } });
+      const { data } = await api.get('/analytics/ioc-matches', { params: { limit: 10 } });
       setIocMatches(data?.items || []);
     } catch {
       setIocMatches([]);

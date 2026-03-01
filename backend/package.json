@@ -6,7 +6,8 @@
   "scripts": {
     "migrate": "node migrate.js",
     "start": "node migrate.js && node server.js",
-    "signal-worker": "node migrate.js && node signal-worker.js"
+    "signal-worker": "node migrate.js && node signal-worker.js",
+    "raw-retention": "node migrate.js && node raw-retention.js"
   },
   "dependencies": {
     "bullmq": "^5.10.3",

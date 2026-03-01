@@ -173,37 +173,47 @@ app.get('/api/analytics/raw-events', async (req, res) => {
 app.get('/api/analytics/ioc-matches', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 100);
-    const hours = Math.min(Math.max(Number(req.query?.hours || 24), 1), 168);
+    const hasHours = req.query?.hours !== undefined && req.query?.hours !== null && String(req.query.hours).trim() !== '';
+    const hours = hasHours ? Math.min(Math.max(Number(req.query.hours), 1), 87600) : null;
 
-    const q = await pool.query(
-      `WITH recent_events AS (
-         SELECT id, event_time, host_name, process_name, destination_ip, destination_port, protocol, created_at
-         FROM signal_events
-         WHERE created_at >= NOW() - ($2::text || ' hours')::interval
-           AND destination_ip IS NOT NULL
-         ORDER BY created_at DESC
-         LIMIT 5000
-       )
-       SELECT
-         se.id,
-         se.event_time,
-         se.host_name,
-         se.process_name,
-         se.destination_ip,
-         se.destination_port,
-         se.protocol,
-         i.observable AS matched_ioc,
-         i.source_name,
-         i.confidence,
-         se.created_at
-       FROM recent_events se
-       JOIN ioc_items i
-         ON i.observable_type = 'ip'
-        AND i.observable = se.destination_ip
-       ORDER BY se.created_at DESC
-       LIMIT $1`,
-      [limit, hours]
-    );
+    const q = hasHours
+      ? await pool.query(
+          `SELECT
+             id,
+             event_time,
+             host_name,
+             process_name,
+             destination_ip,
+             destination_port,
+             protocol,
+             matched_ioc,
+             source_name,
+             confidence,
+             created_at
+           FROM ioc_match_events
+           WHERE created_at >= NOW() - ($2::text || ' hours')::interval
+           ORDER BY created_at DESC
+           LIMIT $1`,
+          [limit, hours]
+        )
+      : await pool.query(
+          `SELECT
+             id,
+             event_time,
+             host_name,
+             process_name,
+             destination_ip,
+             destination_port,
+             protocol,
+             matched_ioc,
+             source_name,
+             confidence,
+             created_at
+           FROM ioc_match_events
+           ORDER BY created_at DESC
+           LIMIT $1`,
+          [limit]
+        );
 
     return res.json({ total: q.rowCount, items: q.rows });
   } catch (err) {

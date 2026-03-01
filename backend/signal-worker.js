@@ -61,11 +61,12 @@ const worker = new Worker(
           continue;
         }
 
-        await client.query(
+        const insertSignal = await client.query(
           `INSERT INTO signal_events (
             source_key, event_time, host_name, username, process_name, process_id,
             destination_ip, destination_port, protocol, score, reason_codes, raw
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          RETURNING id`,
           [
             evt.source_key || 'sysmon.windows',
             evt.event_time || new Date().toISOString(),
@@ -81,6 +82,41 @@ const worker = new Worker(
             evt
           ]
         );
+
+        const signalEventId = insertSignal.rows?.[0]?.id;
+
+        if (evt.destination_ip) {
+          const matches = await client.query(
+            `SELECT observable, source_name, confidence
+             FROM ioc_items
+             WHERE observable_type = 'ip'
+               AND observable = $1
+             LIMIT 10`,
+            [evt.destination_ip]
+          );
+
+          for (const m of matches.rows) {
+            await client.query(
+              `INSERT INTO ioc_match_events (
+                signal_event_id, event_time, host_name, process_name, destination_ip,
+                destination_port, protocol, matched_ioc, source_name, confidence
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+              [
+                signalEventId || null,
+                evt.event_time || new Date().toISOString(),
+                evt.host_name || null,
+                evt.process_name || null,
+                evt.destination_ip || null,
+                evt.destination_port ? Number(evt.destination_port) : null,
+                evt.protocol || null,
+                m.observable,
+                m.source_name || null,
+                m.confidence || null
+              ]
+            );
+          }
+        }
+
         inserted += 1;
       }
 
