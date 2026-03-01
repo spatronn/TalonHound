@@ -526,6 +526,7 @@ function AnalyticsStatisticsPage() {
   const [hours, setHours] = useState(24);
   const [topSources, setTopSources] = useState([]);
   const [topClients, setTopClients] = useState([]);
+  const [riskyClients, setRiskyClients] = useState([]);
   const [timeline, setTimeline] = useState([]);
 
   async function loadStats(targetHours = hours) {
@@ -534,10 +535,12 @@ function AnalyticsStatisticsPage() {
       const { data } = await api.get('/analytics/statistics', { params: { hours: targetHours } });
       setTopSources(data?.top_sources || []);
       setTopClients(data?.top_clients || []);
+      setRiskyClients(data?.risky_clients || []);
       setTimeline(data?.timeline || []);
     } catch {
       setTopSources([]);
       setTopClients([]);
+      setRiskyClients([]);
       setTimeline([]);
     } finally {
       setLoading(false);
@@ -550,6 +553,7 @@ function AnalyticsStatisticsPage() {
 
   const maxSource = Math.max(...topSources.map((x) => Number(x.event_count || 0)), 1);
   const maxClient = Math.max(...topClients.map((x) => Number(x.event_count || 0)), 1);
+  const maxRiskyClient = Math.max(...riskyClients.map((x) => Number(x.risky_event_count || 0)), 1);
 
   const timelineByBucket = timeline.reduce((acc, row) => {
     const key = formatUserDateTime(row.bucket);
@@ -643,6 +647,40 @@ function AnalyticsStatisticsPage() {
               </table>
             )}
           </div>
+        </div>
+
+        <div style={{ marginTop: 12, border: '1px solid #334155', borderRadius: 10, padding: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Risky Clients (IOC Match Activity)</h3>
+          {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
+            <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                  <th>Client</th>
+                  <th>Risky Events</th>
+                  <th>Last Seen</th>
+                  <th>Risk Activity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riskyClients.length ? riskyClients.map((row) => {
+                  const count = Number(row.risky_event_count || 0);
+                  const w = Math.max(6, Math.round((count / maxRiskyClient) * 100));
+                  return (
+                    <tr key={row.host_name} style={{ borderTop: '1px solid #334155' }}>
+                      <td>{row.host_name}</td>
+                      <td>{count}</td>
+                      <td>{formatUserDateTime(row.last_risky_seen_at)}</td>
+                      <td>
+                        <div style={{ background: '#0f172a', borderRadius: 999, height: 10 }}>
+                          <div style={{ width: `${w}%`, height: 10, borderRadius: 999, background: '#ef4444' }} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }) : <tr><td colSpan={4} style={{ color: '#94a3b8' }}>No risky client activity</td></tr>}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div style={{ marginTop: 12, border: '1px solid #334155', borderRadius: 10, padding: 12 }}>

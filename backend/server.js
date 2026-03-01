@@ -260,15 +260,30 @@ app.get('/api/analytics/statistics', async (req, res) => {
       [hours]
     );
 
+    const riskyClientsQ = await pool.query(
+      `SELECT
+         host_name,
+         COUNT(*)::bigint AS risky_event_count,
+         MAX(created_at) AS last_risky_seen_at
+       FROM ioc_match_events
+       WHERE created_at >= NOW() - ($1::text || ' hours')::interval
+         AND host_name IS NOT NULL
+       GROUP BY host_name
+       ORDER BY risky_event_count DESC, last_risky_seen_at DESC
+       LIMIT 10`,
+      [hours]
+    );
+
     return res.json({
       hours,
       top_sources: topSourceQ.rows,
       top_clients: topClientQ.rows,
+      risky_clients: riskyClientsQ.rows,
       timeline: timelineQ.rows
     });
   } catch (err) {
     console.error('[analytics-statistics] failed', err);
-    return res.status(500).json({ hours: 24, top_sources: [], top_clients: [], timeline: [] });
+    return res.status(500).json({ hours: 24, top_sources: [], top_clients: [], risky_clients: [], timeline: [] });
   }
 });
 
