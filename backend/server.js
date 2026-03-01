@@ -158,6 +158,15 @@ app.get('/api/analytics/raw-events', async (req, res) => {
     const q = await pool.query(
       `SELECT id, source_key, event_time, host_name, process_name, destination_ip, destination_port, protocol, created_at, raw
        FROM signal_events
+       WHERE destination_ip IS NOT NULL
+         AND destination_ip ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
+         AND NOT (
+           destination_ip::inet <<= '10.0.0.0/8'::cidr OR
+           destination_ip::inet <<= '172.16.0.0/12'::cidr OR
+           destination_ip::inet <<= '192.168.0.0/16'::cidr OR
+           destination_ip::inet <<= '127.0.0.0/8'::cidr OR
+           destination_ip::inet <<= '169.254.0.0/16'::cidr
+         )
        ORDER BY created_at DESC
        LIMIT $1`,
       [limit]
