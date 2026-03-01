@@ -173,6 +173,7 @@ app.get('/api/analytics/raw-events', async (req, res) => {
 app.get('/api/analytics/ioc-matches', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 100);
+    const hours = Math.min(Math.max(Number(req.query?.hours || 24), 1), 168);
 
     const q = await pool.query(
       `SELECT
@@ -193,9 +194,10 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
         AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
         AND se.destination_ip IS NOT NULL
         AND se.destination_ip::inet <<= i.observable::cidr
+      WHERE se.created_at >= NOW() - ($2::text || ' hours')::interval
        ORDER BY se.created_at DESC
        LIMIT $1`,
-      [limit]
+      [limit, hours]
     );
 
     return res.json({ total: q.rowCount, items: q.rows });

@@ -351,28 +351,40 @@ function DashboardPage() {
 
 function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
+  const [iocLoading, setIocLoading] = useState(false);
   const [sources, setSources] = useState([]);
   const [rawEvents, setRawEvents] = useState([]);
   const [iocMatches, setIocMatches] = useState([]);
 
+  async function loadIocMatches() {
+    setIocLoading(true);
+    try {
+      const { data } = await api.get('/analytics/ioc-matches', { params: { limit: 10, hours: 24 } });
+      setIocMatches(data?.items || []);
+    } catch {
+      setIocMatches([]);
+    } finally {
+      setIocLoading(false);
+    }
+  }
+
   async function loadSources() {
     setLoading(true);
     try {
-      const [{ data: sourceData }, { data: rawData }, { data: iocData }] = await Promise.all([
+      const [{ data: sourceData }, { data: rawData }] = await Promise.all([
         api.get('/analytics/data-sources'),
-        api.get('/analytics/raw-events', { params: { limit: 10 } }),
-        api.get('/analytics/ioc-matches', { params: { limit: 10 } })
+        api.get('/analytics/raw-events', { params: { limit: 10 } })
       ]);
       setSources(sourceData?.sources || []);
       setRawEvents(rawData?.items || []);
-      setIocMatches(iocData?.items || []);
     } catch {
       setSources([]);
       setRawEvents([]);
-      setIocMatches([]);
     } finally {
       setLoading(false);
     }
+
+    loadIocMatches().catch(() => {});
   }
 
   useEffect(() => {
@@ -481,7 +493,7 @@ function AnalyticsPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {iocLoading ? (
                 <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
               ) : iocMatches.length ? iocMatches.map((evt) => (
                 <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
