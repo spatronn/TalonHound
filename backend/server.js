@@ -170,6 +170,41 @@ app.get('/api/analytics/raw-events', async (req, res) => {
   }
 });
 
+app.get('/api/analytics/ioc-matches', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 100);
+
+    const q = await pool.query(
+      `SELECT
+         se.id,
+         se.event_time,
+         se.host_name,
+         se.process_name,
+         se.destination_ip,
+         se.destination_port,
+         se.protocol,
+         i.observable AS matched_ioc,
+         i.source_name,
+         i.confidence,
+         se.created_at
+       FROM signal_events se
+       JOIN ioc_items i
+         ON i.observable_type = 'ip'
+        AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
+        AND se.destination_ip IS NOT NULL
+        AND se.destination_ip::inet <<= i.observable::cidr
+       ORDER BY se.created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    return res.json({ total: q.rowCount, items: q.rows });
+  } catch (err) {
+    console.error('[analytics-ioc-matches] failed', err);
+    return res.status(500).json({ total: 0, items: [] });
+  }
+});
+
 app.get('/api/integrations', async (_req, res) => {
   try {
     const q = `

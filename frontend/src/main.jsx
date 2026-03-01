@@ -353,19 +353,23 @@ function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [sources, setSources] = useState([]);
   const [rawEvents, setRawEvents] = useState([]);
+  const [iocMatches, setIocMatches] = useState([]);
 
   async function loadSources() {
     setLoading(true);
     try {
-      const [{ data: sourceData }, { data: rawData }] = await Promise.all([
+      const [{ data: sourceData }, { data: rawData }, { data: iocData }] = await Promise.all([
         api.get('/analytics/data-sources'),
-        api.get('/analytics/raw-events', { params: { limit: 10 } })
+        api.get('/analytics/raw-events', { params: { limit: 10 } }),
+        api.get('/analytics/ioc-matches', { params: { limit: 10 } })
       ]);
       setSources(sourceData?.sources || []);
       setRawEvents(rawData?.items || []);
+      setIocMatches(iocData?.items || []);
     } catch {
       setSources([]);
       setRawEvents([]);
+      setIocMatches([]);
     } finally {
       setLoading(false);
     }
@@ -454,6 +458,44 @@ function AnalyticsPage() {
                 </tr>
               )) : (
                 <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No raw events yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: 16, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
+            Last 10 IOC Match Events
+          </div>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#111827' }}>
+                <th style={{ width: 80 }}>ID</th>
+                <th>Time</th>
+                <th>Host</th>
+                <th>Process</th>
+                <th>Destination</th>
+                <th>Matched IOC</th>
+                <th>Source</th>
+                <th style={{ width: 110 }}>Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
+              ) : iocMatches.length ? iocMatches.map((evt) => (
+                <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
+                  <td>{evt.id}</td>
+                  <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
+                  <td>{evt.host_name || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.process_name || '-'}</td>
+                  <td>{evt.destination_ip || '-'}</td>
+                  <td>{evt.matched_ioc || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.source_name || '-'}</td>
+                  <td>{evt.confidence || '-'}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
               )}
             </tbody>
           </table>
