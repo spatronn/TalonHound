@@ -522,12 +522,147 @@ function AnalyticsPage() {
 }
 
 function AnalyticsStatisticsPage() {
+  const [loading, setLoading] = useState(true);
+  const [hours, setHours] = useState(24);
+  const [topSources, setTopSources] = useState([]);
+  const [topClients, setTopClients] = useState([]);
+  const [timeline, setTimeline] = useState([]);
+
+  async function loadStats(targetHours = hours) {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/analytics/statistics', { params: { hours: targetHours } });
+      setTopSources(data?.top_sources || []);
+      setTopClients(data?.top_clients || []);
+      setTimeline(data?.timeline || []);
+    } catch {
+      setTopSources([]);
+      setTopClients([]);
+      setTimeline([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadStats(24).catch(() => {});
+  }, []);
+
+  const maxSource = Math.max(...topSources.map((x) => Number(x.event_count || 0)), 1);
+  const maxClient = Math.max(...topClients.map((x) => Number(x.event_count || 0)), 1);
+
+  const timelineByBucket = timeline.reduce((acc, row) => {
+    const key = formatUserDateTime(row.bucket);
+    acc[key] = (acc[key] || 0) + Number(row.event_count || 0);
+    return acc;
+  }, {});
+
+  const timelineRows = Object.entries(timelineByBucket).slice(-12);
+  const maxTimeline = Math.max(...timelineRows.map(([, v]) => Number(v || 0)), 1);
+
   return (
     <AppShell>
-      <section style={{ border: '1px dashed #334155', borderRadius: 12, background: '#111827', padding: 24, minHeight: 220, display: 'grid', placeItems: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Analytics Statistics</h2>
-          <p style={{ margin: 0, color: '#94a3b8' }}>Page is ready. Waiting for your next instructions.</p>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Analytics Statistics</h2>
+            <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Top active source and client activity overview.</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+              <option value={6}>Last 6h</option>
+              <option value={24}>Last 24h</option>
+              <option value={48}>Last 48h</option>
+              <option value={72}>Last 72h</option>
+            </select>
+            <button onClick={() => loadStats(hours).catch(() => {})}>Refresh</button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Top Active Sources</h3>
+            {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
+              <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                    <th>Source</th>
+                    <th>Events</th>
+                    <th>Activity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topSources.length ? topSources.map((row) => {
+                    const count = Number(row.event_count || 0);
+                    const w = Math.max(6, Math.round((count / maxSource) * 100));
+                    return (
+                      <tr key={row.source_key} style={{ borderTop: '1px solid #334155' }}>
+                        <td>{row.source_key}</td>
+                        <td>{count}</td>
+                        <td>
+                          <div style={{ background: '#0f172a', borderRadius: 999, height: 10 }}>
+                            <div style={{ width: `${w}%`, height: 10, borderRadius: 999, background: '#38bdf8' }} />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }) : <tr><td colSpan={3} style={{ color: '#94a3b8' }}>No source activity</td></tr>}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Top Active Clients</h3>
+            {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
+              <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                    <th>Client</th>
+                    <th>Events</th>
+                    <th>Activity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topClients.length ? topClients.map((row) => {
+                    const count = Number(row.event_count || 0);
+                    const w = Math.max(6, Math.round((count / maxClient) * 100));
+                    return (
+                      <tr key={row.host_name} style={{ borderTop: '1px solid #334155' }}>
+                        <td>{row.host_name}</td>
+                        <td>{count}</td>
+                        <td>
+                          <div style={{ background: '#0f172a', borderRadius: 999, height: 10 }}>
+                            <div style={{ width: `${w}%`, height: 10, borderRadius: 999, background: '#22c55e' }} />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }) : <tr><td colSpan={3} style={{ color: '#94a3b8' }}>No client activity</td></tr>}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, border: '1px solid #334155', borderRadius: 10, padding: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Activity Timeline (hourly)</h3>
+          {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {timelineRows.length ? timelineRows.map(([label, value]) => {
+                const w = Math.max(4, Math.round((Number(value || 0) / maxTimeline) * 100));
+                return (
+                  <div key={label} style={{ display: 'grid', gridTemplateColumns: '180px 70px 1fr', gap: 10, alignItems: 'center' }}>
+                    <div style={{ color: '#94a3b8', fontSize: 12 }}>{label}</div>
+                    <div style={{ fontWeight: 700 }}>{value}</div>
+                    <div style={{ background: '#0f172a', borderRadius: 999, height: 10 }}>
+                      <div style={{ width: `${w}%`, height: 10, borderRadius: 999, background: '#f59e0b' }} />
+                    </div>
+                  </div>
+                );
+              }) : <div style={{ color: '#94a3b8' }}>No timeline data</div>}
+            </div>
+          )}
         </div>
       </section>
     </AppShell>

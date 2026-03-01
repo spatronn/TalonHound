@@ -222,6 +222,56 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
   }
 });
 
+app.get('/api/analytics/statistics', async (req, res) => {
+  try {
+    const hours = Math.min(Math.max(Number(req.query?.hours || 24), 1), 168);
+
+    const topSourceQ = await pool.query(
+      `SELECT source_key, COUNT(*)::bigint AS event_count
+       FROM signal_events
+       WHERE created_at >= NOW() - ($1::text || ' hours')::interval
+       GROUP BY source_key
+       ORDER BY event_count DESC
+       LIMIT 10`,
+      [hours]
+    );
+
+    const topClientQ = await pool.query(
+      `SELECT host_name, COUNT(*)::bigint AS event_count
+       FROM signal_events
+       WHERE created_at >= NOW() - ($1::text || ' hours')::interval
+         AND host_name IS NOT NULL
+       GROUP BY host_name
+       ORDER BY event_count DESC
+       LIMIT 10`,
+      [hours]
+    );
+
+    const timelineQ = await pool.query(
+      `SELECT
+         date_trunc('hour', created_at) AS bucket,
+         source_key,
+         host_name,
+         COUNT(*)::bigint AS event_count
+       FROM signal_events
+       WHERE created_at >= NOW() - ($1::text || ' hours')::interval
+       GROUP BY bucket, source_key, host_name
+       ORDER BY bucket ASC`,
+      [hours]
+    );
+
+    return res.json({
+      hours,
+      top_sources: topSourceQ.rows,
+      top_clients: topClientQ.rows,
+      timeline: timelineQ.rows
+    });
+  } catch (err) {
+    console.error('[analytics-statistics] failed', err);
+    return res.status(500).json({ hours: 24, top_sources: [], top_clients: [], timeline: [] });
+  }
+});
+
 app.get('/api/integrations', async (_req, res) => {
   try {
     const q = `
