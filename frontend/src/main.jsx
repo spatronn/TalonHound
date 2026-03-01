@@ -57,7 +57,7 @@ function LoginPage() {
       localStorage.setItem('demo_token', data.token);
       localStorage.setItem('demo_user', data.user.email);
       localStorage.removeItem('demo_timezone');
-      navigate('/dashboard');
+      navigate('/analytics');
     } catch {
       alert('Invalid email or password');
     }
@@ -130,7 +130,6 @@ function AppShell({ children }) {
   }
 
   const isActive = (path) => location.pathname === path;
-  const isOpsActive = location.pathname.startsWith('/ioc');
   const isIntegrationsActive = location.pathname.startsWith('/integrations');
 
   const menuStyle = (active) => ({
@@ -143,30 +142,14 @@ function AppShell({ children }) {
     fontWeight: active ? 600 : 500
   });
 
-  const subMenuStyle = (active) => ({
-    display: 'block',
-    padding: '8px 10px',
-    marginLeft: 8,
-    borderRadius: 6,
-    textDecoration: 'none',
-    color: active ? '#e2e8f0' : '#94a3b8',
-    background: active ? '#1e293b' : 'transparent',
-    fontSize: 14
-  });
-
   return (
     <div style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
 
         <nav>
-          <Link to="/dashboard" style={menuStyle(isActive('/dashboard'))}>1. Dashboard</Link>
-
-          <div style={{ marginTop: 8 }}>
-            <div style={menuStyle(isOpsActive)}>2. Operations</div>
-            <Link to="/ioc" style={subMenuStyle(isActive('/ioc'))}>IOC List</Link>
-            <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
-          </div>
+          <Link to="/analytics" style={menuStyle(isActive('/analytics'))}>1. Analytics</Link>
+          <Link to="/incident" style={menuStyle(isActive('/incident'))}>2. Incident</Link>
 
           <div style={{ marginTop: 8 }}>
             <Link to="/integrations" style={menuStyle(isIntegrationsActive)}>3. Integrations</Link>
@@ -201,145 +184,57 @@ function AppShell({ children }) {
   );
 }
 
-function DashboardPage() {
-  const [mapData, setMapData] = useState({ total: 0, unique_ips: 0, countries: [] });
-  const [hoverInfo, setHoverInfo] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [center, setCenter] = useState([0, 12]);
-
-  useEffect(() => {
-    api.get('/ioc/map/countries', { params: { day: 'all' } })
-      .then(({ data }) => setMapData({ total: data?.total || 0, unique_ips: data?.unique_ips || 0, countries: data?.countries || [] }))
-      .catch(() => setMapData({ total: 0, unique_ips: 0, countries: [] }));
-  }, []);
-
-  const normalizeCode = (value) => String(value || '').trim().toUpperCase();
-  const normalizeName = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-  const countryCounts = mapData.countries.reduce((acc, row) => {
-    acc[normalizeCode(row.country_code)] = row.total;
-    return acc;
-  }, {});
-
-  const displayNames = typeof Intl !== 'undefined' && Intl.DisplayNames
-    ? new Intl.DisplayNames(['en'], { type: 'region' })
-    : null;
-
-  const countryNameCounts = {};
-  for (const [code, count] of Object.entries(countryCounts)) {
-    try {
-      const n = displayNames?.of(code);
-      if (n) countryNameCounts[normalizeName(n)] = count;
-    } catch {}
-  }
-  countryNameCounts.unitedstates = countryCounts.US || 0;
-  countryNameCounts.unitedstatesofamerica = countryCounts.US || 0;
-  countryNameCounts.russia = countryCounts.RU || 0;
-  countryNameCounts.russianfederation = countryCounts.RU || 0;
-  countryNameCounts.iran = countryCounts.IR || 0;
-  countryNameCounts.iranislamicrepublicof = countryCounts.IR || 0;
-  countryNameCounts.southkorea = countryCounts.KR || 0;
-  countryNameCounts.republicofkorea = countryCounts.KR || 0;
-  countryNameCounts.korearepublicof = countryCounts.KR || 0;
-
-  const maxCount = Math.max(...Object.values(countryCounts), 0);
-
-  const countryColor = (count) => {
-    if (!count || maxCount === 0) return '#0f172a';
-    const ratio = count / maxCount;
-    if (ratio <= 0.2) return '#fde047';
-    if (ratio <= 0.4) return '#facc15';
-    if (ratio <= 0.6) return '#fb923c';
-    if (ratio <= 0.8) return '#f97316';
-    return '#ef4444';
-  };
-
-  const resolveCountryCount = (geo) => {
-    const p = geo.properties || {};
-    const geoName = p.name || p.ADMIN || 'Unknown';
-    const key = normalizeName(geoName);
-
-    if (
-      key === 'us'
-      || key === 'usa'
-      || key === 'unitedstates'
-      || key === 'unitedstatesofamerica'
-      || key.includes('unitedstates')
-    ) return countryCounts.US || 0;
-
-    if (key.includes('russia') || key.includes('russianfederation')) return countryCounts.RU || 0;
-    if (key.includes('iran')) return countryCounts.IR || 0;
-    if (key.includes('korea')) return countryCounts.KR || 0;
-
-    return countryNameCounts[key] || 0;
-  };
+function AnalyticsPage() {
+  const dataSources = [
+    { name: 'Sysmon', platform: 'Windows', status: 'active' }
+  ];
 
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Threat World Map</h2>
-        <div style={{ marginBottom: 12, fontSize: 15 }}>
-          Total records in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
-          <span style={{ marginLeft: 10, color: '#94a3b8' }}>| Unique IPs: <b>{mapData.unique_ips}</b></span>
+        <h2 style={{ marginTop: 0 }}>Analytics</h2>
+        <p style={{ color: '#94a3b8', marginTop: 0 }}>Current telemetry coverage overview.</p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginTop: 12 }}>
+          <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 14, background: '#0f172a' }}>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>Connected Data Sources</div>
+            <div style={{ fontSize: 34, fontWeight: 800, marginTop: 6 }}>{dataSources.length}</div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', marginTop: 4 }}>Sysmon (Windows) active</div>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-          <button onClick={() => setZoom((z) => Math.max(1, Number((z - 0.2).toFixed(2))))}>- Zoom out</button>
-          <button onClick={() => setZoom((z) => Math.min(4, Number((z + 0.2).toFixed(2))))}>+ Zoom in</button>
-          <button onClick={() => { setZoom(1); setCenter([0, 12]); }}>Reset</button>
+        <div style={{ marginTop: 16, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                <th>Source</th>
+                <th>Platform</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dataSources.map((source) => (
+                <tr key={source.name} style={{ borderTop: '1px solid #334155' }}>
+                  <td>{source.name}</td>
+                  <td>{source.platform}</td>
+                  <td style={{ color: '#22c55e', fontWeight: 700 }}>{source.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      </section>
+    </AppShell>
+  );
+}
 
-        <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: 8, position: 'relative' }}>
-          <ComposableMap projectionConfig={{ scale: 155 }} width={1080} height={420} style={{ width: '100%', height: 'auto', display: 'block' }}>
-            <ZoomableGroup
-              zoom={zoom}
-              center={center}
-              onMoveEnd={({ zoom: nextZoom, coordinates }) => {
-                setZoom(nextZoom);
-                setCenter(coordinates);
-              }}
-            >
-              <Geographies geography="/world-lite.geojson">
-                {({ geographies }) => geographies.map((geo) => {
-                  const count = resolveCountryCount(geo);
-                  return (
-                    <Geography
-                      key={geo.rsmKey}
-                      geography={geo}
-                      fill={countryColor(count)}
-                      stroke="#475569"
-                      strokeWidth={0.35}
-                      onMouseEnter={() => setHoverInfo({
-                        name: geo.properties?.name || geo.properties?.ADMIN || 'Unknown',
-                        countryCount: count,
-                        globalTotal: mapData.total
-                      })}
-                      onMouseLeave={() => setHoverInfo(null)}
-                      style={{
-                        default: { outline: 'none' },
-                        hover: { outline: 'none', opacity: 0.85 },
-                        pressed: { outline: 'none' }
-                      }}
-                    />
-                  );
-                })}
-              </Geographies>
-            </ZoomableGroup>
-          </ComposableMap>
-
-          {hoverInfo && (
-            <div style={{ position: 'absolute', right: 10, top: 10, background: '#0f172a', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-              <div><b>{hoverInfo.name}</b></div>
-              <div>Total in malicious DB: <b>{hoverInfo.globalTotal}</b></div>
-              <div>Country count: <b>{hoverInfo.countryCount}</b></div>
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, fontSize: 13, color: '#475569' }}>
-          <span>Low</span>
-          <div style={{ height: 10, width: 180, background: 'linear-gradient(90deg, #fde047 0%, #fb923c 50%, #ef4444 100%)', borderRadius: 999 }} />
-          <span>High</span>
+function IncidentPage() {
+  return (
+    <AppShell>
+      <section style={{ border: '1px dashed #334155', borderRadius: 12, background: '#111827', padding: 24, minHeight: 220, display: 'grid', placeItems: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Incident</h2>
+          <p style={{ margin: 0, color: '#94a3b8' }}>This page is intentionally left blank for now.</p>
         </div>
       </section>
     </AppShell>
@@ -1232,12 +1127,13 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+          <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
+          <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
-          <Route path="*" element={<Navigate to={isAuthed() ? '/dashboard' : '/login'} replace />} />
+          <Route path="*" element={<Navigate to={isAuthed() ? '/analytics' : '/login'} replace />} />
         </Routes>
       </BrowserRouter>
     </>
