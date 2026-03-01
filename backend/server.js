@@ -176,7 +176,15 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
     const hours = Math.min(Math.max(Number(req.query?.hours || 24), 1), 168);
 
     const q = await pool.query(
-      `SELECT
+      `WITH recent_events AS (
+         SELECT id, event_time, host_name, process_name, destination_ip, destination_port, protocol, created_at
+         FROM signal_events
+         WHERE created_at >= NOW() - ($2::text || ' hours')::interval
+           AND destination_ip IS NOT NULL
+         ORDER BY created_at DESC
+         LIMIT 5000
+       )
+       SELECT
          se.id,
          se.event_time,
          se.host_name,
@@ -188,13 +196,10 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
          i.source_name,
          i.confidence,
          se.created_at
-       FROM signal_events se
+       FROM recent_events se
        JOIN ioc_items i
          ON i.observable_type = 'ip'
-        AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
-        AND se.destination_ip IS NOT NULL
-        AND se.destination_ip::inet <<= i.observable::cidr
-      WHERE se.created_at >= NOW() - ($2::text || ' hours')::interval
+        AND i.observable = se.destination_ip
        ORDER BY se.created_at DESC
        LIMIT $1`,
       [limit, hours]
