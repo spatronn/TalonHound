@@ -203,6 +203,152 @@ function AppShell({ children }) {
   );
 }
 
+function DashboardPage() {
+  const [mapData, setMapData] = useState({ total: 0, unique_ips: 0, countries: [] });
+  const [hoverInfo, setHoverInfo] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [center, setCenter] = useState([0, 12]);
+
+  useEffect(() => {
+    api.get('/ioc/map/countries', { params: { day: 'all' } })
+      .then(({ data }) => setMapData({ total: data?.total || 0, unique_ips: data?.unique_ips || 0, countries: data?.countries || [] }))
+      .catch(() => setMapData({ total: 0, unique_ips: 0, countries: [] }));
+  }, []);
+
+  const normalizeCode = (value) => String(value || '').trim().toUpperCase();
+  const normalizeName = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const countryCounts = mapData.countries.reduce((acc, row) => {
+    acc[normalizeCode(row.country_code)] = row.total;
+    return acc;
+  }, {});
+
+  const displayNames = typeof Intl !== 'undefined' && Intl.DisplayNames
+    ? new Intl.DisplayNames(['en'], { type: 'region' })
+    : null;
+
+  const countryNameCounts = {};
+  for (const [code, count] of Object.entries(countryCounts)) {
+    try {
+      const n = displayNames?.of(code);
+      if (n) countryNameCounts[normalizeName(n)] = count;
+    } catch {}
+  }
+  countryNameCounts.unitedstates = countryCounts.US || 0;
+  countryNameCounts.unitedstatesofamerica = countryCounts.US || 0;
+  countryNameCounts.russia = countryCounts.RU || 0;
+  countryNameCounts.russianfederation = countryCounts.RU || 0;
+  countryNameCounts.iran = countryCounts.IR || 0;
+  countryNameCounts.iranislamicrepublicof = countryCounts.IR || 0;
+  countryNameCounts.southkorea = countryCounts.KR || 0;
+  countryNameCounts.republicofkorea = countryCounts.KR || 0;
+  countryNameCounts.korearepublicof = countryCounts.KR || 0;
+
+  const maxCount = Math.max(...Object.values(countryCounts), 0);
+
+  const countryColor = (count) => {
+    if (!count || maxCount === 0) return '#0f172a';
+    const ratio = count / maxCount;
+    if (ratio <= 0.2) return '#fde047';
+    if (ratio <= 0.4) return '#facc15';
+    if (ratio <= 0.6) return '#fb923c';
+    if (ratio <= 0.8) return '#f97316';
+    return '#ef4444';
+  };
+
+  const resolveCountryCount = (geo) => {
+    const p = geo.properties || {};
+    const geoName = p.name || p.ADMIN || 'Unknown';
+    const key = normalizeName(geoName);
+
+    if (
+      key === 'us'
+      || key === 'usa'
+      || key === 'unitedstates'
+      || key === 'unitedstatesofamerica'
+      || key.includes('unitedstates')
+    ) return countryCounts.US || 0;
+
+    if (key.includes('russia') || key.includes('russianfederation')) return countryCounts.RU || 0;
+    if (key.includes('iran')) return countryCounts.IR || 0;
+    if (key.includes('korea')) return countryCounts.KR || 0;
+
+    return countryNameCounts[key] || 0;
+  };
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Threat World Map</h2>
+        <div style={{ marginBottom: 12, fontSize: 15 }}>
+          Total records in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
+          <span style={{ marginLeft: 10, color: '#94a3b8' }}>| Unique IPs: <b>{mapData.unique_ips}</b></span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <button onClick={() => setZoom((z) => Math.max(1, Number((z - 0.2).toFixed(2))))}>- Zoom out</button>
+          <button onClick={() => setZoom((z) => Math.min(4, Number((z + 0.2).toFixed(2))))}>+ Zoom in</button>
+          <button onClick={() => { setZoom(1); setCenter([0, 12]); }}>Reset</button>
+        </div>
+
+        <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: 8, position: 'relative' }}>
+          <ComposableMap projectionConfig={{ scale: 155 }} width={1080} height={420} style={{ width: '100%', height: 'auto', display: 'block' }}>
+            <ZoomableGroup
+              zoom={zoom}
+              center={center}
+              onMoveEnd={({ zoom: nextZoom, coordinates }) => {
+                setZoom(nextZoom);
+                setCenter(coordinates);
+              }}
+            >
+              <Geographies geography="/world-lite.geojson">
+                {({ geographies }) => geographies.map((geo) => {
+                  const count = resolveCountryCount(geo);
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      fill={countryColor(count)}
+                      stroke="#475569"
+                      strokeWidth={0.35}
+                      onMouseEnter={() => setHoverInfo({
+                        name: geo.properties?.name || geo.properties?.ADMIN || 'Unknown',
+                        countryCount: count,
+                        globalTotal: mapData.total
+                      })}
+                      onMouseLeave={() => setHoverInfo(null)}
+                      style={{
+                        default: { outline: 'none' },
+                        hover: { outline: 'none', opacity: 0.85 },
+                        pressed: { outline: 'none' }
+                      }}
+                    />
+                  );
+                })}
+              </Geographies>
+            </ZoomableGroup>
+          </ComposableMap>
+
+          {hoverInfo && (
+            <div style={{ position: 'absolute', right: 10, top: 10, background: '#0f172a', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
+              <div><b>{hoverInfo.name}</b></div>
+              <div>Total in malicious DB: <b>{hoverInfo.globalTotal}</b></div>
+              <div>Country count: <b>{hoverInfo.countryCount}</b></div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, fontSize: 13, color: '#475569' }}>
+          <span>Low</span>
+          <div style={{ height: 10, width: 180, background: 'linear-gradient(90deg, #fde047 0%, #fb923c 50%, #ef4444 100%)', borderRadius: 999 }} />
+          <span>High</span>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+
 function AnalyticsPage() {
   const dataSources = [
     { name: 'Sysmon', platform: 'Windows', status: 'active' }
@@ -1146,7 +1292,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/dashboard" element={<Protected><AnalyticsPage /></Protected>} />
+          <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
