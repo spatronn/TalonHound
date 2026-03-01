@@ -21,8 +21,10 @@ const pool = new Pool({
 
 const redisUrl = process.env.REDIS_URL || 'redis://redis:6379';
 const queueName = process.env.QUEUE_NAME || 'integration-imports';
+const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
+const signalQueue = new Queue(signalQueueName, { connection: redis });
 
 app.use(cors());
 app.use(express.json());
@@ -98,6 +100,55 @@ app.get('/health', async (_req, res) => {
     res.json({ ok: true, service: 'backend', db: 'up' });
   } catch {
     res.status(500).json({ ok: false, service: 'backend', db: 'down' });
+  }
+});
+
+app.post('/api/sysmon/events', async (req, res) => {
+  try {
+    const events = Array.isArray(req.body?.events) ? req.body.events : [];
+    if (!events.length) {
+      return res.status(400).json({ ok: false, message: 'events array is required' });
+    }
+
+    const normalized = events.map((evt) => ({
+      source_key: 'sysmon.windows',
+      event_time: evt.event_time || evt.timeCreated || new Date().toISOString(),
+      host_name: evt.host_name || evt.computer || null,
+      username: evt.username || evt.user || null,
+      process_name: evt.process_name || evt.image || null,
+      process_id: evt.process_id || evt.processId || null,
+      destination_ip: evt.destination_ip || evt.destinationIp || null,
+      destination_port: evt.destination_port || evt.destinationPort || null,
+      protocol: evt.protocol || null,
+      raw: evt
+    }));
+
+    const job = await signalQueue.add('sysmon-network-events', { events: normalized }, {
+      removeOnComplete: 50,
+      removeOnFail: 100
+    });
+
+    return res.json({ ok: true, queued: normalized.length, jobId: job.id });
+  } catch (err) {
+    console.error('[sysmon-events] queue failed', err);
+    return res.status(500).json({ ok: false, message: 'failed to enqueue events' });
+  }
+});
+
+app.get('/api/analytics/data-sources', async (_req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT key, name, platform, status, last_seen_at
+       FROM signal_sources
+       ORDER BY key ASC`
+    );
+    return res.json({
+      total: q.rowCount,
+      sources: q.rows
+    });
+  } catch (err) {
+    console.error('[analytics-data-sources] failed', err);
+    return res.status(500).json({ total: 0, sources: [] });
   }
 });
 

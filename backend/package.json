@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "migrate": "node migrate.js",
-    "start": "node migrate.js && node server.js"
+    "start": "node migrate.js && node server.js",
+    "signal-worker": "node migrate.js && node signal-worker.js"
   },
   "dependencies": {
     "bullmq": "^5.10.3",
