@@ -175,7 +175,10 @@ function AppShell({ children }) {
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/integrations" style={menuStyle(isIntegrationsActive)}>5. Integrations</Link>
+            <div style={menuStyle(isIntegrationsActive)}>5. Integrations</div>
+            <Link to="/integrations" style={subMenuStyle(isActive('/integrations'))}>Overview</Link>
+            <Link to="/integrations/queue" style={subMenuStyle(isActive('/integrations/queue'))}>Job Queue Status</Link>
+            <Link to="/integrations/runs" style={subMenuStyle(isActive('/integrations/runs'))}>Recent Runs</Link>
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -723,53 +726,22 @@ function IncidentPage() {
 function IntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
-  const [recentRuns, setRecentRuns] = useState([]);
-  const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
-  const [tableSort, setTableSort] = useState({ integrations: { key: null, dir: null }, queue: { key: null, dir: null }, runs: { key: null, dir: null } });
-  const [tableWidths, setTableWidths] = useState({
-    i_name: 170, i_uuid: 210, i_source: 240, i_added: 150, i_schedule: 120, i_trust: 140, i_status: 110, i_last: 150, i_total: 120, i_action: 110,
-    q_id: 120, q_integration: 160, q_name: 130, q_state: 90, q_queued: 150, q_reason: 230,
-    r_id: 80, r_integration: 180, r_status: 100, r_started: 150, r_finished: 150, r_imported: 110
-  });
-  const [resizeState, setResizeState] = useState(null);
 
   async function load() {
     setLoading(true);
     try {
       const { data } = await api.get('/integrations');
       setIntegrations(data?.integrations || []);
-      setRecentRuns(data?.recent_runs || []);
-      setQueue(data?.queue || { counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
     } catch {
       setIntegrations([]);
-      setRecentRuns([]);
-      setQueue({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    load().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!resizeState) return undefined;
-    function onMove(e) {
-      const delta = e.clientX - resizeState.startX;
-      const next = Math.max(70, resizeState.startWidth + delta);
-      setTableWidths((prev) => ({ ...prev, [resizeState.col]: next }));
-    }
-    function onUp() { setResizeState(null); }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [resizeState]);
+  useEffect(() => { load().catch(() => {}); }, []);
 
   async function runNowAll() {
     const ok = window.confirm('All integrations will be queued now. Do you want to continue?');
@@ -817,12 +789,6 @@ function IntegrationsPage() {
     return '#334155';
   };
 
-  const trustLevelLabel = (value) => {
-    if (value === 'guvenilir') return 'Reliable';
-    if (value === 'orta') return 'Medium';
-    return 'Not Categorized';
-  };
-
   const statusLabel = (status) => {
     if (status === 'success') return 'success';
     if (status === 'failed' || status === 'fail') return 'fail';
@@ -838,83 +804,11 @@ function IntegrationsPage() {
     return c || '-';
   };
 
-  function startResize(col, e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
-  }
-
-  function toggleSort(table, key) {
-    setTableSort((prev) => {
-      const cur = prev[table] || { key: null, dir: null };
-      let next;
-      if (cur.key !== key) next = { key, dir: 'asc' };
-      else if (cur.dir === 'asc') next = { key, dir: 'desc' };
-      else if (cur.dir === 'desc') next = { key: null, dir: null };
-      else next = { key, dir: 'asc' };
-      return { ...prev, [table]: next };
-    });
-  }
-
-  function indicator(table, key) {
-    const s = tableSort[table];
-    if (!s || s.key !== key || !s.dir) return '';
-    return s.dir === 'asc' ? ' ▲' : ' ▼';
-  }
-
-  function applySort(items, table, valueFn) {
-    const s = tableSort[table];
-    if (!s?.key || !s?.dir) return items;
-    const copy = [...items];
-    copy.sort((a, b) => {
-      const av = valueFn(a, s.key);
-      const bv = valueFn(b, s.key);
-      const cmp = (typeof av === 'number' && typeof bv === 'number')
-        ? av - bv
-        : String(av ?? '').localeCompare(String(bv ?? ''), undefined, { numeric: true, sensitivity: 'base' });
-      return s.dir === 'asc' ? cmp : -cmp;
-    });
-    return copy;
-  }
-
-  const sortedIntegrations = useMemo(() => applySort(integrations, 'integrations', (x, k) => {
-    if (k === 'name') return x.name;
-    if (k === 'integration_id') return x.integration_id || '';
-    if (k === 'source') return x.source_url;
-    if (k === 'added') return new Date(x.created_at || 0).getTime();
-    if (k === 'schedule') return humanSchedule(x.schedule);
-    if (k === 'trust') return x.trust_level;
-    if (k === 'status') return statusLabel(x.last_status);
-    if (k === 'last') return new Date(x.last_started_at || 0).getTime();
-    if (k === 'total') return Number(x.total_records || 0);
-    return '';
-  }), [integrations, tableSort, humanSchedule]);
-
-  const sortedQueue = useMemo(() => applySort(queue.jobs || [], 'queue', (x, k) => {
-    if (k === 'id') return String(x.id || '');
-    if (k === 'integration') return x.integration_name || x.integration_key || '';
-    if (k === 'name') return x.name;
-    if (k === 'state') return x.state;
-    if (k === 'queued') return new Date(x.timestamp || 0).getTime();
-    if (k === 'reason') return x.failed_reason || '';
-    return '';
-  }), [queue.jobs, tableSort]);
-
-  const sortedRuns = useMemo(() => applySort(recentRuns, 'runs', (x, k) => {
-    if (k === 'id') return Number(x.id || 0);
-    if (k === 'integration') return x.integration_name || x.integration_key || '';
-    if (k === 'status') return statusLabel(x.status);
-    if (k === 'started') return new Date(x.started_at || 0).getTime();
-    if (k === 'finished') return new Date(x.finished_at || 0).getTime();
-    if (k === 'imported') return Number(x.records_processed || 0);
-    return '';
-  }), [recentRuns, tableSort]);
-
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations Overview</h2>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={runNowAll} disabled={runningNowAll}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
@@ -924,25 +818,13 @@ function IntegrationsPage() {
         {loading ? <div>Loading...</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
-              <colgroup>
-                <col style={{ width: tableWidths.i_name }} /><col style={{ width: tableWidths.i_uuid }} /><col style={{ width: tableWidths.i_source }} /><col style={{ width: tableWidths.i_added }} /><col style={{ width: tableWidths.i_schedule }} /><col style={{ width: tableWidths.i_trust }} /><col style={{ width: tableWidths.i_status }} /><col style={{ width: tableWidths.i_last }} /><col style={{ width: tableWidths.i_total }} /><col style={{ width: tableWidths.i_action }} />
-              </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th onClick={() => toggleSort('integrations','name')} style={{ position: 'relative', cursor: 'pointer' }}>Name{indicator('integrations','name')}<div onMouseDown={(e) => startResize('i_name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','integration_id')} style={{ position: 'relative', cursor: 'pointer' }}>Integration ID{indicator('integrations','integration_id')}<div onMouseDown={(e) => startResize('i_uuid', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','source')} style={{ position: 'relative', cursor: 'pointer' }}>Source{indicator('integrations','source')}<div onMouseDown={(e) => startResize('i_source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','added')} style={{ position: 'relative', cursor: 'pointer' }}>Added At{indicator('integrations','added')}<div onMouseDown={(e) => startResize('i_added', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','schedule')} style={{ position: 'relative', cursor: 'pointer' }}>Schedule{indicator('integrations','schedule')}<div onMouseDown={(e) => startResize('i_schedule', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Trust Level<div onMouseDown={(e) => startResize('i_trust', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','status')} style={{ position: 'relative', cursor: 'pointer' }}>Last status{indicator('integrations','status')}<div onMouseDown={(e) => startResize('i_status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','last')} style={{ position: 'relative', cursor: 'pointer' }}>Last run start{indicator('integrations','last')}<div onMouseDown={(e) => startResize('i_last', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleSort('integrations','total')} style={{ position: 'relative', cursor: 'pointer' }}>Total Records{indicator('integrations','total')}<div onMouseDown={(e) => startResize('i_total', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('i_action', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th>Name</th><th>Integration ID</th><th>Source</th><th>Added At</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Total Records</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedIntegrations.map((i) => (
+                {integrations.map((i) => (
                   <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td>{i.name}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.integration_id || '-'}</td>
@@ -950,11 +832,7 @@ function IntegrationsPage() {
                     <td>{formatUserDateTime(i.created_at)}</td>
                     <td>{humanSchedule(i.schedule)}</td>
                     <td>
-                      <select
-                        value={i.trust_level || 'not_categorized'}
-                        onChange={(e) => updateTrustLevel(i.key, e.target.value)}
-                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
-                      >
+                      <select value={i.trust_level || 'not_categorized'} onChange={(e) => updateTrustLevel(i.key, e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}>
                         <option value="guvenilir">Reliable</option>
                         <option value="orta">Medium</option>
                         <option value="not_categorized">Not Categorized</option>
@@ -963,11 +841,7 @@ function IntegrationsPage() {
                     <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(i.last_status)}</td>
                     <td>{formatUserDateTime(i.last_started_at)}</td>
                     <td>{i.total_records ?? 0}</td>
-                    <td>
-                      <button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>
-                        {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
-                      </button>
-                    </td>
+                    <td><button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -975,9 +849,35 @@ function IntegrationsPage() {
           </div>
         )}
       </section>
+    </AppShell>
+  );
+}
 
+function IntegrationsQueueStatusPage() {
+  const [loading, setLoading] = useState(true);
+  const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
+
+  async function load() {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/integrations');
+      setQueue(data?.queue || { counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
+    } catch {
+      setQueue({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load().catch(() => {}); }, []);
+
+  return (
+    <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
-        <h3 style={{ marginTop: 0 }}>Queue status</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ marginTop: 0 }}>Job Queue Status</h2>
+          <button onClick={() => load().catch(() => {})}>Refresh</button>
+        </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, fontSize: 14 }}>
           <span>Waiting: <b>{queue.counts?.waiting || 0}</b></span>
           <span>Active: <b>{queue.counts?.active || 0}</b></span>
@@ -986,67 +886,69 @@ function IntegrationsPage() {
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
-            <colgroup>
-              <col style={{ width: tableWidths.q_id }} /><col style={{ width: tableWidths.q_integration }} /><col style={{ width: tableWidths.q_name }} /><col style={{ width: tableWidths.q_state }} /><col style={{ width: tableWidths.q_queued }} /><col style={{ width: tableWidths.q_reason }} />
-            </colgroup>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th onClick={() => toggleSort('queue','id')} style={{ position: 'relative', cursor: 'pointer' }}>Job ID{indicator('queue','id')}<div onMouseDown={(e) => startResize('q_id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('queue','integration')} style={{ position: 'relative', cursor: 'pointer' }}>Integration{indicator('queue','integration')}<div onMouseDown={(e) => startResize('q_integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('queue','name')} style={{ position: 'relative', cursor: 'pointer' }}>Name{indicator('queue','name')}<div onMouseDown={(e) => startResize('q_name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('queue','state')} style={{ position: 'relative', cursor: 'pointer' }}>State{indicator('queue','state')}<div onMouseDown={(e) => startResize('q_state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('queue','queued')} style={{ position: 'relative', cursor: 'pointer' }}>Queued At{indicator('queue','queued')}<div onMouseDown={(e) => startResize('q_queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('queue','reason')} style={{ position: 'relative', cursor: 'pointer' }}>Reason{indicator('queue','reason')}<div onMouseDown={(e) => startResize('q_reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-              </tr>
-            </thead>
+            <thead><tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}><th>Job ID</th><th>Integration</th><th>Name</th><th>State</th><th>Queued At</th><th>Reason</th></tr></thead>
             <tbody>
-              {sortedQueue.length ? sortedQueue.map((j) => (
+              {loading ? <tr><td colSpan={6}>Loading...</td></tr> : (queue.jobs?.length ? queue.jobs.map((j) => (
                 <tr key={String(j.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.id}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.integration_name || j.integration_key || '-'}</td>
-                  <td>{j.name}</td>
-                  <td>{j.state}</td>
-                  <td>{formatUserDateTime(j.timestamp)}</td>
-                  <td style={{ maxWidth: 320, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.failed_reason || (j.state === 'success' ? 'Completed successfully' : '-')}</td>
+                  <td>{j.id}</td><td>{j.integration_name || j.integration_key || '-'}</td><td>{j.name}</td><td>{j.state}</td><td>{formatUserDateTime(j.timestamp)}</td><td>{j.failed_reason || (j.state === 'success' ? 'Completed successfully' : '-')}</td>
                 </tr>
-              )) : (
-                <tr><td colSpan={6} style={{ color: '#64748b' }}>No queued jobs</td></tr>
-              )}
+              )) : <tr><td colSpan={6} style={{ color: '#64748b' }}>No queued jobs</td></tr>)}
             </tbody>
           </table>
         </div>
       </section>
+    </AppShell>
+  );
+}
 
+function IntegrationsRecentRunsPage() {
+  const [loading, setLoading] = useState(true);
+  const [recentRuns, setRecentRuns] = useState([]);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/integrations');
+      setRecentRuns(data?.recent_runs || []);
+    } catch {
+      setRecentRuns([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load().catch(() => {}); }, []);
+
+  const statusColor = (status) => {
+    if (status === 'success') return '#166534';
+    if (status === 'failed' || status === 'fail') return '#991b1b';
+    if (status === 'running') return '#92400e';
+    return '#334155';
+  };
+
+  const statusLabel = (status) => {
+    if (status === 'success') return 'success';
+    if (status === 'failed' || status === 'fail') return 'fail';
+    if (status === 'running') return 'running';
+    return 'never';
+  };
+
+  return (
+    <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Recent runs</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ marginTop: 0 }}>Recent Runs</h2>
+          <button onClick={() => load().catch(() => {})}>Refresh</button>
+        </div>
         <div style={{ overflowX: 'auto' }}>
           <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
-            <colgroup>
-              <col style={{ width: tableWidths.r_id }} /><col style={{ width: tableWidths.r_integration }} /><col style={{ width: tableWidths.r_status }} /><col style={{ width: tableWidths.r_started }} /><col style={{ width: tableWidths.r_finished }} /><col style={{ width: tableWidths.r_imported }} />
-            </colgroup>
-            <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th onClick={() => toggleSort('runs','id')} style={{ position: 'relative', cursor: 'pointer' }}>ID{indicator('runs','id')}<div onMouseDown={(e) => startResize('r_id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('runs','integration')} style={{ position: 'relative', cursor: 'pointer' }}>Integration{indicator('runs','integration')}<div onMouseDown={(e) => startResize('r_integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('runs','status')} style={{ position: 'relative', cursor: 'pointer' }}>Status{indicator('runs','status')}<div onMouseDown={(e) => startResize('r_status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('runs','started')} style={{ position: 'relative', cursor: 'pointer' }}>Started{indicator('runs','started')}<div onMouseDown={(e) => startResize('r_started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('runs','finished')} style={{ position: 'relative', cursor: 'pointer' }}>Finished{indicator('runs','finished')}<div onMouseDown={(e) => startResize('r_finished', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th onClick={() => toggleSort('runs','imported')} style={{ position: 'relative', cursor: 'pointer' }}>Imported IOCs{indicator('runs','imported')}<div onMouseDown={(e) => startResize('r_imported', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-              </tr>
-            </thead>
+            <thead><tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}><th>ID</th><th>Integration</th><th>Status</th><th>Started</th><th>Finished</th><th>Imported IOCs</th></tr></thead>
             <tbody>
-              {sortedRuns.length ? sortedRuns.map((r) => (
+              {loading ? <tr><td colSpan={6}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => (
                 <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td>{r.id}</td>
-                  <td>{r.integration_name || r.integration_key || '-'}</td>
-                  <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.status)}</td>
-                  <td>{formatUserDateTime(r.started_at)}</td>
-                  <td>{formatUserDateTime(r.finished_at)}</td>
-                  <td>{r.records_processed ?? 0}</td>
+                  <td>{r.id}</td><td>{r.integration_name || r.integration_key || '-'}</td><td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.status)}</td><td>{formatUserDateTime(r.started_at)}</td><td>{formatUserDateTime(r.finished_at)}</td><td>{r.records_processed ?? 0}</td>
                 </tr>
-              )) : (
-                <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>
-              )}
+              )) : <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
             </tbody>
           </table>
         </div>
@@ -1613,6 +1515,8 @@ function App() {
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
+          <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
           <Route path="*" element={<Navigate to={isAuthed() ? '/analytics' : '/login'} replace />} />
         </Routes>
