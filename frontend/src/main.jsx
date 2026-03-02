@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -1081,6 +1081,7 @@ function SettingsPage() {
 }
 
 function IOCListPage() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
   const [pageSize, setPageSize] = useState(5);
@@ -1337,7 +1338,14 @@ function IOCListPage() {
             {sortedRows.map((r, idx) => (
               <tr key={`${r.observable_type || 'ip'}:${r.observable || r.ip}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
-                <td title={r.observable || r.ip} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.observable || r.ip}</td>
+                <td title={r.observable || r.ip} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                  <button
+                    onClick={() => navigate(`/ioc/details/${encodeURIComponent(r.observable_type || 'ip')}/${encodeURIComponent(r.observable || r.ip)}`)}
+                    style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
+                  >
+                    {r.observable || r.ip}
+                  </button>
+                </td>
                 <td title={(r.source_names && r.source_names[0]) || '-'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   {(r.observable_type || 'ip') === 'ip' ? (
                     <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
@@ -1395,6 +1403,125 @@ function IOCListPage() {
           )}
         </div>
       )}
+      </section>
+    </AppShell>
+  );
+}
+
+function IOCDetailsPage() {
+  const { type, observable } = useParams();
+  const navigate = useNavigate();
+  const decodedType = decodeURIComponent(type || 'ip');
+  const decodedObservable = decodeURIComponent(observable || '');
+
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState({ summary: null, sources: [], matches: [] });
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await api.get('/ioc/details', { params: { observable: decodedObservable, type: decodedType } });
+      setData(res.data || { summary: null, sources: [], matches: [] });
+    } catch {
+      setData({ summary: null, sources: [], matches: [] });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, [decodedObservable, decodedType]);
+
+  const summary = data.summary;
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>IOC Details</h2>
+            <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 13 }}>Analyst-focused detail page for faster triage</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => navigate('/ioc')}>Back to IOC List</button>
+            <button onClick={() => load().catch(() => {})}>Refresh</button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>IOC</div>
+          <div style={{ fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 15, overflowWrap: 'anywhere' }}><b>{decodedObservable}</b></div>
+        </div>
+
+        {loading ? <div>Loading...</div> : !summary ? (
+          <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10 }}>No IOC detail found.</div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.observable_type || '-'}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.source_count || 0}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>IOC Match Events</div><div style={{ fontSize: 18, fontWeight: 700 }}>{data.matches.length}</div></div>
+            </div>
+
+            <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+              <div style={{ fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Confidence Set</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {(summary.confidence_set || []).length ? summary.confidence_set.map((c) => <span key={c} style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #475569' }}>{c}</span>) : <span>-</span>}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
+              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: '#111827' }}>
+                    <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Note</th><th>Created At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.sources.map((s) => (
+                    <tr key={`${s.id}-${s.created_at}`} style={{ borderTop: '1px solid #334155' }}>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_name || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_url || '-'}</td>
+                      <td>{s.confidence || '-'}</td>
+                      <td>{s.category || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.note || '-'}</td>
+                      <td>{formatUserDateTime(s.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Recent IOC Match Events (Top 20)</div>
+              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: '#111827' }}>
+                    <th>Time</th><th>Host</th><th>Process</th><th>Destination</th><th>Port</th><th>Protocol</th><th>Source</th><th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.matches.length ? data.matches.map((m) => (
+                    <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>
+                      <td>{formatUserDateTime(m.event_time || m.created_at)}</td>
+                      <td>{m.host_name || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{m.process_name || '-'}</td>
+                      <td>{m.destination_ip || '-'}</td>
+                      <td>{m.destination_port || '-'}</td>
+                      <td>{m.protocol || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{m.source_name || '-'}</td>
+                      <td>{m.confidence || '-'}</td>
+                    </tr>
+                  )) : <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match event for this IOC yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </section>
     </AppShell>
   );
@@ -1605,6 +1732,7 @@ function App() {
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
+          <Route path="/ioc/details/:type/:observable" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />

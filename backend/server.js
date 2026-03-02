@@ -774,6 +774,87 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
   }
 });
 
+app.get('/api/ioc/details', async (req, res) => {
+  const observable = String(req.query?.observable || '').trim();
+  const observableType = String(req.query?.type || '').trim();
+
+  if (!observable) {
+    return res.status(400).json({ message: 'observable is required' });
+  }
+
+  try {
+    const itemParams = [observable];
+    let typeFilter = '';
+    if (observableType) {
+      itemParams.push(observableType);
+      typeFilter = ` AND observable_type = $2 `;
+    }
+
+    const itemQ = `
+      SELECT
+        id,
+        observable,
+        observable_type,
+        source_name,
+        source_url,
+        confidence,
+        category,
+        note,
+        created_at
+      FROM ioc_items
+      WHERE observable = $1
+      ${typeFilter}
+      ORDER BY created_at DESC
+      LIMIT 500
+    `;
+
+    const itemRes = await pool.query(itemQ, itemParams);
+    const rows = itemRes.rows;
+
+    if (!rows.length) {
+      return res.json({ summary: null, sources: [], matches: [] });
+    }
+
+    const summary = {
+      observable,
+      observable_type: rows[0].observable_type,
+      first_seen_at: rows[rows.length - 1]?.created_at || null,
+      last_seen_at: rows[0]?.created_at || null,
+      source_count: new Set(rows.map((r) => r.source_name)).size,
+      confidence_set: [...new Set(rows.map((r) => r.confidence).filter(Boolean))],
+      category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))]
+    };
+
+    const matchesQ = `
+      SELECT
+        id,
+        event_time,
+        host_name,
+        process_name,
+        destination_ip,
+        destination_port,
+        protocol,
+        matched_ioc,
+        source_name,
+        confidence,
+        created_at
+      FROM ioc_match_events
+      WHERE matched_ioc = $1
+      ORDER BY created_at DESC
+      LIMIT 20
+    `;
+    const matchesRes = await pool.query(matchesQ, [observable]);
+
+    return res.json({
+      summary,
+      sources: rows,
+      matches: matchesRes.rows
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch IOC details', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/recent', async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 100);
 
