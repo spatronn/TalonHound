@@ -138,6 +138,9 @@ docker compose up -d --build
 
 ## System Diagram
 
+Ana diyagramlar ayrı dosyada tutulur:
+- `docs/system-diagram.md` (logical flow + deployment view)
+
 ```mermaid
 flowchart LR
     W[Windows Host\nSysmon + sysmon-agent.ps1]
