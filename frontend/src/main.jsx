@@ -1404,7 +1404,7 @@ function IOCAddPage() {
   const [submitting, setSubmitting] = useState(false);
   const [recentRows, setRecentRows] = useState([]);
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
-  const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 320, type: 110, source: 200, confidence: 110, ts: 170 });
+  const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 420, type: 110, source: 220, confidence: 110, ts: 170 });
   const [recentResize, setRecentResize] = useState(null);
   const iocFormRef = useRef(null);
 
@@ -1542,9 +1542,9 @@ function IOCAddPage() {
             {sortedRecentRows.map((r, idx) => (
               <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
                 <td>{idx + 1}</td>
-                <td><code>{r.observable}</code></td>
+                <td title={r.observable} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}><code style={{ whiteSpace: 'inherit', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{r.observable}</code></td>
                 <td>{r.observable_type || '-'}</td>
-                <td>{r.source_name}</td>
+                <td title={r.source_name} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.source_name}</td>
                 <td>{r.confidence}</td>
                 <td>{formatUserDateTime(r.created_at)}</td>
               </tr>
