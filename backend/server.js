@@ -735,8 +735,8 @@ app.get('/api/ioc/list', async (req, res) => {
 
   try {
     const sourceSql = fullScan
-      ? `SELECT id, observable, observable_type, source_name, confidence, category, created_at FROM ioc_items`
-      : `SELECT id, observable, observable_type, source_name, confidence, category, created_at
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at FROM ioc_items`
+      : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at
          FROM ioc_items
          ORDER BY created_at DESC
          LIMIT 2000`;
@@ -750,6 +750,7 @@ app.get('/api/ioc/list', async (req, res) => {
       ), grouped AS (
         SELECT
           MIN(id)::int AS id,
+          MIN(public_id)::text AS public_id,
           observable,
           observable_type,
           MIN(created_at) AS first_seen_at,
@@ -858,34 +859,34 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
     }
 
     const q = `
-      SELECT MIN(id)::int AS id
+      SELECT MIN(public_id)::text AS public_id
       FROM ioc_items
       WHERE observable = $1
       ${typeFilter}
     `;
     const { rows } = await pool.query(q, params);
-    const id = Number(rows[0]?.id || 0);
-    return res.json({ id: id > 0 ? id : null });
+    const publicId = rows[0]?.public_id || null;
+    return res.json({ public_id: publicId });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to resolve IOC detail id', detail: err.message });
   }
 });
 
 app.get('/api/ioc/details', async (req, res) => {
-  const requestedId = Number(req.query?.id || 0);
+  const requestedPublicId = String(req.query?.public_id || '').trim();
 
-  if (!(requestedId > 0)) {
-    return res.status(400).json({ message: 'id is required' });
+  if (!requestedPublicId) {
+    return res.status(400).json({ message: 'public_id is required' });
   }
 
   try {
     const byIdQ = `
-      SELECT observable, observable_type
+      SELECT observable, observable_type, public_id
       FROM ioc_items
-      WHERE id = $1
+      WHERE public_id = $1::uuid
       LIMIT 1
     `;
-    const byIdRes = await pool.query(byIdQ, [requestedId]);
+    const byIdRes = await pool.query(byIdQ, [requestedPublicId]);
     const seed = byIdRes.rows[0];
     if (!seed) {
       return res.json({ summary: null, sources: [], matches: [] });
@@ -904,6 +905,7 @@ app.get('/api/ioc/details', async (req, res) => {
     const itemQ = `
       SELECT
         id,
+        public_id,
         observable,
         observable_type,
         source_name,
@@ -966,6 +968,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const summary = {
       id: rows[0].id,
+      public_id: rows[0].public_id,
       observable,
       observable_type: rows[0].observable_type,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
@@ -1013,6 +1016,7 @@ app.get('/api/ioc/recent', async (req, res) => {
     const q = `
       SELECT
         i.id,
+        i.public_id,
         i.observable,
         i.observable_type,
         i.source_name,

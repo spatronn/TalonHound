@@ -1370,7 +1370,7 @@ function IOCListPage() {
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td title={r.observable || r.ip} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   <button
-                    onClick={() => r.id && navigate(`/ioc/details/${encodeURIComponent(r.id)}`)}
+                    onClick={() => r.public_id && navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`)}
                     style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
                   >
                     {r.observable || r.ip}
@@ -1453,9 +1453,9 @@ function LegacyIOCDetailsRedirect() {
           return;
         }
         const res = await api.get('/ioc/details/resolve', { params: { type: decodedType, observable: decodedObservable } });
-        const resolvedId = Number(res.data?.id || 0);
-        if (active && resolvedId > 0) {
-          navigate(`/ioc/details/${resolvedId}`, { replace: true });
+        const resolvedPublicId = String(res.data?.public_id || '').trim();
+        if (active && resolvedPublicId) {
+          navigate(`/ioc/details/${resolvedPublicId}`, { replace: true });
         } else if (active) {
           navigate('/ioc', { replace: true });
         }
@@ -1477,22 +1477,22 @@ function LegacyIOCDetailsRedirect() {
 }
 
 function IOCDetailsPage() {
-  const { id } = useParams();
+  const { publicId } = useParams();
   const navigate = useNavigate();
-  const detailsId = Number(id || 0);
+  const detailsPublicId = String(publicId || '').trim();
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [] });
 
   async function load() {
     setLoading(true);
-    if (!(detailsId > 0)) {
+    if (!detailsPublicId) {
       setData({ summary: null, sources: [], matches: [] });
       setLoading(false);
       return;
     }
     try {
-      const res = await api.get('/ioc/details', { params: { id: detailsId } });
+      const res = await api.get('/ioc/details', { params: { public_id: detailsPublicId } });
       setData(res.data || { summary: null, sources: [], matches: [] });
     } catch {
       setData({ summary: null, sources: [], matches: [] });
@@ -1503,7 +1503,7 @@ function IOCDetailsPage() {
 
   useEffect(() => {
     load().catch(() => {});
-  }, [detailsId]);
+  }, [detailsPublicId]);
 
   const summary = data.summary;
   const displayObservable = summary?.observable || '-';
@@ -1767,7 +1767,7 @@ function IOCAddPage() {
                 <td>{idx + 1}</td>
                 <td title={r.observable} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   <button
-                    onClick={() => r.id ? navigate(`/ioc/details/${encodeURIComponent(r.id)}`) : navigate('/ioc')}
+                    onClick={() => r.public_id ? navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`) : navigate('/ioc')}
                     style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
                   >
                     <code style={{ whiteSpace: 'inherit', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{r.observable}</code>
@@ -1835,7 +1835,7 @@ function App() {
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
-          <Route path="/ioc/details/:id" element={<Protected><IOCDetailsPage /></Protected>} />
+          <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
