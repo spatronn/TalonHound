@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { createHash } from 'node:crypto';
+import { strFromU8, unzipSync } from 'fflate';
 import { config } from './config.js';
 
 const { Pool } = pg;
@@ -114,6 +115,22 @@ function mapThreatFoxConfidence(level) {
   if (n >= 80) return 'high';
   if (n >= 50) return 'medium';
   return 'low';
+}
+
+async function readThreatFoxCsvText(response) {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const looksZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+
+  if (!looksZip) {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+
+  const files = unzipSync(bytes);
+  const names = Object.keys(files);
+  if (!names.length) return '';
+
+  const csvName = names.find((n) => n.toLowerCase().endsWith('.csv')) || names[0];
+  return strFromU8(files[csvName]);
 }
 
 function classifyThreatFoxObservable(iocValue, iocType) {
@@ -606,7 +623,7 @@ export async function runThreatfoxImport() {
 
     const res = await fetch(config.threatfoxCsvUrl);
     if (!res.ok) throw new Error(`ThreatFox CSV request failed: ${res.status}`);
-    const txt = await res.text();
+    const txt = await readThreatFoxCsvText(res);
 
     const entries = txt
       .split(/\r?\n/)

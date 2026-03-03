@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "bullmq": "^5.10.3",
+    "fflate": "^0.8.2",
     "ioredis": "^5.4.1",
     "pg": "^8.16.3"
   }
