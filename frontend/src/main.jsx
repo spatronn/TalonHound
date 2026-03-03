@@ -1005,6 +1005,7 @@ function IntegrationsRecentRunsPage() {
     if (status === 'success') return '#166534';
     if (status === 'failed' || status === 'fail') return '#991b1b';
     if (status === 'running') return '#92400e';
+    if (status === 'queued') return '#1d4ed8';
     return '#334155';
   };
 
@@ -1012,6 +1013,7 @@ function IntegrationsRecentRunsPage() {
     if (status === 'success') return 'success';
     if (status === 'failed' || status === 'fail') return 'fail';
     if (status === 'running') return 'running';
+    if (status === 'queued') return 'queued';
     return 'never';
   };
 
@@ -1034,7 +1036,7 @@ function IntegrationsRecentRunsPage() {
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th style={{ position: 'relative' }}>ID<div onMouseDown={(e) => startResize('id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Job ID<div onMouseDown={(e) => startResize('id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Integration<div onMouseDown={(e) => startResize('integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Status<div onMouseDown={(e) => startResize('status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Started<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
@@ -1044,8 +1046,8 @@ function IntegrationsRecentRunsPage() {
             </thead>
             <tbody>
               {loading ? <tr><td colSpan={6}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => (
-                <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td>{r.id}</td>
+                <tr key={String(r.job_id || r.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td>{r.job_id || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.integration_name || r.integration_key || '-'}</td>
                   <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.status)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.started_at)}</td>

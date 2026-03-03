@@ -357,6 +357,9 @@ app.get('/api/integrations', async (_req, res) => {
           WHEN f.key = 'urlhaus-abusech' THEN (
             SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'URLhaus:abuse.ch'
           )
+          WHEN f.key = 'threatfox-abusech' THEN (
+            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'ThreatFox:abuse.ch'
+          )
           ELSE 0
         END AS total_records,
         l.error_message AS last_error
@@ -366,6 +369,7 @@ app.get('/api/integrations', async (_req, res) => {
           WHEN f.key = 'et-blockrules' THEN 'hourly_import'
           WHEN f.key = 'usom-trcert' THEN 'usom_import'
           WHEN f.key = 'urlhaus-abusech' THEN 'urlhaus_import'
+          WHEN f.key = 'threatfox-abusech' THEN 'threatfox_import'
           ELSE f.key
         END
       WHERE f.active = TRUE
@@ -374,33 +378,17 @@ app.get('/api/integrations', async (_req, res) => {
 
     const recentQ = `
       SELECT
-        r.id,
-        r.job_type,
-        r.status,
-        r.started_at,
-        r.finished_at,
-        r.records_processed,
-        COALESCE(f.key, CASE
-          WHEN r.job_type = 'hourly_import' THEN 'et-blockrules'
-          WHEN r.job_type = 'usom_import' THEN 'usom-trcert'
-          WHEN r.job_type = 'urlhaus_import' THEN 'urlhaus-abusech'
-          ELSE r.job_type
-        END) AS integration_key,
-        COALESCE(f.name, CASE
-          WHEN r.job_type = 'hourly_import' THEN 'EmergingThreats Blockrules'
-          WHEN r.job_type = 'usom_import' THEN 'USOM TR-CERT'
-          WHEN r.job_type = 'urlhaus_import' THEN 'URLhaus abuse.ch'
-          ELSE r.job_type
-        END) AS integration_name
-      FROM integration_runs r
-      LEFT JOIN integration_feeds f
-        ON f.key = CASE
-          WHEN r.job_type = 'hourly_import' THEN 'et-blockrules'
-          WHEN r.job_type = 'usom_import' THEN 'usom-trcert'
-          WHEN r.job_type = 'urlhaus_import' THEN 'urlhaus-abusech'
-          ELSE r.job_type
-        END
-      ORDER BY r.started_at DESC
+        q.job_id,
+        q.job_name AS job_type,
+        q.status,
+        q.started_at,
+        q.finished_at,
+        q.records_processed,
+        q.integration_key,
+        COALESCE(f.name, q.integration_key) AS integration_name
+      FROM integration_queue_jobs q
+      LEFT JOIN integration_feeds f ON f.key = q.integration_key
+      ORDER BY COALESCE(q.started_at, q.queued_at) DESC
       LIMIT 20
     `;
 
