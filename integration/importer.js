@@ -81,6 +81,64 @@ function classifyUsomObservable(rawObservable) {
   };
 }
 
+function splitCsvLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === ',' && !inQuotes) {
+      out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function mapThreatFoxConfidence(level) {
+  const n = Number(level);
+  if (Number.isNaN(n)) return 'medium';
+  if (n >= 80) return 'high';
+  if (n >= 50) return 'medium';
+  return 'low';
+}
+
+function classifyThreatFoxObservable(iocValue, iocType) {
+  const raw = String(iocValue || '').trim();
+  const type = String(iocType || '').trim().toLowerCase();
+  if (!raw) return null;
+
+  if (type === 'ip:port') {
+    const [host] = raw.split(':');
+    if (!host) return null;
+    if (isIPv4(host)) return { observable: host, observableType: 'ip' };
+    return null;
+  }
+
+  if (type === 'ip') {
+    if (isIPv4(raw) || isCIDR(raw)) return { observable: raw, observableType: 'ip' };
+    return null;
+  }
+
+  if (type === 'url') return { observable: raw, observableType: 'url' };
+  if (type === 'domain') return { observable: raw, observableType: 'domain' };
+
+  return null;
+}
+
 function hashEntries(entries) {
   return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
 }
@@ -520,6 +578,165 @@ export async function runUrlhausImport() {
   } finally {
     try {
       await client.query('SELECT pg_advisory_unlock(942003)');
+    } catch {
+      // ignore
+    }
+    client.release();
+  }
+}
+
+export async function runThreatfoxImport() {
+  const client = await pool.connect();
+  let runId = null;
+
+  try {
+    const lockResult = await client.query('SELECT pg_try_advisory_lock(942004) AS acquired');
+    if (!lockResult.rows[0]?.acquired) {
+      return { skipped: true, reason: 'lock_not_acquired' };
+    }
+
+    const runInsert = await client.query(
+      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
+       VALUES ('threatfox_import', 'running', clock_timestamp(), 'scheduler')
+       RETURNING id`
+    );
+    runId = runInsert.rows[0].id;
+
+    let inserted = 0;
+
+    const res = await fetch(config.threatfoxCsvUrl);
+    if (!res.ok) throw new Error(`ThreatFox CSV request failed: ${res.status}`);
+    const txt = await res.text();
+
+    const entries = txt
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => splitCsvLine(line))
+      .filter((cols) => cols.length >= 16)
+      .map((cols) => {
+        const observable = classifyThreatFoxObservable(cols[2], cols[3]);
+        if (!observable) return null;
+        return {
+          ...observable,
+          iocId: cols[1],
+          threatType: cols[4],
+          malwarePrintable: cols[7],
+          confidence: mapThreatFoxConfidence(cols[9]),
+          reference: cols[11],
+          tags: cols[12],
+          reporter: cols[14]
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
+
+    const currentHash = hashEntries(entries.map((e) => ({ o: e.observable, t: e.observableType, id: e.iocId })));
+
+    const prevState = await client.query(
+      `SELECT content_hash, items_json
+       FROM integration_source_state
+       WHERE source_name = $1`,
+      [config.threatfoxSourceName]
+    );
+
+    const previousHash = prevState.rows[0]?.content_hash || null;
+    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
+    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
+
+    if (previousHash === currentHash) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='success', finished_at=clock_timestamp(), records_processed=0
+         WHERE id=$1`,
+        [runId]
+      );
+
+      await client.query(
+        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (source_name)
+         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+        [config.threatfoxSourceName, `hash:${currentHash}`]
+      );
+
+      return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
+    }
+
+    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    const batchSize = Number(process.env.THREATFOX_BATCH_SIZE || 1000);
+
+    for (let i = 0; i < addedEntries.length; i += batchSize) {
+      const batch = addedEntries.slice(i, i + batchSize);
+      await client.query('BEGIN');
+      try {
+        for (const entry of batch) {
+          const noteParts = [
+            'Auto-imported from ThreatFox CSV',
+            entry.iocId ? `ioc_id=${entry.iocId}` : null,
+            entry.malwarePrintable ? `malware=${entry.malwarePrintable}` : null,
+            entry.reporter ? `reporter=${entry.reporter}` : null,
+            entry.tags ? `tags=${entry.tags}` : null
+          ].filter(Boolean);
+
+          const okObs = await insertObservable(client, {
+            observable: entry.observable,
+            observableType: entry.observableType,
+            sourceName: config.threatfoxSourceName,
+            sourceUrl: config.threatfoxCsvUrl,
+            confidence: entry.confidence,
+            category: entry.threatType || 'threat-intel',
+            note: noteParts.join(' | '),
+            dedupSource: config.threatfoxSourceName
+          });
+
+          if (okObs) inserted += 1;
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      }
+    }
+
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+      [config.threatfoxSourceName, currentHash, JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))]
+    );
+
+    await client.query(
+      `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+      [config.threatfoxSourceName, `hash:${currentHash}`]
+    );
+
+    await client.query(
+      `UPDATE integration_runs
+       SET status='success', finished_at=clock_timestamp(), records_processed=$2
+       WHERE id=$1`,
+      [runId, inserted]
+    );
+
+    return { ok: true, runId, recordsProcessed: inserted };
+  } catch (err) {
+    if (runId) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='failed', finished_at=clock_timestamp(), error_message=$2
+         WHERE id=$1`,
+        [runId, String(err.message).slice(0, 4000)]
+      );
+    }
+
+    throw err;
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(942004)');
     } catch {
       // ignore
     }

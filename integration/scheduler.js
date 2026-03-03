@@ -30,6 +30,15 @@ async function main() {
     }
   );
 
+  await importQueue.add(
+    'threatfox-import',
+    { triggeredBy: 'scheduler' },
+    {
+      jobId: 'threatfox-import',
+      repeat: { pattern: config.schedulerCron }
+    }
+  );
+
   console.log(`[scheduler] repeat jobs set with cron=${config.schedulerCron}`);
 
   setInterval(async () => {
@@ -56,6 +65,15 @@ async function main() {
       { triggeredBy: 'scheduler' },
       {
         jobId: 'urlhaus-import',
+        repeat: { pattern: config.schedulerCron }
+      }
+    );
+
+    await importQueue.add(
+      'threatfox-import',
+      { triggeredBy: 'scheduler' },
+      {
+        jobId: 'threatfox-import',
         repeat: { pattern: config.schedulerCron }
       }
     );

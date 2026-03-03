@@ -55,6 +55,8 @@ services:
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
       - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
       - URLHAUS_URL=https://urlhaus.abuse.ch/downloads/text/
+      - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
+      - THREATFOX_CSV_URL=https://threatfox.abuse.ch/export/csv/full/
     depends_on:
       - db
       - redis
@@ -79,6 +81,8 @@ services:
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
       - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
       - URLHAUS_URL=https://urlhaus.abuse.ch/downloads/text/
+      - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
+      - THREATFOX_CSV_URL=https://threatfox.abuse.ch/export/csv/full/
     depends_on:
       - db
       - redis

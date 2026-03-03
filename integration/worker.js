@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import pg from 'pg';
 import { config } from './config.js';
 import { redis } from './queue.js';
-import { runHourlyImport, runUsomImport, runUrlhausImport } from './importer.js';
+import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport } from './importer.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -12,6 +12,7 @@ function resolveIntegrationKey(job) {
   if (job?.name === 'hourly-import') return 'et-blockrules';
   if (job?.name === 'usom-import') return 'usom-trcert';
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
+  if (job?.name === 'threatfox-import') return 'threatfox-abusech';
   return 'unknown';
 }
 
@@ -35,6 +36,8 @@ const worker = new Worker(
       result = await runUsomImport();
     } else if (job.name === 'urlhaus-import') {
       result = await runUrlhausImport();
+    } else if (job.name === 'threatfox-import') {
+      result = await runThreatfoxImport();
     } else {
       result = { skipped: true, reason: 'unknown_job' };
     }
