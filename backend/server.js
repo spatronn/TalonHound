@@ -628,6 +628,11 @@ app.post('/api/ioc/ip', async (req, res) => {
       `;
       const { rows } = await pool.query(qObs, [value, inferredType, source_name, source_url || null, confidence, category, note]);
       if (!rows.length) return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
+      await pool.query(
+        `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
+         VALUES ('add', $1, $2, $3)`,
+        [rows[0].id, rows[0].observable, rows[0].observable_type]
+      ).catch(() => {});
       return res.status(201).json(rows[0]);
     }
 
@@ -654,9 +659,40 @@ app.post('/api/ioc/ip', async (req, res) => {
     }
 
     refreshGeoCache(1000).catch(() => {});
+    await pool.query(
+      `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
+       VALUES ('add', $1, $2, $3)`,
+      [rows[0].id, rows[0].observable, rows[0].observable_type]
+    ).catch(() => {});
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
+  }
+});
+
+app.delete('/api/ioc/:id', async (req, res) => {
+  const id = Number(req.params?.id || 0);
+  if (!(id > 0)) {
+    return res.status(400).json({ message: 'valid id is required' });
+  }
+
+  try {
+    const prev = await pool.query('SELECT id, observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [id]);
+    if (!prev.rows.length) {
+      return res.status(404).json({ message: 'IOC not found' });
+    }
+
+    await pool.query('DELETE FROM ioc_items WHERE id = $1', [id]);
+    const row = prev.rows[0];
+    await pool.query(
+      `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
+       VALUES ('delete', $1, $2, $3)`,
+      [row.id, row.observable, row.observable_type]
+    ).catch(() => {});
+
+    return res.json({ ok: true, deleted_id: id });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to delete IOC', detail: err.message });
   }
 });
 
@@ -1001,76 +1037,43 @@ app.get('/api/ioc/recent', async (req, res) => {
 
 app.get('/api/ioc/map/countries', async (_req, res) => {
   try {
-    refreshGeoCache(50000).catch(() => {});
-
-    const q = `
-      WITH resolved AS (
-        SELECT
-          CASE
-            WHEN i.observable_type = 'ip'
-              AND split_part(i.observable, '/', 1) ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
-            THEN split_part(i.observable, '/', 1)
-            WHEN i.observable_type = 'url'
-              AND i.observable ~* '^https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?(/|$)'
-            THEN substring(i.observable from '^https?://([0-9]{1,3}(?:\.[0-9]{1,3}){3})')
-            ELSE NULL
-          END AS ip_text
-        FROM ioc_items i
-      ), with_num AS (
-        SELECT
-          r.ip_text,
-          ((split_part(r.ip_text, '.', 1)::bigint << 24)
-          + (split_part(r.ip_text, '.', 2)::bigint << 16)
-          + (split_part(r.ip_text, '.', 3)::bigint << 8)
-          +  split_part(r.ip_text, '.', 4)::bigint) AS ip_num
-        FROM resolved r
-        WHERE r.ip_text IS NOT NULL
-      )
-      SELECT
-        COALESCE(c.country_code, a.country_code, 'UN') AS country_code,
-        COUNT(*)::int AS total
-      FROM with_num w
-      LEFT JOIN ioc_ip_geo_cache c ON c.ip = w.ip_text::inet
-      LEFT JOIN LATERAL (
-        SELECT country_code
-        FROM asn_ipv4_ranges r
-        WHERE w.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
-        LIMIT 1
-      ) a ON TRUE
-      GROUP BY COALESCE(c.country_code, a.country_code, 'UN')
+    const byCountryQ = `
+      SELECT country_code, total::int AS total
+      FROM dashboard_map_country_totals
+      WHERE total > 0
       ORDER BY total DESC
     `;
 
     const totalsQ = `
-      WITH resolved AS (
-        SELECT
-          CASE
-            WHEN i.observable_type = 'ip'
-              AND split_part(i.observable, '/', 1) ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
-            THEN split_part(i.observable, '/', 1)
-            WHEN i.observable_type = 'url'
-              AND i.observable ~* '^https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?(/|$)'
-            THEN substring(i.observable from '^https?://([0-9]{1,3}(?:\.[0-9]{1,3}){3})')
-            ELSE NULL
-          END AS ip_text
-        FROM ioc_items i
-      )
-      SELECT COUNT(*)::int AS total_records,
-             COUNT(DISTINCT ip_text)::int AS unique_ips
-      FROM resolved
-      WHERE ip_text IS NOT NULL
+      SELECT
+        COALESCE(SUM(total), 0)::int AS total_records,
+        COALESCE(SUM(total), 0)::int AS unique_ips
+      FROM dashboard_map_country_totals
+      WHERE total > 0
     `;
 
-    const [{ rows: byCountry }, { rows: totals }] = await Promise.all([
-      pool.query(q),
-      pool.query(totalsQ)
+    const stateQ = `
+      SELECT full_rebuild_pending, last_run_at
+      FROM dashboard_map_job_state
+      WHERE singleton = TRUE
+      LIMIT 1
+    `;
+
+    const [{ rows: byCountry }, { rows: totals }, { rows: stateRows }] = await Promise.all([
+      pool.query(byCountryQ),
+      pool.query(totalsQ),
+      pool.query(stateQ).catch(() => ({ rows: [] }))
     ]);
 
+    const state = stateRows[0] || null;
     return res.json({
       total: totals[0]?.total_records || 0,
       unique_ips: totals[0]?.unique_ips || 0,
-      countries: byCountry
+      countries: byCountry,
+      batch: {
+        full_rebuild_pending: Boolean(state?.full_rebuild_pending),
+        last_run_at: state?.last_run_at || null
+      }
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch map data', detail: err.message });
