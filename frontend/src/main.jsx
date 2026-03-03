@@ -1340,7 +1340,7 @@ function IOCListPage() {
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td title={r.observable || r.ip} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   <button
-                    onClick={() => navigate(r.id ? `/ioc/details/${encodeURIComponent(r.id)}` : `/ioc/details/${encodeURIComponent(r.observable_type || 'ip')}/${encodeURIComponent(r.observable || r.ip)}`)}
+                    onClick={() => r.id && navigate(`/ioc/details/${encodeURIComponent(r.id)}`)}
                     style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
                   >
                     {r.observable || r.ip}
@@ -1409,10 +1409,8 @@ function IOCListPage() {
 }
 
 function IOCDetailsPage() {
-  const { id, type, observable } = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const decodedType = decodeURIComponent(type || 'ip');
-  const decodedObservable = decodeURIComponent(observable || '');
   const detailsId = Number(id || 0);
 
   const [loading, setLoading] = useState(true);
@@ -1420,11 +1418,13 @@ function IOCDetailsPage() {
 
   async function load() {
     setLoading(true);
+    if (!(detailsId > 0)) {
+      setData({ summary: null, sources: [], matches: [] });
+      setLoading(false);
+      return;
+    }
     try {
-      const params = detailsId > 0
-        ? { id: detailsId }
-        : { observable: decodedObservable, type: decodedType };
-      const res = await api.get('/ioc/details', { params });
+      const res = await api.get('/ioc/details', { params: { id: detailsId } });
       setData(res.data || { summary: null, sources: [], matches: [] });
     } catch {
       setData({ summary: null, sources: [], matches: [] });
@@ -1435,10 +1435,10 @@ function IOCDetailsPage() {
 
   useEffect(() => {
     load().catch(() => {});
-  }, [detailsId, decodedObservable, decodedType]);
+  }, [detailsId]);
 
   const summary = data.summary;
-  const displayObservable = summary?.observable || decodedObservable;
+  const displayObservable = summary?.observable || '-';
 
   return (
     <AppShell>
@@ -1738,7 +1738,6 @@ function App() {
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/details/:id" element={<Protected><IOCDetailsPage /></Protected>} />
-          <Route path="/ioc/details/:type/:observable" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />

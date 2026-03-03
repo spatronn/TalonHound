@@ -777,29 +777,26 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
 
 app.get('/api/ioc/details', async (req, res) => {
   const requestedId = Number(req.query?.id || 0);
-  let observable = String(req.query?.observable || '').trim();
-  let observableType = String(req.query?.type || '').trim();
+
+  if (!(requestedId > 0)) {
+    return res.status(400).json({ message: 'id is required' });
+  }
 
   try {
-    if (requestedId > 0) {
-      const byIdQ = `
-        SELECT observable, observable_type
-        FROM ioc_items
-        WHERE id = $1
-        LIMIT 1
-      `;
-      const byIdRes = await pool.query(byIdQ, [requestedId]);
-      const seed = byIdRes.rows[0];
-      if (!seed) {
-        return res.json({ summary: null, sources: [], matches: [] });
-      }
-      observable = seed.observable;
-      observableType = seed.observable_type;
+    const byIdQ = `
+      SELECT observable, observable_type
+      FROM ioc_items
+      WHERE id = $1
+      LIMIT 1
+    `;
+    const byIdRes = await pool.query(byIdQ, [requestedId]);
+    const seed = byIdRes.rows[0];
+    if (!seed) {
+      return res.json({ summary: null, sources: [], matches: [] });
     }
 
-    if (!observable) {
-      return res.status(400).json({ message: 'id or observable is required' });
-    }
+    const observable = seed.observable;
+    const observableType = seed.observable_type;
 
     const itemParams = [observable];
     let typeFilter = '';
