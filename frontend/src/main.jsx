@@ -211,15 +211,21 @@ function AppShell({ children }) {
 }
 
 function DashboardPage() {
-  const [mapData, setMapData] = useState({ total: 0, unique_ips: 0, countries: [] });
+  const [mapData, setMapData] = useState({ total: 0, unique_ips: 0, countries: [], snapshot_time: null, note: '' });
   const [hoverInfo, setHoverInfo] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState([0, 12]);
 
   useEffect(() => {
     api.get('/ioc/map/countries', { params: { day: 'all' } })
-      .then(({ data }) => setMapData({ total: data?.total || 0, unique_ips: data?.unique_ips || 0, countries: data?.countries || [] }))
-      .catch(() => setMapData({ total: 0, unique_ips: 0, countries: [] }));
+      .then(({ data }) => setMapData({
+        total: data?.total || 0,
+        unique_ips: data?.unique_ips || 0,
+        countries: data?.countries || [],
+        snapshot_time: data?.snapshot_time || null,
+        note: data?.note || ''
+      }))
+      .catch(() => setMapData({ total: 0, unique_ips: 0, countries: [], snapshot_time: null, note: '' }));
   }, []);
 
   const normalizeCode = (value) => String(value || '').trim().toUpperCase();
@@ -288,8 +294,14 @@ function DashboardPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
         <h2 style={{ marginTop: 0 }}>Threat World Map</h2>
         <div style={{ marginBottom: 12, fontSize: 15 }}>
-          Total records in database: <b style={{ fontSize: 22 }}>{mapData.total}</b>
+          Total records in snapshot: <b style={{ fontSize: 22 }}>{mapData.total}</b>
           <span style={{ marginLeft: 10, color: '#94a3b8' }}>| Unique IPs: <b>{mapData.unique_ips}</b></span>
+        </div>
+        <div style={{ marginBottom: 10, fontSize: 13, color: '#94a3b8' }}>
+          {mapData.snapshot_time ? `As of ${new Date(mapData.snapshot_time).toLocaleString()}, this view reflects the last 24 hours of processed IOC data.` : 'Snapshot is being prepared from processed IOC data.'}
+        </div>
+        <div style={{ marginBottom: 12, fontSize: 13, color: '#94a3b8' }}>
+          {mapData.note || 'This dashboard is refreshed once per day around midnight in server local time while new IOC data continues to be processed in the background.'}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -339,7 +351,7 @@ function DashboardPage() {
           {hoverInfo && (
             <div style={{ position: 'absolute', right: 10, top: 10, background: '#0f172a', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
               <div><b>{hoverInfo.name}</b></div>
-              <div>Total in malicious DB: <b>{hoverInfo.globalTotal}</b></div>
+              <div>Total in 24h snapshot: <b>{hoverInfo.globalTotal}</b></div>
               <div>Country count: <b>{hoverInfo.countryCount}</b></div>
             </div>
           )}
