@@ -670,19 +670,19 @@ app.post('/api/ioc/ip', async (req, res) => {
   }
 });
 
-app.delete('/api/ioc/:id', async (req, res) => {
-  const id = Number(req.params?.id || 0);
-  if (!(id > 0)) {
-    return res.status(400).json({ message: 'valid id is required' });
+app.delete('/api/ioc/:publicId', async (req, res) => {
+  const publicId = String(req.params?.publicId || '').trim();
+  if (!publicId) {
+    return res.status(400).json({ message: 'valid publicId is required' });
   }
 
   try {
-    const prev = await pool.query('SELECT id, observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [id]);
+    const prev = await pool.query('SELECT id, public_id, observable, observable_type FROM ioc_items WHERE public_id = $1::uuid LIMIT 1', [publicId]);
     if (!prev.rows.length) {
       return res.status(404).json({ message: 'IOC not found' });
     }
 
-    await pool.query('DELETE FROM ioc_items WHERE id = $1', [id]);
+    await pool.query('DELETE FROM ioc_items WHERE public_id = $1::uuid', [publicId]);
     const row = prev.rows[0];
     await pool.query(
       `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
@@ -690,7 +690,7 @@ app.delete('/api/ioc/:id', async (req, res) => {
       [row.id, row.observable, row.observable_type]
     ).catch(() => {});
 
-    return res.json({ ok: true, deleted_id: id });
+    return res.json({ ok: true, deleted_public_id: row.public_id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete IOC', detail: err.message });
   }
