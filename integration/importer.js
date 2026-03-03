@@ -613,7 +613,7 @@ export async function runThreatfoxImport() {
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
       .map((line) => splitCsvLine(line))
-      .filter((cols) => cols.length >= 16)
+      .filter((cols) => cols.length >= 15)
       .map((cols) => {
         const observable = classifyThreatFoxObservable(cols[2], cols[3]);
         if (!observable) return null;
