@@ -1501,9 +1501,11 @@ function IOCDetailsPage() {
           <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10 }}>No IOC detail found.</div>
         ) : (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.observable_type || '-'}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.source_count || 0}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>ASN</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.geo?.asn ?? '-'}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Country</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.geo?.country_code || '-'}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>IOC Match Events</div><div style={{ fontSize: 18, fontWeight: 700 }}>{data.matches.length}</div></div>

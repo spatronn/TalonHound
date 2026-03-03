@@ -31,6 +31,36 @@ app.use(express.json());
 
 let geoCacheRefreshInProgress = false;
 
+function isValidIpv4(input) {
+  const parts = String(input || '').split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
+}
+
+function extractIpv4ForGeo(observable, observableType) {
+  const raw = String(observable || '').trim();
+  const type = String(observableType || '').toLowerCase();
+  if (!raw) return null;
+
+  if (type === 'ip') {
+    const ip = raw.split('/')[0].trim();
+    return isValidIpv4(ip) ? ip : null;
+  }
+
+  if (type === 'url') {
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      const host = u.hostname;
+      return isValidIpv4(host) ? host : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 async function refreshGeoCache(limit = 20000) {
   if (geoCacheRefreshInProgress) return;
   geoCacheRefreshInProgress = true;
@@ -860,6 +890,44 @@ app.get('/api/ioc/details', async (req, res) => {
       return res.json({ summary: null, sources: [], matches: [] });
     }
 
+    const geoIp = extractIpv4ForGeo(observable, rows[0].observable_type);
+    let geo = { ip: geoIp, asn: null, country_code: null, as_name: null };
+    if (geoIp) {
+      const geoQ = `
+        WITH ip_input AS (
+          SELECT
+            $1::inet AS ip,
+            ((split_part(host($1::inet), '.', 1)::bigint << 24)
+            + (split_part(host($1::inet), '.', 2)::bigint << 16)
+            + (split_part(host($1::inet), '.', 3)::bigint << 8)
+            +  split_part(host($1::inet), '.', 4)::bigint) AS ip_num
+        )
+        SELECT
+          i.ip::text AS ip,
+          COALESCE(c.asn, r.asn) AS asn,
+          COALESCE(c.country_code, r.country_code) AS country_code,
+          COALESCE(c.as_name, r.as_name) AS as_name
+        FROM ip_input i
+        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
+        LEFT JOIN LATERAL (
+          SELECT asn, country_code, as_name
+          FROM asn_ipv4_ranges
+          WHERE i.ip_num BETWEEN start_ip_num AND end_ip_num
+          ORDER BY (end_ip_num - start_ip_num) ASC
+          LIMIT 1
+        ) r ON TRUE
+      `;
+      const geoRes = await pool.query(geoQ, [geoIp]);
+      if (geoRes.rows[0]) {
+        geo = {
+          ip: geoRes.rows[0].ip || geoIp,
+          asn: geoRes.rows[0].asn ?? null,
+          country_code: geoRes.rows[0].country_code || null,
+          as_name: geoRes.rows[0].as_name || null
+        };
+      }
+    }
+
     const summary = {
       id: rows[0].id,
       observable,
@@ -868,7 +936,8 @@ app.get('/api/ioc/details', async (req, res) => {
       last_seen_at: rows[0]?.created_at || null,
       source_count: new Set(rows.map((r) => r.source_name)).size,
       confidence_set: [...new Set(rows.map((r) => r.confidence).filter(Boolean))],
-      category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))]
+      category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
+      geo
     };
 
     const matchesQ = `
