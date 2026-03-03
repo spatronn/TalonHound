@@ -1004,26 +1004,62 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
     refreshGeoCache(50000).catch(() => {});
 
     const q = `
+      WITH resolved AS (
+        SELECT
+          CASE
+            WHEN i.observable_type = 'ip'
+              AND split_part(i.observable, '/', 1) ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
+            THEN split_part(i.observable, '/', 1)
+            WHEN i.observable_type = 'url'
+              AND i.observable ~* '^https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?(/|$)'
+            THEN substring(i.observable from '^https?://([0-9]{1,3}(?:\.[0-9]{1,3}){3})')
+            ELSE NULL
+          END AS ip_text
+        FROM ioc_items i
+      ), with_num AS (
+        SELECT
+          r.ip_text,
+          ((split_part(r.ip_text, '.', 1)::bigint << 24)
+          + (split_part(r.ip_text, '.', 2)::bigint << 16)
+          + (split_part(r.ip_text, '.', 3)::bigint << 8)
+          +  split_part(r.ip_text, '.', 4)::bigint) AS ip_num
+        FROM resolved r
+        WHERE r.ip_text IS NOT NULL
+      )
       SELECT
-        COALESCE(c.country_code, 'UN') AS country_code,
+        COALESCE(c.country_code, a.country_code, 'UN') AS country_code,
         COUNT(*)::int AS total
-      FROM ioc_items i
-      LEFT JOIN ioc_ip_geo_cache c
-        ON c.ip = CASE
-          WHEN i.observable_type = 'ip'
-            AND i.observable ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/\d{1,2})?$'
-          THEN i.observable::inet
-          ELSE NULL
-        END
-      WHERE i.observable_type = 'ip'
-      GROUP BY COALESCE(c.country_code, 'UN')
+      FROM with_num w
+      LEFT JOIN ioc_ip_geo_cache c ON c.ip = w.ip_text::inet
+      LEFT JOIN LATERAL (
+        SELECT country_code
+        FROM asn_ipv4_ranges r
+        WHERE w.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
+        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+        LIMIT 1
+      ) a ON TRUE
+      GROUP BY COALESCE(c.country_code, a.country_code, 'UN')
       ORDER BY total DESC
     `;
 
     const totalsQ = `
+      WITH resolved AS (
+        SELECT
+          CASE
+            WHEN i.observable_type = 'ip'
+              AND split_part(i.observable, '/', 1) ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
+            THEN split_part(i.observable, '/', 1)
+            WHEN i.observable_type = 'url'
+              AND i.observable ~* '^https?://[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?(/|$)'
+            THEN substring(i.observable from '^https?://([0-9]{1,3}(?:\.[0-9]{1,3}){3})')
+            ELSE NULL
+          END AS ip_text
+        FROM ioc_items i
+      )
       SELECT COUNT(*)::int AS total_records,
-             (COUNT(DISTINCT observable) FILTER (WHERE observable_type = 'ip'))::int AS unique_ips
-      FROM ioc_items
+             COUNT(DISTINCT ip_text)::int AS unique_ips
+      FROM resolved
+      WHERE ip_text IS NOT NULL
     `;
 
     const [{ rows: byCountry }, { rows: totals }] = await Promise.all([
