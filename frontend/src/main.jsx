@@ -1513,14 +1513,34 @@ function IOCDetailsPage() {
           <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10 }}>No IOC detail found.</div>
         ) : (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.observable_type || '-'}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.source_count || 0}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>ASN</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.geo?.asn ?? '-'}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Country</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.geo?.country_code || '-'}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>IOC Match Events</div><div style={{ fontSize: 18, fontWeight: 700 }}>{data.matches.length}</div></div>
+            </div>
+
+            <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>IP Information</div>
+              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: '#111827' }}>
+                    <th>Parsed IP</th><th>Country</th><th>ASN</th><th>ASN Owner</th><th>Resolved From</th><th>First Seen</th><th>Last Seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ borderTop: '1px solid #334155' }}>
+                    <td>{summary.geo?.ip || '-'}</td>
+                    <td>{summary.geo?.country_code || '-'}</td>
+                    <td>{summary.geo?.asn ?? '-'}</td>
+                    <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.geo?.as_name || '-'}</td>
+                    <td>{summary.observable_type === 'url' ? 'url-host' : (summary.observable_type === 'ip' ? 'direct-ip' : '-')}</td>
+                    <td>{formatUserDateTime(summary.first_seen_at)}</td>
+                    <td>{formatUserDateTime(summary.last_seen_at)}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
             <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
