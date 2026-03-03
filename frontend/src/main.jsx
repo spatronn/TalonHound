@@ -1116,26 +1116,38 @@ function IOCListPage() {
   const [detailIp, setDetailIp] = useState('');
   const [detailSources, setDetailSources] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [listStatusText, setListStatusText] = useState('');
 
   async function loadData(targetPage = page, targetSize = pageSize) {
-    const [listRes, summaryRes] = await Promise.all([
-      api.get('/ioc/list', {
-        params: {
-          page: targetPage,
-          page_size: targetSize,
-          q: search || undefined,
-        }
-      }),
-      api.get('/ioc/summary/today')
-    ]);
-    const items = listRes.data.items || [];
-    setRows(items);
-    setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
-    setSummary(summaryRes.data);
+    setListLoading(true);
+    setListStatusText('Query is running. Please wait while IOC results are being processed...');
+    try {
+      const [listRes, summaryRes] = await Promise.all([
+        api.get('/ioc/list', {
+          params: {
+            page: targetPage,
+            page_size: targetSize,
+            q: search || undefined,
+          }
+        }),
+        api.get('/ioc/summary/today')
+      ]);
+      const items = listRes.data.items || [];
+      setRows(items);
+      setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
+      setSummary(summaryRes.data);
+      setListStatusText('');
+    } catch {
+      setRows([]);
+      setListStatusText('Query failed. Please try again.');
+    } finally {
+      setListLoading(false);
+    }
   }
 
   useEffect(() => {
-    loadData(page, pageSize).catch(() => {});
+    loadData(page, pageSize);
   }, [page, pageSize, search]);
 
   useEffect(() => {
@@ -1317,7 +1329,13 @@ function IOCListPage() {
         </div>
       </div>
 
-      {rows.length === 0 && (
+      {(listLoading || listStatusText) && (
+        <div style={{ marginBottom: 10, padding: 10, background: listLoading ? '#e0f2fe' : '#fff8e1', border: `1px solid ${listLoading ? '#7dd3fc' : '#ffe0a3'}`, borderRadius: 6, color: '#0f172a' }}>
+          {listLoading ? 'Query is running. Please wait while IOC results are being processed...' : listStatusText}
+        </div>
+      )}
+
+      {!listLoading && !listStatusText && rows.length === 0 && (
         <div style={{ marginBottom: 10, padding: 10, background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 6 }}>
           No IOC records found.
         </div>
