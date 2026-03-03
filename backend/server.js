@@ -750,7 +750,7 @@ app.get('/api/ioc/list', async (req, res) => {
       ), grouped AS (
         SELECT
           MIN(id)::int AS id,
-          MIN(public_id)::text AS public_id,
+          (ARRAY_AGG(public_id ORDER BY id ASC))[1]::text AS public_id,
           observable,
           observable_type,
           MIN(created_at) AS first_seen_at,
