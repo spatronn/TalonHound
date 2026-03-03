@@ -122,7 +122,33 @@ docker compose up -d --build
 
 ---
 
-### 8) `demo-frontend`
+### 8) `demo-dashboard-map-worker`
+**Purpose**
+- Batch worker for Threat World Map aggregation.
+- Processes IOC rows in chunks (default 1000) and updates precomputed map tables.
+- Maintains daily display snapshot (last 24h processed IOC view), refreshed around local midnight.
+
+**Key env vars**
+- `DASHBOARD_MAP_CHUNK_SIZE` (default `1000`)
+- `DASHBOARD_MAP_INTERVAL_MS` (default `5000`)
+
+**Key tables**
+- `dashboard_map_country_totals`
+- `dashboard_map_job_state`
+- `dashboard_map_pending_events`
+- `dashboard_map_display_snapshot`
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 dashboard-map-worker
+  ```
+- Progress check:
+  ```bash
+  docker compose exec -T db psql -U demo -d demo -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
+  ```
+
+### 9) `demo-frontend`
 **Purpose**
 - Web UI.
 
@@ -151,6 +177,7 @@ flowchart LR
     SR[demo-signal-retention\nretention worker]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
+    MW[demo-dashboard-map-worker\nmap batch worker]
     DB[(demo-db\nPostgreSQL)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
@@ -165,6 +192,7 @@ flowchart LR
     R -->|consume integration-imports| IW
     EXT -->|fetch IOC lists| IW
     IW -->|upsert ioc_items| DB
+    MW -->|batch aggregate + daily snapshot| DB
 
     SR -->|delete old signal_events| DB
     BE -->|analytics/auth queries| DB
@@ -214,10 +242,12 @@ docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
 docker compose logs --tail=100 signal-retention
+docker compose logs --tail=100 dashboard-map-worker
 
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \
   -c "SELECT count(*) AS raw_count FROM signal_events;" \
-  -c "SELECT count(*) AS ioc_match_count FROM ioc_match_events;"
+  -c "SELECT count(*) AS ioc_match_count FROM ioc_match_events;" \
+  -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
 ```
 
 ---
