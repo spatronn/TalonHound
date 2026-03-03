@@ -468,7 +468,8 @@ app.get('/api/integrations', async (_req, res) => {
 const INTEGRATION_JOBS = {
   'et-blockrules': 'hourly-import',
   'usom-trcert': 'usom-import',
-  'urlhaus-abusech': 'urlhaus-import'
+  'urlhaus-abusech': 'urlhaus-import',
+  'threatfox-abusech': 'threatfox-import'
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
