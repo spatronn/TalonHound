@@ -1623,6 +1623,7 @@ function IOCDetailsPage() {
 }
 
 function IOCAddPage() {
+  const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [recentRows, setRecentRows] = useState([]);
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
@@ -1764,7 +1765,14 @@ function IOCAddPage() {
             {sortedRecentRows.map((r, idx) => (
               <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #f0f0f0' }}>
                 <td>{idx + 1}</td>
-                <td title={r.observable} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}><code style={{ whiteSpace: 'inherit', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{r.observable}</code></td>
+                <td title={r.observable} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                  <button
+                    onClick={() => r.id ? navigate(`/ioc/details/${encodeURIComponent(r.id)}`) : navigate('/ioc')}
+                    style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
+                  >
+                    <code style={{ whiteSpace: 'inherit', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{r.observable}</code>
+                  </button>
+                </td>
                 <td>{r.observable_type || '-'}</td>
                 <td title={r.source_name} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.source_name}</td>
                 <td>{r.confidence}</td>
