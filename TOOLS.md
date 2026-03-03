@@ -46,3 +46,10 @@ Add whatever helps you do your job. This is your cheat sheet.
 - SSH port: `22`
 - Auth: password-based login (password not stored in this file)
 - Notes: same subnet demo target
+
+## GitHub Access (demo-runbook)
+
+- GitHub user: `spatronn`
+- Repo: `https://github.com/spatronn/demo-runbook`
+- Token policy: PAT is repo-scoped for demo project operations
+- Security: PAT value is **not** stored in plaintext in workspace files
