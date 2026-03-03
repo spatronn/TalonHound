@@ -775,6 +775,36 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
   }
 });
 
+app.get('/api/ioc/details/resolve', async (req, res) => {
+  const observable = String(req.query?.observable || '').trim();
+  const observableType = String(req.query?.type || '').trim();
+
+  if (!observable) {
+    return res.status(400).json({ message: 'observable is required' });
+  }
+
+  try {
+    const params = [observable];
+    let typeFilter = '';
+    if (observableType) {
+      params.push(observableType);
+      typeFilter = ` AND observable_type = $2 `;
+    }
+
+    const q = `
+      SELECT MIN(id)::int AS id
+      FROM ioc_items
+      WHERE observable = $1
+      ${typeFilter}
+    `;
+    const { rows } = await pool.query(q, params);
+    const id = Number(rows[0]?.id || 0);
+    return res.json({ id: id > 0 ? id : null });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to resolve IOC detail id', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/details', async (req, res) => {
   const requestedId = Number(req.query?.id || 0);
 

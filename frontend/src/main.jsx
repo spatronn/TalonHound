@@ -1408,6 +1408,44 @@ function IOCListPage() {
   );
 }
 
+function LegacyIOCDetailsRedirect() {
+  const { type, observable } = useParams();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let active = true;
+    async function resolveAndRedirect() {
+      try {
+        const decodedType = decodeURIComponent(type || 'ip');
+        const decodedObservable = decodeURIComponent(observable || '');
+        if (!decodedObservable) {
+          navigate('/ioc', { replace: true });
+          return;
+        }
+        const res = await api.get('/ioc/details/resolve', { params: { type: decodedType, observable: decodedObservable } });
+        const resolvedId = Number(res.data?.id || 0);
+        if (active && resolvedId > 0) {
+          navigate(`/ioc/details/${resolvedId}`, { replace: true });
+        } else if (active) {
+          navigate('/ioc', { replace: true });
+        }
+      } catch {
+        if (active) navigate('/ioc', { replace: true });
+      }
+    }
+    resolveAndRedirect().catch(() => {});
+    return () => { active = false; };
+  }, [type, observable, navigate]);
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+        <div>Redirecting to IOC details...</div>
+      </section>
+    </AppShell>
+  );
+}
+
 function IOCDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -1738,6 +1776,7 @@ function App() {
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/details/:id" element={<Protected><IOCDetailsPage /></Protected>} />
+          <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
