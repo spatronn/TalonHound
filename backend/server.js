@@ -800,10 +800,14 @@ app.get('/api/ioc/list', async (req, res) => {
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const fullScan = Boolean(source_name || confidence || q || asn || country);
+  // Filtre varken 20M+ satırda full scan önlemek: sadece son N gün (varsayılan 365)
+  const maxAgeDays = Math.min(Math.max(Number(process.env.IOC_LIST_MAX_AGE_DAYS || 365) || 365, 30), 3650);
+  const recentClause = fullScan ? ` WHERE created_at > now() - interval '1 day' * $${params.length + 1}` : '';
+  const recentParam = fullScan ? maxAgeDays : null;
 
   try {
     const sourceSql = fullScan
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at FROM ioc_items`
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at FROM ioc_items${recentClause}`
       : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at
          FROM ioc_items
          ORDER BY created_at DESC
@@ -834,8 +838,9 @@ app.get('/api/ioc/list', async (req, res) => {
 
     const asnValue = asn ? Number(asn) : null;
     const countryValue = country ? `%${country}%` : null;
+    const numBase = params.length + (fullScan ? 1 : 0);
     const geoJoin = `LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END`;
-    const geoWhere = `($${params.length + 1}::int IS NULL OR c.asn = $${params.length + 1}) AND ($${params.length + 2}::text IS NULL OR c.country_code ILIKE $${params.length + 2})`;
+    const geoWhere = `($${numBase + 1}::int IS NULL OR c.asn = $${numBase + 1}) AND ($${numBase + 2}::text IS NULL OR c.country_code ILIKE $${numBase + 2})`;
 
     // Tek sorguda hem sayfa hem toplam (COUNT(*) OVER()); boş sayfa için total ayrı çalışır
     const listQ = `
@@ -851,11 +856,12 @@ app.get('/api/ioc/list', async (req, res) => {
              source_names, confidence_set, category_set, asn, country_code, as_name, total
       FROM with_geo
       ORDER BY last_seen_at DESC
-      LIMIT $${params.length + 3}
-      OFFSET $${params.length + 4}
+      LIMIT $${numBase + 3}
+      OFFSET $${numBase + 4}
     `;
 
-    const listRes = await pool.query(listQ, [...params, asnValue, countryValue, limit, offset]);
+    const listParams = fullScan ? [...params, recentParam, asnValue, countryValue, limit, offset] : [...params, asnValue, countryValue, limit, offset];
+    const listRes = await pool.query(listQ, listParams);
     let total = listRes.rows[0]?.total ?? null;
     if (total === null && listRes.rows.length === 0) {
       const countQ = `
@@ -865,14 +871,15 @@ app.get('/api/ioc/list', async (req, res) => {
         ${geoJoin}
         WHERE ${geoWhere}
       `;
-      const countRes = await pool.query(countQ, [...params, asnValue, countryValue]);
-      total = countRes.rows[0]?.total || 0;
+      const countParams = fullScan ? [...params, recentParam, asnValue, countryValue] : [...params, asnValue, countryValue];
+      const countRes = await pool.query(countQ, countParams);
+      total = countRes.rows[0]?.total ?? 0;
     } else if (total === null) {
       total = listRes.rows.length;
     }
     const items = listRes.rows.map(({ total: _drop, ...row }) => row);
 
-    return res.json({
+    const payload = {
       items,
       pagination: {
         page: currentPage,
@@ -880,7 +887,11 @@ app.get('/api/ioc/list', async (req, res) => {
         total,
         total_pages: Math.max(Math.ceil(total / limit), 1)
       }
-    });
+    };
+    if (fullScan && recentParam) {
+      payload.note = `Filtered list limited to last ${recentParam} days (IOC_LIST_MAX_AGE_DAYS).`;
+    }
+    return res.json(payload);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC list', detail: err.message });
   }
