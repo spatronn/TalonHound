@@ -379,16 +379,18 @@ app.get('/api/integrations', async (_req, res) => {
     const recentQ = `
       SELECT
         q.job_id,
-        q.job_name AS job_type,
-        q.status,
-        q.started_at,
-        q.finished_at,
-        q.records_processed,
         q.integration_key,
-        COALESCE(f.name, q.integration_key) AS integration_name
+        COALESCE(f.name, q.integration_key) AS integration_name,
+        q.job_name AS name,
+        q.status AS state,
+        q.queued_at AS timestamp,
+        q.error_message AS failed_reason,
+        q.records_processed,
+        q.started_at,
+        q.finished_at
       FROM integration_queue_jobs q
       LEFT JOIN integration_feeds f ON f.key = q.integration_key
-      ORDER BY COALESCE(q.started_at, q.queued_at) DESC
+      ORDER BY q.queued_at DESC
       LIMIT 20
     `;
 

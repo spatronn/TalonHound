@@ -962,7 +962,7 @@ function IntegrationsQueueStatusPage() {
 function IntegrationsRecentRunsPage() {
   const [loading, setLoading] = useState(true);
   const [recentRuns, setRecentRuns] = useState([]);
-  const [tableWidths, setTableWidths] = useState({ id: 90, integration: 190, status: 110, started: 170, finished: 170, imported: 130 });
+  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, reason: 320 });
   const [resizeState, setResizeState] = useState(null);
 
   async function load() {
@@ -1029,30 +1029,30 @@ function IntegrationsRecentRunsPage() {
             <colgroup>
               <col style={{ width: tableWidths.id }} />
               <col style={{ width: tableWidths.integration }} />
-              <col style={{ width: tableWidths.status }} />
-              <col style={{ width: tableWidths.started }} />
-              <col style={{ width: tableWidths.finished }} />
-              <col style={{ width: tableWidths.imported }} />
+              <col style={{ width: tableWidths.name }} />
+              <col style={{ width: tableWidths.state }} />
+              <col style={{ width: tableWidths.queued }} />
+              <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                 <th style={{ position: 'relative' }}>Job ID<div onMouseDown={(e) => startResize('id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Integration<div onMouseDown={(e) => startResize('integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Status<div onMouseDown={(e) => startResize('status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Started<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Finished<div onMouseDown={(e) => startResize('finished', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Imported IOCs<div onMouseDown={(e) => startResize('imported', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>State<div onMouseDown={(e) => startResize('state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Queued At<div onMouseDown={(e) => startResize('queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
               {loading ? <tr><td colSpan={6}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => (
                 <tr key={String(r.job_id || r.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td>{r.job_id || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_id || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.integration_name || r.integration_key || '-'}</td>
-                  <td style={{ color: statusColor(r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.status)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.finished_at)}</td>
-                  <td>{r.records_processed ?? 0}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || r.job_type || '-'}</td>
+                  <td style={{ color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.state || r.status)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.timestamp || r.started_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.failed_reason || ((r.state || r.status) === 'success' ? 'Completed successfully' : '-')}</td>
                 </tr>
               )) : <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
             </tbody>
