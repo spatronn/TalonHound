@@ -381,7 +381,7 @@ app.get('/api/integrations', async (req, res) => {
           ELSE f.key
         END
       WHERE f.active = TRUE
-      ORDER BY f.name ASC
+      ORDER BY f.created_at ASC, f.name ASC
     `;
 
     const recentQ = `
