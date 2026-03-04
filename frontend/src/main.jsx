@@ -740,6 +740,8 @@ function IntegrationsPage() {
   const [integrations, setIntegrations] = useState([]);
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
+  const [tableWidths, setTableWidths] = useState({ name: 180, integrationId: 190, source: 280, addedAt: 170, schedule: 140, trust: 160, status: 120, lastRun: 170, total: 120, action: 130 });
+  const [resizeState, setResizeState] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -816,6 +818,28 @@ function IntegrationsPage() {
     return c || '-';
   };
 
+  useEffect(() => {
+    if (!resizeState) return undefined;
+    function onMove(e) {
+      const delta = e.clientX - resizeState.startX;
+      const next = Math.max(80, resizeState.startWidth + delta);
+      setTableWidths((prev) => ({ ...prev, [resizeState.col]: next }));
+    }
+    function onUp() { setResizeState(null); }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [resizeState]);
+
+  function startResize(col, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
+  }
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
@@ -830,19 +854,40 @@ function IntegrationsPage() {
         {loading ? <div>Loading...</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+              <colgroup>
+                <col style={{ width: tableWidths.name }} />
+                <col style={{ width: tableWidths.integrationId }} />
+                <col style={{ width: tableWidths.source }} />
+                <col style={{ width: tableWidths.addedAt }} />
+                <col style={{ width: tableWidths.schedule }} />
+                <col style={{ width: tableWidths.trust }} />
+                <col style={{ width: tableWidths.status }} />
+                <col style={{ width: tableWidths.lastRun }} />
+                <col style={{ width: tableWidths.total }} />
+                <col style={{ width: tableWidths.action }} />
+              </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th>Name</th><th>Integration ID</th><th>Source</th><th>Added At</th><th>Schedule</th><th>Trust Level</th><th>Last status</th><th>Last run start</th><th>Total Records</th><th>Action</th>
+                  <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Integration ID<div onMouseDown={(e) => startResize('integrationId', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Source<div onMouseDown={(e) => startResize('source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Added At<div onMouseDown={(e) => startResize('addedAt', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Schedule<div onMouseDown={(e) => startResize('schedule', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Trust Level<div onMouseDown={(e) => startResize('trust', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Last status<div onMouseDown={(e) => startResize('status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Last run start<div onMouseDown={(e) => startResize('lastRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Total Records<div onMouseDown={(e) => startResize('total', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 </tr>
               </thead>
               <tbody>
                 {integrations.map((i) => (
                   <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td>{i.name}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.name}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.integration_id || '-'}</td>
-                    <td style={{ maxWidth: 360, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
-                    <td>{formatUserDateTime(i.created_at)}</td>
-                    <td>{humanSchedule(i.schedule)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.created_at)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{humanSchedule(i.schedule)}</td>
                     <td>
                       <select value={i.trust_level || 'not_categorized'} onChange={(e) => updateTrustLevel(i.key, e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}>
                         <option value="guvenilir">Reliable</option>
@@ -850,10 +895,10 @@ function IntegrationsPage() {
                         <option value="not_categorized">Not Categorized</option>
                       </select>
                     </td>
-                    <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(i.last_status)}</td>
-                    <td>{formatUserDateTime(i.last_started_at)}</td>
-                    <td>{i.total_records ?? 0}</td>
-                    <td><button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
+                    <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusLabel(i.last_status)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.last_started_at)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.total_records ?? 0}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
                   </tr>
                 ))}
               </tbody>
