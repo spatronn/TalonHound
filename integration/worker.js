@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import pg from 'pg';
 import { config } from './config.js';
 import { redis } from './queue.js';
-import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport } from './importer.js';
+import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport } from './importer.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -13,6 +13,7 @@ function resolveIntegrationKey(job) {
   if (job?.name === 'usom-import') return 'usom-trcert';
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
   if (job?.name === 'threatfox-import') return 'threatfox-abusech';
+  if (job?.name === 'malwarebazaar-import') return 'malwarebazaar-abusech';
   return 'unknown';
 }
 
@@ -38,6 +39,8 @@ const worker = new Worker(
       result = await runUrlhausImport();
     } else if (job.name === 'threatfox-import') {
       result = await runThreatfoxImport();
+    } else if (job.name === 'malwarebazaar-import') {
+      result = await runMalwareBazaarImport();
     } else {
       result = { skipped: true, reason: 'unknown_job' };
     }

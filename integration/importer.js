@@ -760,3 +760,198 @@ export async function runThreatfoxImport() {
     client.release();
   }
 }
+
+function toNullable(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return null;
+  if (v.toLowerCase() === 'n/a') return null;
+  return v;
+}
+
+function parseUtcTimestamp(value) {
+  const raw = toNullable(value);
+  if (!raw) return null;
+  const normalized = raw.replace(' ', 'T');
+  const dt = new Date(`${normalized}Z`);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function mapMalwareBazaarRow(cols) {
+  if (!Array.isArray(cols) || cols.length < 14) return null;
+
+  const firstSeenUtc = parseUtcTimestamp(cols[0]);
+  const sha256 = toNullable(cols[1])?.toLowerCase();
+  if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256)) return null;
+
+  const signature = toNullable(cols[8]);
+  const vtPercentRaw = toNullable(cols[10]);
+  const confidence = vtPercentRaw && /^\d{1,3}$/.test(vtPercentRaw)
+    ? (Number(vtPercentRaw) >= 70 ? 'high' : Number(vtPercentRaw) >= 30 ? 'medium' : 'low')
+    : (signature ? 'high' : 'medium');
+
+  const category = signature || 'malware-sample';
+
+  const noteParts = [
+    'Auto-imported from MalwareBazaar CSV',
+    toNullable(cols[5]) ? `file_name=${toNullable(cols[5])}` : null,
+    toNullable(cols[6]) ? `file_type=${toNullable(cols[6])}` : null,
+    toNullable(cols[7]) ? `mime=${toNullable(cols[7])}` : null,
+    toNullable(cols[4]) ? `reporter=${toNullable(cols[4])}` : null,
+    toNullable(cols[2]) ? `md5=${toNullable(cols[2])}` : null,
+    toNullable(cols[3]) ? `sha1=${toNullable(cols[3])}` : null,
+    toNullable(cols[11]) ? `imphash=${toNullable(cols[11])}` : null,
+    toNullable(cols[12]) ? `ssdeep=${toNullable(cols[12])}` : null,
+    toNullable(cols[13]) ? `tlsh=${toNullable(cols[13])}` : null,
+    vtPercentRaw ? `vtpercent=${vtPercentRaw}` : null
+  ].filter(Boolean);
+
+  return {
+    observable: sha256,
+    observableType: 'sha256',
+    firstSeenUtc,
+    confidence,
+    category,
+    note: noteParts.join(' | ')
+  };
+}
+
+export async function runMalwareBazaarImport() {
+  const client = await pool.connect();
+  let runId = null;
+
+  try {
+    const lockResult = await client.query('SELECT pg_try_advisory_lock(942005) AS acquired');
+    if (!lockResult.rows[0]?.acquired) {
+      return { skipped: true, reason: 'lock_not_acquired' };
+    }
+
+    const runInsert = await client.query(
+      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
+       VALUES ('malwarebazaar_import', 'running', clock_timestamp(), 'scheduler')
+       RETURNING id`
+    );
+    runId = runInsert.rows[0].id;
+
+    const cpRes = await client.query(
+      `SELECT last_cursor
+       FROM integration_checkpoints
+       WHERE source_name = $1`,
+      [config.malwareBazaarSourceName]
+    );
+
+    const previousCursor = cpRes.rows[0]?.last_cursor || null;
+    const previousCursorDate = previousCursor ? new Date(previousCursor) : null;
+
+    let inserted = 0;
+    let processed = 0;
+    let maxSeenDate = previousCursorDate;
+
+    const res = await fetch(config.malwareBazaarCsvUrl);
+    if (!res.ok) throw new Error(`MalwareBazaar CSV request failed: ${res.status}`);
+    const txt = await readThreatFoxCsvText(res);
+
+    const lines = txt.split(/\r?\n/);
+    let olderStreak = 0;
+    const stopAfterOlderStreak = Number(process.env.MALWARE_BAZAAR_OLDER_STREAK || 5000);
+
+    const batch = [];
+    const flushBatch = async () => {
+      if (!batch.length) return;
+      await client.query('BEGIN');
+      try {
+        for (const entry of batch) {
+          const okObs = await insertObservable(client, {
+            observable: entry.observable,
+            observableType: entry.observableType,
+            sourceName: config.malwareBazaarSourceName,
+            sourceUrl: config.malwareBazaarCsvUrl,
+            confidence: entry.confidence,
+            category: entry.category,
+            note: entry.note,
+            dedupSource: config.malwareBazaarSourceName
+          });
+
+          if (okObs) inserted += 1;
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        batch.length = 0;
+      }
+    };
+
+    const batchSize = Number(process.env.MALWARE_BAZAAR_BATCH_SIZE || 1000);
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+
+      const cols = splitCsvLine(line);
+      if (cols.length < 14) continue;
+      if (String(cols[0]).toLowerCase().includes('first_seen_utc')) continue;
+
+      const entry = mapMalwareBazaarRow(cols);
+      if (!entry) continue;
+
+      processed += 1;
+
+      if (entry.firstSeenUtc && (!maxSeenDate || entry.firstSeenUtc > maxSeenDate)) {
+        maxSeenDate = entry.firstSeenUtc;
+      }
+
+      if (previousCursorDate && entry.firstSeenUtc && entry.firstSeenUtc <= previousCursorDate) {
+        olderStreak += 1;
+        if (olderStreak >= stopAfterOlderStreak) break;
+        continue;
+      }
+
+      olderStreak = 0;
+      batch.push(entry);
+      if (batch.length >= batchSize) {
+        await flushBatch();
+      }
+    }
+
+    await flushBatch();
+
+    const nextCursor = maxSeenDate ? maxSeenDate.toISOString() : previousCursor || new Date().toISOString();
+
+    await client.query(
+      `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+      [config.malwareBazaarSourceName, nextCursor]
+    );
+
+    await client.query(
+      `UPDATE integration_runs
+       SET status='success', finished_at=clock_timestamp(), records_processed=$2
+       WHERE id=$1`,
+      [runId, inserted]
+    );
+
+    return { ok: true, runId, recordsProcessed: inserted, parsedRecords: processed, cursor: nextCursor };
+  } catch (err) {
+    if (runId) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='failed', finished_at=clock_timestamp(), error_message=$2
+         WHERE id=$1`,
+        [runId, String(err.message).slice(0, 4000)]
+      );
+    }
+
+    throw err;
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(942005)');
+    } catch {
+      // ignore
+    }
+    client.release();
+  }
+}

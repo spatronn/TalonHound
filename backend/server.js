@@ -368,6 +368,9 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'threatfox-abusech' THEN (
             SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'ThreatFox:abuse.ch'
           )
+          WHEN f.key = 'malwarebazaar-abusech' THEN (
+            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'MalwareBazaar:abuse.ch'
+          )
           ELSE 0
         END AS total_records,
         l.error_message AS last_error
@@ -378,6 +381,7 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'usom-trcert' THEN 'usom_import'
           WHEN f.key = 'urlhaus-abusech' THEN 'urlhaus_import'
           WHEN f.key = 'threatfox-abusech' THEN 'threatfox_import'
+          WHEN f.key = 'malwarebazaar-abusech' THEN 'malwarebazaar_import'
           ELSE f.key
         END
       WHERE f.active = TRUE
@@ -513,7 +517,8 @@ const INTEGRATION_JOBS = {
   'et-blockrules': 'hourly-import',
   'usom-trcert': 'usom-import',
   'urlhaus-abusech': 'urlhaus-import',
-  'threatfox-abusech': 'threatfox-import'
+  'threatfox-abusech': 'threatfox-import',
+  'malwarebazaar-abusech': 'malwarebazaar-import'
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);

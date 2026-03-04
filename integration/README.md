@@ -5,11 +5,12 @@ Queue + worker based hourly import service.
 Current source policy: import `.rules` and `.txt`, but skip `*.suricata.rules` to reduce duplicate data.
 USOM policy: import indicators from `https://www.usom.gov.tr/url-list.txt` into unified `ioc_items` table.
 USOM optimization: source hash + diff ingest (`integration_source_state`) — unchanged feed is skipped, changed feed ingests only newly added indicators.
+MalwareBazaar policy: import file-hash intelligence from `https://bazaar.abuse.ch/export/csv/full/` as `observable_type='sha256'` with metadata in `note`.
 
 ## Components
 
-- `scheduler.js`: registers repeatable `hourly-import` and `usom-import` jobs (default `0 * * * *`)
-- `worker.js`: consumes queue jobs and runs ET blockrules + USOM TR-CERT imports
+- `scheduler.js`: registers repeatable feed jobs (default `0 * * * *`)
+- `worker.js`: consumes queue jobs and runs ET + USOM + URLhaus + ThreatFox + MalwareBazaar imports
 - `importer.js`: import logic, DB lock, run logs, checkpoint + dedup
 
 ## Env vars

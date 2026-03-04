@@ -16,5 +16,7 @@ export const config = {
   urlhausSourceName: process.env.URLHAUS_SOURCE_NAME || 'URLhaus:abuse.ch',
   urlhausUrl: process.env.URLHAUS_URL || 'https://urlhaus.abuse.ch/downloads/text/',
   threatfoxSourceName: process.env.THREATFOX_SOURCE_NAME || 'ThreatFox:abuse.ch',
-  threatfoxCsvUrl: process.env.THREATFOX_CSV_URL || 'https://threatfox.abuse.ch/export/csv/full/'
+  threatfoxCsvUrl: process.env.THREATFOX_CSV_URL || 'https://threatfox.abuse.ch/export/csv/full/',
+  malwareBazaarSourceName: process.env.MALWARE_BAZAAR_SOURCE_NAME || 'MalwareBazaar:abuse.ch',
+  malwareBazaarCsvUrl: process.env.MALWARE_BAZAAR_CSV_URL || 'https://bazaar.abuse.ch/export/csv/full/'
 };
