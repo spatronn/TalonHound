@@ -47,6 +47,7 @@ Add whatever helps you do your job. This is your cheat sheet.
 - Auth: password-based login (password not stored in this file)
 - Notes: same subnet demo target
 - Privilege flow: SSH as `spatronn`, then elevate with `sudo su` for root tasks
+- SSH secret path (host): `/home/spatronn/.openclaw/secrets/ssh.env` (chmod 600)
 
 ## GitHub Access (demo-runbook)
 
