@@ -53,3 +53,5 @@ Add whatever helps you do your job. This is your cheat sheet.
 - Repo: `https://github.com/spatronn/demo-runbook`
 - Token policy: PAT is repo-scoped for demo project operations
 - Security: PAT value is **not** stored in plaintext in workspace files
+- Local secret path (host): `/home/spatronn/.openclaw/secrets/github.env` (chmod 600)
+- Git credential store: `/home/spatronn/.git-credentials` (chmod 600)
