@@ -867,23 +867,34 @@ function IntegrationsPage() {
 
 function IntegrationsQueueStatusPage() {
   const [loading, setLoading] = useState(true);
-  const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
+  const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
   const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, reason: 320 });
   const [resizeState, setResizeState] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [search, setSearch] = useState('');
+  const [windowValue, setWindowValue] = useState('24h');
 
-  async function load() {
+  async function load(targetPage = page, targetPageSize = pageSize, targetSearch = search, targetWindow = windowValue) {
     setLoading(true);
     try {
-      const { data } = await api.get('/integrations');
-      setQueue(data?.queue || { counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
+      const { data } = await api.get('/integrations', {
+        params: {
+          queue_page: targetPage,
+          queue_page_size: targetPageSize,
+          queue_search: targetSearch || undefined,
+          queue_window: targetWindow
+        }
+      });
+      setQueue(data?.queue || { counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
     } catch {
-      setQueue({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [] });
+      setQueue({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: targetPageSize, total: 0, total_pages: 1 } });
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load().catch(() => {}); }, []);
+  useEffect(() => { load(page, pageSize, search, windowValue).catch(() => {}); }, [page, pageSize, search, windowValue]);
 
   useEffect(() => {
     if (!resizeState) return undefined;
@@ -912,13 +923,31 @@ function IntegrationsQueueStatusPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <h2 style={{ marginTop: 0 }}>Job Queue Status</h2>
-          <button onClick={() => load().catch(() => {})}>Refresh</button>
+          <button onClick={() => load(page, pageSize, search, windowValue).catch(() => {})}>Refresh</button>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+          <input
+            value={search}
+            onChange={(e) => { setPage(1); setSearch(e.target.value); }}
+            placeholder="Search all columns..."
+            style={{ minWidth: 260, padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+          />
+          <select value={windowValue} onChange={(e) => { setPage(1); setWindowValue(e.target.value); }} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+            <option value="24h">24 hours</option>
+            <option value="1d">1 day</option>
+            <option value="7d">7 days</option>
+          </select>
+          <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+            <option value={25}>25 rows</option>
+            <option value={50}>50 rows</option>
+          </select>
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, fontSize: 14 }}>
           <span>Waiting: <b>{queue.counts?.waiting || 0}</b></span>
           <span>Active: <b>{queue.counts?.active || 0}</b></span>
           <span>Delayed: <b>{queue.counts?.delayed || 0}</b></span>
           <span>Failed: <b>{queue.counts?.failed || 0}</b></span>
+          <span>Completed: <b>{queue.counts?.completed || 0}</b></span>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
@@ -953,6 +982,15 @@ function IntegrationsQueueStatusPage() {
               )) : <tr><td colSpan={6} style={{ color: '#64748b' }}>No queued jobs</td></tr>)}
             </tbody>
           </table>
+        </div>
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ color: '#64748b', fontSize: 13 }}>
+            Page {queue.pagination?.page || page} / {queue.pagination?.total_pages || 1} · Total {queue.pagination?.total || 0}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button disabled={(queue.pagination?.page || page) <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+            <button disabled={(queue.pagination?.page || page) >= (queue.pagination?.total_pages || 1) || loading} onClick={() => setPage((p) => p + 1)}>Next</button>
+          </div>
         </div>
       </section>
     </AppShell>

@@ -326,8 +326,16 @@ app.get('/api/analytics/statistics', async (req, res) => {
   }
 });
 
-app.get('/api/integrations', async (_req, res) => {
+app.get('/api/integrations', async (req, res) => {
   try {
+    const queuePage = Math.max(Number(req.query?.queue_page || 1) || 1, 1);
+    const requestedSize = Number(req.query?.queue_page_size || 25) || 25;
+    const queuePageSize = Math.min(Math.max(requestedSize, 1), 50);
+    const queueOffset = (queuePage - 1) * queuePageSize;
+    const queueSearch = String(req.query?.queue_search || '').trim();
+    const queueWindow = String(req.query?.queue_window || '24h').trim();
+    const queueWindowSql = queueWindow === '7d' ? "NOW() - INTERVAL '7 days'" : "NOW() - INTERVAL '24 hours'";
+
     const q = `
       WITH latest AS (
         SELECT DISTINCT ON (job_type)
@@ -405,28 +413,63 @@ app.get('/api/integrations', async (_req, res) => {
     };
 
     try {
-      const [countRows, jobsRows] = await Promise.all([
-        pool.query(`
-          SELECT status, COUNT(*)::int AS cnt
-          FROM integration_queue_jobs
-          WHERE queued_at >= NOW() - INTERVAL '14 days'
-          GROUP BY status
-        `),
-        pool.query(`
-          SELECT
-            q.job_id AS id,
-            q.integration_key,
-            COALESCE(f.name, q.integration_key) AS integration_name,
-            f.integration_id,
-            q.job_name AS name,
-            q.status AS state,
-            q.queued_at AS timestamp,
-            q.error_message AS failed_reason
-          FROM integration_queue_jobs q
-          LEFT JOIN integration_feeds f ON f.key = q.integration_key
-          ORDER BY q.queued_at DESC
-          LIMIT 30
-        `)
+      const searchParams = [];
+      let searchWhere = '';
+      if (queueSearch) {
+        searchParams.push(`%${queueSearch}%`);
+        searchWhere = `
+          AND (
+            q.job_id ILIKE $1
+            OR q.integration_key ILIKE $1
+            OR q.job_name ILIKE $1
+            OR q.status ILIKE $1
+            OR COALESCE(q.error_message, '') ILIKE $1
+            OR COALESCE(f.name, q.integration_key) ILIKE $1
+          )
+        `;
+      }
+
+      const countSql = `
+        SELECT status, COUNT(*)::int AS cnt
+        FROM integration_queue_jobs
+        WHERE queued_at >= ${queueWindowSql}
+        GROUP BY status
+      `;
+
+      const totalSql = `
+        SELECT COUNT(*)::int AS total
+        FROM integration_queue_jobs q
+        LEFT JOIN integration_feeds f ON f.key = q.integration_key
+        WHERE q.queued_at >= ${queueWindowSql}
+        ${searchWhere}
+      `;
+
+      const jobsSql = `
+        SELECT
+          q.job_id AS id,
+          q.integration_key,
+          COALESCE(f.name, q.integration_key) AS integration_name,
+          f.integration_id,
+          q.job_name AS name,
+          q.status AS state,
+          q.queued_at AS timestamp,
+          q.error_message AS failed_reason,
+          q.records_processed,
+          q.started_at,
+          q.finished_at
+        FROM integration_queue_jobs q
+        LEFT JOIN integration_feeds f ON f.key = q.integration_key
+        WHERE q.queued_at >= ${queueWindowSql}
+        ${searchWhere}
+        ORDER BY q.queued_at DESC
+        LIMIT $${searchParams.length + 1}
+        OFFSET $${searchParams.length + 2}
+      `;
+
+      const [countRows, totalRows, jobsRows] = await Promise.all([
+        pool.query(countSql),
+        pool.query(totalSql, searchParams),
+        pool.query(jobsSql, [...searchParams, queuePageSize, queueOffset])
       ]);
 
       const mapped = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 };
@@ -437,9 +480,20 @@ app.get('/api/integrations', async (_req, res) => {
         else if (r.status === 'success') mapped.completed += r.cnt;
       }
 
+      const total = Number(totalRows.rows[0]?.total || 0);
       queue = {
         counts: mapped,
-        jobs: jobsRows.rows
+        jobs: jobsRows.rows,
+        pagination: {
+          page: queuePage,
+          page_size: queuePageSize,
+          total,
+          total_pages: Math.max(1, Math.ceil(total / queuePageSize))
+        },
+        filters: {
+          search: queueSearch,
+          window: queueWindow
+        }
       };
     } catch {
       // queue telemetry optional
