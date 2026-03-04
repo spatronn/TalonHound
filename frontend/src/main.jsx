@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -1203,25 +1203,31 @@ function IOCListPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listStatusText, setListStatusText] = useState('');
+  const searchDebounceRef = useRef(null);
 
-  async function loadData(targetPage = page, targetSize = pageSize) {
+  const loadSummary = useCallback(async () => {
+    try {
+      const { data } = await api.get('/ioc/summary/today');
+      setSummary(data || { total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
+    } catch {
+      setSummary({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
+    }
+  }, []);
+
+  const loadData = useCallback(async (targetPage, targetSize) => {
     setListLoading(true);
     setListStatusText('Query is running. Please wait while IOC results are being processed...');
     try {
-      const [listRes, summaryRes] = await Promise.all([
-        api.get('/ioc/list', {
-          params: {
-            page: targetPage,
-            page_size: targetSize,
-            q: search || undefined,
-          }
-        }),
-        api.get('/ioc/summary/today')
-      ]);
+      const listRes = await api.get('/ioc/list', {
+        params: {
+          page: targetPage,
+          page_size: targetSize,
+          q: search || undefined,
+        }
+      });
       const items = listRes.data.items || [];
       setRows(items);
       setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
-      setSummary(summaryRes.data);
       setListStatusText('');
     } catch {
       setRows([]);
@@ -1229,11 +1235,21 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }
+  }, [search]);
+
+  useEffect(() => {
+    loadSummary().catch(() => {});
+  }, [loadSummary]);
 
   useEffect(() => {
     loadData(page, pageSize);
-  }, [page, pageSize, search]);
+  }, [page, pageSize, loadData]);
+
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!resizeState) return undefined;
@@ -1377,16 +1393,53 @@ function IOCListPage() {
         <input
           placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)"
           value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSearchInput(v);
+            if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+            searchDebounceRef.current = setTimeout(() => {
+              setPage(1);
+              setSearch(v.trim());
+              searchDebounceRef.current = null;
+            }, 400);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
+              e.preventDefault();
+              if (searchDebounceRef.current) {
+                clearTimeout(searchDebounceRef.current);
+                searchDebounceRef.current = null;
+              }
               setPage(1);
               setSearch(searchInput.trim());
             }
           }}
         />
-        <button onClick={() => { setPage(1); setSearch(searchInput.trim()); }}>Search</button>
-        <button onClick={() => { setSearchInput(''); setSearch(''); setPage(1); }}>Clear</button>
+        <button
+          onClick={() => {
+            if (searchDebounceRef.current) {
+              clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current = null;
+            }
+            setPage(1);
+            setSearch(searchInput.trim());
+          }}
+        >
+          Search
+        </button>
+        <button
+          onClick={() => {
+            if (searchDebounceRef.current) {
+              clearTimeout(searchDebounceRef.current);
+              searchDebounceRef.current = null;
+            }
+            setSearchInput('');
+            setSearch('');
+            setPage(1);
+          }}
+        >
+          Clear
+        </button>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
@@ -1710,11 +1763,18 @@ function IOCDetailsPage() {
 function IOCAddPage() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState(null);
   const [recentRows, setRecentRows] = useState([]);
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
   const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 420, type: 110, source: 220, confidence: 110, ts: 170 });
   const [recentResize, setRecentResize] = useState(null);
   const iocFormRef = useRef(null);
+
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [message]);
 
   async function loadRecent() {
     const res = await api.get('/ioc/recent', { params: { limit: 10 } });
@@ -1798,22 +1858,37 @@ function IOCAddPage() {
     };
 
     try {
-      await api.post('/ioc/ip', payload);
+      const { data } = await api.post('/ioc/ip', payload);
       formEl?.reset?.();
       loadRecent().catch(() => {});
-      alert('IOC saved successfully');
+      if (data?.skipped) {
+        setMessage({ type: 'duplicate', text: 'Already in list (duplicate).' });
+      } else {
+        setMessage({ type: 'success', text: 'IOC saved successfully.' });
+      }
     } catch (err) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
-      alert(msg);
+      setMessage({ type: 'error', text: msg });
     } finally {
       setSubmitting(false);
     }
   }
 
+  const messageStyle = message?.type === 'success'
+    ? { background: '#dcfce7', border: '1px solid #22c55e', color: '#166534' }
+    : message?.type === 'duplicate'
+      ? { background: '#fef3c7', border: '1px solid #eab308', color: '#92400e' }
+      : { background: '#fee2e2', border: '1px solid #ef4444', color: '#991b1b' };
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>Add IOC</h2>
+      {message && (
+        <div role="alert" style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, fontSize: 14, ...messageStyle }}>
+          {message.text}
+        </div>
+      )}
       <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 20 }}>
         <input name="ip" placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)" required />
         <input name="source_name" placeholder="Source name" required />
