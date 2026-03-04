@@ -192,6 +192,55 @@ async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, catego
   return Boolean(ins.rowCount);
 }
 
+const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
+
+/**
+ * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
+ * import_dedup kullanılmaz (idempotent; aynı feed tekrar çalışırsa INSERT no-op).
+ */
+async function batchInsertIocs(client, entries, observableType = 'ip') {
+  if (!entries.length) return 0;
+  let totalInserted = 0;
+  const now = new Date();
+  for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
+    const chunk = entries.slice(i, i + BATCH_INSERT_CHUNK);
+    const placeholders = [];
+    const params = [];
+    chunk.forEach((e, idx) => {
+      const off = idx * 8;
+      placeholders.push(`($${off + 1}::text, $${off + 2}::text, $${off + 3}::text, $${off + 4}::text, $${off + 5}::text, $${off + 6}::text, $${off + 7}::timestamptz, $${off + 8}::timestamptz)`);
+      params.push(
+        e.observable ?? e.ip,
+        e.sourceName,
+        e.sourceUrl ?? null,
+        e.confidence,
+        e.category ?? null,
+        e.note ?? null,
+        now,
+        now
+      );
+    });
+    const typeParam = chunk.length * 8 + 1;
+    const valuesList = placeholders.join(',\n');
+    const ins = await client.query(
+      `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
+       SELECT v.observable, $${typeParam}::text, v.source_name, v.source_url, v.confidence, v.category, v.note, v.first_seen_at, v.last_seen_at
+       FROM (VALUES ${valuesList}) AS v(observable, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ioc_items i
+         WHERE i.observable = v.observable AND i.observable_type = $${typeParam}
+           AND i.source_name = v.source_name AND i.confidence = v.confidence
+           AND COALESCE(i.category, '') = COALESCE(v.category, '')
+           AND COALESCE(i.source_url, '') = COALESCE(v.source_url, '')
+       )
+       RETURNING id`,
+      [...params.flat(), observableType]
+    );
+    totalInserted += ins.rowCount ?? 0;
+  }
+  return totalInserted;
+}
+
 async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
   const dedupKey = `${observableType}|${observable}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
   const dedup = await client.query(
@@ -262,20 +311,17 @@ export async function runHourlyImport() {
       const sourceName = `EmergingThreats:${file}`;
       const confidence = inferConfidence(file);
       const category = inferCategory(file);
+      const note = `Auto-imported from ET blockrules (${file})`;
 
-      for (const ip of ips) {
-        const ok = await insertIoc(client, {
-          ip,
-          sourceName,
-          sourceUrl,
-          confidence,
-          category,
-          note: `Auto-imported from ET blockrules (${file})`,
-          dedupSource: config.sourceName
-        });
-
-        if (ok) inserted += 1;
-      }
+      const entries = ips.map((ip) => ({
+        ip,
+        sourceName,
+        sourceUrl,
+        confidence,
+        category,
+        note
+      }));
+      inserted += await batchInsertIocs(client, entries, 'ip');
     }
 
     await client.query(

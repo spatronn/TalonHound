@@ -26,10 +26,17 @@ const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const signalQueue = new Queue(signalQueueName, { connection: redis });
 
+// Geo cache refresh tuning (local/kısıtlı ortam için düşürülebilir)
+const GEO_CACHE_REFRESH_LIMIT = Math.max(Number(process.env.GEO_CACHE_REFRESH_LIMIT || 20000), 100);
+const GEO_CACHE_REFRESH_INTERVAL_MS = Math.max(Number(process.env.GEO_CACHE_REFRESH_INTERVAL_MS || 60_000), 10_000);
+const GEO_CACHE_ON_ADD_LIMIT = Math.max(Number(process.env.GEO_CACHE_ON_ADD_LIMIT || 500), 50);
+const GEO_CACHE_DEBOUNCE_MS = Math.max(Number(process.env.GEO_CACHE_DEBOUNCE_MS || 2000), 500);
+
 app.use(cors());
 app.use(express.json());
 
 let geoCacheRefreshInProgress = false;
+let geoCacheDebounceTimer = null;
 
 function isValidIpv4(input) {
   const parts = String(input || '').split('.');
@@ -120,6 +127,15 @@ async function refreshGeoCache(limit = 20000) {
   } finally {
     geoCacheRefreshInProgress = false;
   }
+}
+
+/** Yeni IOC eklendiğinde tek tek ağır refresh yerine debounce: kısa süre içinde tek seferde hafif limit ile çalışır. */
+function scheduleGeoCacheRefreshAfterAdd() {
+  if (geoCacheDebounceTimer) clearTimeout(geoCacheDebounceTimer);
+  geoCacheDebounceTimer = setTimeout(() => {
+    geoCacheDebounceTimer = null;
+    refreshGeoCache(GEO_CACHE_ON_ADD_LIMIT).catch(() => {});
+  }, GEO_CACHE_DEBOUNCE_MS);
 }
 
 // schema migrations are handled by migrate.js
@@ -678,6 +694,7 @@ app.post('/api/ioc/ip', async (req, res) => {
       `;
       const { rows } = await pool.query(qObs, [value, inferredType, source_name, source_url || null, confidence, category, note]);
       if (!rows.length) return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
+      scheduleGeoCacheRefreshAfterAdd();
       await pool.query(
         `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
          VALUES ('add', $1, $2, $3)`,
@@ -708,12 +725,13 @@ app.post('/api/ioc/ip', async (req, res) => {
       return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
     }
 
-    refreshGeoCache(1000).catch(() => {});
+    scheduleGeoCacheRefreshAfterAdd();
     await pool.query(
       `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
        VALUES ('add', $1, $2, $3)`,
       [rows[0].id, rows[0].observable, rows[0].observable_type]
     ).catch(() => {});
+
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
@@ -816,42 +834,46 @@ app.get('/api/ioc/list', async (req, res) => {
 
     const asnValue = asn ? Number(asn) : null;
     const countryValue = country ? `%${country}%` : null;
+    const geoJoin = `LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END`;
+    const geoWhere = `($${params.length + 1}::int IS NULL OR c.asn = $${params.length + 1}) AND ($${params.length + 2}::text IS NULL OR c.country_code ILIKE $${params.length + 2})`;
 
-    const countQ = `
-      ${base}
-      SELECT COUNT(*)::int AS total
-      FROM grouped g
-      LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END
-      WHERE ($${params.length + 1}::int IS NULL OR c.asn = $${params.length + 1})
-        AND ($${params.length + 2}::text IS NULL OR c.country_code ILIKE $${params.length + 2})
-    `;
-
+    // Tek sorguda hem sayfa hem toplam (COUNT(*) OVER()); boş sayfa için total ayrı çalışır
     const listQ = `
       ${base}
-      SELECT
-        g.*,
-        g.observable AS ip,
-        c.asn,
-        c.country_code,
-        c.as_name
-      FROM grouped g
-      LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END
-      WHERE ($${params.length + 1}::int IS NULL OR c.asn = $${params.length + 1})
-        AND ($${params.length + 2}::text IS NULL OR c.country_code ILIKE $${params.length + 2})
-      ORDER BY g.last_seen_at DESC
+      , with_geo AS (
+        SELECT g.*, g.observable AS ip, c.asn, c.country_code, c.as_name,
+               COUNT(*) OVER()::int AS total
+        FROM grouped g
+        ${geoJoin}
+        WHERE ${geoWhere}
+      )
+      SELECT id, public_id, observable, observable_type, ip, first_seen_at, last_seen_at, source_count,
+             source_names, confidence_set, category_set, asn, country_code, as_name, total
+      FROM with_geo
+      ORDER BY last_seen_at DESC
       LIMIT $${params.length + 3}
       OFFSET $${params.length + 4}
     `;
 
-    const [countRes, listRes] = await Promise.all([
-      pool.query(countQ, [...params, asnValue, countryValue]),
-      pool.query(listQ, [...params, asnValue, countryValue, limit, offset])
-    ]);
-
-    const total = countRes.rows[0]?.total || 0;
+    const listRes = await pool.query(listQ, [...params, asnValue, countryValue, limit, offset]);
+    let total = listRes.rows[0]?.total ?? null;
+    if (total === null && listRes.rows.length === 0) {
+      const countQ = `
+        ${base}
+        SELECT COUNT(*)::int AS total
+        FROM grouped g
+        ${geoJoin}
+        WHERE ${geoWhere}
+      `;
+      const countRes = await pool.query(countQ, [...params, asnValue, countryValue]);
+      total = countRes.rows[0]?.total || 0;
+    } else if (total === null) {
+      total = listRes.rows.length;
+    }
+    const items = listRes.rows.map(({ total: _drop, ...row }) => row);
 
     return res.json({
-      items: listRes.rows,
+      items,
       pagination: {
         page: currentPage,
         page_size: limit,
@@ -1182,8 +1204,8 @@ app.get('/api/ioc/summary/today', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`Backend listening on :${port}`);
-  refreshGeoCache(100000).catch(() => {});
+  refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
   setInterval(() => {
-    refreshGeoCache(20000).catch(() => {});
-  }, 60_000);
+    refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
+  }, GEO_CACHE_REFRESH_INTERVAL_MS);
 });
