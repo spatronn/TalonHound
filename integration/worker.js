@@ -24,10 +24,10 @@ const worker = new Worker(
 
     await pool.query(
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, started_at, updated_at)
-       VALUES ($1, $2, $3, 'running', $4, TO_TIMESTAMP($5 / 1000.0), NOW(), NOW())
+       VALUES ($1, $2, $3, 'running', $4, NOW(), NOW(), NOW())
        ON CONFLICT (job_id)
        DO UPDATE SET status='running', started_at=NOW(), updated_at=NOW()`,
-      [String(job.id), integrationKey, job.name, job?.data?.triggeredBy || 'scheduler', Number(job.timestamp || Date.now())]
+      [String(job.id), integrationKey, job.name, job?.data?.triggeredBy || 'scheduler']
     );
 
     let result;
