@@ -39,6 +39,36 @@ function formatUserDateTime(value) {
   });
 }
 
+function sanitizeSourceNote(note) {
+  const raw = String(note || '').trim();
+  if (!raw) return '-';
+
+  const duplicateFileInfoKeys = new Set([
+    'file_name',
+    'file_type',
+    'mime',
+    'md5',
+    'sha1',
+    'sha256',
+    'imphash',
+    'tlsh',
+    'ssdeep'
+  ]);
+
+  const filtered = raw
+    .split('|')
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const idx = part.indexOf('=');
+      if (idx <= 0) return true;
+      const key = part.slice(0, idx).trim().toLowerCase();
+      return !duplicateFileInfoKeys.has(key);
+    });
+
+  return filtered.length ? filtered.join(' | ') : '-';
+}
+
 function isAuthed() {
   return Boolean(localStorage.getItem('demo_token'));
 }
@@ -1740,7 +1770,7 @@ function IOCDetailsPage() {
                       <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_url || '-'}</td>
                       <td>{s.confidence || '-'}</td>
                       <td>{s.category || '-'}</td>
-                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.note || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{sanitizeSourceNote(s.note)}</td>
                       <td>{formatUserDateTime(s.created_at)}</td>
                     </tr>
                   ))}
