@@ -25,9 +25,33 @@ const COMMON_TIMEZONES = [
 ];
 
 function formatUserDateTime(value) {
-  if (!value) return '-';
+  if (!value && value !== 0) return '-';
   const timeZone = localStorage.getItem('demo_timezone') || 'UTC';
-  return new Date(value).toLocaleString('en-GB', {
+
+  let dt;
+  if (value instanceof Date) {
+    dt = value;
+  } else if (typeof value === 'number') {
+    const ms = value > 1e12 ? value : value * 1000;
+    dt = new Date(ms);
+  } else {
+    const raw = String(value).trim();
+    if (!raw) return '-';
+
+    if (/^\d+$/.test(raw)) {
+      const num = Number(raw);
+      const ms = num > 1e12 ? num : num * 1000;
+      dt = new Date(ms);
+    } else {
+      const hasTz = /([zZ]|[+\-]\d{2}:?\d{2})$/.test(raw);
+      const normalized = raw.includes(' ') ? raw.replace(' ', 'T') : raw;
+      dt = new Date(hasTz ? normalized : `${normalized}Z`);
+    }
+  }
+
+  if (Number.isNaN(dt.getTime())) return '-';
+
+  return dt.toLocaleString('en-GB', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
