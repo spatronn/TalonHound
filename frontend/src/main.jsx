@@ -1699,6 +1699,32 @@ function IOCDetailsPage() {
               </table>
             </div>
 
+            {summary.file_information ? (
+              <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+                <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>File Information</div>
+                <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', background: '#111827' }}>
+                      <th>SHA256</th><th>SHA1</th><th>MD5</th><th>SSDEEP</th><th>IMPHASH</th><th>TLSH</th><th>File Name</th><th>File Type</th><th>MIME</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderTop: '1px solid #334155' }}>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.sha256 || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.sha1 || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.md5 || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.ssdeep || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.imphash || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.tlsh || '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.file_name || '-'}</td>
+                      <td>{summary.file_information.file_type || '-'}</td>
+                      <td>{summary.file_information.mime || '-'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
             <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
               <div style={{ fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Confidence Set</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
