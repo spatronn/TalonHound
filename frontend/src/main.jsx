@@ -1385,11 +1385,13 @@ function IOCListPage() {
     }
   }
 
+  const hashTypes = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
   const typeCounts = {
     ip: summary.by_type?.find((x) => x.observable_type === 'ip')?.count || 0,
     url: summary.by_type?.find((x) => x.observable_type === 'url')?.count || 0,
     domain: summary.by_type?.find((x) => x.observable_type === 'domain')?.count || 0,
-    ip6: summary.by_type?.find((x) => x.observable_type === 'ip6')?.count || 0
+    ip6: summary.by_type?.find((x) => x.observable_type === 'ip6')?.count || 0,
+    hash: summary.by_type?.reduce((acc, x) => acc + (hashTypes.has(x.observable_type) ? Number(x.count || 0) : 0), 0) || 0
   };
 
   const confidenceBadgeStyle = (confidence) => ({
@@ -1408,7 +1410,7 @@ function IOCListPage() {
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
         <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
           <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Records</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total}</div>
@@ -1420,6 +1422,10 @@ function IOCListPage() {
         <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
           <div style={{ fontSize: 12, color: '#94a3b8' }}>URL</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.url}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8' }}>Hash (MD5/SHA*)</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.hash}</div>
         </div>
         <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
           <div style={{ fontSize: 12, color: '#94a3b8' }}>Domain</div>
