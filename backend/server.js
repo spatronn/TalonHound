@@ -871,7 +871,12 @@ app.get('/api/ioc/list', async (req, res) => {
       });
     }
     params.push(`%${qv}%`);
-    filters.push(`(observable ILIKE $${params.length} OR source_name ILIKE $${params.length} OR COALESCE(category, '') ILIKE $${params.length})`);
+    filters.push(`(
+      observable ILIKE $${params.length}
+      OR source_name ILIKE $${params.length}
+      OR COALESCE(category, '') ILIKE $${params.length}
+      OR COALESCE(note, '') ILIKE $${params.length}
+    )`);
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
