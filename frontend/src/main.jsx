@@ -24,6 +24,8 @@ const COMMON_TIMEZONES = [
   'Asia/Dubai'
 ];
 
+const FILE_HASH_TYPES = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
+
 function formatUserDateTime(value) {
   if (!value && value !== 0) return '-';
   const timeZone = localStorage.getItem('demo_timezone') || 'UTC';
@@ -1385,13 +1387,12 @@ function IOCListPage() {
     }
   }
 
-  const hashTypes = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
   const typeCounts = {
     ip: summary.by_type?.find((x) => x.observable_type === 'ip')?.count || 0,
     url: summary.by_type?.find((x) => x.observable_type === 'url')?.count || 0,
     domain: summary.by_type?.find((x) => x.observable_type === 'domain')?.count || 0,
     ip6: summary.by_type?.find((x) => x.observable_type === 'ip6')?.count || 0,
-    hash: summary.by_type?.reduce((acc, x) => acc + (hashTypes.has(x.observable_type) ? Number(x.count || 0) : 0), 0) || 0
+    hash: summary.by_type?.reduce((acc, x) => acc + (FILE_HASH_TYPES.has(x.observable_type) ? Number(x.count || 0) : 0), 0) || 0
   };
 
   const confidenceBadgeStyle = (confidence) => ({
@@ -1705,6 +1706,7 @@ function IOCDetailsPage() {
 
   const summary = data.summary;
   const displayObservable = summary?.observable || '-';
+  const isHashObservable = FILE_HASH_TYPES.has(String(summary?.observable_type || '').toLowerCase());
 
   return (
     <AppShell>
@@ -1737,27 +1739,29 @@ function IOCDetailsPage() {
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>IOC Match Events</div><div style={{ fontSize: 18, fontWeight: 700 }}>{data.matches.length}</div></div>
             </div>
 
-            <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>IP Information</div>
-              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th>Parsed IP</th><th>Country</th><th>ASN</th><th>ASN Owner</th><th>Resolved From</th><th>First Seen</th><th>Last Seen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ borderTop: '1px solid #334155' }}>
-                    <td>{summary.geo?.ip || '-'}</td>
-                    <td>{summary.geo?.country_code || '-'}</td>
-                    <td>{summary.geo?.asn ?? '-'}</td>
-                    <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.geo?.as_name || '-'}</td>
-                    <td>{summary.observable_type === 'url' ? 'url-host' : (summary.observable_type === 'ip' ? 'direct-ip' : '-')}</td>
-                    <td>{formatUserDateTime(summary.first_seen_at)}</td>
-                    <td>{formatUserDateTime(summary.last_seen_at)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {!isHashObservable ? (
+              <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+                <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>IP Information</div>
+                <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', background: '#111827' }}>
+                      <th>Parsed IP</th><th>Country</th><th>ASN</th><th>ASN Owner</th><th>Resolved From</th><th>First Seen</th><th>Last Seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderTop: '1px solid #334155' }}>
+                      <td>{summary.geo?.ip || '-'}</td>
+                      <td>{summary.geo?.country_code || '-'}</td>
+                      <td>{summary.geo?.asn ?? '-'}</td>
+                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.geo?.as_name || '-'}</td>
+                      <td>{summary.observable_type === 'url' ? 'url-host' : (summary.observable_type === 'ip' ? 'direct-ip' : '-')}</td>
+                      <td>{formatUserDateTime(summary.first_seen_at)}</td>
+                      <td>{formatUserDateTime(summary.last_seen_at)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
 
             {summary.file_information ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
