@@ -870,13 +870,35 @@ app.get('/api/ioc/list', async (req, res) => {
         note: 'Search term must be at least 3 characters'
       });
     }
-    params.push(`%${qv}%`);
-    filters.push(`(
-      observable ILIKE $${params.length}
-      OR source_name ILIKE $${params.length}
-      OR COALESCE(category, '') ILIKE $${params.length}
-      OR COALESCE(note, '') ILIKE $${params.length}
-    )`);
+
+    const isMd5 = /^[a-f0-9]{32}$/i.test(qv);
+    const isSha1 = /^[a-f0-9]{40}$/i.test(qv);
+    const isSha256 = /^[a-f0-9]{64}$/i.test(qv);
+    const isTlsh = /^[a-f0-9]{70,72}$/i.test(qv);
+    const isSsdeep = /^\d+:[A-Za-z0-9/+]+:[A-Za-z0-9/+]+$/.test(qv);
+    const isImphash = /^[a-f0-9]{32}$/i.test(qv);
+    const isHashLike = isMd5 || isSha1 || isSha256 || isTlsh || isSsdeep || isImphash;
+
+    if (isHashLike) {
+      params.push(qv.toLowerCase());
+      const exactIdx = params.length;
+      const regexEscaped = qv.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      params.push(`(^|\\|\\s*)(md5|sha1|sha256|ssdeep|imphash|tlsh)\\s*=\\s*${regexEscaped}(\\s*\\||$)`);
+      const noteRegexIdx = params.length;
+
+      filters.push(`(
+        LOWER(observable) = $${exactIdx}
+        OR COALESCE(note, '') ~* $${noteRegexIdx}
+      )`);
+    } else {
+      params.push(`%${qv}%`);
+      filters.push(`(
+        observable ILIKE $${params.length}
+        OR source_name ILIKE $${params.length}
+        OR COALESCE(category, '') ILIKE $${params.length}
+        OR COALESCE(note, '') ILIKE $${params.length}
+      )`);
+    }
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
