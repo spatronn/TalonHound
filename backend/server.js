@@ -871,33 +871,61 @@ app.get('/api/ioc/list', async (req, res) => {
       });
     }
 
-    const isMd5 = /^[a-f0-9]{32}$/i.test(qv);
-    const isSha1 = /^[a-f0-9]{40}$/i.test(qv);
-    const isSha256 = /^[a-f0-9]{64}$/i.test(qv);
-    const isTlsh = /^[a-f0-9]{70,72}$/i.test(qv);
-    const isSsdeep = /^\d+:[A-Za-z0-9/+]+:[A-Za-z0-9/+]+$/.test(qv);
-    const isImphash = /^[a-f0-9]{32}$/i.test(qv);
-    const isHashLike = isMd5 || isSha1 || isSha256 || isTlsh || isSsdeep || isImphash;
+    const prefixedHash = qv.match(/^(md5|sha1|sha256|ssdeep|imphash|tlsh)\s*:\s*(.+)$/i);
+    if (prefixedHash) {
+      const hashType = prefixedHash[1].toLowerCase();
+      const hashValue = String(prefixedHash[2] || '').trim().toLowerCase();
+      if (hashValue.length < 3) {
+        return res.json({
+          items: [],
+          pagination: { page: currentPage, page_size: limit, total: 0, total_pages: 1 },
+          note: 'Hash value must be at least 3 characters'
+        });
+      }
 
-    if (isHashLike) {
-      params.push(qv.toLowerCase());
+      params.push(hashType);
+      const typeIdx = params.length;
+      params.push(hashValue);
       const exactIdx = params.length;
-      const regexEscaped = qv.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      params.push(`(^|\\|\\s*)(md5|sha1|sha256|ssdeep|imphash|tlsh)\\s*=\\s*${regexEscaped}(\\s*\\||$)`);
+      const regexEscaped = hashValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      params.push(`%${hashType}=%`);
+      const noteKeyHintIdx = params.length;
+      params.push(`(^|\\|\\s*)${hashType}\\s*=\\s*${regexEscaped}(\\s*\\||$)`);
       const noteRegexIdx = params.length;
 
       filters.push(`(
-        LOWER(observable) = $${exactIdx}
-        OR COALESCE(note, '') ~* $${noteRegexIdx}
+        (observable_type = $${typeIdx} AND LOWER(observable) = $${exactIdx})
+        OR (COALESCE(note, '') ILIKE $${noteKeyHintIdx} AND COALESCE(note, '') ~* $${noteRegexIdx})
       )`);
     } else {
-      params.push(`%${qv}%`);
-      filters.push(`(
-        observable ILIKE $${params.length}
-        OR source_name ILIKE $${params.length}
-        OR COALESCE(category, '') ILIKE $${params.length}
-        OR COALESCE(note, '') ILIKE $${params.length}
-      )`);
+      const isMd5 = /^[a-f0-9]{32}$/i.test(qv);
+      const isSha1 = /^[a-f0-9]{40}$/i.test(qv);
+      const isSha256 = /^[a-f0-9]{64}$/i.test(qv);
+      const isTlsh = /^[a-f0-9]{70,72}$/i.test(qv);
+      const isSsdeep = /^\d+:[A-Za-z0-9/+]+:[A-Za-z0-9/+]+$/.test(qv);
+      const isImphash = /^[a-f0-9]{32}$/i.test(qv);
+      const isHashLike = isMd5 || isSha1 || isSha256 || isTlsh || isSsdeep || isImphash;
+
+      if (isHashLike) {
+        params.push(qv.toLowerCase());
+        const exactIdx = params.length;
+        const regexEscaped = qv.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        params.push(`(^|\\|\\s*)(md5|sha1|sha256|ssdeep|imphash|tlsh)\\s*=\\s*${regexEscaped}(\\s*\\||$)`);
+        const noteRegexIdx = params.length;
+
+        filters.push(`(
+          LOWER(observable) = $${exactIdx}
+          OR COALESCE(note, '') ~* $${noteRegexIdx}
+        )`);
+      } else {
+        params.push(`%${qv}%`);
+        filters.push(`(
+          observable ILIKE $${params.length}
+          OR source_name ILIKE $${params.length}
+          OR COALESCE(category, '') ILIKE $${params.length}
+          OR COALESCE(note, '') ILIKE $${params.length}
+        )`);
+      }
     }
   }
 
