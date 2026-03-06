@@ -1259,7 +1259,6 @@ function IOCListPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listStatusText, setListStatusText] = useState('');
-  const searchDebounceRef = useRef(null);
 
   const loadSummary = useCallback(async () => {
     try {
@@ -1301,11 +1300,7 @@ function IOCListPage() {
     loadData(page, pageSize);
   }, [page, pageSize, loadData]);
 
-  useEffect(() => {
-    return () => {
-      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    };
-  }, []);
+  // Search is triggered only by Enter or Search button.
 
   useEffect(() => {
     if (!resizeState) return undefined;
@@ -1455,22 +1450,11 @@ function IOCListPage() {
           placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)"
           value={searchInput}
           onChange={(e) => {
-            const v = e.target.value;
-            setSearchInput(v);
-            if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-            searchDebounceRef.current = setTimeout(() => {
-              setPage(1);
-              setSearch(v.trim());
-              searchDebounceRef.current = null;
-            }, 400);
+            setSearchInput(e.target.value);
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              if (searchDebounceRef.current) {
-                clearTimeout(searchDebounceRef.current);
-                searchDebounceRef.current = null;
-              }
               setPage(1);
               setSearch(searchInput.trim());
             }
@@ -1478,10 +1462,6 @@ function IOCListPage() {
         />
         <button
           onClick={() => {
-            if (searchDebounceRef.current) {
-              clearTimeout(searchDebounceRef.current);
-              searchDebounceRef.current = null;
-            }
             setPage(1);
             setSearch(searchInput.trim());
           }}
@@ -1490,10 +1470,6 @@ function IOCListPage() {
         </button>
         <button
           onClick={() => {
-            if (searchDebounceRef.current) {
-              clearTimeout(searchDebounceRef.current);
-              searchDebounceRef.current = null;
-            }
             setSearchInput('');
             setSearch('');
             setPage(1);

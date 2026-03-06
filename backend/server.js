@@ -850,6 +850,7 @@ app.get('/api/ioc/list', async (req, res) => {
 
   const filters = [];
   const params = [];
+  let prefixedHashSearch = null;
 
   if (source_name) {
     params.push(`%${source_name}%`);
@@ -883,19 +884,25 @@ app.get('/api/ioc/list', async (req, res) => {
         });
       }
 
+      const noteExprByType = {
+        md5: "LOWER(NULLIF(SPLIT_PART(SPLIT_PART(REPLACE(COALESCE(note, ''), ' ', ''), 'md5=', 2), '|', 1), ''))",
+        sha1: "LOWER(NULLIF(SPLIT_PART(SPLIT_PART(REPLACE(COALESCE(note, ''), ' ', ''), 'sha1=', 2), '|', 1), ''))",
+        sha256: "LOWER(NULLIF(SPLIT_PART(SPLIT_PART(REPLACE(COALESCE(note, ''), ' ', ''), 'sha256=', 2), '|', 1), ''))",
+        ssdeep: "LOWER(NULLIF(SPLIT_PART(SPLIT_PART(REPLACE(COALESCE(note, ''), ' ', ''), 'ssdeep=', 2), '|', 1), ''))",
+        imphash: "LOWER(NULLIF(SPLIT_PART(SPLIT_PART(REPLACE(COALESCE(note, ''), ' ', ''), 'imphash=', 2), '|', 1), ''))",
+        tlsh: "LOWER(NULLIF(SPLIT_PART(SPLIT_PART(REPLACE(COALESCE(note, ''), ' ', ''), 'tlsh=', 2), '|', 1), ''))"
+      };
+
       params.push(hashType);
       const typeIdx = params.length;
       params.push(hashValue);
       const exactIdx = params.length;
-      const regexEscaped = hashValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      params.push(`%${hashType}=%`);
-      const noteKeyHintIdx = params.length;
-      params.push(`(^|\\|\\s*)${hashType}\\s*=\\s*${regexEscaped}(\\s*\\||$)`);
-      const noteRegexIdx = params.length;
+      const noteExpr = noteExprByType[hashType];
 
+      prefixedHashSearch = { typeIdx, exactIdx, noteExpr };
       filters.push(`(
         (observable_type = $${typeIdx} AND LOWER(observable) = $${exactIdx})
-        OR (COALESCE(note, '') ILIKE $${noteKeyHintIdx} AND COALESCE(note, '') ~* $${noteRegexIdx})
+        OR (${noteExpr} = $${exactIdx})
       )`);
     } else {
       const isMd5 = /^[a-f0-9]{32}$/i.test(qv);
@@ -930,19 +937,26 @@ app.get('/api/ioc/list', async (req, res) => {
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const fullScan = Boolean(source_name || confidence || q || asn || country);
+  const fullScan = Boolean(source_name || confidence || (q && !prefixedHashSearch) || asn || country);
   // Filtre varken 20M+ satırda full scan önlemek: sadece son N gün (varsayılan 365)
   const maxAgeDays = Math.min(Math.max(Number(process.env.IOC_LIST_MAX_AGE_DAYS || 365) || 365, 30), 3650);
   const recentClause = fullScan ? ` WHERE created_at > now() - interval '1 day' * $${params.length + 1}` : '';
   const recentParam = fullScan ? maxAgeDays : null;
 
   try {
-    const sourceSql = fullScan
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at FROM ioc_items${recentClause}`
-      : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+    const sourceSql = prefixedHashSearch
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
          FROM ioc_items
-         ORDER BY created_at DESC
-         LIMIT 2000`;
+         WHERE (
+           (observable_type = $${prefixedHashSearch.typeIdx} AND LOWER(observable) = $${prefixedHashSearch.exactIdx})
+           OR (${prefixedHashSearch.noteExpr} = $${prefixedHashSearch.exactIdx})
+         )`
+      : fullScan
+        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at FROM ioc_items${recentClause}`
+        : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+           FROM ioc_items
+           ORDER BY created_at DESC
+           LIMIT 2000`;
 
     const base = `
       WITH combined AS (
