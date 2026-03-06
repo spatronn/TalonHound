@@ -216,6 +216,7 @@ function AppShell({ children }) {
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
 
         <nav>
+          <Link to="/system" style={menuStyle(isActive('/system'))}>0. System</Link>
           <Link to="/dashboard" style={menuStyle(isActive('/dashboard'))}>1. Dashboard</Link>
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
@@ -785,6 +786,167 @@ function IncidentPage() {
         <div style={{ textAlign: 'center' }}>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>Incident</h2>
           <p style={{ margin: 0, color: '#94a3b8' }}>This page is intentionally left blank for now.</p>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+function SystemStatusPage() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadStatus = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get('/system/status');
+      setStatus(data);
+    } catch {
+      setError('Failed to load system status');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStatus().catch(() => {});
+  }, [loadStatus]);
+
+  const database = status?.database || {};
+  const redisStatus = status?.redis || {};
+  const queues = status?.queues || {};
+  const queueRows = Object.entries(queues).filter(([key]) => key !== 'error');
+  const integrations = status?.integrations || {};
+  const telemetry = status?.telemetry || {};
+  const mapSnapshot = status?.map_snapshot || {};
+
+  const statusDot = (ok) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    fontWeight: 700,
+    color: ok ? '#22c55e' : '#f87171'
+  });
+
+  const renderTimestamp = (value) => (value ? formatUserDateTime(value) : '-');
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>System Status</h2>
+            <div style={{ color: '#94a3b8', fontSize: 13 }}>
+              Last refresh: <b>{status?.generated_at ? formatUserDateTime(status.generated_at) : '-'}</b>
+            </div>
+          </div>
+          <button onClick={() => loadStatus().catch(() => {})} disabled={loading}>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 12, padding: 10, borderRadius: 8, border: '1px solid #f87171', background: '#451a1a', color: '#fecaca' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginTop: 16 }}>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Database</div>
+              <span style={statusDot(database.ok)}>● {database.ok ? 'OK' : 'Down'}</span>
+            </div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div><b>Name:</b> {database.current_database || '-'}</div>
+              <div><b>Version:</b> {database.version ? database.version.split('on')[0].trim() : '-'}</div>
+              <div><b>Size:</b> {database.size_mb !== undefined ? `${database.size_mb} MB` : '-'}</div>
+              <div><b>Connections:</b> {database.connections ? `${database.connections.total} (active ${database.connections.active}, idle ${database.connections.idle})` : '-'}</div>
+              {database.error && <div style={{ color: '#f87171' }}>{database.error}</div>}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Redis</div>
+              <span style={statusDot(redisStatus.ok)}>● {redisStatus.ok ? 'OK' : 'Down'}</span>
+            </div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div><b>Version:</b> {redisStatus.version || '-'}</div>
+              <div><b>Mode:</b> {redisStatus.mode || '-'}</div>
+              <div><b>Uptime:</b> {redisStatus.uptime_seconds ? `${Math.round(redisStatus.uptime_seconds / 3600)}h` : '-'}</div>
+              <div><b>Clients:</b> {redisStatus.connected_clients ?? '-'}</div>
+              <div><b>Memory:</b> {redisStatus.memory_used_mb ? `${redisStatus.memory_used_mb} MB` : '-'}</div>
+              {redisStatus.error && <div style={{ color: '#f87171' }}>{redisStatus.error}</div>}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Queues</div>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 480 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#111827' }}>
+                <th>Queue</th>
+                <th>Waiting</th>
+                <th>Active</th>
+                <th>Completed</th>
+                <th>Failed</th>
+                <th>Delayed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {queueRows.length ? queueRows.map(([name, counts]) => (
+                <tr key={name} style={{ borderTop: '1px solid #334155' }}>
+                  <td style={{ textTransform: 'capitalize' }}>{name.replace(/_/g, ' ')}</td>
+                  <td>{counts?.waiting ?? '-'}</td>
+                  <td>{counts?.active ?? '-'}</td>
+                  <td>{counts?.completed ?? '-'}</td>
+                  <td>{counts?.failed ?? '-'}</td>
+                  <td>{counts?.delayed ?? '-'}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>{queues.error || 'No queue data available'}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginTop: 20 }}>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Integration Pipeline</div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div><b>Active feeds:</b> {integrations.active_feeds ?? '-'} / {integrations.total_feeds ?? '-'}</div>
+              <div><b>Last queue job:</b> {integrations.last_queue_job ? `${integrations.last_queue_job.status} @ ${renderTimestamp(integrations.last_queue_job.queued_at)}` : '-'}</div>
+              <div><b>Last run:</b> {integrations.last_run ? `${integrations.last_run.status} (${integrations.last_run.job_type}) @ ${renderTimestamp(integrations.last_run.started_at)}` : '-'}</div>
+              {integrations.error && <div style={{ color: '#f87171' }}>{integrations.error}</div>}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Threat Map Snapshot</div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div><b>Total records:</b> {mapSnapshot?.total_records ?? '-'}</div>
+              <div><b>Unique IPs:</b> {mapSnapshot?.unique_ips ?? '-'}</div>
+              <div><b>Snapshot time:</b> {renderTimestamp(mapSnapshot?.snapshot_time)}</div>
+              <div><b>Last refresh:</b> {renderTimestamp(mapSnapshot?.snapshot_last_refreshed_at)}</div>
+              <div><b>Full rebuild pending:</b> {mapSnapshot?.full_rebuild_pending ? 'Yes' : 'No'}</div>
+              {mapSnapshot?.error && <div style={{ color: '#f87171' }}>{mapSnapshot.error}</div>}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Telemetry</div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div><b>Signal events (24h):</b> {telemetry.signal_events_24h ?? '-'}</div>
+              <div><b>Total IOCs:</b> {telemetry.ioc_total ?? '-'}</div>
+              <div><b>IOCs added today:</b> {telemetry.ioc_today ?? '-'}</div>
+              {telemetry.error && <div style={{ color: '#f87171' }}>{telemetry.error}</div>}
+            </div>
+          </div>
         </div>
       </section>
     </AppShell>
@@ -2049,6 +2211,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
           <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />

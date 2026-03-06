@@ -38,6 +38,21 @@ app.use(express.json());
 let geoCacheRefreshInProgress = false;
 let geoCacheDebounceTimer = null;
 
+function parseRedisInfo(raw = '') {
+  return raw
+    .split('\r\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .reduce((acc, line) => {
+      const idx = line.indexOf(':');
+      if (idx === -1) return acc;
+      const key = line.slice(0, idx);
+      const value = line.slice(idx + 1);
+      acc[key] = value;
+      return acc;
+    }, {});
+}
+
 function isValidIpv4(input) {
   const parts = String(input || '').split('.');
   if (parts.length !== 4) return false;
@@ -223,6 +238,142 @@ app.get('/health', async (_req, res) => {
   } catch {
     res.status(500).json({ ok: false, service: 'backend', db: 'down' });
   }
+});
+
+app.get('/api/system/status', async (_req, res) => {
+  const generatedAt = new Date().toISOString();
+  const payload = { generated_at: generatedAt };
+
+  const database = { ok: false };
+  try {
+    const [versionRes, sizeRes, connectionsRes] = await Promise.all([
+      pool.query('SELECT version() AS version, current_database() AS database'),
+      pool.query('SELECT pg_database_size(current_database())::bigint AS size_bytes'),
+      pool.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE state = 'active')::int AS active,
+           COUNT(*) FILTER (WHERE state = 'idle')::int AS idle
+         FROM pg_stat_activity
+         WHERE datname = current_database()`
+      )
+    ]);
+
+    const sizeBytes = Number(sizeRes.rows[0]?.size_bytes || 0);
+
+    database.ok = true;
+    database.version = versionRes.rows[0]?.version || null;
+    database.current_database = versionRes.rows[0]?.database || null;
+    database.size_bytes = sizeBytes;
+    database.size_mb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
+    database.connections = {
+      total: Number(connectionsRes.rows[0]?.total || 0),
+      active: Number(connectionsRes.rows[0]?.active || 0),
+      idle: Number(connectionsRes.rows[0]?.idle || 0)
+    };
+  } catch (err) {
+    database.error = err.message;
+  }
+  payload.database = database;
+
+  const redisInfo = { ok: false };
+  try {
+    const [pong, infoRaw] = await Promise.all([redis.ping(), redis.info('server')]);
+    const info = parseRedisInfo(infoRaw || '');
+    redisInfo.ok = pong === 'PONG';
+    redisInfo.version = info.redis_version || null;
+    redisInfo.mode = info.redis_mode || null;
+    redisInfo.uptime_seconds = Number(info.uptime_in_seconds || 0);
+    redisInfo.connected_clients = Number(info.connected_clients || 0);
+    redisInfo.memory_used_mb = info.used_memory ? Number((Number(info.used_memory) / (1024 * 1024)).toFixed(2)) : null;
+  } catch (err) {
+    redisInfo.error = err.message;
+  }
+  payload.redis = redisInfo;
+
+  const queues = {};
+  try {
+    const [integrationCounts, signalCounts] = await Promise.all([
+      importQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      signalQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed')
+    ]);
+    queues.integration_imports = integrationCounts;
+    queues.signal_events = signalCounts;
+  } catch (err) {
+    queues.error = err.message;
+  }
+  payload.queues = queues;
+
+  let integrations = { active_feeds: 0, total_feeds: 0 };
+  try {
+    const [feedsRes, lastQueueRes, lastRunRes] = await Promise.all([
+      pool.query('SELECT COUNT(*) FILTER (WHERE active = TRUE) AS active_feeds, COUNT(*)::int AS total_feeds FROM integration_feeds'),
+      pool.query('SELECT job_id, status, queued_at, started_at, finished_at FROM integration_queue_jobs ORDER BY queued_at DESC LIMIT 1'),
+      pool.query('SELECT job_type, status, started_at, finished_at FROM integration_runs ORDER BY started_at DESC LIMIT 1')
+    ]);
+
+    integrations = {
+      active_feeds: Number(feedsRes.rows[0]?.active_feeds || 0),
+      total_feeds: Number(feedsRes.rows[0]?.total_feeds || 0),
+      last_queue_job: lastQueueRes.rows[0] || null,
+      last_run: lastRunRes.rows[0] || null
+    };
+  } catch (err) {
+    integrations.error = err.message;
+  }
+  payload.integrations = integrations;
+
+  let mapSnapshot;
+  try {
+    const [snapshotRes, stateRes] = await Promise.all([
+      pool.query(`
+        SELECT snapshot_time, total_records, unique_ips, countries
+        FROM dashboard_map_display_snapshot
+        WHERE singleton = TRUE
+        LIMIT 1
+      `),
+      pool.query(`
+        SELECT full_rebuild_pending, last_run_at, snapshot_last_refreshed_at
+        FROM dashboard_map_job_state
+        WHERE singleton = TRUE
+        LIMIT 1
+      `)
+    ]);
+    const snapshot = snapshotRes.rows[0] || null;
+    const state = stateRes.rows[0] || null;
+    mapSnapshot = {
+      total_records: Number(snapshot?.total_records || 0),
+      unique_ips: Number(snapshot?.unique_ips || 0),
+      snapshot_time: snapshot?.snapshot_time || null,
+      full_rebuild_pending: Boolean(state?.full_rebuild_pending),
+      last_run_at: state?.last_run_at || null,
+      snapshot_last_refreshed_at: state?.snapshot_last_refreshed_at || null
+    };
+  } catch (err) {
+    mapSnapshot = { error: err.message };
+  }
+  payload.map_snapshot = mapSnapshot;
+
+  let telemetry = {};
+  try {
+    const [signals24hRes, iocTotalRes, iocTodayRes] = await Promise.all([
+      pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'"),
+      pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
+      pool.query("SELECT COUNT(*)::bigint AS count FROM ioc_items WHERE created_at >= date_trunc('day', NOW())")
+    ]);
+    telemetry = {
+      signal_events_24h: Number(signals24hRes.rows[0]?.count || 0),
+      ioc_total: Number(iocTotalRes.rows[0]?.count || 0),
+      ioc_today: Number(iocTodayRes.rows[0]?.count || 0)
+    };
+  } catch (err) {
+    telemetry = { error: err.message };
+  }
+  payload.telemetry = telemetry;
+
+  payload.services = { backend: { ok: true } };
+
+  return res.json(payload);
 });
 
 app.post('/api/sysmon/events', async (req, res) => {
