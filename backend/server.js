@@ -910,8 +910,8 @@ app.get('/api/ioc/list', async (req, res) => {
 
   try {
     const sourceSql = fullScan
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at FROM ioc_items${recentClause}`
-      : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, created_at
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at FROM ioc_items${recentClause}`
+      : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
          FROM ioc_items
          ORDER BY created_at DESC
          LIMIT 2000`;
