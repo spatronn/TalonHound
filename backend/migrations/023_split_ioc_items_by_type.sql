@@ -113,9 +113,8 @@ ON ioc_items (
   COALESCE(source_url, '')
 );
 
--- Same logical uniqueness as uq_ioc_items_public_id in migration 018.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_items_public_id
-ON ioc_items (public_id);
+ON ioc_items (observable_type, public_id);
 
 -- Core btree indexes for common filters/sorting.
 CREATE INDEX IF NOT EXISTS idx_ioc_items_created_at
