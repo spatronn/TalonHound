@@ -100,10 +100,11 @@ BEGIN
 END
 $$;
 
--- 7) Recreate critical indexes and constraints on the new structure.
+-- 7) Recreate important indexes on the new structure.
 
--- Same logical uniqueness as uq_ioc_items_dedup in migration 008.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_items_dedup
+-- App-level INSERT ... WHERE NOT EXISTS zaten dedup sagliyor; burada sadece
+-- sorgulari hizlandirmak icin normal (non-unique) index kullaniyoruz.
+CREATE INDEX IF NOT EXISTS idx_ioc_items_dedup
 ON ioc_items (
   observable,
   observable_type,
@@ -113,8 +114,11 @@ ON ioc_items (
   COALESCE(source_url, '')
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_ioc_items_public_id
-ON ioc_items (observable_type, public_id);
+-- public_id fiilen unique olacak sekilde uretiliyor (gen_random_uuid),
+-- fakat partitioned parent uzerinde UNIQUE constraint sorun cikardigi icin
+-- burada da sadece normal index olusturuyoruz.
+CREATE INDEX IF NOT EXISTS idx_ioc_items_public_id
+ON ioc_items (public_id);
 
 -- Core btree indexes for common filters/sorting.
 CREATE INDEX IF NOT EXISTS idx_ioc_items_created_at
