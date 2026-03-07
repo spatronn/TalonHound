@@ -8,10 +8,9 @@
 -- 1) Rename existing table to keep data during migration.
 ALTER TABLE ioc_items RENAME TO ioc_items_old;
 
--- 2) Recreate ioc_items as a partitioned parent table with the same logical schema.
 --    public_id uses gen_random_uuid(); pgcrypto extension was created in migration 018.
 CREATE TABLE ioc_items (
-  id BIGSERIAL PRIMARY KEY,
+  id BIGSERIAL,
   observable TEXT NOT NULL,
   observable_type TEXT NOT NULL,
   source_name TEXT NOT NULL,
@@ -22,7 +21,8 @@ CREATE TABLE ioc_items (
   first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  public_id UUID NOT NULL DEFAULT gen_random_uuid()
+  public_id UUID NOT NULL DEFAULT gen_random_uuid(),
+  PRIMARY KEY (observable_type, id)
 )
 PARTITION BY LIST (observable_type);
 
