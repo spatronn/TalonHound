@@ -63,7 +63,8 @@ Aşağıdaki aşamalar loglanır (ms):
 
 ## 4. Search Logic: Exact Match (sha256:/md5:/sha1:) ve plan davranışı
 
-- **observable_type literal:** Sorguda `observable_type = $1` yerine `observable_type = 'sha256'` (whitelist’ten literal) kullanılır; böylece PostgreSQL parametreye göre generic plan yerine sabit değere göre concrete plan ve index kullanır. pg driver ile parametreli `observable_type = $1` kullanıldığında plan 2–6 sn sürebilir; literal ile ~2 ms seviyesine iner.
+- **Exact hash path (varsayılan):** Prefixed hash için `ioc_file_hash` tablosu, `WHERE observable = $1`, LIMIT 1; LOWER/OR/note yok. dbQuery ms seviyesi.
+- **observable_type literal (CTE path):** Sorguda `observable_type = $1` yerine `observable_type = 'sha256'` (whitelist’ten literal) kullanılır; böylece PostgreSQL parametreye göre generic plan yerine sabit değere göre concrete plan ve index kullanır. pg driver ile parametreli `observable_type = $1` kullanıldığında plan 2–6 sn sürebilir; literal ile ~2 ms seviyesine iner.
 
 - Arama `sha256:xxxx`, `md5:xxxx`, `sha1:xxxx` formatındaysa **parse edilip** exact match kullanılıyor:
   - `observable_type = 'sha256'` (literal, whitelist) ve `LOWER(observable) = $1` (tek parametre)

@@ -1121,74 +1121,46 @@ app.get('/api/ioc/list', async (req, res) => {
     // Hash-only default: single SELECT + group in Node (no CTE, no geo). Set IOC_LIST_USE_CTE_FOR_HASH=1 to use CTE.
     const useMinimalHashPath = useHashFastPathEarly && prefixedHashSearch && !IOC_LIST_USE_CTE_FOR_HASH;
     if (useMinimalHashPath) {
-      // Literal observable_type so PostgreSQL uses a concrete plan and index (avoids generic plan with param $1 for type).
-      const hashTypeLiteral = ['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'].includes(params[prefixedHashSearch.typeIdx - 1])
-        ? params[prefixedHashSearch.typeIdx - 1]
-        : 'sha256';
+      // Exact hash path: ioc_file_hash partition, observable = $1, no LOWER/OR/note, LIMIT 1. Target: ms-level dbQuery.
       const hashValueOnly = params[prefixedHashSearch.exactIdx - 1];
-      const simpleHashQ = `
+      const exactHashQ = `
         SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
-        FROM ioc_items
-        WHERE (
-          (observable_type = '${hashTypeLiteral}' AND LOWER(observable) = $1)
-          OR (${prefixedHashSearch.noteExpr} = $1)
-        )
-        ORDER BY created_at DESC
-        LIMIT 500`;
+        FROM ioc_file_hash
+        WHERE observable = $1
+        LIMIT 1`;
       if (t) t.dbQueryStart = Date.now();
-      const simpleRes = await db.query(simpleHashQ, [hashValueOnly]);
+      const simpleRes = await db.query(exactHashQ, [hashValueOnly]);
       if (t) t.dbQueryEnd = Date.now();
       const rows = simpleRes.rows;
-      if (t) t.beforeResultMapping = Date.now();
-      const byKey = new Map();
-      for (const r of rows) {
-        const key = `${r.observable}\t${r.observable_type}`;
-        if (!byKey.has(key)) {
-          byKey.set(key, {
+      if (t) {
+        t.beforeResultMapping = Date.now();
+        t.beforePagination = Date.now();
+      }
+      const pageItems = rows.length === 0
+        ? []
+        : rows.map((r) => ({
             id: r.id,
             public_id: r.public_id,
             observable: r.observable,
             observable_type: r.observable_type,
+            ip: r.observable,
             first_seen_at: r.created_at,
             last_seen_at: r.created_at,
+            source_count: 1,
             source_names: [r.source_name],
             confidence_set: [r.confidence],
-            category_set: r.category ? [r.category] : []
-          });
-        } else {
-          const g = byKey.get(key);
-          if (new Date(r.created_at) < new Date(g.first_seen_at)) g.first_seen_at = r.created_at;
-          if (new Date(r.created_at) > new Date(g.last_seen_at)) g.last_seen_at = r.created_at;
-          if (!g.source_names.includes(r.source_name)) g.source_names.push(r.source_name);
-          if (!g.confidence_set.includes(r.confidence)) g.confidence_set.push(r.confidence);
-          if (r.category && !g.category_set.includes(r.category)) g.category_set.push(r.category);
-        }
-      }
-      const groupedList = Array.from(byKey.values()).sort((a, b) => new Date(b.last_seen_at) - new Date(a.last_seen_at));
-      const totalMinimal = groupedList.length;
-      if (t) t.beforePagination = Date.now();
-      const pageItems = groupedList.slice(offset, offset + limit).map((g) => ({
-        id: g.id,
-        public_id: g.public_id,
-        observable: g.observable,
-        observable_type: g.observable_type,
-        ip: g.observable,
-        first_seen_at: g.first_seen_at,
-        last_seen_at: g.last_seen_at,
-        source_count: g.source_names.length,
-        source_names: g.source_names.sort(),
-        confidence_set: [...new Set(g.confidence_set)].sort(),
-        category_set: g.category_set.filter(Boolean).length ? [...new Set(g.category_set)] : [],
-        asn: null,
-        country_code: null,
-        as_name: null
-      }));
+            category_set: r.category ? [r.category] : [],
+            asn: null,
+            country_code: null,
+            as_name: null
+          }));
+      const totalExact = pageItems.length;
       if (t) {
         t.afterPagination = Date.now();
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
-      const payload = { items: pageItems, pagination: { page: currentPage, page_size: limit, total: totalMinimal, total_pages: Math.max(Math.ceil(totalMinimal / limit), 1) } };
+      const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
         const payloadStr = JSON.stringify(payload);
@@ -1211,7 +1183,7 @@ app.get('/api/ioc/list', async (req, res) => {
             `rows=${rows.length}`,
             `responseBytes=${t.responseBytes}`
           ].filter(Boolean);
-          console.log('[ioc/list timing]', parts.join(' '), 'path=minimalHash', 'q=' + (req.query?.q ?? ''));
+          console.log('[ioc/list timing]', parts.join(' '), 'path=exactHash', 'q=' + (req.query?.q ?? ''));
         });
         res.setHeader('Content-Type', 'application/json');
         return res.send(payloadStr);
