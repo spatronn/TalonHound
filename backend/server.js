@@ -35,8 +35,8 @@ const GEO_CACHE_DEBOUNCE_MS = Math.max(Number(process.env.GEO_CACHE_DEBOUNCE_MS 
 
 /** IOC list timing: set IOC_LIST_TIMING=1 to log request/parse/connection/query/map/serialize/send (ms). */
 const IOC_LIST_TIMING = process.env.IOC_LIST_TIMING === '1' || process.env.IOC_LIST_TIMING === 'true';
-/** When set, hash-only search uses a single SELECT + JS grouping instead of the full CTE (lower DB load). */
-const IOC_LIST_MINIMAL_HASH_PATH = process.env.IOC_LIST_MINIMAL_HASH_PATH === '1' || process.env.IOC_LIST_MINIMAL_HASH_PATH === 'true';
+/** Hash-only (sha256:/md5:/sha1: no asn/country) uses single SELECT + JS group by default. Set IOC_LIST_USE_CTE_FOR_HASH=1 to force the full CTE path. */
+const IOC_LIST_USE_CTE_FOR_HASH = process.env.IOC_LIST_USE_CTE_FOR_HASH === '1' || process.env.IOC_LIST_USE_CTE_FOR_HASH === 'true';
 
 app.use(cors());
 app.use(express.json());
@@ -1117,8 +1117,8 @@ app.get('/api/ioc/list', async (req, res) => {
   const db = client || pool;
 
   try {
-    // Minimal hash path: single SELECT + group in Node (no CTE, no geo). Use when IOC_LIST_MINIMAL_HASH_PATH=1.
-    const useMinimalHashPath = useHashFastPathEarly && IOC_LIST_MINIMAL_HASH_PATH && prefixedHashSearch;
+    // Hash-only default: single SELECT + group in Node (no CTE, no geo). Set IOC_LIST_USE_CTE_FOR_HASH=1 to use CTE.
+    const useMinimalHashPath = useHashFastPathEarly && prefixedHashSearch && !IOC_LIST_USE_CTE_FOR_HASH;
     if (useMinimalHashPath) {
       const simpleHashQ = `
         SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
@@ -1159,6 +1159,7 @@ app.get('/api/ioc/list', async (req, res) => {
       }
       const groupedList = Array.from(byKey.values()).sort((a, b) => new Date(b.last_seen_at) - new Date(a.last_seen_at));
       const totalMinimal = groupedList.length;
+      if (t) t.beforePagination = Date.now();
       const pageItems = groupedList.slice(offset, offset + limit).map((g) => ({
         id: g.id,
         public_id: g.public_id,
@@ -1176,19 +1177,19 @@ app.get('/api/ioc/list', async (req, res) => {
         as_name: null
       }));
       if (t) {
-        t.beforeMap = Date.now();
-        t.afterMap = Date.now();
+        t.afterPagination = Date.now();
         t.beforeSerialize = Date.now();
         t.beforeSend = Date.now();
         t.sent = Date.now();
         const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
         const parts = [
           d('parse', t.request, t.parse),
-          d('connection', t.beforeConnect, t.connectionAcquired),
+          t.beforeConnect != null && t.connectionAcquired != null ? d('connection', t.beforeConnect, t.connectionAcquired) : '',
           d('query', t.beforeQuery, t.afterQuery),
-          d('map', t.beforeMap, t.afterMap),
+          d('pagination', t.beforePagination, t.afterPagination),
           d('serialize', t.beforeSerialize, t.beforeSend),
-          `total=${t.sent - t.request}ms`
+          `total=${t.sent - t.request}ms`,
+          `rows=${rows.length}`
         ].filter(Boolean);
         console.log('[ioc/list timing]', parts.join(' '), 'minimalHashPath', 'q=' + (req.query?.q ?? ''));
       }

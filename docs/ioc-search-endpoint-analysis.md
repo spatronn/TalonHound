@@ -46,7 +46,8 @@ Bu doküman `GET /api/ioc/list` endpoint'ini, gecikme kaynaklarını ve performa
 |--------|---------------|----------|
 | Normal (sonuç var) | **1** | Tek sorgu: CTE (combined → filtered → grouped) + geo join + LIMIT/OFFSET, `COUNT(*) OVER()` ile total |
 | Boş sayfa | **2** | Aynı CTE ile list sorgusu (0 satır) + ayrı COUNT sorgusu |
-| Minimal hash path (`IOC_LIST_MINIMAL_HASH_PATH=1`) | **1** | Tek `SELECT ... WHERE observable_type AND observable OR note_expr` + Node'da gruplama |
+| Hash-only (sha256:/md5:/sha1:, asn/country yok) — **varsayılan** | **1** | Tek `SELECT ... WHERE observable_type AND observable OR note_expr` + Node'da gruplama (minimal path). CTE kullanılmaz. |
+| Hash-only + `IOC_LIST_USE_CTE_FOR_HASH=1` | 1 veya 2 | Eski CTE path (gruplama DB'de) |
 
 - **JOIN:** Sadece asn/country filtresi varken `ioc_ip_geo_cache` ile LEFT JOIN.
 - **Enrichment / source:** Aynı endpoint içinde ek sorgu yok; tüm veri tek (veya iki) sorgudan geliyor.
@@ -110,6 +111,6 @@ Basit “tek satır var mı?” sorgusu API’de yok; endpoint her zaman sayfal�
 | sha256:/md5:/sha1: | Parse + exact match (observable + note expr) |
 | Generic ILIKE | Sadece prefiks yokken; max age ile sınırlı |
 | Timing | `IOC_LIST_TIMING=1` → parse / connection / query / map / serialize / send |
-| Minimal path | `IOC_LIST_MINIMAL_HASH_PATH=1` → tek SELECT + JS gruplama |
+| Hash-only path | Varsayılan: tek SELECT + JS gruplama. CTE için `IOC_LIST_USE_CTE_FOR_HASH=1` |
 
 Bu doküman `docs/ioc-performance-improvements.md` ve `docs/sql-scale-20m.md` ile birlikte kullanılabilir.
