@@ -11,6 +11,7 @@ const port = process.env.PORT || 3000;
 const demoEmail = process.env.DEMO_EMAIL || 'demo@demo.local';
 const demoPassword = process.env.DEMO_PASSWORD || 'Password1!';
 
+// Single shared pool: no new Client() per request; connections are reused (recommended for latency).
 const pool = new Pool({
   host: process.env.DB_HOST || 'db',
   port: Number(process.env.DB_PORT || 5432),
@@ -31,6 +32,9 @@ const GEO_CACHE_REFRESH_LIMIT = Math.max(Number(process.env.GEO_CACHE_REFRESH_LI
 const GEO_CACHE_REFRESH_INTERVAL_MS = Math.max(Number(process.env.GEO_CACHE_REFRESH_INTERVAL_MS || 60_000), 10_000);
 const GEO_CACHE_ON_ADD_LIMIT = Math.max(Number(process.env.GEO_CACHE_ON_ADD_LIMIT || 500), 50);
 const GEO_CACHE_DEBOUNCE_MS = Math.max(Number(process.env.GEO_CACHE_DEBOUNCE_MS || 2000), 500);
+
+/** IOC list timing: set IOC_LIST_TIMING=1 to log request/parse/query/serialize/send phases (ms). */
+const IOC_LIST_TIMING = process.env.IOC_LIST_TIMING === '1' || process.env.IOC_LIST_TIMING === 'true';
 
 app.use(cors());
 app.use(express.json());
@@ -992,6 +996,8 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
 });
 
 app.get('/api/ioc/list', async (req, res) => {
+  const t = IOC_LIST_TIMING ? { request: Date.now() } : null;
+
   const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
   const allowedSizes = [5, 10, 25, 100];
   const size = Number(page_size);
@@ -1094,6 +1100,8 @@ app.get('/api/ioc/list', async (req, res) => {
   const recentClause = fullScan ? ` WHERE created_at > now() - interval '1 day' * $${params.length + 1}` : '';
   const recentParam = fullScan ? maxAgeDays : null;
 
+  if (t) t.parse = Date.now();
+
   try {
     const sourceSql = prefixedHashSearch
       ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
@@ -1138,8 +1146,21 @@ app.get('/api/ioc/list', async (req, res) => {
     const geoJoin = `LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN g.observable_type = 'ip' THEN g.observable::inet ELSE NULL END`;
     const geoWhere = `($${numBase + 1}::int IS NULL OR c.asn = $${numBase + 1}) AND ($${numBase + 2}::text IS NULL OR c.country_code ILIKE $${numBase + 2})`;
 
-    // Tek sorguda hem sayfa hem toplam (COUNT(*) OVER()); boş sayfa için total ayrı çalışır
-    const listQ = `
+    // Fast path: prefixed hash (sha256:/md5:/sha1:) with no asn/country filter → skip geo join (hash results are not IPs).
+    const useHashFastPath = prefixedHashSearch && asnValue == null && countryValue == null;
+    const listQ = useHashFastPath
+      ? `
+      ${base}
+      SELECT g.id, g.public_id, g.observable, g.observable_type, g.observable AS ip, g.first_seen_at, g.last_seen_at, g.source_count,
+             g.source_names, g.confidence_set, g.category_set,
+             NULL::bigint AS asn, NULL::text AS country_code, NULL::text AS as_name,
+             COUNT(*) OVER()::int AS total
+      FROM grouped g
+      ORDER BY g.last_seen_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `
+      : `
       ${base}
       , with_geo AS (
         SELECT g.*, g.observable AS ip, c.asn, c.country_code, c.as_name,
@@ -1156,23 +1177,32 @@ app.get('/api/ioc/list', async (req, res) => {
       OFFSET $${numBase + 4}
     `;
 
-    const listParams = fullScan ? [...params, recentParam, asnValue, countryValue, limit, offset] : [...params, asnValue, countryValue, limit, offset];
+    const listParams = useHashFastPath
+      ? [...params, limit, offset]
+      : (fullScan ? [...params, recentParam, asnValue, countryValue, limit, offset] : [...params, asnValue, countryValue, limit, offset]);
+    if (t) t.beforeQuery = Date.now();
     const listRes = await pool.query(listQ, listParams);
+    if (t) t.afterQuery = Date.now();
     let total = listRes.rows[0]?.total ?? null;
     if (total === null && listRes.rows.length === 0) {
-      const countQ = `
+      const countQ = useHashFastPath
+        ? `${base} SELECT COUNT(*)::int AS total FROM grouped g`
+        : `
         ${base}
         SELECT COUNT(*)::int AS total
         FROM grouped g
         ${geoJoin}
         WHERE ${geoWhere}
       `;
-      const countParams = fullScan ? [...params, recentParam, asnValue, countryValue] : [...params, asnValue, countryValue];
+      const countParams = useHashFastPath ? [...params] : (fullScan ? [...params, recentParam, asnValue, countryValue] : [...params, asnValue, countryValue]);
+      if (t) t.beforeCountQuery = Date.now();
       const countRes = await pool.query(countQ, countParams);
+      if (t) t.afterCountQuery = Date.now();
       total = countRes.rows[0]?.total ?? 0;
     } else if (total === null) {
       total = listRes.rows.length;
     }
+    if (t) t.beforeSerialize = Date.now();
     const items = listRes.rows.map(({ total: _drop, ...row }) => row);
 
     const payload = {
@@ -1186,6 +1216,22 @@ app.get('/api/ioc/list', async (req, res) => {
     };
     if (fullScan && recentParam) {
       payload.note = `Filtered list limited to last ${recentParam} days (IOC_LIST_MAX_AGE_DAYS).`;
+    }
+    if (t) {
+      t.beforeSend = Date.now();
+      res.on('finish', () => {
+        t.sent = Date.now();
+        const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+        const parts = [
+          d('parse', t.request, t.parse),
+          d('query', t.beforeQuery, t.afterQuery),
+          t.beforeCountQuery != null && t.afterCountQuery != null ? `countQuery=${t.afterCountQuery - t.beforeCountQuery}ms` : '',
+          d('serialize', t.beforeSerialize, t.beforeSend),
+          d('send', t.beforeSend, t.sent),
+          `total=${t.sent - t.request}ms`
+        ].filter(Boolean);
+        console.log('[ioc/list timing]', parts.join(' '), useHashFastPath ? 'fastPath' : '', 'q=' + (req.query?.q ?? ''));
+      });
     }
     return res.json(payload);
   } catch (err) {

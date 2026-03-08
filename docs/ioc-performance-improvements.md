@@ -25,6 +25,8 @@ Bu doküman, özellikle **yeni IOC eklendiğinde** ve **local / kısıtlı ortam
 
 **Uygulandı:** Tek sorguda hem sayfa hem toplam: `COUNT(*) OVER()` ile window count; sonuç satırlarında `total` dönüyor. Sadece **boş sayfa** (0 satır) döndüğünde total için ayrı count sorgusu çalışıyor. Böylece normal kullanımda ağır CTE bir kez çalışıyor.
 
+**Timing (gecikme tespiti):** `IOC_LIST_TIMING=1` ile endpoint içinde parse / query / serialize / send süreleri loglanır. Örnek: `[ioc/list timing] parse=0ms query=5ms serialize=1ms send=2ms total=8ms q=sha256:xxx`. DB hızlı ama toplam yanıt yavaşsa bu loglarla darboğaz bulunur. **Bağlantı:** Tek `pg.Pool` kullanılıyor; her istekte yeni Client açılmıyor. **Hash-only fast path:** `sha256:` / `md5:` / `sha1:` aramasında asn/country yoksa geo join atlanır, tek sorgu ile sayfa dönülür.
+
 ---
 
 ## 3. Integration bulk import (ET / USOM / URLhaus vb.)
