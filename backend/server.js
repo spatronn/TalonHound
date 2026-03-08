@@ -1155,10 +1155,13 @@ async function handleIocList(req, res) {
     }
     if (exactObservableValue != null) {
       const obsLimit = Math.min(limit, 100);
+      // ioc_observables (025): observable_value, ioc_public_id; join ioc_items for full row
       const obsQ = `
-        SELECT id, observable, observable_type, source_name, source_url, confidence, category, note, created_at
-        FROM ioc_observables
-        WHERE observable = $1
+        SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.source_url, i.confidence, i.category, i.note, i.created_at
+        FROM ioc_observables o
+        JOIN ioc_items i ON i.public_id = o.ioc_public_id
+        WHERE o.observable_value = $1
+        ORDER BY i.created_at DESC
         LIMIT $2`;
       if (t) t.dbQueryStart = Date.now();
       const obsRes = await db.query(obsQ, [exactObservableValue, obsLimit]);
@@ -1167,7 +1170,7 @@ async function handleIocList(req, res) {
       if (rows.length > 0) {
         const pageItems = rows.map((r) => ({
           id: r.id,
-          public_id: r.id,
+          public_id: r.public_id,
           observable: r.observable,
           observable_type: r.observable_type,
           ip: r.observable,
