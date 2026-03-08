@@ -31,6 +31,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - QUEUE_NAME=integration-imports
       - SIGNAL_QUEUE_NAME=signal-events
+      # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
+      - IOC_LIST_TIMING=1
     depends_on:
       - db
       - redis

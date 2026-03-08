@@ -1179,6 +1179,7 @@ app.get('/api/ioc/list', async (req, res) => {
         as_name: null
       }));
       if (t) {
+        t.afterPagination = Date.now();
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
@@ -1683,6 +1684,9 @@ app.get('/api/ioc/summary/today', async (req, res) => {
 
 app.listen(port, () => {
   console.log(`Backend listening on :${port}`);
+  if (IOC_LIST_TIMING) {
+    console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
+  }
   refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
   setInterval(() => {
     refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
