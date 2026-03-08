@@ -1143,29 +1143,18 @@ app.get('/api/ioc/list', async (req, res) => {
     // Hash-only default: single SELECT + group in Node (no CTE, no geo). Set IOC_LIST_USE_CTE_FOR_HASH=1 to use CTE.
     const useMinimalHashPath = useHashFastPathEarly && prefixedHashSearch && !IOC_LIST_USE_CTE_FOR_HASH;
     if (useMinimalHashPath) {
-      // Exact hash path: ioc_file_hash partition, observable = $1, no LOWER/OR/note, LIMIT 1. Target: ms-level dbQuery.
+      // Hash search: ioc_file_hash only. Primary match (observable = $1) or note match (e.g. imphash=, ssdeep=).
       const hashValueOnly = params[prefixedHashSearch.exactIdx - 1];
+      const noteExpr = prefixedHashSearch.noteExpr;
       const exactHashQ = `
         SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
         FROM ioc_file_hash
-        WHERE observable = $1
+        WHERE observable = $1 OR (${noteExpr}) = $1
         LIMIT 1`;
       if (t) t.dbQueryStart = Date.now();
       const simpleRes = await db.query(exactHashQ, [hashValueOnly]);
       if (t) t.dbQueryEnd = Date.now();
-      let rows = simpleRes.rows;
-      if (rows.length === 0) {
-        // Fallback: observable index (e.g. imphash, ssdeep, or any observable stored in ioc_observables). Target: <20ms.
-        const obsRes = await db.query(
-          `SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.confidence, i.category, i.note, i.created_at
-           FROM ioc_observables o
-           JOIN ioc_items i ON i.public_id = o.ioc_public_id
-           WHERE o.observable_value = $1
-           LIMIT 1`,
-          [hashValueOnly]
-        );
-        rows = obsRes.rows;
-      }
+      const rows = simpleRes.rows;
       if (t) {
         t.beforeResultMapping = Date.now();
         t.beforePagination = Date.now();
@@ -1226,12 +1215,14 @@ app.get('/api/ioc/list', async (req, res) => {
     }
 
     if (useObservableOnlyPath) {
+      const obsType = params[prefixedObservableSearch.typeIdx - 1];
       const obsValue = params[prefixedObservableSearch.valueIdx - 1];
+      const partitionTable = { ip: 'ioc_ip', ip6: 'ioc_ip6', domain: 'ioc_domain', url: 'ioc_url' }[obsType];
+      const whereClause = (obsType === 'domain' || obsType === 'url') ? 'LOWER(observable) = $1' : 'observable = $1';
       const obsQ = `
-        SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.confidence, i.category, i.note, i.created_at
-        FROM ioc_observables o
-        JOIN ioc_items i ON i.public_id = o.ioc_public_id
-        WHERE o.observable_value = $1
+        SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+        FROM ${partitionTable}
+        WHERE ${whereClause}
         LIMIT 1`;
       if (t) t.dbQueryStart = Date.now();
       const obsRes = await db.query(obsQ, [obsValue]);
@@ -1265,7 +1256,7 @@ app.get('/api/ioc/list', async (req, res) => {
           const parts = [
             d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
             `total=${t.responseSent - t.requestReceived}ms`,
-            'path=observableIndex'
+            'path=partition'
           ].filter(Boolean);
           console.log('[ioc/list timing]', parts.join(' '), 'q=' + (req.query?.q ?? ''));
         });
