@@ -70,6 +70,8 @@ Bu doküman, özellikle **yeni IOC eklendiğinde** ve **local / kısıtlı ortam
 - `uq_ioc_items_dedup` (observable, observable_type, source_name, confidence, category, source_url)  
 - `idx_ioc_items_created_at_desc`, `idx_ioc_items_observable`, `idx_ioc_items_observable_type_observable`  
 - `idx_ioc_items_observable_trgm`, `idx_ioc_items_source_trgm` (pg_trgm)
+- `idx_ioc_items_sha256_from_note` vb. (022) — note içinden hash
+- `idx_ioc_items_sha256_lower_observable` vb. (024) — sha256/sha1/md5 prefiksli aramada `LOWER(observable)` path
 
 **Öneri:** Yeni composite index’e gerek yok; mevcut indeksler duplicate check ve sıralama için yeterli. İleride sadece ASN/country filtreli list sorguları çok artarsa `ioc_ip_geo_cache(asn)`, `(country_code)` üzerinde index düşünülebilir.
 
