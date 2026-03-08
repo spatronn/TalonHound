@@ -26,14 +26,15 @@ Aşağıdaki aşamalar loglanır (ms):
 | **countQuery** | Boş sayfa durumunda ek COUNT (sadece CTE path) |
 | **paginationLogic** | Slice + sayfa item'ları (minimal path) |
 | **resultMapping** | Satırlar → API şekli (map / gruplama) |
-| **jsonSerialization** | Payload hazırlama |
-| **responseSent** | `res.json()` sonrası yanıt bitene kadar |
+| **jsonStringify** | `JSON.stringify(payload)` süresi (gerçek CPU maliyeti) |
+| **responseSent** | Yanıt yazılıp kapanana kadar (ağ/proxy dahil) |
 | **total** | İstek başından yanıt bitene kadar toplam |
 | **queries** | Çalışan DB sorgu sayısı (1 veya 2) |
+| **responseBytes** | JSON yanıt boyutu (byte); büyükse serialize/ağ yavaşlar |
 
 Örnek log (minimal path):
 ```
-[ioc/list timing] searchStringParse=0ms dbConnectionAcquired=1ms dbQuery=3ms paginationLogic=0ms resultMapping=1ms jsonSerialization=0ms responseSent=2ms total=7ms queries=1 rows=12 path=minimalHash q=sha256:68274...
+[ioc/list timing] searchStringParse=0ms dbConnectionAcquired=1ms dbQuery=3ms paginationLogic=0ms resultMapping=1ms jsonStringify=0ms responseSent=2ms total=7ms queries=1 rows=12 responseBytes=2048 path=minimalHash q=sha256:68274...
 ```
 
 **Gecikme nerede?**
@@ -125,5 +126,52 @@ Basit “tek satır var mı?” sorgusu API’de yok; endpoint her zaman sayfal�
 - **Pool:** `pg.Pool` kullanılıyor; her istekte yeni connection açılmıyor.
 - **ILIKE / full scan:** Sadece prefiks olmayan aramada; hash prefiksi varken kullanılmaz.
 - **3 sn görülüyorsa:** `?timing=1` ile bir arama yapıp log’taki **dbQuery**, **dbConnectionAcquired**, **responseSent** değerlerine bakın. **path=minimalHash** ve **queries=1** görünmüyorsa eski deploy veya farklı path; **dbQuery** düşük ama **total** yüksekse gecikme Node dışında (proxy, ağ, DNS).
+
+---
+
+## 11. Bottleneck analizi ve 200–500 ms hedefi
+
+### Timing ile bottleneck’i bulma
+
+`?timing=1` ile bir istek atın; log’taki değerlere göre:
+
+| Log’ta görünen | Olası bottleneck | Yapılacak |
+|-----------------|------------------|-----------|
+| **path=cte** veya **queries=2** | Hash aramada hâlâ CTE/COUNT kullanılıyor | Son deploy’u kontrol et; hash-only için minimal path varsayılan olmalı |
+| **dbConnectionAcquired** &gt; 500 ms | Pool veya ilk DB bağlantısı | Pool size, DB limit; uygulama açılışında `SELECT 1` ile ısıtma |
+| **dbQuery** &gt; 100 ms | Sorgu veya plan | Aynı SQL’i DB’de EXPLAIN (ANALYZE); index/ANALYZE |
+| **resultMapping** veya **jsonStringify** yüksek | Çok satır veya büyük nesne | **responseBytes**’a bakın; sayfa boyutunu 5–25 ile sınırlayın |
+| **responseBytes** &gt; 100 KB | Büyük JSON | Gereksiz alanları kaldırın; sayfa boyutu küçültün |
+| **responseSent** &gt; 1 s, **total** ~ 3 s, diğerleri düşük | Gecikme Node sonrası | Reverse proxy, TLS, ağ, tarayıcı; Node tarafında yapılacak az |
+
+### Endpoint’teki sorgu sayısı ve tipleri
+
+- **Hash-only (varsayılan):** 1 SELECT (exact match). COUNT yok, JOIN yok, enrichment/source için ek sorgu yok.
+- **CTE path:** 1 list sorgusu; boş sayfada +1 COUNT. JOIN sadece asn/country varken (geo).
+
+### ILIKE / wildcard / full scan
+
+- **sha256:/md5:/sha1:** Parse edilip exact match; ILIKE/wildcard kullanılmıyor.
+- **Serbest metin:** `observable ILIKE '%...%'`, `source_name ILIKE '%...%'` vb.; full scan riski, `IOC_LIST_MAX_AGE_DAYS` ile sınırlı.
+
+### JSON boyutu
+
+- Log’ta **responseBytes** yazılıyor. 50–200 KB normal; &gt; 500 KB ise sayfa boyutunu veya dönen alanları azaltın.
+- **jsonStringify** süresi log’ta; yüksekse büyük payload veya çok sayıda öğe.
+
+### Node tarafında CPU yoğun noktalar
+
+- **resultMapping:** Gruplama (byKey loop) + slice + map; satır sayısı çok değilse (&lt; 500) genelde &lt; 10 ms.
+- **jsonStringify:** Tek seferde stringify (timing açıkken); **responseBytes** büyükse burada zaman artar.
+- Gereksiz veri: Sadece listelenen kolonlar çekiliyor; ek enrichment sorgusu yok.
+
+### Özet: Gecikmenin en büyük kaynağı
+
+1. **Log’ta total ~ 3 s, dbQuery ~ 2–10 ms ise** → Gecikme büyük ölçüde **Node dışında**: reverse proxy, TLS, ağ gecikmesi, tarayıcı. Node’da ek optimizasyonla 200–500 ms’e inmek zor; proxy/network tarafını iyileştirin veya doğrudan backend’e (proxy atlamadan) test edin.
+2. **dbConnectionAcquired yüksek** → Pool/ilk bağlantı; startup’ta bağlantı ısıtma, pool ayarı.
+3. **dbQuery yüksek** → Sorgu/plan/index; DB tarafında iyileştirme.
+4. **responseSent yüksek, diğerleri düşük** → Yanıt yazma/ağ; payload küçültme, proxy/network incelemesi.
+
+**Hedef 200–500 ms:** Minimal path + index’li sorgu + küçük payload ile Node tarafı birkaç 10 ms olabilir. Tarayıcıda 2–3 sn görülüyorsa fark proxy/ağ/tarayıcıdadır; backend log’undaki **total** ile tarayıcı süresini karşılaştırın.
 
 Bu doküman `docs/ioc-performance-improvements.md` ve `docs/sql-scale-20m.md` ile birlikte kullanılabilir.

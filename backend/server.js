@@ -1181,6 +1181,13 @@ app.get('/api/ioc/list', async (req, res) => {
       if (t) {
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
+      }
+      const payload = { items: pageItems, pagination: { page: currentPage, page_size: limit, total: totalMinimal, total_pages: Math.max(Math.ceil(totalMinimal / limit), 1) } };
+      if (t) {
+        t.beforeJsonStringify = Date.now();
+        const payloadStr = JSON.stringify(payload);
+        t.afterJsonStringify = Date.now();
+        t.responseBytes = Buffer.byteLength(payloadStr, 'utf8');
         t.beforeSend = Date.now();
         res.on('finish', () => {
           t.responseSent = Date.now();
@@ -1191,16 +1198,18 @@ app.get('/api/ioc/list', async (req, res) => {
             d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
             d('paginationLogic', t.beforePagination, t.afterPagination),
             d('resultMapping', t.beforeResultMapping, t.afterResultMapping),
-            d('jsonSerialization', t.beforeJsonSerialize, t.beforeSend),
+            d('jsonStringify', t.beforeJsonStringify, t.afterJsonStringify),
             d('responseSent', t.beforeSend, t.responseSent),
             `total=${t.responseSent - t.requestReceived}ms`,
             `queries=1`,
-            `rows=${rows.length}`
+            `rows=${rows.length}`,
+            `responseBytes=${t.responseBytes}`
           ].filter(Boolean);
           console.log('[ioc/list timing]', parts.join(' '), 'path=minimalHash', 'q=' + (req.query?.q ?? ''));
         });
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(payloadStr);
       }
-      const payload = { items: pageItems, pagination: { page: currentPage, page_size: limit, total: totalMinimal, total_pages: Math.max(Math.ceil(totalMinimal / limit), 1) } };
       return res.json(payload);
     }
 
@@ -1321,6 +1330,10 @@ app.get('/api/ioc/list', async (req, res) => {
       payload.note = `Filtered list limited to last ${recentParam} days (IOC_LIST_MAX_AGE_DAYS).`;
     }
     if (t) {
+      t.beforeJsonStringify = Date.now();
+      const payloadStr = JSON.stringify(payload);
+      t.afterJsonStringify = Date.now();
+      t.responseBytes = Buffer.byteLength(payloadStr, 'utf8');
       t.beforeSend = Date.now();
       res.on('finish', () => {
         t.responseSent = Date.now();
@@ -1332,13 +1345,16 @@ app.get('/api/ioc/list', async (req, res) => {
           d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
           t.countQueryStart != null && t.countQueryEnd != null ? d('countQuery', t.countQueryStart, t.countQueryEnd) : '',
           d('resultMapping', t.beforeResultMapping, t.afterResultMapping),
-          d('jsonSerialization', t.beforeJsonSerialize, t.beforeSend),
+          d('jsonStringify', t.beforeJsonStringify, t.afterJsonStringify),
           d('responseSent', t.beforeSend, t.responseSent),
           `total=${t.responseSent - t.requestReceived}ms`,
-          `queries=${queryCount}`
+          `queries=${queryCount}`,
+          `responseBytes=${t.responseBytes}`
         ].filter(Boolean);
         console.log('[ioc/list timing]', parts.join(' '), 'path=cte', 'q=' + (req.query?.q ?? ''));
       });
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(payloadStr);
     }
     return res.json(payload);
   } catch (err) {
