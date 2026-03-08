@@ -3,7 +3,9 @@
  * One-off backfill: populate ioc_observables from existing ioc_items (~1.7M).
  * Each extracted observable (md5, sha1, sha256, imphash, ssdeep, tlsh, etc.)
  * is inserted as a row in ioc_observables with same source_name, confidence, etc.
- * uq_ioc_observables_dedup prevents duplicate (observable, type, source, ...).
+ * INSERT uses ON CONFLICT DO NOTHING so duplicates (uq_ioc_observables_dedup) are skipped.
+ * Per-chunk SAVEPOINT: on batch failure (e.g. unique violation) we rollback to savepoint
+ * and insert row-by-row so the transaction never stays aborted.
  *
  * Usage: node integration/backfill-ioc-observables.js
  *   IOC_BACKFILL_BATCH_SIZE=1000 (default)
@@ -24,7 +26,10 @@ const INSERT_CHUNK = 500;
 const INSERT_SQL = `
   INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
   VALUES ($1, $2, $3, $4, $5, $6, $7)
+  ON CONFLICT DO NOTHING
 `;
+
+const SAVEPOINT_NAME = 'backfill_chunk';
 
 function run() {
   return pool.connect().then((client) => {
@@ -68,7 +73,7 @@ function run() {
       });
     }
 
-    function insertObservablesBatch(rows) {
+    function insertObservablesChunk(rows) {
       if (rows.length === 0) return Promise.resolve();
       if (rows.length === 1) return insertRow(rows[0]);
 
@@ -88,16 +93,18 @@ function run() {
         );
         idx += 7;
       }
-      return client.query(
-        `INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
-         VALUES ${placeholders.join(', ')}`,
-        values
-      ).catch((err) => {
-        if (err.code === '23505') {
-          return Promise.all(rows.map(insertRow));
-        }
-        throw err;
-      });
+      const batchSql = `
+        INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+        VALUES ${placeholders.join(', ')}
+        ON CONFLICT DO NOTHING
+      `;
+      return client.query('SAVEPOINT ' + SAVEPOINT_NAME)
+        .then(() => client.query(batchSql, values))
+        .then(() => client.query('RELEASE SAVEPOINT ' + SAVEPOINT_NAME))
+        .catch((err) => {
+          return client.query('ROLLBACK TO SAVEPOINT ' + SAVEPOINT_NAME)
+            .then(() => Promise.all(rows.map(insertRow)));
+        });
     }
 
     function processBatch() {
@@ -142,7 +149,11 @@ function run() {
           for (let i = 0; i < flat.length; i += INSERT_CHUNK) {
             chunks.push(flat.slice(i, i + INSERT_CHUNK));
           }
-          return Promise.all(chunks.map(insertObservablesBatch)).then(() => ({
+          let chain = Promise.resolve();
+          for (const chunk of chunks) {
+            chain = chain.then(() => insertObservablesChunk(chunk));
+          }
+          return chain.then(() => ({
             done: false,
             totalItems,
             totalObservables
