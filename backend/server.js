@@ -1484,7 +1484,8 @@ app.get('/api/ioc/list', async (req, res) => {
   } finally {
     if (client) client.release();
   }
-});
+}
+);
 
 app.get('/api/ioc/ip/sources', async (req, res) => {
   const { ip } = req.query;
