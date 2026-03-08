@@ -1140,6 +1140,64 @@ app.get('/api/ioc/list', async (req, res) => {
   const db = client || pool;
 
   try {
+    // Exact match on ioc_observables first: one table, all IOC types (md5, sha1, sha256, ip, domain, url). No type filter.
+    const qv = String(q || '').trim();
+    let exactObservableValue = null;
+    if (q && qv.length >= 2 && asnValueEarly == null && countryValueEarly == null) {
+      if (prefixedHashSearch) exactObservableValue = params[prefixedHashSearch.exactIdx - 1];
+      else if (prefixedObservableSearch) exactObservableValue = params[prefixedObservableSearch.valueIdx - 1];
+      else {
+        const isHashLike = /^[a-f0-9]{32}$/i.test(qv) || /^[a-f0-9]{40}$/i.test(qv) || /^[a-f0-9]{64}$/i.test(qv) ||
+          /^\d+:[A-Za-z0-9/+]+:[A-Za-z0-9/+]+$/.test(qv) || /^[a-f0-9]{70,72}$/i.test(qv);
+        exactObservableValue = isHashLike ? qv.toLowerCase() : qv;
+      }
+    }
+    if (exactObservableValue != null) {
+      const obsLimit = Math.min(limit, 100);
+      const obsQ = `
+        SELECT id, observable, observable_type, source_name, source_url, confidence, category, note, created_at
+        FROM ioc_observables
+        WHERE observable = $1
+        LIMIT $2`;
+      if (t) t.dbQueryStart = Date.now();
+      const obsRes = await db.query(obsQ, [exactObservableValue, obsLimit]);
+      if (t) t.dbQueryEnd = Date.now();
+      const rows = obsRes.rows;
+      if (rows.length > 0) {
+        const pageItems = rows.map((r) => ({
+          id: r.id,
+          public_id: r.id,
+          observable: r.observable,
+          observable_type: r.observable_type,
+          ip: r.observable,
+          first_seen_at: r.created_at,
+          last_seen_at: r.created_at,
+          source_count: 1,
+          source_names: [r.source_name],
+          confidence_set: [r.confidence],
+          category_set: r.category ? [r.category] : [],
+          asn: null,
+          country_code: null,
+          as_name: null
+        }));
+        const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: pageItems.length, total_pages: 1 } };
+        if (t) {
+          t.beforeJsonStringify = Date.now();
+          const payloadStr = JSON.stringify(payload);
+          t.afterJsonStringify = Date.now();
+          t.responseBytes = Buffer.byteLength(payloadStr, 'utf8');
+          res.on('finish', () => {
+            t.responseSent = Date.now();
+            const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+            const parts = [d('dbQuery', t.dbQueryStart, t.dbQueryEnd), `rows=${rows.length}`, 'path=ioc_observables'].filter(Boolean);
+            console.log('[ioc/list timing]', parts.join(' '), 'q=' + (req.query?.q ?? ''));
+          });
+        }
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify(payload));
+      }
+    }
+
     // Hash-only default: single SELECT + group in Node (no CTE, no geo). Set IOC_LIST_USE_CTE_FOR_HASH=1 to use CTE.
     const useMinimalHashPath = useHashFastPathEarly && prefixedHashSearch && !IOC_LIST_USE_CTE_FOR_HASH;
     if (useMinimalHashPath) {
