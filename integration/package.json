@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "scheduler": "node scheduler.js",
-    "worker": "node worker.js"
+    "worker": "node worker.js",
+    "backfill-ioc-observables": "node backfill-ioc-observables.js"
   },
   "dependencies": {
     "bullmq": "^5.10.3",

@@ -118,7 +118,7 @@ function normalizeObservableValue(observableType, value) {
  * Returns deduplicated list of { observable_type, observable_value } (normalized).
  * Used to populate ioc_observables index so any hash/ip/domain/url is searchable.
  */
-function extractObservablesFromNote(primaryType, primaryValue, note) {
+export function extractObservablesFromNote(primaryType, primaryValue, note) {
   const seen = new Set();
   const out = [];
   const add = (type, value) => {
