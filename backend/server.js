@@ -33,7 +33,7 @@ const GEO_CACHE_REFRESH_INTERVAL_MS = Math.max(Number(process.env.GEO_CACHE_REFR
 const GEO_CACHE_ON_ADD_LIMIT = Math.max(Number(process.env.GEO_CACHE_ON_ADD_LIMIT || 500), 50);
 const GEO_CACHE_DEBOUNCE_MS = Math.max(Number(process.env.GEO_CACHE_DEBOUNCE_MS || 2000), 500);
 
-/** IOC list timing: set IOC_LIST_TIMING=1 to log request/parse/connection/query/map/serialize/send (ms). */
+/** IOC list timing: IOC_LIST_TIMING=1 or query ?timing=1 to log searchStringParse, dbConnectionAcquired, dbQuery, countQuery, resultMapping, jsonSerialization, responseSent (ms). */
 const IOC_LIST_TIMING = process.env.IOC_LIST_TIMING === '1' || process.env.IOC_LIST_TIMING === 'true';
 /** Hash-only (sha256:/md5:/sha1: no asn/country) uses single SELECT + JS group by default. Set IOC_LIST_USE_CTE_FOR_HASH=1 to force the full CTE path. */
 const IOC_LIST_USE_CTE_FOR_HASH = process.env.IOC_LIST_USE_CTE_FOR_HASH === '1' || process.env.IOC_LIST_USE_CTE_FOR_HASH === 'true';
@@ -998,7 +998,8 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
 });
 
 app.get('/api/ioc/list', async (req, res) => {
-  const t = IOC_LIST_TIMING ? { request: Date.now() } : null;
+  const timingEnabled = IOC_LIST_TIMING || req.query.timing === '1';
+  const t = timingEnabled ? { requestReceived: Date.now() } : null;
 
   const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
   const allowedSizes = [5, 10, 25, 100];
@@ -1102,7 +1103,7 @@ app.get('/api/ioc/list', async (req, res) => {
   const recentClause = fullScan ? ` WHERE created_at > now() - interval '1 day' * $${params.length + 1}` : '';
   const recentParam = fullScan ? maxAgeDays : null;
 
-  if (t) t.parse = Date.now();
+  if (t) t.searchStringParse = Date.now();
 
   const asnValueEarly = asn ? Number(asn) : null;
   const countryValueEarly = country ? `%${country}%` : null;
@@ -1112,7 +1113,7 @@ app.get('/api/ioc/list', async (req, res) => {
   if (t) {
     t.beforeConnect = Date.now();
     client = await pool.connect();
-    t.connectionAcquired = Date.now();
+    t.dbConnectionAcquired = Date.now();
   }
   const db = client || pool;
 
@@ -1129,10 +1130,11 @@ app.get('/api/ioc/list', async (req, res) => {
         )
         ORDER BY created_at DESC
         LIMIT 500`;
-      if (t) t.beforeQuery = Date.now();
+      if (t) t.dbQueryStart = Date.now();
       const simpleRes = await db.query(simpleHashQ, [params[prefixedHashSearch.typeIdx - 1], params[prefixedHashSearch.exactIdx - 1]]);
-      if (t) t.afterQuery = Date.now();
+      if (t) t.dbQueryEnd = Date.now();
       const rows = simpleRes.rows;
+      if (t) t.beforeResultMapping = Date.now();
       const byKey = new Map();
       for (const r of rows) {
         const key = `${r.observable}\t${r.observable_type}`;
@@ -1177,26 +1179,29 @@ app.get('/api/ioc/list', async (req, res) => {
         as_name: null
       }));
       if (t) {
-        t.afterPagination = Date.now();
-        t.beforeSerialize = Date.now();
+        t.afterResultMapping = Date.now();
+        t.beforeJsonSerialize = Date.now();
         t.beforeSend = Date.now();
-        t.sent = Date.now();
-        const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
-        const parts = [
-          d('parse', t.request, t.parse),
-          t.beforeConnect != null && t.connectionAcquired != null ? d('connection', t.beforeConnect, t.connectionAcquired) : '',
-          d('query', t.beforeQuery, t.afterQuery),
-          d('pagination', t.beforePagination, t.afterPagination),
-          d('serialize', t.beforeSerialize, t.beforeSend),
-          `total=${t.sent - t.request}ms`,
-          `rows=${rows.length}`
-        ].filter(Boolean);
-        console.log('[ioc/list timing]', parts.join(' '), 'minimalHashPath', 'q=' + (req.query?.q ?? ''));
+        res.on('finish', () => {
+          t.responseSent = Date.now();
+          const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+          const parts = [
+            d('searchStringParse', t.requestReceived, t.searchStringParse),
+            t.beforeConnect != null && t.dbConnectionAcquired != null ? d('dbConnectionAcquired', t.beforeConnect, t.dbConnectionAcquired) : '',
+            d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
+            d('paginationLogic', t.beforePagination, t.afterPagination),
+            d('resultMapping', t.beforeResultMapping, t.afterResultMapping),
+            d('jsonSerialization', t.beforeJsonSerialize, t.beforeSend),
+            d('responseSent', t.beforeSend, t.responseSent),
+            `total=${t.responseSent - t.requestReceived}ms`,
+            `queries=1`,
+            `rows=${rows.length}`
+          ].filter(Boolean);
+          console.log('[ioc/list timing]', parts.join(' '), 'path=minimalHash', 'q=' + (req.query?.q ?? ''));
+        });
       }
-      return res.json({
-        items: pageItems,
-        pagination: { page: currentPage, page_size: limit, total: totalMinimal, total_pages: Math.max(Math.ceil(totalMinimal / limit), 1) }
-      });
+      const payload = { items: pageItems, pagination: { page: currentPage, page_size: limit, total: totalMinimal, total_pages: Math.max(Math.ceil(totalMinimal / limit), 1) } };
+      return res.json(payload);
     }
 
     const sourceSql = prefixedHashSearch
@@ -1276,9 +1281,9 @@ app.get('/api/ioc/list', async (req, res) => {
     const listParams = useHashFastPath
       ? [...params, limit, offset]
       : (fullScan ? [...params, recentParam, asnValue, countryValue, limit, offset] : [...params, asnValue, countryValue, limit, offset]);
-    if (t) t.beforeQuery = Date.now();
+    if (t) t.dbQueryStart = Date.now();
     const listRes = await db.query(listQ, listParams);
-    if (t) t.afterQuery = Date.now();
+    if (t) t.dbQueryEnd = Date.now();
     let total = listRes.rows[0]?.total ?? null;
     if (total === null && listRes.rows.length === 0) {
       const countQ = useHashFastPath
@@ -1291,17 +1296,17 @@ app.get('/api/ioc/list', async (req, res) => {
         WHERE ${geoWhere}
       `;
       const countParams = useHashFastPath ? [...params] : (fullScan ? [...params, recentParam, asnValue, countryValue] : [...params, asnValue, countryValue]);
-      if (t) t.beforeCountQuery = Date.now();
+      if (t) t.countQueryStart = Date.now();
       const countRes = await db.query(countQ, countParams);
-      if (t) t.afterCountQuery = Date.now();
+      if (t) t.countQueryEnd = Date.now();
       total = countRes.rows[0]?.total ?? 0;
     } else if (total === null) {
       total = listRes.rows.length;
     }
-    if (t) t.beforeMap = Date.now();
+    if (t) t.beforeResultMapping = Date.now();
     const items = listRes.rows.map(({ total: _drop, ...row }) => row);
-    if (t) t.afterMap = Date.now();
-    if (t) t.beforeSerialize = Date.now();
+    if (t) t.afterResultMapping = Date.now();
+    if (t) t.beforeJsonSerialize = Date.now();
 
     const payload = {
       items,
@@ -1318,19 +1323,21 @@ app.get('/api/ioc/list', async (req, res) => {
     if (t) {
       t.beforeSend = Date.now();
       res.on('finish', () => {
-        t.sent = Date.now();
+        t.responseSent = Date.now();
         const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+        const queryCount = t.countQueryStart != null && t.countQueryEnd != null ? 2 : 1;
         const parts = [
-          d('parse', t.request, t.parse),
-          t.beforeConnect != null && t.connectionAcquired != null ? d('connection', t.beforeConnect, t.connectionAcquired) : '',
-          d('query', t.beforeQuery, t.afterQuery),
-          t.beforeCountQuery != null && t.afterCountQuery != null ? `countQuery=${t.afterCountQuery - t.beforeCountQuery}ms` : '',
-          d('map', t.beforeMap, t.afterMap),
-          d('serialize', t.beforeSerialize, t.beforeSend),
-          d('send', t.beforeSend, t.sent),
-          `total=${t.sent - t.request}ms`
+          d('searchStringParse', t.requestReceived, t.searchStringParse),
+          t.beforeConnect != null && t.dbConnectionAcquired != null ? d('dbConnectionAcquired', t.beforeConnect, t.dbConnectionAcquired) : '',
+          d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
+          t.countQueryStart != null && t.countQueryEnd != null ? d('countQuery', t.countQueryStart, t.countQueryEnd) : '',
+          d('resultMapping', t.beforeResultMapping, t.afterResultMapping),
+          d('jsonSerialization', t.beforeJsonSerialize, t.beforeSend),
+          d('responseSent', t.beforeSend, t.responseSent),
+          `total=${t.responseSent - t.requestReceived}ms`,
+          `queries=${queryCount}`
         ].filter(Boolean);
-        console.log('[ioc/list timing]', parts.join(' '), useHashFastPath ? 'fastPath' : '', 'q=' + (req.query?.q ?? ''));
+        console.log('[ioc/list timing]', parts.join(' '), 'path=cte', 'q=' + (req.query?.q ?? ''));
       });
     }
     return res.json(payload);

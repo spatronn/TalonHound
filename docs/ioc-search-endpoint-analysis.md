@@ -14,29 +14,33 @@ Bu doküman `GET /api/ioc/list` endpoint'ini, gecikme kaynaklarını ve performa
 
 ## 2. Timing Logları
 
-`IOC_LIST_TIMING=1` ile aşağıdaki aşamalar loglanır (ms):
+**Açma:** `IOC_LIST_TIMING=1` (env) veya istekte **`?timing=1`** (tek istek, restart gerekmez).
+
+Aşağıdaki aşamalar loglanır (ms):
 
 | Aşama | Açıklama |
 |--------|----------|
-| **parse** | İstek alındı → search string parse edildi (prefixed hash / generic) |
-| **connection** | Pool'dan connection alınması (sadece timing açıkken `pool.connect()` kullanılır) |
-| **query** | Ana list sorgusu (CTE veya minimal path) |
-| **countQuery** | Boş sayfa durumunda ek COUNT sorgusu |
-| **map** | `listRes.rows.map(...)` ile satırların işlenmesi |
-| **serialize** | Payload hazırlama |
-| **send** | `res.json()` ile yanıt gönderilmesi |
-| **total** | İstek başından yanıt bitene kadar toplam süre |
+| **searchStringParse** | İstek alındı → `q` parse (prefixed hash / generic) |
+| **dbConnectionAcquired** | Pool'dan client alınması (timing açıkken `pool.connect()`) |
+| **dbQuery** | Ana list sorgusu (tek SELECT minimal path'te, CTE path'te 1 büyük sorgu) |
+| **countQuery** | Boş sayfa durumunda ek COUNT (sadece CTE path) |
+| **paginationLogic** | Slice + sayfa item'ları (minimal path) |
+| **resultMapping** | Satırlar → API şekli (map / gruplama) |
+| **jsonSerialization** | Payload hazırlama |
+| **responseSent** | `res.json()` sonrası yanıt bitene kadar |
+| **total** | İstek başından yanıt bitene kadar toplam |
+| **queries** | Çalışan DB sorgu sayısı (1 veya 2) |
 
-Örnek log:
+Örnek log (minimal path):
 ```
-[ioc/list timing] parse=0ms connection=2ms query=5ms map=0ms serialize=1ms send=3ms total=11ms fastPath q=sha256:68274...
+[ioc/list timing] searchStringParse=0ms dbConnectionAcquired=1ms dbQuery=3ms paginationLogic=0ms resultMapping=1ms jsonSerialization=0ms responseSent=2ms total=7ms queries=1 rows=12 path=minimalHash q=sha256:68274...
 ```
 
 **Gecikme nerede?**
-- **connection** yüksek → Pool dolu veya DB bağlantı gecikmesi (ilk istek 9 sn ise cold start / DNS / TCP).
-- **query** yüksek → Sorgu veya plan ağır; EXPLAIN ANALYZE ile kontrol et.
-- **map** / **serialize** yüksek → Çok satır veya büyük JSON.
-- **send** yüksek → Ağ veya proxy.
+- **dbConnectionAcquired** yüksek → Pool veya ilk bağlantı.
+- **dbQuery** yüksek → Sorgu/plan; EXPLAIN ANALYZE ile kontrol et.
+- **resultMapping** / **jsonSerialization** yüksek → Çok satır veya büyük payload.
+- **responseSent** yüksek → Ağ veya proxy.
 
 ---
 
@@ -110,7 +114,16 @@ Basit “tek satır var mı?” sorgusu API’de yok; endpoint her zaman sayfal�
 | Sorgu sayısı | 1 (veya boş sayfada 2) |
 | sha256:/md5:/sha1: | Parse + exact match (observable + note expr) |
 | Generic ILIKE | Sadece prefiks yokken; max age ile sınırlı |
-| Timing | `IOC_LIST_TIMING=1` → parse / connection / query / map / serialize / send |
-| Hash-only path | Varsayılan: tek SELECT + JS gruplama. CTE için `IOC_LIST_USE_CTE_FOR_HASH=1` |
+| Timing | `IOC_LIST_TIMING=1` veya `?timing=1` → searchStringParse, dbConnectionAcquired, dbQuery, countQuery, resultMapping, jsonSerialization, responseSent |
+| Hash-only path | Varsayılan: tek SELECT + JS gruplama (queries=1). CTE için `IOC_LIST_USE_CTE_FOR_HASH=1` |
+
+---
+
+## 10. Gecikme kaynağı ve 200 ms hedefi
+
+- **Hash-only (sha256:/md5:/sha1:):** Exact match kullanılır; varsayılan path tek `SELECT` + Node gruplama. **COUNT(*) ayrı çalışmaz.** JOIN yok (geo atlanır). DB ~2 ms ise toplam birkaç 10 ms mertebesinde olmalı.
+- **Pool:** `pg.Pool` kullanılıyor; her istekte yeni connection açılmıyor.
+- **ILIKE / full scan:** Sadece prefiks olmayan aramada; hash prefiksi varken kullanılmaz.
+- **3 sn görülüyorsa:** `?timing=1` ile bir arama yapıp log’taki **dbQuery**, **dbConnectionAcquired**, **responseSent** değerlerine bakın. **path=minimalHash** ve **queries=1** görünmüyorsa eski deploy veya farklı path; **dbQuery** düşük ama **total** yüksekse gecikme Node dışında (proxy, ağ, DNS).
 
 Bu doküman `docs/ioc-performance-improvements.md` ve `docs/sql-scale-20m.md` ile birlikte kullanılabilir.
