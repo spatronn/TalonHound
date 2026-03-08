@@ -1116,6 +1116,7 @@ async function handleIocList(req, res) {
       }
     }
   }
+  }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const fullScan = Boolean(source_name || confidence || (q && !prefixedHashSearch) || asn || country);
