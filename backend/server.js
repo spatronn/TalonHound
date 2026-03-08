@@ -997,7 +997,7 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
   }
 });
 
-app.get('/api/ioc/list', async (req, res) => {
+app.get('/api/ioc/list', (async (req, res) => {
   const timingEnabled = IOC_LIST_TIMING || req.query.timing === '1';
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
 
@@ -1484,7 +1484,7 @@ app.get('/api/ioc/list', async (req, res) => {
   } finally {
     if (client) client.release();
   }
-});
+}));
 
 app.get('/api/ioc/ip/sources', async (req, res) => {
   const { ip } = req.query;
