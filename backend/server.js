@@ -1121,17 +1121,22 @@ app.get('/api/ioc/list', async (req, res) => {
     // Hash-only default: single SELECT + group in Node (no CTE, no geo). Set IOC_LIST_USE_CTE_FOR_HASH=1 to use CTE.
     const useMinimalHashPath = useHashFastPathEarly && prefixedHashSearch && !IOC_LIST_USE_CTE_FOR_HASH;
     if (useMinimalHashPath) {
+      // Literal observable_type so PostgreSQL uses a concrete plan and index (avoids generic plan with param $1 for type).
+      const hashTypeLiteral = ['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'].includes(params[prefixedHashSearch.typeIdx - 1])
+        ? params[prefixedHashSearch.typeIdx - 1]
+        : 'sha256';
+      const hashValueOnly = params[prefixedHashSearch.exactIdx - 1];
       const simpleHashQ = `
         SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
         FROM ioc_items
         WHERE (
-          (observable_type = $${prefixedHashSearch.typeIdx} AND LOWER(observable) = $${prefixedHashSearch.exactIdx})
-          OR (${prefixedHashSearch.noteExpr} = $${prefixedHashSearch.exactIdx})
+          (observable_type = '${hashTypeLiteral}' AND LOWER(observable) = $1)
+          OR (${prefixedHashSearch.noteExpr} = $1)
         )
         ORDER BY created_at DESC
         LIMIT 500`;
       if (t) t.dbQueryStart = Date.now();
-      const simpleRes = await db.query(simpleHashQ, [params[prefixedHashSearch.typeIdx - 1], params[prefixedHashSearch.exactIdx - 1]]);
+      const simpleRes = await db.query(simpleHashQ, [hashValueOnly]);
       if (t) t.dbQueryEnd = Date.now();
       const rows = simpleRes.rows;
       if (t) t.beforeResultMapping = Date.now();
@@ -1214,7 +1219,18 @@ app.get('/api/ioc/list', async (req, res) => {
       return res.json(payload);
     }
 
-    const sourceSql = prefixedHashSearch
+    // Literal observable_type for prefixed hash so PostgreSQL uses concrete plan and index (avoids generic plan).
+    const hashTypeLiteral = prefixedHashSearch && ['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'].includes(params[prefixedHashSearch.typeIdx - 1])
+      ? params[prefixedHashSearch.typeIdx - 1]
+      : null;
+    const sourceSql = prefixedHashSearch && hashTypeLiteral
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+         FROM ioc_items
+         WHERE (
+           (observable_type = '${hashTypeLiteral}' AND LOWER(observable) = $1)
+           OR (${prefixedHashSearch.noteExpr} = $1)
+         )`
+      : prefixedHashSearch
       ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
          FROM ioc_items
          WHERE (
@@ -1259,6 +1275,7 @@ app.get('/api/ioc/list', async (req, res) => {
 
     // Fast path: prefixed hash (sha256:/md5:/sha1:) with no asn/country filter → skip geo join (hash results are not IPs).
     const useHashFastPath = prefixedHashSearch && asnValue == null && countryValue == null;
+    const hashLiteralParams = useHashFastPath && hashTypeLiteral ? [params[prefixedHashSearch.exactIdx - 1]] : null;
     const listQ = useHashFastPath
       ? `
       ${base}
@@ -1268,8 +1285,8 @@ app.get('/api/ioc/list', async (req, res) => {
              COUNT(*) OVER()::int AS total
       FROM grouped g
       ORDER BY g.last_seen_at DESC
-      LIMIT $${params.length + 1}
-      OFFSET $${params.length + 2}
+      LIMIT $${hashLiteralParams ? 2 : params.length + 1}
+      OFFSET $${hashLiteralParams ? 3 : params.length + 2}
     `
       : `
       ${base}
@@ -1289,7 +1306,7 @@ app.get('/api/ioc/list', async (req, res) => {
     `;
 
     const listParams = useHashFastPath
-      ? [...params, limit, offset]
+      ? (hashLiteralParams ? [...hashLiteralParams, limit, offset] : [...params, limit, offset])
       : (fullScan ? [...params, recentParam, asnValue, countryValue, limit, offset] : [...params, asnValue, countryValue, limit, offset]);
     if (t) t.dbQueryStart = Date.now();
     const listRes = await db.query(listQ, listParams);
@@ -1305,7 +1322,7 @@ app.get('/api/ioc/list', async (req, res) => {
         ${geoJoin}
         WHERE ${geoWhere}
       `;
-      const countParams = useHashFastPath ? [...params] : (fullScan ? [...params, recentParam, asnValue, countryValue] : [...params, asnValue, countryValue]);
+      const countParams = useHashFastPath ? (hashLiteralParams ? hashLiteralParams : [...params]) : (fullScan ? [...params, recentParam, asnValue, countryValue] : [...params, asnValue, countryValue]);
       if (t) t.countQueryStart = Date.now();
       const countRes = await db.query(countQ, countParams);
       if (t) t.countQueryEnd = Date.now();
