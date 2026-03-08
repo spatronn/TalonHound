@@ -82,6 +82,75 @@ function classifyUsomObservable(rawObservable) {
   };
 }
 
+/** Allowed observable_type values for ioc_observables index (source-agnostic). */
+const OBSERVABLE_INDEX_TYPES = new Set([
+  'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh',
+  'ip', 'ip6', 'domain', 'url'
+]);
+
+function parseNoteKeyValues(note) {
+  const out = {};
+  const raw = String(note || '').trim();
+  if (!raw) return out;
+  const parts = raw.split('|').map((p) => p.trim()).filter(Boolean);
+  for (const part of parts) {
+    const idx = part.indexOf('=');
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim().toLowerCase();
+    const value = part.slice(idx + 1).trim();
+    if (!key || !value) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function normalizeObservableValue(observableType, value) {
+  if (!value || typeof value !== 'string') return '';
+  const v = value.trim();
+  const t = String(observableType || '').toLowerCase();
+  if (['md5', 'sha1', 'sha256', 'imphash', 'tlsh', 'domain', 'url'].includes(t)) return v.toLowerCase();
+  if (t === 'ssdeep') return v.toLowerCase();
+  return v;
+}
+
+/**
+ * Extract all searchable observables from primary observable + note (key=value).
+ * Returns deduplicated list of { observable_type, observable_value } (normalized).
+ * Used to populate ioc_observables index so any hash/ip/domain/url is searchable.
+ */
+function extractObservablesFromNote(primaryType, primaryValue, note) {
+  const seen = new Set();
+  const out = [];
+  const add = (type, value) => {
+    if (!OBSERVABLE_INDEX_TYPES.has(type)) return;
+    const normalized = normalizeObservableValue(type, value);
+    if (!normalized) return;
+    const key = `${type}:${normalized}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ observable_type: type, observable_value: normalized });
+  };
+
+  add(primaryType, primaryValue);
+  const kv = parseNoteKeyValues(note);
+  for (const [k, v] of Object.entries(kv)) {
+    if (OBSERVABLE_INDEX_TYPES.has(k)) add(k, v);
+  }
+  return out;
+}
+
+async function insertObservablesIndex(client, iocPublicId, observables) {
+  if (!observables.length) return;
+  for (const { observable_type, observable_value } of observables) {
+    await client.query(
+      `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (ioc_public_id, observable_type, observable_value) DO NOTHING`,
+      [iocPublicId, observable_type, observable_value]
+    );
+  }
+}
+
 function splitCsvLine(line) {
   const out = [];
   let cur = '';
@@ -233,10 +302,15 @@ async function batchInsertIocs(client, entries, observableType = 'ip') {
            AND COALESCE(i.category, '') = COALESCE(v.category, '')
            AND COALESCE(i.source_url, '') = COALESCE(v.source_url, '')
        )
-       RETURNING id`,
+       RETURNING public_id, observable, note`,
       [...params.flat(), observableType]
     );
-    totalInserted += ins.rowCount ?? 0;
+    const rows = ins.rows ?? [];
+    totalInserted += rows.length;
+    for (const row of rows) {
+      const observables = extractObservablesFromNote(observableType, row.observable, row.note);
+      await insertObservablesIndex(client, row.public_id, observables);
+    }
   }
   return totalInserted;
 }
@@ -266,11 +340,16 @@ async function insertObservable(client, { observable, observableType, sourceName
          AND COALESCE(category, '') = COALESCE($6, '')
          AND COALESCE(source_url, '') = COALESCE($4, '')
      )
-     RETURNING id`,
+     RETURNING public_id`,
     [observable, observableType, sourceName, sourceUrl, confidence, category, note]
   );
 
-  return Boolean(ins.rowCount);
+  if (!ins.rowCount) return false;
+
+  const publicId = ins.rows[0].public_id;
+  const observables = extractObservablesFromNote(observableType, observable, note);
+  await insertObservablesIndex(client, publicId, observables);
+  return true;
 }
 
 export async function runHourlyImport() {

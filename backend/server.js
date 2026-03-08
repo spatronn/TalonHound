@@ -1011,6 +1011,7 @@ app.get('/api/ioc/list', async (req, res) => {
   const filters = [];
   const params = [];
   let prefixedHashSearch = null;
+  let prefixedObservableSearch = null;
 
   if (source_name) {
     params.push(`%${source_name}%`);
@@ -1065,7 +1066,27 @@ app.get('/api/ioc/list', async (req, res) => {
         OR (${noteExpr} = $${exactIdx})
       )`);
     } else {
-      const isMd5 = /^[a-f0-9]{32}$/i.test(qv);
+      const prefixedObs = qv.match(/^(ip|ip6|domain|url)\s*:\s*(.+)$/i);
+      if (prefixedObs) {
+        const obsType = prefixedObs[1].toLowerCase();
+        let obsValue = String(prefixedObs[2] || '').trim();
+        if (obsType === 'domain' || obsType === 'url') obsValue = obsValue.toLowerCase();
+        if (obsValue.length < 2) {
+          return res.json({
+            items: [],
+            pagination: { page: currentPage, page_size: limit, total: 0, total_pages: 1 },
+            note: 'Observable value must be at least 2 characters'
+          });
+        }
+        params.push(obsType, obsValue);
+        const typeIdx = params.length - 1;
+        const valueIdx = params.length;
+        prefixedObservableSearch = { typeIdx, valueIdx };
+        filters.push(obsType === 'domain' || obsType === 'url'
+          ? `(observable_type = $${typeIdx} AND LOWER(observable) = $${valueIdx})`
+          : `(observable_type = $${typeIdx} AND observable = $${valueIdx})`);
+      } else {
+        const isMd5 = /^[a-f0-9]{32}$/i.test(qv);
       const isSha1 = /^[a-f0-9]{40}$/i.test(qv);
       const isSha256 = /^[a-f0-9]{64}$/i.test(qv);
       const isTlsh = /^[a-f0-9]{70,72}$/i.test(qv);
@@ -1108,6 +1129,7 @@ app.get('/api/ioc/list', async (req, res) => {
   const asnValueEarly = asn ? Number(asn) : null;
   const countryValueEarly = country ? `%${country}%` : null;
   const useHashFastPathEarly = prefixedHashSearch && asnValueEarly == null && countryValueEarly == null;
+  const useObservableOnlyPath = prefixedObservableSearch && asnValueEarly == null && countryValueEarly == null;
 
   let client = null;
   if (t) {
@@ -1131,7 +1153,19 @@ app.get('/api/ioc/list', async (req, res) => {
       if (t) t.dbQueryStart = Date.now();
       const simpleRes = await db.query(exactHashQ, [hashValueOnly]);
       if (t) t.dbQueryEnd = Date.now();
-      const rows = simpleRes.rows;
+      let rows = simpleRes.rows;
+      if (rows.length === 0) {
+        // Fallback: observable index (e.g. imphash, ssdeep, or any observable stored in ioc_observables). Target: <20ms.
+        const obsRes = await db.query(
+          `SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.confidence, i.category, i.note, i.created_at
+           FROM ioc_observables o
+           JOIN ioc_items i ON i.public_id = o.ioc_public_id
+           WHERE o.observable_value = $1
+           LIMIT 1`,
+          [hashValueOnly]
+        );
+        rows = obsRes.rows;
+      }
       if (t) {
         t.beforeResultMapping = Date.now();
         t.beforePagination = Date.now();
@@ -1189,6 +1223,55 @@ app.get('/api/ioc/list', async (req, res) => {
         return res.send(payloadStr);
       }
       return res.json(payload);
+    }
+
+    if (useObservableOnlyPath) {
+      const obsValue = params[prefixedObservableSearch.valueIdx - 1];
+      const obsQ = `
+        SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.confidence, i.category, i.note, i.created_at
+        FROM ioc_observables o
+        JOIN ioc_items i ON i.public_id = o.ioc_public_id
+        WHERE o.observable_value = $1
+        LIMIT 1`;
+      if (t) t.dbQueryStart = Date.now();
+      const obsRes = await db.query(obsQ, [obsValue]);
+      if (t) t.dbQueryEnd = Date.now();
+      const rows = obsRes.rows;
+      const pageItems = rows.length === 0 ? [] : rows.map((r) => ({
+        id: r.id,
+        public_id: r.public_id,
+        observable: r.observable,
+        observable_type: r.observable_type,
+        ip: r.observable,
+        first_seen_at: r.created_at,
+        last_seen_at: r.created_at,
+        source_count: 1,
+        source_names: [r.source_name],
+        confidence_set: [r.confidence],
+        category_set: r.category ? [r.category] : [],
+        asn: null,
+        country_code: null,
+        as_name: null
+      }));
+      const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: pageItems.length, total_pages: pageItems.length ? 1 : 0 } };
+      if (t) {
+        t.beforeJsonStringify = Date.now();
+        const payloadStr = JSON.stringify(payload);
+        t.afterJsonStringify = Date.now();
+        t.responseBytes = Buffer.byteLength(payloadStr, 'utf8');
+        res.on('finish', () => {
+          t.responseSent = Date.now();
+          const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+          const parts = [
+            d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
+            `total=${t.responseSent - t.requestReceived}ms`,
+            'path=observableIndex'
+          ].filter(Boolean);
+          console.log('[ioc/list timing]', parts.join(' '), 'q=' + (req.query?.q ?? ''));
+        });
+      }
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(JSON.stringify(payload));
     }
 
     // Literal observable_type for prefixed hash so PostgreSQL uses concrete plan and index (avoids generic plan).
