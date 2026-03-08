@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * One-off backfill: populate ioc_observables from existing ioc_items (~1.7M).
- * Uses extractObservablesFromNote + batch INSERT with ON CONFLICT DO NOTHING.
- * Keyset pagination (public_id) for stable, fast iteration.
+ * Each extracted observable (md5, sha1, sha256, imphash, ssdeep, tlsh, etc.)
+ * is inserted as a row in ioc_observables with same source_name, confidence, etc.
+ * uq_ioc_observables_dedup prevents duplicate (observable, type, source, ...).
  *
  * Usage: node integration/backfill-ioc-observables.js
  *   IOC_BACKFILL_BATCH_SIZE=1000 (default)
@@ -18,7 +19,12 @@ const pool = new Pool(config.db);
 
 const BATCH_SIZE = Math.min(Math.max(Number(process.env.IOC_BACKFILL_BATCH_SIZE) || 1000, 100), 5000);
 const DRY_RUN = process.env.IOC_BACKFILL_DRY_RUN === '1' || process.env.IOC_BACKFILL_DRY_RUN === 'true';
-const INSERT_CHUNK = 2000;
+const INSERT_CHUNK = 500;
+
+const INSERT_SQL = `
+  INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
+`;
 
 function run() {
   return pool.connect().then((client) => {
@@ -30,7 +36,7 @@ function run() {
     function fetchBatch() {
       if (lastPublicId) {
         return client.query(
-          `SELECT public_id, observable_type, observable, note
+          `SELECT public_id, observable, observable_type, source_name, source_url, confidence, category, note
            FROM ioc_items
            WHERE public_id > $1
            ORDER BY public_id
@@ -39,7 +45,7 @@ function run() {
         );
       }
       return client.query(
-        `SELECT public_id, observable_type, observable, note
+        `SELECT public_id, observable, observable_type, source_name, source_url, confidence, category, note
          FROM ioc_items
          ORDER BY public_id
          LIMIT $1`,
@@ -47,22 +53,51 @@ function run() {
       );
     }
 
+    function insertRow(row) {
+      return client.query(INSERT_SQL, [
+        row.observable,
+        row.observable_type,
+        row.source_name,
+        row.source_url ?? null,
+        row.confidence,
+        row.category ?? null,
+        row.note ?? null
+      ]).catch((err) => {
+        if (err.code === '23505') return; // unique_violation, skip
+        throw err;
+      });
+    }
+
     function insertObservablesBatch(rows) {
       if (rows.length === 0) return Promise.resolve();
-      const values = [];
+      if (rows.length === 1) return insertRow(rows[0]);
+
       const placeholders = [];
+      const values = [];
       let idx = 0;
       for (const r of rows) {
-        placeholders.push(`($${idx + 1}, $${idx + 2}, $${idx + 3})`);
-        values.push(r.ioc_public_id, r.observable_type, r.observable_value);
-        idx += 3;
+        placeholders.push(`($${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5}, $${idx + 6}, $${idx + 7})`);
+        values.push(
+          r.observable,
+          r.observable_type,
+          r.source_name,
+          r.source_url ?? null,
+          r.confidence,
+          r.category ?? null,
+          r.note ?? null
+        );
+        idx += 7;
       }
       return client.query(
-        `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
-         VALUES ${placeholders.join(', ')}
-         ON CONFLICT (ioc_public_id, observable_type, observable_value) DO NOTHING`,
+        `INSERT INTO ioc_observables (observable, observable_type, source_name, source_url, confidence, category, note)
+         VALUES ${placeholders.join(', ')}`,
         values
-      );
+      ).catch((err) => {
+        if (err.code === '23505') {
+          return Promise.all(rows.map(insertRow));
+        }
+        throw err;
+      });
     }
 
     function processBatch() {
@@ -80,13 +115,17 @@ function run() {
               row.note
             );
             for (const o of observables) {
-              const key = `${row.public_id}:${o.observable_type}:${o.observable_value}`;
+              const key = `${o.observable_type}:${o.observable_value}:${row.source_name}:${row.confidence}:${row.category ?? ''}:${row.source_url ?? ''}`;
               if (seen.has(key)) continue;
               seen.add(key);
               flat.push({
-                ioc_public_id: row.public_id,
+                observable: o.observable_value,
                 observable_type: o.observable_type,
-                observable_value: o.observable_value
+                source_name: row.source_name,
+                source_url: row.source_url,
+                confidence: row.confidence,
+                category: row.category,
+                note: row.note
               });
             }
           }
