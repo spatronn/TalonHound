@@ -246,9 +246,25 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-app.get('/api/system/status', async (_req, res) => {
+app.get('/api/system/status', async (req, res) => {
+  const email = String(req.headers['x-user-email'] || '').trim();
+  let userTimezone = 'UTC';
+
+  if (email) {
+    try {
+      const { rows } = await pool.query('SELECT timezone FROM user_preferences WHERE email = $1', [email]);
+      const tz = rows[0]?.timezone;
+      if (tz) {
+        userTimezone = tz;
+      }
+    } catch (err) {
+      console.warn('[system-status] failed to load user timezone', err.message);
+    }
+  }
+
   const generatedAt = new Date().toISOString();
   const payload = { generated_at: generatedAt };
+  payload.user_timezone = userTimezone;
 
   const database = { ok: false };
   try {
@@ -365,7 +381,14 @@ app.get('/api/system/status', async (_req, res) => {
     const [signals24hRes, iocTotalRes, iocTodayRes] = await Promise.all([
       pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'"),
       pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
-      pool.query("SELECT COUNT(*)::bigint AS count FROM ioc_items WHERE created_at >= date_trunc('day', NOW())")
+      pool.query(
+        `SELECT COUNT(*)::bigint AS count
+         FROM ioc_items
+         WHERE created_at >= (
+           date_trunc('day', NOW() AT TIME ZONE $1)
+         ) AT TIME ZONE $1`,
+        [userTimezone]
+      )
     ]);
     telemetry = {
       signal_events_24h: Number(signals24hRes.rows[0]?.count || 0),
