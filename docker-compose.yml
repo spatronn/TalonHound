@@ -140,6 +140,30 @@ services:
       - db
     restart: unless-stopped
 
+
+  syslog-receiver:
+    build: ./backend
+    container_name: demo-syslog-receiver
+    command: ["npm", "run", "syslog-receiver"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=demo123
+      - DB_NAME=demo
+      - SYSLOG_PORT=514
+      - SYSLOG_HOST=0.0.0.0
+      - SYSLOG_HEALTH_PORT=8081
+      - SYSLOG_BATCH_SIZE=200
+      - SYSLOG_FLUSH_INTERVAL_MS=500
+      - SYSLOG_MAX_BUFFERED=20000
+    depends_on:
+      - db
+    ports:
+      - "514:514/udp"
+      - "8081:8081"
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     container_name: demo-frontend

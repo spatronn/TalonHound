@@ -440,9 +440,9 @@ app.post('/api/sysmon/events', async (req, res) => {
 app.get('/api/analytics/data-sources', async (_req, res) => {
   try {
     const q = await pool.query(
-      `SELECT key, name, platform, status, last_seen_at
+      `SELECT key, name, platform, status, source_ip, protocol, event_count, last_seen_at
        FROM signal_sources
-       ORDER BY key ASC`
+       ORDER BY last_seen_at DESC NULLS LAST, key ASC`
     );
     return res.json({
       total: q.rowCount,
@@ -458,18 +458,9 @@ app.get('/api/analytics/raw-events', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 100);
     const q = await pool.query(
-      `SELECT id, source_key, event_time, host_name, process_name, destination_ip, destination_port, protocol, created_at, raw
+      `SELECT id, source_key, source_ip, event_time, received_at, host_name, process_name, destination_ip, destination_port, protocol, created_at, raw_event, raw
        FROM signal_events
-       WHERE destination_ip IS NOT NULL
-         AND destination_ip ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
-         AND NOT (
-           destination_ip::inet <<= '10.0.0.0/8'::cidr OR
-           destination_ip::inet <<= '172.16.0.0/12'::cidr OR
-           destination_ip::inet <<= '192.168.0.0/16'::cidr OR
-           destination_ip::inet <<= '127.0.0.0/8'::cidr OR
-           destination_ip::inet <<= '169.254.0.0/16'::cidr
-         )
-       ORDER BY created_at DESC
+       ORDER BY COALESCE(received_at, created_at) DESC
        LIMIT $1`,
       [limit]
     );
