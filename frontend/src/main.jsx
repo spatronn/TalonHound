@@ -519,33 +519,25 @@ function AnalyticsPage() {
           <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
             Last 10 Raw Events
           </div>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: "collapse", tableLayout: "fixed" }}>
             <thead>
-              <tr style={{ textAlign: 'left', background: '#111827' }}>
-                <th style={{ width: 80 }}>ID</th>
-                <th>Time</th>
-                <th>Host</th>
-                <th>Process</th>
-                <th>Destination</th>
-                <th style={{ width: 90 }}>Port</th>
-                <th style={{ width: 110 }}>Protocol</th>
+              <tr style={{ textAlign: "left", background: "#111827" }}>
+                <th style={{ width: 190 }}>Received At</th>
+                <th style={{ width: 140 }}>Source IP</th>
+                <th>Raw Event</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading raw events...</td></tr>
+                <tr><td colSpan={3} style={{ color: "#94a3b8" }}>Loading raw events...</td></tr>
               ) : rawEvents.length ? rawEvents.map((evt) => (
-                <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
-                  <td>{evt.id}</td>
-                  <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
-                  <td>{evt.host_name || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.process_name || '-'}</td>
-                  <td>{evt.destination_ip || '-'}</td>
-                  <td>{evt.destination_port || '-'}</td>
-                  <td>{evt.protocol || '-'}</td>
+                <tr key={evt.id} style={{ borderTop: "1px solid #334155" }}>
+                  <td style={{ whiteSpace: "nowrap" }}>{formatUserDateTime(evt.received_at || evt.event_time || evt.created_at)}</td>
+                  <td>{evt.source_ip || "-"}</td>
+                  <td style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{evt.raw_event || evt.raw?.raw_event || "-"}</td>
                 </tr>
               )) : (
-                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No raw events yet.</td></tr>
+                <tr><td colSpan={3} style={{ color: "#94a3b8" }}>No raw events yet.</td></tr>
               )}
             </tbody>
           </table>
