@@ -43,12 +43,6 @@ CREATE TABLE IF NOT EXISTS integration_checkpoints (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS import_dedup (
-  source_name TEXT NOT NULL,
-  external_id TEXT NOT NULL,
-  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (source_name, external_id)
-);
 
 CREATE INDEX IF NOT EXISTS idx_ioc_ips_created_at ON ioc_ips (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ioc_ips_source_name ON ioc_ips (source_name);

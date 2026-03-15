@@ -229,43 +229,11 @@ function hashEntries(entries) {
   return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
 }
 
-async function insertIoc(client, { ip, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
-  const dedupKey = `${ip}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
-  const dedup = await client.query(
-    `INSERT INTO import_dedup (source_name, external_id)
-     VALUES ($1, $2)
-     ON CONFLICT (source_name, external_id) DO NOTHING
-     RETURNING source_name`,
-    [dedupSource, dedupKey]
-  );
-
-  if (!dedup.rowCount) return false;
-
-  const ins = await client.query(
-    `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
-     SELECT $1, 'ip', $2, $3, $4, $5, $6, NOW(), NOW()
-     WHERE NOT EXISTS (
-       SELECT 1
-       FROM ioc_items
-       WHERE observable = $1
-         AND observable_type = 'ip'
-         AND source_name = $2
-         AND confidence = $4
-         AND COALESCE(category, '') = COALESCE($5, '')
-         AND COALESCE(source_url, '') = COALESCE($3, '')
-     )
-     RETURNING id`,
-    [ip, sourceName, sourceUrl, confidence, category, note]
-  );
-
-  return Boolean(ins.rowCount);
-}
-
 const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
 
 /**
  * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
- * import_dedup kullanılmaz (idempotent; aynı feed tekrar çalışırsa INSERT no-op).
+ * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
  */
 async function batchInsertIocs(client, entries, observableType = 'ip') {
   if (!entries.length) return 0;
@@ -315,18 +283,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip') {
   return totalInserted;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, dedupSource }) {
-  const dedupKey = `${observableType}|${observable}|${sourceName}|${confidence}|${category || ''}|${sourceUrl || ''}`;
-  const dedup = await client.query(
-    `INSERT INTO import_dedup (source_name, external_id)
-     VALUES ($1, $2)
-     ON CONFLICT (source_name, external_id) DO NOTHING
-     RETURNING source_name`,
-    [dedupSource, dedupKey]
-  );
-
-  if (!dedup.rowCount) return false;
-
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note }) {
   const ins = await client.query(
     `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
      SELECT $1, $2, $3, $4, $5, $6, $7
@@ -526,8 +483,7 @@ export async function runUsomImport() {
             sourceUrl,
             confidence,
             category,
-            note,
-            dedupSource: config.usomSourceName
+            note
           });
 
           if (okObs) inserted += 1;
@@ -669,8 +625,7 @@ export async function runUrlhausImport() {
             sourceUrl,
             confidence,
             category,
-            note,
-            dedupSource: config.urlhausSourceName
+            note
           });
 
           if (okObs) inserted += 1;
@@ -828,8 +783,7 @@ export async function runThreatfoxImport() {
             sourceUrl: config.threatfoxCsvUrl,
             confidence: entry.confidence,
             category: entry.threatType || 'threat-intel',
-            note: noteParts.join(' | '),
-            dedupSource: config.threatfoxSourceName
+            note: noteParts.join(' | ')
           });
 
           if (okObs) inserted += 1;
@@ -993,8 +947,7 @@ export async function runMalwareBazaarImport() {
             sourceUrl: config.malwareBazaarCsvUrl,
             confidence: entry.confidence,
             category: entry.category,
-            note: entry.note,
-            dedupSource: config.malwareBazaarSourceName
+            note: entry.note
           });
 
           if (okObs) inserted += 1;
