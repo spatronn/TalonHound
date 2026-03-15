@@ -1852,6 +1852,12 @@ function IOCDetailsPage() {
   const resolvedFromLabel = observableType === 'url'
     ? 'url-host'
     : ((observableType === 'ip' || observableType === 'ip6') ? 'direct-ip' : (observableType === 'domain' ? 'domain' : '-'));
+  const fileInfo = summary?.file_information || null;
+  const hasMeaningfulFileInfo = Boolean(fileInfo && Object.values(fileInfo).some((v) => {
+    if (v == null) return false;
+    const t = String(v).trim();
+    return t && t !== "-";
+  }));
 
   return (
     <AppShell>
@@ -1908,7 +1914,7 @@ function IOCDetailsPage() {
               </div>
             ) : null}
 
-            {summary.file_information ? (
+            {hasMeaningfulFileInfo ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
                 <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>File Information</div>
                 <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}>
