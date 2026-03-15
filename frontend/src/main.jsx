@@ -1844,7 +1844,14 @@ function IOCDetailsPage() {
 
   const summary = data.summary;
   const displayObservable = summary?.observable || '-';
-  const isHashObservable = FILE_HASH_TYPES.has(String(summary?.observable_type || '').toLowerCase());
+  const observableType = String(summary?.observable_type || '').toLowerCase();
+  const isHashObservable = FILE_HASH_TYPES.has(observableType);
+  const networkInfoTitle = observableType === 'domain'
+    ? 'Domain Information'
+    : (observableType === 'url' ? 'URL Information' : 'IP Information');
+  const resolvedFromLabel = observableType === 'url'
+    ? 'url-host'
+    : ((observableType === 'ip' || observableType === 'ip6') ? 'direct-ip' : (observableType === 'domain' ? 'domain' : '-'));
 
   return (
     <AppShell>
@@ -1879,7 +1886,7 @@ function IOCDetailsPage() {
 
             {!isHashObservable ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-                <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>IP Information</div>
+                <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>{networkInfoTitle}</div>
                 <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
                   <thead>
                     <tr style={{ textAlign: 'left', background: '#111827' }}>
@@ -1892,7 +1899,7 @@ function IOCDetailsPage() {
                       <td>{summary.geo?.country_code || '-'}</td>
                       <td>{summary.geo?.asn ?? '-'}</td>
                       <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.geo?.as_name || '-'}</td>
-                      <td>{summary.observable_type === 'url' ? 'url-host' : (summary.observable_type === 'ip' ? 'direct-ip' : '-')}</td>
+                      <td>{resolvedFromLabel}</td>
                       <td>{formatUserDateTime(summary.first_seen_at)}</td>
                       <td>{formatUserDateTime(summary.last_seen_at)}</td>
                     </tr>
