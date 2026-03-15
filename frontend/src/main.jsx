@@ -1914,7 +1914,7 @@ function IOCDetailsPage() {
               </div>
             ) : null}
 
-            {hasMeaningfulFileInfo ? (
+            {isHashObservable && hasMeaningfulFileInfo ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
                 <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>File Information</div>
                 <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}>
