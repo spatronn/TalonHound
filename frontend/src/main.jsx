@@ -615,13 +615,13 @@ function AnalyticsStatisticsPage() {
     loadStats(24).catch(() => {});
   }, []);
 
-  const maxSource = Math.max(...topSources.map((x) => Number(x.event_count || 0)), 1);
-  const maxClient = Math.max(...topClients.map((x) => Number(x.event_count || 0)), 1);
+  const maxSource = Math.max(...topSources.map((x) => Number(x.event_count ?? x.events ?? 0)), 1);
+  const maxClient = Math.max(...topClients.map((x) => Number(x.event_count ?? x.events ?? 0)), 1);
   const maxRiskyClient = Math.max(...riskyClients.map((x) => Number(x.risky_event_count || 0)), 1);
 
   const timelineByBucket = timeline.reduce((acc, row) => {
-    const key = formatUserDateTime(row.bucket);
-    acc[key] = (acc[key] || 0) + Number(row.event_count || 0);
+    const key = formatUserDateTime(row.bucket || row.hour);
+    acc[key] = (acc[key] || 0) + Number(row.event_count ?? row.events ?? 0);
     return acc;
   }, {});
 
@@ -661,11 +661,11 @@ function AnalyticsStatisticsPage() {
                 </thead>
                 <tbody>
                   {topSources.length ? topSources.map((row) => {
-                    const count = Number(row.event_count || 0);
+                    const count = Number(row.event_count ?? row.events ?? 0);
                     const w = Math.max(6, Math.round((count / maxSource) * 100));
                     return (
-                      <tr key={row.source_key} style={{ borderTop: '1px solid #334155' }}>
-                        <td>{row.source_key}</td>
+                      <tr key={row.source_key || row.source} style={{ borderTop: '1px solid #334155' }}>
+                        <td>{row.source_key || row.source}</td>
                         <td>{count}</td>
                         <td>
                           <div style={{ background: '#0f172a', borderRadius: 999, height: 10 }}>
@@ -693,11 +693,11 @@ function AnalyticsStatisticsPage() {
                 </thead>
                 <tbody>
                   {topClients.length ? topClients.map((row) => {
-                    const count = Number(row.event_count || 0);
+                    const count = Number(row.event_count ?? row.events ?? 0);
                     const w = Math.max(6, Math.round((count / maxClient) * 100));
                     return (
-                      <tr key={row.host_name} style={{ borderTop: '1px solid #334155' }}>
-                        <td>{row.host_name}</td>
+                      <tr key={row.host_name || row.host} style={{ borderTop: '1px solid #334155' }}>
+                        <td>{row.host_name || row.host}</td>
                         <td>{count}</td>
                         <td>
                           <div style={{ background: '#0f172a', borderRadius: 999, height: 10 }}>
