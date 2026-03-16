@@ -54,8 +54,18 @@ const metrics = {
 const sev = ["emerg","alert","crit","err","warning","notice","info","debug"];
 const fac = ["kern","user","mail","daemon","auth","syslog","lpr","news","uucp","clock","authpriv","ftp","ntp","audit","alert","clock2","local0","local1","local2","local3","local4","local5","local6","local7"];
 
+function normalizeTail(text) {
+  let t = String(text || '');
+  t = t.replace(/?
+$/, '');   // real newline
+  t = t.replace(/\n$/, '');     // escaped newline from some generators
+  if (/\)n$/.test(t)) t = t.slice(0, -1); // artifact: trailing "n" after domain tuple
+  return t;
+}
+
+
 function parseSyslogLine(line, sourceIp) {
-  const raw = String(line || "");
+  const raw = normalizeTail(line);
   const now = new Date();
   const out = {
     ts: now.toISOString().slice(0, 19).replace("T", " "),
@@ -81,7 +91,7 @@ function parseSyslogLine(line, sourceIp) {
   if (m) {
     out.host = m[1] || out.host;
     out.program = (m[2] || "unknown").trim();
-    out.message = m[3] || raw;
+    out.message = normalizeTail(m[3] || raw);
   }
 
   return out;
