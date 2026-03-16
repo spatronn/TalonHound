@@ -808,6 +808,7 @@ function SystemStatusPage() {
 
   const database = status?.database || {};
   const redisStatus = status?.redis || {};
+  const clickhouseStatus = status?.clickhouse || {};
   const queues = status?.queues || {};
   const queueRows = Object.entries(queues).filter(([key]) => key !== 'error');
   const integrations = status?.integrations || {};
@@ -873,6 +874,21 @@ function SystemStatusPage() {
               <div><b>Clients:</b> {redisStatus.connected_clients ?? '-'}</div>
               <div><b>Memory:</b> {redisStatus.memory_used_mb ? `${redisStatus.memory_used_mb} MB` : '-'}</div>
               {redisStatus.error && <div style={{ color: '#f87171' }}>{redisStatus.error}</div>}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>ClickHouse</div>
+              <span style={statusDot(clickhouseStatus.ok)}>● {clickhouseStatus.ok ? 'OK' : 'Down'}</span>
+            </div>
+            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div><b>Table:</b> {clickhouseStatus.table || 'syslog_logs'}</div>
+              <div><b>Version:</b> {clickhouseStatus.version || '-'}</div>
+              <div><b>Rows:</b> {clickhouseStatus.rows ?? '-'}</div>
+              <div><b>Size:</b> {clickhouseStatus.size_mb !== undefined ? `${clickhouseStatus.size_mb} MB` : '-'}</div>
+              {clickhouseStatus.note && <div style={{ color: '#94a3b8' }}>{clickhouseStatus.note}</div>}
+              {clickhouseStatus.error && <div style={{ color: '#f87171' }}>{clickhouseStatus.error}</div>}
             </div>
           </div>
         </div>

@@ -301,6 +301,30 @@ app.get('/api/system/status', async (req, res) => {
   }
   payload.database = database;
 
+  const clickhouse = { ok: false };
+  if (USE_CLICKHOUSE) {
+    try {
+      const [verRows, rowRows, sizeRows] = await Promise.all([
+        clickhouseQuery('SELECT version() AS version'),
+        clickhouseQuery('SELECT count() AS rows FROM syslog_logs'),
+        clickhouseQuery("SELECT sum(bytes_on_disk) AS bytes FROM system.parts WHERE active = 1 AND database = currentDatabase() AND table = 'syslog_logs'")
+      ]);
+
+      const sizeBytes = Number(sizeRows?.[0]?.bytes || 0);
+      clickhouse.ok = true;
+      clickhouse.version = verRows?.[0]?.version || null;
+      clickhouse.rows = Number(rowRows?.[0]?.rows || 0);
+      clickhouse.size_bytes = sizeBytes;
+      clickhouse.size_mb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
+      clickhouse.table = 'syslog_logs';
+    } catch (err) {
+      clickhouse.error = err.message;
+    }
+  } else {
+    clickhouse.note = 'LOG_STORAGE is not clickhouse';
+  }
+  payload.clickhouse = clickhouse;
+
   const redisInfo = { ok: false };
   try {
     const [pong, infoRaw] = await Promise.all([redis.ping(), redis.info('server')]);
