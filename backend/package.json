@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "migrate": "node migrate.js",
-    "start": "node migrate.js && node server.js",
+    "start": "node migrate.js && node server-clickhouse.js",
     "signal-worker": "node migrate.js && node signal-worker.js",
     "raw-retention": "node migrate.js && node raw-retention.js",
     "dashboard-map-worker": "node migrate.js && node dashboard-map-worker.js",
@@ -16,6 +16,7 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "ioredis": "^5.4.1",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "@clickhouse/client": "^1.10.0"
   }
 }
