@@ -56,12 +56,12 @@ const fac = ["kern","user","mail","daemon","auth","syslog","lpr","news","uucp","
 
 function normalizeTail(text) {
   let t = String(text || '');
-  t = t.replace(/?
-$/, '');   // real newline
-  t = t.replace(/\n$/, '');     // escaped newline from some generators
-  if (/\)n$/.test(t)) t = t.slice(0, -1); // artifact: trailing "n" after domain tuple
+  t = t.replace(/\n$/, '');            // actual trailing newline
+  t = t.replace(/\\n$/, '');          // escaped \n tail
+  if (/\)n$/.test(t)) t = t.slice(0, -1);
   return t;
 }
+
 
 
 function parseSyslogLine(line, sourceIp) {
