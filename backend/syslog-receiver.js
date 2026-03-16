@@ -1,14 +1,18 @@
 import dgram from "dgram";
 import http from "http";
 import pg from "pg";
+import { insertLogs, ensureSyslogTable, pingClickhouse } from "./lib/clickhouse.js";
 
 const { Pool } = pg;
+
+const LOG_STORAGE = (process.env.LOG_STORAGE || "postgres").toLowerCase();
+const USE_CLICKHOUSE = LOG_STORAGE === "clickhouse";
 
 const SYSLOG_PORT = Number(process.env.SYSLOG_PORT || 514);
 const SYSLOG_HOST = process.env.SYSLOG_HOST || "0.0.0.0";
 const HEALTH_PORT = Number(process.env.SYSLOG_HEALTH_PORT || 8081);
-const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS || 250), 50);
-const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 1000), 10);
+const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS || 200), 50);
+const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 500), 10);
 const MAX_BUFFERED = Math.max(Number(process.env.SYSLOG_MAX_BUFFERED || 100000), BATCH_SIZE);
 const FLUSH_WORKERS = Math.max(Number(process.env.SYSLOG_FLUSH_WORKERS || 4), 1);
 const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 1024 * 1024), 256 * 1024);
@@ -27,6 +31,7 @@ const queue = [];
 let flushingWorkers = 0;
 
 const metrics = {
+  storage_backend: LOG_STORAGE,
   received_logs: 0,
   dropped_logs: 0,
   dropped_queue_full: 0,
@@ -38,9 +43,49 @@ const metrics = {
   flush_duration_ms_max: 0,
   queue_depth_high_watermark: 0,
   socket_recv_buffer_size: null,
+  clickhouse_insert_latency: 0,
+  clickhouse_insert_latency_max: 0,
+  batch_size_avg: 0,
+  flush_time_avg: 0,
   last_flush_at: null,
   started_at: new Date().toISOString()
 };
+
+const sev = ["emerg","alert","crit","err","warning","notice","info","debug"];
+const fac = ["kern","user","mail","daemon","auth","syslog","lpr","news","uucp","clock","authpriv","ftp","ntp","audit","alert","clock2","local0","local1","local2","local3","local4","local5","local6","local7"];
+
+function parseSyslogLine(line, sourceIp) {
+  const raw = String(line || "");
+  const now = new Date();
+  const out = {
+    ts: now.toISOString().slice(0, 19).replace("T", " "),
+    source: `syslog:${sourceIp}`,
+    host: sourceIp || "unknown",
+    program: "unknown",
+    severity: "info",
+    facility: "syslog",
+    message: raw,
+    raw
+  };
+
+  const pri = raw.match(/^<(\d+)>/);
+  if (pri) {
+    const p = Number(pri[1]);
+    const si = p % 8;
+    const fi = Math.floor(p / 8);
+    out.severity = sev[si] || String(si);
+    out.facility = fac[fi] || String(fi);
+  }
+
+  const m = raw.match(/^<\d+>[A-Z][a-z]{2}\s+\d+\s+\d\d:\d\d:\d\d\s+(\S+)\s+([^:\[]+)(?:\[\d+\])?:\s*(.*)$/);
+  if (m) {
+    out.host = m[1] || out.host;
+    out.program = (m[2] || "unknown").trim();
+    out.message = m[3] || raw;
+  }
+
+  return out;
+}
 
 function enqueue(sourceIp, rawEvent) {
   metrics.received_logs += 1;
@@ -52,15 +97,21 @@ function enqueue(sourceIp, rawEvent) {
 
   queue.push({ sourceIp, receivedAt: new Date(), rawEvent });
   metrics.enqueued_logs += 1;
-
-  if (queue.length > metrics.queue_depth_high_watermark) {
-    metrics.queue_depth_high_watermark = queue.length;
-  }
+  if (queue.length > metrics.queue_depth_high_watermark) metrics.queue_depth_high_watermark = queue.length;
 }
 
-function buildBatchInsert(events) {
+function updateAverages(batchSize, flushMs, chLatencyMs = 0) {
+  const n = metrics.flush_runs;
+  metrics.batch_size_avg = n <= 1 ? batchSize : ((metrics.batch_size_avg * (n - 1)) + batchSize) / n;
+  metrics.flush_time_avg = n <= 1 ? flushMs : ((metrics.flush_time_avg * (n - 1)) + flushMs) / n;
+  metrics.clickhouse_insert_latency = chLatencyMs;
+  if (chLatencyMs > metrics.clickhouse_insert_latency_max) metrics.clickhouse_insert_latency_max = chLatencyMs;
+}
+
+function buildPgBatch(events) {
   const values = [];
   const params = [];
+  const byIp = new Map();
 
   for (let i = 0; i < events.length; i += 1) {
     const e = events[i];
@@ -75,26 +126,18 @@ function buildBatchInsert(events) {
       JSON.stringify({ source_ip: e.sourceIp, received_at: e.receivedAt.toISOString(), raw_event: e.rawEvent, protocol: "syslog" }),
       "syslog"
     );
+    byIp.set(e.sourceIp, (byIp.get(e.sourceIp) || 0) + 1);
   }
 
-  return { values, params };
+  return { values, params, byIp };
 }
 
-async function flushOnce() {
-  if (queue.length === 0) return;
-
-  const events = queue.splice(0, BATCH_SIZE);
-  if (events.length === 0) return;
-
-  const byIp = new Map();
-  for (const e of events) byIp.set(e.sourceIp, (byIp.get(e.sourceIp) || 0) + 1);
-
-  const started = Date.now();
+async function flushToPostgres(events) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const { values, params } = buildBatchInsert(events);
+    const { values, params, byIp } = buildPgBatch(events);
     await client.query(
       `INSERT INTO signal_events (source_key, source_ip, event_time, received_at, raw_event, raw, protocol)
        VALUES ${values.join(",")}`,
@@ -125,21 +168,46 @@ async function flushOnce() {
     );
 
     await client.query("COMMIT");
-    metrics.inserted_logs += events.length;
+    return { inserted: events.length, chLatency: 0 };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function flushToClickhouse(events) {
+  const batch = events.map((e) => parseSyslogLine(e.rawEvent, e.sourceIp));
+  const t0 = Date.now();
+  await insertLogs(batch);
+  const t1 = Date.now() - t0;
+  return { inserted: batch.length, chLatency: t1 };
+}
+
+async function flushOnce() {
+  if (queue.length === 0) return;
+
+  const events = queue.splice(0, BATCH_SIZE);
+  if (events.length === 0) return;
+
+  const started = Date.now();
+  try {
+    const result = USE_CLICKHOUSE ? await flushToClickhouse(events) : await flushToPostgres(events);
+
+    metrics.inserted_logs += result.inserted;
     metrics.flush_runs += 1;
     metrics.last_flush_at = new Date().toISOString();
 
     const duration = Date.now() - started;
     metrics.flush_duration_ms_last = duration;
     if (duration > metrics.flush_duration_ms_max) metrics.flush_duration_ms_max = duration;
+    updateAverages(events.length, duration, result.chLatency || 0);
   } catch (err) {
-    await client.query("ROLLBACK");
     metrics.insert_errors += 1;
     const canRequeue = Math.max(0, MAX_BUFFERED - queue.length);
     if (canRequeue > 0) queue.unshift(...events.slice(0, canRequeue));
     console.error("[syslog-receiver] flush error", err?.message || err);
-  } finally {
-    client.release();
   }
 }
 
@@ -157,22 +225,45 @@ udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
   try { udp.setRecvBufferSize(SOCKET_RCVBUF); } catch {}
   try { metrics.socket_recv_buffer_size = udp.getRecvBufferSize(); } catch { metrics.socket_recv_buffer_size = null; }
   console.log(`[syslog-receiver] listening udp://${SYSLOG_HOST}:${SYSLOG_PORT}`);
+  console.log(`[syslog-receiver] storage=${LOG_STORAGE} workers=${FLUSH_WORKERS} batch=${BATCH_SIZE} interval=${FLUSH_INTERVAL_MS}ms`);
 });
 
 const timers = [];
 for (let i = 0; i < FLUSH_WORKERS; i += 1) timers.push(setInterval(() => flushWorkerTick().catch(() => {}), FLUSH_INTERVAL_MS));
 
 const health = http.createServer((req, res) => {
-  if (req.url !== "/health") return res.writeHead(404).end(JSON.stringify({ ok: false }));
+  if (req.url !== "/health" && req.url !== "/receiver/health") {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false }));
+    return;
+  }
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ ok: true, service: "demo-syslog-receiver", queue_depth: queue.length, flushing_workers: flushingWorkers, metrics }));
 });
 
-health.listen(HEALTH_PORT, "0.0.0.0");
+async function bootstrap() {
+  if (USE_CLICKHOUSE) {
+    await ensureSyslogTable();
+    await pingClickhouse();
+  }
+  health.listen(HEALTH_PORT, "0.0.0.0", () => {
+    console.log(`[syslog-receiver] health endpoint on :${HEALTH_PORT}/receiver/health`);
+  });
+}
 
 async function shutdown() {
   for (const t of timers) clearInterval(t);
   for (let i = 0; i < FLUSH_WORKERS * 4 && queue.length > 0; i += 1) await flushOnce().catch(() => {});
-  udp.close(); health.close(); await pool.end(); process.exit(0);
+  udp.close();
+  health.close();
+  await pool.end();
+  process.exit(0);
 }
-process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
+
+bootstrap().catch((err) => {
+  console.error("[syslog-receiver] bootstrap failed", err?.message || err);
+  process.exit(1);
+});
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

@@ -33,9 +33,14 @@ services:
       - SIGNAL_QUEUE_NAME=signal-events
       # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
       - IOC_LIST_TIMING=1
+      - LOG_STORAGE=clickhouse
+      - CLICKHOUSE_URL=http://demo-clickhouse:8123
+      - CLICKHOUSE_USER=demo
+      - CLICKHOUSE_PASSWORD=demo123
     depends_on:
       - db
       - redis
+      - clickhouse
     restart: unless-stopped
 
   integration-scheduler:
@@ -159,11 +164,31 @@ services:
       - SYSLOG_FLUSH_WORKERS=4
       - SYSLOG_MAX_BUFFERED=100000
       - SYSLOG_SOCKET_RCVBUF=8388608
+      - LOG_STORAGE=clickhouse
+      - CLICKHOUSE_URL=http://demo-clickhouse:8123
+      - CLICKHOUSE_USER=demo
+      - CLICKHOUSE_PASSWORD=demo123
     depends_on:
       - db
+      - clickhouse
     ports:
       - "514:514/udp"
       - "8081:8081"
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: demo-clickhouse
+    environment:
+      - CLICKHOUSE_USER=demo
+      - CLICKHOUSE_PASSWORD=demo123
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./db/clickhouse-init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
 
   frontend:
@@ -177,3 +202,4 @@ services:
 
 volumes:
   postgres_data:
+  clickhouse_data:
