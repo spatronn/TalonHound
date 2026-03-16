@@ -523,7 +523,7 @@ function AnalyticsPage() {
             <thead>
               <tr style={{ textAlign: "left", background: "#111827" }}>
                 <th style={{ width: 190 }}>Received At</th>
-                <th style={{ width: 140 }}>Source IP</th>
+                <th style={{ width: 180 }}>Source</th>
                 <th>Raw Event</th>
               </tr>
             </thead>
@@ -533,7 +533,7 @@ function AnalyticsPage() {
               ) : rawEvents.length ? rawEvents.map((evt) => (
                 <tr key={evt.id} style={{ borderTop: "1px solid #334155" }}>
                   <td style={{ whiteSpace: "nowrap" }}>{formatUserDateTime(evt.received_at || evt.event_time || evt.created_at)}</td>
-                  <td>{evt.source_ip || "-"}</td>
+                  <td>{evt.source_key || evt.source || evt.source_ip || "-"}</td>
                   <td style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{evt.raw_event || evt.raw?.raw_event || "-"}</td>
                 </tr>
               )) : (
