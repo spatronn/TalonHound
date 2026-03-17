@@ -1424,7 +1424,8 @@ function IOCListPage() {
   const [sortState, setSortState] = useState({ key: null, dir: null });
   const [resizeState, setResizeState] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
-  const [detailIp, setDetailIp] = useState('');
+  const [detailObservable, setDetailObservable] = useState('');
+  const [detailType, setDetailType] = useState('');
   const [detailSources, setDetailSources] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
@@ -1542,12 +1543,15 @@ function IOCListPage() {
     return copy;
   }, [rows, sortState]);
 
-  async function openSourceDetails(ip) {
-    setDetailIp(ip);
+  async function openSourceDetails(row) {
+    const obs = row.observable || row.ip;
+    const obsType = row.observable_type || 'ip';
+    setDetailObservable(obs);
+    setDetailType(obsType);
     setDetailSources([]);
     setDetailLoading(true);
     try {
-      const res = await api.get('/ioc/ip/sources', { params: { ip } });
+      const res = await api.get('/ioc/observable/sources', { params: { observable: obs, type: obsType } });
       setDetailSources(res.data?.sources || []);
     } catch {
       setDetailSources([]);
@@ -1728,8 +1732,8 @@ function IOCListPage() {
                   </button>
                 </td>
                 <td title={(r.source_names && r.source_names[0]) || '-'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                  {(r.observable_type || 'ip') === 'ip' && r.source_count > 1 ? (
-                    <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
+                  {r.source_count > 1 ? (
+                    <button onClick={() => openSourceDetails(r)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
                       {(r.source_names && r.source_names[0]) || '-'}{r.source_count > 1 ? ` +${r.source_count - 1}` : ''}
                     </button>
                   ) : (
@@ -1756,11 +1760,11 @@ function IOCListPage() {
         </button>
       </div>
 
-      {detailIp && (
+      {detailObservable && (
         <div style={{ marginTop: 14, border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <b>Sources for {detailIp}</b>
-            <button onClick={() => { setDetailIp(''); setDetailSources([]); }}>Close</button>
+            <b>Sources for {detailObservable}</b>
+            <button onClick={() => { setDetailObservable(''); setDetailType(''); setDetailSources([]); }}>Close</button>
           </div>
           {detailLoading ? <div>Loading...</div> : (
             <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13, background: '#0f172a', color: '#e2e8f0' }}>
