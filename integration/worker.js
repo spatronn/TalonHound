@@ -47,7 +47,7 @@ const worker = new Worker(
 
     await pool.query(
       `UPDATE integration_queue_jobs
-       SET status='success', finished_at=NOW(), records_processed=$2, updated_at=NOW()
+       SET status='success', finished_at=NOW(), records_processed=$2, error_message=NULL, updated_at=NOW()
        WHERE job_id=$1`,
       [String(job.id), Number(result?.recordsProcessed || 0)]
     );
