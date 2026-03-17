@@ -1744,7 +1744,8 @@ app.get('/api/ioc/recent', async (req, res) => {
 app.get('/api/ioc/stats', async (_req, res) => {
   try {
     const now = Date.now();
-    const lastUpdateQ = await pool.query("SELECT MAX(created_at) AS last_update FROM ioc_items");
+    // Index-friendly: uses idx on created_at (DESC) instead of full-table MAX() aggregate.
+    const lastUpdateQ = await pool.query("SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1");
     const lastUpdate = lastUpdateQ.rows[0]?.last_update || null;
     const cacheKey = `ioc_stats_${lastUpdate ?? 'null'}`;
 
