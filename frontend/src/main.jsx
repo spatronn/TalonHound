@@ -1429,13 +1429,17 @@ function IOCListPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listStatusText, setListStatusText] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const loadSummary = useCallback(async () => {
+    setSummaryLoading(true);
     try {
-      const { data } = await api.get('/ioc/summary/today');
-      setSummary(data || { total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
+      const { data } = await api.get('/ioc/stats');
+      setSummary(data || { total: 0, by_source: [], by_type: [] });
     } catch {
-      setSummary({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
+      setSummary({ total: 0, by_source: [], by_type: [] });
+    } finally {
+      setSummaryLoading(false);
     }
   }, []);
 
@@ -1604,7 +1608,9 @@ function IOCListPage() {
       </div>
 
       <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
-        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Top 5 sources</div>
+        <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>
+          {summaryLoading ? 'Loading stats…' : 'Top 5 sources'}
+        </div>
         <div style={{ marginTop: 6, fontSize: 14, display: 'grid', gap: 6 }}>
           {summary.by_source.length ? summary.by_source.slice(0, 5).map((s, idx) => (
             <div key={s.source_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>

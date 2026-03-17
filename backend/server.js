@@ -38,6 +38,15 @@ const IOC_LIST_TIMING = process.env.IOC_LIST_TIMING === '1' || process.env.IOC_L
 /** Hash-only (sha256:/md5:/sha1: no asn/country) uses single SELECT + JS group by default. Set IOC_LIST_USE_CTE_FOR_HASH=1 to force the full CTE path. */
 const IOC_LIST_USE_CTE_FOR_HASH = process.env.IOC_LIST_USE_CTE_FOR_HASH === '1' || process.env.IOC_LIST_USE_CTE_FOR_HASH === 'true';
 
+// In-memory cache for IOC stats (non-real-time aggregations, keyed by last_update + TTL).
+const IOC_STATS_TTL_MS = 60 * 60 * 1000; // 1 hour
+let iocStatsCache = {
+  key: null,
+  data: null,
+  createdAt: 0,
+  lastUpdate: null
+};
+
 app.use(cors());
 app.use(express.json());
 
@@ -1729,6 +1738,62 @@ app.get('/api/ioc/recent', async (req, res) => {
     return res.json({ items: rows });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch recent IOC records', detail: err.message });
+  }
+});
+
+app.get('/api/ioc/stats', async (_req, res) => {
+  try {
+    const now = Date.now();
+    const lastUpdateQ = await pool.query("SELECT MAX(created_at) AS last_update FROM ioc_items");
+    const lastUpdate = lastUpdateQ.rows[0]?.last_update || null;
+    const cacheKey = `ioc_stats_${lastUpdate ?? 'null'}`;
+
+    if (
+      iocStatsCache.data &&
+      iocStatsCache.key === cacheKey &&
+      now - iocStatsCache.createdAt < IOC_STATS_TTL_MS
+    ) {
+      return res.json(iocStatsCache.data);
+    }
+
+    const [totalQ, byTypeQ, topSourcesQ] = await Promise.all([
+      pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
+      pool.query(`
+        SELECT observable_type, COUNT(*)::bigint AS count
+        FROM ioc_items
+        GROUP BY observable_type
+        ORDER BY count DESC
+      `),
+      pool.query(`
+        SELECT source_name, COUNT(*)::bigint AS count
+        FROM ioc_items
+        GROUP BY source_name
+        ORDER BY count DESC
+        LIMIT 20
+      `)
+    ]);
+
+    const payload = {
+      last_update: lastUpdate,
+      total: Number(totalQ.rows[0]?.count || 0),
+      by_type: byTypeQ.rows,
+      by_source: topSourcesQ.rows
+    };
+
+    iocStatsCache = {
+      key: cacheKey,
+      data: payload,
+      createdAt: now,
+      lastUpdate
+    };
+
+    return res.json(payload);
+  } catch (err) {
+    console.error('[ioc/stats] failed', err);
+    return res.status(500).json({
+      message: 'Failed to fetch IOC stats',
+      detail: err.message
+    });
   }
 });
 
