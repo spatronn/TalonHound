@@ -1728,7 +1728,7 @@ function IOCListPage() {
                   </button>
                 </td>
                 <td title={(r.source_names && r.source_names[0]) || '-'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                  {(r.observable_type || 'ip') === 'ip' ? (
+                  {(r.observable_type || 'ip') === 'ip' && r.source_count > 1 ? (
                     <button onClick={() => openSourceDetails(r.ip)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
                       {(r.source_names && r.source_names[0]) || '-'}{r.source_count > 1 ? ` +${r.source_count - 1}` : ''}
                     </button>

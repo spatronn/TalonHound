@@ -1389,7 +1389,7 @@ async function handleIocList(req, res) {
           observable_type,
           MIN(created_at) AS first_seen_at,
           MAX(created_at) AS last_seen_at,
-          COUNT(*)::int AS source_count,
+          COUNT(DISTINCT source_name)::int AS source_count,
           ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
           ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
           ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set
@@ -1524,16 +1524,18 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
   try {
     const detailsQ = `
       SELECT
-        id,
+        MIN(id)::int AS id,
         observable AS ip,
         source_name,
-        source_url,
-        confidence,
-        category,
-        note,
-        created_at
+        MIN(source_url) AS source_url,
+        MIN(confidence) AS confidence,
+        MIN(category) AS category,
+        STRING_AGG(DISTINCT note, ' | ') FILTER (WHERE note IS NOT NULL AND note <> '') AS note,
+        MAX(created_at) AS created_at,
+        COUNT(*)::int AS total_rows
       FROM ioc_items
       WHERE observable_type='ip' AND observable = $1
+      GROUP BY observable, source_name
       ORDER BY created_at DESC
     `;
     const { rows } = await pool.query(detailsQ, [ip]);
