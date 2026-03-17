@@ -609,11 +609,17 @@ app.get('/api/integrations', async (req, res) => {
     const queueWindowSql = queueWindow === '7d' ? "NOW() - INTERVAL '7 days'" : "NOW() - INTERVAL '24 hours'";
 
     const q = `
-      WITH latest AS (
+      WITH latest_runs AS (
         SELECT DISTINCT ON (job_type)
           job_type, status, started_at, finished_at, records_processed, error_message
         FROM integration_runs
         ORDER BY job_type, started_at DESC
+      ),
+      latest_queue AS (
+        SELECT DISTINCT ON (integration_key)
+          integration_key, status, started_at, queued_at, finished_at, records_processed, error_message
+        FROM integration_queue_jobs
+        ORDER BY integration_key, COALESCE(started_at, queued_at) DESC
       )
       SELECT
         f.key,
@@ -623,10 +629,10 @@ app.get('/api/integrations', async (req, res) => {
         f.schedule_cron AS schedule,
         f.trust_level,
         f.created_at,
-        COALESCE(l.status, 'never') AS last_status,
-        l.started_at AS last_started_at,
-        l.finished_at AS last_finished_at,
-        COALESCE(l.records_processed, 0) AS last_records_processed,
+        COALESCE(lr.status, lq.status, 'never') AS last_status,
+        COALESCE(lr.started_at, lq.started_at, lq.queued_at) AS last_started_at,
+        COALESCE(lr.finished_at, lq.finished_at) AS last_finished_at,
+        COALESCE(lr.records_processed, lq.records_processed, 0) AS last_records_processed,
         CASE
           WHEN f.key = 'et-blockrules' THEN (
             SELECT COUNT(*)::int FROM ioc_items i WHERE i.source_name LIKE 'EmergingThreats:%'
@@ -643,12 +649,12 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'malwarebazaar-abusech' THEN (
             SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'MalwareBazaar:abuse.ch'
           )
-          ELSE 0
+          ELSE COALESCE(lr.records_processed, lq.records_processed, 0)
         END AS total_records,
-        l.error_message AS last_error
+        COALESCE(lr.error_message, lq.error_message) AS last_error
       FROM integration_feeds f
-      LEFT JOIN latest l
-        ON l.job_type = CASE
+      LEFT JOIN latest_runs lr
+        ON lr.job_type = CASE
           WHEN f.key = 'et-blockrules' THEN 'hourly_import'
           WHEN f.key = 'usom-trcert' THEN 'usom_import'
           WHEN f.key = 'urlhaus-abusech' THEN 'urlhaus_import'
@@ -656,6 +662,8 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'malwarebazaar-abusech' THEN 'malwarebazaar_import'
           ELSE f.key
         END
+      LEFT JOIN latest_queue lq
+        ON lq.integration_key = f.key
       WHERE f.active = TRUE
       ORDER BY f.created_at ASC, f.name ASC
     `;
