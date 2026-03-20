@@ -16,18 +16,32 @@ export const clickhouse = createClient({
   }
 });
 
-export async function insertLogs(batch) {
+function withTag(sql, tag) {
+  if (!tag) return sql;
+  return `/* ${tag} */\n${sql}`;
+}
+
+export async function insertLogs(batch, opts = {}) {
   if (!Array.isArray(batch) || batch.length === 0) return { inserted: 0 };
+  const { queryId, logTag } = opts;
   await clickhouse.insert({
     table: 'syslog_logs',
     values: batch,
-    format: 'JSONEachRow'
+    format: 'JSONEachRow',
+    query_id: queryId,
+    clickhouse_settings: logTag ? { log_comment: logTag } : undefined
   });
   return { inserted: batch.length };
 }
 
-export async function query(sql) {
-  const rs = await clickhouse.query({ query: sql, format: 'JSONEachRow' });
+export async function query(sql, opts = {}) {
+  const { queryId, logTag, settings } = opts;
+  const rs = await clickhouse.query({
+    query: withTag(sql, logTag),
+    format: 'JSONEachRow',
+    query_id: queryId,
+    clickhouse_settings: settings
+  });
   return rs.json();
 }
 
@@ -72,8 +86,8 @@ export async function ensureSyslogTable() {
 }
 
 export async function ensureIocCorrelationAssets() {
-  await clickhouse.command({ query: `DROP DICTIONARY IF EXISTS default.ioc_domain_dict` });
-  await clickhouse.command({ query: `DROP DICTIONARY IF EXISTS default.ioc_ip_dict` });
+  await clickhouse.command({ query: `/* ioc-assets.drop-legacy-dicts */ DROP DICTIONARY IF EXISTS default.ioc_domain_dict` });
+  await clickhouse.command({ query: `/* ioc-assets.drop-legacy-dicts */ DROP DICTIONARY IF EXISTS default.ioc_ip_dict` });
 
   await clickhouse.command({
     query: `
@@ -92,9 +106,26 @@ export async function ensureIocCorrelationAssets() {
 }
 
 export async function syncIocLookupFromPostgres() {
-  await clickhouse.command({ query: `TRUNCATE TABLE IF EXISTS ioc_lookup` });
+  const changed = await query(`
+    SELECT
+      (
+        SELECT toDateTime64(max(created_at), 3)
+        FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
+      ) AS pg_last_update,
+      (
+        SELECT toDateTime64(max(updated_at), 3)
+        FROM default.ioc_lookup
+      ) AS ch_last_update
+  `, { logTag: 'ioc-lookup.sync-change-check' });
+  const pgLast = changed?.[0]?.pg_last_update || null;
+  const chLast = changed?.[0]?.ch_last_update || null;
+  if (pgLast && chLast && String(pgLast) === String(chLast)) {
+    return { changed: false, pg_last_update: pgLast, ch_last_update: chLast };
+  }
+
+  await clickhouse.command({ query: `/* ioc-lookup.sync-truncate */ TRUNCATE TABLE IF EXISTS ioc_lookup` });
   await clickhouse.command({
-    query: `
+    query: withTag(`
       INSERT INTO ioc_lookup (observable, observable_type, confidence, source_name, updated_at)
       SELECT
         lower(observable) AS observable,
@@ -110,6 +141,7 @@ export async function syncIocLookupFromPostgres() {
         AND observable != ''
         AND observable_type IN ('domain', 'hostname', 'url', 'ip')
       GROUP BY observable, observable_type
-    `
+    `, 'ioc-lookup.sync-full-refresh')
   });
+  return { changed: true, pg_last_update: pgLast, ch_last_update: chLast };
 }

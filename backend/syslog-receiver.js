@@ -36,6 +36,10 @@ let flushingWorkers = 0;
 let flushTimer = null;
 let flushInFlight = null;
 
+function makeQueryId(name) {
+  return `syslog-receiver:${name}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
 const metrics = {
   storage_backend: LOG_STORAGE,
   received_logs: 0,
@@ -277,7 +281,7 @@ async function flushToPostgres(events) {
 async function flushToClickhouse(events) {
   const batch = events.map((e) => parseSyslogLine(e.rawEvent, e.sourceIp));
   const t0 = Date.now();
-  await insertLogs(batch);
+  await insertLogs(batch, { queryId: makeQueryId('insert-batch'), logTag: 'syslog-receiver.insert-batch' });
   const t1 = Date.now() - t0;
   return { inserted: batch.length, chLatency: t1 };
 }

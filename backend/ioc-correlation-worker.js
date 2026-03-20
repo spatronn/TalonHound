@@ -19,9 +19,14 @@ const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_W
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
 const CH_MAX_THREADS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_THREADS || 2), 1);
 const CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_EXECUTION_TIME_SECONDS || 20), 5);
+const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || process.env.IOC_LOOKUP_SYNC_ENABLED === 'true';
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
+
+function makeQueryId(name) {
+  return `ioc-correlation:${name}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function esc(value) {
   return String(value || '').replace(/'/g, "''");
@@ -248,7 +253,7 @@ async function runBatch() {
     await client.query('BEGIN');
     const state = await getOrInitState(client);
     const query = buildScanQuery(state.last_ts, state.last_row_hash, BATCH_SIZE);
-    const scanned = await clickhouseQuery(query);
+    const scanned = await clickhouseQuery(query, { queryId: makeQueryId('scan-batch'), logTag: 'ioc-correlation.scan-batch' });
 
     if (!scanned.length) {
       await client.query('COMMIT');
@@ -300,11 +305,12 @@ async function tick() {
 
 
 async function maybeSyncIocLookup(force = false) {
+  if (!IOC_LOOKUP_SYNC_ENABLED) return false;
   const now = Date.now();
   if (!force && (now - lastIocLookupSyncAtMs) < (IOC_LOOKUP_SYNC_INTERVAL_SECONDS * 1000)) return false;
-  await syncIocLookupFromPostgres();
+  const syncRes = await syncIocLookupFromPostgres();
   lastIocLookupSyncAtMs = now;
-  console.log(`[ioc-correlation] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS}`);
+  console.log(`[ioc-correlation] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS} changed=${Boolean(syncRes?.changed)}`);
   return true;
 }
 

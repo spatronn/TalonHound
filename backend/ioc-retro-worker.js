@@ -21,10 +21,15 @@ const RETRO_CH_MAX_THREADS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_THREAD
 const RETRO_CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_EXECUTION_TIME_SECONDS || 25), 5);
 const RETRO_NEW_IOC_WINDOW_HOURS = Math.max(Number(process.env.IOC_RETRO_NEW_IOC_WINDOW_HOURS || 2), 1);
 const RETRO_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_MAX_NEW_IOCS || 5000), 100);
+const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || process.env.IOC_LOOKUP_SYNC_ENABLED === 'true';
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
 let lastRetroRunAtMs = 0;
+
+function makeQueryId(name) {
+  return `ioc-retro:${name}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function floorToBucket(tsIso, seconds) {
   const d = new Date(tsIso);
@@ -74,11 +79,12 @@ async function insertMatchEvents(client, rows) {
 }
 
 async function maybeSyncIocLookup(force = false) {
+  if (!IOC_LOOKUP_SYNC_ENABLED) return false;
   const now = Date.now();
   if (!force && (now - lastIocLookupSyncAtMs) < (IOC_LOOKUP_SYNC_INTERVAL_SECONDS * 1000)) return false;
-  await syncIocLookupFromPostgres();
+  const syncRes = await syncIocLookupFromPostgres();
   lastIocLookupSyncAtMs = now;
-  console.log(`[ioc-retro] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS}`);
+  console.log(`[ioc-retro] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS} changed=${Boolean(syncRes?.changed)}`);
   return true;
 }
 
@@ -90,7 +96,7 @@ async function runRetroactivePass() {
     SELECT count() AS c
     FROM default.ioc_lookup
     WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
-  `);
+  `, { queryId: makeQueryId('new-ioc-count'), logTag: 'ioc-retro.new-ioc-count' });
   const newIocCount = Number(newIocCountRows?.[0]?.c || 0);
   if (!newIocCount) {
     lastRetroRunAtMs = now;
@@ -132,7 +138,7 @@ async function runRetroactivePass() {
     )
     LIMIT ${RETRO_BATCH_SIZE}
     SETTINGS max_threads = ${RETRO_CH_MAX_THREADS}, max_execution_time = ${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}
-  `);
+  `, { queryId: makeQueryId('retro-pass'), logTag: 'ioc-retro.retro-pass' });
 
   if (!rows.length) {
     lastRetroRunAtMs = now;
