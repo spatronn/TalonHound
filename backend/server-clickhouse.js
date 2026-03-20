@@ -1316,18 +1316,43 @@ async function handleIocList(req, res) {
       if (t) t.dbQueryEnd = Date.now();
       const rows = obsRes.rows;
       if (rows.length > 0) {
-        const pageItems = rows.map((r) => ({
-          id: r.id,
-          public_id: r.public_id,
-          observable: r.observable,
-          observable_type: r.observable_type,
-          ip: r.observable,
-          first_seen_at: r.created_at,
-          last_seen_at: r.created_at,
-          source_count: 1,
-          source_names: [r.source_name],
-          confidence_set: [r.confidence],
-          category_set: r.category ? [r.category] : [],
+        const grouped = new Map();
+        for (const r of rows) {
+          const key = `${r.observable_type}::${r.observable}`;
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              id: r.id,
+              public_id: r.public_id,
+              observable: r.observable,
+              observable_type: r.observable_type,
+              ip: r.observable,
+              first_seen_at: r.created_at,
+              last_seen_at: r.created_at,
+              _sources: new Set(),
+              _conf: new Set(),
+              _cat: new Set()
+            });
+          }
+          const g = grouped.get(key);
+          if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
+          if (r.created_at > g.last_seen_at) g.last_seen_at = r.created_at;
+          if (r.source_name) g._sources.add(r.source_name);
+          if (r.confidence) g._conf.add(r.confidence);
+          if (r.category) g._cat.add(r.category);
+        }
+
+        const pageItems = Array.from(grouped.values()).map((g) => ({
+          id: g.id,
+          public_id: g.public_id,
+          observable: g.observable,
+          observable_type: g.observable_type,
+          ip: g.ip,
+          first_seen_at: g.first_seen_at,
+          last_seen_at: g.last_seen_at,
+          source_count: g._sources.size,
+          source_names: Array.from(g._sources).sort(),
+          confidence_set: Array.from(g._conf).sort(),
+          category_set: Array.from(g._cat).sort(),
           asn: null,
           country_code: null,
           as_name: null
@@ -1369,24 +1394,49 @@ async function handleIocList(req, res) {
         t.beforeResultMapping = Date.now();
         t.beforePagination = Date.now();
       }
-      const pageItems = rows.length === 0
-        ? []
-        : rows.map((r) => ({
-            id: r.id,
-            public_id: r.public_id,
-            observable: r.observable,
-            observable_type: r.observable_type,
-            ip: r.observable,
-            first_seen_at: r.created_at,
-            last_seen_at: r.created_at,
-            source_count: 1,
-            source_names: [r.source_name],
-            confidence_set: [r.confidence],
-            category_set: r.category ? [r.category] : [],
-            asn: null,
-            country_code: null,
-            as_name: null
-          }));
+      const pageItems = (() => {
+        if (rows.length === 0) return [];
+        const grouped = new Map();
+        for (const r of rows) {
+          const key = `${r.observable_type}::${r.observable}`;
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              id: r.id,
+              public_id: r.public_id,
+              observable: r.observable,
+              observable_type: r.observable_type,
+              ip: r.observable,
+              first_seen_at: r.created_at,
+              last_seen_at: r.created_at,
+              _sources: new Set(),
+              _conf: new Set(),
+              _cat: new Set()
+            });
+          }
+          const g = grouped.get(key);
+          if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
+          if (r.created_at > g.last_seen_at) g.last_seen_at = r.created_at;
+          if (r.source_name) g._sources.add(r.source_name);
+          if (r.confidence) g._conf.add(r.confidence);
+          if (r.category) g._cat.add(r.category);
+        }
+        return Array.from(grouped.values()).map((g) => ({
+          id: g.id,
+          public_id: g.public_id,
+          observable: g.observable,
+          observable_type: g.observable_type,
+          ip: g.ip,
+          first_seen_at: g.first_seen_at,
+          last_seen_at: g.last_seen_at,
+          source_count: g._sources.size,
+          source_names: Array.from(g._sources).sort(),
+          confidence_set: Array.from(g._conf).sort(),
+          category_set: Array.from(g._cat).sort(),
+          asn: null,
+          country_code: null,
+          as_name: null
+        }));
+      })();
       const totalExact = pageItems.length;
       if (t) {
         t.afterPagination = Date.now();
@@ -1438,22 +1488,49 @@ async function handleIocList(req, res) {
       const obsRes = await db.query(obsQ, [obsValue]);
       if (t) t.dbQueryEnd = Date.now();
       const rows = obsRes.rows;
-      const pageItems = rows.length === 0 ? [] : rows.map((r) => ({
-        id: r.id,
-        public_id: r.public_id,
-        observable: r.observable,
-        observable_type: r.observable_type,
-        ip: r.observable,
-        first_seen_at: r.created_at,
-        last_seen_at: r.created_at,
-        source_count: 1,
-        source_names: [r.source_name],
-        confidence_set: [r.confidence],
-        category_set: r.category ? [r.category] : [],
-        asn: null,
-        country_code: null,
-        as_name: null
-      }));
+      const pageItems = (() => {
+        if (rows.length === 0) return [];
+        const grouped = new Map();
+        for (const r of rows) {
+          const key = `${r.observable_type}::${r.observable}`;
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              id: r.id,
+              public_id: r.public_id,
+              observable: r.observable,
+              observable_type: r.observable_type,
+              ip: r.observable,
+              first_seen_at: r.created_at,
+              last_seen_at: r.created_at,
+              _sources: new Set(),
+              _conf: new Set(),
+              _cat: new Set()
+            });
+          }
+          const g = grouped.get(key);
+          if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
+          if (r.created_at > g.last_seen_at) g.last_seen_at = r.created_at;
+          if (r.source_name) g._sources.add(r.source_name);
+          if (r.confidence) g._conf.add(r.confidence);
+          if (r.category) g._cat.add(r.category);
+        }
+        return Array.from(grouped.values()).map((g) => ({
+          id: g.id,
+          public_id: g.public_id,
+          observable: g.observable,
+          observable_type: g.observable_type,
+          ip: g.ip,
+          first_seen_at: g.first_seen_at,
+          last_seen_at: g.last_seen_at,
+          source_count: g._sources.size,
+          source_names: Array.from(g._sources).sort(),
+          confidence_set: Array.from(g._conf).sort(),
+          category_set: Array.from(g._cat).sort(),
+          asn: null,
+          country_code: null,
+          as_name: null
+        }));
+      })();
       const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: pageItems.length, total_pages: pageItems.length ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
