@@ -229,6 +229,7 @@ async function insertMatchEvents(client, rows) {
 }
 
 async function runBatch() {
+  const startedAtMs = Date.now();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -238,7 +239,7 @@ async function runBatch() {
 
     if (!scanned.length) {
       await client.query('COMMIT');
-      return { scanned: 0, matched: 0, inserted: 0 };
+      return { scanned: 0, matched: 0, inserted: 0, duration_ms: Date.now() - startedAtMs };
     }
 
     const matchedRows = toMatchRows(scanned);
@@ -248,7 +249,14 @@ async function runBatch() {
     await saveState(client, last.ts, last.row_hash);
     await client.query('COMMIT');
 
-    return { scanned: scanned.length, matched: matchedRows.length, inserted, last_ts: last.ts, last_row_hash: last.row_hash };
+    return {
+      scanned: scanned.length,
+      matched: matchedRows.length,
+      inserted,
+      last_ts: last.ts,
+      last_row_hash: last.row_hash,
+      duration_ms: Date.now() - startedAtMs
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -261,17 +269,19 @@ async function tick() {
   let totalScanned = 0;
   let totalMatched = 0;
   let totalInserted = 0;
+  let totalDurationMs = 0;
 
   for (let i = 0; i < MAX_BATCHES_PER_TICK; i += 1) {
     const result = await runBatch();
     totalScanned += result.scanned;
     totalMatched += result.matched;
     totalInserted += result.inserted;
+    totalDurationMs += Number(result.duration_ms || 0);
     if (result.scanned < BATCH_SIZE) break;
   }
 
   if (totalScanned > 0) {
-    console.log(`[ioc-correlation] scanned=${totalScanned} matched=${totalMatched} inserted_or_upserted=${totalInserted}`);
+    console.log(`[ioc-correlation] scanned=${totalScanned} matched=${totalMatched} inserted_or_upserted=${totalInserted} duration_ms=${totalDurationMs}`);
   }
 }
 
