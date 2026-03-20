@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "migrate": "node migrate.js",
-    "start": "node migrate.js && node server-clickhouse.js",
+    "start": "node migrate.js && node server.js",
     "signal-worker": "node migrate.js && node signal-worker.js",
     "ioc-correlation-worker": "node migrate.js && node ioc-correlation-worker.js",
     "dashboard-map-worker": "node migrate.js && node dashboard-map-worker.js",
