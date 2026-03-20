@@ -1,0 +1,302 @@
+import pg from 'pg';
+import { ensureIocCorrelationAssets, query as clickhouseQuery } from './lib/clickhouse.js';
+
+const { Pool } = pg;
+
+const pool = new Pool({
+  host: process.env.DB_HOST || 'db',
+  port: Number(process.env.DB_PORT || 5432),
+  user: process.env.DB_USER || 'demo',
+  password: process.env.DB_PASSWORD || 'demo123',
+  database: process.env.DB_NAME || 'demo'
+});
+
+const WORKER_NAME = process.env.IOC_CORRELATION_WORKER_NAME || 'clickhouse-ioc-correlation-v1';
+const POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_CORRELATION_POLL_INTERVAL_MS || 3000), 500);
+const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 5000), 100);
+const MAX_BATCHES_PER_TICK = Math.max(Number(process.env.IOC_CORRELATION_MAX_BATCHES_PER_TICK || 5), 1);
+const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
+
+let stopping = false;
+
+function esc(value) {
+  return String(value || '').replace(/'/g, "''");
+}
+
+function floorToBucket(tsIso, seconds) {
+  const d = new Date(tsIso);
+  const ms = d.getTime();
+  const bucketMs = seconds * 1000;
+  const floored = Math.floor(ms / bucketMs) * bucketMs;
+  return new Date(floored).toISOString();
+}
+
+function dedupKeyOf(row) {
+  // Stable key per source + ioc type/value + parser context + host.
+  return [
+    row.match_type || 'unknown',
+    row.matched_ioc || '',
+    row.host || '',
+    row.source || '',
+    row.parser_source || 'unknown'
+  ].join('|');
+}
+
+async function getOrInitState(client) {
+  const q = await client.query(
+    `SELECT worker_name, last_ts, last_row_hash
+     FROM ioc_correlation_state
+     WHERE worker_name = $1`,
+    [WORKER_NAME]
+  );
+
+  if (q.rowCount) return q.rows[0];
+
+  const init = await client.query(
+    `INSERT INTO ioc_correlation_state (worker_name, last_ts, last_row_hash, batch_size)
+     VALUES ($1, to_timestamp(0), 0, $2)
+     RETURNING worker_name, last_ts, last_row_hash`,
+    [WORKER_NAME, BATCH_SIZE]
+  );
+  return init.rows[0];
+}
+
+async function saveState(client, lastTs, lastRowHash) {
+  await client.query(
+    `UPDATE ioc_correlation_state
+     SET last_ts = $2,
+         last_row_hash = $3,
+         batch_size = $4,
+         updated_at = NOW()
+     WHERE worker_name = $1`,
+    [WORKER_NAME, lastTs, String(lastRowHash), BATCH_SIZE]
+  );
+}
+
+function buildScanQuery(lastTs, lastRowHash, limit) {
+  const ts = esc(lastTs);
+  const hash = Number(lastRowHash || 0);
+  const lim = Number(limit || BATCH_SIZE);
+
+  return `
+    WITH src AS (
+      SELECT
+        ts,
+        source,
+        host,
+        parser_source,
+        parsed_ip,
+        parsed_query,
+        ioc_ip,
+        ioc_query,
+        cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) AS row_hash
+      FROM default.syslog_logs
+      WHERE (ts > toDateTime('${ts}')
+         OR (ts = toDateTime('${ts}')
+             AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64(${hash})))
+      ORDER BY ts, row_hash
+      LIMIT ${lim}
+    )
+    SELECT
+      ts,
+      source,
+      host,
+      parser_source,
+      parsed_ip,
+      parsed_query,
+      ioc_ip,
+      ioc_query,
+      row_hash,
+      lower(ifNull(ioc_query, '')) AS norm_query,
+      ifNull(ioc_ip, '') AS norm_ip,
+      dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))) AS has_domain_match,
+      dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')) AS has_ip_match,
+      if(dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))), dictGetUInt64('default.ioc_domain_dict', 'ioc_item_id', lower(ifNull(ioc_query, ''))), toUInt64(0)) AS domain_ioc_item_id,
+      if(dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))), dictGetString('default.ioc_domain_dict', 'source_name', lower(ifNull(ioc_query, ''))), '') AS domain_source_name,
+      if(dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))), dictGetString('default.ioc_domain_dict', 'confidence', lower(ifNull(ioc_query, ''))), '') AS domain_confidence,
+      if(dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')), dictGetUInt64('default.ioc_ip_dict', 'ioc_item_id', ifNull(ioc_ip, '')), toUInt64(0)) AS ip_ioc_item_id,
+      if(dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')), dictGetString('default.ioc_ip_dict', 'source_name', ifNull(ioc_ip, '')), '') AS ip_source_name,
+      if(dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')), dictGetString('default.ioc_ip_dict', 'confidence', ifNull(ioc_ip, '')), '') AS ip_confidence
+    FROM src
+  `;
+}
+
+function toMatchRows(chRows) {
+  const out = [];
+  for (const r of chRows) {
+    if (r.has_domain_match) {
+      out.push({
+        event_time: r.ts,
+        host: r.host,
+        source: r.source,
+        parser_source: r.parser_source,
+        destination_ip: r.parsed_ip || null,
+        protocol: 'dns',
+        matched_ioc: r.norm_query,
+        ioc_type: 'domain',
+        ioc_item_id: Number(r.domain_ioc_item_id || 0) || null,
+        source_name: r.domain_source_name || null,
+        confidence: r.domain_confidence || null,
+        match_context: {
+          parsed_query: r.parsed_query || null,
+          parsed_ip: r.parsed_ip || null,
+          ioc_query: r.ioc_query || null
+        }
+      });
+    }
+
+    if (r.has_ip_match) {
+      out.push({
+        event_time: r.ts,
+        host: r.host,
+        source: r.source,
+        parser_source: r.parser_source,
+        destination_ip: r.parsed_ip || null,
+        protocol: 'dns',
+        matched_ioc: r.norm_ip,
+        ioc_type: 'ip',
+        ioc_item_id: Number(r.ip_ioc_item_id || 0) || null,
+        source_name: r.ip_source_name || null,
+        confidence: r.ip_confidence || null,
+        match_context: {
+          parsed_query: r.parsed_query || null,
+          parsed_ip: r.parsed_ip || null,
+          ioc_ip: r.ioc_ip || null
+        }
+      });
+    }
+  }
+  return out;
+}
+
+async function insertMatchEvents(client, rows) {
+  if (!rows.length) return 0;
+
+  const values = [];
+  const params = [];
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const r = rows[i];
+    const bucketStart = floorToBucket(r.event_time, DEDUP_WINDOW_SECONDS);
+    const dedupKey = dedupKeyOf({ ...r, match_type: r.ioc_type });
+    const base = i * 17;
+
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17})`);
+    params.push(
+      r.event_time,
+      r.host || null,
+      null, // process_name
+      r.destination_ip || null,
+      null, // destination_port
+      r.protocol || null,
+      r.matched_ioc,
+      r.source_name || null,
+      r.confidence || null,
+      r.ioc_type,
+      r.ioc_item_id,
+      r.parser_source || null,
+      r.source || null,
+      JSON.stringify(r.match_context || {}),
+      dedupKey,
+      bucketStart,
+      r.event_time // last_seen_at seed
+    );
+  }
+
+  const sql = `
+    INSERT INTO ioc_match_events (
+      event_time, host_name, process_name, destination_ip, destination_port, protocol,
+      matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
+      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at
+    ) VALUES ${values.join(',')}
+    ON CONFLICT (dedup_key, bucket_start)
+    DO UPDATE SET
+      hit_count = ioc_match_events.hit_count + 1,
+      last_seen_at = GREATEST(ioc_match_events.last_seen_at, EXCLUDED.last_seen_at),
+      confidence = COALESCE(EXCLUDED.confidence, ioc_match_events.confidence),
+      source_name = COALESCE(EXCLUDED.source_name, ioc_match_events.source_name),
+      match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context)
+  `;
+
+  await client.query(sql, params);
+  return rows.length;
+}
+
+async function runBatch() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const state = await getOrInitState(client);
+    const query = buildScanQuery(state.last_ts, state.last_row_hash, BATCH_SIZE);
+    const scanned = await clickhouseQuery(query);
+
+    if (!scanned.length) {
+      await client.query('COMMIT');
+      return { scanned: 0, matched: 0, inserted: 0 };
+    }
+
+    const matchedRows = toMatchRows(scanned);
+    const inserted = await insertMatchEvents(client, matchedRows);
+
+    const last = scanned[scanned.length - 1];
+    await saveState(client, last.ts, last.row_hash);
+    await client.query('COMMIT');
+
+    return { scanned: scanned.length, matched: matchedRows.length, inserted, last_ts: last.ts, last_row_hash: last.row_hash };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function tick() {
+  let totalScanned = 0;
+  let totalMatched = 0;
+  let totalInserted = 0;
+
+  for (let i = 0; i < MAX_BATCHES_PER_TICK; i += 1) {
+    const result = await runBatch();
+    totalScanned += result.scanned;
+    totalMatched += result.matched;
+    totalInserted += result.inserted;
+    if (result.scanned < BATCH_SIZE) break;
+  }
+
+  if (totalScanned > 0) {
+    console.log(`[ioc-correlation] scanned=${totalScanned} matched=${totalMatched} inserted_or_upserted=${totalInserted}`);
+  }
+}
+
+async function bootstrap() {
+  await ensureIocCorrelationAssets();
+  console.log(`[ioc-correlation] started worker=${WORKER_NAME} poll_ms=${POLL_INTERVAL_MS} batch=${BATCH_SIZE} dedup_window_s=${DEDUP_WINDOW_SECONDS}`);
+
+  while (!stopping) {
+    try {
+      await tick();
+    } catch (err) {
+      console.error('[ioc-correlation] tick failed', err?.message || err);
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+}
+
+process.on('SIGINT', async () => {
+  stopping = true;
+  await pool.end();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  stopping = true;
+  await pool.end();
+  process.exit(0);
+});
+
+bootstrap().catch(async (err) => {
+  console.error('[ioc-correlation] bootstrap failed', err?.message || err);
+  await pool.end();
+  process.exit(1);
+});

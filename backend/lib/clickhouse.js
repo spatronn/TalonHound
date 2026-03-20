@@ -71,3 +71,54 @@ export async function ensureSyslogTable() {
   await clickhouse.command({ query: `ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip` });
   await clickhouse.command({ query: `ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip_private` });
 }
+
+export async function ensureIocCorrelationAssets() {
+  // Domain dictionary (query/domain observables)
+  await clickhouse.command({
+    query: `
+      CREATE DICTIONARY IF NOT EXISTS default.ioc_domain_dict (
+        observable String,
+        ioc_item_id UInt64,
+        source_name String,
+        confidence String
+      )
+      PRIMARY KEY observable
+      SOURCE(POSTGRESQL(
+        HOST 'db'
+        PORT 5432
+        USER 'demo'
+        PASSWORD 'demo123'
+        DB 'demo'
+        QUERY 'SELECT lower(observable) AS observable, id AS ioc_item_id, source_name, confidence FROM ioc_items WHERE observable_type IN (''domain'', ''hostname'', ''url'')'
+      ))
+      LAYOUT(HASHED())
+      LIFETIME(MIN 5 MAX 30)
+    `
+  });
+
+  // IP dictionary (public IP observables)
+  await clickhouse.command({
+    query: `
+      CREATE DICTIONARY IF NOT EXISTS default.ioc_ip_dict (
+        observable String,
+        ioc_item_id UInt64,
+        source_name String,
+        confidence String
+      )
+      PRIMARY KEY observable
+      SOURCE(POSTGRESQL(
+        HOST 'db'
+        PORT 5432
+        USER 'demo'
+        PASSWORD 'demo123'
+        DB 'demo'
+        QUERY 'SELECT observable, id AS ioc_item_id, source_name, confidence FROM ioc_items WHERE observable_type = ''ip'''
+      ))
+      LAYOUT(HASHED())
+      LIFETIME(MIN 5 MAX 30)
+    `
+  });
+
+  await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_domain_dict` });
+  await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_ip_dict` });
+}
