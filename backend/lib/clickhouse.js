@@ -95,7 +95,7 @@ export async function syncIocLookupFromPostgres() {
   await clickhouse.command({ query: `TRUNCATE TABLE IF EXISTS ioc_lookup` });
   await clickhouse.command({
     query: `
-      INSERT INTO ioc_lookup (observable, observable_type, confidence, source_name)
+      INSERT INTO ioc_lookup (observable, observable_type, confidence, source_name, updated_at)
       SELECT
         lower(observable) AS observable,
         if(observable_type = 'hostname', 'domain', observable_type) AS observable_type,
@@ -103,7 +103,8 @@ export async function syncIocLookupFromPostgres() {
                     lower(coalesce(confidence, '')) = 'medium', 60,
                     lower(coalesce(confidence, '')) = 'low', 30,
                     50)) AS confidence,
-        any(source_name) AS source_name
+        any(source_name) AS source_name,
+        toDateTime64(max(created_at), 3) AS updated_at
       FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
       WHERE observable IS NOT NULL
         AND observable != ''

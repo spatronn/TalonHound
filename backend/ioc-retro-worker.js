@@ -13,12 +13,13 @@ const pool = new Pool({
 
 const POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_RETRO_POLL_INTERVAL_MS || 10000), 1000);
 const RETRO_SCAN_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_RETRO_SCAN_INTERVAL_SECONDS || 3600), 300);
-const RETRO_LOOKBACK_HOURS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_HOURS || 6), 1);
+const RETRO_LOOKBACK_DAYS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_DAYS || 30), 1);
 const RETRO_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_BATCH_SIZE || 20000), 1000);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
 const RETRO_CH_MAX_THREADS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_THREADS || 4), 1);
 const RETRO_CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_EXECUTION_TIME_SECONDS || 25), 5);
+const RETRO_NEW_IOC_WINDOW_HOURS = Math.max(Number(process.env.IOC_RETRO_NEW_IOC_WINDOW_HOURS || 2), 1);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -88,7 +89,7 @@ async function runRetroactivePass() {
     WITH new_iocs AS (
       SELECT observable, observable_type, confidence, source_name
       FROM default.ioc_lookup
-      WHERE updated_at >= now() - INTERVAL 1 HOUR
+      WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
     ), domain_matches AS (
       SELECT s.ts, s.source, s.host, s.parser_source, s.parsed_ip, s.parsed_query,
              ni.observable AS matched_ioc, ni.observable_type AS ioc_type,
@@ -97,7 +98,7 @@ async function runRetroactivePass() {
       ANY INNER JOIN new_iocs ni
         ON ni.observable = lower(ifNull(s.ioc_query, ''))
        AND ni.observable_type IN ('domain', 'url')
-      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_HOURS} HOUR
+      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
         AND notEmpty(ifNull(s.ioc_query, ''))
     ), ip_matches AS (
       SELECT s.ts, s.source, s.host, s.parser_source, s.parsed_ip, s.parsed_query,
@@ -107,7 +108,7 @@ async function runRetroactivePass() {
       ANY INNER JOIN new_iocs ni
         ON ni.observable = ifNull(s.ioc_ip, '')
        AND ni.observable_type = 'ip'
-      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_HOURS} HOUR
+      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
         AND notEmpty(ifNull(s.ioc_ip, ''))
     )
     SELECT * FROM (
@@ -157,7 +158,7 @@ async function runRetroactivePass() {
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started poll_ms=${POLL_INTERVAL_MS} retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} lookback_h=${RETRO_LOOKBACK_HOURS} batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started poll_ms=${POLL_INTERVAL_MS} retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
