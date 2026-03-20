@@ -490,38 +490,56 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
     const q = hasHours
       ? await pool.query(
           `SELECT
-             id,
-             event_time,
-             host_name,
-             process_name,
-             destination_ip,
-             destination_port,
-             protocol,
-             matched_ioc,
-             source_name,
-             confidence,
-             created_at
-           FROM ioc_match_events
-           WHERE created_at >= NOW() - ($2::text || ' hours')::interval
-           ORDER BY created_at DESC
+             m.id,
+             m.event_time,
+             m.host_name,
+             m.process_name,
+             m.destination_ip,
+             m.destination_port,
+             m.protocol,
+             m.matched_ioc,
+             m.source_name,
+             m.confidence,
+             m.created_at,
+             COALESCE(src.source_count, 0) AS source_count,
+             COALESCE(src.source_names, ARRAY[]::text[]) AS source_names
+           FROM ioc_match_events m
+           LEFT JOIN LATERAL (
+             SELECT
+               COUNT(DISTINCT i.source_name)::int AS source_count,
+               ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
+             FROM ioc_items i
+             WHERE lower(i.observable) = lower(m.matched_ioc)
+           ) src ON TRUE
+           WHERE m.created_at >= NOW() - ($2::text || ' hours')::interval
+           ORDER BY m.created_at DESC
            LIMIT $1`,
           [limit, hours]
         )
       : await pool.query(
           `SELECT
-             id,
-             event_time,
-             host_name,
-             process_name,
-             destination_ip,
-             destination_port,
-             protocol,
-             matched_ioc,
-             source_name,
-             confidence,
-             created_at
-           FROM ioc_match_events
-           ORDER BY created_at DESC
+             m.id,
+             m.event_time,
+             m.host_name,
+             m.process_name,
+             m.destination_ip,
+             m.destination_port,
+             m.protocol,
+             m.matched_ioc,
+             m.source_name,
+             m.confidence,
+             m.created_at,
+             COALESCE(src.source_count, 0) AS source_count,
+             COALESCE(src.source_names, ARRAY[]::text[]) AS source_names
+           FROM ioc_match_events m
+           LEFT JOIN LATERAL (
+             SELECT
+               COUNT(DISTINCT i.source_name)::int AS source_count,
+               ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
+             FROM ioc_items i
+             WHERE lower(i.observable) = lower(m.matched_ioc)
+           ) src ON TRUE
+           ORDER BY m.created_at DESC
            LIMIT $1`,
           [limit]
         );

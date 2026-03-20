@@ -571,7 +571,11 @@ function AnalyticsPage() {
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.process_name || '-'}</td>
                   <td>{evt.destination_ip || '-'}</td>
                   <td>{evt.matched_ioc || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.source_name || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {evt.source_count > 1
+                      ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
+                      : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
+                  </td>
                   <td>{evt.confidence || '-'}</td>
                 </tr>
               )) : (
