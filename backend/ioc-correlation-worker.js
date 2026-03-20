@@ -17,7 +17,7 @@ const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 500
 const MAX_BATCHES_PER_TICK = Math.max(Number(process.env.IOC_CORRELATION_MAX_BATCHES_PER_TICK || 5), 1);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
-const CH_MAX_THREADS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_THREADS || 4), 1);
+const CH_MAX_THREADS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_THREADS || 2), 1);
 const CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_EXECUTION_TIME_SECONDS || 20), 5);
 
 let stopping = false;

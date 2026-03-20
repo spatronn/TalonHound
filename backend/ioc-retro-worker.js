@@ -17,9 +17,10 @@ const RETRO_LOOKBACK_DAYS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_DAYS 
 const RETRO_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_BATCH_SIZE || 20000), 1000);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
-const RETRO_CH_MAX_THREADS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_THREADS || 4), 1);
+const RETRO_CH_MAX_THREADS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_THREADS || 2), 1);
 const RETRO_CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_RETRO_CH_MAX_EXECUTION_TIME_SECONDS || 25), 5);
 const RETRO_NEW_IOC_WINDOW_HOURS = Math.max(Number(process.env.IOC_RETRO_NEW_IOC_WINDOW_HOURS || 2), 1);
+const RETRO_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_MAX_NEW_IOCS || 5000), 100);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -85,11 +86,24 @@ async function runRetroactivePass() {
   const now = Date.now();
   if ((now - lastRetroRunAtMs) < (RETRO_SCAN_INTERVAL_SECONDS * 1000)) return { ran: false, inserted: 0 };
 
+  const newIocCountRows = await clickhouseQuery(`
+    SELECT count() AS c
+    FROM default.ioc_lookup
+    WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
+  `);
+  const newIocCount = Number(newIocCountRows?.[0]?.c || 0);
+  if (!newIocCount) {
+    lastRetroRunAtMs = now;
+    return { ran: true, inserted: 0, skipped: 'no_new_ioc' };
+  }
+
   const rows = await clickhouseQuery(`
     WITH new_iocs AS (
       SELECT observable, observable_type, confidence, source_name
       FROM default.ioc_lookup
       WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
+      ORDER BY updated_at DESC
+      LIMIT ${RETRO_MAX_NEW_IOCS}
     ), domain_matches AS (
       SELECT s.ts, s.source, s.host, s.parser_source, s.parsed_ip, s.parsed_query,
              ni.observable AS matched_ioc, ni.observable_type AS ioc_type,
@@ -158,7 +172,7 @@ async function runRetroactivePass() {
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started poll_ms=${POLL_INTERVAL_MS} retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started poll_ms=${POLL_INTERVAL_MS} retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
