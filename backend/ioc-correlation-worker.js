@@ -17,13 +17,9 @@ const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 500
 const MAX_BATCHES_PER_TICK = Math.max(Number(process.env.IOC_CORRELATION_MAX_BATCHES_PER_TICK || 5), 1);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
-const RETRO_SCAN_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_RETRO_SCAN_INTERVAL_SECONDS || 3600), 300);
-const RETRO_LOOKBACK_DAYS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_DAYS || 30), 1);
-const RETRO_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_BATCH_SIZE || 20000), 1000);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
-let lastRetroRunAtMs = 0;
 
 function esc(value) {
   return String(value || '').replace(/'/g, "''");
@@ -308,109 +304,16 @@ async function maybeSyncIocLookup(force = false) {
   return true;
 }
 
-async function runRetroactivePass() {
-  const now = Date.now();
-  if ((now - lastRetroRunAtMs) < (RETRO_SCAN_INTERVAL_SECONDS * 1000)) return { ran: false, inserted: 0 };
-
-  const rows = await clickhouseQuery(`
-    WITH new_iocs AS (
-      SELECT observable, observable_type, confidence, source_name
-      FROM default.ioc_lookup
-      WHERE updated_at >= now() - INTERVAL 1 HOUR
-    ), domain_matches AS (
-      SELECT
-        s.ts,
-        s.source,
-        s.host,
-        s.parser_source,
-        s.parsed_ip,
-        s.parsed_query,
-        ni.observable AS matched_ioc,
-        ni.observable_type AS ioc_type,
-        ni.confidence AS confidence,
-        ni.source_name AS source_name
-      FROM default.syslog_logs s
-      INNER JOIN new_iocs ni
-        ON ni.observable = lower(ifNull(s.ioc_query, ''))
-       AND ni.observable_type IN ('domain', 'url')
-      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
-    ), ip_matches AS (
-      SELECT
-        s.ts,
-        s.source,
-        s.host,
-        s.parser_source,
-        s.parsed_ip,
-        s.parsed_query,
-        ni.observable AS matched_ioc,
-        ni.observable_type AS ioc_type,
-        ni.confidence AS confidence,
-        ni.source_name AS source_name
-      FROM default.syslog_logs s
-      INNER JOIN new_iocs ni
-        ON ni.observable = ifNull(s.ioc_ip, '')
-       AND ni.observable_type = 'ip'
-      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
-    )
-    SELECT * FROM (
-      SELECT * FROM domain_matches
-      UNION ALL
-      SELECT * FROM ip_matches
-    )
-    ORDER BY ts DESC
-    LIMIT ${RETRO_BATCH_SIZE}
-  `);
-
-  if (!rows.length) {
-    lastRetroRunAtMs = now;
-    return { ran: true, inserted: 0 };
-  }
-
-  const mapped = rows.map((r) => ({
-    event_time: r.ts,
-    host: r.host,
-    source: r.source,
-    parser_source: r.parser_source,
-    destination_ip: r.parsed_ip || null,
-    protocol: 'dns',
-    matched_ioc: r.matched_ioc,
-    ioc_type: r.ioc_type,
-    ioc_item_id: null,
-    source_name: r.source_name || null,
-    confidence: String(r.confidence || ''),
-    match_context: {
-      retroactive: true,
-      parsed_query: r.parsed_query || null,
-      parsed_ip: r.parsed_ip || null
-    }
-  }));
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const inserted = await insertMatchEvents(client, mapped);
-    await client.query('COMMIT');
-    lastRetroRunAtMs = now;
-    console.log(`[ioc-correlation] retroactive scanned=${rows.length} inserted_or_upserted=${inserted}`);
-    return { ran: true, inserted };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
 
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-correlation] started worker=${WORKER_NAME} poll_ms=${POLL_INTERVAL_MS} batch=${BATCH_SIZE} dedup_window_s=${DEDUP_WINDOW_SECONDS} retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS}`);
+  console.log(`[ioc-correlation] started worker=${WORKER_NAME} poll_ms=${POLL_INTERVAL_MS} batch=${BATCH_SIZE} dedup_window_s=${DEDUP_WINDOW_SECONDS}`);
 
   while (!stopping) {
     try {
       await maybeSyncIocLookup(false);
       await tick();
-      await runRetroactivePass();
     } catch (err) {
       console.error('[ioc-correlation] tick failed', err?.message || err);
     }
