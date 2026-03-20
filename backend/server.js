@@ -508,19 +508,19 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
              LIMIT $1
            ), source_agg AS (
              SELECT
-               lower(i.observable) AS observable_lc,
+               i.observable AS observable_norm,
                COUNT(DISTINCT i.source_name)::int AS source_count,
                ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
              FROM ioc_items i
-             WHERE lower(i.observable) IN (SELECT DISTINCT lower(r.matched_ioc) FROM recent r)
-             GROUP BY lower(i.observable)
+             WHERE i.observable IN (SELECT DISTINCT lower(r.matched_ioc) FROM recent r)
+             GROUP BY i.observable
            )
            SELECT
              r.*,
              COALESCE(sa.source_count, 0) AS source_count,
              COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
            FROM recent r
-           LEFT JOIN source_agg sa ON sa.observable_lc = lower(r.matched_ioc)
+           LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
            ORDER BY r.created_at DESC`,
           [limit, hours]
         )
@@ -543,19 +543,19 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
              LIMIT $1
            ), source_agg AS (
              SELECT
-               lower(i.observable) AS observable_lc,
+               i.observable AS observable_norm,
                COUNT(DISTINCT i.source_name)::int AS source_count,
                ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
              FROM ioc_items i
-             WHERE lower(i.observable) IN (SELECT DISTINCT lower(r.matched_ioc) FROM recent r)
-             GROUP BY lower(i.observable)
+             WHERE i.observable IN (SELECT DISTINCT lower(r.matched_ioc) FROM recent r)
+             GROUP BY i.observable
            )
            SELECT
              r.*,
              COALESCE(sa.source_count, 0) AS source_count,
              COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
            FROM recent r
-           LEFT JOIN source_agg sa ON sa.observable_lc = lower(r.matched_ioc)
+           LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
            ORDER BY r.created_at DESC`,
           [limit]
         );
