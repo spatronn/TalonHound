@@ -1381,13 +1381,15 @@ async function handleIocList(req, res) {
       // Hash search: ioc_file_hash only. Primary match (observable = $1) or note match (e.g. imphash=, ssdeep=).
       const hashValueOnly = params[prefixedHashSearch.exactIdx - 1];
       const noteExpr = prefixedHashSearch.noteExpr;
+      const obsLimit = Math.max(Math.min(limit * 50, 500), 100);
       const exactHashQ = `
         SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
         FROM ioc_file_hash
         WHERE observable = $1 OR (${noteExpr}) = $1
-        LIMIT 1`;
+        ORDER BY created_at DESC
+        LIMIT $2`;
       if (t) t.dbQueryStart = Date.now();
-      const simpleRes = await db.query(exactHashQ, [hashValueOnly]);
+      const simpleRes = await db.query(exactHashQ, [hashValueOnly, obsLimit]);
       if (t) t.dbQueryEnd = Date.now();
       const rows = simpleRes.rows;
       if (t) {
@@ -1479,13 +1481,15 @@ async function handleIocList(req, res) {
       const obsValue = params[prefixedObservableSearch.valueIdx - 1];
       const partitionTable = { ip: 'ioc_ip', ip6: 'ioc_ip6', domain: 'ioc_domain', url: 'ioc_url' }[obsType];
       const whereClause = (obsType === 'domain' || obsType === 'url') ? 'LOWER(observable) = $1' : 'observable = $1';
+      const obsLimit = Math.max(Math.min(limit * 50, 500), 100);
       const obsQ = `
         SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
         FROM ${partitionTable}
         WHERE ${whereClause}
-        LIMIT 1`;
+        ORDER BY created_at DESC
+        LIMIT $2`;
       if (t) t.dbQueryStart = Date.now();
-      const obsRes = await db.query(obsQ, [obsValue]);
+      const obsRes = await db.query(obsQ, [obsValue, obsLimit]);
       if (t) t.dbQueryEnd = Date.now();
       const rows = obsRes.rows;
       const pageItems = (() => {
