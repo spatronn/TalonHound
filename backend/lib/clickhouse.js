@@ -46,7 +46,13 @@ export async function ensureSyslogTable() {
         severity String,
         facility String,
         message String,
-        raw String
+        raw String,
+        parser_source LowCardinality(String) DEFAULT 'unknown',
+        parsed_src_ip Nullable(String),
+        parsed_query Nullable(String),
+        parsed_src_ip_private Nullable(Bool),
+        ioc_ip Nullable(String),
+        ioc_query Nullable(String)
       )
       ENGINE = MergeTree
       PARTITION BY toYYYYMMDD(ts)
@@ -54,4 +60,12 @@ export async function ensureSyslogTable() {
       TTL ts + INTERVAL 30 DAY
     `
   });
+
+  // Forward-compatible schema evolution on existing tables.
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parser_source LowCardinality(String) DEFAULT 'unknown'` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_src_ip Nullable(String)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_query Nullable(String)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_src_ip_private Nullable(Bool)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_ip Nullable(String)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_query Nullable(String)` });
 }

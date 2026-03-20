@@ -76,7 +76,53 @@ function normalizeTail(text) {
   return t;
 }
 
+function isPrivateIPv4(ip) {
+  const m = String(ip || '').match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if ([a, b].some((n) => Number.isNaN(n) || n < 0 || n > 255)) return false;
+  // RFC1918: 10/8, 172.16/12, 192.168/16
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
 
+function decodeMicrosoftDnsName(raw) {
+  const parts = [];
+  const re = /\((\d+)\)([^()]+)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const len = Number(m[1]);
+    const label = String(m[2] || '').trim();
+    if (Number.isNaN(len)) continue;
+    if (len === 0) break;
+    if (label) parts.push(label);
+  }
+  if (parts.length === 0) return null;
+  return parts.join('.').toLowerCase();
+}
+
+function parseMicrosoftDnsDebug(line) {
+  const raw = normalizeTail(line);
+  // Example:
+  // 03/15 10:55:45 CE61 PACKET ... UDP Rcv 10.10.29.130 ... A (4)ocsp(6)msocsp(3)com(0)
+  const ipMatch = raw.match(/\b(?:Snd|Rcv)\s+(\d{1,3}(?:\.\d{1,3}){3})\b/i);
+  const srcIp = ipMatch?.[1] || null;
+  const query = decodeMicrosoftDnsName(raw);
+  if (!srcIp && !query) return null;
+
+  const srcIpPrivate = srcIp ? isPrivateIPv4(srcIp) : null;
+  return {
+    parser_source: 'microsoft_dns_debug',
+    parsed_src_ip: srcIp,
+    parsed_query: query,
+    parsed_src_ip_private: srcIpPrivate,
+    // IOC pre-filter output for next phase:
+    // - private IPs are intentionally excluded
+    // - query/domain is kept
+    ioc_ip: srcIp && srcIpPrivate === false ? srcIp : null,
+    ioc_query: query || null
+  };
+}
 
 function parseSyslogLine(line, sourceIp) {
   const raw = normalizeTail(line);
@@ -107,6 +153,14 @@ function parseSyslogLine(line, sourceIp) {
     out.program = (m[2] || "unknown").trim();
     out.message = normalizeTail(m[3] || raw);
   }
+
+  const dns = parseMicrosoftDnsDebug(raw);
+  out.parser_source = dns?.parser_source || 'unknown';
+  out.parsed_src_ip = dns?.parsed_src_ip || null;
+  out.parsed_query = dns?.parsed_query || null;
+  out.parsed_src_ip_private = dns?.parsed_src_ip_private ?? null;
+  out.ioc_ip = dns?.ioc_ip || null;
+  out.ioc_query = dns?.ioc_query || null;
 
   return out;
 }
