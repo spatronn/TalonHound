@@ -48,9 +48,9 @@ export async function ensureSyslogTable() {
         message String,
         raw String,
         parser_source LowCardinality(String) DEFAULT 'unknown',
-        parsed_src_ip Nullable(String),
+        parsed_ip Nullable(String),
         parsed_query Nullable(String),
-        parsed_src_ip_private Nullable(Bool),
+        parsed_ip_private Nullable(Bool),
         ioc_ip Nullable(String),
         ioc_query Nullable(String)
       )
@@ -63,9 +63,11 @@ export async function ensureSyslogTable() {
 
   // Forward-compatible schema evolution on existing tables.
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parser_source LowCardinality(String) DEFAULT 'unknown'` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_src_ip Nullable(String)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip Nullable(String)` });
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_query Nullable(String)` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_src_ip_private Nullable(Bool)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip_private Nullable(Bool)` });
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_ip Nullable(String)` });
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_query Nullable(String)` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip` });
+  await clickhouse.command({ query: `ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip_private` });
 }

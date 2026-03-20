@@ -113,9 +113,9 @@ function parseMicrosoftDnsDebug(line) {
   const srcIpPrivate = srcIp ? isPrivateIPv4(srcIp) : null;
   return {
     parser_source: 'microsoft_dns_debug',
-    parsed_src_ip: srcIp,
+    parsed_ip: srcIp,
     parsed_query: query,
-    parsed_src_ip_private: srcIpPrivate,
+    parsed_ip_private: srcIpPrivate,
     // IOC pre-filter output for next phase:
     // - private IPs are intentionally excluded
     // - query/domain is kept
@@ -156,9 +156,9 @@ function parseSyslogLine(line, sourceIp) {
 
   const dns = parseMicrosoftDnsDebug(raw);
   out.parser_source = dns?.parser_source || 'unknown';
-  out.parsed_src_ip = dns?.parsed_src_ip || null;
+  out.parsed_ip = dns?.parsed_ip || null;
   out.parsed_query = dns?.parsed_query || null;
-  out.parsed_src_ip_private = dns?.parsed_src_ip_private ?? null;
+  out.parsed_ip_private = dns?.parsed_ip_private ?? null;
   out.ioc_ip = dns?.ioc_ip || null;
   out.ioc_query = dns?.ioc_query || null;
 

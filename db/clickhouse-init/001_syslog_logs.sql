@@ -8,9 +8,9 @@ CREATE TABLE IF NOT EXISTS syslog_logs (
   message String,
   raw String,
   parser_source LowCardinality(String) DEFAULT 'unknown',
-  parsed_src_ip Nullable(String),
+  parsed_ip Nullable(String),
   parsed_query Nullable(String),
-  parsed_src_ip_private Nullable(Bool),
+  parsed_ip_private Nullable(Bool),
   ioc_ip Nullable(String),
   ioc_query Nullable(String)
 )
