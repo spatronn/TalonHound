@@ -1301,7 +1301,9 @@ async function handleIocList(req, res) {
         exactObservableValue = isHashLike ? qv.toLowerCase() : qv;
       }
     }
-    if (exactObservableValue != null) {
+    // For explicit observable prefix searches (domain:/url:/ip:), prefer partition fast path
+    // so source aggregation reflects current partition tables directly.
+    if (exactObservableValue != null && !prefixedObservableSearch) {
       const obsLimit = Math.min(limit, 100);
       // ioc_observables (025): observable_value, ioc_public_id; join ioc_items for full row
       const obsQ = `
