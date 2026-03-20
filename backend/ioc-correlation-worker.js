@@ -23,6 +23,12 @@ function esc(value) {
   return String(value || '').replace(/'/g, "''");
 }
 
+function formatChDateTime(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '1970-01-01 00:00:00';
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 function floorToBucket(tsIso, seconds) {
   const d = new Date(tsIso);
   const ms = d.getTime();
@@ -74,7 +80,7 @@ async function saveState(client, lastTs, lastRowHash) {
 }
 
 function buildScanQuery(lastTs, lastRowHash, limit) {
-  const ts = esc(lastTs);
+  const ts = esc(formatChDateTime(lastTs));
   const hash = Number(lastRowHash || 0);
   const lim = Number(limit || BATCH_SIZE);
 
