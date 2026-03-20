@@ -1751,6 +1751,46 @@ app.get('/api/ioc/ip/sources', async (req, res) => {
   }
 });
 
+app.get('/api/ioc/observable/sources', async (req, res) => {
+  const observable = String(req.query?.observable || '').trim();
+  const observableType = String(req.query?.type || '').trim();
+  if (!observable) {
+    return res.status(400).json({ message: 'observable is required' });
+  }
+
+  try {
+    const params = [observable];
+    let typeFilter = '';
+    if (observableType) {
+      params.push(observableType);
+      typeFilter = ' AND observable_type = $2 ';
+    }
+
+    const detailsQ = `
+      SELECT
+        MIN(id)::int AS id,
+        observable,
+        observable_type,
+        source_name,
+        MIN(source_url) AS source_url,
+        MIN(confidence) AS confidence,
+        MIN(category) AS category,
+        STRING_AGG(DISTINCT note, ' | ') FILTER (WHERE note IS NOT NULL AND note <> '') AS note,
+        MAX(created_at) AS created_at,
+        COUNT(*)::int AS total_rows
+      FROM ioc_items
+      WHERE observable = $1
+      ${typeFilter}
+      GROUP BY observable, observable_type, source_name
+      ORDER BY created_at DESC
+    `;
+    const { rows } = await pool.query(detailsQ, params);
+    return res.json({ observable, observable_type: observableType || null, sources: rows });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch observable source details', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/details/resolve', async (req, res) => {
   const observable = String(req.query?.observable || '').trim();
   const observableType = String(req.query?.type || '').trim();
