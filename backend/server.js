@@ -414,8 +414,16 @@ app.get('/api/system/status', async (req, res) => {
 
   let telemetry = {};
   try {
+    const signals24hPromise = USE_CLICKHOUSE
+      ? clickhouseQuery(`
+          SELECT count() AS count
+          FROM syslog_logs
+          WHERE ts >= now() - INTERVAL 24 HOUR
+        `)
+      : pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'");
+
     const [signals24hRes, iocTotalRes, iocTodayRes] = await Promise.all([
-      pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'"),
+      signals24hPromise,
       pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
       pool.query(
         `SELECT COUNT(*)::bigint AS count
@@ -426,8 +434,13 @@ app.get('/api/system/status', async (req, res) => {
         [userTimezone]
       )
     ]);
+
+    const signalCount = USE_CLICKHOUSE
+      ? Number(signals24hRes?.[0]?.count || 0)
+      : Number(signals24hRes.rows?.[0]?.count || 0);
+
     telemetry = {
-      signal_events_24h: Number(signals24hRes.rows[0]?.count || 0),
+      signal_events_24h: signalCount,
       ioc_total: Number(iocTotalRes.rows[0]?.count || 0),
       ioc_today: Number(iocTodayRes.rows[0]?.count || 0)
     };
