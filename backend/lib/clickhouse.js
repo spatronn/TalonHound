@@ -21,6 +21,11 @@ function withTag(sql, tag) {
   return `/* ${tag} */\n${sql}`;
 }
 
+export async function command(sql, opts = {}) {
+  const { logTag, settings } = opts;
+  await clickhouse.command({ query: withTag(sql, logTag), clickhouse_settings: settings });
+}
+
 export async function insertLogs(batch, opts = {}) {
   if (!Array.isArray(batch) || batch.length === 0) return { inserted: 0 };
   const { queryId, logTag } = opts;
@@ -63,115 +68,180 @@ export async function pingClickhouse() {
 }
 
 export async function ensureSyslogTable() {
-  await clickhouse.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS syslog_logs (
-        ts DateTime,
-        source String,
-        host String,
-        program String,
-        severity String,
-        facility String,
-        message String,
-        raw String,
-        parser_source LowCardinality(String) DEFAULT 'unknown',
-        parsed_ip Nullable(String),
-        parsed_query Nullable(String),
-        parsed_ip_private Nullable(Bool),
-        ioc_ip Nullable(String),
-        ioc_query Nullable(String)
-      )
-      ENGINE = MergeTree
-      PARTITION BY toYYYYMMDD(ts)
-      ORDER BY (ts, host)
-      TTL ts + INTERVAL 30 DAY
-    `
-  });
+  await command(`
+    CREATE TABLE IF NOT EXISTS syslog_logs (
+      ts DateTime,
+      source String,
+      host String,
+      program String,
+      severity String,
+      facility String,
+      message String,
+      raw String,
+      parser_source LowCardinality(String) DEFAULT 'unknown',
+      parsed_ip Nullable(String),
+      parsed_query Nullable(String),
+      parsed_ip_private Nullable(Bool),
+      ioc_ip Nullable(String),
+      ioc_query Nullable(String)
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(ts)
+    ORDER BY (ts, host)
+    TTL ts + INTERVAL 30 DAY
+  `);
 
-  await clickhouse.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS syslog_observables (
-        ts DateTime,
-        source LowCardinality(String),
-        host LowCardinality(String),
-        observable String,
-        observable_type LowCardinality(String),
-        raw_row_hash String
-      )
-      ENGINE = MergeTree
-      PARTITION BY toYYYYMMDD(ts)
-      ORDER BY (observable, observable_type, ts, raw_row_hash)
-      TTL ts + INTERVAL 30 DAY
-    `
-  });
+  await command(`
+    CREATE TABLE IF NOT EXISTS syslog_observables (
+      ts DateTime,
+      source LowCardinality(String),
+      host LowCardinality(String),
+      observable String,
+      observable_type LowCardinality(String),
+      raw_row_hash String
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMMDD(ts)
+    ORDER BY (observable, observable_type, ts, raw_row_hash)
+    TTL ts + INTERVAL 30 DAY
+  `);
 
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parser_source LowCardinality(String) DEFAULT 'unknown'` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip Nullable(String)` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_query Nullable(String)` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip_private Nullable(Bool)` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_ip Nullable(String)` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_query Nullable(String)` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip` });
-  await clickhouse.command({ query: `ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip_private` });
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parser_source LowCardinality(String) DEFAULT 'unknown'`);
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip Nullable(String)`);
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_query Nullable(String)`);
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip_private Nullable(Bool)`);
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_ip Nullable(String)`);
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_query Nullable(String)`);
+  await command(`ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip`);
+  await command(`ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip_private`);
 }
 
 export async function ensureIocCorrelationAssets() {
-  await clickhouse.command({ query: `/* ioc-assets.drop-legacy-dicts */ DROP DICTIONARY IF EXISTS default.ioc_domain_dict` });
-  await clickhouse.command({ query: `/* ioc-assets.drop-legacy-dicts */ DROP DICTIONARY IF EXISTS default.ioc_ip_dict` });
+  await command(`DROP DICTIONARY IF EXISTS default.ioc_domain_dict`);
+  await command(`DROP DICTIONARY IF EXISTS default.ioc_ip_dict`);
 
-  await clickhouse.command({
-    query: `
-      CREATE TABLE IF NOT EXISTS ioc_lookup (
-        observable String,
-        observable_type LowCardinality(String),
-        confidence Int32,
-        source_name String,
-        updated_at DateTime64(3) DEFAULT now64(3)
-      )
-      ENGINE = ReplacingMergeTree(updated_at)
-      ORDER BY (observable, observable_type)
-      SETTINGS index_granularity = 8192
-    `
-  });
+  await command(`
+    CREATE TABLE IF NOT EXISTS ioc_lookup (
+      observable String,
+      observable_type LowCardinality(String),
+      confidence Int32,
+      source_name String,
+      updated_at DateTime64(3) DEFAULT now64(3)
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY (observable, observable_type)
+    SETTINGS index_granularity = 8192
+  `);
+
+  await command(`
+    CREATE TABLE IF NOT EXISTS ioc_lookup_sync_state (
+      worker_name String,
+      last_sync_ts DateTime64(3),
+      last_sync_id UInt64,
+      updated_at DateTime64(3) DEFAULT now64(3)
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY worker_name
+  `);
+
+  await command(`
+    CREATE TABLE IF NOT EXISTS ioc_retro_state (
+      worker_name String,
+      last_processed_ts DateTime64(3),
+      last_processed_row_hash String,
+      updated_at DateTime64(3) DEFAULT now64(3)
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY worker_name
+  `);
 }
 
-export async function syncIocLookupFromPostgres() {
-  const changed = await query(`
+function confidenceToInt(v) {
+  const s = String(v || '').toLowerCase();
+  if (s === 'high') return 90;
+  if (s === 'medium') return 60;
+  if (s === 'low') return 30;
+  return 50;
+}
+
+export async function syncIocLookupFromPostgres(opts = {}) {
+  const workerName = opts.workerName || 'ioc-correlation-sync-v1';
+  const batchSize = Math.max(Number(opts.batchSize || 20000), 1000);
+
+  const st = await query(`
+    SELECT last_sync_ts, last_sync_id
+    FROM ioc_lookup_sync_state
+    WHERE worker_name = '${workerName.replace(/'/g, "''")}'
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `);
+
+  const lastTs = st?.[0]?.last_sync_ts || '1970-01-01 00:00:00.000';
+  const lastId = Number(st?.[0]?.last_sync_id || 0);
+
+  const delta = await query(`
     SELECT
-      (
-        SELECT toDateTime64(max(created_at), 3)
-        FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
-      ) AS pg_last_update,
-      (
-        SELECT toDateTime64(max(updated_at), 3)
-        FROM default.ioc_lookup
-      ) AS ch_last_update
-  `, { logTag: 'ioc-lookup.sync-change-check' });
-  const pgLast = changed?.[0]?.pg_last_update || null;
-  const chLast = changed?.[0]?.ch_last_update || null;
-  if (pgLast && chLast && String(pgLast) === String(chLast)) {
-    return { changed: false, pg_last_update: pgLast, ch_last_update: chLast };
+      toUInt64(id) AS id,
+      lower(observable) AS observable,
+      if(observable_type = 'hostname', 'domain', observable_type) AS observable_type,
+      source_name,
+      confidence,
+      toDateTime64(created_at, 3) AS created_at
+    FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
+    WHERE observable IS NOT NULL
+      AND observable != ''
+      AND observable_type IN ('domain', 'hostname', 'url', 'ip')
+      AND (
+        toDateTime64(created_at, 3) > toDateTime64('${String(lastTs).replace('T', ' ').replace('Z', '')}', 3)
+        OR (
+          toDateTime64(created_at, 3) = toDateTime64('${String(lastTs).replace('T', ' ').replace('Z', '')}', 3)
+          AND toUInt64(id) > ${lastId}
+        )
+      )
+    ORDER BY created_at, id
+    LIMIT ${batchSize}
+  `, { logTag: 'ioc-lookup.sync-incremental' });
+
+  if (!delta.length) {
+    return { changed: false, fetched: 0 };
   }
 
-  await clickhouse.command({ query: `/* ioc-lookup.sync-truncate */ TRUNCATE TABLE IF EXISTS ioc_lookup` });
-  await clickhouse.command({
-    query: withTag(`
-      INSERT INTO ioc_lookup (observable, observable_type, confidence, source_name, updated_at)
-      SELECT
-        lower(observable) AS observable,
-        if(observable_type = 'hostname', 'domain', observable_type) AS observable_type,
-        max(multiIf(lower(coalesce(confidence, '')) = 'high', 90,
-                    lower(coalesce(confidence, '')) = 'medium', 60,
-                    lower(coalesce(confidence, '')) = 'low', 30,
-                    50)) AS confidence,
-        any(source_name) AS source_name,
-        toDateTime64(max(created_at), 3) AS updated_at
-      FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
-      WHERE observable IS NOT NULL
-        AND observable != ''
-        AND observable_type IN ('domain', 'hostname', 'url', 'ip')
-      GROUP BY observable, observable_type
-    `, 'ioc-lookup.sync-full-refresh')
+  const agg = new Map();
+  for (const r of delta) {
+    const key = `${r.observable}|${r.observable_type}`;
+    const conf = confidenceToInt(r.confidence);
+    const created = String(r.created_at || '1970-01-01 00:00:00.000');
+    const prev = agg.get(key);
+    if (!prev || conf > prev.confidence || created > prev.updated_at) {
+      agg.set(key, {
+        observable: r.observable,
+        observable_type: r.observable_type,
+        confidence: conf,
+        source_name: r.source_name || 'unknown',
+        updated_at: created
+      });
+    }
+  }
+
+  await clickhouse.insert({ table: 'ioc_lookup', values: Array.from(agg.values()), format: 'JSONEachRow' });
+
+  const last = delta[delta.length - 1];
+  await clickhouse.insert({
+    table: 'ioc_lookup_sync_state',
+    values: [{
+      worker_name: workerName,
+      last_sync_ts: String(last.created_at),
+      last_sync_id: String(last.id),
+      updated_at: new Date().toISOString().replace('T', ' ').replace('Z', '')
+    }],
+    format: 'JSONEachRow'
   });
-  return { changed: true, pg_last_update: pgLast, ch_last_update: chLast };
+
+  return {
+    changed: true,
+    fetched: delta.length,
+    written: agg.size,
+    last_sync_ts: String(last.created_at),
+    last_sync_id: Number(last.id)
+  };
 }

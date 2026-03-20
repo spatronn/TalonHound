@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
+import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, command as clickhouseCommand } from './lib/clickhouse.js';
 
 const { Pool } = pg;
 
@@ -29,6 +29,28 @@ let lastRetroRunAtMs = 0;
 
 function makeQueryId(name) {
   return `ioc-retro:${name}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+
+async function loadRetroState() {
+  const rows = await clickhouseQuery(`
+    SELECT last_processed_ts, last_processed_row_hash
+    FROM default.ioc_retro_state
+    WHERE worker_name = 'ioc-retro-v1'
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `, { queryId: makeQueryId('retro-state-load'), logTag: 'ioc-retro.state-load' });
+  return {
+    last_processed_ts: rows?.[0]?.last_processed_ts || '1970-01-01 00:00:00.000',
+    last_processed_row_hash: rows?.[0]?.last_processed_row_hash || '0'
+  };
+}
+
+async function saveRetroState(ts, hash) {
+  await clickhouseCommand(`
+    INSERT INTO default.ioc_retro_state (worker_name, last_processed_ts, last_processed_row_hash, updated_at)
+    VALUES ('ioc-retro-v1', toDateTime64('${String(ts).replace('T',' ').replace('Z','')}', 3), '${String(hash)}', now64(3))
+  `, { logTag: 'ioc-retro.state-save' });
 }
 
 function floorToBucket(tsIso, seconds) {
@@ -92,23 +114,55 @@ async function runRetroactivePass() {
   const now = Date.now();
   if ((now - lastRetroRunAtMs) < (RETRO_SCAN_INTERVAL_SECONDS * 1000)) return { ran: false, inserted: 0 };
 
-  const newIocCountRows = await clickhouseQuery(`
-    SELECT count() AS c
-    FROM default.ioc_lookup
-    WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
-  `, { queryId: makeQueryId('new-ioc-count'), logTag: 'ioc-retro.new-ioc-count' });
-  const newIocCount = Number(newIocCountRows?.[0]?.c || 0);
-  if (!newIocCount) {
+  const st = await loadRetroState();
+  const lastTs = String(st.last_processed_ts || '1970-01-01 00:00:00.000').replace('T', ' ').replace('Z', '');
+  const lastHash = String(st.last_processed_row_hash || '0').replace(/[^0-9]/g, '') || '0';
+
+  const cursorRows = await clickhouseQuery(`
+    WITH new_iocs AS (
+      SELECT
+        observable,
+        observable_type,
+        confidence,
+        source_name,
+        updated_at,
+        toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
+      FROM default.ioc_lookup
+      WHERE (
+        updated_at > toDateTime64('${lastTs}', 3)
+        OR (updated_at = toDateTime64('${lastTs}', 3)
+            AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${lastHash}'))
+      )
+      ORDER BY updated_at, toUInt64(row_hash)
+      LIMIT ${RETRO_MAX_NEW_IOCS}
+    )
+    SELECT updated_at, row_hash
+    FROM new_iocs
+    ORDER BY updated_at DESC, toUInt64(row_hash) DESC
+    LIMIT 1
+  `, { queryId: makeQueryId('retro-cursor-probe'), logTag: 'ioc-retro.cursor-probe' });
+
+  if (!cursorRows.length) {
     lastRetroRunAtMs = now;
     return { ran: true, inserted: 0, skipped: 'no_new_ioc' };
   }
 
   const rows = await clickhouseQuery(`
     WITH new_iocs AS (
-      SELECT observable, observable_type, confidence, source_name
+      SELECT
+        observable,
+        observable_type,
+        confidence,
+        source_name,
+        updated_at,
+        toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
       FROM default.ioc_lookup
-      WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
-      ORDER BY updated_at DESC
+      WHERE (
+        updated_at > toDateTime64('${lastTs}', 3)
+        OR (updated_at = toDateTime64('${lastTs}', 3)
+            AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${lastHash}'))
+      )
+      ORDER BY updated_at, toUInt64(row_hash)
       LIMIT ${RETRO_MAX_NEW_IOCS}
     )
     SELECT
@@ -131,6 +185,10 @@ async function runRetroactivePass() {
     LIMIT ${RETRO_BATCH_SIZE}
     SETTINGS max_threads = ${RETRO_CH_MAX_THREADS}, max_execution_time = ${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}
   `, { queryId: makeQueryId('retro-pass'), logTag: 'ioc-retro.retro-pass' });
+
+  const cursorTs = String(cursorRows[0].updated_at || lastTs);
+  const cursorHash = String(cursorRows[0].row_hash || lastHash);
+  await saveRetroState(cursorTs, cursorHash);
 
   if (!rows.length) {
     lastRetroRunAtMs = now;
@@ -157,7 +215,7 @@ async function runRetroactivePass() {
     const inserted = await insertMatchEvents(client, mapped);
     await client.query('COMMIT');
     lastRetroRunAtMs = now;
-    console.log(`[ioc-retro] scanned=${rows.length} inserted_or_upserted=${inserted}`);
+    console.log(`[ioc-retro] scanned=${rows.length} inserted_or_upserted=${inserted} cursor_ts=${cursorTs}`);
     return { ran: true, inserted };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -166,6 +224,7 @@ async function runRetroactivePass() {
     client.release();
   }
 }
+
 
 async function bootstrap() {
   await ensureIocCorrelationAssets();
