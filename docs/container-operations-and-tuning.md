@@ -89,19 +89,37 @@ docker compose up -d --build
 
 ---
 
+---
+
+
+### 5) `demo-ioc-correlation-engine`
 **Purpose**
-- Raw retention worker.
-- Deletes `signal_events` records older than 30 days.
+- ClickHouse tabanlı IOC correlation worker.
+- `syslog_logs` içindeki parse edilmiş IOC adaylarını dictionary lookup ile eşleştirir.
+- Eşleşmeleri PostgreSQL `ioc_match_events` tablosuna batch upsert eder.
 
-**Config**
+**Core behavior**
+- Incremental scan (watermark): `ioc_correlation_state`
+- ClickHouse dictionaries:
+  - `default.ioc_domain_dict`
+  - `default.ioc_ip_dict`
+- Dedup/Aggregation:
+  - `ON CONFLICT (dedup_key, bucket_start)`
+  - `hit_count`, `last_seen_at` güncellenir
 
-**Why this exists**
-- Keeps raw telemetry footprint controlled while preserving IOC match history forever.
+**Key env vars**
+- `IOC_CORRELATION_POLL_INTERVAL_MS` (default `3000`)
+- `IOC_CORRELATION_BATCH_SIZE` (default `5000`)
+- `IOC_CORRELATION_MAX_BATCHES_PER_TICK` (default `5`)
+- `IOC_CORRELATION_DEDUP_WINDOW_SECONDS` (default `300`)
 
 **Ops notes**
 - Logs:
   ```bash
+  docker compose logs -f --tail=100 ioc-correlation-engine
   ```
+- Troubleshooting metric log format:
+  - `scanned=... matched=... inserted_or_upserted=... duration_ms=...`
 
 ---
 
@@ -170,6 +188,7 @@ flowchart LR
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
     SE[demo-signal-engine\nqueue consumer]
+    ICE[demo-ioc-correlation-engine\nCH dictionary matcher]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
     MW[demo-dashboard-map-worker\nmap batch worker]
@@ -181,15 +200,14 @@ flowchart LR
 
     BE -->|enqueue signal-events| R
     R -->|consume signal-events| SE
-    SE -->|write raw + matches| DB
+    SE -->|write raw events| DB
+    ICE -->|match + upsert ioc_match_events| DB
 
     IS -->|enqueue integration-imports| R
     R -->|consume integration-imports| IW
     EXT -->|fetch IOC lists| IW
     IW -->|upsert ioc_items| DB
     MW -->|batch aggregate + daily snapshot| DB
-
-    SR -->|delete old signal_events| DB
     BE -->|analytics/auth queries| DB
 ```
 
@@ -236,6 +254,7 @@ cd /opt/demo-runbook
 docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
+docker compose logs --tail=100 ioc-correlation-engine
 docker compose logs --tail=100 dashboard-map-worker
 
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \

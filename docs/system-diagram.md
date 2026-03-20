@@ -9,6 +9,7 @@ flowchart LR
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
     SE[demo-signal-engine\nqueue consumer]
+    ICE[demo-ioc-correlation-engine\nCH dictionary matcher]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
     DB[(demo-db\nPostgreSQL)]
@@ -19,14 +20,14 @@ flowchart LR
 
     BE -->|enqueue signal-events| R
     R -->|consume signal-events| SE
-    SE -->|write raw + matches| DB
+    SE -->|write raw events| DB
+    ICE -->|match + upsert ioc_match_events| DB
 
     IS -->|enqueue integration-imports| R
     R -->|consume integration-imports| IW
     EXT -->|fetch IOC lists| IW
     IW -->|upsert ioc_items| DB
 
-    SR -->|delete old signal_events| DB
     BE -->|analytics/auth queries| DB
 ```
 
@@ -44,6 +45,7 @@ flowchart TB
         R[(demo-redis)]
         DB[(demo-db)]
         SE[demo-signal-engine]
+        ICE[demo-ioc-correlation-engine]
         IS[demo-integration-scheduler]
         IW[demo-integration-worker]
       end
@@ -56,12 +58,14 @@ flowchart TB
     BE -->|signal-events| R
     R --> SE
     SE --> DB
+    BE -->|read parsed logs| CH[(demo-clickhouse)]
+    CH --> ICE
+    ICE --> DB
 
     IS -->|integration-imports| R
     R --> IW
     IOC --> IW
     IW --> DB
 
-    SR -->|retention cleanup| DB
     BE --> DB
 ```
