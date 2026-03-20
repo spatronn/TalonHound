@@ -4,9 +4,6 @@ const clickhouseUrl = process.env.CLICKHOUSE_URL || 'http://demo-clickhouse:8123
 const clickhouseDb = process.env.CLICKHOUSE_DB || 'default';
 const clickhouseUser = process.env.CLICKHOUSE_USER || 'default';
 const clickhousePassword = process.env.CLICKHOUSE_PASSWORD || '';
-const IOC_DICT_LIFETIME_MIN = Math.max(Number(process.env.IOC_DICT_LIFETIME_MIN || 300), 60);
-const IOC_DICT_LIFETIME_MAX = Math.max(Number(process.env.IOC_DICT_LIFETIME_MAX || 600), IOC_DICT_LIFETIME_MIN);
-const IOC_DICT_FORCE_RELOAD_ON_BOOT = process.env.IOC_DICT_FORCE_RELOAD_ON_BOOT === '1' || process.env.IOC_DICT_FORCE_RELOAD_ON_BOOT === 'true';
 
 export const clickhouse = createClient({
   host: clickhouseUrl,
@@ -64,7 +61,6 @@ export async function ensureSyslogTable() {
     `
   });
 
-  // Forward-compatible schema evolution on existing tables.
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parser_source LowCardinality(String) DEFAULT 'unknown'` });
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip Nullable(String)` });
   await clickhouse.command({ query: `ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_query Nullable(String)` });
@@ -76,54 +72,43 @@ export async function ensureSyslogTable() {
 }
 
 export async function ensureIocCorrelationAssets() {
-  // Domain dictionary (query/domain observables)
+  await clickhouse.command({ query: `DROP DICTIONARY IF EXISTS default.ioc_domain_dict` });
+  await clickhouse.command({ query: `DROP DICTIONARY IF EXISTS default.ioc_ip_dict` });
+
   await clickhouse.command({
     query: `
-      CREATE DICTIONARY IF NOT EXISTS default.ioc_domain_dict (
+      CREATE TABLE IF NOT EXISTS ioc_lookup (
         observable String,
-        ioc_item_id UInt64,
+        observable_type LowCardinality(String),
+        confidence Int32,
         source_name String,
-        confidence String
+        updated_at DateTime64(3) DEFAULT now64(3)
       )
-      PRIMARY KEY observable
-      SOURCE(POSTGRESQL(
-        HOST 'db'
-        PORT 5432
-        USER 'demo'
-        PASSWORD 'demo123'
-        DB 'demo'
-        QUERY 'SELECT lower(observable) AS observable, id AS ioc_item_id, source_name, confidence FROM ioc_items WHERE observable_type IN (''domain'', ''hostname'', ''url'')'
-      ))
-      LAYOUT(HASHED())
-      LIFETIME(MIN ${IOC_DICT_LIFETIME_MIN} MAX ${IOC_DICT_LIFETIME_MAX})
+      ENGINE = ReplacingMergeTree(updated_at)
+      ORDER BY (observable, observable_type)
+      SETTINGS index_granularity = 8192
     `
   });
+}
 
-  // IP dictionary (public IP observables)
+export async function syncIocLookupFromPostgres() {
+  await clickhouse.command({ query: `TRUNCATE TABLE IF EXISTS ioc_lookup` });
   await clickhouse.command({
     query: `
-      CREATE DICTIONARY IF NOT EXISTS default.ioc_ip_dict (
-        observable String,
-        ioc_item_id UInt64,
-        source_name String,
-        confidence String
-      )
-      PRIMARY KEY observable
-      SOURCE(POSTGRESQL(
-        HOST 'db'
-        PORT 5432
-        USER 'demo'
-        PASSWORD 'demo123'
-        DB 'demo'
-        QUERY 'SELECT observable, id AS ioc_item_id, source_name, confidence FROM ioc_items WHERE observable_type = ''ip'''
-      ))
-      LAYOUT(HASHED())
-      LIFETIME(MIN ${IOC_DICT_LIFETIME_MIN} MAX ${IOC_DICT_LIFETIME_MAX})
+      INSERT INTO ioc_lookup (observable, observable_type, confidence, source_name)
+      SELECT
+        lower(observable) AS observable,
+        if(observable_type = 'hostname', 'domain', observable_type) AS observable_type,
+        max(multiIf(lower(coalesce(confidence, '')) = 'high', 90,
+                    lower(coalesce(confidence, '')) = 'medium', 60,
+                    lower(coalesce(confidence, '')) = 'low', 30,
+                    50)) AS confidence,
+        any(source_name) AS source_name
+      FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
+      WHERE observable IS NOT NULL
+        AND observable != ''
+        AND observable_type IN ('domain', 'hostname', 'url', 'ip')
+      GROUP BY observable, observable_type
     `
   });
-
-  if (IOC_DICT_FORCE_RELOAD_ON_BOOT) {
-    await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_domain_dict` });
-    await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_ip_dict` });
-  }
 }

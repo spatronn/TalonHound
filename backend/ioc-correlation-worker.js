@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { ensureIocCorrelationAssets, query as clickhouseQuery } from './lib/clickhouse.js';
+import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
 
 const { Pool } = pg;
 
@@ -17,8 +17,10 @@ const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 500
 const MAX_BATCHES_PER_TICK = Math.max(Number(process.env.IOC_CORRELATION_MAX_BATCHES_PER_TICK || 5), 1);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
 const IOC_RECHECK_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_IOC_RECHECK_INTERVAL_SECONDS || 3600), 60);
+const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
 
 let stopping = false;
+let lastIocLookupSyncAtMs = 0;
 
 function esc(value) {
   return String(value || '').replace(/'/g, "''");
@@ -114,17 +116,23 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
       ioc_ip,
       ioc_query,
       row_hash,
-      lower(ifNull(ioc_query, '')) AS norm_query,
-      ifNull(ioc_ip, '') AS norm_ip,
-      dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))) AS has_domain_match,
-      dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')) AS has_ip_match,
-      if(dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))), dictGetUInt64('default.ioc_domain_dict', 'ioc_item_id', lower(ifNull(ioc_query, ''))), toUInt64(0)) AS domain_ioc_item_id,
-      if(dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))), dictGetString('default.ioc_domain_dict', 'source_name', lower(ifNull(ioc_query, ''))), '') AS domain_source_name,
-      if(dictHas('default.ioc_domain_dict', lower(ifNull(ioc_query, ''))), dictGetString('default.ioc_domain_dict', 'confidence', lower(ifNull(ioc_query, ''))), '') AS domain_confidence,
-      if(dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')), dictGetUInt64('default.ioc_ip_dict', 'ioc_item_id', ifNull(ioc_ip, '')), toUInt64(0)) AS ip_ioc_item_id,
-      if(dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')), dictGetString('default.ioc_ip_dict', 'source_name', ifNull(ioc_ip, '')), '') AS ip_source_name,
-      if(dictHas('default.ioc_ip_dict', ifNull(ioc_ip, '')), dictGetString('default.ioc_ip_dict', 'confidence', ifNull(ioc_ip, '')), '') AS ip_confidence
-    FROM src
+      lower(ifNull(s.ioc_query, '')) AS norm_query,
+      ifNull(s.ioc_ip, '') AS norm_ip,
+      (dq.observable != '') AS has_domain_match,
+      (ipq.observable != '') AS has_ip_match,
+      toUInt64(0) AS domain_ioc_item_id,
+      dq.source_name AS domain_source_name,
+      toString(dq.confidence) AS domain_confidence,
+      toUInt64(0) AS ip_ioc_item_id,
+      ipq.source_name AS ip_source_name,
+      toString(ipq.confidence) AS ip_confidence
+    FROM src s
+    LEFT JOIN ioc_lookup dq
+      ON dq.observable = lower(ifNull(s.ioc_query, ''))
+     AND dq.observable_type IN ('domain', 'url')
+    LEFT JOIN ioc_lookup ipq
+      ON ipq.observable = ifNull(s.ioc_ip, '')
+     AND ipq.observable_type = 'ip'
   `;
 }
 
@@ -141,7 +149,7 @@ function toMatchRows(chRows) {
         protocol: 'dns',
         matched_ioc: r.norm_query,
         ioc_type: 'domain',
-        ioc_item_id: Number(r.domain_ioc_item_id || 0) || null,
+        ioc_item_id: null,
         source_name: r.domain_source_name || null,
         confidence: r.domain_confidence || null,
         match_context: {
@@ -162,7 +170,7 @@ function toMatchRows(chRows) {
         protocol: 'dns',
         matched_ioc: r.norm_ip,
         ioc_type: 'ip',
-        ioc_item_id: Number(r.ip_ioc_item_id || 0) || null,
+        ioc_item_id: null,
         source_name: r.ip_source_name || null,
         confidence: r.ip_confidence || null,
         match_context: {
@@ -343,12 +351,24 @@ async function tick() {
   }
 }
 
+
+async function maybeSyncIocLookup(force = false) {
+  const now = Date.now();
+  if (!force && (now - lastIocLookupSyncAtMs) < (IOC_LOOKUP_SYNC_INTERVAL_SECONDS * 1000)) return false;
+  await syncIocLookupFromPostgres();
+  lastIocLookupSyncAtMs = now;
+  console.log(`[ioc-correlation] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS}`);
+  return true;
+}
+
 async function bootstrap() {
   await ensureIocCorrelationAssets();
+  await maybeSyncIocLookup(true);
   console.log(`[ioc-correlation] started worker=${WORKER_NAME} poll_ms=${POLL_INTERVAL_MS} batch=${BATCH_SIZE} dedup_window_s=${DEDUP_WINDOW_SECONDS}`);
 
   while (!stopping) {
     try {
+      await maybeSyncIocLookup(false);
       await tick();
     } catch (err) {
       console.error('[ioc-correlation] tick failed', err?.message || err);
