@@ -9,7 +9,6 @@ flowchart LR
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
     SE[demo-signal-engine\nqueue consumer]
-    SR[demo-signal-retention\nretention worker]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
     DB[(demo-db\nPostgreSQL)]
@@ -45,7 +44,6 @@ flowchart TB
         R[(demo-redis)]
         DB[(demo-db)]
         SE[demo-signal-engine]
-        SR[demo-signal-retention]
         IS[demo-integration-scheduler]
         IW[demo-integration-worker]
       end

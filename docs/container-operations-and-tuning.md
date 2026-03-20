@@ -89,14 +89,11 @@ docker compose up -d --build
 
 ---
 
-### 5) `demo-signal-retention`
 **Purpose**
 - Raw retention worker.
 - Deletes `signal_events` records older than 30 days.
 
 **Config**
-- `RAW_RETENTION_DAYS=30`
-- `RETENTION_CHECK_INTERVAL_SECONDS=3600`
 
 **Why this exists**
 - Keeps raw telemetry footprint controlled while preserving IOC match history forever.
@@ -104,7 +101,6 @@ docker compose up -d --build
 **Ops notes**
 - Logs:
   ```bash
-  docker compose logs -f --tail=100 signal-retention
   ```
 
 ---
@@ -174,7 +170,6 @@ flowchart LR
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
     SE[demo-signal-engine\nqueue consumer]
-    SR[demo-signal-retention\nretention worker]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
     MW[demo-dashboard-map-worker\nmap batch worker]
@@ -241,7 +236,6 @@ cd /opt/demo-runbook
 docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
-docker compose logs --tail=100 signal-retention
 docker compose logs --tail=100 dashboard-map-worker
 
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \

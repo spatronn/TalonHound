@@ -7,7 +7,6 @@
     "migrate": "node migrate.js",
     "start": "node migrate.js && node server-clickhouse.js",
     "signal-worker": "node migrate.js && node signal-worker.js",
-    "raw-retention": "node migrate.js && node raw-retention.js",
     "dashboard-map-worker": "node migrate.js && node dashboard-map-worker.js",
     "syslog-receiver": "node migrate.js && node syslog-receiver.js"
   },
