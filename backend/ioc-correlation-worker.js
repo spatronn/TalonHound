@@ -81,7 +81,7 @@ async function saveState(client, lastTs, lastRowHash) {
 
 function buildScanQuery(lastTs, lastRowHash, limit) {
   const ts = esc(formatChDateTime(lastTs));
-  const hash = Number(lastRowHash || 0);
+  const hash = String(lastRowHash || '0').replace(/[^0-9]/g, '') || '0';
   const lim = Number(limit || BATCH_SIZE);
 
   return `
@@ -95,12 +95,12 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
         parsed_query,
         ioc_ip,
         ioc_query,
-        cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) AS row_hash
+        toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
       FROM default.syslog_logs
       WHERE (ts > toDateTime('${ts}')
          OR (ts = toDateTime('${ts}')
-             AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64(${hash})))
-      ORDER BY ts, row_hash
+             AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')))
+      ORDER BY ts, toUInt64(row_hash)
       LIMIT ${lim}
     )
     SELECT
