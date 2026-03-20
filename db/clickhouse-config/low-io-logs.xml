@@ -1,0 +1,15 @@
+<clickhouse>
+  <!-- Demo low-I/O profile: reduce internal system-log write amplification -->
+  <logger>
+    <level>warning</level>
+  </logger>
+
+  <!-- High-churn internal logs disabled for this demo environment -->
+  <asynchronous_metric_log remove="1"/>
+  <metric_log remove="1"/>
+  <query_thread_log remove="1"/>
+  <trace_log remove="1"/>
+  <processors_profile_log remove="1"/>
+
+  <!-- Keep query_log enabled for lightweight troubleshooting -->
+</clickhouse>

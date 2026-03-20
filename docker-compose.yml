@@ -191,6 +191,7 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./db/clickhouse-init:/docker-entrypoint-initdb.d:ro
+      - ./db/clickhouse-config:/etc/clickhouse-server/config.d:ro
     restart: unless-stopped
 
   frontend:
