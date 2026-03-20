@@ -616,10 +616,19 @@ app.get('/api/integrations', async (req, res) => {
         ORDER BY job_type, started_at DESC
       ),
       latest_queue AS (
-        SELECT DISTINCT ON (integration_key)
-          integration_key, status, started_at, queued_at, finished_at, records_processed, error_message
-        FROM integration_queue_jobs
-        ORDER BY integration_key, COALESCE(started_at, queued_at) DESC
+        SELECT DISTINCT ON (integration_key_norm)
+          integration_key_norm AS integration_key,
+          status, started_at, queued_at, finished_at, records_processed, error_message
+        FROM (
+          SELECT
+            CASE
+              WHEN integration_key = 'unknown' AND job_name = 'phishtank-import' THEN 'phishtank-opendnsrr'
+              ELSE integration_key
+            END AS integration_key_norm,
+            status, started_at, queued_at, finished_at, records_processed, error_message
+          FROM integration_queue_jobs
+        ) qn
+        ORDER BY integration_key_norm, COALESCE(started_at, queued_at) DESC
       )
       SELECT
         f.key,
@@ -649,6 +658,9 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'malwarebazaar-abusech' THEN (
             SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'MalwareBazaar:abuse.ch'
           )
+          WHEN f.key = 'phishtank-opendnsrr' THEN (
+            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'PhishTank:open_dnsrr'
+          )
           ELSE COALESCE(lr.records_processed, lq.records_processed, 0)
         END AS total_records,
         COALESCE(lr.error_message, lq.error_message) AS last_error
@@ -660,6 +672,7 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'urlhaus-abusech' THEN 'urlhaus_import'
           WHEN f.key = 'threatfox-abusech' THEN 'threatfox_import'
           WHEN f.key = 'malwarebazaar-abusech' THEN 'malwarebazaar_import'
+          WHEN f.key = 'phishtank-opendnsrr' THEN 'phishtank_import'
           ELSE f.key
         END
       LEFT JOIN latest_queue lq
@@ -672,7 +685,11 @@ app.get('/api/integrations', async (req, res) => {
       SELECT
         q.job_id,
         q.integration_key,
-        COALESCE(f.name, q.integration_key) AS integration_name,
+        COALESCE(
+          f.name,
+          CASE WHEN q.integration_key = 'unknown' AND q.job_name = 'phishtank-import' THEN 'PhishTank online-valid' END,
+          q.integration_key
+        ) AS integration_name,
         q.job_name AS name,
         q.status AS state,
         COALESCE(q.started_at, q.queued_at) AS timestamp,
@@ -732,7 +749,11 @@ app.get('/api/integrations', async (req, res) => {
         SELECT
           q.job_id AS id,
           q.integration_key,
-          COALESCE(f.name, q.integration_key) AS integration_name,
+          COALESCE(
+          f.name,
+          CASE WHEN q.integration_key = 'unknown' AND q.job_name = 'phishtank-import' THEN 'PhishTank online-valid' END,
+          q.integration_key
+        ) AS integration_name,
           f.integration_id,
           q.job_name AS name,
           q.status AS state,
@@ -798,7 +819,8 @@ const INTEGRATION_JOBS = {
   'usom-trcert': 'usom-import',
   'urlhaus-abusech': 'urlhaus-import',
   'threatfox-abusech': 'threatfox-import',
-  'malwarebazaar-abusech': 'malwarebazaar-import'
+  'malwarebazaar-abusech': 'malwarebazaar-import',
+  'phishtank-opendnsrr': 'phishtank-import'
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);

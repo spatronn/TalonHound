@@ -14,6 +14,7 @@ function resolveIntegrationKey(job) {
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
   if (job?.name === 'threatfox-import') return 'threatfox-abusech';
   if (job?.name === 'malwarebazaar-import') return 'malwarebazaar-abusech';
+  if (job?.name === 'phishtank-import') return 'phishtank-opendnsrr';
   return 'unknown';
 }
 
