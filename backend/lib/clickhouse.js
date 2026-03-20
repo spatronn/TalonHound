@@ -4,6 +4,9 @@ const clickhouseUrl = process.env.CLICKHOUSE_URL || 'http://demo-clickhouse:8123
 const clickhouseDb = process.env.CLICKHOUSE_DB || 'default';
 const clickhouseUser = process.env.CLICKHOUSE_USER || 'default';
 const clickhousePassword = process.env.CLICKHOUSE_PASSWORD || '';
+const IOC_DICT_LIFETIME_MIN = Math.max(Number(process.env.IOC_DICT_LIFETIME_MIN || 300), 60);
+const IOC_DICT_LIFETIME_MAX = Math.max(Number(process.env.IOC_DICT_LIFETIME_MAX || 600), IOC_DICT_LIFETIME_MIN);
+const IOC_DICT_FORCE_RELOAD_ON_BOOT = process.env.IOC_DICT_FORCE_RELOAD_ON_BOOT === '1' || process.env.IOC_DICT_FORCE_RELOAD_ON_BOOT === 'true';
 
 export const clickhouse = createClient({
   host: clickhouseUrl,
@@ -92,7 +95,7 @@ export async function ensureIocCorrelationAssets() {
         QUERY 'SELECT lower(observable) AS observable, id AS ioc_item_id, source_name, confidence FROM ioc_items WHERE observable_type IN (''domain'', ''hostname'', ''url'')'
       ))
       LAYOUT(HASHED())
-      LIFETIME(MIN 5 MAX 30)
+      LIFETIME(MIN ${IOC_DICT_LIFETIME_MIN} MAX ${IOC_DICT_LIFETIME_MAX})
     `
   });
 
@@ -115,10 +118,12 @@ export async function ensureIocCorrelationAssets() {
         QUERY 'SELECT observable, id AS ioc_item_id, source_name, confidence FROM ioc_items WHERE observable_type = ''ip'''
       ))
       LAYOUT(HASHED())
-      LIFETIME(MIN 5 MAX 30)
+      LIFETIME(MIN ${IOC_DICT_LIFETIME_MIN} MAX ${IOC_DICT_LIFETIME_MAX})
     `
   });
 
-  await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_domain_dict` });
-  await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_ip_dict` });
+  if (IOC_DICT_FORCE_RELOAD_ON_BOOT) {
+    await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_domain_dict` });
+    await clickhouse.command({ query: `SYSTEM RELOAD DICTIONARY default.ioc_ip_dict` });
+  }
 }
