@@ -34,6 +34,19 @@ export async function insertLogs(batch, opts = {}) {
   return { inserted: batch.length };
 }
 
+export async function insertObservables(batch, opts = {}) {
+  if (!Array.isArray(batch) || batch.length === 0) return { inserted: 0 };
+  const { queryId, logTag } = opts;
+  await clickhouse.insert({
+    table: 'syslog_observables',
+    values: batch,
+    format: 'JSONEachRow',
+    query_id: queryId,
+    clickhouse_settings: logTag ? { log_comment: logTag } : undefined
+  });
+  return { inserted: batch.length };
+}
+
 export async function query(sql, opts = {}) {
   const { queryId, logTag, settings } = opts;
   const rs = await clickhouse.query({
@@ -71,6 +84,23 @@ export async function ensureSyslogTable() {
       ENGINE = MergeTree
       PARTITION BY toYYYYMMDD(ts)
       ORDER BY (ts, host)
+      TTL ts + INTERVAL 30 DAY
+    `
+  });
+
+  await clickhouse.command({
+    query: `
+      CREATE TABLE IF NOT EXISTS syslog_observables (
+        ts DateTime,
+        source LowCardinality(String),
+        host LowCardinality(String),
+        observable String,
+        observable_type LowCardinality(String),
+        raw_row_hash String
+      )
+      ENGINE = MergeTree
+      PARTITION BY toYYYYMMDD(ts)
+      ORDER BY (observable, observable_type, ts, raw_row_hash)
       TTL ts + INTERVAL 30 DAY
     `
   });

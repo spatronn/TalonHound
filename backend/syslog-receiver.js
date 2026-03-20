@@ -1,7 +1,8 @@
 import dgram from "dgram";
 import http from "http";
+import crypto from "crypto";
 import pg from "pg";
-import { insertLogs, ensureSyslogTable, pingClickhouse } from "./lib/clickhouse.js";
+import { insertLogs, insertObservables, ensureSyslogTable, pingClickhouse } from "./lib/clickhouse.js";
 
 const { Pool } = pg;
 
@@ -11,15 +12,12 @@ const USE_CLICKHOUSE = LOG_STORAGE === "clickhouse";
 const SYSLOG_PORT = Number(process.env.SYSLOG_PORT || 514);
 const SYSLOG_HOST = process.env.SYSLOG_HOST || "0.0.0.0";
 const HEALTH_PORT = Number(process.env.SYSLOG_HEALTH_PORT || 8081);
-// Flush policy: either max batch size OR max wait time.
-// Defaults tuned to avoid small-part amplification in ClickHouse.
 const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS || 150), 50);
 const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 5000), 10);
 const MAX_BUFFERED = Math.max(Number(process.env.SYSLOG_MAX_BUFFERED || 100000), BATCH_SIZE);
-// Legacy knob (kept for compatibility); actual flush is concurrency-safe and single-flight.
 const FLUSH_WORKERS = Math.max(Number(process.env.SYSLOG_FLUSH_WORKERS || 1), 1);
 const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 1024 * 1024), 256 * 1024);
-const OVERFLOW_POLICY = String(process.env.SYSLOG_OVERFLOW_POLICY || "drop_oldest").toLowerCase(); // drop_oldest | drop_newest | block
+const OVERFLOW_POLICY = String(process.env.SYSLOG_OVERFLOW_POLICY || "drop_oldest").toLowerCase();
 
 const pool = new Pool({
   host: process.env.DB_HOST || "db",
@@ -74,8 +72,8 @@ function armFlushTimer() {
 
 function normalizeTail(text) {
   let t = String(text || '');
-  t = t.replace(/\n$/, '');            // actual trailing newline
-  t = t.replace(/\\n$/, '');          // escaped \n tail
+  t = t.replace(/\n$/, '');
+  t = t.replace(/\\n$/, '');
   if (/\)n$/.test(t)) t = t.slice(0, -1);
   return t;
 }
@@ -86,7 +84,6 @@ function isPrivateIPv4(ip) {
   const a = Number(m[1]);
   const b = Number(m[2]);
   if ([a, b].some((n) => Number.isNaN(n) || n < 0 || n > 255)) return false;
-  // RFC1918: 10/8, 172.16/12, 192.168/16
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
@@ -107,8 +104,6 @@ function decodeMicrosoftDnsName(raw) {
 
 function parseMicrosoftDnsDebug(line) {
   const raw = normalizeTail(line);
-  // Example:
-  // 03/15 10:55:45 CE61 PACKET ... UDP Rcv 10.10.29.130 ... A (4)ocsp(6)msocsp(3)com(0)
   const ipMatch = raw.match(/\b(?:Snd|Rcv)\s+(\d{1,3}(?:\.\d{1,3}){3})\b/i);
   const srcIp = ipMatch?.[1] || null;
   const query = decodeMicrosoftDnsName(raw);
@@ -120,9 +115,6 @@ function parseMicrosoftDnsDebug(line) {
     parsed_ip: srcIp,
     parsed_query: query,
     parsed_ip_private: srcIpPrivate,
-    // IOC pre-filter output for next phase:
-    // - private IPs are intentionally excluded
-    // - query/domain is kept
     ioc_ip: srcIp && srcIpPrivate === false ? srcIp : null,
     ioc_query: query || null
   };
@@ -181,12 +173,6 @@ function enqueue(sourceIp, rawEvent) {
       queue.shift();
       metrics.dropped_logs += 1;
       metrics.dropped_queue_full += 1;
-    } else if (OVERFLOW_POLICY === "block") {
-      // Best-effort backpressure: drop if we can't make room quickly (UDP has no real backpressure).
-      // We avoid busy loops inside UDP handler by falling back to dropping.
-      metrics.dropped_logs += 1;
-      metrics.dropped_queue_full += 1;
-      return;
     } else {
       metrics.dropped_logs += 1;
       metrics.dropped_queue_full += 1;
@@ -278,10 +264,42 @@ async function flushToPostgres(events) {
   }
 }
 
+function buildObservableRows(parsedBatch) {
+  const rows = [];
+  for (const r of parsedBatch) {
+    const rawRowHash = crypto.createHash('sha1').update(String(r.raw || '')).digest('hex');
+    if (r.ioc_query) {
+      rows.push({
+        ts: r.ts,
+        source: r.source,
+        host: r.host,
+        observable: String(r.ioc_query).toLowerCase(),
+        observable_type: 'domain',
+        raw_row_hash: rawRowHash
+      });
+    }
+    if (r.ioc_ip) {
+      rows.push({
+        ts: r.ts,
+        source: r.source,
+        host: r.host,
+        observable: String(r.ioc_ip),
+        observable_type: 'ip',
+        raw_row_hash: rawRowHash
+      });
+    }
+  }
+  return rows;
+}
+
 async function flushToClickhouse(events) {
   const batch = events.map((e) => parseSyslogLine(e.rawEvent, e.sourceIp));
+  const observablesBatch = buildObservableRows(batch);
   const t0 = Date.now();
   await insertLogs(batch, { queryId: makeQueryId('insert-batch'), logTag: 'syslog-receiver.insert-batch' });
+  if (observablesBatch.length > 0) {
+    await insertObservables(observablesBatch, { queryId: makeQueryId('insert-observables'), logTag: 'syslog-receiver.insert-observables' });
+  }
   const t1 = Date.now() - t0;
   return { inserted: batch.length, chLatency: t1 };
 }
@@ -301,7 +319,6 @@ async function flushOnce() {
     const started = Date.now();
     try {
       const result = USE_CLICKHOUSE ? await flushToClickhouse(events) : await flushToPostgres(events);
-
       metrics.inserted_logs += result.inserted;
       metrics.flush_runs += 1;
       metrics.last_flush_at = new Date().toISOString();
@@ -342,7 +359,6 @@ udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
 });
 
 const timers = [];
-// Keep legacy worker intervals, but flush is single-flight; multiple intervals are harmless.
 for (let i = 0; i < FLUSH_WORKERS; i += 1) timers.push(setInterval(() => flushWorkerTick().catch(() => {}), FLUSH_INTERVAL_MS));
 
 const health = http.createServer((req, res) => {

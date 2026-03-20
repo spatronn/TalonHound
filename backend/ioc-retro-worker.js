@@ -110,32 +110,24 @@ async function runRetroactivePass() {
       WHERE updated_at >= now() - INTERVAL ${RETRO_NEW_IOC_WINDOW_HOURS} HOUR
       ORDER BY updated_at DESC
       LIMIT ${RETRO_MAX_NEW_IOCS}
-    ), domain_matches AS (
-      SELECT s.ts, s.source, s.host, s.parser_source, s.parsed_ip, s.parsed_query,
-             ni.observable AS matched_ioc, ni.observable_type AS ioc_type,
-             ni.confidence AS confidence, ni.source_name AS source_name
-      FROM default.syslog_logs s
-      ANY INNER JOIN new_iocs ni
-        ON ni.observable = lower(ifNull(s.ioc_query, ''))
-       AND ni.observable_type IN ('domain', 'url')
-      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
-        AND notEmpty(ifNull(s.ioc_query, ''))
-    ), ip_matches AS (
-      SELECT s.ts, s.source, s.host, s.parser_source, s.parsed_ip, s.parsed_query,
-             ni.observable AS matched_ioc, ni.observable_type AS ioc_type,
-             ni.confidence AS confidence, ni.source_name AS source_name
-      FROM default.syslog_logs s
-      ANY INNER JOIN new_iocs ni
-        ON ni.observable = ifNull(s.ioc_ip, '')
-       AND ni.observable_type = 'ip'
-      WHERE s.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
-        AND notEmpty(ifNull(s.ioc_ip, ''))
     )
-    SELECT * FROM (
-      SELECT * FROM domain_matches
-      UNION ALL
-      SELECT * FROM ip_matches
-    )
+    SELECT
+      so.ts,
+      so.source,
+      so.host,
+      'syslog_observables' AS parser_source,
+      CAST(NULL, 'Nullable(String)') AS parsed_ip,
+      CAST(NULL, 'Nullable(String)') AS parsed_query,
+      ni.observable AS matched_ioc,
+      ni.observable_type AS ioc_type,
+      ni.confidence AS confidence,
+      ni.source_name AS source_name
+    FROM default.syslog_observables so
+    ANY INNER JOIN new_iocs ni
+      ON ni.observable = so.observable
+     AND ni.observable_type = so.observable_type
+    WHERE so.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
+    ORDER BY so.ts DESC
     LIMIT ${RETRO_BATCH_SIZE}
     SETTINGS max_threads = ${RETRO_CH_MAX_THREADS}, max_execution_time = ${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}
   `, { queryId: makeQueryId('retro-pass'), logTag: 'ioc-retro.retro-pass' });
@@ -156,7 +148,7 @@ async function runRetroactivePass() {
     ioc_type: r.ioc_type,
     source_name: r.source_name || null,
     confidence: String(r.confidence || ''),
-    match_context: { retroactive: true, parsed_query: r.parsed_query || null, parsed_ip: r.parsed_ip || null }
+    match_context: { retroactive: true, observable_source: 'syslog_observables' }
   }));
 
   const client = await pool.connect();
