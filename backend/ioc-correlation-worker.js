@@ -16,6 +16,7 @@ const POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_CORRELATION_POLL_INTERV
 const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 5000), 100);
 const MAX_BATCHES_PER_TICK = Math.max(Number(process.env.IOC_CORRELATION_MAX_BATCHES_PER_TICK || 5), 1);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
+const IOC_RECHECK_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_IOC_RECHECK_INTERVAL_SECONDS || 3600), 60);
 
 let stopping = false;
 
@@ -175,6 +176,62 @@ function toMatchRows(chRows) {
   return out;
 }
 
+async function filterRowsByHourlyIocCheck(client, rows) {
+  if (!rows.length) return rows;
+
+  const uniq = new Map();
+  for (const r of rows) {
+    const key = `${r.ioc_type}:${String(r.matched_ioc || '').toLowerCase()}`;
+    if (!r.matched_ioc) continue;
+    if (!uniq.has(key)) uniq.set(key, { ioc_key: key, ioc_type: r.ioc_type, ioc_value: String(r.matched_ioc).toLowerCase() });
+  }
+
+  const keys = Array.from(uniq.keys());
+  if (!keys.length) return [];
+
+  const existing = await client.query(
+    `SELECT ioc_key, last_checked_at
+     FROM ioc_correlation_ioc_state
+     WHERE ioc_key = ANY($1::text[])`,
+    [keys]
+  );
+
+  const lastByKey = new Map(existing.rows.map((x) => [x.ioc_key, new Date(x.last_checked_at).getTime()]));
+  const now = Date.now();
+  const minGapMs = IOC_RECHECK_INTERVAL_SECONDS * 1000;
+
+  const allowedKeys = new Set();
+  for (const k of keys) {
+    const last = lastByKey.get(k);
+    if (!last || (now - last) >= minGapMs) allowedKeys.add(k);
+  }
+
+  if (!allowedKeys.size) return [];
+
+  const filtered = rows.filter((r) => allowedKeys.has(`${r.ioc_type}:${String(r.matched_ioc || '').toLowerCase()}`));
+
+  const due = Array.from(allowedKeys).map((k) => uniq.get(k)).filter(Boolean);
+  if (due.length) {
+    const vals = [];
+    const params = [];
+    for (let i = 0; i < due.length; i += 1) {
+      const d = due[i];
+      const b = i * 3;
+      vals.push(`($${b + 1},$${b + 2},$${b + 3},NOW(),NOW())`);
+      params.push(d.ioc_key, d.ioc_type, d.ioc_value);
+    }
+    await client.query(
+      `INSERT INTO ioc_correlation_ioc_state (ioc_key, ioc_type, ioc_value, last_checked_at, updated_at)
+       VALUES ${vals.join(',')}
+       ON CONFLICT (ioc_key)
+       DO UPDATE SET last_checked_at = NOW(), updated_at = NOW()`,
+      params
+    );
+  }
+
+  return filtered;
+}
+
 async function insertMatchEvents(client, rows) {
   if (!rows.length) return 0;
 
@@ -243,7 +300,8 @@ async function runBatch() {
     }
 
     const matchedRows = toMatchRows(scanned);
-    const inserted = await insertMatchEvents(client, matchedRows);
+    const dueRows = await filterRowsByHourlyIocCheck(client, matchedRows);
+    const inserted = await insertMatchEvents(client, dueRows);
 
     const last = scanned[scanned.length - 1];
     await saveState(client, last.ts, last.row_hash);
