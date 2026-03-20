@@ -17,6 +17,8 @@ const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 500
 const MAX_BATCHES_PER_TICK = Math.max(Number(process.env.IOC_CORRELATION_MAX_BATCHES_PER_TICK || 5), 1);
 const DEDUP_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_DEDUP_WINDOW_SECONDS || 300), 60);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
+const CH_MAX_THREADS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_THREADS || 4), 1);
+const CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_CH_MAX_EXECUTION_TIME_SECONDS || 20), 5);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -102,6 +104,7 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
       WHERE (ts > toDateTime('${ts}')
          OR (ts = toDateTime('${ts}')
              AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')))
+        AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
       ORDER BY ts, toUInt64(row_hash)
       LIMIT ${lim}
     )
@@ -132,6 +135,7 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
     LEFT JOIN ioc_lookup ipq
       ON ipq.observable = ifNull(s.ioc_ip, '')
      AND ipq.observable_type = 'ip'
+    SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
   `;
 }
 
