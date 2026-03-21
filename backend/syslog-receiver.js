@@ -191,6 +191,7 @@ function parseSyslogLine(line, sourceIp) {
   out.parsed_query = parsed?.parsed_query || null;
   out.parsed_ip_private = parsed?.parsed_ip_private ?? null;
   out.ioc_ip = parsed?.ioc_ip || null;
+  out.ioc_ip_secondary = parsed?.ioc_ip_secondary || null;
   out.ioc_query = parsed?.ioc_query || null;
 
   return out;
