@@ -223,10 +223,34 @@ docker compose logs --tail=200
 - Threat map country aggregation: `/api/ioc/map/countries?day=today|24h|7d|all`
 - IOC filters: query/source/confidence/asn/country + subnet search
 
-## 13) Change Log
+## 13) Supported Syslog Parse Formats (IOC Extraction)
+
+### 13.1 Microsoft DNS Debug (existing)
+- Detection: lines containing Microsoft DNS debug pattern (`Snd`/`Rcv` + encoded query labels)
+- Extracted fields:
+  - `parsed_ip`: source IP from debug line
+  - `parsed_query`: decoded DNS query (domain)
+- IOC derivation:
+  - `ioc_query`: decoded domain
+  - `ioc_ip`: source IP only when public IP
+
+### 13.2 FortiGate Traffic Key=Value (new)
+- Detection: syslog payload containing `type="traffic"`
+- Expected format: key=value pairs (quoted/unquoted), e.g. `srcip=... dstip=... service="HTTP"`
+- Extracted fields (current schema, no new columns):
+  - `parsed_ip`: `dstip`
+  - `parsed_ip_private`: private/public check for `dstip`
+- IOC derivation:
+  - `ioc_ip`: `dstip` when public IP
+- Tested sample variants:
+  - `subtype="multicast"` with `dstip=49.212.188.245`
+  - `subtype="forward"` with `dstip=23.59.154.35`
+
+## 14) Change Log
 - 2026-02-26: Initial runbook created.
 - 2026-02-26: Added minimal demo stack (React login frontend + Express auth backend + Docker Compose).
 - 2026-02-26: Completed preflight, deployment, and smoke tests on demo VM (192.168.1.251).
 - 2026-02-26: Expanded runbook with troubleshooting, rollback commands, demo presentation flow, and test evidence summary.
 - 2026-02-26: Switched persistence to PostgreSQL and added IOC IP/source data flow.
 - 2026-02-28: Updated technology stack section (map layer, timezone preferences, map APIs) and documented Emerging Threats blockrules integration.
+- 2026-03-21: Documented currently supported syslog parse formats used for IOC extraction (Microsoft DNS debug + FortiGate traffic key=value).
