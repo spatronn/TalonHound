@@ -137,16 +137,20 @@ function parseFortiTraffic(line) {
   if (!/(?:^|\s)type="traffic"(?:\s|$)/i.test(raw)) return null;
 
   const kv = parseKvPairs(raw);
+  const srcIp = kv.srcip || null;
   const dstIp = kv.dstip || null;
-  if (!dstIp && !kv.service) return null;
+  if (!dstIp && !srcIp && !kv.service) return null;
 
+  const srcIpPrivate = srcIp ? isPrivateIPv4(srcIp) : null;
   const dstIpPrivate = dstIp ? isPrivateIPv4(dstIp) : null;
+
   return {
     parser_source: 'fortigate_traffic',
-    parsed_ip: dstIp,
+    parsed_ip: dstIp || srcIp,
     parsed_query: null,
-    parsed_ip_private: dstIpPrivate,
+    parsed_ip_private: dstIp ? dstIpPrivate : srcIpPrivate,
     ioc_ip: dstIp && dstIpPrivate === false ? dstIp : null,
+    ioc_ip_secondary: srcIp && srcIpPrivate === false ? srcIp : null,
     ioc_query: null
   };
 }
@@ -309,12 +313,13 @@ function buildObservableRows(parsedBatch) {
         raw_row_hash: rawRowHash
       });
     }
-    if (r.ioc_ip) {
+    const ipSet = new Set([r.ioc_ip, r.ioc_ip_secondary].filter(Boolean).map((v) => String(v)));
+    for (const ip of ipSet) {
       rows.push({
         ts: r.ts,
         source: r.source,
         host: r.host,
-        observable: String(r.ioc_ip),
+        observable: ip,
         observable_type: 'ip',
         raw_row_hash: rawRowHash
       });
