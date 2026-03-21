@@ -120,6 +120,37 @@ function parseMicrosoftDnsDebug(line) {
   };
 }
 
+function parseKvPairs(raw) {
+  const out = {};
+  const re = /(\w+)=((?:"[^"]*")|\S+)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const k = m[1];
+    const v = m[2];
+    out[k] = v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1) : v;
+  }
+  return out;
+}
+
+function parseFortiTraffic(line) {
+  const raw = normalizeTail(line);
+  if (!/(?:^|\s)type="traffic"(?:\s|$)/i.test(raw)) return null;
+
+  const kv = parseKvPairs(raw);
+  const dstIp = kv.dstip || null;
+  if (!dstIp && !kv.service) return null;
+
+  const dstIpPrivate = dstIp ? isPrivateIPv4(dstIp) : null;
+  return {
+    parser_source: 'fortigate_traffic',
+    parsed_ip: dstIp,
+    parsed_query: null,
+    parsed_ip_private: dstIpPrivate,
+    ioc_ip: dstIp && dstIpPrivate === false ? dstIp : null,
+    ioc_query: null
+  };
+}
+
 function parseSyslogLine(line, sourceIp) {
   const raw = normalizeTail(line);
   const now = new Date();
@@ -150,13 +181,13 @@ function parseSyslogLine(line, sourceIp) {
     out.message = normalizeTail(m[3] || raw);
   }
 
-  const dns = parseMicrosoftDnsDebug(raw);
-  out.parser_source = dns?.parser_source || 'unknown';
-  out.parsed_ip = dns?.parsed_ip || null;
-  out.parsed_query = dns?.parsed_query || null;
-  out.parsed_ip_private = dns?.parsed_ip_private ?? null;
-  out.ioc_ip = dns?.ioc_ip || null;
-  out.ioc_query = dns?.ioc_query || null;
+  const parsed = parseFortiTraffic(raw) || parseMicrosoftDnsDebug(raw);
+  out.parser_source = parsed?.parser_source || 'unknown';
+  out.parsed_ip = parsed?.parsed_ip || null;
+  out.parsed_query = parsed?.parsed_query || null;
+  out.parsed_ip_private = parsed?.parsed_ip_private ?? null;
+  out.ioc_ip = parsed?.ioc_ip || null;
+  out.ioc_query = parsed?.ioc_query || null;
 
   return out;
 }
