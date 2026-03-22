@@ -12,8 +12,9 @@ const USE_CLICKHOUSE = LOG_STORAGE === "clickhouse";
 const SYSLOG_PORT = Number(process.env.SYSLOG_PORT || 514);
 const SYSLOG_HOST = process.env.SYSLOG_HOST || "0.0.0.0";
 const HEALTH_PORT = Number(process.env.SYSLOG_HEALTH_PORT || 8081);
-const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS || 150), 50);
+const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS || 3000), 200);
 const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 5000), 10);
+const MIN_FLUSH_SIZE = Math.max(Number(process.env.SYSLOG_MIN_FLUSH_SIZE || 200), 1);
 const MAX_BUFFERED = Math.max(Number(process.env.SYSLOG_MAX_BUFFERED || 100000), BATCH_SIZE);
 const FLUSH_WORKERS = Math.max(Number(process.env.SYSLOG_FLUSH_WORKERS || 1), 1);
 const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 1024 * 1024), 256 * 1024);
@@ -66,7 +67,8 @@ function armFlushTimer() {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    flushOnce().catch(() => {});
+    // timer is fallback path: flush whatever is buffered
+    flushOnce(true).catch(() => {});
   }, FLUSH_INTERVAL_MS);
 }
 
@@ -219,7 +221,7 @@ function enqueue(sourceIp, rawEvent) {
   queue.push({ sourceIp, receivedAt: new Date(), rawEvent });
   metrics.enqueued_logs += 1;
   if (queue.length > metrics.queue_depth_high_watermark) metrics.queue_depth_high_watermark = queue.length;
-  if (queue.length >= BATCH_SIZE) flushOnce().catch(() => {});
+  if (queue.length >= BATCH_SIZE) flushOnce(false).catch(() => {});
   else armFlushTimer();
 }
 
@@ -341,8 +343,12 @@ async function flushToClickhouse(events) {
   return { inserted: batch.length, chLatency: t1 };
 }
 
-async function flushOnce() {
+async function flushOnce(force = false) {
   if (queue.length === 0) return;
+  if (!force && queue.length < BATCH_SIZE && queue.length < MIN_FLUSH_SIZE) {
+    armFlushTimer();
+    return;
+  }
   if (flushInFlight) return flushInFlight;
   if (flushTimer) {
     clearTimeout(flushTimer);
@@ -378,13 +384,6 @@ async function flushOnce() {
   return flushInFlight;
 }
 
-async function flushWorkerTick() {
-  if (queue.length === 0) return;
-  flushingWorkers += 1;
-  try { await flushOnce(); }
-  finally { flushingWorkers = Math.max(0, flushingWorkers - 1); }
-}
-
 udp.on("message", (msg, rinfo) => enqueue(rinfo.address || "unknown", msg.toString("utf8")));
 udp.on("error", (err) => console.error("[syslog-receiver] udp error", err?.message || err));
 
@@ -392,11 +391,10 @@ udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
   try { udp.setRecvBufferSize(SOCKET_RCVBUF); } catch {}
   try { metrics.socket_recv_buffer_size = udp.getRecvBufferSize(); } catch { metrics.socket_recv_buffer_size = null; }
   console.log(`[syslog-receiver] listening udp://${SYSLOG_HOST}:${SYSLOG_PORT}`);
-  console.log(`[syslog-receiver] storage=${LOG_STORAGE} workers=${FLUSH_WORKERS} batch=${BATCH_SIZE} interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}`);
+  console.log(`[syslog-receiver] storage=${LOG_STORAGE} mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}`);
 });
 
 const timers = [];
-for (let i = 0; i < FLUSH_WORKERS; i += 1) timers.push(setInterval(() => flushWorkerTick().catch(() => {}), FLUSH_INTERVAL_MS));
 
 const health = http.createServer((req, res) => {
   if (req.url !== "/health" && req.url !== "/receiver/health") {
@@ -420,7 +418,7 @@ async function bootstrap() {
 
 async function shutdown() {
   for (const t of timers) clearInterval(t);
-  for (let i = 0; i < FLUSH_WORKERS * 4 && queue.length > 0; i += 1) await flushOnce().catch(() => {});
+  for (let i = 0; i < Math.max(FLUSH_WORKERS * 4, 8) && queue.length > 0; i += 1) await flushOnce(true).catch(() => {});
   udp.close();
   health.close();
   await pool.end();

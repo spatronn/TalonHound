@@ -204,7 +204,8 @@ services:
       - SYSLOG_HEALTH_PORT=8081
       # Avoid ClickHouse small-part amplification: micro-batch flush (rows OR time)
       - SYSLOG_BATCH_SIZE=5000
-      - SYSLOG_FLUSH_INTERVAL_MS=150
+      - SYSLOG_MIN_FLUSH_SIZE=200
+      - SYSLOG_FLUSH_INTERVAL_MS=3000
       - SYSLOG_FLUSH_WORKERS=1
       - SYSLOG_MAX_BUFFERED=100000
       - SYSLOG_OVERFLOW_POLICY=drop_oldest
