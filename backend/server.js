@@ -1391,6 +1391,14 @@ app.post('/api/ioc/ip', async (req, res) => {
       `;
       const { rows } = await pool.query(qObs, [value, inferredType, source_name, source_url || null, confidence, category, note]);
       if (!rows.length) return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
+
+      await pool.query(
+        `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (ioc_public_id, observable_type, observable_value) DO NOTHING`,
+        [rows[0].public_id, rows[0].observable_type, String(rows[0].observable || '').toLowerCase()]
+      ).catch(() => {});
+
       scheduleGeoCacheRefreshAfterAdd();
       await pool.query(
         `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
@@ -1421,6 +1429,13 @@ app.post('/api/ioc/ip', async (req, res) => {
     if (!rows.length) {
       return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
     }
+
+    await pool.query(
+      `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (ioc_public_id, observable_type, observable_value) DO NOTHING`,
+      [rows[0].public_id, rows[0].observable_type, String(rows[0].observable || '').toLowerCase()]
+    ).catch(() => {});
 
     scheduleGeoCacheRefreshAfterAdd();
     await pool.query(
