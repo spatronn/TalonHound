@@ -389,6 +389,9 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.table = 'syslog_logs';
       clickhouse.retro_pending_ioc = Number(retroRows?.[0]?.pending || 0);
       clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || null;
+      clickhouse.retro_cursor_ts_iso = retroRows?.[0]?.cursor_ts
+        ? `${String(retroRows[0].cursor_ts).replace(' ', 'T')}Z`
+        : null;
       clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || null;
     } catch (err) {
       clickhouse.error = err.message;
