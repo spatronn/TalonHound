@@ -110,13 +110,30 @@ async function maybeSyncIocLookup(force = false) {
   return true;
 }
 
+async function getPendingCount(ts, hash) {
+  const safeTs = String(ts || '1970-01-01 00:00:00.000').replace('T', ' ').replace('Z', '');
+  const safeHash = String(hash || '0').replace(/[^0-9]/g, '') || '0';
+  const rows = await clickhouseQuery(`
+    SELECT count() AS pending
+    FROM default.ioc_lookup
+    WHERE (
+      updated_at > toDateTime64('${safeTs}', 3)
+      OR (updated_at = toDateTime64('${safeTs}', 3)
+          AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash}'))
+    )
+  `, { queryId: makeQueryId('pending-count'), logTag: 'ioc-retro.pending-count' });
+  return Number(rows?.[0]?.pending || 0);
+}
+
 async function runRetroactivePass() {
-  const now = Date.now();
+  const passStartedAtMs = Date.now();
+  const now = passStartedAtMs;
   if ((now - lastRetroRunAtMs) < (RETRO_SCAN_INTERVAL_SECONDS * 1000)) return { ran: false, inserted: 0 };
 
   const st = await loadRetroState();
   const lastTs = String(st.last_processed_ts || '1970-01-01 00:00:00.000').replace('T', ' ').replace('Z', '');
   const lastHash = String(st.last_processed_row_hash || '0').replace(/[^0-9]/g, '') || '0';
+  const pendingBefore = await getPendingCount(lastTs, lastHash);
 
   const cursorRows = await clickhouseQuery(`
     WITH new_iocs AS (
@@ -136,7 +153,10 @@ async function runRetroactivePass() {
       ORDER BY updated_at, toUInt64(row_hash)
       LIMIT ${RETRO_MAX_NEW_IOCS}
     )
-    SELECT updated_at, row_hash
+    SELECT
+      (SELECT count() FROM new_iocs) AS scanned_new_iocs,
+      updated_at,
+      row_hash
     FROM new_iocs
     ORDER BY updated_at DESC, toUInt64(row_hash) DESC
     LIMIT 1
@@ -144,6 +164,7 @@ async function runRetroactivePass() {
 
   if (!cursorRows.length) {
     lastRetroRunAtMs = now;
+    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=0 matched_rows=0 inserted_or_upserted=0 pending_after=${pendingBefore} cursor_before_ts=${lastTs} cursor_after_ts=${lastTs} duration_ms=${Date.now() - passStartedAtMs} skipped=no_new_ioc`);
     return { ran: true, inserted: 0, skipped: 'no_new_ioc' };
   }
 
@@ -187,12 +208,15 @@ async function runRetroactivePass() {
     SETTINGS max_threads = ${RETRO_CH_MAX_THREADS}, max_execution_time = ${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}
   `, { queryId: makeQueryId('retro-pass'), logTag: 'ioc-retro.retro-pass' });
 
+  const scannedNewIocs = Number(cursorRows?.[0]?.scanned_new_iocs || 0);
   const cursorTs = String(cursorRows[0].updated_at || lastTs);
   const cursorHash = String(cursorRows[0].row_hash || lastHash);
   await saveRetroState(cursorTs, cursorHash);
 
   if (!rows.length) {
     lastRetroRunAtMs = now;
+    const pendingAfter = await getPendingCount(cursorTs, cursorHash);
+    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=${scannedNewIocs} matched_rows=0 inserted_or_upserted=0 pending_after=${pendingAfter} cursor_before_ts=${lastTs} cursor_after_ts=${cursorTs} duration_ms=${Date.now() - passStartedAtMs}`);
     return { ran: true, inserted: 0 };
   }
 
@@ -226,7 +250,8 @@ async function runRetroactivePass() {
     const inserted = await insertMatchEvents(client, mapped);
     await client.query('COMMIT');
     lastRetroRunAtMs = now;
-    console.log(`[ioc-retro] scanned=${rows.length} inserted_or_upserted=${inserted} cursor_ts=${cursorTs}`);
+    const pendingAfter = await getPendingCount(cursorTs, cursorHash);
+    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=${scannedNewIocs} matched_rows=${rows.length} inserted_or_upserted=${inserted} pending_after=${pendingAfter} cursor_before_ts=${lastTs} cursor_after_ts=${cursorTs} duration_ms=${Date.now() - passStartedAtMs}`);
     return { ran: true, inserted };
   } catch (err) {
     await client.query('ROLLBACK');
