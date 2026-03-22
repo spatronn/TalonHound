@@ -577,9 +577,19 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                m.matched_ioc,
                m.source_name,
                m.created_at,
-               COALESCE(se.raw_event, se.raw->>'raw_event', se.raw::text) AS matched_syslog_event
+               COALESCE(
+                 NULLIF(CONCAT_WS(' | ',
+                   NULLIF(m.host_name, ''),
+                   NULLIF(m.process_name, ''),
+                   CASE
+                     WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+                     ELSE NULL
+                   END,
+                   NULLIF(m.protocol, '')
+                 ), ''),
+                 '-'
+               ) AS matched_syslog_event
              FROM ioc_match_events m
-             LEFT JOIN signal_events se ON se.id = m.signal_event_id
              WHERE m.created_at >= NOW() - ($2::text || ' hours')::interval
              ORDER BY m.created_at DESC
              LIMIT $1
@@ -610,9 +620,19 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                m.matched_ioc,
                m.source_name,
                m.created_at,
-               COALESCE(se.raw_event, se.raw->>'raw_event', se.raw::text) AS matched_syslog_event
+               COALESCE(
+                 NULLIF(CONCAT_WS(' | ',
+                   NULLIF(m.host_name, ''),
+                   NULLIF(m.process_name, ''),
+                   CASE
+                     WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+                     ELSE NULL
+                   END,
+                   NULLIF(m.protocol, '')
+                 ), ''),
+                 '-'
+               ) AS matched_syslog_event
              FROM ioc_match_events m
-             LEFT JOIN signal_events se ON se.id = m.signal_event_id
              ORDER BY m.created_at DESC
              LIMIT $1
            ), source_agg AS (
