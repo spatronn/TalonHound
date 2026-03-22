@@ -792,7 +792,9 @@ app.get('/api/ioc/match-events', async (req, res) => {
             '-'
           ) AS matched_syslog_event,
           CASE
-            WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro' THEN 'retroactive'
+            WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+              OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+            THEN 'retroactive'
             ELSE 'realtime'
           END AS detection_mode
         FROM ioc_match_events m
@@ -853,7 +855,9 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
              '-'
            ) AS matched_syslog_event,
            CASE
-             WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro' THEN 'retroactive'
+             WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+               OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+             THEN 'retroactive'
              ELSE 'realtime'
            END AS detection_mode
          FROM ioc_match_events m
