@@ -550,23 +550,42 @@ function AnalyticsPage() {
           </div>
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
-              <tr style={{ textAlign: 'left', background: '#111827' }}>
-                <th style={{ width: 80 }}>ID</th>
-                <th>Time</th>
+              <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                <th style={{ width: 90 }}>ID</th>
+                <th style={{ width: 170 }}>Time</th>
                 <th>Matched Syslog event</th>
-                <th>Matched IOC</th>
-                <th>Source</th>
+                <th style={{ width: 230 }}>Matched IOC</th>
+                <th style={{ width: 150 }}>Detection</th>
+                <th style={{ width: 220 }}>Source</th>
               </tr>
             </thead>
             <tbody>
               {iocLoading ? (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
               ) : iocMatches.length ? iocMatches.map((evt) => (
                 <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
-                  <td>{evt.id}</td>
+                  <td>
+                    <Link to={`/analytics/ioc-match-events/${evt.id}`} style={{ color: '#93c5fd', textDecoration: 'underline' }}>
+                      {evt.id}
+                    </Link>
+                  </td>
                   <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
-                  <td>{evt.matched_ioc || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
+                  <td>
+                    <span style={{
+                      display: 'inline-block',
+                      borderRadius: 999,
+                      padding: '3px 10px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                      color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
+                      background: '#020617'
+                    }}>
+                      {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
+                    </span>
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {evt.source_count > 1
                       ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
@@ -574,7 +593,7 @@ function AnalyticsPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
               )}
             </tbody>
           </table>
