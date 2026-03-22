@@ -1111,6 +1111,8 @@ function SystemStatusPage() {
               <div><b>Version:</b> {clickhouseStatus.version || '-'}</div>
               <div><b>Rows:</b> {clickhouseStatus.rows ?? '-'}</div>
               <div><b>Size:</b> {clickhouseStatus.size_mb !== undefined ? `${clickhouseStatus.size_mb} MB` : '-'}</div>
+              <div><b>Retro Pending IOC:</b> {clickhouseStatus.retro_pending_ioc ?? '-'}</div>
+              <div><b>Retro Cursor TS:</b> {clickhouseStatus.retro_cursor_ts || '-'}</div>
               {clickhouseStatus.note && <div style={{ color: '#94a3b8' }}>{clickhouseStatus.note}</div>}
               {clickhouseStatus.error && <div style={{ color: '#f87171' }}>{clickhouseStatus.error}</div>}
             </div>

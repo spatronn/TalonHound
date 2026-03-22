@@ -358,10 +358,26 @@ app.get('/api/system/status', async (req, res) => {
   const clickhouse = { ok: false };
   if (USE_CLICKHOUSE) {
     try {
-      const [verRows, rowRows, sizeRows] = await Promise.all([
+      const [verRows, rowRows, sizeRows, retroRows] = await Promise.all([
         clickhouseQuery('SELECT version() AS version'),
         clickhouseQuery('SELECT count() AS rows FROM syslog_logs'),
-        clickhouseQuery("SELECT sum(bytes_on_disk) AS bytes FROM system.parts WHERE active = 1 AND database = currentDatabase() AND table = 'syslog_logs'")
+        clickhouseQuery("SELECT sum(bytes_on_disk) AS bytes FROM system.parts WHERE active = 1 AND database = currentDatabase() AND table = 'syslog_logs'"),
+        clickhouseQuery(`
+          WITH st AS (
+            SELECT last_processed_ts AS ts, toUInt64(last_processed_row_hash) AS h
+            FROM ioc_retro_state
+            WHERE worker_name = 'ioc-retro-v1'
+            ORDER BY updated_at DESC
+            LIMIT 1
+          )
+          SELECT
+            count() AS pending,
+            toString((SELECT ts FROM st)) AS cursor_ts,
+            toString((SELECT h FROM st)) AS cursor_hash
+          FROM ioc_lookup
+          WHERE (updated_at > (SELECT ts FROM st))
+             OR (updated_at = (SELECT ts FROM st) AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > (SELECT h FROM st))
+        `)
       ]);
 
       const sizeBytes = Number(sizeRows?.[0]?.bytes || 0);
@@ -371,6 +387,9 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.size_bytes = sizeBytes;
       clickhouse.size_mb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
       clickhouse.table = 'syslog_logs';
+      clickhouse.retro_pending_ioc = Number(retroRows?.[0]?.pending || 0);
+      clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || null;
+      clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || null;
     } catch (err) {
       clickhouse.error = err.message;
     }
