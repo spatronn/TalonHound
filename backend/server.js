@@ -654,7 +654,51 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
           [limit]
         );
 
-    return res.json({ total: q.rowCount, items: q.rows });
+    const escapeChString = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const withRawSyslogEvent = async (row) => {
+      if (!USE_CLICKHOUSE) return row;
+      try {
+        const matched = String(row?.matched_ioc || '').trim();
+        if (!matched) return row;
+
+        const ts = row?.event_time ? new Date(row.event_time) : null;
+        const tsStart = ts ? new Date(ts.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
+        const tsEnd = ts ? new Date(ts.getTime() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
+
+        const whereParts = [];
+        if (tsStart && tsEnd) whereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
+
+        const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
+        if (isIp) {
+          whereParts.push(`(ioc_ip = '${escapeChString(matched)}' OR parsed_ip = '${escapeChString(matched)}')`);
+        } else {
+          whereParts.push(`(ioc_query = '${escapeChString(matched)}' OR lower(ioc_query) = lower('${escapeChString(matched)}') OR lower(parsed_query) = lower('${escapeChString(matched)}'))`);
+        }
+
+        const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+        const rows = await clickhouseQuery(`
+          SELECT raw
+          FROM syslog_logs
+          ${whereSql}
+          ORDER BY ts DESC
+          LIMIT 1
+        `);
+
+        const raw = rows?.[0]?.raw;
+        if (raw && String(raw).trim()) {
+          return { ...row, matched_syslog_event: String(raw) };
+        }
+        return row;
+      } catch {
+        return row;
+      }
+    };
+
+    const items = USE_CLICKHOUSE
+      ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
+      : q.rows;
+
+    return res.json({ total: q.rowCount, items });
   } catch (err) {
     console.error('[analytics-ioc-matches] failed', err);
     return res.status(500).json({ total: 0, items: [] });
