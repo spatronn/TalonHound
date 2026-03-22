@@ -572,17 +572,14 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
           `WITH recent AS (
              SELECT
                m.id,
+               m.signal_event_id,
                m.event_time,
-               m.host_name,
-               m.process_name,
-               m.destination_ip,
-               m.destination_port,
-               m.protocol,
                m.matched_ioc,
                m.source_name,
-               m.confidence,
-               m.created_at
+               m.created_at,
+               COALESCE(se.raw_event, se.raw->>'raw_event', se.raw::text) AS matched_syslog_event
              FROM ioc_match_events m
+             LEFT JOIN signal_events se ON se.id = m.signal_event_id
              WHERE m.created_at >= NOW() - ($2::text || ' hours')::interval
              ORDER BY m.created_at DESC
              LIMIT $1
@@ -608,17 +605,14 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
           `WITH recent AS (
              SELECT
                m.id,
+               m.signal_event_id,
                m.event_time,
-               m.host_name,
-               m.process_name,
-               m.destination_ip,
-               m.destination_port,
-               m.protocol,
                m.matched_ioc,
                m.source_name,
-               m.confidence,
-               m.created_at
+               m.created_at,
+               COALESCE(se.raw_event, se.raw->>'raw_event', se.raw::text) AS matched_syslog_event
              FROM ioc_match_events m
+             LEFT JOIN signal_events se ON se.id = m.signal_event_id
              ORDER BY m.created_at DESC
              LIMIT $1
            ), source_agg AS (
