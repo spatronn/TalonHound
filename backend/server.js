@@ -771,7 +771,11 @@ app.get('/api/ioc/match-events', async (req, res) => {
               NULLIF(m.protocol, '')
             ), ''),
             '-'
-          ) AS matched_syslog_event
+          ) AS matched_syslog_event,
+          CASE
+            WHEN COALESCE((m.match_context->>'retroactive')::boolean, false) THEN 'retroactive'
+            ELSE 'realtime'
+          END AS detection_mode
         FROM ioc_match_events m
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY m.created_at DESC
@@ -828,7 +832,11 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
                NULLIF(m.protocol, '')
              ), ''),
              '-'
-           ) AS matched_syslog_event
+           ) AS matched_syslog_event,
+           CASE
+             WHEN COALESCE((m.match_context->>'retroactive')::boolean, false) THEN 'retroactive'
+             ELSE 'realtime'
+           END AS detection_mode
          FROM ioc_match_events m
          WHERE m.id = $1
          LIMIT 1

@@ -821,12 +821,13 @@ function IOCMatchEventsPage() {
                 <th style={{ width: 170 }}>Time</th>
                 <th>Matched Syslog event</th>
                 <th style={{ width: 230 }}>Matched IOC</th>
+                <th style={{ width: 150 }}>Detection</th>
                 <th style={{ width: 220 }}>Source</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
               ) : rows.length ? rows.map((evt) => (
                 <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                   <td>
@@ -840,6 +841,20 @@ function IOCMatchEventsPage() {
                   <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
+                  <td>
+                    <span style={{
+                      display: 'inline-block',
+                      borderRadius: 999,
+                      padding: '3px 10px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                      color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
+                      background: '#020617'
+                    }}>
+                      {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
+                    </span>
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {evt.source_count > 1
                       ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
@@ -847,7 +862,7 @@ function IOCMatchEventsPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
               )}
             </tbody>
           </table>
@@ -919,10 +934,25 @@ function IOCMatchEventDetailsPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched IOC</div>
                 <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.matched_ioc || '-'}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detection</div>
+                <span style={{
+                  display: 'inline-block',
+                  borderRadius: 999,
+                  padding: '4px 10px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  border: `1px solid ${item.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                  color: item.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
+                  background: '#020617'
+                }}>
+                  {item.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
+                </span>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Source</div>
