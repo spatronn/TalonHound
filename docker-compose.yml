@@ -246,9 +246,9 @@ services:
       - MODE=mixed
       - EPS=400
       - DURATION_SECONDS=900
-      - IOC_INSERT_RATIO=0.3
+      - IOC_INSERT_RATIO=0
       - REALTIME_RATIO=0.5
-      - RETRO_DELAY_MS=1500
+      - RETRO_DELAY_MS=0
       - STATS_EVERY_SEC=10
       - SYSLOG_HOST=syslog-receiver
       - SYSLOG_PORT=514
