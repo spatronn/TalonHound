@@ -774,40 +774,17 @@ function IOCMatchEventsPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detail, setDetail] = useState(null);
+  const navigate = useNavigate();
 
   const loadEvents = useCallback(async (q = '') => {
     setLoading(true);
     try {
       const { data } = await api.get('/ioc/match-events', { params: { limit: 20, q: q || undefined } });
-      const items = data?.items || [];
-      setRows(items);
-      if (!items.length) {
-        setSelectedId(null);
-        setDetail(null);
-      }
+      setRows(data?.items || []);
     } catch {
       setRows([]);
-      setSelectedId(null);
-      setDetail(null);
     } finally {
       setLoading(false);
-    }
-  }, []);
-
-  const loadDetail = useCallback(async (id) => {
-    if (!id) return;
-    setDetailLoading(true);
-    try {
-      const { data } = await api.get(`/ioc/match-events/${id}`);
-      setDetail(data?.item || null);
-      setSelectedId(id);
-    } catch {
-      setDetail(null);
-    } finally {
-      setDetailLoading(false);
     }
   }, []);
 
@@ -851,10 +828,10 @@ function IOCMatchEventsPage() {
               {loading ? (
                 <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
               ) : rows.length ? rows.map((evt) => (
-                <tr key={evt.id} style={{ borderTop: '1px solid #334155', background: Number(selectedId) === Number(evt.id) ? '#1e293b' : 'transparent' }}>
+                <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                   <td>
                     <button
-                      onClick={() => loadDetail(evt.id).catch(() => {})}
+                      onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)}
                       style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                     >
                       {evt.id}
@@ -871,23 +848,85 @@ function IOCMatchEventsPage() {
             </tbody>
           </table>
         </div>
+      </section>
+    </AppShell>
+  );
+}
 
-        <div style={{ marginTop: 12, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
-            Event Detail {selectedId ? `#${selectedId}` : ''}
-          </div>
-          <div style={{ padding: 12 }}>
-            {detailLoading ? (
-              <div style={{ color: '#94a3b8' }}>Loading detail...</div>
-            ) : detail ? (
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.45, color: '#e2e8f0' }}>
-                {JSON.stringify(detail, null, 2)}
-              </pre>
-            ) : (
-              <div style={{ color: '#94a3b8' }}>Click an ID to view all details for that event.</div>
-            )}
-          </div>
+function IOCMatchEventDetailsPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [item, setItem] = useState(null);
+
+  const loadDetail = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/ioc/match-events/${id}`);
+      setItem(data?.item || null);
+    } catch {
+      setItem(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadDetail().catch(() => {});
+  }, [loadDetail]);
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ margin: 0 }}>IOC Match Event Details #{id}</h2>
+          <button onClick={() => navigate('/analytics/ioc-match-events')}>Back</button>
         </div>
+
+        {loading ? (
+          <div style={{ color: '#94a3b8' }}>Loading detail...</div>
+        ) : !item ? (
+          <div style={{ color: '#94a3b8' }}>Event detail not found.</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Event Time</div>
+              <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.event_time || item.created_at)}</div>
+            </div>
+
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched Syslog event</div>
+              <div style={{
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+                lineHeight: 1.45,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace',
+                fontSize: 13,
+                background: '#020617',
+                border: '1px solid #334155',
+                borderRadius: 8,
+                padding: 10,
+                maxHeight: 280,
+                overflowY: 'auto'
+              }}>
+                {item.matched_syslog_event || '-'}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched IOC</div>
+                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.matched_ioc || '-'}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Source</div>
+                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source_name || '-'}</div>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
     </AppShell>
   );
@@ -2369,6 +2408,7 @@ function App() {
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/analytics/ioc-match-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
+          <Route path="/analytics/ioc-match-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
