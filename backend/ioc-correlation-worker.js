@@ -264,16 +264,40 @@ function toMatchRows(chRows) {
 async function insertMatchEvents(client, rows) {
   if (!rows.length) return 0;
 
+  // Deduplicate same (dedup_key, bucket_start) inside this batch to avoid
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time".
+  const uniq = new Map();
+  for (const r of rows) {
+    const bucketStart = floorToBucket(r.event_time, DEDUP_WINDOW_SECONDS);
+    const dedupKey = dedupKeyOf({ ...r, match_type: r.ioc_type });
+    const k = `${dedupKey}@@${bucketStart}`;
+
+    const prev = uniq.get(k);
+    if (!prev) {
+      uniq.set(k, { ...r, _bucketStart: bucketStart, _dedupKey: dedupKey, _hitInc: 1 });
+      continue;
+    }
+
+    prev._hitInc += 1;
+    if (new Date(r.event_time).getTime() > new Date(prev.event_time).getTime()) {
+      prev.event_time = r.event_time;
+      prev.destination_ip = r.destination_ip;
+      prev.protocol = r.protocol;
+      prev.source_name = r.source_name || prev.source_name;
+      prev.confidence = r.confidence || prev.confidence;
+      prev.match_context = r.match_context || prev.match_context;
+    }
+  }
+
+  const normalizedRows = Array.from(uniq.values());
   const values = [];
   const params = [];
 
-  for (let i = 0; i < rows.length; i += 1) {
-    const r = rows[i];
-    const bucketStart = floorToBucket(r.event_time, DEDUP_WINDOW_SECONDS);
-    const dedupKey = dedupKeyOf({ ...r, match_type: r.ioc_type });
-    const base = i * 17;
+  for (let i = 0; i < normalizedRows.length; i += 1) {
+    const r = normalizedRows[i];
+    const base = i * 18;
 
-    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17})`);
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18})`);
     params.push(
       r.event_time,
       r.host || null,
@@ -289,9 +313,10 @@ async function insertMatchEvents(client, rows) {
       r.parser_source || null,
       r.source || null,
       JSON.stringify(r.match_context || {}),
-      dedupKey,
-      bucketStart,
-      r.event_time // last_seen_at seed
+      r._dedupKey,
+      r._bucketStart,
+      r.event_time, // last_seen_at seed
+      r._hitInc
     );
   }
 
@@ -299,11 +324,11 @@ async function insertMatchEvents(client, rows) {
     INSERT INTO ioc_match_events (
       event_time, host_name, process_name, destination_ip, destination_port, protocol,
       matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
-      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at
+      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count
     ) VALUES ${values.join(',')}
     ON CONFLICT (dedup_key, bucket_start)
     DO UPDATE SET
-      hit_count = ioc_match_events.hit_count + 1,
+      hit_count = ioc_match_events.hit_count + EXCLUDED.hit_count,
       last_seen_at = GREATEST(ioc_match_events.last_seen_at, EXCLUDED.last_seen_at),
       confidence = COALESCE(EXCLUDED.confidence, ioc_match_events.confidence),
       source_name = COALESCE(EXCLUDED.source_name, ioc_match_events.source_name),
@@ -311,7 +336,7 @@ async function insertMatchEvents(client, rows) {
   `;
 
   await client.query(sql, params);
-  return rows.length;
+  return normalizedRows.length;
 }
 
 async function runBatch() {
