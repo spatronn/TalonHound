@@ -840,7 +840,11 @@ function IOCMatchEventsPage() {
                   <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.source_name || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {evt.source_count > 1
+                      ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
+                      : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
+                  </td>
                 </tr>
               )) : (
                 <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
@@ -922,7 +926,17 @@ function IOCMatchEventDetailsPage() {
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Source</div>
-                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source_name || '-'}</div>
+                {Array.isArray(item.source_names) && item.source_names.length ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {item.source_names.map((src) => (
+                      <span key={src} style={{ border: '1px solid #334155', borderRadius: 999, padding: '4px 10px', background: '#020617', fontSize: 12 }}>
+                        {src}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source_name || '-'}</div>
+                )}
               </div>
             </div>
           </div>

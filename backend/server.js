@@ -736,45 +736,62 @@ app.get('/api/ioc/match-events', async (req, res) => {
     const limitIdx = params.length;
 
     const sql = `
+      WITH recent AS (
+        SELECT
+          m.id,
+          m.signal_event_id,
+          m.event_time,
+          m.host_name,
+          m.process_name,
+          m.destination_ip,
+          m.destination_port,
+          m.protocol,
+          m.matched_ioc,
+          m.source_name,
+          m.confidence,
+          m.ioc_type,
+          m.ioc_item_id,
+          m.parser_source,
+          m.source,
+          m.match_context,
+          m.dedup_key,
+          m.bucket_start,
+          m.first_seen_at,
+          m.last_seen_at,
+          m.hit_count,
+          m.created_at,
+          COALESCE(
+            NULLIF(CONCAT_WS(' | ',
+              NULLIF(m.host_name, ''),
+              NULLIF(m.process_name, ''),
+              CASE
+                WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+                ELSE NULL
+              END,
+              NULLIF(m.protocol, '')
+            ), ''),
+            '-'
+          ) AS matched_syslog_event
+        FROM ioc_match_events m
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY m.created_at DESC
+        LIMIT $${limitIdx}
+      ), source_agg AS (
+        SELECT
+          i.observable AS observable_norm,
+          COUNT(DISTINCT i.source_name)::int AS source_count,
+          ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
+        FROM ioc_items i
+        WHERE i.observable IN (SELECT DISTINCT lower(r.matched_ioc) FROM recent r)
+        GROUP BY i.observable
+      )
       SELECT
-        m.id,
-        m.signal_event_id,
-        m.event_time,
-        m.host_name,
-        m.process_name,
-        m.destination_ip,
-        m.destination_port,
-        m.protocol,
-        m.matched_ioc,
-        m.source_name,
-        m.confidence,
-        m.ioc_type,
-        m.ioc_item_id,
-        m.parser_source,
-        m.source,
-        m.match_context,
-        m.dedup_key,
-        m.bucket_start,
-        m.first_seen_at,
-        m.last_seen_at,
-        m.hit_count,
-        m.created_at,
-        COALESCE(
-          NULLIF(CONCAT_WS(' | ',
-            NULLIF(m.host_name, ''),
-            NULLIF(m.process_name, ''),
-            CASE
-              WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
-              ELSE NULL
-            END,
-            NULLIF(m.protocol, '')
-          ), ''),
-          '-'
-        ) AS matched_syslog_event
-      FROM ioc_match_events m
-      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY m.created_at DESC
-      LIMIT $${limitIdx}
+        r.*,
+        COALESCE(sa.source_count, 0) AS source_count,
+        COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
+      FROM recent r
+      LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
+      ORDER BY r.created_at DESC
     `;
 
     const q = await pool.query(sql, params);
@@ -797,22 +814,39 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
     }
 
     const q = await pool.query(
-      `SELECT
-        m.*,
-        COALESCE(
-          NULLIF(CONCAT_WS(' | ',
-            NULLIF(m.host_name, ''),
-            NULLIF(m.process_name, ''),
-            CASE
-              WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
-              ELSE NULL
-            END,
-            NULLIF(m.protocol, '')
-          ), ''),
-          '-'
-        ) AS matched_syslog_event
-       FROM ioc_match_events m
-       WHERE m.id = $1
+      `WITH one AS (
+         SELECT
+           m.*,
+           COALESCE(
+             NULLIF(CONCAT_WS(' | ',
+               NULLIF(m.host_name, ''),
+               NULLIF(m.process_name, ''),
+               CASE
+                 WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+                 ELSE NULL
+               END,
+               NULLIF(m.protocol, '')
+             ), ''),
+             '-'
+           ) AS matched_syslog_event
+         FROM ioc_match_events m
+         WHERE m.id = $1
+         LIMIT 1
+       ), source_agg AS (
+         SELECT
+           i.observable AS observable_norm,
+           COUNT(DISTINCT i.source_name)::int AS source_count,
+           ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
+         FROM ioc_items i
+         WHERE i.observable IN (SELECT DISTINCT lower(o.matched_ioc) FROM one o)
+         GROUP BY i.observable
+       )
+       SELECT
+         o.*,
+         COALESCE(sa.source_count, 0) AS source_count,
+         COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
+       FROM one o
+       LEFT JOIN source_agg sa ON sa.observable_norm = lower(o.matched_ioc)
        LIMIT 1`,
       [id]
     );
