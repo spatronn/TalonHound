@@ -119,6 +119,51 @@ function parseNoteKeyValues(note) {
   return out;
 }
 
+function escapeChString(v) {
+  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function withRawSyslogEvent(row) {
+  if (!USE_CLICKHOUSE) return row;
+
+  try {
+    const matched = String(row?.matched_ioc || '').trim();
+    if (!matched) return row;
+
+    const ts = row?.event_time ? new Date(row.event_time) : null;
+    const tsStart = ts ? new Date(ts.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
+    const tsEnd = ts ? new Date(ts.getTime() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
+
+    const whereParts = [];
+    if (tsStart && tsEnd) whereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
+
+    const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
+    if (isIp) {
+      whereParts.push(`(ioc_ip = '${escapeChString(matched)}' OR parsed_ip = '${escapeChString(matched)}')`);
+    } else {
+      whereParts.push(`(ioc_query = '${escapeChString(matched)}' OR lower(ioc_query) = lower('${escapeChString(matched)}') OR lower(parsed_query) = lower('${escapeChString(matched)}'))`);
+    }
+
+    const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+    const rows = await clickhouseQuery(`
+      SELECT raw
+      FROM syslog_logs
+      ${whereSql}
+      ORDER BY ts DESC
+      LIMIT 1
+    `);
+
+    const raw = rows?.[0]?.raw;
+    if (raw && String(raw).trim()) {
+      return { ...row, matched_syslog_event: String(raw) };
+    }
+
+    return row;
+  } catch {
+    return row;
+  }
+}
+
 function buildFileInformation(rows, observable, observableType) {
   const type = String(observableType || '').toLowerCase();
   const fileTypes = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
@@ -654,46 +699,6 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
           [limit]
         );
 
-    const escapeChString = (v) => String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    const withRawSyslogEvent = async (row) => {
-      if (!USE_CLICKHOUSE) return row;
-      try {
-        const matched = String(row?.matched_ioc || '').trim();
-        if (!matched) return row;
-
-        const ts = row?.event_time ? new Date(row.event_time) : null;
-        const tsStart = ts ? new Date(ts.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
-        const tsEnd = ts ? new Date(ts.getTime() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
-
-        const whereParts = [];
-        if (tsStart && tsEnd) whereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
-
-        const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
-        if (isIp) {
-          whereParts.push(`(ioc_ip = '${escapeChString(matched)}' OR parsed_ip = '${escapeChString(matched)}')`);
-        } else {
-          whereParts.push(`(ioc_query = '${escapeChString(matched)}' OR lower(ioc_query) = lower('${escapeChString(matched)}') OR lower(parsed_query) = lower('${escapeChString(matched)}'))`);
-        }
-
-        const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-        const rows = await clickhouseQuery(`
-          SELECT raw
-          FROM syslog_logs
-          ${whereSql}
-          ORDER BY ts DESC
-          LIMIT 1
-        `);
-
-        const raw = rows?.[0]?.raw;
-        if (raw && String(raw).trim()) {
-          return { ...row, matched_syslog_event: String(raw) };
-        }
-        return row;
-      } catch {
-        return row;
-      }
-    };
-
     const items = USE_CLICKHOUSE
       ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
       : q.rows;
@@ -702,6 +707,125 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
   } catch (err) {
     console.error('[analytics-ioc-matches] failed', err);
     return res.status(500).json({ total: 0, items: [] });
+  }
+});
+
+app.get('/api/ioc/match-events', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query?.limit || 20), 1), 100);
+    const qStr = String(req.query?.q || '').trim();
+
+    const where = [];
+    const params = [];
+
+    if (qStr) {
+      params.push(`%${qStr}%`);
+      const idx = params.length;
+      where.push(`(
+        m.id::text ILIKE $${idx}
+        OR COALESCE(m.matched_ioc, '') ILIKE $${idx}
+        OR COALESCE(m.source_name, '') ILIKE $${idx}
+        OR COALESCE(m.host_name, '') ILIKE $${idx}
+        OR COALESCE(m.process_name, '') ILIKE $${idx}
+        OR COALESCE(m.destination_ip, '') ILIKE $${idx}
+        OR COALESCE(m.protocol, '') ILIKE $${idx}
+      )`);
+    }
+
+    params.push(limit);
+    const limitIdx = params.length;
+
+    const sql = `
+      SELECT
+        m.id,
+        m.signal_event_id,
+        m.event_time,
+        m.host_name,
+        m.process_name,
+        m.destination_ip,
+        m.destination_port,
+        m.protocol,
+        m.matched_ioc,
+        m.source_name,
+        m.confidence,
+        m.ioc_type,
+        m.ioc_item_id,
+        m.parser_source,
+        m.source,
+        m.match_context,
+        m.dedup_key,
+        m.bucket_start,
+        m.first_seen_at,
+        m.last_seen_at,
+        m.hit_count,
+        m.created_at,
+        COALESCE(
+          NULLIF(CONCAT_WS(' | ',
+            NULLIF(m.host_name, ''),
+            NULLIF(m.process_name, ''),
+            CASE
+              WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+              ELSE NULL
+            END,
+            NULLIF(m.protocol, '')
+          ), ''),
+          '-'
+        ) AS matched_syslog_event
+      FROM ioc_match_events m
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY m.created_at DESC
+      LIMIT $${limitIdx}
+    `;
+
+    const q = await pool.query(sql, params);
+    const items = USE_CLICKHOUSE
+      ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
+      : q.rows;
+
+    return res.json({ total: items.length, items });
+  } catch (err) {
+    console.error('[ioc-match-events] failed', err);
+    return res.status(500).json({ total: 0, items: [] });
+  }
+});
+
+app.get('/api/ioc/match-events/:id', async (req, res) => {
+  try {
+    const id = Number(req.params?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const q = await pool.query(
+      `SELECT
+        m.*,
+        COALESCE(
+          NULLIF(CONCAT_WS(' | ',
+            NULLIF(m.host_name, ''),
+            NULLIF(m.process_name, ''),
+            CASE
+              WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+              ELSE NULL
+            END,
+            NULLIF(m.protocol, '')
+          ), ''),
+          '-'
+        ) AS matched_syslog_event
+       FROM ioc_match_events m
+       WHERE m.id = $1
+       LIMIT 1`,
+      [id]
+    );
+
+    if (!q.rowCount) {
+      return res.status(404).json({ message: 'IOC match event not found' });
+    }
+
+    const item = USE_CLICKHOUSE ? await withRawSyslogEvent(q.rows[0]) : q.rows[0];
+    return res.json({ item });
+  } catch (err) {
+    console.error('[ioc-match-event-detail] failed', err);
+    return res.status(500).json({ message: 'Failed to fetch IOC match event detail' });
   }
 });
 

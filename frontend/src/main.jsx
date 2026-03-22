@@ -222,6 +222,7 @@ function AppShell({ children }) {
             <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
             <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
             <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
+            <Link to="/analytics/ioc-match-events" style={subMenuStyle(isActive('/analytics/ioc-match-events'))}>IOC Match Events</Link>
           </div>
           <Link to="/incident" style={menuStyle(isActive('/incident'))}>3. Incident</Link>
 
@@ -763,6 +764,129 @@ function AnalyticsStatisticsPage() {
               }) : <div style={{ color: '#94a3b8' }}>No timeline data</div>}
             </div>
           )}
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+function IOCMatchEventsPage() {
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [rows, setRows] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
+
+  const loadEvents = useCallback(async (q = '') => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/ioc/match-events', { params: { limit: 20, q: q || undefined } });
+      const items = data?.items || [];
+      setRows(items);
+      if (!items.length) {
+        setSelectedId(null);
+        setDetail(null);
+      }
+    } catch {
+      setRows([]);
+      setSelectedId(null);
+      setDetail(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadDetail = useCallback(async (id) => {
+    if (!id) return;
+    setDetailLoading(true);
+    try {
+      const { data } = await api.get(`/ioc/match-events/${id}`);
+      setDetail(data?.item || null);
+      setSelectedId(id);
+    } catch {
+      setDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEvents('').catch(() => {});
+  }, [loadEvents]);
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>IOC Match Events</h2>
+            <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Search and inspect IOC match events. Default list shows last 20 events.</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query).catch(() => {}); }}
+              placeholder="Search by ID / IOC / source / host / IP"
+              style={{ minWidth: 320 }}
+            />
+            <button onClick={() => loadEvents(query).catch(() => {})}>Search</button>
+            <button onClick={() => { setQuery(''); loadEvents('').catch(() => {}); }}>Reset</button>
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                <th style={{ width: 90 }}>ID</th>
+                <th style={{ width: 170 }}>Time</th>
+                <th>Matched Syslog event</th>
+                <th style={{ width: 230 }}>Matched IOC</th>
+                <th style={{ width: 220 }}>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+              ) : rows.length ? rows.map((evt) => (
+                <tr key={evt.id} style={{ borderTop: '1px solid #334155', background: Number(selectedId) === Number(evt.id) ? '#1e293b' : 'transparent' }}>
+                  <td>
+                    <button
+                      onClick={() => loadDetail(evt.id).catch(() => {})}
+                      style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                    >
+                      {evt.id}
+                    </button>
+                  </td>
+                  <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.source_name || '-'}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: 12, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
+            Event Detail {selectedId ? `#${selectedId}` : ''}
+          </div>
+          <div style={{ padding: 12 }}>
+            {detailLoading ? (
+              <div style={{ color: '#94a3b8' }}>Loading detail...</div>
+            ) : detail ? (
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.45, color: '#e2e8f0' }}>
+                {JSON.stringify(detail, null, 2)}
+              </pre>
+            ) : (
+              <div style={{ color: '#94a3b8' }}>Click an ID to view all details for that event.</div>
+            )}
+          </div>
         </div>
       </section>
     </AppShell>
@@ -2244,6 +2368,7 @@ function App() {
           <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
+          <Route path="/analytics/ioc-match-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
