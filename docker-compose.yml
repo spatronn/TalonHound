@@ -244,8 +244,8 @@ services:
       - PYTHONUNBUFFERED=1
       - ENABLED=1
       - MODE=mixed
-      - EPS=400
-      - DURATION_SECONDS=900
+      - EPS=50
+      - DURATION_SECONDS=86400
       - IOC_INSERT_RATIO=0
       - REALTIME_RATIO=0.5
       - RETRO_DELAY_MS=0
