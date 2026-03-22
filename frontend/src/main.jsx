@@ -953,10 +953,14 @@ function IOCMatchEventDetailsPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched IOC</div>
                 <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.matched_ioc || '-'}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>IOC Type</div>
+                <div style={{ textTransform: 'uppercase', fontWeight: 700 }}>{item.ioc_type || '-'}</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detection</div>
