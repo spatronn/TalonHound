@@ -71,6 +71,7 @@ export async function ensureSyslogTable() {
   await command(`
     CREATE TABLE IF NOT EXISTS syslog_logs (
       ts DateTime,
+      ingest_time DateTime DEFAULT now(),
       source String,
       host String,
       program String,
@@ -106,6 +107,7 @@ export async function ensureSyslogTable() {
     TTL ts + INTERVAL 30 DAY
   `);
 
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ingest_time DateTime DEFAULT now()`);
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parser_source LowCardinality(String) DEFAULT 'unknown'`);
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip Nullable(String)`);
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_query Nullable(String)`);

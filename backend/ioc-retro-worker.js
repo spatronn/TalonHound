@@ -175,7 +175,8 @@ async function runRetroactivePass() {
       ni.observable AS matched_ioc,
       ni.observable_type AS ioc_type,
       ni.confidence AS confidence,
-      ni.source_name AS source_name
+      ni.source_name AS source_name,
+      ni.updated_at AS ioc_updated_at
     FROM default.syslog_observables so
     ANY INNER JOIN new_iocs ni
       ON ni.observable = so.observable
@@ -195,19 +196,29 @@ async function runRetroactivePass() {
     return { ran: true, inserted: 0 };
   }
 
-  const mapped = rows.map((r) => ({
-    event_time: r.ts,
-    host: r.host,
-    source: r.source,
-    parser_source: r.parser_source,
-    destination_ip: r.parsed_ip || null,
-    protocol: 'dns',
-    matched_ioc: r.matched_ioc,
-    ioc_type: r.ioc_type,
-    source_name: r.source_name || null,
-    confidence: String(r.confidence || ''),
-    match_context: { retroactive: true, observable_source: 'syslog_observables' }
-  }));
+  const mapped = rows.map((r) => {
+    const eventMs = r?.ts ? new Date(r.ts).getTime() : 0;
+    const iocUpdatedMs = r?.ioc_updated_at ? new Date(r.ioc_updated_at).getTime() : 0;
+    const iocWasPresentAtIngest = eventMs > 0 && iocUpdatedMs > 0 ? iocUpdatedMs <= eventMs : false;
+    return {
+      event_time: r.ts,
+      host: r.host,
+      source: r.source,
+      parser_source: r.parser_source,
+      destination_ip: r.parsed_ip || null,
+      protocol: 'dns',
+      matched_ioc: r.matched_ioc,
+      ioc_type: r.ioc_type,
+      source_name: r.source_name || null,
+      confidence: String(r.confidence || ''),
+      match_context: {
+        retroactive: true,
+        observable_source: 'syslog_observables',
+        processing_path: 'retro',
+        ioc_was_present_at_ingest: iocWasPresentAtIngest
+      }
+    };
+  });
 
   const client = await pool.connect();
   try {

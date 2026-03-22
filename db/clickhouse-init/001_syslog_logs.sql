@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS syslog_logs (
   ts DateTime,
+  ingest_time DateTime DEFAULT now(),
   source String,
   host String,
   program String,
