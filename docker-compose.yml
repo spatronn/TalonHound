@@ -242,10 +242,10 @@ services:
     container_name: demo-loadgen
     environment:
       - PYTHONUNBUFFERED=1
-      - ENABLED=0
+      - ENABLED=1
       - MODE=mixed
       - EPS=400
-      - DURATION_SECONDS=0
+      - DURATION_SECONDS=900
       - IOC_INSERT_RATIO=0.3
       - REALTIME_RATIO=0.5
       - RETRO_DELAY_MS=1500
