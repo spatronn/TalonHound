@@ -552,7 +552,7 @@ function AnalyticsPage() {
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
                 <th style={{ width: 90 }}>ID</th>
-                <th style={{ width: 170 }}>Time</th>
+                <th style={{ width: 170 }}>Detected At</th>
                 <th>Matched Syslog event</th>
                 <th style={{ width: 230 }}>Matched IOC</th>
                 <th style={{ width: 150 }}>Detection</th>
@@ -569,7 +569,7 @@ function AnalyticsPage() {
                       {evt.id}
                     </Link>
                   </td>
-                  <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
+                  <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
                   <td>
@@ -837,7 +837,7 @@ function IOCMatchEventsPage() {
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
                 <th style={{ width: 90 }}>ID</th>
-                <th style={{ width: 170 }}>Time</th>
+                <th style={{ width: 170 }}>Detected At</th>
                 <th>Matched Syslog event</th>
                 <th style={{ width: 230 }}>Matched IOC</th>
                 <th style={{ width: 150 }}>Detection</th>
@@ -857,7 +857,7 @@ function IOCMatchEventsPage() {
                       {evt.id}
                     </button>
                   </td>
-                  <td>{formatUserDateTime(evt.event_time || evt.created_at)}</td>
+                  <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
                   <td>
@@ -929,8 +929,8 @@ function IOCMatchEventDetailsPage() {
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Event Time</div>
-              <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.event_time || item.created_at)}</div>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detected At</div>
+              <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.created_at || item.event_time)}</div>
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
