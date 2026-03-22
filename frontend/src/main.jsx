@@ -1101,21 +1101,25 @@ function SystemStatusPage() {
             </div>
           </div>
 
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>ClickHouse</div>
-              <span style={statusDot(clickhouseStatus.ok)}>● {clickhouseStatus.ok ? 'OK' : 'Down'}</span>
-            </div>
-            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+          {/* ClickHouse card moved below as full-width section */}
+        </div>
+
+        <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>ClickHouse</span>
+            <span style={statusDot(clickhouseStatus.ok)}>● {clickhouseStatus.ok ? 'OK' : 'Down'}</span>
+          </div>
+          <div style={{ padding: 12, background: '#0f172a' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
               <div><b>Table:</b> {clickhouseStatus.table || 'syslog_logs'}</div>
               <div><b>Version:</b> {clickhouseStatus.version || '-'}</div>
               <div><b>Rows:</b> {clickhouseStatus.rows ?? '-'}</div>
               <div><b>Size:</b> {clickhouseStatus.size_mb !== undefined ? `${clickhouseStatus.size_mb} MB` : '-'}</div>
               <div><b>Retro Pending IOC:</b> {clickhouseStatus.retro_pending_ioc ?? '-'}</div>
               <div><b>Retro Cursor TS:</b> {clickhouseStatus.retro_cursor_ts || '-'}</div>
-              {clickhouseStatus.note && <div style={{ color: '#94a3b8' }}>{clickhouseStatus.note}</div>}
-              {clickhouseStatus.error && <div style={{ color: '#f87171' }}>{clickhouseStatus.error}</div>}
             </div>
+            {clickhouseStatus.note && <div style={{ color: '#94a3b8', marginTop: 8 }}>{clickhouseStatus.note}</div>}
+            {clickhouseStatus.error && <div style={{ color: '#f87171', marginTop: 8 }}>{clickhouseStatus.error}</div>}
           </div>
         </div>
 
