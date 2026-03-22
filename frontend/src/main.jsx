@@ -1110,7 +1110,7 @@ function SystemStatusPage() {
             <span style={statusDot(clickhouseStatus.ok)}>● {clickhouseStatus.ok ? 'OK' : 'Down'}</span>
           </div>
           <div style={{ padding: 12, background: '#0f172a' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
               <div><b>Table:</b> {clickhouseStatus.table || 'syslog_logs'}</div>
               <div><b>Version:</b> {clickhouseStatus.version || '-'}</div>
               <div><b>Rows:</b> {clickhouseStatus.rows ?? '-'}</div>
