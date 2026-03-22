@@ -237,6 +237,29 @@ services:
       - ./db/clickhouse-config/low-io-logs.xml:/etc/clickhouse-server/config.d/low-io-logs.xml:ro
     restart: unless-stopped
 
+  loadgen:
+    build: ./tools/loadgen
+    container_name: demo-loadgen
+    environment:
+      - ENABLED=0
+      - MODE=mixed
+      - EPS=400
+      - DURATION_SECONDS=0
+      - IOC_INSERT_RATIO=0.3
+      - REALTIME_RATIO=0.5
+      - RETRO_DELAY_MS=1500
+      - STATS_EVERY_SEC=10
+      - SYSLOG_HOST=syslog-receiver
+      - SYSLOG_PORT=514
+      - IOC_API_BASE=http://backend:3000
+      - IOC_SOURCE_NAME=loadgen-smoke
+      - IOC_CONFIDENCE=90
+      - IOC_NOTE=loadgen random ioc
+    depends_on:
+      - backend
+      - syslog-receiver
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     container_name: demo-frontend
