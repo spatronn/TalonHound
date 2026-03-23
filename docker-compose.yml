@@ -241,9 +241,10 @@ services:
   loadgen:
     build: ./tools/loadgen
     container_name: demo-loadgen
+    profiles: ["manual"]
     environment:
       - PYTHONUNBUFFERED=1
-      - ENABLED=1
+      - ENABLED=0
       - MODE=mixed
       - EPS=100
       - DURATION_SECONDS=86400
