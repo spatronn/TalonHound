@@ -164,6 +164,28 @@ async function getBacklogFromState() {
   return { pending, lastTs, lastHash };
 }
 
+async function hasNewIocs() {
+  const st = await loadRetroState();
+  const lastTs = safeTs(st.last_processed_ts);
+  const lastHash = safeHash(st.last_processed_row_hash);
+  const rows = await clickhouseQuery(`
+    WITH new_iocs AS (
+      SELECT observable, observable_type, source_name, updated_at,
+             toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
+      FROM default.ioc_lookup
+      WHERE (
+        updated_at > toDateTime64('${lastTs}', 3)
+        OR (updated_at = toDateTime64('${lastTs}', 3)
+            AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${lastHash}'))
+      )
+      ORDER BY updated_at, toUInt64(row_hash)
+      LIMIT 1
+    )
+    SELECT 1 AS has_new FROM new_iocs LIMIT 1
+  `, { queryId: makeQueryId('retro-has-new-iocs'), logTag: 'ioc-retro.has-new-iocs' });
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 async function runRetroBatch({ maxNewIocs = RETRO_MAX_NEW_IOCS, batchSize = RETRO_BATCH_SIZE } = {}) {
   const passStartedAtMs = Date.now();
 
@@ -319,9 +341,22 @@ async function runAdaptiveLoop() {
     if (pending <= 0) break;
 
     await maybeSyncIocLookup(false);
+
+    // Strict pre-guard: do NOT run retro-pass when incremental IOC set is empty.
+    const hasIncrementalIocs = await hasNewIocs();
+    if (!hasIncrementalIocs) {
+      workerStatus.mode = 'idle';
+      workerStatus.lastBatchSize = 0;
+      workerStatus.backlogSize = 0;
+      const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_CATCHUP_COOLDOWN_MS);
+      logStatus(`processed_iocs=0 estimated_backlog=no mode=idle skip_reason=no_new_ioc_precheck sleep_ms=${skipSleepMs}`);
+      await sleep(skipSleepMs);
+      continue;
+    }
+
     const res = await runRetroBatch({ maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE });
 
-    // Guard: if incremental IOC set is empty, skip heavy loop path and back off.
+    // Secondary guard (defensive): if probe/race yields no IOC in batch step, back off.
     if (res?.skipped === 'no_new_ioc' || Number(res?.scannedNewIocs || 0) === 0) {
       workerStatus.mode = 'idle';
       workerStatus.lastRunDurationMs = Number(res?.durationMs || 0);
@@ -331,7 +366,7 @@ async function runAdaptiveLoop() {
       const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_CATCHUP_COOLDOWN_MS);
       logStatus(`processed_iocs=0 batch_duration_ms=${workerStatus.lastRunDurationMs} estimated_backlog=no mode=idle skip_reason=no_new_ioc sleep_ms=${skipSleepMs}`);
       await sleep(skipSleepMs);
-      break;
+      continue;
     }
 
     workerStatus.lastRunDurationMs = res.durationMs;
