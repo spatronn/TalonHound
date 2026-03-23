@@ -12,6 +12,7 @@ const pool = new Pool({
 });
 
 const RETRO_SCAN_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_RETRO_SCAN_INTERVAL_SECONDS || 3600), 30);
+const RETRO_POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_RETRO_POLL_INTERVAL_MS || 5000), 500);
 const RETRO_LOOKBACK_DAYS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_DAYS || 30), 1);
 const RETRO_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_BATCH_SIZE || 20000), 1000);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
@@ -320,6 +321,19 @@ async function runAdaptiveLoop() {
     await maybeSyncIocLookup(false);
     const res = await runRetroBatch({ maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE });
 
+    // Guard: if incremental IOC set is empty, skip heavy loop path and back off.
+    if (res?.skipped === 'no_new_ioc' || Number(res?.scannedNewIocs || 0) === 0) {
+      workerStatus.mode = 'idle';
+      workerStatus.lastRunDurationMs = Number(res?.durationMs || 0);
+      workerStatus.lastBatchSize = 0;
+      workerStatus.backlogSize = 0;
+      workerStatus.loops = loopCount;
+      const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_CATCHUP_COOLDOWN_MS);
+      logStatus(`processed_iocs=0 batch_duration_ms=${workerStatus.lastRunDurationMs} estimated_backlog=no mode=idle skip_reason=no_new_ioc sleep_ms=${skipSleepMs}`);
+      await sleep(skipSleepMs);
+      break;
+    }
+
     workerStatus.lastRunDurationMs = res.durationMs;
     workerStatus.lastBatchSize = res.scannedNewIocs;
     workerStatus.backlogSize = res.pendingAfter;
@@ -344,7 +358,7 @@ async function runAdaptiveLoop() {
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started adaptive=1 retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} catchup_max_loops=${RETRO_CATCHUP_MAX_LOOPS} fast_delay_ms=${RETRO_BATCH_FAST_DELAY_MS} slow_delay_ms=${RETRO_BATCH_SLOW_DELAY_MS} cooldown_ms=${RETRO_CATCHUP_COOLDOWN_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started adaptive=1 retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} poll_ms=${RETRO_POLL_INTERVAL_MS} catchup_max_loops=${RETRO_CATCHUP_MAX_LOOPS} fast_delay_ms=${RETRO_BATCH_FAST_DELAY_MS} slow_delay_ms=${RETRO_BATCH_SLOW_DELAY_MS} cooldown_ms=${RETRO_CATCHUP_COOLDOWN_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
