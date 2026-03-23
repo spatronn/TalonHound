@@ -111,6 +111,7 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
         toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
       FROM default.syslog_logs
       WHERE ts > toDateTime('${ingestTs}')
+        AND ts >= now() - INTERVAL 1 MINUTE
         AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
       LIMIT ${lim}
     )
