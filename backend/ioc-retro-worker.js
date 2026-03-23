@@ -22,12 +22,12 @@ const RETRO_NEW_IOC_WINDOW_HOURS = Math.max(Number(process.env.IOC_RETRO_NEW_IOC
 const RETRO_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_MAX_NEW_IOCS || 5000), 100);
 const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || process.env.IOC_LOOKUP_SYNC_ENABLED === 'true';
 
-// Adaptive catch-up controls (throttled; safe defaults for production use)
+// Stabilized catch-up controls (no query/mimari change, only pacing)
 const RETRO_CATCHUP_MAX_LOOPS = Math.max(Number(process.env.IOC_RETRO_CATCHUP_MAX_LOOPS || 10), 1);
-const RETRO_CATCHUP_DELAY_MS = Math.min(Math.max(Number(process.env.IOC_RETRO_CATCHUP_DELAY_MS || 1000), 500), 5000);
-const RETRO_DYNAMIC_BATCH_ENABLED = process.env.IOC_RETRO_DYNAMIC_BATCH_ENABLED === '1' || process.env.IOC_RETRO_DYNAMIC_BATCH_ENABLED === 'true';
-const RETRO_CATCHUP_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_CATCHUP_MAX_NEW_IOCS || (RETRO_MAX_NEW_IOCS * 4)), RETRO_MAX_NEW_IOCS);
-const RETRO_CATCHUP_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_CATCHUP_BATCH_SIZE || (RETRO_BATCH_SIZE * 2)), RETRO_BATCH_SIZE);
+const RETRO_BATCH_FAST_DELAY_MS = Math.max(Number(process.env.IOC_RETRO_BATCH_FAST_DELAY_MS || 500), 500);
+const RETRO_BATCH_SLOW_DELAY_MS = Math.max(Number(process.env.IOC_RETRO_BATCH_SLOW_DELAY_MS || 2000), 2000);
+const RETRO_BATCH_SLOW_THRESHOLD_MS = Math.max(Number(process.env.IOC_RETRO_BATCH_SLOW_THRESHOLD_MS || 2000), 1000);
+const RETRO_CATCHUP_COOLDOWN_MS = Math.min(Math.max(Number(process.env.IOC_RETRO_CATCHUP_COOLDOWN_MS || 4000), 3000), 5000);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -62,16 +62,6 @@ function logStatus(extra = '') {
   console.log(
     `[ioc-retro][status] mode=${workerStatus.mode} backlog=${workerStatus.backlogSize} last_duration_ms=${workerStatus.lastRunDurationMs} last_batch_size=${workerStatus.lastBatchSize} loops=${workerStatus.loops}${suffix}`
   );
-}
-
-function getEffectiveLimits(backlog) {
-  if (!RETRO_DYNAMIC_BATCH_ENABLED || backlog <= RETRO_MAX_NEW_IOCS) {
-    return { maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE };
-  }
-  return {
-    maxNewIocs: Math.min(Math.max(backlog, RETRO_MAX_NEW_IOCS), RETRO_CATCHUP_MAX_NEW_IOCS),
-    batchSize: RETRO_CATCHUP_BATCH_SIZE
-  };
 }
 
 async function loadRetroState() {
@@ -314,7 +304,7 @@ async function runAdaptiveLoop() {
   if (initial.pending <= 0) {
     workerStatus.mode = 'idle';
     workerStatus.loops = 0;
-    logStatus(`sleep_ms=${RETRO_SCAN_INTERVAL_SECONDS * 1000}`);
+    logStatus(`estimated_backlog=no sleep_ms=${RETRO_SCAN_INTERVAL_SECONDS * 1000}`);
     await sleep(RETRO_SCAN_INTERVAL_SECONDS * 1000);
     return;
   }
@@ -328,30 +318,33 @@ async function runAdaptiveLoop() {
     if (pending <= 0) break;
 
     await maybeSyncIocLookup(false);
-    const limits = getEffectiveLimits(pending);
-    const res = await runRetroBatch(limits);
+    const res = await runRetroBatch({ maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE });
 
     workerStatus.lastRunDurationMs = res.durationMs;
-    workerStatus.lastBatchSize = res.matchedRows;
+    workerStatus.lastBatchSize = res.scannedNewIocs;
     workerStatus.backlogSize = res.pendingAfter;
     workerStatus.lastRunAt = new Date().toISOString();
     workerStatus.loops = loopCount + 1;
 
-    logStatus(`loop=${loopCount + 1}/${RETRO_CATCHUP_MAX_LOOPS} scanned_new_iocs=${res.scannedNewIocs} inserted=${res.inserted} max_new_iocs=${limits.maxNewIocs} batch_size=${limits.batchSize}`);
+    const backlogState = res.pendingAfter > 0 ? 'yes' : 'no';
+    logStatus(`processed_iocs=${res.scannedNewIocs} batch_duration_ms=${res.durationMs} estimated_backlog=${backlogState} mode=${workerStatus.mode} loop=${loopCount + 1}/${RETRO_CATCHUP_MAX_LOOPS}`);
 
     loopCount += 1;
     if (stopping) break;
-    await sleep(RETRO_CATCHUP_DELAY_MS);
+
+    // Per-batch throttling: slow batches back off harder, fast batches still pause.
+    const batchDelayMs = res.durationMs > RETRO_BATCH_SLOW_THRESHOLD_MS ? RETRO_BATCH_SLOW_DELAY_MS : RETRO_BATCH_FAST_DELAY_MS;
+    await sleep(batchDelayMs);
   }
 
-  // Small cool-down keeps load predictable when backlog remains after max loop cap.
-  await sleep(RETRO_CATCHUP_DELAY_MS);
+  // Loop cap cooldown: avoid aggressive endless catch-up bursts under sustained backlog.
+  await sleep(RETRO_CATCHUP_COOLDOWN_MS);
 }
 
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started adaptive=1 retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} catchup_max_loops=${RETRO_CATCHUP_MAX_LOOPS} catchup_delay_ms=${RETRO_CATCHUP_DELAY_MS} dynamic_batch=${RETRO_DYNAMIC_BATCH_ENABLED ? 1 : 0} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started adaptive=1 retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} catchup_max_loops=${RETRO_CATCHUP_MAX_LOOPS} fast_delay_ms=${RETRO_BATCH_FAST_DELAY_MS} slow_delay_ms=${RETRO_BATCH_SLOW_DELAY_MS} cooldown_ms=${RETRO_CATCHUP_COOLDOWN_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
@@ -360,7 +353,7 @@ async function bootstrap() {
     } catch (err) {
       console.error('[ioc-retro] tick failed', err?.message || err);
       // Retry-safe backoff on errors, prevents tight error loops.
-      await sleep(RETRO_CATCHUP_DELAY_MS);
+      await sleep(RETRO_BATCH_SLOW_DELAY_MS);
     }
   }
 }
