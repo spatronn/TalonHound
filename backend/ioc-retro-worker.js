@@ -11,8 +11,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'demo'
 });
 
-const POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_RETRO_POLL_INTERVAL_MS || 10000), 1000);
-const RETRO_SCAN_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_RETRO_SCAN_INTERVAL_SECONDS || 3600), 300);
+const RETRO_SCAN_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_RETRO_SCAN_INTERVAL_SECONDS || 3600), 30);
 const RETRO_LOOKBACK_DAYS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_DAYS || 30), 1);
 const RETRO_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_BATCH_SIZE || 20000), 1000);
 const IOC_LOOKUP_SYNC_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_LOOKUP_SYNC_INTERVAL_SECONDS || 1800), 60);
@@ -23,14 +22,57 @@ const RETRO_NEW_IOC_WINDOW_HOURS = Math.max(Number(process.env.IOC_RETRO_NEW_IOC
 const RETRO_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_MAX_NEW_IOCS || 5000), 100);
 const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || process.env.IOC_LOOKUP_SYNC_ENABLED === 'true';
 
+// Adaptive catch-up controls (throttled; safe defaults for production use)
+const RETRO_CATCHUP_MAX_LOOPS = Math.max(Number(process.env.IOC_RETRO_CATCHUP_MAX_LOOPS || 10), 1);
+const RETRO_CATCHUP_DELAY_MS = Math.min(Math.max(Number(process.env.IOC_RETRO_CATCHUP_DELAY_MS || 1000), 500), 5000);
+const RETRO_DYNAMIC_BATCH_ENABLED = process.env.IOC_RETRO_DYNAMIC_BATCH_ENABLED === '1' || process.env.IOC_RETRO_DYNAMIC_BATCH_ENABLED === 'true';
+const RETRO_CATCHUP_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_CATCHUP_MAX_NEW_IOCS || (RETRO_MAX_NEW_IOCS * 4)), RETRO_MAX_NEW_IOCS);
+const RETRO_CATCHUP_BATCH_SIZE = Math.max(Number(process.env.IOC_RETRO_CATCHUP_BATCH_SIZE || (RETRO_BATCH_SIZE * 2)), RETRO_BATCH_SIZE);
+
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
-let lastRetroRunAtMs = 0;
+
+const workerStatus = {
+  backlogSize: 0,
+  lastRunDurationMs: 0,
+  lastBatchSize: 0,
+  mode: 'idle',
+  lastRunAt: null,
+  loops: 0
+};
 
 function makeQueryId(name) {
   return `ioc-retro:${name}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function safeTs(ts) {
+  return String(ts || '1970-01-01 00:00:00.000').replace('T', ' ').replace('Z', '');
+}
+
+function safeHash(hash) {
+  return String(hash || '0').replace(/[^0-9]/g, '') || '0';
+}
+
+function logStatus(extra = '') {
+  const suffix = extra ? ` ${extra}` : '';
+  console.log(
+    `[ioc-retro][status] mode=${workerStatus.mode} backlog=${workerStatus.backlogSize} last_duration_ms=${workerStatus.lastRunDurationMs} last_batch_size=${workerStatus.lastBatchSize} loops=${workerStatus.loops}${suffix}`
+  );
+}
+
+function getEffectiveLimits(backlog) {
+  if (!RETRO_DYNAMIC_BATCH_ENABLED || backlog <= RETRO_MAX_NEW_IOCS) {
+    return { maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE };
+  }
+  return {
+    maxNewIocs: Math.min(Math.max(backlog, RETRO_MAX_NEW_IOCS), RETRO_CATCHUP_MAX_NEW_IOCS),
+    batchSize: RETRO_CATCHUP_BATCH_SIZE
+  };
+}
 
 async function loadRetroState() {
   const rows = await clickhouseQuery(`
@@ -49,7 +91,7 @@ async function loadRetroState() {
 async function saveRetroState(ts, hash) {
   await clickhouseCommand(`
     INSERT INTO default.ioc_retro_state (worker_name, last_processed_ts, last_processed_row_hash, updated_at)
-    VALUES ('ioc-retro-v1', toDateTime64('${String(ts).replace('T',' ').replace('Z','')}', 3), '${String(hash)}', now64(3))
+    VALUES ('ioc-retro-v1', toDateTime64('${safeTs(ts)}', 3), '${String(hash)}', now64(3))
   `, { logTag: 'ioc-retro.state-save' });
 }
 
@@ -111,28 +153,32 @@ async function maybeSyncIocLookup(force = false) {
 }
 
 async function getPendingCount(ts, hash) {
-  const safeTs = String(ts || '1970-01-01 00:00:00.000').replace('T', ' ').replace('Z', '');
-  const safeHash = String(hash || '0').replace(/[^0-9]/g, '') || '0';
   const rows = await clickhouseQuery(`
     SELECT count() AS pending
     FROM default.ioc_lookup
     WHERE (
-      updated_at > toDateTime64('${safeTs}', 3)
-      OR (updated_at = toDateTime64('${safeTs}', 3)
-          AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash}'))
+      updated_at > toDateTime64('${safeTs(ts)}', 3)
+      OR (updated_at = toDateTime64('${safeTs(ts)}', 3)
+          AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(hash)}'))
     )
   `, { queryId: makeQueryId('pending-count'), logTag: 'ioc-retro.pending-count' });
   return Number(rows?.[0]?.pending || 0);
 }
 
-async function runRetroactivePass() {
+async function getBacklogFromState() {
+  const st = await loadRetroState();
+  const lastTs = safeTs(st.last_processed_ts);
+  const lastHash = safeHash(st.last_processed_row_hash);
+  const pending = await getPendingCount(lastTs, lastHash);
+  return { pending, lastTs, lastHash };
+}
+
+async function runRetroBatch({ maxNewIocs = RETRO_MAX_NEW_IOCS, batchSize = RETRO_BATCH_SIZE } = {}) {
   const passStartedAtMs = Date.now();
-  const now = passStartedAtMs;
-  if ((now - lastRetroRunAtMs) < (RETRO_SCAN_INTERVAL_SECONDS * 1000)) return { ran: false, inserted: 0 };
 
   const st = await loadRetroState();
-  const lastTs = String(st.last_processed_ts || '1970-01-01 00:00:00.000').replace('T', ' ').replace('Z', '');
-  const lastHash = String(st.last_processed_row_hash || '0').replace(/[^0-9]/g, '') || '0';
+  const lastTs = safeTs(st.last_processed_ts);
+  const lastHash = safeHash(st.last_processed_row_hash);
   const pendingBefore = await getPendingCount(lastTs, lastHash);
 
   const cursorRows = await clickhouseQuery(`
@@ -151,7 +197,7 @@ async function runRetroactivePass() {
             AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${lastHash}'))
       )
       ORDER BY updated_at, toUInt64(row_hash)
-      LIMIT ${RETRO_MAX_NEW_IOCS}
+      LIMIT ${maxNewIocs}
     )
     SELECT
       (SELECT count() FROM new_iocs) AS scanned_new_iocs,
@@ -163,9 +209,9 @@ async function runRetroactivePass() {
   `, { queryId: makeQueryId('retro-cursor-probe'), logTag: 'ioc-retro.cursor-probe' });
 
   if (!cursorRows.length) {
-    lastRetroRunAtMs = now;
-    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=0 matched_rows=0 inserted_or_upserted=0 pending_after=${pendingBefore} cursor_before_ts=${lastTs} cursor_after_ts=${lastTs} duration_ms=${Date.now() - passStartedAtMs} skipped=no_new_ioc`);
-    return { ran: true, inserted: 0, skipped: 'no_new_ioc' };
+    const durationMs = Date.now() - passStartedAtMs;
+    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=0 matched_rows=0 inserted_or_upserted=0 pending_after=${pendingBefore} cursor_before_ts=${lastTs} cursor_after_ts=${lastTs} duration_ms=${durationMs} skipped=no_new_ioc`);
+    return { ran: true, inserted: 0, matchedRows: 0, scannedNewIocs: 0, pendingBefore, pendingAfter: pendingBefore, durationMs, skipped: 'no_new_ioc' };
   }
 
   const rows = await clickhouseQuery(`
@@ -184,7 +230,7 @@ async function runRetroactivePass() {
             AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${lastHash}'))
       )
       ORDER BY updated_at, toUInt64(row_hash)
-      LIMIT ${RETRO_MAX_NEW_IOCS}
+      LIMIT ${maxNewIocs}
     )
     SELECT
       so.ts,
@@ -204,7 +250,7 @@ async function runRetroactivePass() {
      AND ni.observable_type = so.observable_type
     WHERE so.ts >= now() - INTERVAL ${RETRO_LOOKBACK_DAYS} DAY
     ORDER BY so.ts DESC
-    LIMIT ${RETRO_BATCH_SIZE}
+    LIMIT ${batchSize}
     SETTINGS max_threads = ${RETRO_CH_MAX_THREADS}, max_execution_time = ${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}
   `, { queryId: makeQueryId('retro-pass'), logTag: 'ioc-retro.retro-pass' });
 
@@ -214,10 +260,10 @@ async function runRetroactivePass() {
   await saveRetroState(cursorTs, cursorHash);
 
   if (!rows.length) {
-    lastRetroRunAtMs = now;
     const pendingAfter = await getPendingCount(cursorTs, cursorHash);
-    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=${scannedNewIocs} matched_rows=0 inserted_or_upserted=0 pending_after=${pendingAfter} cursor_before_ts=${lastTs} cursor_after_ts=${cursorTs} duration_ms=${Date.now() - passStartedAtMs}`);
-    return { ran: true, inserted: 0 };
+    const durationMs = Date.now() - passStartedAtMs;
+    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=${scannedNewIocs} matched_rows=0 inserted_or_upserted=0 pending_after=${pendingAfter} cursor_before_ts=${lastTs} cursor_after_ts=${cursorTs} duration_ms=${durationMs}`);
+    return { ran: true, inserted: 0, matchedRows: 0, scannedNewIocs, pendingBefore, pendingAfter, durationMs };
   }
 
   const mapped = rows.map((r) => {
@@ -249,10 +295,10 @@ async function runRetroactivePass() {
     await client.query('BEGIN');
     const inserted = await insertMatchEvents(client, mapped);
     await client.query('COMMIT');
-    lastRetroRunAtMs = now;
     const pendingAfter = await getPendingCount(cursorTs, cursorHash);
-    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=${scannedNewIocs} matched_rows=${rows.length} inserted_or_upserted=${inserted} pending_after=${pendingAfter} cursor_before_ts=${lastTs} cursor_after_ts=${cursorTs} duration_ms=${Date.now() - passStartedAtMs}`);
-    return { ran: true, inserted };
+    const durationMs = Date.now() - passStartedAtMs;
+    console.log(`[ioc-retro] pending_before=${pendingBefore} scanned_new_iocs=${scannedNewIocs} matched_rows=${rows.length} inserted_or_upserted=${inserted} pending_after=${pendingAfter} cursor_before_ts=${lastTs} cursor_after_ts=${cursorTs} duration_ms=${durationMs}`);
+    return { ran: true, inserted, matchedRows: rows.length, scannedNewIocs, pendingBefore, pendingAfter, durationMs };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -261,20 +307,61 @@ async function runRetroactivePass() {
   }
 }
 
+async function runAdaptiveLoop() {
+  const initial = await getBacklogFromState();
+  workerStatus.backlogSize = initial.pending;
+
+  if (initial.pending <= 0) {
+    workerStatus.mode = 'idle';
+    workerStatus.loops = 0;
+    logStatus(`sleep_ms=${RETRO_SCAN_INTERVAL_SECONDS * 1000}`);
+    await sleep(RETRO_SCAN_INTERVAL_SECONDS * 1000);
+    return;
+  }
+
+  workerStatus.mode = 'catchup';
+  let loopCount = 0;
+
+  while (!stopping && loopCount < RETRO_CATCHUP_MAX_LOOPS) {
+    const { pending } = await getBacklogFromState();
+    workerStatus.backlogSize = pending;
+    if (pending <= 0) break;
+
+    await maybeSyncIocLookup(false);
+    const limits = getEffectiveLimits(pending);
+    const res = await runRetroBatch(limits);
+
+    workerStatus.lastRunDurationMs = res.durationMs;
+    workerStatus.lastBatchSize = res.matchedRows;
+    workerStatus.backlogSize = res.pendingAfter;
+    workerStatus.lastRunAt = new Date().toISOString();
+    workerStatus.loops = loopCount + 1;
+
+    logStatus(`loop=${loopCount + 1}/${RETRO_CATCHUP_MAX_LOOPS} scanned_new_iocs=${res.scannedNewIocs} inserted=${res.inserted} max_new_iocs=${limits.maxNewIocs} batch_size=${limits.batchSize}`);
+
+    loopCount += 1;
+    if (stopping) break;
+    await sleep(RETRO_CATCHUP_DELAY_MS);
+  }
+
+  // Small cool-down keeps load predictable when backlog remains after max loop cap.
+  await sleep(RETRO_CATCHUP_DELAY_MS);
+}
 
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started poll_ms=${POLL_INTERVAL_MS} retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started adaptive=1 retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} catchup_max_loops=${RETRO_CATCHUP_MAX_LOOPS} catchup_delay_ms=${RETRO_CATCHUP_DELAY_MS} dynamic_batch=${RETRO_DYNAMIC_BATCH_ENABLED ? 1 : 0} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
       await maybeSyncIocLookup(false);
-      await runRetroactivePass();
+      await runAdaptiveLoop();
     } catch (err) {
       console.error('[ioc-retro] tick failed', err?.message || err);
+      // Retry-safe backoff on errors, prevents tight error loops.
+      await sleep(RETRO_CATCHUP_DELAY_MS);
     }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
 }
 
