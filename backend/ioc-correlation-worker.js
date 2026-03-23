@@ -108,11 +108,11 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
         parsed_query,
         ioc_ip,
         ioc_query,
-        toString(cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
+        toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
       FROM default.syslog_logs
-      WHERE (ingest_time > toDateTime('${ingestTs}')
-         OR (ingest_time = toDateTime('${ingestTs}')
-             AND cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')))
+      WHERE (ts > toDateTime('${ingestTs}')
+         OR (ts = toDateTime('${ingestTs}')
+             AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')))
         AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
       LIMIT ${lim}
     )
@@ -356,7 +356,7 @@ async function runBatch() {
     const inserted = await insertMatchEvents(client, matchedRows);
 
     const last = scanned[scanned.length - 1];
-    await saveState(client, last.ingest_time || last.ts, last.row_hash);
+    await saveState(client, last.ts, last.row_hash);
     await client.query('COMMIT');
 
     return {
