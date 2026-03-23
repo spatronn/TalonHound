@@ -114,7 +114,6 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
          OR (ingest_time = toDateTime('${ingestTs}')
              AND cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')))
         AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
-      ORDER BY ingest_time, toUInt64(row_hash)
       LIMIT ${lim}
     )
     SELECT
