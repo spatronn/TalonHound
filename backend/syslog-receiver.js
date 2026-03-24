@@ -16,7 +16,7 @@ const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS |
 const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 3000), 10);
 const MIN_FLUSH_SIZE = Math.max(Number(process.env.SYSLOG_MIN_FLUSH_SIZE || 1000), 1);
 const MIN_INSERT_ROWS = Math.max(Number(process.env.SYSLOG_MIN_INSERT_ROWS || MIN_FLUSH_SIZE), 1);
-const FORCE_FLUSH_MAX_MS = Math.max(Number(process.env.SYSLOG_FORCE_FLUSH_MAX_MS || 15000), FLUSH_INTERVAL_MS);
+const FORCE_FLUSH_MAX_MS = Math.max(Number(process.env.SYSLOG_FORCE_FLUSH_MAX_MS || 60000), FLUSH_INTERVAL_MS);
 const MAX_BUFFERED = Math.max(Number(process.env.SYSLOG_MAX_BUFFERED || 100000), BATCH_SIZE);
 const FLUSH_WORKERS = Math.max(Number(process.env.SYSLOG_FLUSH_WORKERS || 1), 1);
 const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 1024 * 1024), 256 * 1024);
@@ -352,13 +352,9 @@ async function flushOnce(force = false) {
     ? Math.max(0, Date.now() - new Date(queue[0].receivedAt).getTime())
     : 0;
 
-  if (!force && queue.length < BATCH_SIZE && queue.length < MIN_FLUSH_SIZE) {
-    armFlushTimer();
-    return;
-  }
-
-  // Timer fallback is allowed, but avoid tiny inserts unless backlog is aging out.
-  if (queue.length < MIN_INSERT_ROWS && oldestAgeMs < FORCE_FLUSH_MAX_MS) {
+  // Hard gate to avoid small-part writes:
+  // flush only if queue reached MIN_INSERT_ROWS OR oldest buffered event is too old.
+  if (queue.length < MIN_INSERT_ROWS && oldestAgeMs <= FORCE_FLUSH_MAX_MS) {
     armFlushTimer();
     return;
   }
