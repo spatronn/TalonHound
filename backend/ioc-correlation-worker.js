@@ -26,6 +26,8 @@ const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || p
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
+let lastReplayWindowAtMs = 0;
+const REPLAY_WINDOW_RUN_INTERVAL_MS = Math.max(Number(process.env.IOC_CORRELATION_REPLAY_RUN_INTERVAL_MS || 300000), 15000);
 
 function makeQueryId(name) {
   return `ioc-correlation:${name}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
@@ -395,35 +397,41 @@ async function tick() {
   let replayMatched = 0;
   let replayInserted = 0;
   let lateArrivalCount = 0;
-  try {
-    const replayRows = await clickhouseQuery(buildReplayQuery(), { queryId: makeQueryId('replay-window'), logTag: 'ioc-correlation.replay-window' });
-    replayScanned = replayRows.length;
-    if (replayRows.length) {
-      const mapped = toMatchRows(replayRows);
-      replayMatched = mapped.length;
-      lateArrivalCount = replayRows.filter((r) => {
-        const ets = r?.ts ? new Date(r.ts).getTime() : 0;
-        const its = r?.ingest_time ? new Date(r.ingest_time).getTime() : 0;
-        return ets > 0 && its > 0 && (its - ets) > 60_000;
-      }).length;
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        replayInserted = await insertMatchEvents(client, mapped);
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
+  const nowMs = Date.now();
+  const shouldRunReplay = (nowMs - lastReplayWindowAtMs) >= REPLAY_WINDOW_RUN_INTERVAL_MS;
+
+  if (shouldRunReplay) {
+    try {
+      const replayRows = await clickhouseQuery(buildReplayQuery(), { queryId: makeQueryId('replay-window'), logTag: 'ioc-correlation.replay-window' });
+      replayScanned = replayRows.length;
+      lastReplayWindowAtMs = nowMs;
+      if (replayRows.length) {
+        const mapped = toMatchRows(replayRows);
+        replayMatched = mapped.length;
+        lateArrivalCount = replayRows.filter((r) => {
+          const ets = r?.ts ? new Date(r.ts).getTime() : 0;
+          const its = r?.ingest_time ? new Date(r.ingest_time).getTime() : 0;
+          return ets > 0 && its > 0 && (its - ets) > 60_000;
+        }).length;
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          replayInserted = await insertMatchEvents(client, mapped);
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK');
+          throw err;
+        } finally {
+          client.release();
+        }
       }
+    } catch (err) {
+      console.error('[ioc-correlation] replay-window failed', err?.message || err);
     }
-  } catch (err) {
-    console.error('[ioc-correlation] replay-window failed', err?.message || err);
   }
 
   if (totalScanned > 0 || replayScanned > 0) {
-    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs}`);
+    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`);
   }
 }
 
