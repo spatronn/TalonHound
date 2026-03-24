@@ -12,4 +12,8 @@
   <processors_profile_log remove="1"/>
 
   <!-- Keep query_log enabled for lightweight troubleshooting -->
+
+  <!-- Throttle background merge workers to reduce idle→spike CPU bursts -->
+  <background_pool_size>2</background_pool_size>
+  <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
 </clickhouse>
