@@ -16,4 +16,9 @@
   <!-- Throttle background merge workers to reduce idle→spike CPU bursts -->
   <background_pool_size>2</background_pool_size>
   <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
+
+  <!-- Required with very small background pool to keep mutation sanity checks valid -->
+  <merge_tree>
+    <number_of_free_entries_in_pool_to_execute_mutation>1</number_of_free_entries_in_pool_to_execute_mutation>
+  </merge_tree>
 </clickhouse>
