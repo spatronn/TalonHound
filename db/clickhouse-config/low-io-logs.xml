@@ -1,4 +1,6 @@
 <clickhouse>
+  <asynchronous_metric_log remove="1"/>
+
   <background_pool_size>2</background_pool_size>
   <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
 
