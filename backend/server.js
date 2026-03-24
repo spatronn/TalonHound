@@ -646,6 +646,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                m.created_at,
                COALESCE(
                  NULLIF(CONCAT_WS(' | ',
+                   NULLIF(m.source, ''),
                    NULLIF(m.host_name, ''),
                    NULLIF(m.process_name, ''),
                    CASE
@@ -689,6 +690,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                m.created_at,
                COALESCE(
                  NULLIF(CONCAT_WS(' | ',
+                   NULLIF(m.source, ''),
                    NULLIF(m.host_name, ''),
                    NULLIF(m.process_name, ''),
                    CASE
@@ -784,7 +786,8 @@ app.get('/api/ioc/match-events', async (req, res) => {
           m.created_at,
           COALESCE(
             NULLIF(CONCAT_WS(' | ',
-              NULLIF(m.host_name, ''),
+              NULLIF(m.source, ''),
+                   NULLIF(m.host_name, ''),
               NULLIF(m.process_name, ''),
               CASE
                 WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
@@ -847,7 +850,8 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
            m.*,
            COALESCE(
              NULLIF(CONCAT_WS(' | ',
-               NULLIF(m.host_name, ''),
+               NULLIF(m.source, ''),
+                   NULLIF(m.host_name, ''),
                NULLIF(m.process_name, ''),
                CASE
                  WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
