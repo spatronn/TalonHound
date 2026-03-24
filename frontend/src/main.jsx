@@ -978,7 +978,7 @@ function IOCMatchEventDetailsPage() {
                 </span>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Source</div>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>IOC Source</div>
                 {Array.isArray(item.source_names) && item.source_names.length ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {item.source_names.map((src) => (
@@ -990,6 +990,8 @@ function IOCMatchEventDetailsPage() {
                 ) : (
                   <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source_name || '-'}</div>
                 )}
+                <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 10, marginBottom: 6 }}>Syslog Source</div>
+                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source || '-'}</div>
               </div>
             </div>
           </div>
