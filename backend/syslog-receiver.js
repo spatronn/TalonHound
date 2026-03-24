@@ -13,8 +13,10 @@ const SYSLOG_PORT = Number(process.env.SYSLOG_PORT || 514);
 const SYSLOG_HOST = process.env.SYSLOG_HOST || "0.0.0.0";
 const HEALTH_PORT = Number(process.env.SYSLOG_HEALTH_PORT || 8081);
 const FLUSH_INTERVAL_MS = Math.max(Number(process.env.SYSLOG_FLUSH_INTERVAL_MS || 3000), 200);
-const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 5000), 10);
-const MIN_FLUSH_SIZE = Math.max(Number(process.env.SYSLOG_MIN_FLUSH_SIZE || 200), 1);
+const BATCH_SIZE = Math.max(Number(process.env.SYSLOG_BATCH_SIZE || 3000), 10);
+const MIN_FLUSH_SIZE = Math.max(Number(process.env.SYSLOG_MIN_FLUSH_SIZE || 1000), 1);
+const MIN_INSERT_ROWS = Math.max(Number(process.env.SYSLOG_MIN_INSERT_ROWS || MIN_FLUSH_SIZE), 1);
+const FORCE_FLUSH_MAX_MS = Math.max(Number(process.env.SYSLOG_FORCE_FLUSH_MAX_MS || 15000), FLUSH_INTERVAL_MS);
 const MAX_BUFFERED = Math.max(Number(process.env.SYSLOG_MAX_BUFFERED || 100000), BATCH_SIZE);
 const FLUSH_WORKERS = Math.max(Number(process.env.SYSLOG_FLUSH_WORKERS || 1), 1);
 const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 1024 * 1024), 256 * 1024);
@@ -345,7 +347,18 @@ async function flushToClickhouse(events) {
 
 async function flushOnce(force = false) {
   if (queue.length === 0) return;
+
+  const oldestAgeMs = queue.length > 0
+    ? Math.max(0, Date.now() - new Date(queue[0].receivedAt).getTime())
+    : 0;
+
   if (!force && queue.length < BATCH_SIZE && queue.length < MIN_FLUSH_SIZE) {
+    armFlushTimer();
+    return;
+  }
+
+  // Timer fallback is allowed, but avoid tiny inserts unless backlog is aging out.
+  if (queue.length < MIN_INSERT_ROWS && oldestAgeMs < FORCE_FLUSH_MAX_MS) {
     armFlushTimer();
     return;
   }
@@ -391,7 +404,7 @@ udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
   try { udp.setRecvBufferSize(SOCKET_RCVBUF); } catch {}
   try { metrics.socket_recv_buffer_size = udp.getRecvBufferSize(); } catch { metrics.socket_recv_buffer_size = null; }
   console.log(`[syslog-receiver] listening udp://${SYSLOG_HOST}:${SYSLOG_PORT}`);
-  console.log(`[syslog-receiver] storage=${LOG_STORAGE} mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}`);
+  console.log(`[syslog-receiver] storage=${LOG_STORAGE} mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} min_insert=${MIN_INSERT_ROWS} force_flush_max_ms=${FORCE_FLUSH_MAX_MS} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}`);
 });
 
 const timers = [];
