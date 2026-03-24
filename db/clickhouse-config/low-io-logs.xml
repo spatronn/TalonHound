@@ -20,5 +20,6 @@
   <!-- Required with very small background pool to keep mutation sanity checks valid -->
   <merge_tree>
     <number_of_free_entries_in_pool_to_execute_mutation>1</number_of_free_entries_in_pool_to_execute_mutation>
+    <number_of_free_entries_in_pool_to_lower_max_size_of_merge>1</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
   </merge_tree>
 </clickhouse>
