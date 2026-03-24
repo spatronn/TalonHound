@@ -111,8 +111,6 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
         toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
       FROM default.syslog_logs
       WHERE ts > toDateTime('${ingestTs}')
-        AND ts >= now() - INTERVAL 1 MINUTE
-        AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
       LIMIT ${lim}
     )
     SELECT
@@ -209,6 +207,9 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
 function toMatchRows(chRows) {
   const out = [];
   for (const r of chRows) {
+    const hasIocQuery = typeof r.ioc_query === 'string' ? r.ioc_query.trim().length > 0 : Boolean(r.ioc_query);
+    const hasIocIp = typeof r.ioc_ip === 'string' ? r.ioc_ip.trim().length > 0 : Boolean(r.ioc_ip);
+    if (!hasIocQuery && !hasIocIp) continue;
     if (r.has_domain_match) {
       out.push({
         event_time: r.ts,
