@@ -1,26 +1,6 @@
-<clickhouse>
-  <!-- Demo low-I/O profile: reduce internal system-log write amplification -->
-  <logger>
-    <level>warning</level>
-  </logger>
-
-  <!-- High-churn internal logs disabled for this demo environment -->
-  <asynchronous_metric_log remove="1"/>
-  <metric_log remove="1"/>
-  <query_thread_log remove="1"/>
-  <trace_log remove="1"/>
-  <processors_profile_log remove="1"/>
-
-  <!-- Keep query_log enabled for lightweight troubleshooting -->
-
-  <!-- Throttle background merge workers to reduce idle→spike CPU bursts -->
-  <background_pool_size>2</background_pool_size>
-  <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
-
-  <!-- Required with very small background pool to keep mutation sanity checks valid -->
+<yandex>
   <merge_tree>
-    <number_of_free_entries_in_pool_to_execute_mutation>1</number_of_free_entries_in_pool_to_execute_mutation>
-    <number_of_free_entries_in_pool_to_lower_max_size_of_merge>1</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
-    <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>1</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    <background_pool_size>2</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>1</background_merges_mutations_concurrency_ratio>
   </merge_tree>
-</clickhouse>
+</yandex>
