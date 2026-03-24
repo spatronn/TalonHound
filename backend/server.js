@@ -139,7 +139,9 @@ async function withRawSyslogEvent(row) {
 
     const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
     if (isIp) {
-      whereParts.push(`(ioc_ip = '${escapeChString(matched)}' OR parsed_ip = '${escapeChString(matched)}')`);
+      // Fallback to raw payload search for retro/correlation paths where the matched IP
+      // may come from secondary observable extraction and not be present in ioc_ip/parsed_ip.
+      whereParts.push(`(ioc_ip = '${escapeChString(matched)}' OR parsed_ip = '${escapeChString(matched)}' OR position(raw, '${escapeChString(matched)}') > 0)`);
     } else {
       whereParts.push(`(ioc_query = '${escapeChString(matched)}' OR lower(ioc_query) = lower('${escapeChString(matched)}') OR lower(parsed_query) = lower('${escapeChString(matched)}'))`);
     }
