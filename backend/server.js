@@ -71,6 +71,15 @@ function parseRedisInfo(raw = '') {
     }, {});
 }
 
+function safeTs(v) {
+  return String(v || '1970-01-01 00:00:00.000').replace(/'/g, "''");
+}
+
+function safeHash(v) {
+  const n = String(v ?? '0').replace(/[^0-9]/g, '');
+  return n || '0';
+}
+
 function isValidIpv4(input) {
   const parts = String(input || '').split('.');
   if (parts.length !== 4) return false;
@@ -360,27 +369,61 @@ app.get('/api/system/status', async (req, res) => {
   const clickhouse = { ok: false };
   if (USE_CLICKHOUSE) {
     try {
-      const [verRows, rowRows, sizeRows, retroRows] = await Promise.all([
+      const [verRows, rowRows, sizeRows, retroStateRows] = await Promise.all([
         clickhouseQuery('SELECT version() AS version'),
         clickhouseQuery('SELECT count() AS rows FROM syslog_logs'),
         clickhouseQuery("SELECT sum(bytes_on_disk) AS bytes FROM system.parts WHERE active = 1 AND database = currentDatabase() AND table = 'syslog_logs'"),
         clickhouseQuery(`
-          WITH st AS (
-            SELECT last_processed_ts AS ts, toUInt64(last_processed_row_hash) AS h
-            FROM ioc_retro_state
-            WHERE worker_name = 'ioc-retro-v1'
-            ORDER BY updated_at DESC
-            LIMIT 1
-          )
           SELECT
-            count() AS pending,
-            toString((SELECT ts FROM st)) AS cursor_ts,
-            toString((SELECT h FROM st)) AS cursor_hash
-          FROM ioc_lookup
-          WHERE (updated_at > (SELECT ts FROM st))
-             OR (updated_at = (SELECT ts FROM st) AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > (SELECT h FROM st))
+            toString(last_processed_ts) AS cursor_ts,
+            toString(toUInt64(last_processed_row_hash)) AS cursor_hash,
+            toString(updated_at) AS state_updated_at
+          FROM ioc_retro_state
+          WHERE worker_name = 'ioc-retro-v1'
+          ORDER BY updated_at DESC
+          LIMIT 2
         `)
       ]);
+
+      const latestState = retroStateRows?.[0] || null;
+      const prevState = retroStateRows?.[1] || null;
+      let retroRows = [{ pending: 0, cursor_ts: null, cursor_hash: null }];
+      let lastRetroScannedIoc = null;
+
+      if (latestState?.cursor_ts && latestState?.cursor_hash) {
+        retroRows = await clickhouseQuery(`
+          SELECT
+            count() AS pending,
+            '${String(latestState.cursor_ts)}' AS cursor_ts,
+            '${String(latestState.cursor_hash)}' AS cursor_hash
+          FROM ioc_lookup
+          WHERE (updated_at > toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3))
+             OR (updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
+                 AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(latestState.cursor_hash))}'))
+        `);
+      }
+
+      if (latestState?.cursor_ts && latestState?.cursor_hash && prevState?.cursor_ts && prevState?.cursor_hash) {
+        const lastScannedRows = await clickhouseQuery(`
+          SELECT count() AS scanned
+          FROM ioc_lookup
+          WHERE (
+            updated_at > toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
+            OR (
+              updated_at = toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
+              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(prevState.cursor_hash))}')
+            )
+          )
+          AND (
+            updated_at < toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
+            OR (
+              updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
+              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) <= toUInt64('${safeHash(String(latestState.cursor_hash))}')
+            )
+          )
+        `);
+        lastRetroScannedIoc = Number(lastScannedRows?.[0]?.scanned || 0);
+      }
 
       const sizeBytes = Number(sizeRows?.[0]?.bytes || 0);
       clickhouse.ok = true;
@@ -390,11 +433,16 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.size_mb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
       clickhouse.table = 'syslog_logs';
       clickhouse.retro_pending_ioc = Number(retroRows?.[0]?.pending || 0);
-      clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || null;
-      clickhouse.retro_cursor_ts_iso = retroRows?.[0]?.cursor_ts
-        ? `${String(retroRows[0].cursor_ts).replace(' ', 'T')}Z`
+      clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || latestState?.cursor_ts || null;
+      clickhouse.retro_cursor_ts_iso = clickhouse.retro_cursor_ts
+        ? `${String(clickhouse.retro_cursor_ts).replace(' ', 'T')}Z`
         : null;
-      clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || null;
+      clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
+      clickhouse.retro_last_run_at = latestState?.state_updated_at || null;
+      clickhouse.retro_last_run_at_iso = latestState?.state_updated_at
+        ? `${String(latestState.state_updated_at).replace(' ', 'T')}Z`
+        : null;
+      clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
     } catch (err) {
       clickhouse.error = err.message;
     }
