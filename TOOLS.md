@@ -42,12 +42,11 @@ Add whatever helps you do your job. This is your cheat sheet.
 ## Demo VM
 
 - VM IP: `192.168.1.251`
-- SSH user: `spatronn`
+- SSH users: `spatronn`, `root`
 - SSH port: `22`
-- Auth: password-based login (password not stored in this file)
+- Auth: SSH key (primary: `~/.ssh/demo_vm_ed25519`)
 - Notes: same subnet demo target
-- Privilege flow: SSH as `spatronn`, then elevate with `sudo su` for root tasks
-- SSH secret path (host): `/home/spatronn/.openclaw/secrets/ssh.env` (chmod 600)
+- Privilege flow: `spatronn` erişimi mevcut; gerektiğinde direkt `root` erişimi de mevcut.
 
 ## GitHub Access (demo-runbook)
 

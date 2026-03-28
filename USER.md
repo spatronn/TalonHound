@@ -3,10 +3,12 @@
 _Learn about the person you're helping. Update this as you go._
 
 - **Name:**
-- **What to call them:**
+- **What to call them:** kirvem
 - **Pronouns:** _(optional)_
-- **Timezone:**
+- **Timezone:** UTC
 - **Notes:**
+  - Teknik doğrulama isteyen, hızlı ve net yanıt tercih ediyor.
+  - Session açılışlarında aynı erişim bilgilerini tekrar sormamı istemiyor; kalıcı notlardan ilerlememi istiyor.
 
 ## Context
 
