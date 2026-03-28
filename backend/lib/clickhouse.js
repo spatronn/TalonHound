@@ -192,7 +192,7 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
     WHERE observable IS NOT NULL
       AND observable != ''
-      AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh')
+      AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'md5', 'sha1', 'sha256')
       AND (
         toDateTime64(created_at, 3) > toDateTime64('${String(lastTs).replace('T', ' ').replace('Z', '')}', 3)
         OR (
