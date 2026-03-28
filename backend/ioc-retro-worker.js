@@ -23,12 +23,12 @@ const RETRO_NEW_IOC_WINDOW_HOURS = Math.max(Number(process.env.IOC_RETRO_NEW_IOC
 const RETRO_MAX_NEW_IOCS = Math.max(Number(process.env.IOC_RETRO_MAX_NEW_IOCS || 5000), 100);
 const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || process.env.IOC_LOOKUP_SYNC_ENABLED === 'true';
 
-// Stabilized catch-up controls (no query/mimari change, only pacing)
-const RETRO_CATCHUP_MAX_LOOPS = Math.max(Number(process.env.IOC_RETRO_CATCHUP_MAX_LOOPS || 10), 1);
-const RETRO_BATCH_FAST_DELAY_MS = Math.max(Number(process.env.IOC_RETRO_BATCH_FAST_DELAY_MS || 500), 500);
-const RETRO_BATCH_SLOW_DELAY_MS = Math.max(Number(process.env.IOC_RETRO_BATCH_SLOW_DELAY_MS || 2000), 2000);
-const RETRO_BATCH_SLOW_THRESHOLD_MS = Math.max(Number(process.env.IOC_RETRO_BATCH_SLOW_THRESHOLD_MS || 2000), 1000);
-const RETRO_CATCHUP_COOLDOWN_MS = Math.min(Math.max(Number(process.env.IOC_RETRO_CATCHUP_COOLDOWN_MS || 4000), 3000), 5000);
+// Single-pass autonomous pacing (no inner catch-up loop)
+const RETRO_BACKLOG_FAST_POLL_MS = Math.max(Number(process.env.IOC_RETRO_BACKLOG_FAST_POLL_MS || 15000), 3000);
+const RETRO_BACKLOG_MEDIUM_POLL_MS = Math.max(Number(process.env.IOC_RETRO_BACKLOG_MEDIUM_POLL_MS || 60000), 5000);
+const RETRO_BACKLOG_THRESHOLD_HIGH = Math.max(Number(process.env.IOC_RETRO_BACKLOG_THRESHOLD_HIGH || 10000), 100);
+const RETRO_BACKLOG_THRESHOLD_MEDIUM = Math.max(Number(process.env.IOC_RETRO_BACKLOG_THRESHOLD_MEDIUM || 500), 10);
+const RETRO_SLOW_TICK_THRESHOLD_MS = Math.max(Number(process.env.IOC_RETRO_SLOW_TICK_THRESHOLD_MS || 4000), 1000);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -63,6 +63,18 @@ function logStatus(extra = '') {
   console.log(
     `[ioc-retro][status] mode=${workerStatus.mode} backlog=${workerStatus.backlogSize} last_duration_ms=${workerStatus.lastRunDurationMs} last_batch_size=${workerStatus.lastBatchSize} loops=${workerStatus.loops}${suffix}`
   );
+}
+
+function compareCursor(aTs, aHash, bTs, bHash) {
+  const ta = new Date(safeTs(aTs).replace(' ', 'T') + 'Z').getTime();
+  const tb = new Date(safeTs(bTs).replace(' ', 'T') + 'Z').getTime();
+  if (ta > tb) return 1;
+  if (ta < tb) return -1;
+  const ha = BigInt(safeHash(aHash));
+  const hb = BigInt(safeHash(bHash));
+  if (ha > hb) return 1;
+  if (ha < hb) return -1;
+  return 0;
 }
 
 async function loadRetroState() {
@@ -270,6 +282,22 @@ async function runRetroBatch({ maxNewIocs = RETRO_MAX_NEW_IOCS, batchSize = RETR
   const scannedNewIocs = Number(cursorRows?.[0]?.scanned_new_iocs || 0);
   const cursorTs = String(cursorRows[0].updated_at || lastTs);
   const cursorHash = String(cursorRows[0].row_hash || lastHash);
+
+  // Monotonicity guard: never move cursor backward.
+  if (compareCursor(cursorTs, cursorHash, lastTs, lastHash) < 0) {
+    console.warn(`[ioc-retro] cursor regression blocked cursor_before_ts=${lastTs} cursor_before_hash=${lastHash} cursor_after_ts=${cursorTs} cursor_after_hash=${cursorHash}`);
+    return {
+      ran: false,
+      inserted: 0,
+      matchedRows: 0,
+      scannedNewIocs: 0,
+      pendingBefore,
+      pendingAfter: pendingBefore,
+      durationMs: Date.now() - passStartedAtMs,
+      skipped: 'cursor_regression'
+    };
+  }
+
   await saveRetroState(cursorTs, cursorHash);
 
   if (!rows.length) {
@@ -323,77 +351,72 @@ async function runRetroBatch({ maxNewIocs = RETRO_MAX_NEW_IOCS, batchSize = RETR
 async function runAdaptiveLoop() {
   const initial = await getBacklogFromState();
   workerStatus.backlogSize = initial.pending;
+  workerStatus.loops = 1; // single-pass tick
 
   if (initial.pending <= 0) {
     workerStatus.mode = 'idle';
-    workerStatus.loops = 0;
     logStatus(`estimated_backlog=no sleep_ms=${RETRO_SCAN_INTERVAL_SECONDS * 1000}`);
     await sleep(RETRO_SCAN_INTERVAL_SECONDS * 1000);
     return;
   }
 
-  workerStatus.mode = 'catchup';
-  let loopCount = 0;
+  await maybeSyncIocLookup(false);
 
-  while (!stopping && loopCount < RETRO_CATCHUP_MAX_LOOPS) {
-    const { pending } = await getBacklogFromState();
-    workerStatus.backlogSize = pending;
-    if (pending <= 0) break;
-
-    await maybeSyncIocLookup(false);
-
-    // Strict pre-guard: do NOT run retro-pass when incremental IOC set is empty.
-    const hasIncrementalIocs = await hasNewIocs();
-    if (!hasIncrementalIocs) {
-      workerStatus.mode = 'idle';
-      workerStatus.lastBatchSize = 0;
-      workerStatus.backlogSize = 0;
-      const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_CATCHUP_COOLDOWN_MS);
-      logStatus(`processed_iocs=0 estimated_backlog=no mode=idle skip_reason=no_new_ioc_precheck sleep_ms=${skipSleepMs}`);
-      await sleep(skipSleepMs);
-      continue;
-    }
-
-    const res = await runRetroBatch({ maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE });
-
-    // Secondary guard (defensive): if probe/race yields no IOC in batch step, back off.
-    if (res?.skipped === 'no_new_ioc' || Number(res?.scannedNewIocs || 0) === 0) {
-      workerStatus.mode = 'idle';
-      workerStatus.lastRunDurationMs = Number(res?.durationMs || 0);
-      workerStatus.lastBatchSize = 0;
-      workerStatus.backlogSize = 0;
-      workerStatus.loops = loopCount;
-      const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_CATCHUP_COOLDOWN_MS);
-      logStatus(`processed_iocs=0 batch_duration_ms=${workerStatus.lastRunDurationMs} estimated_backlog=no mode=idle skip_reason=no_new_ioc sleep_ms=${skipSleepMs}`);
-      await sleep(skipSleepMs);
-      continue;
-    }
-
-    workerStatus.lastRunDurationMs = res.durationMs;
-    workerStatus.lastBatchSize = res.scannedNewIocs;
-    workerStatus.backlogSize = res.pendingAfter;
-    workerStatus.lastRunAt = new Date().toISOString();
-    workerStatus.loops = loopCount + 1;
-
-    const backlogState = res.pendingAfter > 0 ? 'yes' : 'no';
-    logStatus(`processed_iocs=${res.scannedNewIocs} batch_duration_ms=${res.durationMs} estimated_backlog=${backlogState} mode=${workerStatus.mode} loop=${loopCount + 1}/${RETRO_CATCHUP_MAX_LOOPS}`);
-
-    loopCount += 1;
-    if (stopping) break;
-
-    // Per-batch throttling: slow batches back off harder, fast batches still pause.
-    const batchDelayMs = res.durationMs > RETRO_BATCH_SLOW_THRESHOLD_MS ? RETRO_BATCH_SLOW_DELAY_MS : RETRO_BATCH_FAST_DELAY_MS;
-    await sleep(batchDelayMs);
+  // Strict pre-guard: do NOT run retro-pass when incremental IOC set is empty.
+  const hasIncrementalIocs = await hasNewIocs();
+  if (!hasIncrementalIocs) {
+    workerStatus.mode = 'idle';
+    workerStatus.lastBatchSize = 0;
+    workerStatus.backlogSize = 0;
+    const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_BACKLOG_MEDIUM_POLL_MS);
+    logStatus(`processed_iocs=0 estimated_backlog=no mode=idle skip_reason=no_new_ioc_precheck sleep_ms=${skipSleepMs}`);
+    await sleep(skipSleepMs);
+    return;
   }
 
-  // Loop cap cooldown: avoid aggressive endless catch-up bursts under sustained backlog.
-  await sleep(RETRO_CATCHUP_COOLDOWN_MS);
+  workerStatus.mode = 'single-pass';
+  const res = await runRetroBatch({ maxNewIocs: RETRO_MAX_NEW_IOCS, batchSize: RETRO_BATCH_SIZE });
+
+  workerStatus.lastRunDurationMs = Number(res?.durationMs || 0);
+  workerStatus.lastBatchSize = Number(res?.scannedNewIocs || 0);
+  workerStatus.backlogSize = Number(res?.pendingAfter ?? initial.pending);
+  workerStatus.lastRunAt = new Date().toISOString();
+
+  // Secondary guard (defensive): no IOC in effective batch.
+  if (res?.skipped === 'no_new_ioc' || res?.skipped === 'cursor_regression' || Number(res?.scannedNewIocs || 0) === 0) {
+    workerStatus.mode = 'idle';
+    const skipSleepMs = Math.max(RETRO_POLL_INTERVAL_MS, RETRO_BACKLOG_MEDIUM_POLL_MS);
+    logStatus(`processed_iocs=0 batch_duration_ms=${workerStatus.lastRunDurationMs} estimated_backlog=no mode=idle skip_reason=${res?.skipped || 'no_new_ioc'} sleep_ms=${skipSleepMs}`);
+    await sleep(skipSleepMs);
+    return;
+  }
+
+  const backlogAfter = Number(res?.pendingAfter || 0);
+  let nextSleepMs = RETRO_SCAN_INTERVAL_SECONDS * 1000;
+  let pace = 'normal';
+
+  if (backlogAfter > RETRO_BACKLOG_THRESHOLD_HIGH) {
+    nextSleepMs = RETRO_BACKLOG_FAST_POLL_MS;
+    pace = 'fast';
+  } else if (backlogAfter > RETRO_BACKLOG_THRESHOLD_MEDIUM) {
+    nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
+    pace = 'medium';
+  }
+
+  if (workerStatus.lastRunDurationMs > RETRO_SLOW_TICK_THRESHOLD_MS) {
+    nextSleepMs = Math.max(nextSleepMs, RETRO_BACKLOG_MEDIUM_POLL_MS);
+    pace = `${pace}+slowguard`;
+  }
+
+  const backlogState = backlogAfter > 0 ? 'yes' : 'no';
+  logStatus(`processed_iocs=${workerStatus.lastBatchSize} batch_duration_ms=${workerStatus.lastRunDurationMs} estimated_backlog=${backlogState} pace=${pace} sleep_ms=${nextSleepMs}`);
+  await sleep(nextSleepMs);
 }
 
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started adaptive=1 retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} poll_ms=${RETRO_POLL_INTERVAL_MS} catchup_max_loops=${RETRO_CATCHUP_MAX_LOOPS} fast_delay_ms=${RETRO_BATCH_FAST_DELAY_MS} slow_delay_ms=${RETRO_BATCH_SLOW_DELAY_MS} cooldown_ms=${RETRO_CATCHUP_COOLDOWN_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started adaptive=1 mode=single-pass retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} poll_ms=${RETRO_POLL_INTERVAL_MS} backlog_fast_poll_ms=${RETRO_BACKLOG_FAST_POLL_MS} backlog_medium_poll_ms=${RETRO_BACKLOG_MEDIUM_POLL_MS} backlog_high=${RETRO_BACKLOG_THRESHOLD_HIGH} backlog_medium=${RETRO_BACKLOG_THRESHOLD_MEDIUM} slow_tick_threshold_ms=${RETRO_SLOW_TICK_THRESHOLD_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} max_new_iocs=${RETRO_MAX_NEW_IOCS} batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
@@ -402,7 +425,7 @@ async function bootstrap() {
     } catch (err) {
       console.error('[ioc-retro] tick failed', err?.message || err);
       // Retry-safe backoff on errors, prevents tight error loops.
-      await sleep(RETRO_BATCH_SLOW_DELAY_MS);
+      await sleep(RETRO_BACKLOG_MEDIUM_POLL_MS);
     }
   }
 }
