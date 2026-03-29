@@ -28,6 +28,8 @@ const RETRO_DRAIN_POLL_MS = Math.max(Number(process.env.IOC_RETRO_DRAIN_POLL_MS 
 const RETRO_BACKLOG_THRESHOLD_HIGH = Math.max(Number(process.env.IOC_RETRO_BACKLOG_THRESHOLD_HIGH || 10000), 100);
 const RETRO_BACKLOG_THRESHOLD_MEDIUM = Math.max(Number(process.env.IOC_RETRO_BACKLOG_THRESHOLD_MEDIUM || 500), 10);
 const RETRO_SLOW_TICK_THRESHOLD_MS = Math.max(Number(process.env.IOC_RETRO_SLOW_TICK_THRESHOLD_MS || 4000), 1000);
+const RETRO_ALIGN_MINUTE = Math.min(Math.max(Number(process.env.IOC_RETRO_ALIGN_MINUTE || 10), 0), 59);
+const RETRO_ALIGN_ENABLED = process.env.IOC_RETRO_ALIGN_ENABLED === '0' ? false : true;
 
 /** Start-of-time cursor: tuple (ts, raw_row_hash) > this includes all real syslog rows. */
 const MATCH_CURSOR_TS_START = '1970-01-01 00:00:00';
@@ -51,6 +53,22 @@ function makeQueryId(name) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getIdleSleepMs() {
+  if (!RETRO_ALIGN_ENABLED) return RETRO_SCAN_INTERVAL_SECONDS * 1000;
+
+  const now = new Date();
+  const next = new Date(now);
+  next.setUTCSeconds(0, 0);
+  next.setUTCMinutes(RETRO_ALIGN_MINUTE);
+
+  if (next <= now) {
+    next.setUTCHours(next.getUTCHours() + 1);
+  }
+
+  const ms = next.getTime() - now.getTime();
+  return Math.max(ms, 1000);
 }
 
 function safeTs(ts) {
@@ -536,8 +554,9 @@ async function runAdaptiveLoop() {
 
   if (initial.pending <= 0) {
     workerStatus.mode = 'idle';
-    logStatus(`estimated_backlog=no sleep_ms=${RETRO_SCAN_INTERVAL_SECONDS * 1000}`);
-    await sleep(RETRO_SCAN_INTERVAL_SECONDS * 1000);
+    const idleSleepMs = getIdleSleepMs();
+    logStatus(`estimated_backlog=no sleep_ms=${idleSleepMs}`);
+    await sleep(idleSleepMs);
     return;
   }
 
@@ -571,8 +590,8 @@ async function runAdaptiveLoop() {
   }
 
   const backlogAfter = Number(res?.pendingAfter || 0);
-  let nextSleepMs = RETRO_SCAN_INTERVAL_SECONDS * 1000;
-  let pace = 'normal';
+  let nextSleepMs = getIdleSleepMs();
+  let pace = RETRO_ALIGN_ENABLED ? `normal-aligned-${String(RETRO_ALIGN_MINUTE).padStart(2, '0')}` : 'normal';
 
   // Auto-drain mode: while backlog exists, keep near-term ticks (no inner loop).
   if (backlogAfter > 0) {
@@ -602,7 +621,7 @@ async function runAdaptiveLoop() {
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started adaptive=1 mode=single-pass+ioc-pagination retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} poll_ms=${RETRO_POLL_INTERVAL_MS} drain_poll_ms=${RETRO_DRAIN_POLL_MS} backlog_fast_poll_ms=${RETRO_BACKLOG_FAST_POLL_MS} backlog_medium_poll_ms=${RETRO_BACKLOG_MEDIUM_POLL_MS} backlog_high=${RETRO_BACKLOG_THRESHOLD_HIGH} backlog_medium=${RETRO_BACKLOG_THRESHOLD_MEDIUM} slow_tick_threshold_ms=${RETRO_SLOW_TICK_THRESHOLD_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} (log_only) batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started adaptive=1 mode=single-pass+ioc-pagination retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} align_enabled=${RETRO_ALIGN_ENABLED ? 1 : 0} align_minute=${RETRO_ALIGN_MINUTE} poll_ms=${RETRO_POLL_INTERVAL_MS} drain_poll_ms=${RETRO_DRAIN_POLL_MS} backlog_fast_poll_ms=${RETRO_BACKLOG_FAST_POLL_MS} backlog_medium_poll_ms=${RETRO_BACKLOG_MEDIUM_POLL_MS} backlog_high=${RETRO_BACKLOG_THRESHOLD_HIGH} backlog_medium=${RETRO_BACKLOG_THRESHOLD_MEDIUM} slow_tick_threshold_ms=${RETRO_SLOW_TICK_THRESHOLD_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} (log_only) batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
