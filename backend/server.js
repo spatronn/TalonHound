@@ -80,6 +80,12 @@ function safeHash(v) {
   return n || '0';
 }
 
+function isoFromEpochMs(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n).toISOString();
+}
+
 function isValidIpv4(input) {
   const parts = String(input || '').split('.');
   if (parts.length !== 4) return false;
@@ -376,8 +382,10 @@ app.get('/api/system/status', async (req, res) => {
         clickhouseQuery(`
           SELECT
             toString(last_processed_ts) AS cursor_ts,
+            toUInt64(toUnixTimestamp64Milli(last_processed_ts)) AS cursor_ts_ms,
             toString(toUInt64(last_processed_row_hash)) AS cursor_hash,
-            toString(updated_at) AS state_updated_at
+            toString(updated_at) AS state_updated_at,
+            toUInt64(toUnixTimestamp64Milli(updated_at)) AS state_updated_at_ms
           FROM ioc_retro_state
           WHERE worker_name = 'ioc-retro-v1'
           ORDER BY updated_at DESC
@@ -434,14 +442,10 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.table = 'syslog_logs';
       clickhouse.retro_pending_ioc = Number(retroRows?.[0]?.pending || 0);
       clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || latestState?.cursor_ts || null;
-      clickhouse.retro_cursor_ts_iso = clickhouse.retro_cursor_ts
-        ? `${String(clickhouse.retro_cursor_ts).replace(' ', 'T')}Z`
-        : null;
+      clickhouse.retro_cursor_ts_iso = isoFromEpochMs(latestState?.cursor_ts_ms);
       clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
       clickhouse.retro_last_run_at = latestState?.state_updated_at || null;
-      clickhouse.retro_last_run_at_iso = latestState?.state_updated_at
-        ? `${String(latestState.state_updated_at).replace(' ', 'T')}Z`
-        : null;
+      clickhouse.retro_last_run_at_iso = isoFromEpochMs(latestState?.state_updated_at_ms);
       clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
     } catch (err) {
       clickhouse.error = err.message;
