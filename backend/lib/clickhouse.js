@@ -167,6 +167,15 @@ export async function ensureIocCorrelationAssets() {
   await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_ioc_confidence Int32 DEFAULT 0`);
   await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_ioc_row_hash String DEFAULT ''`);
   await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS last_run_duration_ms Int32 DEFAULT 0`);
+  // Window-bulk retro state (v3)
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS chunk_active UInt8 DEFAULT 0`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS chunk_end_ts DateTime64(3) DEFAULT toDateTime64('1970-01-01 00:00:00.000', 3)`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS chunk_end_row_hash String DEFAULT '0'`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS chunk_ioc_count UInt32 DEFAULT 0`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS chunk_rows_processed UInt64 DEFAULT 0`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_observable String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_observable_type String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_source_name String DEFAULT ''`);
 }
 
 function confidenceToInt(v) {

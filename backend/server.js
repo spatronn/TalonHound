@@ -386,7 +386,12 @@ app.get('/api/system/status', async (req, res) => {
             toString(toUInt64(last_processed_row_hash)) AS cursor_hash,
             toString(updated_at) AS state_updated_at,
             toUInt64(toUnixTimestamp64Milli(updated_at)) AS state_updated_at_ms,
-            toInt32(last_run_duration_ms) AS last_run_duration_ms
+            toInt32(last_run_duration_ms) AS last_run_duration_ms,
+            toUInt8(chunk_active) AS chunk_active,
+            toString(chunk_end_ts) AS chunk_end_ts,
+            toString(chunk_end_row_hash) AS chunk_end_row_hash,
+            toUInt32(chunk_ioc_count) AS chunk_ioc_count,
+            toUInt64(chunk_rows_processed) AS chunk_rows_processed
           FROM ioc_retro_state
           WHERE worker_name = 'ioc-retro-v1'
           ORDER BY updated_at DESC
@@ -403,6 +408,8 @@ app.get('/api/system/status', async (req, res) => {
         retroRows = await clickhouseQuery(`
           SELECT
             count() AS pending,
+            min(updated_at) AS pending_min_ts,
+            max(updated_at) AS pending_max_ts,
             '${String(latestState.cursor_ts)}' AS cursor_ts,
             '${String(latestState.cursor_hash)}' AS cursor_hash
           FROM ioc_lookup
@@ -449,6 +456,13 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.retro_last_run_at_iso = isoFromEpochMs(latestState?.state_updated_at_ms);
       clickhouse.retro_last_duration_ms = Number(latestState?.last_run_duration_ms || 0);
       clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
+      clickhouse.retro_pending_min_ts = retroRows?.[0]?.pending_min_ts || null;
+      clickhouse.retro_pending_max_ts = retroRows?.[0]?.pending_max_ts || null;
+      clickhouse.retro_chunk_active = Number(latestState?.chunk_active || 0);
+      clickhouse.retro_chunk_end_ts = latestState?.chunk_end_ts || null;
+      clickhouse.retro_chunk_end_row_hash = latestState?.chunk_end_row_hash || null;
+      clickhouse.retro_chunk_ioc_count = Number(latestState?.chunk_ioc_count || 0);
+      clickhouse.retro_chunk_rows_processed = Number(latestState?.chunk_rows_processed || 0);
     } catch (err) {
       clickhouse.error = err.message;
     }
