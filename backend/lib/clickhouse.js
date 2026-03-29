@@ -156,6 +156,16 @@ export async function ensureIocCorrelationAssets() {
     ENGINE = ReplacingMergeTree(updated_at)
     ORDER BY worker_name
   `);
+
+  // Retro worker v2: IOC stream cursor + per-IOC match pagination (no OFFSET).
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_observable String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_observable_type String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_source_name String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_ts DateTime DEFAULT toDateTime(0)`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_raw_hash String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_ioc_updated_at DateTime64(3) DEFAULT toDateTime64('1970-01-01 00:00:00.000', 3)`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_ioc_confidence Int32 DEFAULT 0`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_ioc_row_hash String DEFAULT ''`);
 }
 
 function confidenceToInt(v) {
