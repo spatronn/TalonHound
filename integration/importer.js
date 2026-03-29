@@ -1033,3 +1033,98 @@ export async function runMalwareBazaarImport() {
     client.release();
   }
 }
+
+export async function runPhishtankImport() {
+  const client = await pool.connect();
+  let runId = null;
+
+  try {
+    await client.query('BEGIN');
+
+    const lockResult = await client.query('SELECT pg_try_advisory_lock(942006) AS acquired');
+    if (!lockResult.rows[0]?.acquired) {
+      await client.query('ROLLBACK');
+      return { skipped: true, reason: 'lock_not_acquired' };
+    }
+
+    const runInsert = await client.query(
+      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
+       VALUES ('phishtank_import', 'running', clock_timestamp(), 'scheduler')
+       RETURNING id`
+    );
+    runId = runInsert.rows[0].id;
+
+    const response = await fetch(config.phishTankCsvUrl, {
+      headers: { 'User-Agent': 'demo-runbook-integration/1.0' }
+    });
+    if (!response.ok) throw new Error(`Failed to fetch PhishTank CSV: ${response.status}`);
+
+    const text = await response.text();
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (lines.length <= 1) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='success', finished_at=clock_timestamp(), records_processed=0
+         WHERE id=$1`,
+        [runId]
+      );
+      await client.query('COMMIT');
+      return { ok: true, runId, recordsProcessed: 0, parsedRecords: 0 };
+    }
+
+    let inserted = 0;
+    let parsed = 0;
+    const sourceName = config.phishTankSourceName;
+    const sourceUrl = config.phishTankCsvUrl;
+
+    // online-valid.csv header: phish_id,url,phish_detail_url,submission_time,verified,verification_time,online,target
+    for (let i = 1; i < lines.length; i += 1) {
+      const cols = splitCsvLine(lines[i]);
+      if (!cols.length) continue;
+      const url = String(cols[1] || '').trim();
+      if (!url || !/^https?:\/\//i.test(url)) continue;
+      parsed += 1;
+
+      const ok = await insertObservable(client, {
+        observable: url,
+        observableType: 'url',
+        sourceName,
+        sourceUrl,
+        confidence: 'high',
+        category: 'phishing',
+        note: 'Auto-imported from PhishTank online-valid.csv'
+      });
+      if (ok) inserted += 1;
+    }
+
+    await client.query(
+      `UPDATE integration_runs
+       SET status='success', finished_at=clock_timestamp(), records_processed=$2
+       WHERE id=$1`,
+      [runId, inserted]
+    );
+
+    await client.query('COMMIT');
+    return { ok: true, runId, recordsProcessed: inserted, parsedRecords: parsed };
+  } catch (err) {
+    await client.query('ROLLBACK');
+
+    if (runId) {
+      await client.query(
+        `UPDATE integration_runs
+         SET status='failed', finished_at=clock_timestamp(), error_message=$2
+         WHERE id=$1`,
+        [runId, String(err.message).slice(0, 4000)]
+      );
+    }
+
+    throw err;
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock(942006)');
+    } catch {
+      // ignore
+    }
+    client.release();
+  }
+}

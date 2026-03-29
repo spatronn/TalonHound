@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import pg from 'pg';
 import { config } from './config.js';
 import { redis } from './queue.js';
-import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport } from './importer.js';
+import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -42,6 +42,8 @@ const worker = new Worker(
       result = await runThreatfoxImport();
     } else if (job.name === 'malwarebazaar-import') {
       result = await runMalwareBazaarImport();
+    } else if (job.name === 'phishtank-import') {
+      result = await runPhishtankImport();
     } else {
       result = { skipped: true, reason: 'unknown_job' };
     }

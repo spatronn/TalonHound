@@ -48,6 +48,15 @@ async function main() {
     }
   );
 
+  await importQueue.add(
+    'phishtank-import',
+    { triggeredBy: 'scheduler' },
+    {
+      jobId: 'phishtank-import',
+      repeat: { pattern: config.schedulerCron }
+    }
+  );
+
   console.log(`[scheduler] repeat jobs set with cron=${config.schedulerCron}`);
 
   setInterval(async () => {
@@ -92,6 +101,15 @@ async function main() {
       { triggeredBy: 'scheduler' },
       {
         jobId: 'malwarebazaar-import',
+        repeat: { pattern: config.schedulerCron }
+      }
+    );
+
+    await importQueue.add(
+      'phishtank-import',
+      { triggeredBy: 'scheduler' },
+      {
+        jobId: 'phishtank-import',
         repeat: { pattern: config.schedulerCron }
       }
     );
