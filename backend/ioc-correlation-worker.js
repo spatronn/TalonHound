@@ -112,8 +112,42 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
         ioc_query,
         toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
       FROM default.syslog_logs
-      WHERE ts > toDateTime('${ingestTs}')
+      WHERE (
+        ts > toDateTime('${ingestTs}')
+        OR (
+          ts = toDateTime('${ingestTs}')
+          AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')
+        )
+      )
+        AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
+      ORDER BY ts, row_hash
       LIMIT ${lim}
+    ),
+    dom_keys AS (
+      SELECT DISTINCT lower(ifNull(ioc_query, '')) AS observable
+      FROM src
+      WHERE notEmpty(ifNull(ioc_query, ''))
+    ),
+    ip_keys AS (
+      SELECT DISTINCT ifNull(ioc_ip, '') AS observable
+      FROM src
+      WHERE notEmpty(ifNull(ioc_ip, ''))
+    ),
+    dq AS (
+      SELECT observable, observable_type, confidence, source_name, updated_at
+      FROM default.ioc_lookup
+      WHERE observable_type IN ('domain', 'url')
+        AND observable IN (SELECT observable FROM dom_keys)
+      ORDER BY updated_at DESC
+      LIMIT 1 BY observable, observable_type
+    ),
+    ipq AS (
+      SELECT observable, observable_type, confidence, source_name, updated_at
+      FROM default.ioc_lookup
+      WHERE observable_type = 'ip'
+        AND observable IN (SELECT observable FROM ip_keys)
+      ORDER BY updated_at DESC
+      LIMIT 1 BY observable, observable_type
     )
     SELECT
       ts,
@@ -139,10 +173,10 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
       ipq.source_name AS ip_source_name,
       toString(ipq.confidence) AS ip_confidence
     FROM src s
-    LEFT JOIN ioc_lookup dq
+    LEFT JOIN dq
       ON dq.observable = lower(ifNull(s.ioc_query, ''))
      AND dq.observable_type IN ('domain', 'url')
-    LEFT JOIN ioc_lookup ipq
+    LEFT JOIN ipq
       ON ipq.observable = ifNull(s.ioc_ip, '')
      AND ipq.observable_type = 'ip'
     SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
@@ -171,6 +205,32 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
         AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
       ORDER BY ingest_time DESC
       LIMIT ${lim}
+    ),
+    dom_keys AS (
+      SELECT DISTINCT lower(ifNull(ioc_query, '')) AS observable
+      FROM src
+      WHERE notEmpty(ifNull(ioc_query, ''))
+    ),
+    ip_keys AS (
+      SELECT DISTINCT ifNull(ioc_ip, '') AS observable
+      FROM src
+      WHERE notEmpty(ifNull(ioc_ip, ''))
+    ),
+    dq AS (
+      SELECT observable, observable_type, confidence, source_name, updated_at
+      FROM default.ioc_lookup
+      WHERE observable_type IN ('domain', 'url')
+        AND observable IN (SELECT observable FROM dom_keys)
+      ORDER BY updated_at DESC
+      LIMIT 1 BY observable, observable_type
+    ),
+    ipq AS (
+      SELECT observable, observable_type, confidence, source_name, updated_at
+      FROM default.ioc_lookup
+      WHERE observable_type = 'ip'
+        AND observable IN (SELECT observable FROM ip_keys)
+      ORDER BY updated_at DESC
+      LIMIT 1 BY observable, observable_type
     )
     SELECT
       ts,
@@ -196,10 +256,10 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
       ipq.source_name AS ip_source_name,
       toString(ipq.confidence) AS ip_confidence
     FROM src s
-    LEFT JOIN ioc_lookup dq
+    LEFT JOIN dq
       ON dq.observable = lower(ifNull(s.ioc_query, ''))
      AND dq.observable_type IN ('domain', 'url')
-    LEFT JOIN ioc_lookup ipq
+    LEFT JOIN ipq
       ON ipq.observable = ifNull(s.ioc_ip, '')
      AND ipq.observable_type = 'ip'
     SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
