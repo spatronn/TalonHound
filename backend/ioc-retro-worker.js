@@ -137,7 +137,8 @@ async function loadRetroState() {
       match_cursor_raw_hash,
       match_ioc_updated_at,
       match_ioc_confidence,
-      match_ioc_row_hash
+      match_ioc_row_hash,
+      last_run_duration_ms
     FROM default.ioc_retro_state
     WHERE worker_name = 'ioc-retro-v1'
     ORDER BY updated_at DESC
@@ -155,7 +156,8 @@ async function loadRetroState() {
     match_cursor_raw_hash: r.match_cursor_raw_hash ?? idle.match_cursor_raw_hash,
     match_ioc_updated_at: r.match_ioc_updated_at || idle.match_ioc_updated_at,
     match_ioc_confidence: Number(r.match_ioc_confidence ?? idle.match_ioc_confidence),
-    match_ioc_row_hash: r.match_ioc_row_hash ?? idle.match_ioc_row_hash
+    match_ioc_row_hash: r.match_ioc_row_hash ?? idle.match_ioc_row_hash,
+    last_run_duration_ms: Number(r.last_run_duration_ms || 0)
   };
 }
 
@@ -172,7 +174,8 @@ async function saveRetroState({
   match_cursor_raw_hash = MATCH_CURSOR_RAW_START,
   match_ioc_updated_at = '1970-01-01 00:00:00.000',
   match_ioc_confidence = 0,
-  match_ioc_row_hash = ''
+  match_ioc_row_hash = '',
+  last_run_duration_ms = 0
 }) {
   const mdt = safeDateTime(match_cursor_ts);
   const mraw = chLiteral(String(match_cursor_raw_hash ?? ''));
@@ -189,6 +192,7 @@ async function saveRetroState({
       match_ioc_updated_at,
       match_ioc_confidence,
       match_ioc_row_hash,
+      last_run_duration_ms,
       updated_at
     )
     VALUES (
@@ -203,6 +207,7 @@ async function saveRetroState({
       toDateTime64('${safeTs(match_ioc_updated_at)}', 3),
       toInt32(${Number(match_ioc_confidence) || 0}),
       '${chLiteral(String(match_ioc_row_hash))}',
+      toInt32(${Number(last_run_duration_ms) || 0}),
       now64(3)
     )
   `, { logTag: 'ioc-retro.state-save' });
@@ -465,6 +470,7 @@ async function runRetroBatch({ batchSize = RETRO_BATCH_SIZE } = {}) {
     }
     client.release();
 
+    const durationMs = Date.now() - passStartedAtMs;
     await saveRetroState({
       last_processed_ts: iocTs,
       last_processed_row_hash: iocHash,
@@ -475,14 +481,14 @@ async function runRetroBatch({ batchSize = RETRO_BATCH_SIZE } = {}) {
       match_cursor_raw_hash: String(lastSo.raw_row_hash ?? ''),
       match_ioc_updated_at: meta.updated_at,
       match_ioc_confidence: meta.confidence,
-      match_ioc_row_hash: meta.row_hash
+      match_ioc_row_hash: meta.row_hash,
+      last_run_duration_ms: durationMs
     });
 
     const pendingAfterRaw = await getPendingCount(iocTs, iocHash);
     // While paging the same IOC, raw pending count includes the in-flight IOC itself.
     // For operator-facing backlog, show *remaining* IOCs after the active one.
     const pendingAfter = Math.max(pendingAfterRaw - 1, 0);
-    const durationMs = Date.now() - passStartedAtMs;
     console.log(`[ioc-retro] pending_before=${pendingBefore} ioc_step=page matched_rows=${rows.length} inserted_or_upserted=${inserted} match_page_full=1 ioc_cursor_unchanged=1 pending_after=${pendingAfter} pending_after_raw=${pendingAfterRaw} duration_ms=${durationMs}`);
     return {
       ran: true,
@@ -530,15 +536,16 @@ async function runRetroBatch({ batchSize = RETRO_BATCH_SIZE } = {}) {
     client.release();
   }
 
+  const durationMs = Date.now() - passStartedAtMs;
   const idle = idleMatchDefaults();
   await saveRetroState({
     last_processed_ts: nextIocTs,
     last_processed_row_hash: nextIocHash,
-    ...idle
+    ...idle,
+    last_run_duration_ms: durationMs
   });
 
   const pendingAfter = await getPendingCount(nextIocTs, nextIocHash);
-  const durationMs = Date.now() - passStartedAtMs;
   console.log(`[ioc-retro] pending_before=${pendingBefore} ioc_step=complete matched_rows=${rows.length} inserted_or_upserted=${inserted} match_page_full=0 pending_after=${pendingAfter} cursor_after_ts=${nextIocTs} duration_ms=${durationMs}`);
   return {
     ran: true,

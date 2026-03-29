@@ -385,7 +385,8 @@ app.get('/api/system/status', async (req, res) => {
             toUInt64(toUnixTimestamp64Milli(last_processed_ts)) AS cursor_ts_ms,
             toString(toUInt64(last_processed_row_hash)) AS cursor_hash,
             toString(updated_at) AS state_updated_at,
-            toUInt64(toUnixTimestamp64Milli(updated_at)) AS state_updated_at_ms
+            toUInt64(toUnixTimestamp64Milli(updated_at)) AS state_updated_at_ms,
+            toInt32(last_run_duration_ms) AS last_run_duration_ms
           FROM ioc_retro_state
           WHERE worker_name = 'ioc-retro-v1'
           ORDER BY updated_at DESC
@@ -446,6 +447,7 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
       clickhouse.retro_last_run_at = latestState?.state_updated_at || null;
       clickhouse.retro_last_run_at_iso = isoFromEpochMs(latestState?.state_updated_at_ms);
+      clickhouse.retro_last_duration_ms = Number(latestState?.last_run_duration_ms || 0);
       clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
     } catch (err) {
       clickhouse.error = err.message;
