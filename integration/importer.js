@@ -1083,6 +1083,8 @@ export async function runPhishtankImport() {
       if (!cols.length) continue;
       const url = String(cols[1] || '').trim();
       if (!url || !/^https?:\/\//i.test(url)) continue;
+      // Guard against oversized TEXT index entries in Postgres (btree tuple limit).
+      if (url.length > 1800) continue;
       parsed += 1;
 
       const ok = await insertObservable(client, {
