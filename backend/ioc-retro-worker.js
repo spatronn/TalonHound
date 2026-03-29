@@ -451,9 +451,12 @@ async function runRetroBatch({ batchSize = RETRO_BATCH_SIZE } = {}) {
       match_ioc_row_hash: meta.row_hash
     });
 
-    const pendingAfter = await getPendingCount(iocTs, iocHash);
+    const pendingAfterRaw = await getPendingCount(iocTs, iocHash);
+    // While paging the same IOC, raw pending count includes the in-flight IOC itself.
+    // For operator-facing backlog, show *remaining* IOCs after the active one.
+    const pendingAfter = Math.max(pendingAfterRaw - 1, 0);
     const durationMs = Date.now() - passStartedAtMs;
-    console.log(`[ioc-retro] pending_before=${pendingBefore} ioc_step=page matched_rows=${rows.length} inserted_or_upserted=${inserted} match_page_full=1 ioc_cursor_unchanged=1 pending_after=${pendingAfter} duration_ms=${durationMs}`);
+    console.log(`[ioc-retro] pending_before=${pendingBefore} ioc_step=page matched_rows=${rows.length} inserted_or_upserted=${inserted} match_page_full=1 ioc_cursor_unchanged=1 pending_after=${pendingAfter} pending_after_raw=${pendingAfterRaw} duration_ms=${durationMs}`);
     return {
       ran: true,
       workDone: true,
