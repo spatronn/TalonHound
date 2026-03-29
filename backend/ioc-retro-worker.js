@@ -24,6 +24,7 @@ const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || p
 
 const RETRO_BACKLOG_FAST_POLL_MS = Math.max(Number(process.env.IOC_RETRO_BACKLOG_FAST_POLL_MS || 15000), 3000);
 const RETRO_BACKLOG_MEDIUM_POLL_MS = Math.max(Number(process.env.IOC_RETRO_BACKLOG_MEDIUM_POLL_MS || 60000), 5000);
+const RETRO_DRAIN_POLL_MS = Math.max(Number(process.env.IOC_RETRO_DRAIN_POLL_MS || 10000), 2000);
 const RETRO_BACKLOG_THRESHOLD_HIGH = Math.max(Number(process.env.IOC_RETRO_BACKLOG_THRESHOLD_HIGH || 10000), 100);
 const RETRO_BACKLOG_THRESHOLD_MEDIUM = Math.max(Number(process.env.IOC_RETRO_BACKLOG_THRESHOLD_MEDIUM || 500), 10);
 const RETRO_SLOW_TICK_THRESHOLD_MS = Math.max(Number(process.env.IOC_RETRO_SLOW_TICK_THRESHOLD_MS || 4000), 1000);
@@ -573,21 +574,22 @@ async function runAdaptiveLoop() {
   let nextSleepMs = RETRO_SCAN_INTERVAL_SECONDS * 1000;
   let pace = 'normal';
 
+  // Auto-drain mode: while backlog exists, keep near-term ticks (no inner loop).
   if (backlogAfter > 0) {
-    nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
-    pace = 'backlog-followup';
+    nextSleepMs = RETRO_DRAIN_POLL_MS;
+    pace = 'drain';
   }
 
   if (backlogAfter > RETRO_BACKLOG_THRESHOLD_HIGH) {
     nextSleepMs = RETRO_BACKLOG_FAST_POLL_MS;
     pace = 'fast';
   } else if (backlogAfter > RETRO_BACKLOG_THRESHOLD_MEDIUM) {
-    nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
+    nextSleepMs = Math.min(RETRO_BACKLOG_MEDIUM_POLL_MS, RETRO_DRAIN_POLL_MS);
     pace = 'medium';
   }
 
   if (workerStatus.lastRunDurationMs > RETRO_SLOW_TICK_THRESHOLD_MS) {
-    nextSleepMs = Math.max(nextSleepMs, RETRO_BACKLOG_MEDIUM_POLL_MS);
+    nextSleepMs = Math.max(nextSleepMs, RETRO_DRAIN_POLL_MS);
     pace = `${pace}+slowguard`;
   }
 
@@ -600,7 +602,7 @@ async function runAdaptiveLoop() {
 async function bootstrap() {
   await ensureIocCorrelationAssets();
   await maybeSyncIocLookup(true);
-  console.log(`[ioc-retro] started adaptive=1 mode=single-pass+ioc-pagination retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} poll_ms=${RETRO_POLL_INTERVAL_MS} backlog_fast_poll_ms=${RETRO_BACKLOG_FAST_POLL_MS} backlog_medium_poll_ms=${RETRO_BACKLOG_MEDIUM_POLL_MS} backlog_high=${RETRO_BACKLOG_THRESHOLD_HIGH} backlog_medium=${RETRO_BACKLOG_THRESHOLD_MEDIUM} slow_tick_threshold_ms=${RETRO_SLOW_TICK_THRESHOLD_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} (log_only) batch=${RETRO_BATCH_SIZE}`);
+  console.log(`[ioc-retro] started adaptive=1 mode=single-pass+ioc-pagination retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} poll_ms=${RETRO_POLL_INTERVAL_MS} drain_poll_ms=${RETRO_DRAIN_POLL_MS} backlog_fast_poll_ms=${RETRO_BACKLOG_FAST_POLL_MS} backlog_medium_poll_ms=${RETRO_BACKLOG_MEDIUM_POLL_MS} backlog_high=${RETRO_BACKLOG_THRESHOLD_HIGH} backlog_medium=${RETRO_BACKLOG_THRESHOLD_MEDIUM} slow_tick_threshold_ms=${RETRO_SLOW_TICK_THRESHOLD_MS} lookback_d=${RETRO_LOOKBACK_DAYS} new_ioc_window_h=${RETRO_NEW_IOC_WINDOW_HOURS} (log_only) batch=${RETRO_BATCH_SIZE}`);
 
   while (!stopping) {
     try {
