@@ -706,7 +706,13 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                    NULLIF(m.protocol, '')
                  ), ''),
                  '-'
-               ) AS matched_syslog_event
+               ) AS matched_syslog_event,
+               CASE
+                 WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                   OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+                 THEN 'retroactive'
+                 ELSE 'realtime'
+               END AS detection_mode
              FROM ioc_match_events m
              WHERE m.created_at >= NOW() - ($2::text || ' hours')::interval
              ORDER BY m.created_at DESC
@@ -750,7 +756,13 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                    NULLIF(m.protocol, '')
                  ), ''),
                  '-'
-               ) AS matched_syslog_event
+               ) AS matched_syslog_event,
+               CASE
+                 WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                   OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+                 THEN 'retroactive'
+                 ELSE 'realtime'
+               END AS detection_mode
              FROM ioc_match_events m
              ORDER BY m.created_at DESC
              LIMIT $1
