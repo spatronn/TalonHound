@@ -552,15 +552,21 @@ async function runAdaptiveLoop() {
     return;
   }
 
-  let nextSleepMs = getIdleSleepMs();
-  let pace = RETRO_ALIGN_ENABLED ? `normal-aligned-${String(RETRO_ALIGN_MINUTE).padStart(2, '0')}` : 'normal';
+  let nextSleepMs;
+  let pace;
 
-  if (workerStatus.backlogSize > RETRO_BACKLOG_THRESHOLD_HIGH) {
-    nextSleepMs = RETRO_BACKLOG_FAST_POLL_MS;
-    pace = 'fast';
-  } else if (workerStatus.backlogSize > RETRO_BACKLOG_THRESHOLD_MEDIUM) {
-    nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
-    pace = 'medium';
+  // If backlog exists, do not return to aligned/idle pacing.
+  if (workerStatus.backlogSize > 0) {
+    if (workerStatus.backlogSize > RETRO_BACKLOG_THRESHOLD_HIGH) {
+      nextSleepMs = RETRO_BACKLOG_FAST_POLL_MS;
+      pace = 'fast';
+    } else {
+      nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
+      pace = 'medium';
+    }
+  } else {
+    nextSleepMs = getIdleSleepMs();
+    pace = RETRO_ALIGN_ENABLED ? `normal-aligned-${String(RETRO_ALIGN_MINUTE).padStart(2, '0')}` : 'normal';
   }
 
   if (workerStatus.lastRunDurationMs > RETRO_SLOW_TICK_THRESHOLD_MS) {
