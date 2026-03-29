@@ -189,9 +189,11 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     LIMIT 1
   `);
 
-  const lastTs = st?.[0]?.last_sync_ts || '1970-01-01 00:00:00.000';
   const lastId = Number(st?.[0]?.last_sync_id || 0);
 
+  // IMPORTANT: Cursor by monotonic id only.
+  // Using (created_at, id) can miss rows committed later with older created_at
+  // (e.g. long-running transactions/imports with clock_timestamp() semantics).
   const delta = await query(`
     SELECT
       toUInt64(id) AS id,
@@ -204,14 +206,8 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     WHERE observable IS NOT NULL
       AND observable != ''
       AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'sha256')
-      AND (
-        toDateTime64(created_at, 3) > toDateTime64('${String(lastTs).replace('T', ' ').replace('Z', '')}', 3)
-        OR (
-          toDateTime64(created_at, 3) = toDateTime64('${String(lastTs).replace('T', ' ').replace('Z', '')}', 3)
-          AND toUInt64(id) > ${lastId}
-        )
-      )
-    ORDER BY created_at, id
+      AND toUInt64(id) > ${lastId}
+    ORDER BY id
     LIMIT ${batchSize}
   `, { logTag: 'ioc-lookup.sync-incremental' });
 
