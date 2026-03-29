@@ -623,22 +623,17 @@ async function runAdaptiveLoop() {
   let nextSleepMs = getIdleSleepMs();
   let pace = RETRO_ALIGN_ENABLED ? `normal-aligned-${String(RETRO_ALIGN_MINUTE).padStart(2, '0')}` : 'normal';
 
-  // Auto-drain mode: while backlog exists, keep near-term ticks (no inner loop).
-  if (backlogAfter > 0) {
-    nextSleepMs = RETRO_DRAIN_POLL_MS;
-    pace = 'drain';
-  }
-
+  // Drain mode intentionally removed: pacing is now only threshold-based.
   if (backlogAfter > RETRO_BACKLOG_THRESHOLD_HIGH) {
     nextSleepMs = RETRO_BACKLOG_FAST_POLL_MS;
     pace = 'fast';
   } else if (backlogAfter > RETRO_BACKLOG_THRESHOLD_MEDIUM) {
-    nextSleepMs = Math.min(RETRO_BACKLOG_MEDIUM_POLL_MS, RETRO_DRAIN_POLL_MS);
+    nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
     pace = 'medium';
   }
 
   if (workerStatus.lastRunDurationMs > RETRO_SLOW_TICK_THRESHOLD_MS) {
-    nextSleepMs = Math.max(nextSleepMs, RETRO_DRAIN_POLL_MS);
+    nextSleepMs = Math.max(nextSleepMs, RETRO_BACKLOG_MEDIUM_POLL_MS);
     pace = `${pace}+slowguard`;
   }
 
