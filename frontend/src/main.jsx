@@ -1123,6 +1123,7 @@ function SystemStatusPage() {
               <div><b>Size:</b> {clickhouseStatus.size_mb !== undefined ? `${clickhouseStatus.size_mb} MB` : '-'}</div>
               <div><b>Retro Pending IOC:</b> {clickhouseStatus.retro_pending_ioc ?? '-'}</div>
               <div><b>Last retro scanned IOC:</b> {clickhouseStatus.retro_last_scanned_ioc ?? '-'}</div>
+              <div><b>Last Retro Duration:</b> {clickhouseStatus.retro_last_duration_ms !== undefined ? `${clickhouseStatus.retro_last_duration_ms} ms` : '-'}</div>
               <div><b>Last Retro Run:</b> {clickhouseStatus.retro_last_run_at_iso ? formatUserDateTime(clickhouseStatus.retro_last_run_at_iso) : (clickhouseStatus.retro_last_run_at || '-')}</div>
               <div><b>Retro Cursor TS:</b> {clickhouseStatus.retro_cursor_ts_iso ? formatUserDateTime(clickhouseStatus.retro_cursor_ts_iso) : (clickhouseStatus.retro_cursor_ts || '-')}</div>
             </div>
