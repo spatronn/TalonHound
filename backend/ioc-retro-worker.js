@@ -395,6 +395,13 @@ async function runAdaptiveLoop() {
   let nextSleepMs = RETRO_SCAN_INTERVAL_SECONDS * 1000;
   let pace = 'normal';
 
+  // No-loop policy with guaranteed follow-up when backlog exists.
+  // If there is any pending IOC left, schedule another near-term tick.
+  if (backlogAfter > 0) {
+    nextSleepMs = RETRO_BACKLOG_MEDIUM_POLL_MS;
+    pace = 'backlog-followup';
+  }
+
   if (backlogAfter > RETRO_BACKLOG_THRESHOLD_HIGH) {
     nextSleepMs = RETRO_BACKLOG_FAST_POLL_MS;
     pace = 'fast';
