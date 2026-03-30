@@ -149,44 +149,49 @@ async function withRawSyslogEvent(row) {
     const tsStart = ts ? new Date(ts.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
     const tsEnd = ts ? new Date(ts.getTime() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
 
-    const whereParts = [];
-    if (tsStart && tsEnd) whereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
+    const baseWhereParts = [];
+    if (tsStart && tsEnd) baseWhereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
 
     const rowSource = String(row?.source || '').trim();
-    if (rowSource) whereParts.push(`source = '${escapeChString(rowSource)}'`);
-
     const rowHost = String(row?.host_name || '').trim();
-    if (rowHost) whereParts.push(`host = '${escapeChString(rowHost)}'`);
-
     const rowParser = String(row?.parser_source || '').trim();
-    if (rowParser) whereParts.push(`parser_source = '${escapeChString(rowParser)}'`);
-
     const rowDestIp = String(row?.destination_ip || '').trim();
-    if (rowDestIp) {
-      whereParts.push(`(parsed_ip = '${escapeChString(rowDestIp)}' OR ioc_ip = '${escapeChString(rowDestIp)}')`);
-    }
 
+    const escapedMatched = escapeChString(matched);
     const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
-    if (isIp) {
-      // Fallback to raw payload search for retro/correlation paths where the matched IP
-      // may come from secondary observable extraction and not be present in ioc_ip/parsed_ip.
-      whereParts.push(`(ioc_ip = '${escapeChString(matched)}' OR parsed_ip = '${escapeChString(matched)}' OR position(raw, '${escapeChString(matched)}') > 0)`);
-    } else {
-      whereParts.push(`(ioc_query = '${escapeChString(matched)}' OR lower(ioc_query) = lower('${escapeChString(matched)}') OR lower(parsed_query) = lower('${escapeChString(matched)}'))`);
-    }
+    const iocClause = isIp
+      ? `(ioc_ip = '${escapedMatched}' OR parsed_ip = '${escapedMatched}' OR position(raw, '${escapedMatched}') > 0)`
+      : `(ioc_query = '${escapedMatched}' OR lower(ioc_query) = lower('${escapedMatched}') OR lower(parsed_query) = lower('${escapedMatched}'))`;
 
-    const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-    const rows = await clickhouseQuery(`
-      SELECT raw
-      FROM syslog_logs
-      ${whereSql}
-      ORDER BY ts DESC
-      LIMIT 1
-    `);
+    const strictParts = [...baseWhereParts];
+    if (rowSource) strictParts.push(`source = '${escapeChString(rowSource)}'`);
+    if (rowHost) strictParts.push(`host = '${escapeChString(rowHost)}'`);
+    if (rowParser) strictParts.push(`parser_source = '${escapeChString(rowParser)}'`);
+    if (rowDestIp) strictParts.push(`(parsed_ip = '${escapeChString(rowDestIp)}' OR ioc_ip = '${escapeChString(rowDestIp)}')`);
+    strictParts.push(iocClause);
 
-    const raw = rows?.[0]?.raw;
-    if (raw && String(raw).trim()) {
-      return { ...row, matched_syslog_event: String(raw) };
+    const mediumParts = [...baseWhereParts];
+    if (rowSource) mediumParts.push(`source = '${escapeChString(rowSource)}'`);
+    mediumParts.push(iocClause);
+
+    const relaxedParts = [...baseWhereParts, iocClause];
+
+    const candidates = [strictParts, mediumParts, relaxedParts];
+
+    for (const parts of candidates) {
+      const whereSql = parts.length ? `WHERE ${parts.join(' AND ')}` : '';
+      const rows = await clickhouseQuery(`
+        SELECT raw
+        FROM syslog_logs
+        ${whereSql}
+        ORDER BY ts DESC
+        LIMIT 1
+      `);
+
+      const raw = rows?.[0]?.raw;
+      if (raw && String(raw).trim()) {
+        return { ...row, matched_syslog_event: String(raw) };
+      }
     }
 
     return row;
