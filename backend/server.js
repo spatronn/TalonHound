@@ -2358,9 +2358,18 @@ app.get('/api/ioc/details', async (req, res) => {
         destination_ip,
         destination_port,
         protocol,
+        source,
+        parser_source,
         matched_ioc,
         source_name,
         confidence,
+        hit_count,
+        CASE
+          WHEN COALESCE(NULLIF(match_context->>'processing_path', ''), 'realtime') = 'retro'
+            OR COALESCE((match_context->>'retroactive')::boolean, false)
+          THEN 'retroactive'
+          ELSE 'realtime'
+        END AS detection_mode,
         created_at
       FROM ioc_match_events
       WHERE matched_ioc = $1
