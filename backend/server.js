@@ -746,12 +746,17 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                  ), ''),
                  '-'
                ) AS matched_syslog_event,
-               CASE
-                 WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
-                   OR COALESCE((m.match_context->>'retroactive')::boolean, false)
-                 THEN 'retroactive'
-                 ELSE 'realtime'
-               END AS detection_mode
+               m.detection_type,
+               m.match_source,
+               COALESCE(
+                 m.detection_type,
+                 CASE
+                   WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                     OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+                   THEN 'retroactive'
+                   ELSE 'realtime'
+                 END
+               ) AS detection_mode
              FROM ioc_match_events m
              WHERE m.created_at >= NOW() - ($2::text || ' hours')::interval
              ORDER BY m.created_at DESC
@@ -796,12 +801,17 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                  ), ''),
                  '-'
                ) AS matched_syslog_event,
-               CASE
-                 WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
-                   OR COALESCE((m.match_context->>'retroactive')::boolean, false)
-                 THEN 'retroactive'
-                 ELSE 'realtime'
-               END AS detection_mode
+               m.detection_type,
+               m.match_source,
+               COALESCE(
+                 m.detection_type,
+                 CASE
+                   WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                     OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+                   THEN 'retroactive'
+                   ELSE 'realtime'
+                 END
+               ) AS detection_mode
              FROM ioc_match_events m
              ORDER BY m.created_at DESC
              LIMIT $1
@@ -885,10 +895,12 @@ app.get('/api/ioc/match-events', async (req, res) => {
           m.last_seen_at,
           m.hit_count,
           m.created_at,
+          m.detection_type,
+          m.match_source,
           COALESCE(
             NULLIF(CONCAT_WS(' | ',
               NULLIF(m.source, ''),
-                   NULLIF(m.host_name, ''),
+                  NULLIF(m.host_name, ''),
               NULLIF(m.process_name, ''),
               CASE
                 WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
@@ -898,12 +910,15 @@ app.get('/api/ioc/match-events', async (req, res) => {
             ), ''),
             '-'
           ) AS matched_syslog_event,
-          CASE
-            WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
-              OR COALESCE((m.match_context->>'retroactive')::boolean, false)
-            THEN 'retroactive'
-            ELSE 'realtime'
-          END AS detection_mode
+          COALESCE(
+            m.detection_type,
+            CASE
+              WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+              THEN 'retroactive'
+              ELSE 'realtime'
+            END
+          ) AS detection_mode
         FROM ioc_match_events m
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY m.created_at DESC
@@ -962,12 +977,15 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
              ), ''),
              '-'
            ) AS matched_syslog_event,
-           CASE
-             WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
-               OR COALESCE((m.match_context->>'retroactive')::boolean, false)
-             THEN 'retroactive'
-             ELSE 'realtime'
-           END AS detection_mode
+           COALESCE(
+             m.detection_type,
+             CASE
+               WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                 OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+               THEN 'retroactive'
+               ELSE 'realtime'
+             END
+           ) AS detection_mode
          FROM ioc_match_events m
          WHERE m.id = $1
          LIMIT 1
@@ -2383,12 +2401,17 @@ app.get('/api/ioc/details', async (req, res) => {
         source_name,
         confidence,
         hit_count,
-        CASE
-          WHEN COALESCE(NULLIF(match_context->>'processing_path', ''), 'realtime') = 'retro'
-            OR COALESCE((match_context->>'retroactive')::boolean, false)
-          THEN 'retroactive'
-          ELSE 'realtime'
-        END AS detection_mode,
+        detection_type,
+        match_source,
+        COALESCE(
+          detection_type,
+          CASE
+            WHEN COALESCE(NULLIF(match_context->>'processing_path', ''), 'realtime') = 'retro'
+              OR COALESCE((match_context->>'retroactive')::boolean, false)
+            THEN 'retroactive'
+            ELSE 'realtime'
+          END
+        ) AS detection_mode,
         created_at
       FROM ioc_match_events
       WHERE matched_ioc = $1

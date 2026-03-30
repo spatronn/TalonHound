@@ -91,6 +91,100 @@ function isPrivateIPv4(ip) {
   return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 }
 
+const GENERIC_IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g;
+const GENERIC_SHA256_RE = /\b[a-fA-F0-9]{64}\b/g;
+const GENERIC_URL_RE = /\bhttps?:\/\/[^\s<>"']+/gi;
+const GENERIC_DOMAIN_RE = /\b(?!(?:\d{1,3}\.){3}\d{1,3}\b)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b/g;
+const HOST_IS_IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/;
+
+function trimTrailingUrlPunct(s) {
+  return String(s || '').replace(/[.,;:!?)>\]'"]+$/, '');
+}
+
+/**
+ * Fallback + enrichment IOC extraction from raw syslog text (no structured parser required).
+ * Returns { type, value } with type ipv4 | domain | url | sha256 (source applied in mergeObservables).
+ */
+function extractGenericIOCs(raw) {
+  const text = String(raw || '');
+  const items = [];
+  const seenLocal = new Set();
+
+  const push = (type, value) => {
+    const v = String(value || '');
+    if (!v) return;
+    const k = `${type}\0${v}`;
+    if (seenLocal.has(k)) return;
+    seenLocal.add(k);
+    items.push({ type, value: v });
+  };
+
+  for (const m of text.matchAll(GENERIC_SHA256_RE)) {
+    push('sha256', m[0].toLowerCase());
+  }
+
+  for (const m of text.matchAll(GENERIC_IPV4_RE)) {
+    const ip = m[0];
+    if (isPrivateIPv4(ip)) continue;
+    push('ipv4', ip);
+  }
+
+  for (const m of text.matchAll(GENERIC_URL_RE)) {
+    const trimmed = trimTrailingUrlPunct(m[0]);
+    try {
+      const u = new URL(trimmed);
+      push('url', u.href);
+      const host = u.hostname;
+      if (host && HOST_IS_IPV4_RE.test(host)) {
+        if (!isPrivateIPv4(host)) push('ipv4', host);
+      } else if (host) {
+        push('domain', host.toLowerCase());
+      }
+    } catch {
+      /* ignore malformed URLs */
+    }
+  }
+
+  for (const m of text.matchAll(GENERIC_DOMAIN_RE)) {
+    push('domain', m[0].toLowerCase());
+  }
+
+  return items;
+}
+
+/**
+ * Combines parser-derived IOCs (ioc_*) with generic extraction.
+ * Unique key (type, value); parser wins over generic for the same key.
+ */
+function mergeObservables(row, genericList) {
+  const fromParser = [];
+  if (row.ioc_query) {
+    const v = String(row.ioc_query).toLowerCase();
+    if (v) fromParser.push({ type: 'domain', value: v, source: 'parser' });
+  }
+  for (const ip of [row.ioc_ip, row.ioc_ip_secondary].filter(Boolean)) {
+    const v = String(ip);
+    if (v) fromParser.push({ type: 'ipv4', value: v, source: 'parser' });
+  }
+
+  const genericTagged = (genericList || []).map((it) => ({
+    type: it.type,
+    value: String(it.value || ''),
+    source: 'generic'
+  })).filter((it) => it.type && it.value);
+
+  const byKey = new Map();
+  for (const it of genericTagged) {
+    const k = `${it.type}\0${it.value}`;
+    if (!byKey.has(k)) byKey.set(k, it);
+  }
+  for (const it of fromParser) {
+    const k = `${it.type}\0${it.value}`;
+    byKey.set(k, it);
+  }
+  return Array.from(byKey.values());
+}
+
 function decodeMicrosoftDnsName(raw) {
   const parts = [];
   const re = /\((\d+)\)([^()]+)/g;
@@ -198,6 +292,8 @@ function parseSyslogLine(line, sourceIp) {
   out.ioc_ip_secondary = parsed?.ioc_ip_secondary || null;
   out.ioc_query = parsed?.ioc_query || null;
 
+  out.merged_observables = mergeObservables(out, extractGenericIOCs(raw));
+
   return out;
 }
 
@@ -304,28 +400,22 @@ async function flushToPostgres(events) {
   }
 }
 
+function observableTypeForCh(type) {
+  return type === 'ipv4' ? 'ip' : type;
+}
+
 function buildObservableRows(parsedBatch) {
   const rows = [];
   for (const r of parsedBatch) {
     const rawRowHash = crypto.createHash('sha1').update(String(r.raw || '')).digest('hex');
-    if (r.ioc_query) {
+    const obs = Array.isArray(r.merged_observables) ? r.merged_observables : [];
+    for (const { type, value } of obs) {
       rows.push({
         ts: r.ts,
         source: r.source,
         host: r.host,
-        observable: String(r.ioc_query).toLowerCase(),
-        observable_type: 'domain',
-        raw_row_hash: rawRowHash
-      });
-    }
-    const ipSet = new Set([r.ioc_ip, r.ioc_ip_secondary].filter(Boolean).map((v) => String(v)));
-    for (const ip of ipSet) {
-      rows.push({
-        ts: r.ts,
-        source: r.source,
-        host: r.host,
-        observable: ip,
-        observable_type: 'ip',
+        observable: value,
+        observable_type: observableTypeForCh(type),
         raw_row_hash: rawRowHash
       });
     }
@@ -336,8 +426,12 @@ function buildObservableRows(parsedBatch) {
 async function flushToClickhouse(events) {
   const batch = events.map((e) => parseSyslogLine(e.rawEvent, e.sourceIp));
   const observablesBatch = buildObservableRows(batch);
+  const logRows = batch.map(({ merged_observables, ...log }) => ({
+    ...log,
+    merged_observables: JSON.stringify(merged_observables || [])
+  }));
   const t0 = Date.now();
-  await insertLogs(batch, { queryId: makeQueryId('insert-batch'), logTag: 'syslog-receiver.insert-batch' });
+  await insertLogs(logRows, { queryId: makeQueryId('insert-batch'), logTag: 'syslog-receiver.insert-batch' });
   if (observablesBatch.length > 0) {
     await insertObservables(observablesBatch, { queryId: makeQueryId('insert-observables'), logTag: 'syslog-receiver.insert-observables' });
   }

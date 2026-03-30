@@ -84,7 +84,8 @@ export async function ensureSyslogTable() {
       parsed_query Nullable(String),
       parsed_ip_private Nullable(Bool),
       ioc_ip Nullable(String),
-      ioc_query Nullable(String)
+      ioc_query Nullable(String),
+      merged_observables String DEFAULT '[]'
     )
     ENGINE = MergeTree
     PARTITION BY toYYYYMMDD(ts)
@@ -114,6 +115,7 @@ export async function ensureSyslogTable() {
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS parsed_ip_private Nullable(Bool)`);
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_ip Nullable(String)`);
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS ioc_query Nullable(String)`);
+  await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS merged_observables String DEFAULT '[]'`);
   await command(`ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip`);
   await command(`ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip_private`);
 }

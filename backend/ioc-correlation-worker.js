@@ -52,14 +52,204 @@ function floorToBucket(tsIso, seconds) {
 }
 
 function dedupKeyOf(row) {
-  // Stable key per source + ioc type/value + parser context + host.
   return [
     row.match_type || 'unknown',
     row.matched_ioc || '',
     row.host || '',
     row.source || '',
-    row.parser_source || 'unknown'
+    row.parser_source || 'unknown',
+    row.detection_type || 'realtime',
+    row.match_source || ''
   ].join('|');
+}
+
+const MERGE_TYPES = new Set(['ipv4', 'domain', 'url', 'sha256']);
+
+function normalizeMergedObs(o) {
+  if (!o || typeof o !== 'object') return null;
+  const type = String(o.type || '').toLowerCase();
+  const value = String(o.value || '').trim();
+  const source = o.source === 'parser' ? 'parser' : 'generic';
+  if (!MERGE_TYPES.has(type) || !value) return null;
+  return { type, value, source };
+}
+
+function expandRowObservables(r) {
+  const raw = r.merged_observables;
+  if (raw != null && String(raw).trim() !== '' && String(raw).trim() !== '[]') {
+    try {
+      const arr = JSON.parse(String(raw));
+      if (Array.isArray(arr) && arr.length > 0) {
+        const out = [];
+        for (const item of arr) {
+          const n = normalizeMergedObs(item);
+          if (n) out.push(n);
+        }
+        if (out.length) return out;
+      }
+    } catch {
+      /* fall through to legacy */
+    }
+  }
+
+  const legacy = [];
+  if (r.ioc_query && String(r.ioc_query).trim()) {
+    legacy.push({
+      type: 'domain',
+      value: String(r.ioc_query).toLowerCase(),
+      source: 'parser'
+    });
+  }
+  if (r.ioc_ip && String(r.ioc_ip).trim()) {
+    legacy.push({ type: 'ipv4', value: String(r.ioc_ip), source: 'parser' });
+  }
+  return legacy;
+}
+
+function lookupTuplesForObs(obs) {
+  const t = obs.type;
+  const v = String(obs.value || '').trim();
+  if (!v) return [];
+  if (t === 'ipv4') return [[v, 'ip']];
+  if (t === 'sha256') return [[v.toLowerCase(), 'sha256']];
+  if (t === 'domain') {
+    const lv = v.toLowerCase();
+    return [
+      [lv, 'domain'],
+      [lv, 'url']
+    ];
+  }
+  if (t === 'url') return [[v.toLowerCase(), 'url']];
+  return [];
+}
+
+function pickBestLookup(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  const ta = new Date(a.updated_at).getTime();
+  const tb = new Date(b.updated_at).getTime();
+  if (Number.isNaN(ta) && Number.isNaN(tb)) return a;
+  if (Number.isNaN(ta)) return b;
+  if (Number.isNaN(tb)) return a;
+  if (tb !== ta) return tb > ta ? b : a;
+  return Number(b.confidence || 0) > Number(a.confidence || 0) ? b : a;
+}
+
+function matchObsToLookup(obs, lookupMap) {
+  const t = obs.type;
+  const v = String(obs.value || '').trim();
+  if (!v) return null;
+  if (t === 'ipv4') {
+    return lookupMap.get(`ip\t${v}`) || null;
+  }
+  if (t === 'sha256') {
+    return lookupMap.get(`sha256\t${v.toLowerCase()}`) || null;
+  }
+  if (t === 'domain') {
+    const lv = v.toLowerCase();
+    return pickBestLookup(lookupMap.get(`domain\t${lv}`), lookupMap.get(`url\t${lv}`));
+  }
+  if (t === 'url') {
+    const lv = v.toLowerCase();
+    return pickBestLookup(lookupMap.get(`url\t${lv}`), lookupMap.get(`domain\t${lv}`));
+  }
+  return null;
+}
+
+function iocTypeForPg(obsType) {
+  return obsType === 'ipv4' ? 'ip' : obsType;
+}
+
+function matchedIocValue(obs) {
+  if (obs.type === 'ipv4') return obs.value;
+  if (obs.type === 'domain' || obs.type === 'url' || obs.type === 'sha256') return obs.value.toLowerCase();
+  return obs.value;
+}
+
+async function fetchIocLookupMatches(tupleList) {
+  if (!tupleList.length) return new Map();
+  const parts = tupleList.map(([obs, typ]) => `('${esc(obs)}','${esc(typ)}')`).join(',');
+  const q = `
+    SELECT observable, observable_type, confidence, source_name, updated_at
+    FROM default.ioc_lookup
+    WHERE (observable, observable_type) IN (${parts})
+    ORDER BY updated_at DESC
+    LIMIT 1 BY observable, observable_type
+    SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
+  `;
+  const rows = await clickhouseQuery(q, { queryId: makeQueryId('lookup-batch'), logTag: 'ioc-correlation.lookup-batch' });
+  const map = new Map();
+  for (const row of rows || []) {
+    const o = String(row.observable || '');
+    const typ = String(row.observable_type || '');
+    map.set(`${typ}\t${o}`, row);
+  }
+  return map;
+}
+
+function collectLookupTuplesForBatch(chRows) {
+  const tupleSet = new Set();
+  const tupleList = [];
+  for (const r of chRows) {
+    for (const obs of expandRowObservables(r)) {
+      for (const pair of lookupTuplesForObs(obs)) {
+        const k = `${pair[0]}\t${pair[1]}`;
+        if (tupleSet.has(k)) continue;
+        tupleSet.add(k);
+        tupleList.push(pair);
+      }
+    }
+  }
+  return tupleList;
+}
+
+function rowToMatchEvents(r, lookupMap) {
+  const out = [];
+  const ingestMs = r.ingest_time ? new Date(r.ingest_time).getTime() : 0;
+  for (const obs of expandRowObservables(r)) {
+    const hit = matchObsToLookup(obs, lookupMap);
+    if (!hit) continue;
+    const iocUpdatedMs = hit.updated_at ? new Date(hit.updated_at).getTime() : 0;
+    const iocWasPresent = ingestMs > 0 && iocUpdatedMs > 0 && iocUpdatedMs <= ingestMs;
+    out.push({
+      event_time: r.ts,
+      host: r.host,
+      source: r.source,
+      parser_source: r.parser_source,
+      destination_ip: r.parsed_ip || null,
+      protocol: 'syslog',
+      matched_ioc: matchedIocValue(obs),
+      ioc_type: iocTypeForPg(obs.type),
+      ioc_item_id: null,
+      source_name: hit.source_name || null,
+      confidence: String(hit.confidence != null ? hit.confidence : ''),
+      detection_type: 'realtime',
+      match_source: obs.source,
+      match_context: {
+        parsed_query: r.parsed_query || null,
+        parsed_ip: r.parsed_ip || null,
+        ioc_query: r.ioc_query || null,
+        ioc_ip: r.ioc_ip || null,
+        processing_path: 'realtime',
+        observable_merge_type: obs.type,
+        detection_type: 'realtime',
+        match_source: obs.source,
+        ioc_was_present_at_ingest: iocWasPresent
+      }
+    });
+  }
+  return out;
+}
+
+async function toMatchRowsFromScanned(chRows) {
+  if (!chRows.length) return [];
+  const tupleList = collectLookupTuplesForBatch(chRows);
+  const lookupMap = await fetchIocLookupMatches(tupleList);
+  const out = [];
+  for (const r of chRows) {
+    out.push(...rowToMatchEvents(r, lookupMap));
+  }
+  return out;
 }
 
 async function getOrInitState(client) {
@@ -99,56 +289,6 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
   const lim = Number(limit || BATCH_SIZE);
 
   return `
-    WITH src AS (
-      SELECT
-        ts,
-        ingest_time,
-        source,
-        host,
-        parser_source,
-        parsed_ip,
-        parsed_query,
-        ioc_ip,
-        ioc_query,
-        toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
-      FROM default.syslog_logs
-      WHERE (
-        ts > toDateTime('${ingestTs}')
-        OR (
-          ts = toDateTime('${ingestTs}')
-          AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')
-        )
-      )
-        AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
-      ORDER BY ts, row_hash
-      LIMIT ${lim}
-    ),
-    dom_keys AS (
-      SELECT DISTINCT lower(ifNull(ioc_query, '')) AS observable
-      FROM src
-      WHERE notEmpty(ifNull(ioc_query, ''))
-    ),
-    ip_keys AS (
-      SELECT DISTINCT ifNull(ioc_ip, '') AS observable
-      FROM src
-      WHERE notEmpty(ifNull(ioc_ip, ''))
-    ),
-    dq AS (
-      SELECT observable, observable_type, confidence, source_name, updated_at
-      FROM default.ioc_lookup
-      WHERE observable_type IN ('domain', 'url')
-        AND observable IN (SELECT observable FROM dom_keys)
-      ORDER BY updated_at DESC
-      LIMIT 1 BY observable, observable_type
-    ),
-    ipq AS (
-      SELECT observable, observable_type, confidence, source_name, updated_at
-      FROM default.ioc_lookup
-      WHERE observable_type = 'ip'
-        AND observable IN (SELECT observable FROM ip_keys)
-      ORDER BY updated_at DESC
-      LIMIT 1 BY observable, observable_type
-    )
     SELECT
       ts,
       ingest_time,
@@ -159,26 +299,23 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
       parsed_query,
       ioc_ip,
       ioc_query,
-      row_hash,
-      lower(ifNull(s.ioc_query, '')) AS norm_query,
-      ifNull(s.ioc_ip, '') AS norm_ip,
-      (dq.observable != '') AS has_domain_match,
-      (ipq.observable != '') AS has_ip_match,
-      (dq.updated_at <= toDateTime64(s.ingest_time, 3)) AS domain_ioc_present_at_ingest,
-      (ipq.updated_at <= toDateTime64(s.ingest_time, 3)) AS ip_ioc_present_at_ingest,
-      toUInt64(0) AS domain_ioc_item_id,
-      dq.source_name AS domain_source_name,
-      toString(dq.confidence) AS domain_confidence,
-      toUInt64(0) AS ip_ioc_item_id,
-      ipq.source_name AS ip_source_name,
-      toString(ipq.confidence) AS ip_confidence
-    FROM src s
-    LEFT JOIN dq
-      ON dq.observable = lower(ifNull(s.ioc_query, ''))
-     AND dq.observable_type IN ('domain', 'url')
-    LEFT JOIN ipq
-      ON ipq.observable = ifNull(s.ioc_ip, '')
-     AND ipq.observable_type = 'ip'
+      ifNull(merged_observables, '') AS merged_observables,
+      toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
+    FROM default.syslog_logs
+    WHERE (
+      ts > toDateTime('${ingestTs}')
+      OR (
+        ts = toDateTime('${ingestTs}')
+        AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')
+      )
+    )
+      AND (
+        (length(trim(ifNull(merged_observables, ''))) > 2 AND ifNull(merged_observables, '') != '[]')
+        OR notEmpty(ifNull(ioc_query, ''))
+        OR notEmpty(ifNull(ioc_ip, ''))
+      )
+    ORDER BY ts, row_hash
+    LIMIT ${lim}
     SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
   `;
 }
@@ -188,50 +325,6 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
   const lim = Math.max(Number(limit || REPLAY_BATCH_SIZE), 100);
 
   return `
-    WITH src AS (
-      SELECT
-        ts,
-        ingest_time,
-        source,
-        host,
-        parser_source,
-        parsed_ip,
-        parsed_query,
-        ioc_ip,
-        ioc_query,
-        toString(cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
-      FROM default.syslog_logs
-      WHERE ingest_time >= now() - INTERVAL ${win} SECOND
-        AND (notEmpty(ifNull(ioc_query, '')) OR notEmpty(ifNull(ioc_ip, '')))
-      ORDER BY ingest_time DESC
-      LIMIT ${lim}
-    ),
-    dom_keys AS (
-      SELECT DISTINCT lower(ifNull(ioc_query, '')) AS observable
-      FROM src
-      WHERE notEmpty(ifNull(ioc_query, ''))
-    ),
-    ip_keys AS (
-      SELECT DISTINCT ifNull(ioc_ip, '') AS observable
-      FROM src
-      WHERE notEmpty(ifNull(ioc_ip, ''))
-    ),
-    dq AS (
-      SELECT observable, observable_type, confidence, source_name, updated_at
-      FROM default.ioc_lookup
-      WHERE observable_type IN ('domain', 'url')
-        AND observable IN (SELECT observable FROM dom_keys)
-      ORDER BY updated_at DESC
-      LIMIT 1 BY observable, observable_type
-    ),
-    ipq AS (
-      SELECT observable, observable_type, confidence, source_name, updated_at
-      FROM default.ioc_lookup
-      WHERE observable_type = 'ip'
-        AND observable IN (SELECT observable FROM ip_keys)
-      ORDER BY updated_at DESC
-      LIMIT 1 BY observable, observable_type
-    )
     SELECT
       ts,
       ingest_time,
@@ -242,85 +335,20 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
       parsed_query,
       ioc_ip,
       ioc_query,
-      row_hash,
-      lower(ifNull(s.ioc_query, '')) AS norm_query,
-      ifNull(s.ioc_ip, '') AS norm_ip,
-      (dq.observable != '') AS has_domain_match,
-      (ipq.observable != '') AS has_ip_match,
-      (dq.updated_at <= toDateTime64(s.ingest_time, 3)) AS domain_ioc_present_at_ingest,
-      (ipq.updated_at <= toDateTime64(s.ingest_time, 3)) AS ip_ioc_present_at_ingest,
-      toUInt64(0) AS domain_ioc_item_id,
-      dq.source_name AS domain_source_name,
-      toString(dq.confidence) AS domain_confidence,
-      toUInt64(0) AS ip_ioc_item_id,
-      ipq.source_name AS ip_source_name,
-      toString(ipq.confidence) AS ip_confidence
-    FROM src s
-    LEFT JOIN dq
-      ON dq.observable = lower(ifNull(s.ioc_query, ''))
-     AND dq.observable_type IN ('domain', 'url')
-    LEFT JOIN ipq
-      ON ipq.observable = ifNull(s.ioc_ip, '')
-     AND ipq.observable_type = 'ip'
+      ifNull(merged_observables, '') AS merged_observables,
+      toString(cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
+    FROM default.syslog_logs
+    WHERE ingest_time >= now() - INTERVAL ${win} SECOND
+      AND (
+        (length(trim(ifNull(merged_observables, ''))) > 2 AND ifNull(merged_observables, '') != '[]')
+        OR notEmpty(ifNull(ioc_query, ''))
+        OR notEmpty(ifNull(ioc_ip, ''))
+      )
+    ORDER BY ingest_time DESC
+    LIMIT ${lim}
     SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
   `;
 }
-
-function toMatchRows(chRows) {
-  const out = [];
-  for (const r of chRows) {
-    const hasIocQuery = typeof r.ioc_query === 'string' ? r.ioc_query.trim().length > 0 : Boolean(r.ioc_query);
-    const hasIocIp = typeof r.ioc_ip === 'string' ? r.ioc_ip.trim().length > 0 : Boolean(r.ioc_ip);
-    if (!hasIocQuery && !hasIocIp) continue;
-    if (r.has_domain_match) {
-      out.push({
-        event_time: r.ts,
-        host: r.host,
-        source: r.source,
-        parser_source: r.parser_source,
-        destination_ip: r.parsed_ip || null,
-        protocol: 'dns',
-        matched_ioc: r.norm_query,
-        ioc_type: 'domain',
-        ioc_item_id: null,
-        source_name: r.domain_source_name || null,
-        confidence: r.domain_confidence || null,
-        match_context: {
-          parsed_query: r.parsed_query || null,
-          parsed_ip: r.parsed_ip || null,
-          ioc_query: r.ioc_query || null,
-          processing_path: 'realtime',
-          ioc_was_present_at_ingest: Boolean(r.domain_ioc_present_at_ingest)
-        }
-      });
-    }
-
-    if (r.has_ip_match) {
-      out.push({
-        event_time: r.ts,
-        host: r.host,
-        source: r.source,
-        parser_source: r.parser_source,
-        destination_ip: r.parsed_ip || null,
-        protocol: 'dns',
-        matched_ioc: r.norm_ip,
-        ioc_type: 'ip',
-        ioc_item_id: null,
-        source_name: r.ip_source_name || null,
-        confidence: r.ip_confidence || null,
-        match_context: {
-          parsed_query: r.parsed_query || null,
-          parsed_ip: r.parsed_ip || null,
-          ioc_ip: r.ioc_ip || null,
-          processing_path: 'realtime',
-          ioc_was_present_at_ingest: Boolean(r.ip_ioc_present_at_ingest)
-        }
-      });
-    }
-  }
-  return out;
-}
-
 
 async function insertMatchEvents(client, rows) {
   if (!rows.length) return 0;
@@ -347,6 +375,8 @@ async function insertMatchEvents(client, rows) {
       prev.source_name = r.source_name || prev.source_name;
       prev.confidence = r.confidence || prev.confidence;
       prev.match_context = r.match_context || prev.match_context;
+      prev.detection_type = r.detection_type || prev.detection_type;
+      prev.match_source = r.match_source ?? prev.match_source;
     }
   }
 
@@ -356,9 +386,9 @@ async function insertMatchEvents(client, rows) {
 
   for (let i = 0; i < normalizedRows.length; i += 1) {
     const r = normalizedRows[i];
-    const base = i * 18;
+    const base = i * 20;
 
-    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18})`);
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20})`);
     params.push(
       r.event_time,
       r.host || null,
@@ -377,7 +407,9 @@ async function insertMatchEvents(client, rows) {
       r._dedupKey,
       r._bucketStart,
       r.event_time, // last_seen_at seed
-      r._hitInc
+      r._hitInc,
+      r.detection_type || 'realtime',
+      r.match_source ?? null
     );
   }
 
@@ -385,7 +417,8 @@ async function insertMatchEvents(client, rows) {
     INSERT INTO ioc_match_events (
       event_time, host_name, process_name, destination_ip, destination_port, protocol,
       matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
-      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count
+      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count,
+      detection_type, match_source
     ) VALUES ${values.join(',')}
     ON CONFLICT (dedup_key, bucket_start)
     DO UPDATE SET
@@ -393,7 +426,9 @@ async function insertMatchEvents(client, rows) {
       last_seen_at = GREATEST(ioc_match_events.last_seen_at, EXCLUDED.last_seen_at),
       confidence = COALESCE(EXCLUDED.confidence, ioc_match_events.confidence),
       source_name = COALESCE(EXCLUDED.source_name, ioc_match_events.source_name),
-      match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context)
+      match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context),
+      detection_type = COALESCE(EXCLUDED.detection_type, ioc_match_events.detection_type),
+      match_source = COALESCE(EXCLUDED.match_source, ioc_match_events.match_source)
   `;
 
   await client.query(sql, params);
@@ -414,7 +449,7 @@ async function runBatch() {
       return { scanned: 0, matched: 0, inserted: 0, duration_ms: Date.now() - startedAtMs };
     }
 
-    const matchedRows = toMatchRows(scanned);
+    const matchedRows = await toMatchRowsFromScanned(scanned);
     const inserted = await insertMatchEvents(client, matchedRows);
 
     const last = scanned[scanned.length - 1];
@@ -466,7 +501,7 @@ async function tick() {
       replayScanned = replayRows.length;
       lastReplayWindowAtMs = nowMs;
       if (replayRows.length) {
-        const mapped = toMatchRows(replayRows);
+        const mapped = await toMatchRowsFromScanned(replayRows);
         replayMatched = mapped.length;
         lateArrivalCount = replayRows.filter((r) => {
           const ets = r?.ts ? new Date(r.ts).getTime() : 0;

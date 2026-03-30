@@ -96,7 +96,15 @@ function floorToBucket(tsIso, seconds) {
 }
 
 function dedupKeyOf(row) {
-  return [row.match_type || 'unknown', row.matched_ioc || '', row.host || '', row.source || '', row.parser_source || 'unknown'].join('|');
+  return [
+    row.match_type || 'unknown',
+    row.matched_ioc || '',
+    row.host || '',
+    row.source || '',
+    row.parser_source || 'unknown',
+    row.detection_type || 'retroactive',
+    row.match_source || ''
+  ].join('|');
 }
 
 function idleMatchDefaults() {
@@ -220,13 +228,15 @@ async function insertMatchEvents(client, rows) {
   const params = [];
   for (let i = 0; i < deduped.length; i += 1) {
     const r = deduped[i];
-    const base = i * 18;
-    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18})`);
+    const base = i * 20;
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20})`);
     params.push(
       r.event_time, r.host || null, null, r.destination_ip || null, null, r.protocol || null,
       r.matched_ioc, r.source_name || null, r.confidence || null, r.ioc_type, null,
       r.parser_source || null, r.source || null, JSON.stringify(r.match_context || {}),
-      r._dedupKey, r._bucketStart, r.event_time, r._hitInc
+      r._dedupKey, r._bucketStart, r.event_time, r._hitInc,
+      r.detection_type || 'retroactive',
+      r.match_source ?? null
     );
   }
 
@@ -234,7 +244,8 @@ async function insertMatchEvents(client, rows) {
     `INSERT INTO ioc_match_events (
       event_time, host_name, process_name, destination_ip, destination_port, protocol,
       matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
-      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count
+      parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count,
+      detection_type, match_source
     ) VALUES ${values.join(',')}
     ON CONFLICT (dedup_key, bucket_start)
     DO UPDATE SET
@@ -242,7 +253,9 @@ async function insertMatchEvents(client, rows) {
       last_seen_at = GREATEST(ioc_match_events.last_seen_at, EXCLUDED.last_seen_at),
       confidence = COALESCE(EXCLUDED.confidence, ioc_match_events.confidence),
       source_name = COALESCE(EXCLUDED.source_name, ioc_match_events.source_name),
-      match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context)`,
+      match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context),
+      detection_type = COALESCE(EXCLUDED.detection_type, ioc_match_events.detection_type),
+      match_source = COALESCE(EXCLUDED.match_source, ioc_match_events.match_source)`,
     params
   );
 
@@ -264,10 +277,13 @@ function mapRowToEvent(r) {
     ioc_type: r.ioc_type,
     source_name: r.source_name || null,
     confidence: String(r.confidence || ''),
+    detection_type: 'retroactive',
+    match_source: null,
     match_context: {
       retroactive: true,
       observable_source: 'syslog_observables',
       processing_path: 'retro-window',
+      detection_type: 'retroactive',
       ioc_was_present_at_ingest: iocWasPresentAtIngest,
       ioc_updated_at: r.ioc_updated_at || null
     }

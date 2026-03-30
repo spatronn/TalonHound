@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS syslog_logs (
   parsed_query Nullable(String),
   parsed_ip_private Nullable(Bool),
   ioc_ip Nullable(String),
-  ioc_query Nullable(String)
+  ioc_query Nullable(String),
+  merged_observables String DEFAULT '[]'
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(ts)
