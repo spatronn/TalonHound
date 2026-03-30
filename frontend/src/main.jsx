@@ -2235,7 +2235,7 @@ function IOCDetailsPage() {
                 </thead>
                 <tbody>
                   {data.matches.length ? data.matches.map((m) => {
-                    const matchedSyslogEvent = [
+                    const fallbackSyslogEvent = [
                       m.source || null,
                       m.host_name || null,
                       m.process_name || null,
@@ -2243,6 +2243,7 @@ function IOCDetailsPage() {
                       m.protocol || null,
                       m.parser_source || null
                     ].filter(Boolean).join(' | ') || '-';
+                    const matchedSyslogEvent = m.matched_syslog_event || fallbackSyslogEvent;
 
                     return (
                       <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>

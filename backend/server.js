@@ -152,6 +152,20 @@ async function withRawSyslogEvent(row) {
     const whereParts = [];
     if (tsStart && tsEnd) whereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
 
+    const rowSource = String(row?.source || '').trim();
+    if (rowSource) whereParts.push(`source = '${escapeChString(rowSource)}'`);
+
+    const rowHost = String(row?.host_name || '').trim();
+    if (rowHost) whereParts.push(`host = '${escapeChString(rowHost)}'`);
+
+    const rowParser = String(row?.parser_source || '').trim();
+    if (rowParser) whereParts.push(`parser_source = '${escapeChString(rowParser)}'`);
+
+    const rowDestIp = String(row?.destination_ip || '').trim();
+    if (rowDestIp) {
+      whereParts.push(`(parsed_ip = '${escapeChString(rowDestIp)}' OR ioc_ip = '${escapeChString(rowDestIp)}')`);
+    }
+
     const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
     if (isIp) {
       // Fallback to raw payload search for retro/correlation paths where the matched IP
@@ -2377,11 +2391,14 @@ app.get('/api/ioc/details', async (req, res) => {
       LIMIT 20
     `;
     const matchesRes = await pool.query(matchesQ, [observable]);
+    const matches = USE_CLICKHOUSE
+      ? await Promise.all((matchesRes.rows || []).map((row) => withRawSyslogEvent(row)))
+      : matchesRes.rows;
 
     return res.json({
       summary,
       sources: rows,
-      matches: matchesRes.rows
+      matches
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC details', detail: err.message });
