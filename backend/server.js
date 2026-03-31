@@ -192,14 +192,14 @@ async function withRawSyslogEvent(row) {
     for (const parts of candidates) {
       const whereSql = parts.length ? `WHERE ${parts.join(' AND ')}` : '';
       const rows = await clickhouseQuery(`
-        SELECT raw
+        SELECT COALESCE(NULLIF(raw, ''), NULLIF(message, '')) AS raw_event
         FROM syslog_logs
         ${whereSql}
         ORDER BY ts DESC
         LIMIT 1
       `);
 
-      const raw = rows?.[0]?.raw;
+      const raw = rows?.[0]?.raw_event;
       if (raw && String(raw).trim()) {
         return { ...row, matched_syslog_event: String(raw) };
       }
