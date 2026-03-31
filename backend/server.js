@@ -172,11 +172,22 @@ async function withRawSyslogEvent(row) {
 
     const mediumParts = [...baseWhereParts];
     if (rowSource) mediumParts.push(`source = '${escapeChString(rowSource)}'`);
+    if (rowParser) mediumParts.push(`parser_source = '${escapeChString(rowParser)}'`);
     mediumParts.push(iocClause);
 
     const relaxedParts = [...baseWhereParts, iocClause];
 
-    const candidates = [strictParts, mediumParts, relaxedParts];
+    // If event_time is delayed/skewed against ClickHouse ts, try without time window.
+    const noTimeStrictParts = [];
+    if (rowSource) noTimeStrictParts.push(`source = '${escapeChString(rowSource)}'`);
+    if (rowHost) noTimeStrictParts.push(`host = '${escapeChString(rowHost)}'`);
+    if (rowParser) noTimeStrictParts.push(`parser_source = '${escapeChString(rowParser)}'`);
+    if (rowDestIp) noTimeStrictParts.push(`(parsed_ip = '${escapeChString(rowDestIp)}' OR ioc_ip = '${escapeChString(rowDestIp)}')`);
+    noTimeStrictParts.push(iocClause);
+
+    const noTimeRelaxedParts = [iocClause];
+
+    const candidates = [strictParts, mediumParts, relaxedParts, noTimeStrictParts, noTimeRelaxedParts];
 
     for (const parts of candidates) {
       const whereSql = parts.length ? `WHERE ${parts.join(' AND ')}` : '';
