@@ -2386,6 +2386,21 @@ app.get('/api/ioc/details', async (req, res) => {
       file_information: buildFileInformation(rows, observable, rows[0].observable_type)
     };
 
+    let signalRawExpr = 'NULL';
+    try {
+      const existsRes = await pool.query(`SELECT to_regclass('public.signal_events') AS rel`);
+      if (existsRes.rows?.[0]?.rel) {
+        signalRawExpr = `(
+            SELECT se.raw_event
+            FROM signal_events se
+            WHERE se.id = m.signal_event_id
+            LIMIT 1
+          )`;
+      }
+    } catch {
+      signalRawExpr = 'NULL';
+    }
+
     const matchesQ = `
       SELECT
         m.id,
@@ -2405,12 +2420,7 @@ app.get('/api/ioc/details', async (req, res) => {
         m.detection_type,
         m.match_source,
         COALESCE(
-          NULLIF((
-            SELECT se.raw_event
-            FROM signal_events se
-            WHERE se.id = m.signal_event_id
-            LIMIT 1
-          ), ''),
+          NULLIF(${signalRawExpr}, ''),
           NULLIF(CONCAT_WS(' | ',
             NULLIF(m.source, ''),
             NULLIF(m.host_name, ''),
