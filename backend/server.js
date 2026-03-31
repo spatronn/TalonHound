@@ -2388,34 +2388,55 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const matchesQ = `
       SELECT
-        id,
-        event_time,
-        host_name,
-        process_name,
-        destination_ip,
-        destination_port,
-        protocol,
-        source,
-        parser_source,
-        matched_ioc,
-        source_name,
-        confidence,
-        hit_count,
-        detection_type,
-        match_source,
+        m.id,
+        m.signal_event_id,
+        m.event_time,
+        m.host_name,
+        m.process_name,
+        m.destination_ip,
+        m.destination_port,
+        m.protocol,
+        m.source,
+        m.parser_source,
+        m.matched_ioc,
+        m.source_name,
+        m.confidence,
+        m.hit_count,
+        m.detection_type,
+        m.match_source,
         COALESCE(
-          detection_type,
+          NULLIF((
+            SELECT se.raw_event
+            FROM signal_events se
+            WHERE se.id = m.signal_event_id
+            LIMIT 1
+          ), ''),
+          NULLIF(CONCAT_WS(' | ',
+            NULLIF(m.source, ''),
+            NULLIF(m.host_name, ''),
+            NULLIF(m.process_name, ''),
+            CASE
+              WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+              ELSE NULL
+            END,
+            NULLIF(m.protocol, ''),
+            NULLIF(m.parser_source, '')
+          ), ''),
+          '-'
+        ) AS matched_syslog_event,
+        COALESCE(
+          m.detection_type,
           CASE
-            WHEN COALESCE(NULLIF(match_context->>'processing_path', ''), 'realtime') = 'retro'
-              OR COALESCE((match_context->>'retroactive')::boolean, false)
+            WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+              OR COALESCE((m.match_context->>'retroactive')::boolean, false)
             THEN 'retroactive'
             ELSE 'realtime'
           END
         ) AS detection_mode,
-        created_at
-      FROM ioc_match_events
-      WHERE matched_ioc = $1
-      ORDER BY created_at DESC
+        m.created_at
+      FROM ioc_match_events m
+      WHERE m.matched_ioc = $1
+      ORDER BY m.created_at DESC
       LIMIT 20
     `;
     const matchesRes = await pool.query(matchesQ, [observable]);
