@@ -1669,6 +1669,7 @@ function IOCListPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listStatusText, setListStatusText] = useState('');
+  const [searchError, setSearchError] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   const loadSummary = useCallback(async () => {
@@ -1818,6 +1819,43 @@ function IOCListPage() {
     color: confidence === 'high' ? '#991b1b' : confidence === 'medium' ? '#92400e' : '#166534'
   });
 
+  function normalizeSearchQuery(rawInput) {
+    const trimmed = String(rawInput || '').trim();
+    if (!trimmed) return { ok: true, value: '' };
+
+    const match = trimmed.match(/^(ip|sha1|sha256|md5|domain|ipv6)\s*:\s*(.+)$/i);
+    if (!match) {
+      return {
+        ok: false,
+        message: 'Syntax error. Use one of: ip:, sha1:, sha256:, md5:, domain:, ipv6:'
+      };
+    }
+
+    const prefix = match[1].toLowerCase();
+    const value = String(match[2] || '').trim();
+    if (!value) {
+      return {
+        ok: false,
+        message: 'Syntax error. Query value cannot be empty.'
+      };
+    }
+
+    const backendPrefix = prefix === 'ipv6' ? 'ip6' : prefix;
+    return { ok: true, value: `${backendPrefix}:${value}` };
+  }
+
+  function applySearch() {
+    const parsed = normalizeSearchQuery(searchInput);
+    if (!parsed.ok) {
+      setSearchError(parsed.message || 'Syntax error.');
+      return;
+    }
+
+    setSearchError('');
+    setPage(1);
+    setSearch(parsed.value);
+  }
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
@@ -1866,30 +1904,26 @@ function IOCListPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
         <input
-          placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)"
+          placeholder="Search (ip:, sha1:, sha256:, md5:, domain:, ipv6:)"
           value={searchInput}
           onChange={(e) => {
             setSearchInput(e.target.value);
+            if (searchError) setSearchError('');
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              setPage(1);
-              setSearch(searchInput.trim());
+              applySearch();
             }
           }}
         />
-        <button
-          onClick={() => {
-            setPage(1);
-            setSearch(searchInput.trim());
-          }}
-        >
+        <button onClick={applySearch}>
           Search
         </button>
         <button
           onClick={() => {
             setSearchInput('');
+            setSearchError('');
             setSearch('');
             setPage(1);
           }}
@@ -1897,6 +1931,12 @@ function IOCListPage() {
           Clear
         </button>
       </div>
+
+      {searchError && (
+        <div style={{ marginBottom: 10, padding: 10, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, color: '#991b1b', fontWeight: 600 }}>
+          {searchError}
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
