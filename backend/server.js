@@ -2432,17 +2432,6 @@ app.get('/api/ioc/details', async (req, res) => {
         m.match_source,
         COALESCE(
           NULLIF(${signalRawExpr}, ''),
-          NULLIF(CONCAT_WS(' | ',
-            NULLIF(m.source, ''),
-            NULLIF(m.host_name, ''),
-            NULLIF(m.process_name, ''),
-            CASE
-              WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
-              ELSE NULL
-            END,
-            NULLIF(m.protocol, ''),
-            NULLIF(m.parser_source, '')
-          ), ''),
           '-'
         ) AS matched_syslog_event,
         COALESCE(
