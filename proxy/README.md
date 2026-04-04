@@ -5,4 +5,6 @@
 
 İlk çalıştırmada `certs/` boşsa entrypoint **self-signed** üretir (tarayıcı uyarısı normal).
 
-Üretim: `cert.pem` / `key.pem` dosyalarını bu dizine mount edin (veya volume); güçlü cipher ve HSTS ihtiyacına göre `nginx.conf` genişletin.
+Üretim: `cert.pem` / `key.pem` dosyalarını bu dizine mount edin (veya volume).
+
+`nginx.conf` içinde özetle: **TLS 1.2+**, AEAD cipher seti, **HTTP/2**, oturum önbelleği, **HSTS** (`includeSubDomains`), **OCSP stapling** (stapling doğrulaması self-signed ile uyum için `off`; Let’s Encrypt kullanırken `fullchain.pem`’i `cert.pem` olarak verip istersen `ssl_stapling_verify on` + `ssl_trusted_certificate` ile sıkılaştırabilirsin), birkaç güvenlik başlığı (`nosniff`, `Referrer-Policy`, `X-Frame-Options`).
