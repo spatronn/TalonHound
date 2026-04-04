@@ -1,6 +1,6 @@
 -- CPU root-cause profiling pack for demo-clickhouse
 -- Run with:
--- docker compose exec clickhouse clickhouse-client -u demo --password demo123 --multiquery < /opt/demo-runbook/scripts/clickhouse-cpu-root-cause-profile.sql
+-- docker compose exec clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD" --multiquery < /opt/demo-runbook/scripts/clickhouse-cpu-root-cause-profile.sql
 
 -- 1) Live expensive queries
 SELECT

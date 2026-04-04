@@ -1,6 +1,6 @@
 -- Apply on running ClickHouse to stop high network input from too-frequent PostgreSQL dictionary reloads.
 -- Usage:
---   docker compose exec clickhouse clickhouse-client -u demo --password demo123 --multiquery < /opt/demo-runbook/scripts/clickhouse-fix-ioc-dictionaries.sql
+--   docker compose exec clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD" --multiquery < /opt/demo-runbook/scripts/clickhouse-fix-ioc-dictionaries.sql
 
 -- 1) Inspect current dictionaries
 SELECT

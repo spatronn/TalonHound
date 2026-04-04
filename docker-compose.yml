@@ -36,7 +36,7 @@ services:
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
       - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=demo123
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     depends_on:
       - db
       - redis
@@ -126,7 +126,7 @@ services:
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
       - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=demo123
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - IOC_CORRELATION_WORKER_NAME=clickhouse-ioc-correlation-v1
       - IOC_CORRELATION_POLL_INTERVAL_MS=30000
       - IOC_CORRELATION_BATCH_SIZE=2000
@@ -155,7 +155,7 @@ services:
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
       - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=demo123
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - IOC_LOOKUP_SYNC_INTERVAL_SECONDS=3600
       - IOC_LOOKUP_SYNC_ENABLED=0
       - IOC_RETRO_SCAN_INTERVAL_SECONDS=3600
@@ -218,7 +218,7 @@ services:
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
       - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=demo123
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     depends_on:
       - db
       - clickhouse
@@ -232,7 +232,7 @@ services:
     container_name: demo-clickhouse
     environment:
       - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=demo123
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "8123:8123"

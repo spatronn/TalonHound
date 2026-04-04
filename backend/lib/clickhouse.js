@@ -1,4 +1,5 @@
 import './ensure-db-password.js';
+import './ensure-clickhouse-password.js';
 import { createClient } from '@clickhouse/client';
 
 const clickhouseUrl = process.env.CLICKHOUSE_URL || 'http://demo-clickhouse:8123';
