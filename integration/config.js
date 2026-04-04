@@ -1,7 +1,8 @@
 import './ensure-db-password.js';
+import { getRedisUrl } from './redis-url.js';
 
 export const config = {
-  redisUrl: process.env.REDIS_URL || 'redis://redis:6379',
+  redisUrl: getRedisUrl(),
   queueName: process.env.QUEUE_NAME || 'integration-imports',
   schedulerCron: process.env.SCHEDULER_CRON || '0 * * * *',
   db: {

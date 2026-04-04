@@ -1,11 +1,12 @@
 import './lib/ensure-db-password.js';
 import pg from 'pg';
 import IORedis from 'ioredis';
+import { getRedisUrl } from './lib/redis-url.js';
 import { Worker } from 'bullmq';
 
 const { Pool } = pg;
 
-const redisUrl = process.env.REDIS_URL || 'redis://redis:6379';
+const redisUrl = getRedisUrl();
 const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
 const signalWorkerConcurrency = Number(process.env.SIGNAL_WORKER_CONCURRENCY || 2);
 

@@ -15,7 +15,7 @@ MalwareBazaar policy: import file-hash intelligence from `https://bazaar.abuse.c
 
 ## Env vars
 
-- `REDIS_URL` (default: `redis://redis:6379`)
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (URL built in code; password URL-encoded). Optional legacy `REDIS_URL` if set.
 - `QUEUE_NAME` (default: `integration-imports`)
 - `SCHEDULER_CRON` (default: `0 * * * *`)
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`

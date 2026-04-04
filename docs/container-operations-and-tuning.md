@@ -42,6 +42,7 @@ docker compose up -d --build
 ### 2) `demo-redis`
 **Purpose**
 - Queue broker for async jobs.
+- **AUTH:** `redis-server --requirepass` from `REDIS_PASSWORD` (compose default `dev-insecure-redis` if unset). All app workers use the same password via `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`.
 
 **Used queues**
 - `integration-imports` (IOC integration jobs)
@@ -49,6 +50,7 @@ docker compose up -d --build
 
 **Ops notes**
 - Redis memory should be monitored if event rate increases.
+- Smoke AUTH: `docker compose exec -T redis redis-cli -a "$REDIS_PASSWORD" ping` (or paste password from `.env`).
 
 ---
 

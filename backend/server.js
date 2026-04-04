@@ -4,6 +4,7 @@ import cors from 'cors';
 import pg from 'pg';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
+import { getRedisUrl } from './lib/redis-url.js';
 import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
 import { signUserToken, apiAuthGate } from './lib/auth.js';
 
@@ -25,7 +26,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'demo'
 });
 
-const redisUrl = process.env.REDIS_URL || 'redis://redis:6379';
+const redisUrl = getRedisUrl();
 const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
