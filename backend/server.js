@@ -1189,7 +1189,7 @@ app.get('/api/integrations', async (req, res) => {
         f.integration_id,
         f.name,
         f.source_url,
-        '0 * * * *' AS schedule,
+        f.schedule_cron AS schedule,
         f.trust_level,
         f.created_at,
         COALESCE(lr.status, lq.status, 'never') AS last_status,
@@ -1378,6 +1378,7 @@ const INTEGRATION_JOBS = {
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
+const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *']);
 
 app.post('/api/integrations/run-now', async (_req, res) => {
   try {
@@ -1444,6 +1445,33 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update trust level', detail: err.message });
+  }
+});
+
+app.put('/api/integrations/:key/schedule', async (req, res) => {
+  const { key } = req.params;
+  const scheduleCron = String(req.body?.schedule_cron || '').trim();
+
+  if (!SCHEDULE_CRONS.has(scheduleCron)) {
+    return res.status(400).json({ message: 'Invalid schedule_cron' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET schedule_cron = $2, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, schedule_cron`,
+      [key, scheduleCron]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update schedule', detail: err.message });
   }
 });
 

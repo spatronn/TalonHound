@@ -1257,6 +1257,15 @@ function IntegrationsPage() {
     }
   }
 
+  async function updateSchedule(key, scheduleCron) {
+    try {
+      await api.put(`/integrations/${encodeURIComponent(key)}/schedule`, { schedule_cron: scheduleCron });
+      setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, schedule: scheduleCron } : i)));
+    } catch {
+      alert('Failed to update schedule');
+    }
+  }
+
   const statusColor = (status) => {
     if (status === 'success') return '#166534';
     if (status === 'failed' || status === 'fail') return '#991b1b';
@@ -1271,11 +1280,17 @@ function IntegrationsPage() {
     return 'never';
   };
 
+  const SCHEDULE_OPTIONS = [
+    { cron: '*/5 * * * *', label: 'Every 5 minutes' },
+    { cron: '*/15 * * * *', label: 'Every 15 minutes' },
+    { cron: '*/30 * * * *', label: 'Every 30 minutes' },
+    { cron: '0 * * * *', label: 'Every hour' }
+  ];
+
   const humanSchedule = (cron) => {
     const c = String(cron || '').trim();
-    if (c === '0 * * * *') return 'Every hour';
-    if (c === '*/30 * * * *') return 'Every 30 minutes';
-    if (c === '*/15 * * * *') return 'Every 15 minutes';
+    const found = SCHEDULE_OPTIONS.find((o) => o.cron === c);
+    if (found) return found.label;
     return c || '-';
   };
 
@@ -1348,7 +1363,17 @@ function IntegrationsPage() {
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.integration_id || '-'}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.created_at)}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{humanSchedule(i.schedule)}</td>
+                    <td>
+                      <select
+                        value={i.schedule || '0 * * * *'}
+                        onChange={(e) => updateSchedule(i.key, e.target.value)}
+                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                      >
+                        {SCHEDULE_OPTIONS.map((opt) => (
+                          <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td>
                       <select value={i.trust_level || 'not_categorized'} onChange={(e) => updateTrustLevel(i.key, e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}>
                         <option value="guvenilir">Reliable</option>
