@@ -1201,7 +1201,7 @@ function IntegrationsPage() {
   const [integrations, setIntegrations] = useState([]);
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
-  const [tableWidths, setTableWidths] = useState({ name: 180, integrationId: 190, source: 280, addedAt: 170, schedule: 140, trust: 160, status: 120, lastRun: 170, total: 120, action: 130 });
+  const [tableWidths, setTableWidths] = useState({ name: 180, integrationId: 190, source: 280, addedAt: 170, schedule: 140, trust: 160, status: 120, lastRun: 170, nextRun: 180, total: 120, action: 130 });
   const [resizeState, setResizeState] = useState(null);
 
   async function load() {
@@ -1339,6 +1339,7 @@ function IntegrationsPage() {
                 <col style={{ width: tableWidths.trust }} />
                 <col style={{ width: tableWidths.status }} />
                 <col style={{ width: tableWidths.lastRun }} />
+                <col style={{ width: tableWidths.nextRun }} />
                 <col style={{ width: tableWidths.total }} />
                 <col style={{ width: tableWidths.action }} />
               </colgroup>
@@ -1352,6 +1353,7 @@ function IntegrationsPage() {
                   <th style={{ position: 'relative' }}>Trust Level<div onMouseDown={(e) => startResize('trust', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Last status<div onMouseDown={(e) => startResize('status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Last run start<div onMouseDown={(e) => startResize('lastRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th style={{ position: 'relative' }}>Next run<div onMouseDown={(e) => startResize('nextRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Total Records<div onMouseDown={(e) => startResize('total', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 </tr>
@@ -1383,6 +1385,7 @@ function IntegrationsPage() {
                     </td>
                     <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusLabel(i.last_status)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.last_started_at)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.next_run_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.total_records ?? 0}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
                   </tr>

@@ -1194,6 +1194,12 @@ app.get('/api/integrations', async (req, res) => {
         f.created_at,
         COALESCE(lr.status, lq.status, 'never') AS last_status,
         COALESCE(lr.started_at, lq.started_at, lq.queued_at) AS last_started_at,
+        CASE
+          WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
+          WHEN f.schedule_cron = '*/15 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 15 = 0 THEN 15 ELSE 15 - (EXTRACT(MINUTE FROM NOW())::int % 15) END) * INTERVAL '1 minute'
+          WHEN f.schedule_cron = '*/30 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 30 = 0 THEN 30 ELSE 30 - (EXTRACT(MINUTE FROM NOW())::int % 30) END) * INTERVAL '1 minute'
+          ELSE date_trunc('hour', NOW()) + INTERVAL '1 hour'
+        END AS next_run_at,
         COALESCE(lr.finished_at, lq.finished_at) AS last_finished_at,
         COALESCE(lr.records_processed, lq.records_processed, 0) AS last_records_processed,
         CASE
