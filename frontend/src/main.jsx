@@ -327,7 +327,7 @@ function AppShell({ children }) {
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/settings" style={menuStyle(isActive('/settings'))}>6. Settings</Link>
+            <Link to="/settings" style={menuStyle(isActive('/settings'))}>6. Administration</Link>
           </div>
         </nav>
 
@@ -343,7 +343,7 @@ function AppShell({ children }) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ width: 420, maxWidth: '92vw', background: '#fff', borderRadius: 12, padding: 16, border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginTop: 0 }}>Select Timezone</h3>
-            <p style={{ fontSize: 14, color: '#475569' }}>This is required once. You can change it later from Settings.</p>
+            <p style={{ fontSize: 14, color: '#475569' }}>This is required once. You can change it later from Administration.</p>
             <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 10 }}>
               {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
@@ -1849,8 +1849,8 @@ function SettingsPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, maxWidth: 720 }}>
-        <h2 style={{ marginTop: 0 }}>Settings</h2>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, width: '100%', maxWidth: 1180 }}>
+        <h2 style={{ marginTop: 0 }}>Administration</h2>
 
         <label style={{ display: 'block', fontSize: 14, marginBottom: 6 }}>Timezone</label>
         <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 12 }}>
