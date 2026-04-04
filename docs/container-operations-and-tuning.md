@@ -24,7 +24,7 @@ docker compose up -d --build
 **Key tables (relevant to current flow)**
 - `signal_events` → raw telemetry events (retention: 30 days)
 - `ioc_match_events` → IOC matches (kept indefinitely)
-- `signal_sources` → connected source metadata (e.g., Sysmon/Windows)
+- `signal_sources` → connected source metadata (legacy / analytics)
 - `ioc_items` → IOC inventory
 
 **Ops notes**
@@ -45,7 +45,7 @@ docker compose up -d --build
 
 **Used queues**
 - `integration-imports` (IOC integration jobs)
-- `signal-events` (Sysmon event processing jobs)
+- `signal-events` (signal processing jobs)
 
 **Ops notes**
 - Redis memory should be monitored if event rate increases.
@@ -60,7 +60,6 @@ docker compose up -d --build
 - `GET /api/analytics/data-sources`
 - `GET /api/analytics/raw-events?limit=10`
 - `GET /api/analytics/ioc-matches?limit=10`
-- `POST /api/sysmon/events` (ingest entrypoint)
 
 **Ops notes**
 - Runs migrations on startup.
@@ -75,7 +74,7 @@ docker compose up -d --build
 - Writes raw events to `signal_events` and matches to `ioc_match_events`.
 
 **Current behavior**
-- Processes Sysmon events from Windows agent.
+- Consumes jobs from the `signal-events` queue when producers enqueue them.
 - Score/filter logic exists in worker.
 
 **Ops notes**
@@ -183,7 +182,6 @@ Ana diyagramlar ayrı dosyada tutulur:
 
 ```mermaid
 flowchart LR
-    W[Windows Host\nSysmon + sysmon-agent.ps1]
     FE[demo-frontend\nUI]
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
@@ -195,7 +193,6 @@ flowchart LR
     DB[(demo-db\nPostgreSQL)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
-    W -->|POST /api/sysmon/events| BE
     FE -->|API calls| BE
 
     BE -->|enqueue signal-events| R
@@ -210,20 +207,6 @@ flowchart LR
     MW -->|batch aggregate + daily snapshot| DB
     BE -->|analytics/auth queries| DB
 ```
-
-## Windows Demo Telemetry Path
-
-1. Sysmon captures events (`ProcessCreate`, `NetworkConnect`, `DnsQuery`)
-2. `sysmon-agent.ps1` sends data to:
-   - `POST http://192.168.1.251/api/sysmon/events`
-3. Backend enqueues to Redis `signal-events`
-4. Signal engine processes and writes DB records
-5. Analytics page reads and displays results
-
-Related files:
-- `reports/sysmon-agent.ps1`
-- `reports/sysmon-full-network.xml`
-- `docs/windows-demo-config.md`
 
 ---
 

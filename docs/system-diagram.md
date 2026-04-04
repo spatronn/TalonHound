@@ -4,7 +4,6 @@
 
 ```mermaid
 flowchart LR
-    W[Windows Host\nSysmon + sysmon-agent.ps1]
     FE[demo-frontend\nUI]
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
@@ -15,7 +14,6 @@ flowchart LR
     DB[(demo-db\nPostgreSQL)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
-    W -->|POST /api/sysmon/events| BE
     FE -->|API calls| BE
 
     BE -->|enqueue signal-events| R
@@ -35,7 +33,6 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    WIN[Windows Demo Endpoint\nSysmon + Agent]
     IOC[External IOC Feeds\nET / USOM / URLhaus]
 
     subgraph HOST[Linux Host 192.168.1.251]
@@ -53,7 +50,6 @@ flowchart TB
 
     USER[Analyst Browser] -->|HTTP :80| FE
     FE -->|API| BE
-    WIN -->|POST /api/sysmon/events| BE
 
     BE -->|signal-events| R
     R --> SE

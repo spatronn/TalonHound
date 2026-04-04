@@ -2,7 +2,7 @@
 
 ## Quick Links
 
-- Windows demo setup: `docs/windows-demo-config.md`
+- System diagram: `docs/system-diagram.md`
 - Container operations & tuning: `docs/container-operations-and-tuning.md`
 
 ## Run
