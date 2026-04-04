@@ -7,7 +7,15 @@ import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
-import { signUserToken, apiAuthGate, appendAuthCookie, clearAuthCookie } from './lib/auth.js';
+import {
+  signUserToken,
+  apiAuthGate,
+  csrfProtection,
+  appendAuthCookie,
+  clearAuthCookie,
+  appendCsrfCookie,
+  clearCsrfCookie
+} from './lib/auth.js';
 
 const { Pool } = pg;
 
@@ -58,6 +66,7 @@ app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
 app.use(apiAuthGate);
+app.use(csrfProtection);
 
 let geoCacheRefreshInProgress = false;
 let geoCacheDebounceTimer = null;
@@ -1461,6 +1470,7 @@ app.post('/api/auth/login', (req, res) => {
   if (email === demoEmail && password === demoPassword) {
     const token = signUserToken(email);
     appendAuthCookie(req, res, token);
+    appendCsrfCookie(req, res);
     return res.json({ user: { email } });
   }
 
@@ -1469,6 +1479,7 @@ app.post('/api/auth/login', (req, res) => {
 
 app.post('/api/auth/logout', (req, res) => {
   clearAuthCookie(req, res);
+  clearCsrfCookie(req, res);
   res.status(204).end();
 });
 

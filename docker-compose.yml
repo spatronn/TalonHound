@@ -270,6 +270,7 @@ services:
       - SYSLOG_HOST=syslog-receiver
       - SYSLOG_PORT=514
       - IOC_API_BASE=http://backend:3000
+      - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
       - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
       - IOC_SOURCE_NAME=loadgen-smoke
       - IOC_CONFIDENCE=90

@@ -45,9 +45,9 @@ def post_ioc(api_base, ip, source_name, confidence, note):
     }
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
-    token = os.getenv("API_BEARER_TOKEN", "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    ingest = os.getenv("API_INGEST_TOKEN", "").strip() or os.getenv("API_BEARER_TOKEN", "").strip()
+    if ingest:
+        headers["X-Api-Ingest-Token"] = ingest
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=5) as resp:
         return resp.status
