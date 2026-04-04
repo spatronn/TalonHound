@@ -6,7 +6,9 @@ DURATION="${DURATION:-120}"
 TARGET_HOST="${TARGET_HOST:-127.0.0.1}"
 TARGET_PORT="${TARGET_PORT:-514}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8081/receiver/health}"
-CH_URL="${CH_URL:-http://127.0.0.1:8123}"
+# ClickHouse HTTP is not published on the host by default (see docker-compose). Leave empty to skip CH curls,
+# or set e.g. CH_URL=http://127.0.0.1:8123 if you publish 8123 locally / use an SSH tunnel.
+CH_URL="${CH_URL:-}"
 
 TOTAL=$((EPS * DURATION))
 START_TS=$(date +%s)
@@ -31,13 +33,17 @@ WALL=$((END_TS - START_TS))
 echo "\n=== Receiver metrics ==="
 curl -fsS "$HEALTH_URL" || true
 
-echo "\n=== ClickHouse insert rate (last 5m) ==="
-curl -fsS "$CH_URL" --data-binary "SELECT count() AS events_5m, round(count()/300,2) AS eps_5m FROM syslog_logs WHERE ts > now() - INTERVAL 5 MINUTE FORMAT JSONEachRow" || true
+if [[ -n "${CH_URL}" ]]; then
+  echo "\n=== ClickHouse insert rate (last 5m) ==="
+  curl -fsS "$CH_URL" --data-binary "SELECT count() AS events_5m, round(count()/300,2) AS eps_5m FROM syslog_logs WHERE ts > now() - INTERVAL 5 MINUTE FORMAT JSONEachRow" || true
 
-echo "\n=== ClickHouse query latency ==="
-T0=$(date +%s%3N)
-curl -fsS "$CH_URL" --data-binary "SELECT toStartOfMinute(ts) AS m, count() AS c FROM syslog_logs WHERE ts > now() - INTERVAL 1 HOUR GROUP BY m ORDER BY m FORMAT JSONEachRow" >/dev/null || true
-T1=$(date +%s%3N)
-echo "query_latency_ms=$((T1-T0))"
+  echo "\n=== ClickHouse query latency ==="
+  T0=$(date +%s%3N)
+  curl -fsS "$CH_URL" --data-binary "SELECT toStartOfMinute(ts) AS m, count() AS c FROM syslog_logs WHERE ts > now() - INTERVAL 1 HOUR GROUP BY m ORDER BY m FORMAT JSONEachRow" >/dev/null || true
+  T1=$(date +%s%3N)
+  echo "query_latency_ms=$((T1-T0))"
+else
+  echo "\n=== ClickHouse (skipped: set CH_URL to query HTTP API from this host) ==="
+fi
 
 echo "[load-test] done wall=${WALL}s"

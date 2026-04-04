@@ -228,6 +228,9 @@ services:
       - "8081:8081"
     restart: unless-stopped
 
+  # ClickHouse is reachable only on the Docker network (demo-clickhouse:8123 / :9000).
+  # Do not publish HTTP/native ports to the host in production. For ad-hoc queries:
+  #   docker compose exec clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD"
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     container_name: demo-clickhouse
@@ -235,9 +238,6 @@ services:
       - CLICKHOUSE_USER=demo
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-    ports:
-      - "8123:8123"
-      - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./db/clickhouse-init:/docker-entrypoint-initdb.d:ro
