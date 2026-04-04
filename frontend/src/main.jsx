@@ -197,8 +197,8 @@ function LoginPage() {
     <div style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'sans-serif' }}>
       <h2>Demo Login</h2>
       <form onSubmit={onSubmit}>
-        <input name="email" type="email" placeholder="email" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
-        <input name="password" type="password" placeholder="password" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
+        <input name="email" type="text" placeholder="username or email" autoComplete="username" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
+        <input name="password" type="password" placeholder="password" autoComplete="current-password" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
         <button type="submit" style={{ width: '100%', padding: 10 }}>Sign In</button>
       </form>
       <p style={{ fontSize: 12, color: '#555' }}>Demo user: demo@demo.local / Password1!</p>
