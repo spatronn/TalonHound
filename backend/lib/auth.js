@@ -4,10 +4,6 @@ import jwt from 'jsonwebtoken';
 const secret = process.env.JWT_SECRET;
 const expiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
-if (process.env.NODE_ENV === 'production' && !process.env.INGEST_API_KEY) {
-  console.warn('[auth] INGEST_API_KEY is not set; POST /api/sysmon/events accepts unauthenticated requests');
-}
-
 export function signUserToken(email) {
   const e = String(email || '').trim();
   return jwt.sign({ email: e }, secret, { subject: e, expiresIn });
@@ -38,22 +34,9 @@ export function requireAuth(req, res, next) {
   }
 }
 
-export function requireAuthOrIngestKey(req, res, next) {
-  const ingestKey = process.env.INGEST_API_KEY;
-  if (ingestKey) {
-    const provided = String(req.get('x-ingest-key') || '');
-    if (provided && provided === ingestKey) return next();
-    return requireAuth(req, res, next);
-  }
-  return next();
-}
-
 export function apiAuthGate(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   if (req.path === '/api/auth/login' && req.method === 'POST') return next();
-  if (req.path === '/api/sysmon/events' && req.method === 'POST') {
-    return requireAuthOrIngestKey(req, res, next);
-  }
   if (req.path.startsWith('/api')) {
     return requireAuth(req, res, next);
   }

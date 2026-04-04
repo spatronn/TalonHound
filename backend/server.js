@@ -624,38 +624,6 @@ app.get('/api/system/status', async (req, res) => {
   return res.json(payload);
 });
 
-app.post('/api/sysmon/events', async (req, res) => {
-  try {
-    const events = Array.isArray(req.body?.events) ? req.body.events : [];
-    if (!events.length) {
-      return res.status(400).json({ ok: false, message: 'events array is required' });
-    }
-
-    const normalized = events.map((evt) => ({
-      source_key: 'sysmon.windows',
-      event_time: evt.event_time || evt.timeCreated || new Date().toISOString(),
-      host_name: evt.host_name || evt.computer || null,
-      username: evt.username || evt.user || null,
-      process_name: evt.process_name || evt.image || null,
-      process_id: evt.process_id || evt.processId || null,
-      destination_ip: evt.destination_ip || evt.destinationIp || null,
-      destination_port: evt.destination_port || evt.destinationPort || null,
-      protocol: evt.protocol || null,
-      raw: evt
-    }));
-
-    const job = await signalQueue.add('sysmon-network-events', { events: normalized }, {
-      removeOnComplete: 50,
-      removeOnFail: 100
-    });
-
-    return res.json({ ok: true, queued: normalized.length, jobId: job.id });
-  } catch (err) {
-    console.error('[sysmon-events] queue failed', err);
-    return res.status(500).json({ ok: false, message: 'failed to enqueue events' });
-  }
-});
-
 app.get('/api/analytics/data-sources', async (_req, res) => {
   try {
     if (USE_CLICKHOUSE) {

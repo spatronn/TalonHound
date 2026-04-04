@@ -69,7 +69,7 @@ const worker = new Worker(
           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
           RETURNING id`,
           [
-            evt.source_key || 'sysmon.windows',
+            evt.source_key || 'signal.ingest',
             evt.event_time || new Date().toISOString(),
             evt.host_name || null,
             evt.username || null,
@@ -126,7 +126,7 @@ const worker = new Worker(
          VALUES ($1, $2, $3, 'active')
          ON CONFLICT (key)
          DO UPDATE SET status='active', last_seen_at=NOW()`,
-        ['sysmon.windows', 'Sysmon', 'Windows']
+        ['signal.ingest', 'Signal Ingest', 'Ingest']
       );
 
       await client.query('COMMIT');

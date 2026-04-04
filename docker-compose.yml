@@ -24,7 +24,6 @@ services:
       - DEMO_EMAIL=demo@demo.local
       - DEMO_PASSWORD=Password1!
       - JWT_SECRET=${JWT_SECRET}
-      - INGEST_API_KEY=${INGEST_API_KEY:-}
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
