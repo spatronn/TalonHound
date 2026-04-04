@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -39,6 +39,59 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+const SessionContext = React.createContext({
+  authState: 'loading',
+  userEmail: '',
+  userId: null,
+  role: 'admin',
+  canWrite: true,
+  refreshSession: async () => {}
+});
+
+function SessionProvider({ children }) {
+  const [authState, setAuthState] = useState('loading');
+  const [userEmail, setUserEmail] = useState('');
+  const [userId, setUserId] = useState(null);
+  const [role, setRole] = useState('admin');
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const { data } = await api.get('/auth/me');
+      const u = data?.user || {};
+      const em = String(u.email || '');
+      if (em) {
+        setUserEmail(em);
+        setUserId(u.id != null ? Number(u.id) : null);
+        setRole(String(u.role || 'admin'));
+        setAuthState('authed');
+      } else {
+        setAuthState('anon');
+      }
+    } catch {
+      setAuthState('anon');
+      setUserEmail('');
+      setUserId(null);
+      setRole('admin');
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSession();
+  }, [refreshSession]);
+
+  const canWrite = role !== 'readonly';
+  const value = useMemo(
+    () => ({ authState, userEmail, userId, role, canWrite, refreshSession }),
+    [authState, userEmail, userId, role, canWrite, refreshSession]
+  );
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+function useSession() {
+  return useContext(SessionContext);
+}
 
 const COMMON_TIMEZONES = [
   'UTC',
@@ -122,6 +175,7 @@ function sanitizeSourceNote(note) {
 
 function LoginPage() {
   const navigate = useNavigate();
+  const { refreshSession } = useSession();
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -132,6 +186,7 @@ function LoginPage() {
     try {
       await api.post('/auth/login', { email, password });
       localStorage.removeItem('demo_timezone');
+      await refreshSession();
       navigate('/analytics');
     } catch {
       alert('Invalid email or password');
@@ -154,24 +209,9 @@ function LoginPage() {
 function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [user, setUser] = useState('');
+  const { userEmail, role, canWrite, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
   const [needsTimezoneSelection, setNeedsTimezoneSelection] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    api
-      .get('/auth/me')
-      .then(({ data }) => {
-        if (!mounted) return;
-        const email = data?.user?.email;
-        if (email) setUser(String(email));
-      })
-      .catch(() => {});
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -201,6 +241,12 @@ function AppShell({ children }) {
   }, []);
 
   async function saveTimezone(value) {
+    if (!canWrite) {
+      localStorage.setItem('demo_timezone', value);
+      setTimezone(value);
+      setNeedsTimezoneSelection(false);
+      return;
+    }
     try {
       const { data } = await api.put('/users/me/preferences', { timezone: value });
       const tz = data?.timezone || value;
@@ -218,6 +264,7 @@ function AppShell({ children }) {
     } catch {
       /* still leave app */
     }
+    await refreshSession();
     navigate('/login');
   }
 
@@ -249,7 +296,7 @@ function AppShell({ children }) {
   return (
     <div style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
-        <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{user || 'demo user'}</b></div>
+        <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{userEmail || 'demo user'}</b> <span style={{ color: '#94a3b8' }}>({role})</span></div>
 
         <nav>
           <Link to="/system" style={menuStyle(isActive('/system'))}>0. System</Link>
@@ -265,7 +312,11 @@ function AppShell({ children }) {
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isOpsActive)}>4. Operations</div>
             <Link to="/ioc" style={subMenuStyle(isActive('/ioc'))}>IOC List</Link>
-            <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
+            {canWrite ? (
+              <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
+            ) : (
+              <span style={{ ...subMenuStyle(false), opacity: 0.45, cursor: 'not-allowed' }} title="Read-only role">Add IOC</span>
+            )}
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -296,7 +347,7 @@ function AppShell({ children }) {
             <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 10 }}>
               {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
-            <button onClick={() => saveTimezone(timezone)} style={{ width: '100%', padding: 10, fontWeight: 600 }}>Save Timezone</button>
+            <button type="button" onClick={() => saveTimezone(timezone)} disabled={!canWrite} style={{ width: '100%', padding: 10, fontWeight: 600, opacity: canWrite ? 1 : 0.5 }}>{canWrite ? 'Save Timezone' : 'Read-only (local only)'}</button>
           </div>
         </div>
       )}
@@ -1233,6 +1284,7 @@ function SystemStatusPage() {
 }
 
 function IntegrationsPage() {
+  const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
   const [runningNowAll, setRunningNowAll] = useState(false);
@@ -1255,6 +1307,7 @@ function IntegrationsPage() {
   useEffect(() => { load().catch(() => {}); }, []);
 
   async function runNowAll() {
+    if (!canWrite) return;
     const ok = window.confirm('All integrations will be queued now. Do you want to continue?');
     if (!ok || runningNowAll) return;
     setRunningNowAll(true);
@@ -1270,6 +1323,7 @@ function IntegrationsPage() {
   }
 
   async function runNowOne(key, name) {
+    if (!canWrite) return;
     const ok = window.confirm(`Queue run for ${name || key} now?`);
     if (!ok || runningKeys[key]) return;
     setRunningKeys((prev) => ({ ...prev, [key]: true }));
@@ -1285,6 +1339,7 @@ function IntegrationsPage() {
   }
 
   async function updateTrustLevel(key, trustLevel) {
+    if (!canWrite) return;
     try {
       await api.put(`/integrations/${encodeURIComponent(key)}/trust-level`, { trust_level: trustLevel });
       setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, trust_level: trustLevel } : i)));
@@ -1294,6 +1349,7 @@ function IntegrationsPage() {
   }
 
   async function updateSchedule(key, scheduleCron) {
+    if (!canWrite) return;
     try {
       await api.put(`/integrations/${encodeURIComponent(key)}/schedule`, { schedule_cron: scheduleCron });
       setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, schedule: scheduleCron } : i)));
@@ -1358,7 +1414,7 @@ function IntegrationsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations Overview</h2>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={runNowAll} disabled={runningNowAll}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
+            <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
           </div>
         </div>
@@ -1405,7 +1461,8 @@ function IntegrationsPage() {
                       <select
                         value={i.schedule || '0 * * * *'}
                         onChange={(e) => updateSchedule(i.key, e.target.value)}
-                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+                        disabled={!canWrite}
+                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box', opacity: canWrite ? 1 : 0.55 }}
                       >
                         {SCHEDULE_OPTIONS.map((opt) => (
                           <option key={opt.cron} value={opt.cron}>{opt.label}</option>
@@ -1413,7 +1470,7 @@ function IntegrationsPage() {
                       </select>
                     </td>
                     <td>
-                      <select value={i.trust_level || 'not_categorized'} onChange={(e) => updateTrustLevel(i.key, e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box' }}>
+                      <select value={i.trust_level || 'not_categorized'} onChange={(e) => updateTrustLevel(i.key, e.target.value)} disabled={!canWrite} style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box', opacity: canWrite ? 1 : 0.55 }}>
                         <option value="guvenilir">Reliable</option>
                         <option value="orta">Medium</option>
                         <option value="not_categorized">Not Categorized</option>
@@ -1423,7 +1480,7 @@ function IntegrationsPage() {
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.last_started_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.next_run_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.total_records ?? 0}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><button onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key])}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1672,10 +1729,53 @@ function IntegrationsRecentRunsPage() {
 }
 
 function SettingsPage() {
+  const { canWrite, role, userId, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
   const [saving, setSaving] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [profile, setProfile] = useState({ first_name: '', last_name: '' });
+  const [profileBusy, setProfileBusy] = useState(false);
+
+  async function loadUsers() {
+    if (!canWrite) return;
+    setUsersLoading(true);
+    try {
+      const { data } = await api.get('/users');
+      setUsers(data?.users || []);
+    } catch {
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadUsers().catch(() => {});
+  }, [canWrite]);
+
+  async function loadSelfProfile() {
+    if (canWrite || userId == null) return;
+    try {
+      const { data } = await api.get('/users');
+      const u = (data?.users || [])[0];
+      if (u) setProfile({ first_name: u.first_name || '', last_name: u.last_name || '' });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  useEffect(() => {
+    loadSelfProfile().catch(() => {});
+  }, [canWrite, userId]);
 
   async function save() {
+    if (!canWrite) {
+      localStorage.setItem('demo_timezone', timezone);
+      alert('Timezone stored locally (read-only account).');
+      return;
+    }
     setSaving(true);
     try {
       const { data } = await api.put('/users/me/preferences', { timezone });
@@ -1688,15 +1788,149 @@ function SettingsPage() {
     }
   }
 
+  async function createUser(e) {
+    e.preventDefault();
+    if (!canWrite) return;
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const username = String(fd.get('username') || '').trim();
+    const password = fd.get('password');
+    const first_name = String(fd.get('first_name') || '').trim();
+    const last_name = String(fd.get('last_name') || '').trim();
+    const r = String(fd.get('role') || 'readonly').trim();
+    if (!username || !password) {
+      alert('Username and password required');
+      return;
+    }
+    setCreateBusy(true);
+    try {
+      await api.post('/users', { username, password, first_name, last_name, role: r });
+      form.reset();
+      await loadUsers();
+      alert('User created');
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed';
+      alert(msg);
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
+  async function saveProfile(e) {
+    e.preventDefault();
+    if (userId == null) return;
+    setProfileBusy(true);
+    try {
+      await api.put(`/users/${userId}`, {
+        first_name: profile.first_name,
+        last_name: profile.last_name
+      });
+      await refreshSession();
+      alert('Profile updated');
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed';
+      alert(msg);
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function removeUser(id) {
+    if (!canWrite) return;
+    if (!window.confirm('Delete this user?')) return;
+    try {
+      await api.delete(`/users/${id}`);
+      await loadUsers();
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed';
+      alert(msg);
+    }
+  }
+
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, maxWidth: 520 }}>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, maxWidth: 720 }}>
         <h2 style={{ marginTop: 0 }}>Settings</h2>
+
         <label style={{ display: 'block', fontSize: 14, marginBottom: 6 }}>Timezone</label>
         <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 12 }}>
           {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
         </select>
-        <button onClick={save} disabled={saving} style={{ padding: '10px 14px' }}>{saving ? 'Saving...' : 'Save'}</button>
+        <button type="button" onClick={save} disabled={saving} style={{ padding: '10px 14px', marginBottom: 24 }}>
+          {saving ? 'Saving...' : canWrite ? 'Save timezone' : 'Save locally (read-only)'}
+        </button>
+
+        {role === 'readonly' && userId != null ? (
+          <div style={{ marginBottom: 24, paddingTop: 16, borderTop: '1px solid #334155' }}>
+            <h3 style={{ marginTop: 0 }}>Your profile</h3>
+            <form onSubmit={saveProfile} style={{ display: 'grid', gap: 10, maxWidth: 400 }}>
+              <input
+                value={profile.first_name}
+                onChange={(e) => setProfile((p) => ({ ...p, first_name: e.target.value }))}
+                placeholder="First name"
+                style={{ padding: 10, borderRadius: 8 }}
+              />
+              <input
+                value={profile.last_name}
+                onChange={(e) => setProfile((p) => ({ ...p, last_name: e.target.value }))}
+                placeholder="Last name"
+                style={{ padding: 10, borderRadius: 8 }}
+              />
+              <button type="submit" disabled={profileBusy} style={{ padding: '10px 14px' }}>
+                {profileBusy ? 'Saving...' : 'Update name'}
+              </button>
+            </form>
+          </div>
+        ) : null}
+
+        {canWrite ? (
+          <div style={{ paddingTop: 16, borderTop: '1px solid #334155' }}>
+            <h3 style={{ marginTop: 0 }}>Create user (admin)</h3>
+            <form onSubmit={createUser} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
+              <input name="username" placeholder="Username" required style={{ padding: 10, borderRadius: 8 }} />
+              <input name="password" type="password" placeholder="Password" required style={{ padding: 10, borderRadius: 8 }} />
+              <input name="first_name" placeholder="First name" style={{ padding: 10, borderRadius: 8 }} />
+              <input name="last_name" placeholder="Last name" style={{ padding: 10, borderRadius: 8 }} />
+              <select name="role" defaultValue="readonly" style={{ padding: 10, borderRadius: 8 }}>
+                <option value="readonly">readonly</option>
+                <option value="admin">admin</option>
+              </select>
+              <button type="submit" disabled={createBusy} style={{ gridColumn: '1 / -1', padding: 10 }}>
+                {createBusy ? 'Creating...' : 'Create user'}
+              </button>
+            </form>
+
+            <h3>Users</h3>
+            {usersLoading ? <div style={{ color: '#94a3b8' }}>Loading…</div> : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155' }}>
+                      <th>ID</th>
+                      <th>Username</th>
+                      <th>Name</th>
+                      <th>Role</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map((u) => (
+                      <tr key={u.id} style={{ borderBottom: '1px solid #334155' }}>
+                        <td>{u.id}</td>
+                        <td>{u.username}</td>
+                        <td>{`${u.first_name || ''} ${u.last_name || ''}`.trim() || '—'}</td>
+                        <td>{u.role}</td>
+                        <td>
+                          <button type="button" onClick={() => removeUser(u.id)} style={{ padding: '4px 10px' }}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : null}
       </section>
     </AppShell>
   );
@@ -2369,6 +2603,7 @@ function IOCDetailsPage() {
 
 function IOCAddPage() {
   const navigate = useNavigate();
+  const { canWrite } = useSession();
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [recentRows, setRecentRows] = useState([]);
@@ -2450,6 +2685,7 @@ function IOCAddPage() {
 
   async function onSubmit(e) {
     e.preventDefault();
+    if (!canWrite) return;
     if (submitting) return;
     setSubmitting(true);
 
@@ -2491,23 +2727,28 @@ function IOCAddPage() {
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>Add IOC</h2>
+      {!canWrite && (
+        <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: '1px solid #475569', color: '#94a3b8', fontSize: 14 }}>
+          Read-only role: adding IOCs is disabled.
+        </div>
+      )}
       {message && (
         <div role="alert" style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, fontSize: 14, ...messageStyle }}>
           {message.text}
         </div>
       )}
       <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginBottom: 20 }}>
-        <input name="ip" placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)" required />
-        <input name="source_name" placeholder="Source name" required />
-        <input name="source_url" placeholder="Source URL" />
-        <select name="confidence" defaultValue="medium">
+        <input name="ip" placeholder="IOC (e.g. 1.2.3.4 / malicious.example / http://bad.site)" required disabled={!canWrite} />
+        <input name="source_name" placeholder="Source name" required disabled={!canWrite} />
+        <input name="source_url" placeholder="Source URL" disabled={!canWrite} />
+        <select name="confidence" defaultValue="medium" disabled={!canWrite}>
           <option value="low">low</option>
           <option value="medium">medium</option>
           <option value="high">high</option>
         </select>
-        <input name="category" placeholder="Category" />
-        <input name="note" placeholder="Note" />
-        <button type="submit" disabled={submitting} style={{ gridColumn: '1 / -1', padding: 10, opacity: submitting ? 0.7 : 1 }}>
+        <input name="category" placeholder="Category" disabled={!canWrite} />
+        <input name="note" placeholder="Note" disabled={!canWrite} />
+        <button type="submit" disabled={submitting || !canWrite} style={{ gridColumn: '1 / -1', padding: 10, opacity: submitting || !canWrite ? 0.7 : 1 }}>
           {submitting ? 'Saving...' : 'Save IOC'}
         </button>
       </form>
@@ -2555,50 +2796,23 @@ function IOCAddPage() {
 }
 
 function Protected({ children }) {
-  const [state, setState] = useState('loading');
+  const { authState } = useSession();
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get('/auth/me')
-      .then(() => {
-        if (!cancelled) setState('authed');
-      })
-      .catch(() => {
-        if (!cancelled) setState('anon');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (state === 'loading') {
+  if (authState === 'loading') {
     return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
   }
-  if (state === 'anon') return <Navigate to="/login" replace />;
+  if (authState === 'anon') return <Navigate to="/login" replace />;
   return children;
 }
 
 function DefaultRedirect() {
-  const [target, setTarget] = useState(null);
+  const { authState } = useSession();
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get('/auth/me')
-      .then(() => {
-        if (!cancelled) setTarget('/analytics');
-      })
-      .catch(() => {
-        if (!cancelled) setTarget('/login');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!target) return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
-  return <Navigate to={target} replace />;
+  if (authState === 'loading') {
+    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
+  }
+  if (authState === 'anon') return <Navigate to="/login" replace />;
+  return <Navigate to="/analytics" replace />;
 }
 
 function App() {
@@ -2637,6 +2851,7 @@ function App() {
         .ioc-table th:last-child, .ioc-table td:last-child { border-right: none; }
       `}</style>
       <BrowserRouter>
+        <SessionProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
@@ -2656,6 +2871,7 @@ function App() {
           <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
           <Route path="*" element={<DefaultRedirect />} />
         </Routes>
+        </SessionProvider>
       </BrowserRouter>
     </>
   );

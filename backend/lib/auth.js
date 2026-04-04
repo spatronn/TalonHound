@@ -1,6 +1,7 @@
 import './ensure-jwt-secret.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { effectiveRoleFromPayload, normalizeAppRole, ROLES } from './rbac.js';
 
 const secret = process.env.JWT_SECRET;
 const expiresIn = process.env.JWT_EXPIRES_IN || '24h';
@@ -74,9 +75,34 @@ export function clearCsrfCookie(req, res) {
   });
 }
 
-export function signUserToken(email) {
-  const e = String(email || '').trim();
-  return jwt.sign({ email: e }, secret, { subject: e, expiresIn });
+/**
+ * @param {string | { email?: string, username?: string, userId?: number|null, role?: string }} payload
+ * Backward compatible: signUserToken('user@x') issues admin role for legacy demo sessions.
+ */
+export function signUserToken(payload) {
+  if (typeof payload === 'string') {
+    const email = String(payload || '').trim();
+    return jwt.sign({ email, role: ROLES.ADMIN }, secret, { subject: email, expiresIn });
+  }
+  const username = String(payload.username || payload.email || '').trim();
+  const email = String(payload.email || username).trim();
+  const sub = email || username;
+  const roleNorm = normalizeAppRole(payload.role) || ROLES.READONLY;
+  const body = { email: sub, username: username || sub, role: roleNorm };
+  if (payload.userId != null && Number.isFinite(Number(payload.userId))) {
+    body.userId = Number(payload.userId);
+  }
+  return jwt.sign(body, secret, { subject: sub, expiresIn });
+}
+
+function userFromJwtPayload(payload) {
+  const email = String(payload.email || payload.sub || '').trim();
+  if (!email) return null;
+  const username = String(payload.username || email).trim();
+  const role = effectiveRoleFromPayload(payload.role);
+  const id =
+    payload.userId != null && Number.isFinite(Number(payload.userId)) ? Number(payload.userId) : null;
+  return { email, username, id, role: role || ROLES.ADMIN };
 }
 
 function extractBearer(req) {
@@ -121,7 +147,12 @@ export function requireAuth(req, res, next) {
     if (!API_INGEST_TOKEN || !ingestTokenOk(ingestHdr)) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    req.user = { email: 'api-ingest@internal' };
+    req.user = {
+      email: 'api-ingest@internal',
+      username: 'api-ingest@internal',
+      id: null,
+      role: ROLES.ADMIN
+    };
     req.authVia = 'ingest';
     return next();
   }
@@ -133,11 +164,11 @@ export function requireAuth(req, res, next) {
     }
     try {
       const payload = jwt.verify(bearer, secret);
-      const email = payload.email || payload.sub;
-      if (!email || typeof email !== 'string') {
+      const u = userFromJwtPayload(payload);
+      if (!u) {
         return res.status(401).json({ message: 'Invalid token' });
       }
-      req.user = { email: email.trim() };
+      req.user = u;
       req.authVia = 'bearer';
       return next();
     } catch {
@@ -152,11 +183,11 @@ export function requireAuth(req, res, next) {
   }
   try {
     const payload = jwt.verify(fromCookie, secret);
-    const email = payload.email || payload.sub;
-    if (!email || typeof email !== 'string') {
+    const u = userFromJwtPayload(payload);
+    if (!u) {
       return res.status(401).json({ message: 'Invalid token' });
     }
-    req.user = { email: email.trim() };
+    req.user = u;
     req.authVia = 'cookie';
     return next();
   } catch {

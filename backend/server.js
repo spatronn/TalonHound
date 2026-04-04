@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import pg from 'pg';
+import bcrypt from 'bcrypt';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
@@ -16,6 +17,8 @@ import {
   appendCsrfCookie,
   clearCsrfCookie
 } from './lib/auth.js';
+import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
+import { registerUserManagementRoutes } from './routes/users.js';
 
 const { Pool } = pg;
 
@@ -67,6 +70,7 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(apiAuthGate);
 app.use(csrfProtection);
+app.use(rbacHttpPolicy);
 
 let geoCacheRefreshInProgress = false;
 let geoCacheDebounceTimer = null;
@@ -1464,14 +1468,52 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
+  const loginId = String(email || '').trim();
 
-  if (email === demoEmail && password === demoPassword) {
-    const token = signUserToken(email);
+  if (!loginId || password == null || typeof password !== 'string') {
+    return res.status(401).json({ message: 'Invalid email or password' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, username, password_hash, role FROM users WHERE username = $1',
+      [loginId]
+    );
+    if (rows.length) {
+      const u = rows[0];
+      const ok = await bcrypt.compare(password, u.password_hash);
+      if (ok) {
+        const token = signUserToken({
+          userId: u.id,
+          username: u.username,
+          email: u.username,
+          role: u.role
+        });
+        appendAuthCookie(req, res, token);
+        appendCsrfCookie(req, res);
+        return res.json({
+          user: {
+            email: u.username,
+            username: u.username,
+            id: u.id,
+            role: u.role
+          }
+        });
+      }
+    }
+  } catch {
+    /* fall through to env-based demo login if DB unavailable */
+  }
+
+  if (loginId === demoEmail && password === demoPassword) {
+    const token = signUserToken(loginId);
     appendAuthCookie(req, res, token);
     appendCsrfCookie(req, res);
-    return res.json({ user: { email } });
+    return res.json({
+      user: { email: loginId, username: loginId, id: null, role: ROLES.ADMIN }
+    });
   }
 
   return res.status(401).json({ message: 'Invalid email or password' });
@@ -1484,7 +1526,14 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  res.json({ user: { email: req.user.email } });
+  res.json({
+    user: {
+      email: req.user.email,
+      username: req.user.username || req.user.email,
+      id: req.user.id ?? null,
+      role: req.user.role || ROLES.ADMIN
+    }
+  });
 });
 
 app.get('/api/users/me/preferences', async (req, res) => {
@@ -1523,6 +1572,8 @@ app.put('/api/users/me/preferences', async (req, res) => {
     return res.status(500).json({ message: 'Failed to save preferences', detail: err.message });
   }
 });
+
+registerUserManagementRoutes(app, pool);
 
 app.post('/api/ioc/ip', async (req, res) => {
   const { ip, source_name, source_url, confidence = 'medium', category = null, note = null } = req.body || {};
@@ -2702,11 +2753,26 @@ if (USE_CLICKHOUSE) {
     .catch((err) => console.error('[clickhouse] init failed', err));
 }
 
-app.listen(port, () => {
+async function ensureSeedDemoUser() {
+  try {
+    const hash = await bcrypt.hash(demoPassword, 12);
+    await pool.query(
+      `INSERT INTO users (username, password_hash, first_name, last_name, role)
+       VALUES ($1, $2, 'Demo', 'User', 'admin'::app_user_role)
+       ON CONFLICT (username) DO NOTHING`,
+      [String(demoEmail || '').trim(), hash]
+    );
+  } catch (err) {
+    console.warn('[users] demo seed skipped:', err.message);
+  }
+}
+
+app.listen(port, async () => {
   console.log(`Backend listening on :${port}`);
   if (IOC_LIST_TIMING) {
     console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
   }
+  await ensureSeedDemoUser();
   refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
   setInterval(() => {
     refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
