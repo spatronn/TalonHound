@@ -1189,7 +1189,7 @@ app.get('/api/integrations', async (req, res) => {
         f.integration_id,
         f.name,
         f.source_url,
-        f.schedule_cron AS schedule,
+        '0 * * * *' AS schedule,
         f.trust_level,
         f.created_at,
         COALESCE(lr.status, lq.status, 'never') AS last_status,
