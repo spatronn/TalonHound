@@ -1,3 +1,4 @@
+import './ensure-db-password.js';
 import { createClient } from '@clickhouse/client';
 
 const clickhouseUrl = process.env.CLICKHOUSE_URL || 'http://demo-clickhouse:8123';
@@ -188,9 +189,17 @@ function confidenceToInt(v) {
   return 50;
 }
 
+function pgLiteralForPostgresqlEngine(value) {
+  return String(value ?? '').replace(/'/g, "''");
+}
+
 export async function syncIocLookupFromPostgres(opts = {}) {
   const workerName = opts.workerName || 'ioc-correlation-sync-v1';
   const batchSize = Math.max(Number(opts.batchSize || 20000), 1000);
+  const pgHostPort = `${process.env.DB_HOST || 'db'}:${String(process.env.DB_PORT || '5432')}`;
+  const pgDbName = process.env.DB_NAME || 'demo';
+  const pgUser = process.env.DB_USER || 'demo';
+  const pgPassword = process.env.DB_PASSWORD;
 
   const st = await query(`
     SELECT last_sync_ts, last_sync_id
@@ -213,7 +222,7 @@ export async function syncIocLookupFromPostgres(opts = {}) {
       source_name,
       confidence,
       toDateTime64(created_at, 3) AS created_at
-    FROM postgresql('db:5432', 'demo', 'ioc_items', 'demo', 'demo123')
+    FROM postgresql('${pgLiteralForPostgresqlEngine(pgHostPort)}', '${pgLiteralForPostgresqlEngine(pgDbName)}', 'ioc_items', '${pgLiteralForPostgresqlEngine(pgUser)}', '${pgLiteralForPostgresqlEngine(pgPassword)}')
     WHERE observable IS NOT NULL
       AND observable != ''
       AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'sha256')

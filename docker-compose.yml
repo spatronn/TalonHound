@@ -5,7 +5,7 @@ services:
     environment:
       - POSTGRES_DB=demo
       - POSTGRES_USER=demo
-      - POSTGRES_PASSWORD=demo123
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -26,7 +26,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - REDIS_URL=redis://redis:6379
       - QUEUE_NAME=integration-imports
@@ -51,7 +51,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - REDIS_URL=redis://redis:6379
       - QUEUE_NAME=integration-imports
@@ -77,7 +77,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - REDIS_URL=redis://redis:6379
       - QUEUE_NAME=integration-imports
@@ -103,7 +103,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - REDIS_URL=redis://redis:6379
       - SIGNAL_QUEUE_NAME=signal-events
@@ -121,7 +121,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
@@ -150,7 +150,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
@@ -183,7 +183,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - DASHBOARD_MAP_CHUNK_SIZE=1000
       - DASHBOARD_MAP_INTERVAL_MS=5000
@@ -200,7 +200,7 @@ services:
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
-      - DB_PASSWORD=demo123
+      - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
       - SYSLOG_PORT=514
       - SYSLOG_HOST=0.0.0.0

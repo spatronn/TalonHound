@@ -1,3 +1,4 @@
+import "./lib/ensure-db-password.js";
 import dgram from "dgram";
 import http from "http";
 import crypto from "crypto";
@@ -26,7 +27,7 @@ const pool = new Pool({
   host: process.env.DB_HOST || "db",
   port: Number(process.env.DB_PORT || 5432),
   user: process.env.DB_USER || "demo",
-  password: process.env.DB_PASSWORD || "demo123",
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || "demo",
   max: Math.max(FLUSH_WORKERS + 2, 6)
 });
