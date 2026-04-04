@@ -1,12 +1,13 @@
 import './lib/ensure-db-password.js';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import pg from 'pg';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
-import { signUserToken, apiAuthGate } from './lib/auth.js';
+import { signUserToken, apiAuthGate, appendAuthCookie, clearAuthCookie } from './lib/auth.js';
 
 const { Pool } = pg;
 
@@ -54,6 +55,7 @@ let iocStatsCache = {
 };
 
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
 app.use(apiAuthGate);
 
@@ -1457,13 +1459,21 @@ app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body || {};
 
   if (email === demoEmail && password === demoPassword) {
-    return res.json({
-      token: signUserToken(email),
-      user: { email }
-    });
+    const token = signUserToken(email);
+    appendAuthCookie(req, res, token);
+    return res.json({ user: { email } });
   }
 
   return res.status(401).json({ message: 'Invalid email or password' });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearAuthCookie(req, res);
+  res.status(204).end();
+});
+
+app.get('/api/auth/me', (req, res) => {
+  res.json({ user: { email: req.user.email } });
 });
 
 app.get('/api/users/me/preferences', async (req, res) => {

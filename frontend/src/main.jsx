@@ -4,25 +4,13 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate,
 import axios from 'axios';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
-const api = axios.create({ baseURL: '/api' });
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('demo_token');
-  config.headers = config.headers || {};
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const api = axios.create({ baseURL: '/api', withCredentials: true });
 
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     const url = String(err.config?.url || '');
     if (err.response?.status === 401 && !url.includes('/auth/login')) {
-      localStorage.removeItem('demo_token');
-      localStorage.removeItem('demo_user');
-      localStorage.removeItem('demo_timezone');
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login');
       }
@@ -111,10 +99,6 @@ function sanitizeSourceNote(note) {
   return filtered.length ? filtered.join(' | ') : '-';
 }
 
-function isAuthed() {
-  return Boolean(localStorage.getItem('demo_token'));
-}
-
 function LoginPage() {
   const navigate = useNavigate();
 
@@ -125,9 +109,7 @@ function LoginPage() {
     const password = form.get('password');
 
     try {
-      const { data } = await api.post('/auth/login', { email, password });
-      localStorage.setItem('demo_token', data.token);
-      localStorage.setItem('demo_user', data.user.email);
+      await api.post('/auth/login', { email, password });
       localStorage.removeItem('demo_timezone');
       navigate('/analytics');
     } catch {
@@ -151,9 +133,24 @@ function LoginPage() {
 function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = localStorage.getItem('demo_user');
+  const [user, setUser] = useState('');
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
   const [needsTimezoneSelection, setNeedsTimezoneSelection] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    api
+      .get('/auth/me')
+      .then(({ data }) => {
+        if (!mounted) return;
+        const email = data?.user?.email;
+        if (email) setUser(String(email));
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -194,10 +191,12 @@ function AppShell({ children }) {
     }
   }
 
-  function logout() {
-    localStorage.removeItem('demo_token');
-    localStorage.removeItem('demo_user');
-    localStorage.removeItem('demo_timezone');
+  async function logout() {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      /* still leave app */
+    }
     navigate('/login');
   }
 
@@ -2535,8 +2534,50 @@ function IOCAddPage() {
 }
 
 function Protected({ children }) {
-  if (!isAuthed()) return <Navigate to="/login" replace />;
+  const [state, setState] = useState('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/auth/me')
+      .then(() => {
+        if (!cancelled) setState('authed');
+      })
+      .catch(() => {
+        if (!cancelled) setState('anon');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state === 'loading') {
+    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
+  }
+  if (state === 'anon') return <Navigate to="/login" replace />;
   return children;
+}
+
+function DefaultRedirect() {
+  const [target, setTarget] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get('/auth/me')
+      .then(() => {
+        if (!cancelled) setTarget('/analytics');
+      })
+      .catch(() => {
+        if (!cancelled) setTarget('/login');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!target) return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
+  return <Navigate to={target} replace />;
 }
 
 function App() {
@@ -2592,7 +2633,7 @@ function App() {
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
-          <Route path="*" element={<Navigate to={isAuthed() ? '/analytics' : '/login'} replace />} />
+          <Route path="*" element={<DefaultRedirect />} />
         </Routes>
       </BrowserRouter>
     </>
