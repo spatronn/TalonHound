@@ -37,7 +37,8 @@ flowchart TB
 
     subgraph HOST[Linux Host 192.168.1.251]
       subgraph COMPOSE[Docker Compose: /opt/demo-runbook]
-        FE[demo-frontend\n:80]
+        RP[demo-proxy\n:80 / :443 TLS]
+        FE[demo-frontend\n:80 internal]
         BE[demo-backend\n:3000 internal]
         R[(demo-redis)]
         DB[(demo-db)]
@@ -48,7 +49,8 @@ flowchart TB
       end
     end
 
-    USER[Analyst Browser] -->|HTTP :80| FE
+    USER[Analyst Browser] -->|HTTPS :443| RP
+    RP --> FE
     FE -->|API| BE
 
     BE -->|signal-events| R

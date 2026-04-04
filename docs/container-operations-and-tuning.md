@@ -163,7 +163,7 @@ docker compose up -d --build
 
 ### 9) `demo-frontend`
 **Purpose**
-- Web UI.
+- Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
 
 **Current relevant pages**
 - Dashboard (world map)
@@ -172,6 +172,18 @@ docker compose up -d --build
   - Last 10 Raw Events
   - Last 10 IOC Match Events
 - Incident (placeholder for now)
+
+### 10) `demo-proxy`
+**Purpose**
+- TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
+
+**Certs**
+- `proxy/certs/cert.pem` and `key.pem` (gitignored `*.pem`). Empty on first run → entrypoint generates a **self-signed** pair for local/demo.
+
+**Ops notes**
+```bash
+docker compose logs -f --tail=100 proxy
+```
 
 ---
 
