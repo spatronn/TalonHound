@@ -70,6 +70,7 @@ def main():
     enabled = os.getenv("ENABLED", "0") == "1"
     target_host = os.getenv("SYSLOG_HOST", "syslog-receiver")
     target_port = env_int("SYSLOG_PORT", 514)
+    udp_ingest_key = os.getenv("SYSLOG_UDP_SHARED_SECRET", "").strip()
     api_base = os.getenv("IOC_API_BASE", "http://backend:3000")
 
     eps = max(env_int("EPS", 400), 1)
@@ -116,7 +117,10 @@ def main():
                 post_ioc(api_base, dst_ip, source_name, confidence, note)
                 ioc_posts += 1
             msg = build_syslog(dst_ip, src_ip)
-            sock.sendto(msg.encode("utf-8"), (target_host, target_port))
+            payload = msg.encode("utf-8")
+            if udp_ingest_key:
+                payload = f"{udp_ingest_key}|".encode("utf-8") + payload
+            sock.sendto(payload, (target_host, target_port))
             sent += 1
             if do_ioc and current_mode == "retro":
                 if retro_delay_ms > 0:

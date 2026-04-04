@@ -22,6 +22,8 @@ const MAX_BUFFERED = Math.max(Number(process.env.SYSLOG_MAX_BUFFERED || 100000),
 const FLUSH_WORKERS = Math.max(Number(process.env.SYSLOG_FLUSH_WORKERS || 1), 1);
 const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 1024 * 1024), 256 * 1024);
 const OVERFLOW_POLICY = String(process.env.SYSLOG_OVERFLOW_POLICY || "drop_oldest").toLowerCase();
+/** If set, each UDP datagram must begin with UTF-8 `SECRET|` (timing-safe check); remainder is parsed as syslog. Mitigates open 514 when published to the host. */
+const UDP_INGEST_SECRET = String(process.env.SYSLOG_UDP_SHARED_SECRET || "").trim();
 
 const pool = new Pool({
   host: process.env.DB_HOST || "db",
@@ -60,7 +62,8 @@ const metrics = {
   batch_size_avg: 0,
   flush_time_avg: 0,
   last_flush_at: null,
-  started_at: new Date().toISOString()
+  started_at: new Date().toISOString(),
+  udp_rejected_key: 0
 };
 
 const sev = ["emerg","alert","crit","err","warning","notice","info","debug"];
@@ -298,6 +301,18 @@ function parseSyslogLine(line, sourceIp) {
   return out;
 }
 
+function stripUdpIngestPrefix(buf) {
+  if (!UDP_INGEST_SECRET) return { ok: true, payload: buf };
+  const prefix = Buffer.from(`${UDP_INGEST_SECRET}|`, "utf8");
+  if (buf.length < prefix.length) return { ok: false };
+  try {
+    if (!crypto.timingSafeEqual(buf.subarray(0, prefix.length), prefix)) return { ok: false };
+  } catch {
+    return { ok: false };
+  }
+  return { ok: true, payload: buf.subarray(prefix.length) };
+}
+
 function enqueue(sourceIp, rawEvent) {
   metrics.received_logs += 1;
   if (queue.length >= MAX_BUFFERED) {
@@ -488,14 +503,23 @@ async function flushOnce(force = false) {
   return flushInFlight;
 }
 
-udp.on("message", (msg, rinfo) => enqueue(rinfo.address || "unknown", msg.toString("utf8")));
+udp.on("message", (msg, rinfo) => {
+  const buf = Buffer.isBuffer(msg) ? msg : Buffer.from(msg);
+  const stripped = stripUdpIngestPrefix(buf);
+  if (!stripped.ok) {
+    metrics.udp_rejected_key += 1;
+    return;
+  }
+  enqueue(rinfo.address || "unknown", stripped.payload.toString("utf8"));
+});
 udp.on("error", (err) => console.error("[syslog-receiver] udp error", err?.message || err));
 
 udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
   try { udp.setRecvBufferSize(SOCKET_RCVBUF); } catch {}
   try { metrics.socket_recv_buffer_size = udp.getRecvBufferSize(); } catch { metrics.socket_recv_buffer_size = null; }
   console.log(`[syslog-receiver] listening udp://${SYSLOG_HOST}:${SYSLOG_PORT}`);
-  console.log(`[syslog-receiver] storage=${LOG_STORAGE} mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} min_insert=${MIN_INSERT_ROWS} force_flush_max_ms=${FORCE_FLUSH_MAX_MS} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}`);
+  const udpKeyHint = UDP_INGEST_SECRET ? " udp_ingest_key=required(prefix SECRET|)" : "";
+  console.log(`[syslog-receiver] storage=${LOG_STORAGE} mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} min_insert=${MIN_INSERT_ROWS} force_flush_max_ms=${FORCE_FLUSH_MAX_MS} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}${udpKeyHint}`);
 });
 
 const timers = [];

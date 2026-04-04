@@ -8,6 +8,7 @@ TARGET_PORT="${TARGET_PORT:-514}"
 # Default empty: syslog health is not on the host unless you use docker-compose.syslog-host.yml. Set HEALTH_URL + SYSLOG_HEALTH_TOKEN when published.
 HEALTH_URL="${HEALTH_URL:-}"
 SYSLOG_HEALTH_TOKEN="${SYSLOG_HEALTH_TOKEN:-}"
+SYSLOG_UDP_SHARED_SECRET="${SYSLOG_UDP_SHARED_SECRET:-}"
 # ClickHouse HTTP is not published on the host by default (see docker-compose). Leave empty to skip CH curls,
 # or set e.g. CH_URL=http://127.0.0.1:8123 if you publish 8123 locally / use an SSH tunnel.
 CH_URL="${CH_URL:-}"
@@ -20,7 +21,12 @@ echo "[load-test] target=${TARGET_HOST}:${TARGET_PORT} eps=${EPS} duration=${DUR
 for ((s=0; s<DURATION; s++)); do
   ts=$(date '+%b %d %H:%M:%S')
   for ((i=0; i<EPS; i++)); do
-    printf '<134>%s loadgen app[%d]: synthetic log second=%d idx=%d\n' "$ts" "$i" "$s" "$i" | nc -u -w0 "$TARGET_HOST" "$TARGET_PORT" >/dev/null 2>&1 || true
+    payload=$(printf '<134>%s loadgen app[%d]: synthetic log second=%d idx=%d\n' "$ts" "$i" "$s" "$i")
+    if [[ -n "$SYSLOG_UDP_SHARED_SECRET" ]]; then
+      printf '%s|%s' "$SYSLOG_UDP_SHARED_SECRET" "$payload" | nc -u -w0 "$TARGET_HOST" "$TARGET_PORT" >/dev/null 2>&1 || true
+    else
+      printf '%s' "$payload" | nc -u -w0 "$TARGET_HOST" "$TARGET_PORT" >/dev/null 2>&1 || true
+    fi
   done
   sleep 1
   if (( (s+1) % 10 == 0 )); then

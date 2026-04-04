@@ -1,8 +1,15 @@
 # Optional: map syslog UDP + receiver health to the host (load-test.sh / udp-replay from localhost, physical forwarders).
-# Requires SYSLOG_HEALTH_TOKEN in .env (see .env.example).
+# Requires SYSLOG_HEALTH_TOKEN and SYSLOG_UDP_SHARED_SECRET in .env (see .env.example).
+# Forwarders must prepend each datagram with:  <SHARED_SECRET>|<syslog payload>
 #   docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d
 services:
   syslog-receiver:
     ports:
       - "514:514/udp"
       - "8081:8081"
+    environment:
+      - SYSLOG_UDP_SHARED_SECRET=${SYSLOG_UDP_SHARED_SECRET:?Set SYSLOG_UDP_SHARED_SECRET in .env (e.g. openssl rand -hex 16; prepend KEY| to each UDP datagram)}
+
+  loadgen:
+    environment:
+      - SYSLOG_UDP_SHARED_SECRET=${SYSLOG_UDP_SHARED_SECRET}
