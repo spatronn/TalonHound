@@ -1,0 +1,8 @@
+# Optional: map syslog UDP + receiver health to the host (load-test.sh / udp-replay from localhost, physical forwarders).
+# Requires SYSLOG_HEALTH_TOKEN in .env (see .env.example).
+#   docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d
+services:
+  syslog-receiver:
+    ports:
+      - "514:514/udp"
+      - "8081:8081"

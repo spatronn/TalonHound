@@ -5,7 +5,9 @@ EPS="${EPS:-2000}"
 DURATION="${DURATION:-120}"
 TARGET_HOST="${TARGET_HOST:-127.0.0.1}"
 TARGET_PORT="${TARGET_PORT:-514}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8081/receiver/health}"
+# Default empty: syslog health is not on the host unless you use docker-compose.syslog-host.yml. Set HEALTH_URL + SYSLOG_HEALTH_TOKEN when published.
+HEALTH_URL="${HEALTH_URL:-}"
+SYSLOG_HEALTH_TOKEN="${SYSLOG_HEALTH_TOKEN:-}"
 # ClickHouse HTTP is not published on the host by default (see docker-compose). Leave empty to skip CH curls,
 # or set e.g. CH_URL=http://127.0.0.1:8123 if you publish 8123 locally / use an SSH tunnel.
 CH_URL="${CH_URL:-}"
@@ -31,7 +33,15 @@ END_TS=$(date +%s)
 WALL=$((END_TS - START_TS))
 
 echo "\n=== Receiver metrics ==="
-curl -fsS "$HEALTH_URL" || true
+if [[ -n "$HEALTH_URL" ]]; then
+  if [[ -n "$SYSLOG_HEALTH_TOKEN" ]]; then
+    curl -fsS -H "Authorization: Bearer ${SYSLOG_HEALTH_TOKEN}" "$HEALTH_URL" || true
+  else
+    curl -fsS "$HEALTH_URL" || true
+  fi
+else
+  echo "(skipped: set HEALTH_URL if you publish 8081, e.g. docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d)"
+fi
 
 if [[ -n "${CH_URL}" ]]; then
   echo "\n=== ClickHouse insert rate (last 5m) ==="

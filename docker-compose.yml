@@ -215,6 +215,7 @@ services:
       - SYSLOG_PORT=514
       - SYSLOG_HOST=0.0.0.0
       - SYSLOG_HEALTH_PORT=8081
+      - SYSLOG_HEALTH_TOKEN=${SYSLOG_HEALTH_TOKEN:?Set SYSLOG_HEALTH_TOKEN in .env (e.g. openssl rand -hex 16)}
       # Avoid ClickHouse small-part amplification: micro-batch flush (rows OR time)
       - SYSLOG_BATCH_SIZE=3000
       - SYSLOG_MIN_FLUSH_SIZE=1000
@@ -232,9 +233,8 @@ services:
     depends_on:
       - db
       - clickhouse
-    ports:
-      - "514:514/udp"
-      - "8081:8081"
+    # UDP 514 / HTTP health are not published on the host by default (avoids open ingest + unauthenticated metrics).
+    # To expose for local forwarders or host scripts: docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d
     restart: unless-stopped
 
   # ClickHouse is reachable only on the Docker network (demo-clickhouse:8123 / :9000).

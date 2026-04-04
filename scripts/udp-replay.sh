@@ -10,6 +10,7 @@ SLEEP_MS="${SLEEP_MS:-1}"
 if [[ -z "$FILE" || ! -f "$FILE" ]]; then
   echo "Usage: $0 <log-file>"
   echo "Optional env: TARGET_HOST=127.0.0.1 TARGET_PORT=514 SLEEP_EVERY=0 SLEEP_MS=1"
+  echo "Host UDP 514: use docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d"
   exit 1
 fi
 

@@ -500,9 +500,41 @@ udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
 
 const timers = [];
 
+const HEALTH_TOKEN = String(process.env.SYSLOG_HEALTH_TOKEN || "").trim();
+
+function extractHealthToken(req) {
+  const auth = req.headers.authorization;
+  if (auth && typeof auth === "string") {
+    const m = auth.match(/^Bearer\s+(\S+)/i);
+    if (m) return m[1].trim();
+  }
+  const x = req.headers["x-syslog-health-token"];
+  if (x && typeof x === "string") return x.trim();
+  return "";
+}
+
+function healthAuthOk(req) {
+  if (!HEALTH_TOKEN) return true;
+  const provided = extractHealthToken(req);
+  if (!provided) return false;
+  try {
+    const a = Buffer.from(provided, "utf8");
+    const b = Buffer.from(HEALTH_TOKEN, "utf8");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 const health = http.createServer((req, res) => {
   if (req.url !== "/health" && req.url !== "/receiver/health") {
     res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: false }));
+    return;
+  }
+  if (!healthAuthOk(req)) {
+    res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: false }));
     return;
   }
@@ -516,7 +548,8 @@ async function bootstrap() {
     await pingClickhouse();
   }
   health.listen(HEALTH_PORT, "0.0.0.0", () => {
-    console.log(`[syslog-receiver] health endpoint on :${HEALTH_PORT}/receiver/health`);
+    const authHint = HEALTH_TOKEN ? " (Bearer or X-Syslog-Health-Token required)" : " (unauthenticated — set SYSLOG_HEALTH_TOKEN)";
+    console.log(`[syslog-receiver] health endpoint on :${HEALTH_PORT}/receiver/health${authHint}`);
   });
 }
 
