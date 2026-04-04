@@ -553,15 +553,14 @@ function AnalyticsPage() {
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
                 <th style={{ width: 90 }}>ID</th>
                 <th style={{ width: 170 }}>Detected At</th>
-                <th>Matched Syslog event</th>
-                <th style={{ width: 230 }}>Matched IOC</th>
+                <th style={{ width: 320 }}>Matched IOC</th>
                 <th style={{ width: 150 }}>Detection</th>
                 <th style={{ width: 220 }}>Source</th>
               </tr>
             </thead>
             <tbody>
               {iocLoading ? (
-                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
+                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
               ) : iocMatches.length ? iocMatches.map((evt) => (
                 <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
                   <td>
@@ -570,7 +569,6 @@ function AnalyticsPage() {
                     </Link>
                   </td>
                   <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
                   <td>
                     <span style={{
@@ -593,7 +591,7 @@ function AnalyticsPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
+                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -2265,7 +2263,6 @@ function IOCDetailsPage() {
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
                     <th style={{ width: 170 }}>Time</th>
                     <th style={{ width: 130 }}>Detection</th>
-                    <th>Matched Syslog Event</th>
                     <th style={{ width: 210 }}>IOC Source</th>
                     <th style={{ width: 110 }}>Confidence</th>
                     <th style={{ width: 90 }}>Hits</th>
@@ -2273,16 +2270,6 @@ function IOCDetailsPage() {
                 </thead>
                 <tbody>
                   {data.matches.length ? data.matches.map((m) => {
-                    const fallbackSyslogEvent = [
-                      m.source || null,
-                      m.host_name || null,
-                      m.process_name || null,
-                      m.destination_ip ? `${m.destination_ip}${m.destination_port ? `:${m.destination_port}` : ''}` : null,
-                      m.protocol || null,
-                      m.parser_source || null
-                    ].filter(Boolean).join(' | ') || '-';
-                    const matchedSyslogEvent = m.matched_syslog_event || fallbackSyslogEvent;
-
                     return (
                       <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>
                         <td>{formatUserDateTime(m.event_time || m.created_at)}</td>
@@ -2300,13 +2287,12 @@ function IOCDetailsPage() {
                             {m.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
                           </span>
                         </td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{matchedSyslogEvent}</td>
                         <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{m.source_name || '-'}</td>
                         <td>{m.confidence || '-'}</td>
                         <td>{m.hit_count ?? 1}</td>
                       </tr>
                     );
-                  }) : <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match event for this IOC yet.</td></tr>}
+                  }) : <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match event for this IOC yet.</td></tr>}
                 </tbody>
               </table>
             </div>
