@@ -321,7 +321,7 @@ function AppShell({ children }) {
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/settings" style={menuStyle(isActive('/settings'))}>6. Administration</Link>
+            <Link to="/administration" style={menuStyle(isActive('/administration') || isActive('/settings'))}>6. Administration</Link>
           </div>
         </nav>
 
@@ -1838,7 +1838,7 @@ function SettingsPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, width: '100%', maxWidth: 1180 }}>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, width: '100%' }}>
         <h2 style={{ marginTop: 0 }}>Administration</h2>
 
         <label style={{ display: 'block', fontSize: 14, marginBottom: 6 }}>Timezone</label>
@@ -2857,7 +2857,8 @@ function App() {
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
-          <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
+          <Route path="/administration" element={<Protected><SettingsPage /></Protected>} />
+          <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />
         </Routes>
         </SessionProvider>
