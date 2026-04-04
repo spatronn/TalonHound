@@ -50,30 +50,75 @@ async function ensureSchedule(feed) {
   );
 }
 
+function deriveFeedKeyFromRepeatable(repeatable, desiredByKey, desiredKeysByJobName) {
+  const idRaw = String(repeatable.id || '').trim();
+  const idKey = idRaw.replace(/-scheduled$/, '');
+  if (idKey && desiredByKey.has(idKey)) return idKey;
+
+  const jobName = String(repeatable.name || '').trim();
+  const keysForName = desiredKeysByJobName.get(jobName) || [];
+  if (keysForName.length === 1) return keysForName[0];
+
+  return null;
+}
+
 async function syncSchedules() {
   const desired = await loadActiveFeedSchedules();
-  const desiredKeys = new Set(desired.map((d) => d.key));
+  const desiredByKey = new Map(desired.map((d) => [d.key, d]));
+  const desiredKeysByJobName = new Map();
+
+  for (const d of desired) {
+    const jobName = INTEGRATION_JOBS[d.key];
+    if (!desiredKeysByJobName.has(jobName)) desiredKeysByJobName.set(jobName, []);
+    desiredKeysByJobName.get(jobName).push(d.key);
+  }
 
   const repeatables = await importQueue.getRepeatableJobs();
+  const seenPerFeedAndCron = new Set();
 
   for (const r of repeatables) {
-    const key = String(r.id || '').replace(/-scheduled$/, '');
-    if (!key || !INTEGRATION_JOBS[key]) continue;
+    const jobName = String(r.name || '').trim();
 
-    const desiredFeed = desired.find((d) => d.key === key);
-    const repeatCron = String(r.pattern || '').trim();
+    // Ignore unrelated repeatable jobs on this queue.
+    if (!Array.from(desiredKeysByJobName.keys()).includes(jobName)) continue;
 
-    if (!desiredFeed || desiredFeed.cron !== repeatCron) {
+    const mappedKey = deriveFeedKeyFromRepeatable(r, desiredByKey, desiredKeysByJobName);
+    const repeatCron = sanitizeCron(String(r.pattern || '').trim());
+
+    if (!mappedKey) {
       await importQueue.removeRepeatableByKey(r.key);
-      console.log(`[scheduler] removed repeat job key=${key} pattern=${repeatCron || '-'} reason=${!desiredFeed ? 'inactive_or_missing' : 'schedule_changed'}`);
+      console.log(`[scheduler] removed repeat job name=${jobName} key=unknown pattern=${repeatCron || '-'} reason=legacy_or_unmapped`);
+      continue;
     }
+
+    const desiredFeed = desiredByKey.get(mappedKey);
+    if (!desiredFeed) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`[scheduler] removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=inactive_or_missing`);
+      continue;
+    }
+
+    if (desiredFeed.cron !== repeatCron) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`[scheduler] removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=schedule_changed`);
+      continue;
+    }
+
+    const dedupKey = `${mappedKey}::${repeatCron}`;
+    if (seenPerFeedAndCron.has(dedupKey)) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`[scheduler] removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=duplicate`);
+      continue;
+    }
+
+    seenPerFeedAndCron.add(dedupKey);
   }
 
   for (const feed of desired) {
     await ensureSchedule(feed);
   }
 
-  console.log(`[scheduler] schedule sync complete, active=${desiredKeys.size}`);
+  console.log(`[scheduler] schedule sync complete, active=${desired.length}`);
 }
 
 async function main() {
