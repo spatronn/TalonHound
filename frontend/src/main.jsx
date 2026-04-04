@@ -1838,7 +1838,7 @@ function SettingsPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, width: '100%', maxWidth: 1180, boxSizing: 'border-box' }}>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, width: '100%', maxWidth: 1180, margin: '0 auto', boxSizing: 'border-box' }}>
         <h2 style={{ marginTop: 0 }}>Administration</h2>
 
         <label style={{ display: 'block', fontSize: 14, marginBottom: 6 }}>Timezone</label>
