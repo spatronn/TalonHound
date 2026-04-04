@@ -953,7 +953,13 @@ app.get('/api/ioc/match-events', async (req, res) => {
     `;
 
     const q = await pool.query(sql, params);
-    const items = USE_CLICKHOUSE
+
+    // ClickHouse raw-event enrichment is expensive for list views and is not
+    // needed by the IOC Match Events table. Keep it opt-in for faster response.
+    const includeRaw = String(req.query?.include_raw || req.query?.includeRaw || '').toLowerCase();
+    const shouldIncludeRaw = includeRaw === '1' || includeRaw === 'true' || includeRaw === 'yes';
+
+    const items = (USE_CLICKHOUSE && shouldIncludeRaw)
       ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
       : q.rows;
 
