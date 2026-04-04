@@ -5,6 +5,7 @@ import pg from 'pg';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
+import { signUserToken, apiAuthGate } from './lib/auth.js';
 
 const { Pool } = pg;
 
@@ -53,6 +54,7 @@ let iocStatsCache = {
 
 app.use(cors());
 app.use(express.json());
+app.use(apiAuthGate);
 
 let geoCacheRefreshInProgress = false;
 let geoCacheDebounceTimer = null;
@@ -352,7 +354,7 @@ app.get('/health', async (_req, res) => {
 });
 
 app.get('/api/system/status', async (req, res) => {
-  const email = String(req.headers['x-user-email'] || '').trim();
+  const email = req.user?.email ? String(req.user.email).trim() : '';
   let userTimezone = 'UTC';
 
   if (email) {
@@ -1487,7 +1489,7 @@ app.post('/api/auth/login', (req, res) => {
 
   if (email === demoEmail && password === demoPassword) {
     return res.json({
-      token: 'demo-token-123',
+      token: signUserToken(email),
       user: { email }
     });
   }
@@ -1496,10 +1498,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.get('/api/users/me/preferences', async (req, res) => {
-  const email = String(req.headers['x-user-email'] || '').trim();
-  if (!email) {
-    return res.status(400).json({ message: 'x-user-email header is required' });
-  }
+  const email = req.user.email;
 
   try {
     const { rows } = await pool.query('SELECT email, timezone FROM user_preferences WHERE email = $1', [email]);
@@ -1513,12 +1512,9 @@ app.get('/api/users/me/preferences', async (req, res) => {
 });
 
 app.put('/api/users/me/preferences', async (req, res) => {
-  const email = String(req.headers['x-user-email'] || '').trim();
+  const email = req.user.email;
   const timezone = String(req.body?.timezone || '').trim();
 
-  if (!email) {
-    return res.status(400).json({ message: 'x-user-email header is required' });
-  }
   if (!timezone) {
     return res.status(400).json({ message: 'timezone is required' });
   }

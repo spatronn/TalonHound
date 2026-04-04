@@ -23,6 +23,8 @@ services:
       - PORT=3000
       - DEMO_EMAIL=demo@demo.local
       - DEMO_PASSWORD=Password1!
+      - JWT_SECRET=${JWT_SECRET}
+      - INGEST_API_KEY=${INGEST_API_KEY:-}
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
@@ -260,6 +262,7 @@ services:
       - SYSLOG_HOST=syslog-receiver
       - SYSLOG_PORT=514
       - IOC_API_BASE=http://backend:3000
+      - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
       - IOC_SOURCE_NAME=loadgen-smoke
       - IOC_CONFIDENCE=90
       - IOC_NOTE=loadgen random ioc

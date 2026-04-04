@@ -1,5 +1,6 @@
 param(
   [string]$EngineUrl = "http://192.168.1.251/api/sysmon/events",
+  [string]$IngestApiKey = $env:INGEST_API_KEY,
   [int]$IntervalSeconds = 30,
   [int]$BatchSize = 500,
   [int]$LookbackSeconds = 60
@@ -46,7 +47,9 @@ while ($true) {
 
       $eventList = @($mapped)
       $body = @{ events = $eventList } | ConvertTo-Json -Depth 6
-      $resp = Invoke-RestMethod -Uri $EngineUrl -Method Post -ContentType 'application/json' -Body $body
+      $headers = @{ 'Content-Type' = 'application/json' }
+      if ($IngestApiKey) { $headers['X-Ingest-Key'] = $IngestApiKey }
+      $resp = Invoke-RestMethod -Uri $EngineUrl -Method Post -Headers $headers -Body $body
 
       Write-Host ("[{0}] found={1} sent={2} queued={3} jobId={4}" -f (Get-Date), $events.Count, $eventList.Count, $resp.queued, $resp.jobId)
     } else {

@@ -44,7 +44,11 @@ def post_ioc(api_base, ip, source_name, confidence, note):
         "note": note,
     }
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", "x-user-email": "demo@demo.local"}, method="POST")
+    headers = {"Content-Type": "application/json"}
+    token = os.getenv("API_BEARER_TOKEN", "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=5) as resp:
         return resp.status
 

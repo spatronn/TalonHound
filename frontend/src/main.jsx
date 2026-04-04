@@ -7,13 +7,29 @@ import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simp
 const api = axios.create({ baseURL: '/api' });
 
 api.interceptors.request.use((config) => {
-  const email = localStorage.getItem('demo_user');
-  if (email) {
-    config.headers = config.headers || {};
-    config.headers['x-user-email'] = email;
+  const token = localStorage.getItem('demo_token');
+  config.headers = config.headers || {};
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const url = String(err.config?.url || '');
+    if (err.response?.status === 401 && !url.includes('/auth/login')) {
+      localStorage.removeItem('demo_token');
+      localStorage.removeItem('demo_user');
+      localStorage.removeItem('demo_timezone');
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    }
+    return Promise.reject(err);
+  }
+);
 
 const COMMON_TIMEZONES = [
   'UTC',
