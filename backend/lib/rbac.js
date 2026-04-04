@@ -43,7 +43,9 @@ export function requireRole(...allowed) {
 }
 
 /**
- * Read-only users: GET/HEAD only, except PUT /api/users/:id (handler enforces self + fields).
+ * Read-only users: GET/HEAD only, except:
+ *   - PUT /api/users/:id (handler enforces self + fields)
+ *   - PUT /api/users/me/preferences (self timezone preference)
  * Ingest / bearer bypass (machine & existing automation).
  */
 export function rbacHttpPolicy(req, res, next) {
@@ -64,7 +66,7 @@ export function rbacHttpPolicy(req, res, next) {
     return next();
   }
 
-  if (m === 'PUT' && /^\/api\/users\/\d+$/.test(req.path)) {
+  if (m === 'PUT' && (/^\/api\/users\/\d+$/.test(req.path) || req.path === '/api/users/me/preferences')) {
     return next();
   }
 

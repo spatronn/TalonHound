@@ -241,12 +241,6 @@ function AppShell({ children }) {
   }, []);
 
   async function saveTimezone(value) {
-    if (!canWrite) {
-      localStorage.setItem('demo_timezone', value);
-      setTimezone(value);
-      setNeedsTimezoneSelection(false);
-      return;
-    }
     try {
       const { data } = await api.put('/users/me/preferences', { timezone: value });
       const tz = data?.timezone || value;
@@ -347,7 +341,7 @@ function AppShell({ children }) {
             <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 10 }}>
               {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
-            <button type="button" onClick={() => saveTimezone(timezone)} disabled={!canWrite} style={{ width: '100%', padding: 10, fontWeight: 600, opacity: canWrite ? 1 : 0.5 }}>{canWrite ? 'Save Timezone' : 'Read-only (local only)'}</button>
+            <button type="button" onClick={() => saveTimezone(timezone)} style={{ width: '100%', padding: 10, fontWeight: 600 }}>Save Timezone</button>
           </div>
         </div>
       )}
@@ -1771,11 +1765,6 @@ function SettingsPage() {
   }, [canWrite, userId]);
 
   async function save() {
-    if (!canWrite) {
-      localStorage.setItem('demo_timezone', timezone);
-      alert('Timezone stored locally (read-only account).');
-      return;
-    }
     setSaving(true);
     try {
       const { data } = await api.put('/users/me/preferences', { timezone });
@@ -1857,7 +1846,7 @@ function SettingsPage() {
           {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
         </select>
         <button type="button" onClick={save} disabled={saving} style={{ padding: '10px 14px', marginBottom: 24 }}>
-          {saving ? 'Saving...' : canWrite ? 'Save timezone' : 'Save locally (read-only)'}
+          {saving ? 'Saving...' : 'Save timezone'}
         </button>
 
         {role === 'readonly' && userId != null ? (
