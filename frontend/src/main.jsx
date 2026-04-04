@@ -1847,11 +1847,11 @@ function IOCListPage() {
     const trimmed = String(rawInput || '').trim();
     if (!trimmed) return { ok: true, value: '' };
 
-    const match = trimmed.match(/^(ip|sha1|sha256|md5|domain|ipv6)\s*:\s*(.+)$/i);
+    const match = trimmed.match(/^(ip|sha1|sha256|md5|domain|ipv6|url)\s*:\s*(.+)$/i);
     if (!match) {
       return {
         ok: false,
-        message: 'Syntax error. Use one of: ip:, sha1:, sha256:, md5:, domain:, ipv6:'
+        message: 'Syntax error. Use one of: ip:, sha1:, sha256:, md5:, domain:, ipv6:, url:'
       };
     }
 
@@ -1928,7 +1928,7 @@ function IOCListPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
         <input
-          placeholder="Search (ip:, sha1:, sha256:, md5:, domain:, ipv6:)"
+          placeholder="Search (ip:, sha1:, sha256:, md5:, domain:, ipv6:, url:)"
           value={searchInput}
           onChange={(e) => {
             setSearchInput(e.target.value);
