@@ -24,7 +24,7 @@ services:
       - PORT=3000
       - DEMO_EMAIL=demo@demo.local
       - DEMO_PASSWORD=Password1!
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars, e.g. openssl rand -hex 32)}
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=demo
