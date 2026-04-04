@@ -2836,8 +2836,10 @@ function App() {
         thead tr { background: #1f2937 !important; }
         tbody tr { background: #111827 !important; }
         code { color: #93c5fd !important; }
-        .ioc-table th, .ioc-table td { border-right: 1px solid #334155; }
-        .ioc-table th:last-child, .ioc-table td:last-child { border-right: none; }
+        table th, table td { border-right: 1px solid #334155 !important; }
+        table th:last-child, table td:last-child { border-right: none !important; }
+        .ioc-table th, .ioc-table td { border-right: 1px solid #334155 !important; }
+        .ioc-table th:last-child, .ioc-table td:last-child { border-right: none !important; }
       `}</style>
       <BrowserRouter>
         <SessionProvider>
