@@ -838,15 +838,14 @@ function IOCMatchEventsPage() {
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
                 <th style={{ width: 90 }}>ID</th>
                 <th style={{ width: 170 }}>Detected At</th>
-                <th>Matched Syslog event</th>
-                <th style={{ width: 230 }}>Matched IOC</th>
+                <th style={{ width: 320 }}>Matched IOC</th>
                 <th style={{ width: 150 }}>Detection</th>
                 <th style={{ width: 220 }}>Source</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
               ) : rows.length ? rows.map((evt) => (
                 <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                   <td>
@@ -858,7 +857,6 @@ function IOCMatchEventsPage() {
                     </button>
                   </td>
                   <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_syslog_event || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
                   <td>
                     <span style={{
@@ -881,7 +879,7 @@ function IOCMatchEventsPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
               )}
             </tbody>
           </table>
