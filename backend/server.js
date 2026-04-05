@@ -1478,7 +1478,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, username, password_hash, role, status FROM users WHERE username = $1',
+      'SELECT id, public_id, username, password_hash, role, status FROM users WHERE username = $1',
       [loginId]
     );
     if (rows.length) {
@@ -1500,7 +1500,7 @@ app.post('/api/auth/login', async (req, res) => {
           user: {
             email: u.username,
             username: u.username,
-            id: u.id,
+            id: u.public_id,
             role: u.role
           }
         });
@@ -1528,12 +1528,22 @@ app.post('/api/auth/logout', (req, res) => {
   res.status(204).end();
 });
 
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', async (req, res) => {
+  let publicId = null;
+  if (req.user?.id != null) {
+    try {
+      const { rows } = await pool.query('SELECT public_id FROM users WHERE id = $1', [Number(req.user.id)]);
+      if (rows.length) publicId = rows[0].public_id;
+    } catch {
+      // fall through to null id
+    }
+  }
+
   res.json({
     user: {
       email: req.user.email,
       username: req.user.username || req.user.email,
-      id: req.user.id ?? null,
+      id: publicId,
       role: req.user.role || ROLES.ADMIN
     }
   });

@@ -9,10 +9,14 @@ function normalizeUserStatus(value) {
   return null;
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
 function toPublicUser(row) {
   if (!row) return null;
   return {
-    id: Number(row.id),
+    id: String(row.public_id || ''),
     username: row.username,
     first_name: row.first_name,
     last_name: row.last_name,
@@ -20,6 +24,14 @@ function toPublicUser(row) {
     status: row.status || 'active',
     created_at: row.created_at
   };
+}
+
+async function resolveInternalUserId(pool, publicId) {
+  const val = String(publicId || '').trim();
+  if (!isUuid(val)) return null;
+  const { rows } = await pool.query('SELECT id FROM users WHERE public_id = $1::uuid', [val]);
+  if (!rows.length) return null;
+  return Number(rows[0].id);
 }
 
 /**
@@ -47,7 +59,7 @@ export function registerUserManagementRoutes(app, pool) {
       const { rows } = await pool.query(
         `INSERT INTO users (username, password_hash, first_name, last_name, role)
          VALUES ($1, $2, $3, $4, $5::app_user_role)
-         RETURNING id, username, first_name, last_name, role, status, created_at`,
+         RETURNING public_id, username, first_name, last_name, role, status, created_at`,
         [username, hash, first_name, last_name, role]
       );
       return res.status(201).json({ user: toPublicUser(rows[0]) });
@@ -65,8 +77,8 @@ export function registerUserManagementRoutes(app, pool) {
     try {
       if (role === ROLES.ADMIN) {
         const { rows } = await pool.query(
-          `SELECT id, username, first_name, last_name, role, status, created_at
-           FROM users ORDER BY id ASC`
+          `SELECT public_id, username, first_name, last_name, role, status, created_at
+           FROM users ORDER BY created_at ASC`
         );
         return res.json({ users: rows.map(toPublicUser) });
       }
@@ -75,7 +87,7 @@ export function registerUserManagementRoutes(app, pool) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const { rows } = await pool.query(
-        `SELECT id, username, first_name, last_name, role, status, created_at
+        `SELECT public_id, username, first_name, last_name, role, status, created_at
          FROM users WHERE id = $1`,
         [req.user.id]
       );
@@ -89,8 +101,8 @@ export function registerUserManagementRoutes(app, pool) {
   });
 
   app.put('/api/users/:id', async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = await resolveInternalUserId(pool, req.params.id);
+    if (!id) {
       return res.status(400).json({ message: 'Invalid user id' });
     }
 
@@ -119,7 +131,7 @@ export function registerUserManagementRoutes(app, pool) {
              first_name = COALESCE($2, first_name),
              last_name = COALESCE($3, last_name)
            WHERE id = $1
-           RETURNING id, username, first_name, last_name, role, status, created_at`,
+           RETURNING public_id, username, first_name, last_name, role, status, created_at`,
           [id, first_name ?? null, last_name ?? null]
         );
         if (!rows.length) {
@@ -177,7 +189,7 @@ export function registerUserManagementRoutes(app, pool) {
            last_name = COALESCE($5, last_name),
            role = COALESCE($6::app_user_role, role)
          WHERE id = $1
-         RETURNING id, username, first_name, last_name, role, status, created_at`,
+         RETURNING public_id, username, first_name, last_name, role, status, created_at`,
         [
           id,
           username ?? null,
@@ -198,8 +210,8 @@ export function registerUserManagementRoutes(app, pool) {
   });
 
   app.patch('/api/users/:id/status', requireRole(ROLES.ADMIN), async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = await resolveInternalUserId(pool, req.params.id);
+    if (!id) {
       return res.status(400).json({ message: 'Invalid user id' });
     }
 
@@ -215,7 +227,7 @@ export function registerUserManagementRoutes(app, pool) {
     try {
       const { rows } = await pool.query(
         `UPDATE users SET status = $2::app_user_status WHERE id = $1
-         RETURNING id, username, first_name, last_name, role, status, created_at`,
+         RETURNING public_id, username, first_name, last_name, role, status, created_at`,
         [id, next]
       );
       if (!rows.length) {
@@ -228,8 +240,8 @@ export function registerUserManagementRoutes(app, pool) {
   });
 
   app.delete('/api/users/:id', requireRole(ROLES.ADMIN), async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id < 1) {
+    const id = await resolveInternalUserId(pool, req.params.id);
+    if (!id) {
       return res.status(400).json({ message: 'Invalid user id' });
     }
     try {

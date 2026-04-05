@@ -62,7 +62,7 @@ function SessionProvider({ children }) {
       const em = String(u.email || '');
       if (em) {
         setUserEmail(em);
-        setUserId(u.id != null ? Number(u.id) : null);
+        setUserId(u.id != null ? String(u.id) : null);
         setRole(String(u.role || 'admin'));
         setAuthState('authed');
       } else {
@@ -2209,7 +2209,7 @@ function AdministrationPage() {
                     <tbody>
                       {users.map((u) => {
                         const isPassive = String(u.status || 'active') === 'passive';
-                        const isOwnRow = userId != null && Number(userId) === Number(u.id);
+                        const isOwnRow = userId != null && String(userId) === String(u.id);
                         const busy = statusBusyId === u.id;
                         return (
                         <tr
