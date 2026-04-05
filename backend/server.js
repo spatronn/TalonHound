@@ -2350,8 +2350,12 @@ app.get('/api/ioc/hot', async (req, res) => {
   try {
     const countQ = `
       SELECT COUNT(*)::bigint AS cnt
-      FROM ioc_items
-      WHERE ${baseWhere}
+      FROM (
+        SELECT observable, observable_type
+        FROM ioc_items
+        WHERE ${baseWhere}
+        GROUP BY observable, observable_type
+      ) g
     `;
     const { rows: countRows } = await pool.query(countQ, params);
     const total = Number(countRows[0]?.cnt || 0);
@@ -2363,23 +2367,30 @@ app.get('/api/ioc/hot', async (req, res) => {
 
     const listQ = `
       SELECT
-        id,
-        public_id::text AS public_id,
+        MIN(id) AS id,
+        MIN(public_id)::text AS public_id,
         observable,
         observable_type,
-        source_name,
-        match_count,
-        first_seen_log,
-        last_seen_log
+        SUM(match_count)::bigint AS total_hits,
+        COUNT(DISTINCT source_name)::bigint AS source_count,
+        MIN(first_seen_log) AS first_seen_log,
+        MAX(last_seen_log) AS last_seen_log
       FROM ioc_items
       WHERE ${baseWhere}
-      ORDER BY last_seen_log DESC NULLS LAST, match_count DESC, id ASC
+      GROUP BY observable, observable_type
+      ORDER BY MAX(last_seen_log) DESC NULLS LAST, SUM(match_count) DESC, observable ASC
       LIMIT $${limIdx} OFFSET $${offIdx}
     `;
 
     const { rows: items } = await pool.query(listQ, listParams);
 
     const statsQ = `
+      WITH grouped AS (
+        SELECT observable, observable_type
+        FROM ioc_items
+        WHERE ${baseWhere}
+        GROUP BY observable, observable_type
+      )
       SELECT
         COUNT(*)::bigint AS total,
         COUNT(*) FILTER (WHERE observable_type = 'ip')::bigint AS ip,
@@ -2387,14 +2398,13 @@ app.get('/api/ioc/hot', async (req, res) => {
         COUNT(*) FILTER (WHERE observable_type = 'domain')::bigint AS domain,
         COUNT(*) FILTER (WHERE observable_type = 'ip6')::bigint AS ip6,
         COUNT(*) FILTER (WHERE observable_type IN ('md5','sha1','sha256','ssdeep','imphash','tlsh'))::bigint AS hash
-      FROM ioc_items
-      WHERE ${baseWhere}
+      FROM grouped
     `;
     const { rows: statsRows } = await pool.query(statsQ, params);
     const s = statsRows[0] || {};
 
     const topSourcesQ = `
-      SELECT source_name, COUNT(*)::bigint AS count
+      SELECT source_name, COUNT(DISTINCT (observable, observable_type))::bigint AS count
       FROM ioc_items
       WHERE ${baseWhere}
       GROUP BY source_name

@@ -2513,6 +2513,7 @@ function IOCHotListPage() {
                 <th>IOC</th>
                 <th style={{ width: 110 }}>Type</th>
                 <th style={{ width: 88 }}>Hits</th>
+                <th style={{ width: 96 }}>Sources</th>
                 <th style={{ width: 200 }}>First Seen</th>
                 <th style={{ width: 200 }}>Last Seen</th>
               </tr>
@@ -2532,13 +2533,14 @@ function IOCHotListPage() {
                       {isNewlyActiveHotIoc(r.first_seen_log) ? (
                         <span style={hotBadge('#312e81', '#c7d2fe')}>Newly active</span>
                       ) : null}
-                      {Number(r.match_count) > 100 ? (
+                      {Number(r.total_hits ?? 0) > 100 ? (
                         <span style={hotBadge('#78350f', '#fcd34d')}>High activity</span>
                       ) : null}
                     </span>
                   </td>
                   <td style={{ textTransform: 'lowercase' }}>{r.observable_type || '-'}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.match_count ?? 0)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.total_hits ?? 0)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.source_count ?? 0)}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.first_seen_log)}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.last_seen_log)}</td>
                 </tr>
