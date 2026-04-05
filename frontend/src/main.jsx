@@ -2298,6 +2298,7 @@ function isNewlyActiveHotIoc(firstSeenLog) {
 function IOCHotListPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
+  const [summary, setSummary] = useState({ total: 0, by_type: [], by_source: [] });
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState('');
   const [page, setPage] = useState(1);
@@ -2318,9 +2319,11 @@ function IOCHotListPage() {
       if (search) params.q = search;
       const { data } = await api.get('/ioc/hot', { params });
       setItems(data.items || []);
+      setSummary(data.summary || { total: 0, by_type: [], by_source: [] });
       setPagination(data.pagination || { page: 1, page_size: pageSize, total: 0, total_pages: 1 });
     } catch {
       setItems([]);
+      setSummary({ total: 0, by_type: [], by_source: [] });
       setBanner('Failed to load hot IOC list.');
     } finally {
       setLoading(false);
@@ -2348,12 +2351,59 @@ function IOCHotListPage() {
     setSearch(String(searchInput || '').trim());
   }
 
+  const typeCounts = {
+    ip: summary.by_type?.find((x) => x.observable_type === 'ip')?.count || 0,
+    url: summary.by_type?.find((x) => x.observable_type === 'url')?.count || 0,
+    domain: summary.by_type?.find((x) => x.observable_type === 'domain')?.count || 0,
+    ip6: summary.by_type?.find((x) => x.observable_type === 'ip6')?.count || 0,
+    hash: summary.by_type?.find((x) => x.observable_type === 'hash')?.count || 0
+  };
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
         <h2 style={{ marginTop: 0 }}>Hot IOC List</h2>
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
           Indicators with at least one environment match (hits &gt; 0), from PostgreSQL snapshot. Sorted by last seen in logs.
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Records</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>IP</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.ip}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>URL</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.url}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Hash (MD5/SHA*)</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.hash}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Domain</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.domain}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>IPv6</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.ip6}</div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
+          <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Top 5 sources</div>
+          <div style={{ marginTop: 6, fontSize: 14, display: 'grid', gap: 6 }}>
+            {summary.by_source?.length ? summary.by_source.slice(0, 5).map((s, idx) => (
+              <div key={`${s.source_name}-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>
+                <span style={{ color: '#cbd5e1' }}>{idx + 1}. {s.source_name}</span>
+                <b style={{ color: '#e2e8f0' }}>{s.count}</b>
+              </div>
+            )) : <span style={{ color: '#94a3b8' }}>No data</span>}
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'center' }}>

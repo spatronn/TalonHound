@@ -2367,6 +2367,7 @@ app.get('/api/ioc/hot', async (req, res) => {
         public_id::text AS public_id,
         observable,
         observable_type,
+        source_name,
         match_count,
         first_seen_log,
         last_seen_log
@@ -2378,8 +2379,43 @@ app.get('/api/ioc/hot', async (req, res) => {
 
     const { rows: items } = await pool.query(listQ, listParams);
 
+    const statsQ = `
+      SELECT
+        COUNT(*)::bigint AS total,
+        COUNT(*) FILTER (WHERE observable_type = 'ip')::bigint AS ip,
+        COUNT(*) FILTER (WHERE observable_type = 'url')::bigint AS url,
+        COUNT(*) FILTER (WHERE observable_type = 'domain')::bigint AS domain,
+        COUNT(*) FILTER (WHERE observable_type = 'ip6')::bigint AS ip6,
+        COUNT(*) FILTER (WHERE observable_type IN ('md5','sha1','sha256','ssdeep','imphash','tlsh'))::bigint AS hash
+      FROM ioc_items
+      WHERE ${baseWhere}
+    `;
+    const { rows: statsRows } = await pool.query(statsQ, params);
+    const s = statsRows[0] || {};
+
+    const topSourcesQ = `
+      SELECT source_name, COUNT(*)::bigint AS count
+      FROM ioc_items
+      WHERE ${baseWhere}
+      GROUP BY source_name
+      ORDER BY count DESC, source_name ASC
+      LIMIT 5
+    `;
+    const { rows: topSources } = await pool.query(topSourcesQ, params);
+
     return res.json({
       items,
+      summary: {
+        total: Number(s.total || 0),
+        by_type: [
+          { observable_type: 'ip', count: Number(s.ip || 0) },
+          { observable_type: 'url', count: Number(s.url || 0) },
+          { observable_type: 'domain', count: Number(s.domain || 0) },
+          { observable_type: 'ip6', count: Number(s.ip6 || 0) },
+          { observable_type: 'hash', count: Number(s.hash || 0) }
+        ],
+        by_source: topSources.map((r) => ({ source_name: r.source_name, count: Number(r.count || 0) }))
+      },
       pagination: {
         page,
         page_size: limit,
