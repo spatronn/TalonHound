@@ -2111,63 +2111,42 @@ function AdministrationPage() {
             <div style={ui.card}>
               <h2 style={ui.cardTitle}>Create User</h2>
               <p style={ui.cardDesc}>Create a new user and assign role.</p>
-              <form onSubmit={createUser}>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                    gap: '20px 28px'
-                  }}
-                >
-                  <div>
-                    <label htmlFor="new-username" style={ui.label}>Username</label>
-                    <input id="new-username" name="username" required style={ui.input} autoComplete="username" />
-                  </div>
-                  <div>
-                    <label htmlFor="new-first" style={ui.label}>First name</label>
-                    <input id="new-first" name="first_name" style={ui.input} autoComplete="given-name" />
-                  </div>
-                  <div>
-                    <label htmlFor="new-password" style={ui.label}>Password</label>
-                    <input id="new-password" name="password" type="password" required style={ui.input} autoComplete="new-password" />
-                  </div>
-                  <div>
-                    <label htmlFor="new-last" style={ui.label}>Last name</label>
-                    <input id="new-last" name="last_name" style={ui.input} autoComplete="family-name" />
-                  </div>
+              <form onSubmit={createUser} style={{ display: 'grid', gap: 20, maxWidth: 520 }}>
+                <div>
+                  <label htmlFor="new-first" style={ui.label}>First name</label>
+                  <input id="new-first" name="first_name" style={ui.input} autoComplete="given-name" />
                 </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'flex-end',
-                    justifyContent: 'space-between',
-                    gap: 20,
-                    marginTop: 24,
-                    paddingTop: 24,
-                    borderTop: '1px solid #1e293b'
-                  }}
-                >
-                  <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
-                    <label htmlFor="new-role" style={ui.label}>User Role</label>
-                    <select id="new-role" name="role" defaultValue="readonly" style={ui.select}>
-                      <option value="admin">Admin (Full Access)</option>
-                      <option value="readonly">Read Only (View Only)</option>
-                    </select>
-                  </div>
-                  <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
-                    <button
-                      type="submit"
-                      disabled={createBusy}
-                      style={{
-                        ...ui.btnPrimary,
-                        opacity: createBusy ? 0.8 : 1,
-                        cursor: createBusy ? 'wait' : 'pointer'
-                      }}
-                    >
-                      {createBusy ? 'Creating…' : 'Create User'}
-                    </button>
-                  </div>
+                <div>
+                  <label htmlFor="new-last" style={ui.label}>Last name</label>
+                  <input id="new-last" name="last_name" style={ui.input} autoComplete="family-name" />
+                </div>
+                <div>
+                  <label htmlFor="new-username" style={ui.label}>Username</label>
+                  <input id="new-username" name="username" required style={ui.input} autoComplete="username" />
+                </div>
+                <div>
+                  <label htmlFor="new-password" style={ui.label}>Password</label>
+                  <input id="new-password" name="password" type="password" required style={ui.input} autoComplete="new-password" />
+                </div>
+                <div>
+                  <label htmlFor="new-role" style={ui.label}>User Role</label>
+                  <select id="new-role" name="role" defaultValue="readonly" style={ui.select}>
+                    <option value="admin">Admin (Full Access)</option>
+                    <option value="readonly">Read Only (View Only)</option>
+                  </select>
+                </div>
+                <div>
+                  <button
+                    type="submit"
+                    disabled={createBusy}
+                    style={{
+                      ...ui.btnPrimary,
+                      opacity: createBusy ? 0.8 : 1,
+                      cursor: createBusy ? 'wait' : 'pointer'
+                    }}
+                  >
+                    {createBusy ? 'Creating…' : 'Create User'}
+                  </button>
                 </div>
               </form>
             </div>
