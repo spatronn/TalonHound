@@ -307,6 +307,7 @@ function AppShell({ children }) {
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isOpsActive)}>4. Operations</div>
             <Link to="/ioc" style={subMenuStyle(isActive('/ioc'))}>IOC List</Link>
+            <Link to="/ioc/hot" style={subMenuStyle(isActive('/ioc/hot'))}>Hot IOC List</Link>
             {canWrite ? (
               <Link to="/ioc/new" style={subMenuStyle(isActive('/ioc/new'))}>Add IOC</Link>
             ) : (
@@ -2287,6 +2288,206 @@ function AdministrationPage() {
   );
 }
 
+function isNewlyActiveHotIoc(firstSeenLog) {
+  if (!firstSeenLog) return false;
+  const t = new Date(firstSeenLog).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t <= 60 * 60 * 1000;
+}
+
+function IOCHotListPage() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [sinceFilter, setSinceFilter] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0, total_pages: 1 });
+
+  const loadHot = useCallback(async () => {
+    setLoading(true);
+    setBanner('');
+    try {
+      const params = { page, limit: pageSize };
+      if (typeFilter) params.type = typeFilter;
+      if (sinceFilter) params.last_seen_since = sinceFilter;
+      const { data } = await api.get('/ioc/hot', { params });
+      setItems(data.items || []);
+      setPagination(data.pagination || { page: 1, page_size: pageSize, total: 0, total_pages: 1 });
+    } catch {
+      setItems([]);
+      setBanner('Failed to load hot IOC list.');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, typeFilter, sinceFilter]);
+
+  useEffect(() => {
+    loadHot();
+  }, [loadHot]);
+
+  const hotBadge = (bg, color) => ({
+    display: 'inline-block',
+    marginLeft: 6,
+    marginTop: 4,
+    padding: '2px 8px',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 700,
+    background: bg,
+    color
+  });
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Hot IOC List</h2>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
+          Indicators with at least one environment match (hits &gt; 0), from PostgreSQL snapshot. Sorted by last seen in logs.
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'center' }}>
+          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
+            Type{' '}
+            <select
+              value={typeFilter}
+              onChange={(e) => {
+                setPage(1);
+                setTypeFilter(e.target.value);
+              }}
+              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
+            >
+              <option value="">All</option>
+              <option value="ip">IP</option>
+              <option value="domain">Domain</option>
+              <option value="hash">Hash</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
+            Last seen in logs{' '}
+            <select
+              value={sinceFilter}
+              onChange={(e) => {
+                setPage(1);
+                setSinceFilter(e.target.value);
+              }}
+              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
+            >
+              <option value="">Any time</option>
+              <option value="1h">Last hour</option>
+              <option value="24h">Last 24 hours</option>
+              <option value="7d">Last 7 days</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
+            Page size{' '}
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPage(1);
+                setPageSize(Number(e.target.value));
+              }}
+              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
+            >
+              {[25, 50, 100, 200].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
+            Hot IOCs <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
+            <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
+            Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
+          </div>
+        </div>
+
+        {(loading || banner) && (
+          <div style={{ marginBottom: 10, padding: 10, background: loading ? '#e0f2fe' : '#fee2e2', border: `1px solid ${loading ? '#7dd3fc' : '#fecaca'}`, borderRadius: 6, color: '#0f172a' }}>
+            {loading ? 'Loading hot IOCs...' : banner}
+          </div>
+        )}
+
+        {!loading && !banner && items.length === 0 && (
+          <div style={{ marginBottom: 10, padding: 10, background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 6, color: '#0f172a' }}>
+            No hot IOCs yet — nothing in your environment has matched a listed indicator.
+          </div>
+        )}
+
+        <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+          <table
+            className="ioc-table"
+            width="100%"
+            cellPadding="10"
+            style={{
+              borderCollapse: 'collapse',
+              minWidth: 720,
+              background: '#fff',
+              tableLayout: 'fixed',
+              fontSize: 13,
+              fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace"
+            }}
+          >
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+                <th>IOC</th>
+                <th style={{ width: 110 }}>Type</th>
+                <th style={{ width: 88 }}>Hits</th>
+                <th style={{ width: 200 }}>First Seen</th>
+                <th style={{ width: 200 }}>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => (
+                <tr
+                  key={`${r.public_id || r.id}`}
+                  style={{ borderBottom: '1px solid #f1f5f9', cursor: r.public_id ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if (r.public_id) navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`);
+                  }}
+                >
+                  <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                    <span style={{ color: '#93c5fd', textDecoration: 'underline', fontWeight: 600 }}>{r.observable || '-'}</span>
+                    <span style={{ display: 'block' }}>
+                      {isNewlyActiveHotIoc(r.first_seen_log) ? (
+                        <span style={hotBadge('#312e81', '#c7d2fe')}>Newly active</span>
+                      ) : null}
+                      {Number(r.match_count) > 100 ? (
+                        <span style={hotBadge('#78350f', '#fcd34d')}>High activity</span>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td style={{ textTransform: 'lowercase' }}>{r.observable_type || '-'}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.match_count ?? 0)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.first_seen_log)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.last_seen_log)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+          <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+            Previous
+          </button>
+          <button
+            style={{ minWidth: 92, fontWeight: 600 }}
+            disabled={pagination.page >= pagination.total_pages}
+            onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))}
+          >
+            Next
+          </button>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
 function IOCListPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
@@ -3228,6 +3429,7 @@ function App() {
           <Route path="/analytics/ioc-match-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
           <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
+          <Route path="/ioc/hot" element={<Protected><IOCHotListPage /></Protected>} />
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />

@@ -2282,6 +2282,110 @@ async function handleIocList(req, res) {
 
 app.get('/api/ioc/list', handleIocList);
 
+/** Hot IOC list: `last_seen_since` = ISO 8601 or relative `24h`, `7d`, `1h`, `30m`, `60s`. */
+function parseLastSeenSinceParam(raw) {
+  if (raw == null) return { ok: true, since: null };
+  const s = String(raw).trim();
+  if (!s) return { ok: true, since: null };
+  const rel = /^(\d+)\s*(s|m|h|d)$/i.exec(s);
+  if (rel) {
+    const n = Math.min(Math.max(parseInt(rel[1], 10) || 0, 1), 100000);
+    const u = rel[2].toLowerCase();
+    let ms;
+    if (u === 's') ms = n * 1000;
+    else if (u === 'm') ms = n * 60 * 1000;
+    else if (u === 'h') ms = n * 3600 * 1000;
+    else ms = n * 86400 * 1000;
+    return { ok: true, since: new Date(Date.now() - ms) };
+  }
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return { ok: true, since: d };
+  return { ok: false, error: 'Use ISO 8601 timestamp or a relative window like 24h, 7d, 1h, 30m, 60s.' };
+}
+
+app.get('/api/ioc/hot', async (req, res) => {
+  const page = Math.max(parseInt(String(req.query.page || '1'), 10) || 1, 1);
+  let limit = parseInt(String(req.query.limit ?? req.query.page_size ?? '50'), 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 50;
+  limit = Math.min(limit, 200);
+  const offset = (page - 1) * limit;
+
+  const typeRaw = String(req.query.type || '').trim().toLowerCase();
+  const params = [];
+  let extraWhere = '';
+
+  if (typeRaw === 'ip') {
+    extraWhere += ` AND observable_type IN ('ip', 'ip6') `;
+  } else if (typeRaw === 'domain') {
+    extraWhere += ` AND observable_type = 'domain' `;
+  } else if (typeRaw === 'hash') {
+    extraWhere += ` AND observable_type IN ('md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh') `;
+  } else if (typeRaw) {
+    return res.status(400).json({
+      message: 'Invalid query parameter: type',
+      detail: 'Allowed values: ip, domain, hash.'
+    });
+  }
+
+  const sinceParsed = parseLastSeenSinceParam(req.query.last_seen_since);
+  if (!sinceParsed.ok) {
+    return res.status(400).json({
+      message: 'Invalid query parameter: last_seen_since',
+      detail: sinceParsed.error
+    });
+  }
+  if (sinceParsed.since) {
+    params.push(sinceParsed.since.toISOString());
+    extraWhere += ` AND last_seen_log >= $${params.length}::timestamptz `;
+  }
+
+  const baseWhere = `match_count > 0${extraWhere}`;
+
+  try {
+    const countQ = `
+      SELECT COUNT(*)::bigint AS cnt
+      FROM ioc_items
+      WHERE ${baseWhere}
+    `;
+    const { rows: countRows } = await pool.query(countQ, params);
+    const total = Number(countRows[0]?.cnt || 0);
+    const totalPages = total === 0 ? 1 : Math.max(Math.ceil(total / limit), 1);
+
+    const listParams = [...params, limit, offset];
+    const limIdx = params.length + 1;
+    const offIdx = params.length + 2;
+
+    const listQ = `
+      SELECT
+        id,
+        public_id::text AS public_id,
+        observable,
+        observable_type,
+        match_count,
+        first_seen_log,
+        last_seen_log
+      FROM ioc_items
+      WHERE ${baseWhere}
+      ORDER BY last_seen_log DESC NULLS LAST, match_count DESC, id ASC
+      LIMIT $${limIdx} OFFSET $${offIdx}
+    `;
+
+    const { rows: items } = await pool.query(listQ, listParams);
+
+    return res.json({
+      items,
+      pagination: {
+        page,
+        page_size: limit,
+        total,
+        total_pages: totalPages
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch hot IOC list', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/ip/sources', async (req, res) => {
   const { ip } = req.query;
   if (!ip) {
