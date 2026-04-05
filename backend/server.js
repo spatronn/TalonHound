@@ -2311,6 +2311,7 @@ app.get('/api/ioc/hot', async (req, res) => {
   const offset = (page - 1) * limit;
 
   const typeRaw = String(req.query.type || '').trim().toLowerCase();
+  const qRaw = String(req.query.q || '').trim();
   const params = [];
   let extraWhere = '';
 
@@ -2337,6 +2338,11 @@ app.get('/api/ioc/hot', async (req, res) => {
   if (sinceParsed.since) {
     params.push(sinceParsed.since.toISOString());
     extraWhere += ` AND last_seen_log >= $${params.length}::timestamptz `;
+  }
+
+  if (qRaw) {
+    params.push(`%${qRaw}%`);
+    extraWhere += ` AND (observable ILIKE $${params.length} OR public_id::text ILIKE $${params.length}) `;
   }
 
   const baseWhere = `match_count > 0${extraWhere}`;

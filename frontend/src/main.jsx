@@ -2304,6 +2304,8 @@ function IOCHotListPage() {
   const [pageSize, setPageSize] = useState(50);
   const [typeFilter, setTypeFilter] = useState('');
   const [sinceFilter, setSinceFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0, total_pages: 1 });
 
   const loadHot = useCallback(async () => {
@@ -2313,6 +2315,7 @@ function IOCHotListPage() {
       const params = { page, limit: pageSize };
       if (typeFilter) params.type = typeFilter;
       if (sinceFilter) params.last_seen_since = sinceFilter;
+      if (search) params.q = search;
       const { data } = await api.get('/ioc/hot', { params });
       setItems(data.items || []);
       setPagination(data.pagination || { page: 1, page_size: pageSize, total: 0, total_pages: 1 });
@@ -2322,7 +2325,7 @@ function IOCHotListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, typeFilter, sinceFilter]);
+  }, [page, pageSize, typeFilter, sinceFilter, search]);
 
   useEffect(() => {
     loadHot();
@@ -2340,6 +2343,11 @@ function IOCHotListPage() {
     color
   });
 
+  function applySearch() {
+    setPage(1);
+    setSearch(String(searchInput || '').trim());
+  }
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
@@ -2349,6 +2357,24 @@ function IOCHotListPage() {
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'center' }}>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') applySearch(); }}
+            placeholder="Search by IOC value or public ID"
+            style={{ minWidth: 320 }}
+          />
+          <button onClick={applySearch}>Search</button>
+          <button
+            onClick={() => {
+              setSearchInput('');
+              setSearch('');
+              setPage(1);
+            }}
+          >
+            Clear
+          </button>
+
           <label style={{ fontSize: 14, color: '#cbd5e1' }}>
             Type{' '}
             <select
