@@ -1486,7 +1486,7 @@ app.post('/api/auth/login', async (req, res) => {
       const ok = await bcrypt.compare(password, u.password_hash);
       if (ok) {
         if (String(u.status || 'active') === 'passive') {
-          return res.status(403).json({ message: 'User is inactive' });
+          return res.status(401).json({ message: 'Invalid email or password' });
         }
         const token = signUserToken({
           userId: u.id,
