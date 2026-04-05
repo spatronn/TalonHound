@@ -1941,8 +1941,14 @@ function AdministrationPage() {
       await loadUsers();
       alert('User created');
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to create user';
-      alert(msg);
+      const status = Number(err?.response?.status || 0);
+      const backendMsg = String(err?.response?.data?.message || '').trim();
+      if (status === 409 || /already exists/i.test(backendMsg)) {
+        alert('This username is already in use. Please choose another one.');
+      } else {
+        const msg = backendMsg || err?.message || 'Failed to create user';
+        alert(msg);
+      }
     } finally {
       setCreateBusy(false);
     }
