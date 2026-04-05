@@ -26,12 +26,15 @@ function toPgTs(v) {
 async function fetchAggregatesFromClickHouse() {
   const sql = `
     SELECT
-      lowerUTF8(observable) AS observable_value,
+      lowerUTF8(so.observable) AS observable_value,
       count() AS match_count,
-      min(ts) AS first_seen_log,
-      max(ts) AS last_seen_log
-    FROM default.syslog_observables
-    WHERE observable != ''
+      min(so.ts) AS first_seen_log,
+      max(so.ts) AS last_seen_log
+    FROM default.syslog_observables AS so
+    WHERE so.observable != ''
+      AND so.observable IN (
+        SELECT observable FROM default.ioc_lookup
+      )
     GROUP BY observable_value
   `;
 
@@ -39,7 +42,7 @@ async function fetchAggregatesFromClickHouse() {
     logTag: 'ioc-match-count.aggregate',
     settings: {
       max_threads: Math.max(Number(process.env.IOC_MATCH_COUNT_CH_MAX_THREADS || 1), 1),
-      max_execution_time: Math.max(Number(process.env.IOC_MATCH_COUNT_CH_MAX_EXECUTION_TIME_SECONDS || 30), 5)
+      max_execution_time: Math.max(Number(process.env.IOC_MATCH_COUNT_CH_MAX_EXECUTION_TIME_SECONDS || 120), 5)
     }
   });
 
