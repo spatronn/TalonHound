@@ -2544,6 +2544,26 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
   }
 });
 
+
+const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
+const iocDetailsCache = new Map();
+let signalEventsTableCache = { value: null, checkedAt: 0 };
+
+async function hasSignalEventsTable() {
+  const now = Date.now();
+  if (signalEventsTableCache.value != null && (now - signalEventsTableCache.checkedAt) < 60000) {
+    return signalEventsTableCache.value;
+  }
+  try {
+    const r = await pool.query(`SELECT to_regclass('public.signal_events') AS rel`);
+    signalEventsTableCache = { value: Boolean(r.rows?.[0]?.rel), checkedAt: now };
+    return signalEventsTableCache.value;
+  } catch {
+    signalEventsTableCache = { value: false, checkedAt: now };
+    return false;
+  }
+}
+
 app.get('/api/ioc/details', async (req, res) => {
   const requestedPublicId = String(req.query?.public_id || '').trim();
 
@@ -2551,61 +2571,87 @@ app.get('/api/ioc/details', async (req, res) => {
     return res.status(400).json({ message: 'public_id is required' });
   }
 
+  const startedAt = Date.now();
+  let pgMs = 0;
+  let chMs = 0;
+
+  const cached = iocDetailsCache.get(requestedPublicId);
+  if (cached && cached.expiresAt > Date.now()) {
+    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=hit total_ms=${Date.now() - startedAt} pg_ms=0 ch_ms=0`);
+    return res.json(cached.payload);
+  }
+  if (cached) iocDetailsCache.delete(requestedPublicId);
+
   try {
-    const byIdQ = `
-      SELECT observable, observable_type, public_id
-      FROM ioc_items
-      WHERE public_id = $1::uuid
-      LIMIT 1
-    `;
-    const byIdRes = await pool.query(byIdQ, [requestedPublicId]);
-    const seed = byIdRes.rows[0];
-    if (!seed) {
-      return res.json({ summary: null, sources: [], matches: [] });
-    }
-
-    const observable = seed.observable;
-    const observableType = seed.observable_type;
-
-    const itemParams = [observable];
-    let typeFilter = '';
-    if (observableType) {
-      itemParams.push(observableType);
-      typeFilter = ` AND observable_type = $2 `;
-    }
-
     const itemQ = `
+      WITH seed AS (
+        SELECT observable, observable_type
+        FROM ioc_items
+        WHERE public_id = $1::uuid
+        LIMIT 1
+      )
       SELECT
-        id,
-        public_id,
-        observable,
-        observable_type,
-        source_name,
-        source_url,
-        confidence,
-        category,
-        note,
-        match_count,
-        first_seen_log,
-        last_seen_log,
-        created_at
-      FROM ioc_items
-      WHERE observable = $1
-      ${typeFilter}
-      ORDER BY created_at DESC
+        i.id,
+        i.public_id,
+        i.observable,
+        i.observable_type,
+        i.source_name,
+        i.source_url,
+        i.confidence,
+        i.category,
+        i.note,
+        i.match_count,
+        i.first_seen_log,
+        i.last_seen_log,
+        i.created_at
+      FROM ioc_items i
+      INNER JOIN seed s
+        ON i.observable = s.observable
+       AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)
+      ORDER BY i.created_at DESC
       LIMIT 500
     `;
 
-    const itemRes = await pool.query(itemQ, itemParams);
-    const rows = itemRes.rows;
+    const tItem = Date.now();
+    const itemRes = await pool.query(itemQ, [requestedPublicId]);
+    pgMs += Date.now() - tItem;
 
+    const rows = itemRes.rows;
     if (!rows.length) {
-      return res.json({ summary: null, sources: [], matches: [] });
+      const payload = { summary: null, sources: [], matches: [] };
+      iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
+      console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=0 matches=0`);
+      return res.json(payload);
     }
 
-    const geoIp = extractIpv4ForGeo(observable, rows[0].observable_type);
-    let geo = { ip: geoIp, asn: null, country_code: null, as_name: null };
-    if (geoIp) {
+    const observable = rows[0].observable;
+    const observableType = rows[0].observable_type;
+
+    const computedMatchCount = rows.reduce((max, r) => Math.max(max, Number(r.match_count || 0)), 0);
+    const firstSeenLog = rows
+      .map((r) => r.first_seen_log)
+      .filter(Boolean)
+      .sort()[0] || null;
+    const lastSeenLog = rows
+      .map((r) => r.last_seen_log)
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0] || null;
+
+    const signalEventsExists = await hasSignalEventsTable();
+    const signalRawExpr = signalEventsExists
+      ? `(
+          SELECT se.raw_event
+          FROM signal_events se
+          WHERE se.id = m.signal_event_id
+          LIMIT 1
+        )`
+      : 'NULL';
+
+    const geoIp = extractIpv4ForGeo(observable, observableType);
+
+    const geoPromise = (async () => {
+      if (!geoIp) return { ip: null, asn: null, country_code: null, as_name: null };
       const geoQ = `
         WITH ip_input AS (
           SELECT
@@ -2630,27 +2676,66 @@ app.get('/api/ioc/details', async (req, res) => {
           LIMIT 1
         ) r ON TRUE
       `;
+      const tGeo = Date.now();
       const geoRes = await pool.query(geoQ, [geoIp]);
-      if (geoRes.rows[0]) {
-        geo = {
-          ip: geoRes.rows[0].ip || geoIp,
-          asn: geoRes.rows[0].asn ?? null,
-          country_code: geoRes.rows[0].country_code || null,
-          as_name: geoRes.rows[0].as_name || null
-        };
-      }
-    }
+      pgMs += Date.now() - tGeo;
+      if (!geoRes.rows[0]) return { ip: geoIp, asn: null, country_code: null, as_name: null };
+      return {
+        ip: geoRes.rows[0].ip || geoIp,
+        asn: geoRes.rows[0].asn ?? null,
+        country_code: geoRes.rows[0].country_code || null,
+        as_name: geoRes.rows[0].as_name || null
+      };
+    })();
 
-    const computedMatchCount = rows.reduce((max, r) => Math.max(max, Number(r.match_count || 0)), 0);
-    const firstSeenLog = rows
-      .map((r) => r.first_seen_log)
-      .filter(Boolean)
-      .sort()[0] || null;
-    const lastSeenLog = rows
-      .map((r) => r.last_seen_log)
-      .filter(Boolean)
-      .sort()
-      .slice(-1)[0] || null;
+    const matchesPromise = (async () => {
+      const matchesQ = `
+        SELECT
+          m.id,
+          m.signal_event_id,
+          m.event_time,
+          m.host_name,
+          m.process_name,
+          m.destination_ip,
+          m.destination_port,
+          m.protocol,
+          m.source,
+          m.parser_source,
+          m.matched_ioc,
+          m.source_name,
+          m.confidence,
+          m.hit_count,
+          m.detection_type,
+          m.match_source,
+          COALESCE(NULLIF(${signalRawExpr}, ''), '-') AS matched_syslog_event,
+          COALESCE(
+            m.detection_type,
+            CASE
+              WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+              THEN 'retroactive'
+              ELSE 'realtime'
+            END
+          ) AS detection_mode,
+          m.created_at
+        FROM ioc_match_events m
+        WHERE m.matched_ioc = $1
+        ORDER BY m.created_at DESC
+        LIMIT 20
+      `;
+      const tMatches = Date.now();
+      const matchesRes = await pool.query(matchesQ, [observable]);
+      pgMs += Date.now() - tMatches;
+
+      if (!USE_CLICKHOUSE) return matchesRes.rows;
+
+      const tCh = Date.now();
+      const enriched = await Promise.all((matchesRes.rows || []).map((row) => withRawSyslogEvent(row)));
+      chMs += Date.now() - tCh;
+      return enriched;
+    })();
+
+    const [geo, matches] = await Promise.all([geoPromise, matchesPromise]);
 
     const summary = {
       id: rows[0].id,
@@ -2669,69 +2754,17 @@ app.get('/api/ioc/details', async (req, res) => {
       file_information: buildFileInformation(rows, observable, rows[0].observable_type)
     };
 
-    let signalRawExpr = 'NULL';
-    try {
-      const existsRes = await pool.query(`SELECT to_regclass('public.signal_events') AS rel`);
-      if (existsRes.rows?.[0]?.rel) {
-        signalRawExpr = `(
-            SELECT se.raw_event
-            FROM signal_events se
-            WHERE se.id = m.signal_event_id
-            LIMIT 1
-          )`;
-      }
-    } catch {
-      signalRawExpr = 'NULL';
-    }
-
-    const matchesQ = `
-      SELECT
-        m.id,
-        m.signal_event_id,
-        m.event_time,
-        m.host_name,
-        m.process_name,
-        m.destination_ip,
-        m.destination_port,
-        m.protocol,
-        m.source,
-        m.parser_source,
-        m.matched_ioc,
-        m.source_name,
-        m.confidence,
-        m.hit_count,
-        m.detection_type,
-        m.match_source,
-        COALESCE(
-          NULLIF(${signalRawExpr}, ''),
-          '-'
-        ) AS matched_syslog_event,
-        COALESCE(
-          m.detection_type,
-          CASE
-            WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
-              OR COALESCE((m.match_context->>'retroactive')::boolean, false)
-            THEN 'retroactive'
-            ELSE 'realtime'
-          END
-        ) AS detection_mode,
-        m.created_at
-      FROM ioc_match_events m
-      WHERE m.matched_ioc = $1
-      ORDER BY m.created_at DESC
-      LIMIT 20
-    `;
-    const matchesRes = await pool.query(matchesQ, [observable]);
-    const matches = USE_CLICKHOUSE
-      ? await Promise.all((matchesRes.rows || []).map((row) => withRawSyslogEvent(row)))
-      : matchesRes.rows;
-
-    return res.json({
+    const payload = {
       summary,
       match_count: Number(summary.match_count || 0),
       sources: rows,
       matches
-    });
+    };
+
+    iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
+    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=${rows.length} matches=${matches.length}`);
+
+    return res.json(payload);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC details', detail: err.message });
   }
