@@ -137,7 +137,42 @@ docker compose up -d --build
 
 ---
 
-### 8) `demo-dashboard-map-worker`
+### 8) `demo-ioc-match-count-worker`
+**Purpose**
+- Calculates IOC match totals from **ClickHouse** (`syslog_observables`) and snapshots them into PostgreSQL.
+- Source of truth for IOC hit count: ClickHouse aggregation.
+- Persistence/UI snapshot: PostgreSQL (`ioc_match_count_snapshot` + `ioc_items.match_count`).
+
+**What it updates**
+- `ioc_match_count_snapshot`
+- `ioc_items.match_count`
+- `ioc_items.first_seen_log`
+- `ioc_items.last_seen_log`
+
+**Behavior**
+- Periodic run (default every 60s).
+- Single batch aggregation query on ClickHouse (`GROUP BY observable_value`).
+- PostgreSQL side uses bulk upsert/update (no per-IOC runtime join in API).
+
+**Key env vars**
+- `IOC_MATCH_COUNT_INTERVAL_MS` (default `60000`)
+- `IOC_MATCH_COUNT_BATCH_SIZE` (default `2000`)
+- `IOC_MATCH_COUNT_CH_MAX_THREADS` (default `1`)
+- `IOC_MATCH_COUNT_CH_MAX_EXECUTION_TIME_SECONDS` (default `120`)
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 ioc-match-count-worker
+  ```
+- Quick status check:
+  ```bash
+  docker compose exec -T db psql -U demo -d demo -c "SELECT count(*) AS snapshot_rows, max(updated_at) AS last_update FROM ioc_match_count_snapshot;"
+  ```
+
+---
+
+### 9) `demo-dashboard-map-worker`
 **Purpose**
 - Batch worker for Threat World Map aggregation.
 - Processes IOC rows in chunks (default 1000) and updates precomputed map tables.
@@ -163,7 +198,7 @@ docker compose up -d --build
   docker compose exec -T db psql -U demo -d demo -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
   ```
 
-### 9) `demo-frontend`
+### 10) `demo-frontend`
 **Purpose**
 - Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
 
@@ -175,7 +210,7 @@ docker compose up -d --build
   - Last 10 IOC Match Events
 - Incident (placeholder for now)
 
-### 10) `demo-proxy`
+### 11) `demo-proxy`
 **Purpose**
 - TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
 
@@ -204,7 +239,9 @@ flowchart LR
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
     MW[demo-dashboard-map-worker\nmap batch worker]
+    IMC[demo-ioc-match-count-worker\nCH->PG match_count snapshot]
     DB[(demo-db\nPostgreSQL)]
+    CH[(demo-clickhouse\nsyslog_observables)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
     FE -->|API calls| BE
@@ -219,6 +256,8 @@ flowchart LR
     EXT -->|fetch IOC lists| IW
     IW -->|upsert ioc_items| DB
     MW -->|batch aggregate + daily snapshot| DB
+    IMC -->|aggregate observable hits| CH
+    IMC -->|upsert snapshot + update ioc_items.match_count| DB
     BE -->|analytics/auth queries| DB
 ```
 
@@ -252,6 +291,7 @@ docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
 docker compose logs --tail=100 ioc-correlation-engine
+docker compose logs --tail=100 ioc-match-count-worker
 docker compose logs --tail=100 dashboard-map-worker
 
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \
