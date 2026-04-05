@@ -2421,6 +2421,9 @@ app.get('/api/ioc/details', async (req, res) => {
         confidence,
         category,
         note,
+        match_count,
+        first_seen_log,
+        last_seen_log,
         created_at
       FROM ioc_items
       WHERE observable = $1
@@ -2474,6 +2477,17 @@ app.get('/api/ioc/details', async (req, res) => {
       }
     }
 
+    const computedMatchCount = rows.reduce((max, r) => Math.max(max, Number(r.match_count || 0)), 0);
+    const firstSeenLog = rows
+      .map((r) => r.first_seen_log)
+      .filter(Boolean)
+      .sort()[0] || null;
+    const lastSeenLog = rows
+      .map((r) => r.last_seen_log)
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0] || null;
+
     const summary = {
       id: rows[0].id,
       public_id: rows[0].public_id,
@@ -2481,6 +2495,9 @@ app.get('/api/ioc/details', async (req, res) => {
       observable_type: rows[0].observable_type,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
+      match_count: computedMatchCount,
+      first_seen_log: firstSeenLog,
+      last_seen_log: lastSeenLog,
       source_count: new Set(rows.map((r) => r.source_name)).size,
       confidence_set: [...new Set(rows.map((r) => r.confidence).filter(Boolean))],
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
@@ -2547,6 +2564,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     return res.json({
       summary,
+      match_count: Number(summary.match_count || 0),
       sources: rows,
       matches
     });

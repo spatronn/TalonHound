@@ -185,6 +185,29 @@ services:
       - clickhouse
     restart: unless-stopped
 
+  ioc-match-count-worker:
+    build: ./backend
+    container_name: demo-ioc-match-count-worker
+    command: ["npm", "run", "ioc-match-count-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=demo
+      - LOG_STORAGE=clickhouse
+      - CLICKHOUSE_URL=http://demo-clickhouse:8123
+      - CLICKHOUSE_USER=demo
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - IOC_MATCH_COUNT_INTERVAL_MS=60000
+      - IOC_MATCH_COUNT_BATCH_SIZE=2000
+      - IOC_MATCH_COUNT_CH_MAX_THREADS=1
+      - IOC_MATCH_COUNT_CH_MAX_EXECUTION_TIME_SECONDS=30
+    depends_on:
+      - db
+      - clickhouse
+    restart: unless-stopped
+
   dashboard-map-worker:
     build: ./backend
     container_name: demo-dashboard-map-worker
