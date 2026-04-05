@@ -335,14 +335,43 @@ function AppShell({ children }) {
       </main>
 
       {needsTimezoneSelection && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ width: 420, maxWidth: '92vw', background: '#fff', borderRadius: 12, padding: 16, border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginTop: 0 }}>Select Timezone</h3>
-            <p style={{ fontSize: 14, color: '#475569' }}>This is required once. You can change it later from Administration.</p>
-            <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 10 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div style={{ width: 440, maxWidth: '96vw', background: 'linear-gradient(180deg, #111827 0%, #0f172a 100%)', borderRadius: 14, padding: 20, border: '1px solid #334155', boxShadow: '0 24px 60px rgba(2,6,23,0.55)' }}>
+            <h3 style={{ margin: '0 0 8px', color: '#f8fafc', fontSize: 22, fontWeight: 700 }}>Select Timezone</h3>
+            <p style={{ fontSize: 14, color: '#94a3b8', margin: '0 0 14px' }}>This is required once. You can change it later from Administration.</p>
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              style={{
+                width: '100%',
+                height: 42,
+                borderRadius: 10,
+                border: '1px solid #334155',
+                background: '#0b1220',
+                color: '#e2e8f0',
+                padding: '0 12px',
+                marginBottom: 12,
+                outline: 'none'
+              }}
+            >
               {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
-            <button type="button" onClick={() => saveTimezone(timezone)} style={{ width: '100%', padding: 10, fontWeight: 600 }}>Save Timezone</button>
+            <button
+              type="button"
+              onClick={() => saveTimezone(timezone)}
+              style={{
+                width: '100%',
+                height: 42,
+                borderRadius: 10,
+                border: '1px solid #2563eb',
+                background: 'linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)',
+                color: '#eff6ff',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Save Timezone
+            </button>
           </div>
         </div>
       )}
