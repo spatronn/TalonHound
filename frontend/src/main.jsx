@@ -2198,7 +2198,6 @@ function AdministrationPage() {
                   <table className="ioc-table" style={ui.table}>
                     <thead>
                       <tr>
-                        <th style={ui.th}>ID</th>
                         <th style={ui.th}>Username</th>
                         <th style={ui.th}>Name</th>
                         <th style={ui.th}>Role</th>
@@ -2219,7 +2218,6 @@ function AdministrationPage() {
                             opacity: isPassive ? 0.62 : 1
                           }}
                         >
-                          <td style={{ ...ui.td, fontVariantNumeric: 'tabular-nums', color: '#94a3b8' }}>{u.id}</td>
                           <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 13 }}>{u.username}</td>
                           <td style={ui.td}>{formatDisplayName(u)}</td>
                           <td style={ui.td}>
