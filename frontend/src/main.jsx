@@ -1722,7 +1722,7 @@ function IntegrationsRecentRunsPage() {
   );
 }
 
-function SettingsPage() {
+function AdministrationPage() {
   const { canWrite, role, userId, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
   const [saving, setSaving] = useState(false);
@@ -1731,6 +1731,86 @@ function SettingsPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [profile, setProfile] = useState({ first_name: '', last_name: '' });
   const [profileBusy, setProfileBusy] = useState(false);
+
+  const ui = {
+    pageTitle: { margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.02em' },
+    pageSub: { margin: '0 0 28px', fontSize: 14, color: '#94a3b8', lineHeight: 1.5, maxWidth: 560 },
+    card: {
+      border: '1px solid #334155',
+      borderRadius: 12,
+      background: '#111827',
+      padding: 24,
+      marginBottom: 24,
+      boxSizing: 'border-box'
+    },
+    cardTitle: { margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: '#e2e8f0' },
+    cardDesc: { margin: '0 0 20px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 },
+    label: {
+      display: 'block',
+      fontSize: 12,
+      fontWeight: 600,
+      color: '#94a3b8',
+      marginBottom: 8,
+      letterSpacing: '0.03em'
+    },
+    input: {
+      width: '100%',
+      padding: '10px 12px',
+      borderRadius: 8,
+      border: '1px solid #334155',
+      background: '#0f172a',
+      color: '#e2e8f0',
+      fontSize: 14,
+      boxSizing: 'border-box'
+    },
+    select: {
+      width: '100%',
+      padding: '10px 12px',
+      borderRadius: 8,
+      border: '1px solid #334155',
+      background: '#0f172a',
+      color: '#e2e8f0',
+      fontSize: 14,
+      boxSizing: 'border-box',
+      cursor: 'pointer'
+    },
+    btnPrimary: {
+      padding: '10px 22px',
+      borderRadius: 8,
+      border: 'none',
+      background: '#2563eb',
+      color: '#fff',
+      fontWeight: 600,
+      fontSize: 14,
+      cursor: 'pointer',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+    },
+    btnDanger: {
+      padding: '6px 12px',
+      borderRadius: 8,
+      border: '1px solid #7f1d1d',
+      background: 'rgba(127,29,29,0.25)',
+      color: '#fca5a5',
+      fontSize: 12,
+      fontWeight: 600,
+      cursor: 'pointer',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6
+    },
+    table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
+    th: {
+      textAlign: 'left',
+      padding: '12px 14px',
+      borderBottom: '1px solid #334155',
+      color: '#94a3b8',
+      fontSize: 11,
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em'
+    },
+    td: { padding: '14px', borderBottom: '1px solid #1e293b', color: '#e2e8f0', verticalAlign: 'middle' }
+  };
 
   async function loadUsers() {
     if (!canWrite) return;
@@ -1765,6 +1845,11 @@ function SettingsPage() {
   }, [canWrite, userId]);
 
   async function save() {
+    if (!canWrite) {
+      localStorage.setItem('demo_timezone', timezone);
+      alert('Timezone stored locally (read-only account).');
+      return;
+    }
     setSaving(true);
     try {
       const { data } = await api.put('/users/me/preferences', { timezone });
@@ -1798,7 +1883,7 @@ function SettingsPage() {
       await loadUsers();
       alert('User created');
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed';
+      const msg = err?.response?.data?.message || err?.message || 'Failed to create user';
       alert(msg);
     } finally {
       setCreateBusy(false);
@@ -1817,7 +1902,7 @@ function SettingsPage() {
       await refreshSession();
       alert('Profile updated');
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed';
+      const msg = err?.response?.data?.message || err?.message || 'Failed to update profile';
       alert(msg);
     } finally {
       setProfileBusy(false);
@@ -1826,101 +1911,243 @@ function SettingsPage() {
 
   async function removeUser(id) {
     if (!canWrite) return;
-    if (!window.confirm('Delete this user?')) return;
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
     try {
       await api.delete(`/users/${id}`);
       await loadUsers();
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed';
+      const msg = err?.response?.data?.message || err?.message || 'Failed to delete user';
       alert(msg);
     }
   }
 
+  function formatDisplayName(u) {
+    const t = `${u.first_name || ''} ${u.last_name || ''}`.trim();
+    return t || 'Not set';
+  }
+
+  function roleBadgeStyle(r) {
+    if (r === 'admin') {
+      return {
+        display: 'inline-block',
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        padding: '4px 10px',
+        borderRadius: 6,
+        background: 'rgba(185, 28, 28, 0.2)',
+        color: '#fca5a5',
+        border: '1px solid rgba(127, 29, 29, 0.8)'
+      };
+    }
+    return {
+      display: 'inline-block',
+      fontSize: 11,
+      fontWeight: 600,
+      letterSpacing: '0.03em',
+      padding: '4px 10px',
+      borderRadius: 6,
+      background: 'rgba(51, 65, 85, 0.5)',
+      color: '#cbd5e1',
+      border: '1px solid #475569'
+    };
+  }
+
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, width: '100%', margin: 0, boxSizing: 'border-box' }}>
-        <h2 style={{ marginTop: 0 }}>Administration</h2>
+      <div style={{ width: '100%', maxWidth: 960, margin: 0, boxSizing: 'border-box' }}>
+        <h1 style={ui.pageTitle}>Administration</h1>
+        <p style={ui.pageSub}>
+          Manage your session timezone and, when permitted, platform users and roles.
+        </p>
 
-        <label style={{ display: 'block', fontSize: 14, marginBottom: 6 }}>Timezone</label>
-        <select value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', marginBottom: 12 }}>
-          {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-        </select>
-        <button type="button" onClick={save} disabled={saving} style={{ padding: '10px 14px', marginBottom: 24 }}>
-          {saving ? 'Saving...' : 'Save timezone'}
-        </button>
+        <div style={ui.card}>
+          <h2 style={ui.cardTitle}>Timezone</h2>
+          <p style={ui.cardDesc}>Used for timestamps across the application.</p>
+          <label htmlFor="admin-tz" style={ui.label}>Display timezone</label>
+          <select
+            id="admin-tz"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            style={{ ...ui.select, maxWidth: 400 }}
+          >
+            {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+          </select>
+          <div style={{ marginTop: 16 }}>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              style={{
+                ...ui.btnPrimary,
+                opacity: saving ? 0.75 : 1,
+                cursor: saving ? 'wait' : 'pointer'
+              }}
+            >
+              {saving ? 'Saving…' : 'Save timezone'}
+            </button>
+          </div>
+        </div>
 
         {role === 'readonly' && userId != null ? (
-          <div style={{ marginBottom: 24, paddingTop: 16, borderTop: '1px solid #334155' }}>
-            <h3 style={{ marginTop: 0 }}>Your profile</h3>
-            <form onSubmit={saveProfile} style={{ display: 'grid', gap: 10, maxWidth: 400 }}>
-              <input
-                value={profile.first_name}
-                onChange={(e) => setProfile((p) => ({ ...p, first_name: e.target.value }))}
-                placeholder="First name"
-                style={{ padding: 10, borderRadius: 8 }}
-              />
-              <input
-                value={profile.last_name}
-                onChange={(e) => setProfile((p) => ({ ...p, last_name: e.target.value }))}
-                placeholder="Last name"
-                style={{ padding: 10, borderRadius: 8 }}
-              />
-              <button type="submit" disabled={profileBusy} style={{ padding: '10px 14px' }}>
-                {profileBusy ? 'Saving...' : 'Update name'}
-              </button>
+          <div style={ui.card}>
+            <h2 style={ui.cardTitle}>Your profile</h2>
+            <p style={ui.cardDesc}>Update the name shown on your account.</p>
+            <form onSubmit={saveProfile} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, maxWidth: 560 }}>
+              <div>
+                <label htmlFor="profile-fn" style={ui.label}>First name</label>
+                <input
+                  id="profile-fn"
+                  value={profile.first_name}
+                  onChange={(e) => setProfile((p) => ({ ...p, first_name: e.target.value }))}
+                  style={ui.input}
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-ln" style={ui.label}>Last name</label>
+                <input
+                  id="profile-ln"
+                  value={profile.last_name}
+                  onChange={(e) => setProfile((p) => ({ ...p, last_name: e.target.value }))}
+                  style={ui.input}
+                  autoComplete="family-name"
+                />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <button
+                  type="submit"
+                  disabled={profileBusy}
+                  style={{
+                    ...ui.btnPrimary,
+                    opacity: profileBusy ? 0.75 : 1,
+                    cursor: profileBusy ? 'wait' : 'pointer'
+                  }}
+                >
+                  {profileBusy ? 'Saving…' : 'Update name'}
+                </button>
+              </div>
             </form>
           </div>
         ) : null}
 
         {canWrite ? (
-          <div style={{ paddingTop: 16, borderTop: '1px solid #334155' }}>
-            <h3 style={{ marginTop: 0 }}>Create user (admin)</h3>
-            <form onSubmit={createUser} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
-              <input name="username" placeholder="Username" required style={{ padding: 10, borderRadius: 8 }} />
-              <input name="password" type="password" placeholder="Password" required style={{ padding: 10, borderRadius: 8 }} />
-              <input name="first_name" placeholder="First name" style={{ padding: 10, borderRadius: 8 }} />
-              <input name="last_name" placeholder="Last name" style={{ padding: 10, borderRadius: 8 }} />
-              <select name="role" defaultValue="readonly" style={{ padding: 10, borderRadius: 8 }}>
-                <option value="readonly">readonly</option>
-                <option value="admin">admin</option>
-              </select>
-              <button type="submit" disabled={createBusy} style={{ gridColumn: '1 / -1', padding: 10 }}>
-                {createBusy ? 'Creating...' : 'Create user'}
-              </button>
-            </form>
+          <>
+            <div style={ui.card}>
+              <h2 style={ui.cardTitle}>Create User</h2>
+              <p style={ui.cardDesc}>Create a new user and assign role.</p>
+              <form onSubmit={createUser}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gap: '20px 28px'
+                  }}
+                >
+                  <div>
+                    <label htmlFor="new-username" style={ui.label}>Username</label>
+                    <input id="new-username" name="username" required style={ui.input} autoComplete="username" />
+                  </div>
+                  <div>
+                    <label htmlFor="new-first" style={ui.label}>First name</label>
+                    <input id="new-first" name="first_name" style={ui.input} autoComplete="given-name" />
+                  </div>
+                  <div>
+                    <label htmlFor="new-password" style={ui.label}>Password</label>
+                    <input id="new-password" name="password" type="password" required style={ui.input} autoComplete="new-password" />
+                  </div>
+                  <div>
+                    <label htmlFor="new-last" style={ui.label}>Last name</label>
+                    <input id="new-last" name="last_name" style={ui.input} autoComplete="family-name" />
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-end',
+                    justifyContent: 'space-between',
+                    gap: 20,
+                    marginTop: 24,
+                    paddingTop: 24,
+                    borderTop: '1px solid #1e293b'
+                  }}
+                >
+                  <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
+                    <label htmlFor="new-role" style={ui.label}>User Role</label>
+                    <select id="new-role" name="role" defaultValue="readonly" style={ui.select}>
+                      <option value="admin">Admin (Full Access)</option>
+                      <option value="readonly">Read Only (View Only)</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
+                    <button
+                      type="submit"
+                      disabled={createBusy}
+                      style={{
+                        ...ui.btnPrimary,
+                        opacity: createBusy ? 0.8 : 1,
+                        cursor: createBusy ? 'wait' : 'pointer'
+                      }}
+                    >
+                      {createBusy ? 'Creating…' : 'Create User'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
 
-            <h3>Users</h3>
-            {usersLoading ? <div style={{ color: '#94a3b8' }}>Loading…</div> : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155' }}>
-                      <th>ID</th>
-                      <th>Username</th>
-                      <th>Name</th>
-                      <th>Role</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((u) => (
-                      <tr key={u.id} style={{ borderBottom: '1px solid #334155' }}>
-                        <td>{u.id}</td>
-                        <td>{u.username}</td>
-                        <td>{`${u.first_name || ''} ${u.last_name || ''}`.trim() || '—'}</td>
-                        <td>{u.role}</td>
-                        <td>
-                          <button type="button" onClick={() => removeUser(u.id)} style={{ padding: '4px 10px' }}>Delete</button>
-                        </td>
+            <div style={ui.card}>
+              <h2 style={ui.cardTitle}>Users</h2>
+              <p style={ui.cardDesc}>All accounts on this instance.</p>
+              {usersLoading ? (
+                <div style={{ color: '#94a3b8', padding: '8px 0' }}>Loading…</div>
+              ) : users.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No users yet.</div>
+              ) : (
+                <div style={{ overflowX: 'auto', margin: '4px -4px 0' }}>
+                  <table className="ioc-table" style={ui.table}>
+                    <thead>
+                      <tr>
+                        <th style={ui.th}>ID</th>
+                        <th style={ui.th}>Username</th>
+                        <th style={ui.th}>Name</th>
+                        <th style={ui.th}>Role</th>
+                        <th style={{ ...ui.th, textAlign: 'right' }}>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody>
+                      {users.map((u) => (
+                        <tr key={u.id} style={{ background: 'transparent' }}>
+                          <td style={{ ...ui.td, fontVariantNumeric: 'tabular-nums', color: '#94a3b8' }}>{u.id}</td>
+                          <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 13 }}>{u.username}</td>
+                          <td style={ui.td}>{formatDisplayName(u)}</td>
+                          <td style={ui.td}>
+                            <span style={roleBadgeStyle(u.role)}>
+                              {u.role === 'admin' ? 'Admin' : 'Read only'}
+                            </span>
+                          </td>
+                          <td style={{ ...ui.td, textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => removeUser(u.id)}
+                              style={ui.btnDanger}
+                              title="Delete user"
+                            >
+                              <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>×</span>
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
         ) : null}
-      </section>
+      </div>
     </AppShell>
   );
 }
@@ -2859,7 +3086,7 @@ function App() {
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
-          <Route path="/administration" element={<Protected><SettingsPage /></Protected>} />
+          <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />
         </Routes>
