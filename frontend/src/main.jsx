@@ -2910,8 +2910,8 @@ function IOCDetailsPage() {
               <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1280, fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th style={{ width: 170 }}>Time</th>
                     <th style={{ width: 90 }}>ID</th>
+                    <th style={{ width: 170 }}>Time</th>
                     <th style={{ width: 130 }}>Detection</th>
                     <th style={{ width: 210 }}>IOC Source</th>
                     <th style={{ width: 110 }}>Confidence</th>
@@ -2922,7 +2922,6 @@ function IOCDetailsPage() {
                   {data.matches.length ? data.matches.map((m) => {
                     return (
                       <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>
-                        <td>{formatUserDateTime(m.event_time || m.created_at)}</td>
                         <td>
                           {m.id != null ? (
                             <button
@@ -2935,6 +2934,7 @@ function IOCDetailsPage() {
                             </button>
                           ) : '-'}
                         </td>
+                        <td>{formatUserDateTime(m.event_time || m.created_at)}</td>
                         <td>
                           <span style={{
                             display: 'inline-block',
