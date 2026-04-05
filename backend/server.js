@@ -2379,14 +2379,14 @@ app.get('/api/ioc/hot', async (req, res) => {
         MIN(public_id::text) AS public_id,
         observable,
         observable_type,
-        SUM(match_count)::bigint AS total_hits,
+        MAX(match_count)::bigint AS total_hits,
         COUNT(DISTINCT source_name)::bigint AS source_count,
         MIN(first_seen_log) AS first_seen_log,
         MAX(last_seen_log) AS last_seen_log
       FROM ioc_items
       WHERE ${baseWhere}
       GROUP BY observable, observable_type
-      ORDER BY MAX(last_seen_log) DESC NULLS LAST, SUM(match_count) DESC, observable ASC
+      ORDER BY MAX(last_seen_log) DESC NULLS LAST, MAX(match_count) DESC, observable ASC
       LIMIT $${limIdx} OFFSET $${offIdx}
     `;
 
