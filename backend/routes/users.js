@@ -1,6 +1,14 @@
 import bcrypt from 'bcrypt';
 import { normalizeAppRole, requireRole, ROLES } from '../lib/rbac.js';
 
+const USER_STATUSES = new Set(['active', 'passive']);
+
+function normalizeUserStatus(value) {
+  const s = String(value || '').trim().toLowerCase();
+  if (USER_STATUSES.has(s)) return s;
+  return null;
+}
+
 function toPublicUser(row) {
   if (!row) return null;
   return {
@@ -9,6 +17,7 @@ function toPublicUser(row) {
     first_name: row.first_name,
     last_name: row.last_name,
     role: row.role,
+    status: row.status || 'active',
     created_at: row.created_at
   };
 }
@@ -38,7 +47,7 @@ export function registerUserManagementRoutes(app, pool) {
       const { rows } = await pool.query(
         `INSERT INTO users (username, password_hash, first_name, last_name, role)
          VALUES ($1, $2, $3, $4, $5::app_user_role)
-         RETURNING id, username, first_name, last_name, role, created_at`,
+         RETURNING id, username, first_name, last_name, role, status, created_at`,
         [username, hash, first_name, last_name, role]
       );
       return res.status(201).json({ user: toPublicUser(rows[0]) });
@@ -56,7 +65,7 @@ export function registerUserManagementRoutes(app, pool) {
     try {
       if (role === ROLES.ADMIN) {
         const { rows } = await pool.query(
-          `SELECT id, username, first_name, last_name, role, created_at
+          `SELECT id, username, first_name, last_name, role, status, created_at
            FROM users ORDER BY id ASC`
         );
         return res.json({ users: rows.map(toPublicUser) });
@@ -66,7 +75,7 @@ export function registerUserManagementRoutes(app, pool) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const { rows } = await pool.query(
-        `SELECT id, username, first_name, last_name, role, created_at
+        `SELECT id, username, first_name, last_name, role, status, created_at
          FROM users WHERE id = $1`,
         [req.user.id]
       );
@@ -110,7 +119,7 @@ export function registerUserManagementRoutes(app, pool) {
              first_name = COALESCE($2, first_name),
              last_name = COALESCE($3, last_name)
            WHERE id = $1
-           RETURNING id, username, first_name, last_name, role, created_at`,
+           RETURNING id, username, first_name, last_name, role, status, created_at`,
           [id, first_name ?? null, last_name ?? null]
         );
         if (!rows.length) {
@@ -168,7 +177,7 @@ export function registerUserManagementRoutes(app, pool) {
            last_name = COALESCE($5, last_name),
            role = COALESCE($6::app_user_role, role)
          WHERE id = $1
-         RETURNING id, username, first_name, last_name, role, created_at`,
+         RETURNING id, username, first_name, last_name, role, status, created_at`,
         [
           id,
           username ?? null,
@@ -185,6 +194,36 @@ export function registerUserManagementRoutes(app, pool) {
         return res.status(409).json({ message: 'Username already exists' });
       }
       return res.status(500).json({ message: 'Failed to update user', detail: err.message });
+    }
+  });
+
+  app.patch('/api/users/:id/status', requireRole(ROLES.ADMIN), async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const next = normalizeUserStatus(req.body?.status);
+    if (next === null) {
+      return res.status(400).json({ message: 'status must be active or passive' });
+    }
+
+    if (next === 'passive' && req.user?.id != null && Number(req.user.id) === id) {
+      return res.status(403).json({ message: 'Cannot deactivate your own account' });
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `UPDATE users SET status = $2::app_user_status WHERE id = $1
+         RETURNING id, username, first_name, last_name, role, status, created_at`,
+        [id, next]
+      );
+      if (!rows.length) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      return res.json({ user: toPublicUser(rows[0]) });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to update status', detail: err.message });
     }
   });
 

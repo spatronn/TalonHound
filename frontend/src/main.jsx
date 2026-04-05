@@ -188,8 +188,9 @@ function LoginPage() {
       localStorage.removeItem('demo_timezone');
       await refreshSession();
       navigate('/analytics');
-    } catch {
-      alert('Invalid email or password');
+    } catch (err) {
+      const msg = err?.response?.data?.message || 'Invalid email or password';
+      alert(msg);
     }
   }
 
@@ -1731,6 +1732,7 @@ function AdministrationPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [profile, setProfile] = useState({ first_name: '', last_name: '' });
   const [profileBusy, setProfileBusy] = useState(false);
+  const [statusBusyId, setStatusBusyId] = useState(null);
 
   const ui = {
     pageTitle: { margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.02em' },
@@ -1797,6 +1799,33 @@ function AdministrationPage() {
       display: 'inline-flex',
       alignItems: 'center',
       gap: 6
+    },
+    btnDeactivate: {
+      padding: '6px 10px',
+      borderRadius: 8,
+      border: '1px solid #b45309',
+      background: 'rgba(180,83,9,0.2)',
+      color: '#fcd34d',
+      fontSize: 12,
+      fontWeight: 600,
+      cursor: 'pointer'
+    },
+    btnActivate: {
+      padding: '6px 10px',
+      borderRadius: 8,
+      border: '1px solid #166534',
+      background: 'rgba(22,101,52,0.25)',
+      color: '#86efac',
+      fontSize: 12,
+      fontWeight: 600,
+      cursor: 'pointer'
+    },
+    actionsCell: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8,
+      justifyContent: 'flex-end',
+      alignItems: 'center'
     },
     table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
     th: {
@@ -1921,9 +1950,55 @@ function AdministrationPage() {
     }
   }
 
+  async function setUserStatus(targetId, next) {
+    if (!canWrite) return;
+    const confirmMsg =
+      next === 'passive'
+        ? 'Are you sure you want to deactivate this user?'
+        : 'Are you sure you want to activate this user?';
+    if (!window.confirm(confirmMsg)) return;
+    setStatusBusyId(targetId);
+    try {
+      await api.patch(`/users/${targetId}/status`, { status: next });
+      await loadUsers();
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to update status';
+      alert(msg);
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
   function formatDisplayName(u) {
     const t = `${u.first_name || ''} ${u.last_name || ''}`.trim();
     return t || 'Not set';
+  }
+
+  function accountStatusBadgeStyle(st) {
+    if (String(st || 'active') === 'passive') {
+      return {
+        display: 'inline-block',
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: '0.03em',
+        padding: '4px 10px',
+        borderRadius: 6,
+        background: 'rgba(71, 85, 105, 0.45)',
+        color: '#cbd5e1',
+        border: '1px solid #64748b'
+      };
+    }
+    return {
+      display: 'inline-block',
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: '0.04em',
+      padding: '4px 10px',
+      borderRadius: 6,
+      background: 'rgba(22, 163, 74, 0.2)',
+      color: '#86efac',
+      border: '1px solid rgba(22, 101, 52, 0.85)'
+    };
   }
 
   function roleBadgeStyle(r) {
@@ -2113,12 +2188,23 @@ function AdministrationPage() {
                         <th style={ui.th}>Username</th>
                         <th style={ui.th}>Name</th>
                         <th style={ui.th}>Role</th>
+                        <th style={ui.th}>Status</th>
                         <th style={{ ...ui.th, textAlign: 'right' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((u) => (
-                        <tr key={u.id} style={{ background: 'transparent' }}>
+                      {users.map((u) => {
+                        const isPassive = String(u.status || 'active') === 'passive';
+                        const isOwnRow = userId != null && Number(userId) === Number(u.id);
+                        const busy = statusBusyId === u.id;
+                        return (
+                        <tr
+                          key={u.id}
+                          style={{
+                            background: 'transparent',
+                            opacity: isPassive ? 0.62 : 1
+                          }}
+                        >
                           <td style={{ ...ui.td, fontVariantNumeric: 'tabular-nums', color: '#94a3b8' }}>{u.id}</td>
                           <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 13 }}>{u.username}</td>
                           <td style={ui.td}>{formatDisplayName(u)}</td>
@@ -2127,19 +2213,56 @@ function AdministrationPage() {
                               {u.role === 'admin' ? 'Admin' : 'Read only'}
                             </span>
                           </td>
+                          <td style={ui.td}>
+                            <span style={accountStatusBadgeStyle(u.status)}>
+                              {isPassive ? 'Passive' : 'Active'}
+                            </span>
+                          </td>
                           <td style={{ ...ui.td, textAlign: 'right' }}>
-                            <button
-                              type="button"
-                              onClick={() => removeUser(u.id)}
-                              style={ui.btnDanger}
-                              title="Delete user"
-                            >
-                              <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>×</span>
-                              Delete
-                            </button>
+                            <div style={ui.actionsCell}>
+                              {!isPassive ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setUserStatus(u.id, 'passive')}
+                                  disabled={isOwnRow || busy}
+                                  style={{
+                                    ...ui.btnDeactivate,
+                                    opacity: isOwnRow || busy ? 0.4 : 1,
+                                    cursor: isOwnRow || busy ? 'not-allowed' : 'pointer'
+                                  }}
+                                  title={isOwnRow ? 'You cannot deactivate your own account' : 'Deactivate user'}
+                                >
+                                  {busy ? '…' : 'Deactivate'}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setUserStatus(u.id, 'active')}
+                                  disabled={busy}
+                                  style={{
+                                    ...ui.btnActivate,
+                                    opacity: busy ? 0.4 : 1,
+                                    cursor: busy ? 'wait' : 'pointer'
+                                  }}
+                                  title="Activate user"
+                                >
+                                  {busy ? '…' : 'Activate'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeUser(u.id)}
+                                style={ui.btnDanger}
+                                title="Delete user"
+                              >
+                                <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>×</span>
+                                Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -1478,13 +1478,16 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, username, password_hash, role FROM users WHERE username = $1',
+      'SELECT id, username, password_hash, role, status FROM users WHERE username = $1',
       [loginId]
     );
     if (rows.length) {
       const u = rows[0];
       const ok = await bcrypt.compare(password, u.password_hash);
       if (ok) {
+        if (String(u.status || 'active') === 'passive') {
+          return res.status(403).json({ message: 'User is inactive' });
+        }
         const token = signUserToken({
           userId: u.id,
           username: u.username,
