@@ -2368,7 +2368,7 @@ app.get('/api/ioc/hot', async (req, res) => {
     const listQ = `
       SELECT
         MIN(id) AS id,
-        MIN(public_id)::text AS public_id,
+        MIN(public_id::text) AS public_id,
         observable,
         observable_type,
         SUM(match_count)::bigint AS total_hits,
