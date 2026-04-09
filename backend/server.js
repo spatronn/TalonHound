@@ -161,9 +161,6 @@ async function withRawSyslogEvent(row) {
   if (!USE_CLICKHOUSE) return row;
 
   try {
-    const existingRaw = String(row?.matched_syslog_event || '').trim();
-    if (existingRaw && existingRaw !== '-') return row;
-
     const parserSource = String(row?.parser_source || '').trim().toLowerCase();
     // Legacy DNS debug events usually have no raw in ClickHouse syslog_logs;
     // probing ClickHouse for each row causes avoidable latency.
