@@ -187,8 +187,13 @@ async function withRawSyslogEvent(row) {
     const escapedMatched = escapeChString(matched);
     const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
     const iocClause = isIp
-      ? `(ioc_ip = '${escapedMatched}' OR parsed_ip = '${escapedMatched}' OR position(raw, '${escapedMatched}') > 0)`
-      : `(ioc_query = '${escapedMatched}' OR lower(ioc_query) = lower('${escapedMatched}') OR lower(parsed_query) = lower('${escapedMatched}'))`;
+      ? `(ioc_ip = '${escapedMatched}' OR parsed_ip = '${escapedMatched}' OR position(COALESCE(raw, message), '${escapedMatched}') > 0)`
+      : `(
+          ioc_query = '${escapedMatched}'
+          OR lower(ioc_query) = lower('${escapedMatched}')
+          OR lower(parsed_query) = lower('${escapedMatched}')
+          OR positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapedMatched}') > 0
+        )`;
 
     const strictParts = [...baseWhereParts];
     if (rowSource) strictParts.push(`source = '${escapeChString(rowSource)}'`);
