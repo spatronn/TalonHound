@@ -3480,7 +3480,7 @@ function IOCAddPage() {
             <div style={twoColRowStyle}>
               <div>
                 <label htmlFor="confidence" style={fieldLabelStyle}>Confidence</label>
-                <select id="confidence" name="confidence" value={confidenceValue} onChange={(e) => setConfidenceValue(e.target.value)} disabled={!canWrite} style={{ ...inputStyle, border: `1px solid ${confidenceStyle.border}`, background: confidenceStyle.bg, color: confidenceStyle.color, fontWeight: 700, textTransform: 'uppercase' }}>
+                <select id="confidence" name="confidence" value={confidenceValue} onChange={(e) => setConfidenceValue(e.target.value)} disabled={!canWrite} style={{ ...inputStyle, border: `1px solid ${confidenceStyle.border}`, background: confidenceStyle.bg, color: confidenceStyle.color, fontWeight: 700, fontSize: 12, textTransform: 'capitalize' }}>
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
