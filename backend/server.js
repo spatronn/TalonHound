@@ -767,7 +767,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                ) AS detection_mode
              FROM ioc_match_events m
              WHERE m.created_at >= NOW() - ($2::text || ' hours')::interval
-             ORDER BY m.created_at DESC
+             ORDER BY m.created_at DESC, m.id DESC
              LIMIT $1
            ), source_agg AS (
              SELECT
@@ -784,7 +784,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
              COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
            FROM recent r
            LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
-           ORDER BY r.created_at DESC`,
+           ORDER BY r.created_at DESC, r.id DESC`,
           [limit, hours]
         )
       : await pool.query(
@@ -821,7 +821,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                  END
                ) AS detection_mode
              FROM ioc_match_events m
-             ORDER BY m.created_at DESC
+             ORDER BY m.created_at DESC, m.id DESC
              LIMIT $1
            ), source_agg AS (
              SELECT
@@ -838,7 +838,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
              COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
            FROM recent r
            LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
-           ORDER BY r.created_at DESC`,
+           ORDER BY r.created_at DESC, r.id DESC`,
           [limit]
         );
 
