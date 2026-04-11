@@ -929,7 +929,7 @@ app.get('/api/ioc/match-events', async (req, res) => {
           ) AS detection_mode
         FROM ioc_match_events m
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY m.created_at DESC
+        ORDER BY m.created_at DESC, m.id DESC
         LIMIT $${limitIdx}
       ), source_agg AS (
         SELECT
@@ -946,7 +946,7 @@ app.get('/api/ioc/match-events', async (req, res) => {
         COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
       FROM recent r
       LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
-      ORDER BY r.created_at DESC
+      ORDER BY r.created_at DESC, r.id DESC
     `;
 
     const q = await pool.query(sql, params);
