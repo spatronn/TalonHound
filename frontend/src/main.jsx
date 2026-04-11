@@ -3255,7 +3255,6 @@ function IOCAddPage() {
   const [recentResize, setRecentResize] = useState(null);
   const [iocValue, setIocValue] = useState('');
   const [confidenceValue, setConfidenceValue] = useState('medium');
-  const [copiedKey, setCopiedKey] = useState('');
   const iocFormRef = useRef(null);
 
   useEffect(() => {
@@ -3264,11 +3263,6 @@ function IOCAddPage() {
     return () => clearTimeout(t);
   }, [message]);
 
-  useEffect(() => {
-    if (!copiedKey) return;
-    const t = setTimeout(() => setCopiedKey(''), 1200);
-    return () => clearTimeout(t);
-  }, [copiedKey]);
 
   function detectIocType(value) {
     const v = String(value || '').trim();
@@ -3372,14 +3366,6 @@ function IOCAddPage() {
     setRecentResize({ col, startX: e.clientX, startWidth: recentWidths[col] || 120 });
   }
 
-  async function copyText(text, key) {
-    try {
-      await navigator.clipboard.writeText(String(text || ''));
-      setCopiedKey(key);
-    } catch (_) {
-      setMessage({ type: 'error', text: 'Copy failed: clipboard permission denied.' });
-    }
-  }
 
   const sortedRecentRows = useMemo(() => {
     if (!recentSort.key || !recentSort.dir) return recentRows;
@@ -3540,7 +3526,6 @@ function IOCAddPage() {
                 {sortedRecentRows.map((r, idx) => {
                   const conf = confidencePillStyle(r.confidence);
                   const sourceStyle = sourceBadgeStyle(r.source_name);
-                  const copyKey = `${r.id}-${idx}`;
                   return (
                     <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #1f2937', transition: 'background 0.15s ease-in-out' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#111827'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                       <td>{idx + 1}</td>
@@ -3551,14 +3536,6 @@ function IOCAddPage() {
                             style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
                           >
                             <code style={{ whiteSpace: 'inherit', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{r.observable}</code>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => copyText(r.observable, copyKey)}
-                            title="Copy IOC"
-                            style={{ border: '1px solid #334155', background: '#0b1220', color: copiedKey === copyKey ? '#34d399' : '#94a3b8', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}
-                          >
-                            {copiedKey === copyKey ? '✓' : '⧉'}
                           </button>
                         </div>
                       </td>
