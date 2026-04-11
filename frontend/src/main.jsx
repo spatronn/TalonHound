@@ -3292,9 +3292,9 @@ function IOCAddPage() {
   }
 
   function confidencePillStyle(value) {
-    if (value === 'high') return { color: '#fca5a5', border: '#dc2626', bg: 'rgba(220,38,38,0.18)' };
-    if (value === 'low') return { color: '#cbd5e1', border: '#64748b', bg: 'rgba(100,116,139,0.2)' };
-    return { color: '#fde68a', border: '#ca8a04', bg: 'rgba(202,138,4,0.22)' };
+    if (value === 'high') return { color: '#991b1b', bg: '#fee2e2' };
+    if (value === 'medium') return { color: '#92400e', bg: '#fef3c7' };
+    return { color: '#166534', bg: '#dcfce7' };
   }
 
   function sourceBadgeStyle(source) {
@@ -3480,7 +3480,7 @@ function IOCAddPage() {
             <div style={twoColRowStyle}>
               <div>
                 <label htmlFor="confidence" style={fieldLabelStyle}>Confidence</label>
-                <select id="confidence" name="confidence" value={confidenceValue} onChange={(e) => setConfidenceValue(e.target.value)} disabled={!canWrite} style={{ ...inputStyle, border: `1px solid ${confidenceStyle.border}`, background: confidenceStyle.bg, color: confidenceStyle.color, fontWeight: 700, fontSize: 12, textTransform: 'capitalize' }}>
+                <select id="confidence" name="confidence" value={confidenceValue} onChange={(e) => setConfidenceValue(e.target.value)} disabled={!canWrite} style={{ ...inputStyle, background: confidenceStyle.bg, color: confidenceStyle.color, fontWeight: 700, fontSize: 12, textTransform: 'capitalize' }}>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -3544,7 +3544,7 @@ function IOCAddPage() {
                         <span style={{ display: 'inline-flex', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, ...sourceStyle }}>{r.source_name || '-'}</span>
                       </td>
                       <td>
-                        <span style={{ display: 'inline-flex', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', border: `1px solid ${conf.border}`, color: conf.color, background: conf.bg }}>{r.confidence || '-'}</span>
+                        <span style={{ display: 'inline-flex', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', color: conf.color, background: conf.bg }}>{r.confidence || '-'}</span>
                       </td>
                       <td>{formatUserDateTime(r.created_at)}</td>
                     </tr>
