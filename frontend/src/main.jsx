@@ -3546,7 +3546,7 @@ function IOCAddPage() {
                       <td>
                         <span style={{ display: 'inline-flex', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', border: `1px solid ${conf.border}`, color: conf.color, background: conf.bg }}>{r.confidence || '-'}</span>
                       </td>
-                      <td title={formatUserDateTime(r.created_at)}>{relativeTime(r.created_at)}</td>
+                      <td>{formatUserDateTime(r.created_at)}</td>
                     </tr>
                   );
                 })}
