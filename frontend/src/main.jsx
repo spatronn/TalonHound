@@ -3248,7 +3248,6 @@ function IOCAddPage() {
   const navigate = useNavigate();
   const { canWrite } = useSession();
   const [submitting, setSubmitting] = useState(false);
-  const [quickSubmitting, setQuickSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [recentRows, setRecentRows] = useState([]);
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
@@ -3256,7 +3255,6 @@ function IOCAddPage() {
   const [recentResize, setRecentResize] = useState(null);
   const [iocValue, setIocValue] = useState('');
   const [confidenceValue, setConfidenceValue] = useState('medium');
-  const [quickValue, setQuickValue] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
   const iocFormRef = useRef(null);
 
@@ -3383,16 +3381,6 @@ function IOCAddPage() {
     }
   }
 
-  async function createIoc(payload) {
-    const { data } = await api.post('/ioc/ip', payload);
-    loadRecent().catch(() => {});
-    if (data?.skipped) {
-      setMessage({ type: 'duplicate', text: 'Already in list (duplicate).' });
-      return;
-    }
-    setMessage({ type: 'success', text: 'IOC saved successfully.' });
-  }
-
   const sortedRecentRows = useMemo(() => {
     if (!recentSort.key || !recentSort.dir) return recentRows;
     const copy = [...recentRows];
@@ -3430,10 +3418,16 @@ function IOCAddPage() {
     };
 
     try {
-      await createIoc(payload);
+      const { data } = await api.post('/ioc/ip', payload);
       formEl?.reset?.();
       setIocValue('');
       setConfidenceValue('medium');
+      loadRecent().catch(() => {});
+      if (data?.skipped) {
+        setMessage({ type: 'duplicate', text: 'Already in list (duplicate).' });
+      } else {
+        setMessage({ type: 'success', text: 'IOC saved successfully.' });
+      }
     } catch (err) {
       const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to save record';
       setMessage({ type: 'error', text: msg });
@@ -3442,27 +3436,8 @@ function IOCAddPage() {
     }
   }
 
-  async function onQuickAdd(e) {
-    e.preventDefault();
-    if (!canWrite || quickSubmitting) return;
-    const value = String(quickValue || '').trim();
-    if (!value) return;
-    setQuickSubmitting(true);
-    try {
-      await createIoc({ ip: value, source_name: 'Quick Add', source_url: '', confidence: 'medium', category: '', note: '' });
-      setQuickValue('');
-    } catch (err) {
-      const msg = err?.response?.data?.detail || err?.response?.data?.message || err?.message || 'Failed to quick add IOC';
-      setMessage({ type: 'error', text: msg });
-    } finally {
-      setQuickSubmitting(false);
-    }
-  }
-
   const detectedType = detectIocType(iocValue);
-  const quickDetectedType = detectIocType(quickValue);
   const detectedStyle = iocTypeStyle(detectedType || 'unknown');
-  const quickDetectedStyle = iocTypeStyle(quickDetectedType || 'unknown');
 
   const messageStyle = message?.type === 'success'
     ? { background: 'rgba(34,197,94,0.16)', border: '1px solid #22c55e', color: '#86efac' }
@@ -3471,6 +3446,9 @@ function IOCAddPage() {
       : { background: 'rgba(239,68,68,0.16)', border: '1px solid #ef4444', color: '#fca5a5' };
 
   const confidenceStyle = confidencePillStyle(confidenceValue);
+  const inputStyle = { width: '100%', minWidth: 0, height: 42, padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' };
+  const fieldLabelStyle = { display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600 };
+  const twoColRowStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, alignItems: 'end' };
 
   return (
     <AppShell>
@@ -3489,20 +3467,11 @@ function IOCAddPage() {
             </div>
           )}
 
-          <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label htmlFor="ioc-value" style={{ display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600, letterSpacing: 0.3 }}>IOC Value</label>
+          <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gap: 14 }}>
+            <div>
+              <label htmlFor="ioc-value" style={{ ...fieldLabelStyle, letterSpacing: 0.3 }}>IOC Value</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  id="ioc-value"
-                  name="ip"
-                  value={iocValue}
-                  onChange={(e) => setIocValue(e.target.value)}
-                  required
-                  disabled={!canWrite}
-                  spellCheck={false}
-                  style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0' }}
-                />
+                <input id="ioc-value" name="ip" value={iocValue} onChange={(e) => setIocValue(e.target.value)} required disabled={!canWrite} spellCheck={false} style={{ ...inputStyle, flex: 1 }} />
                 {detectedType && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', padding: '6px 9px', borderRadius: 999, border: `1px solid ${detectedStyle.border}`, background: detectedStyle.bg, color: detectedStyle.color, fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 }}>
                     {detectedType}
@@ -3511,54 +3480,40 @@ function IOCAddPage() {
               </div>
             </div>
 
-            <div>
-              <label htmlFor="source-name" style={{ display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600 }}>Source Name</label>
-              <input id="source-name" name="source_name" required disabled={!canWrite} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0' }} />
+            <div style={twoColRowStyle}>
+              <div>
+                <label htmlFor="source-name" style={fieldLabelStyle}>Source Name</label>
+                <input id="source-name" name="source_name" required disabled={!canWrite} style={inputStyle} />
+              </div>
+              <div>
+                <label htmlFor="source-url" style={fieldLabelStyle}>Source URL</label>
+                <input id="source-url" name="source_url" disabled={!canWrite} style={inputStyle} />
+              </div>
             </div>
-            <div>
-              <label htmlFor="source-url" style={{ display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600 }}>Source URL</label>
-              <input id="source-url" name="source_url" disabled={!canWrite} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0' }} />
-            </div>
-            <div>
-              <label htmlFor="confidence" style={{ display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600 }}>Confidence</label>
-              <div style={{ position: 'relative' }}>
-                <select id="confidence" name="confidence" value={confidenceValue} onChange={(e) => setConfidenceValue(e.target.value)} disabled={!canWrite} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${confidenceStyle.border}`, background: confidenceStyle.bg, color: confidenceStyle.color, fontWeight: 700, textTransform: 'uppercase' }}>
+
+            <div style={twoColRowStyle}>
+              <div>
+                <label htmlFor="confidence" style={fieldLabelStyle}>Confidence</label>
+                <select id="confidence" name="confidence" value={confidenceValue} onChange={(e) => setConfidenceValue(e.target.value)} disabled={!canWrite} style={{ ...inputStyle, border: `1px solid ${confidenceStyle.border}`, background: confidenceStyle.bg, color: confidenceStyle.color, fontWeight: 700, textTransform: 'uppercase' }}>
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
                 </select>
               </div>
+              <div>
+                <label htmlFor="category" style={fieldLabelStyle}>Category</label>
+                <input id="category" name="category" disabled={!canWrite} style={inputStyle} />
+              </div>
             </div>
+
             <div>
-              <label htmlFor="category" style={{ display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600 }}>Category</label>
-              <input id="category" name="category" disabled={!canWrite} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0' }} />
+              <label htmlFor="note" style={fieldLabelStyle}>Note</label>
+              <input id="note" name="note" disabled={!canWrite} style={inputStyle} />
             </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label htmlFor="note" style={{ display: 'block', marginBottom: 6, fontSize: 12, color: '#cbd5e1', fontWeight: 600 }}>Note</label>
-              <input id="note" name="note" disabled={!canWrite} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0' }} />
-            </div>
-            <button type="submit" disabled={submitting || !canWrite} style={{ gridColumn: '1 / -1', padding: '11px 14px', borderRadius: 10, border: '1px solid #1d4ed8', background: submitting || !canWrite ? '#1e3a8a' : '#2563eb', color: '#dbeafe', fontWeight: 700, letterSpacing: 0.3, cursor: submitting || !canWrite ? 'not-allowed' : 'pointer', opacity: submitting || !canWrite ? 0.7 : 1 }}>
+
+            <button type="submit" disabled={submitting || !canWrite} style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #1d4ed8', background: submitting || !canWrite ? '#1e3a8a' : '#2563eb', color: '#dbeafe', fontWeight: 700, letterSpacing: 0.3, cursor: submitting || !canWrite ? 'not-allowed' : 'pointer', opacity: submitting || !canWrite ? 0.7 : 1 }}>
               {submitting ? 'Adding...' : '+ Add IOC'}
             </button>
-          </form>
-
-          <form onSubmit={onQuickAdd} style={{ marginTop: 14, borderTop: '1px dashed #334155', paddingTop: 12, display: 'grid', gap: 8 }}>
-            <label htmlFor="quick-ioc" style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>Quick Add IOC</label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
-                id="quick-ioc"
-                value={quickValue}
-                onChange={(e) => setQuickValue(e.target.value)}
-                disabled={!canWrite}
-                style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#e2e8f0' }}
-              />
-              {quickDetectedType && (
-                <span style={{ padding: '6px 9px', borderRadius: 999, border: `1px solid ${quickDetectedStyle.border}`, background: quickDetectedStyle.bg, color: quickDetectedStyle.color, fontWeight: 700, fontSize: 12, textTransform: 'uppercase' }}>{quickDetectedType}</span>
-              )}
-              <button type="submit" disabled={!canWrite || quickSubmitting} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #334155', background: '#1f2937', color: '#cbd5e1', cursor: !canWrite || quickSubmitting ? 'not-allowed' : 'pointer' }}>
-                {quickSubmitting ? '...' : 'Enter'}
-              </button>
-            </div>
           </form>
         </div>
 
