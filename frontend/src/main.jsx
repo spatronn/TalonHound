@@ -317,7 +317,7 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isIntegrationsActive)}>5. Threat Intelligence</div>
-            <Link to="/integrations" style={subMenuStyle(isActive('/integrations'))}>Feeds</Link>
+            <Link to="/integrations/feeds" style={subMenuStyle(isActive('/integrations/feeds') || isActive('/integrations'))}>Feeds</Link>
             <Link to="/integrations/enrichment" style={subMenuStyle(isActive('/integrations/enrichment'))}>Enrichment</Link>
             <Link to="/integrations/queue" style={subMenuStyle(isActive('/integrations/queue'))}>Job Queue Status</Link>
             <Link to="/integrations/runs" style={subMenuStyle(isActive('/integrations/runs'))}>Recent Runs</Link>
@@ -4105,7 +4105,8 @@ function App() {
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
-          <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/integrations" element={<Navigate to="/integrations/feeds" replace />} />
+          <Route path="/integrations/feeds" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/integrations/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
