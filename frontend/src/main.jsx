@@ -995,27 +995,21 @@ function IOCMatchEventsPage() {
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
                 <th style={{ width: 80 }}>ID</th>
                 <th style={{ width: 170 }}>Detected At</th>
-                <th style={{ width: 260 }}>Matched IOC</th>
+                <th style={{ width: 240 }}>Matched IOC</th>
                 <th style={{ width: 140 }}>Detection</th>
                 <th style={{ width: 140 }}>Verdict</th>
-                <th style={{ width: 210 }}>Source</th>
+                <th style={{ width: 190 }}>Source</th>
+                <th style={{ width: 140 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
               ) : rows.length ? rows.map((evt) => {
                 const vm = verdictMeta(evt.verdict);
                 return (
-                  <tr key={evt.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => openReview(evt)}>
-                    <td>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); navigate(`/analytics/ioc-match-events/${evt.id}`); }}
-                        style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                      >
-                        {evt.id}
-                      </button>
-                    </td>
+                  <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
+                    <td>{evt.id}</td>
                     <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
                     <td>
@@ -1051,10 +1045,30 @@ function IOCMatchEventsPage() {
                         ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
                         : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
                     </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)}
+                          title="View detail"
+                          aria-label="View detail"
+                          style={{ minWidth: 32, padding: '4px 8px' }}
+                        >
+                          🔍
+                        </button>
+                        <button
+                          onClick={() => openReview(evt)}
+                          title="Review verdict"
+                          aria-label="Review verdict"
+                          style={{ minWidth: 32, padding: '4px 8px' }}
+                        >
+                          ✏️
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               }) : (
-                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
               )}
             </tbody>
           </table>
