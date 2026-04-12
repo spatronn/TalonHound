@@ -238,8 +238,6 @@ services:
       - ENRICHMENT_SYNC_BATCH_SIZE=5000
       - ENRICHMENT_SYNC_ONCE=0
       - ENRICHMENT_SOURCE_URL=https://geoip.oxl.app/file/asn_full.json.zip
-    volumes:
-      - /tmp/asn_full.json:/tmp/asn_full.json
     depends_on:
       - db
     restart: unless-stopped
