@@ -907,16 +907,17 @@ function IOCMatchEventsPage() {
   const [reviewVerdict, setReviewVerdict] = useState('');
   const [reviewNote, setReviewNote] = useState('');
   const [savingReview, setSavingReview] = useState(false);
+  const [userLookup, setUserLookup] = useState({});
   const navigate = useNavigate();
   const { userEmail } = useSession();
 
-  const verdictMeta = (verdict, assignedTo) => {
+  const verdictMeta = (verdict) => {
     const v = String(verdict || '').toLowerCase();
-    if (v === 'fp') return { label: 'FP', color: '#ef4444', assignedTo: null };
-    if (v === 'tp') return { label: 'TP', color: '#22c55e', assignedTo: null };
-    if (v === 'suspicious') return { label: 'Suspicious', color: '#f59e0b', assignedTo: null };
-    if (v === 'in_progress') return { label: 'In Progress', color: '#f59e0b', assignedTo: assignedTo || null };
-    return { label: 'Unreviewed', color: '#94a3b8', assignedTo: null };
+    if (v === 'fp') return { label: 'FP', color: '#ef4444' };
+    if (v === 'tp') return { label: 'TP', color: '#22c55e' };
+    if (v === 'suspicious') return { label: 'Suspicious', color: '#f59e0b' };
+    if (v === 'in_progress') return { label: 'In Progress', color: '#f59e0b' };
+    return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
   const loadEvents = useCallback(async (q = '') => {
@@ -930,6 +931,27 @@ function IOCMatchEventsPage() {
       setLoading(false);
     }
   }, []);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const { data } = await api.get('/users');
+      const next = {};
+      for (const u of (data?.users || [])) {
+        const username = String(u?.username || '').trim();
+        if (!username) continue;
+        next[username.toLowerCase()] = username;
+      }
+      setUserLookup(next);
+    } catch {
+      setUserLookup({});
+    }
+  }, []);
+
+  const resolveAssignee = useCallback((assignedTo) => {
+    const raw = String(assignedTo || '').trim();
+    if (!raw) return 'Unassigned';
+    return userLookup[raw.toLowerCase()] || '-';
+  }, [userLookup]);
 
   const openReview = useCallback((evt) => {
     setSelectedEvent(evt || null);
@@ -967,7 +989,8 @@ function IOCMatchEventsPage() {
 
   useEffect(() => {
     loadEvents('').catch(() => {});
-  }, [loadEvents]);
+    loadUsers().catch(() => {});
+  }, [loadEvents, loadUsers]);
 
   return (
     <AppShell>
@@ -999,15 +1022,16 @@ function IOCMatchEventsPage() {
                 <th style={{ width: 240 }}>Matched IOC</th>
                 <th style={{ width: 140 }}>Detection</th>
                 <th style={{ width: 140 }}>Verdict</th>
-                <th style={{ width: 190 }}>Source</th>
+                <th style={{ width: 140 }}>Assignee</th>
+                <th style={{ width: 170 }}>Source</th>
                 <th style={{ width: 140 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
               ) : rows.length ? rows.map((evt) => {
-                const vm = verdictMeta(evt.verdict, evt.assigned_to);
+                const vm = verdictMeta(evt.verdict);
                 return (
                   <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                     <td>{evt.id}</td>
@@ -1028,25 +1052,21 @@ function IOCMatchEventsPage() {
                       </span>
                     </td>
                     <td>
-                      <div title={vm.assignedTo ? `Assigned to ${vm.assignedTo}` : undefined}>
-                        <span style={{
-                          display: 'inline-block',
-                          borderRadius: 999,
-                          padding: '3px 10px',
-                          fontSize: 12,
-                          fontWeight: 700,
-                          border: `1px solid ${vm.color}`,
-                          color: vm.color,
-                          background: '#020617'
-                        }}>
-                          {vm.label}
-                        </span>
-                        {vm.assignedTo ? (
-                          <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {vm.assignedTo}
-                          </div>
-                        ) : null}
-                      </div>
+                      <span style={{
+                        display: 'inline-block',
+                        borderRadius: 999,
+                        padding: '3px 10px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        border: `1px solid ${vm.color}`,
+                        color: vm.color,
+                        background: '#020617'
+                      }}>
+                        {vm.label}
+                      </span>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {resolveAssignee(evt.assigned_to)}
                     </td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {evt.source_count > 1
@@ -1076,7 +1096,7 @@ function IOCMatchEventsPage() {
                   </tr>
                 );
               }) : (
-                <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
               )}
             </tbody>
           </table>
