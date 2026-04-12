@@ -1098,9 +1098,7 @@ function IOCMatchEventsPage() {
         if (!verdictFilter.includes(verdictNorm)) return false;
       }
 
-      if (assigneeFilter === 'me') {
-        if (!assigneeRaw || assigneeRaw.toLowerCase() !== String(userEmail || '').toLowerCase()) return false;
-      } else if (assigneeFilter === 'unassigned') {
+      if (assigneeFilter === 'unassigned') {
         if (assigneeRaw) return false;
       } else if (assigneeFilter !== 'all') {
         if (assignee.toLowerCase() !== assigneeFilter.toLowerCase()) return false;
@@ -1143,13 +1141,13 @@ function IOCMatchEventsPage() {
         setDateFrom('');
         setDateTo('');
         setActiveDateQuick('');
-        loadEvents(query, assigneeFilter === 'me' ? userEmail : null, '', '', verdictFilter, detectionFilter).catch(() => {});
+        loadEvents(query, null, '', '', verdictFilter, detectionFilter).catch(() => {});
       }
     });
   }
   if (detectionFilter.length) activeFilters.push({ key: 'detection', label: `Detection: ${detectionFilter.map((d) => d === 'realtime' ? 'Real-time' : 'Retroactive').join(', ')}`, onClear: () => setDetectionFilter([]) });
   if (verdictFilter.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter.map((v) => v === 'unreviewed' ? 'Unreviewed' : v === 'in_progress' ? 'In Progress' : v.toUpperCase()).join(', ')}`, onClear: () => setVerdictFilter([]) });
-  if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'me' ? 'Me' : assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
+  if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
   if (sourceFilter !== 'all') activeFilters.push({ key: 'source', label: `Source: ${sourceFilter}`, onClear: () => setSourceFilter('all') });
 
   const highlight = (text) => {
@@ -1189,11 +1187,11 @@ function IOCMatchEventsPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {}); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {}); }}
               placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
-            <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {})}>Search</button>
+            <button onClick={() => loadEvents(query, null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {})}>Search</button>
           </div>
 
           <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1221,7 +1219,7 @@ function IOCMatchEventsPage() {
                   const t = toDateTimeLocal(now);
                   setDateFrom(f);
                   setDateTo(t);
-                  loadEvents(query, assigneeFilter === 'me' ? userEmail : null, f, t, verdictFilter, detectionFilter).catch(() => {});
+                  loadEvents(query, null, f, t, verdictFilter, detectionFilter).catch(() => {});
                 }}
                 style={{
                   borderRadius: 999,
@@ -1289,7 +1287,6 @@ function IOCMatchEventsPage() {
 
             <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
               <option value="all">Assignee: All</option>
-              <option value="me">Assignee: Me</option>
               <option value="unassigned">Assignee: Unassigned</option>
               {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
