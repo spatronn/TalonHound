@@ -66,6 +66,23 @@ function parseIpRange(v) {
   return { start: x, end: x };
 }
 
+function normalizeTextValue(v) {
+  if (v == null) return null;
+  if (typeof v === 'string') {
+    const t = v.trim();
+    return t || null;
+  }
+  if (typeof v === 'object') {
+    for (const k of ['name', 'organization', 'org', 'label', 'en']) {
+      const cand = v?.[k];
+      if (typeof cand === 'string' && cand.trim()) return cand.trim();
+    }
+    return null;
+  }
+  const t = String(v).trim();
+  return t || null;
+}
+
 function asnToNumber(v) {
   if (v == null) return null;
   const s = String(v).trim().toUpperCase();
@@ -300,8 +317,8 @@ async function buildAndSwap() {
         continue;
       }
 
-      const owner = String(obj.organization ?? obj.info?.name ?? obj.info?.descr ?? '').trim() || null;
-      const country = String(obj.info?.country ?? '').trim() || null;
+      const owner = normalizeTextValue(obj.organization) || normalizeTextValue(obj.info?.name) || normalizeTextValue(obj.info?.descr) || null;
+      const country = normalizeTextValue(obj.info?.country) || null;
       const asnNum = asnToNumber(entry.asnKey);
       const prefixes = Array.isArray(obj.ipv4) ? obj.ipv4 : [];
 
@@ -340,6 +357,24 @@ async function buildAndSwap() {
     await client.query('LOCK TABLE asn_lookup IN ACCESS EXCLUSIVE MODE');
     await client.query(`ALTER TABLE asn_lookup RENAME TO ${backupTable}`);
     await client.query(`ALTER TABLE ${nextTable} RENAME TO asn_lookup`);
+
+    // Backward-compatible enrichment source for existing IOC detail / geo flows.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS asn_ipv4_ranges (
+        id BIGSERIAL PRIMARY KEY,
+        start_ip_num BIGINT NOT NULL,
+        end_ip_num BIGINT NOT NULL,
+        asn BIGINT,
+        country_code TEXT,
+        as_name TEXT
+      )
+    `);
+    await client.query('TRUNCATE TABLE asn_ipv4_ranges');
+    await client.query(`
+      INSERT INTO asn_ipv4_ranges (start_ip_num, end_ip_num, asn, country_code, as_name)
+      SELECT start_ip_int, end_ip_int, asn, country, asn_owner
+      FROM asn_lookup
+    `);
     await client.query('COMMIT');
 
     await client.query(`DROP TABLE IF EXISTS ${backupTable}`);
