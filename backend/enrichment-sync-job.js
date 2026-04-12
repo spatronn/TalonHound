@@ -5,7 +5,8 @@ import { pipeline } from 'stream/promises';
 import { createWriteStream } from 'fs';
 import { tmpdir } from 'os';
 import { join as pathJoin } from 'path';
-import yauzl from 'yauzl';
+import { promisify } from 'util';
+import { execFile } from 'child_process';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -228,37 +229,11 @@ function downloadToFile(url, outPath, redirects = 3) {
   });
 }
 
-async function extractJsonFromZip(zipPath, jsonOutPath) {
-  await new Promise((resolve, reject) => {
-    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
-      if (err || !zipfile) return reject(err || new Error('failed to open zip'));
+const execFileAsync = promisify(execFile);
 
-      let found = false;
-      zipfile.readEntry();
-      zipfile.on('entry', (entry) => {
-        const name = String(entry.fileName || '').toLowerCase();
-        if (!name.endsWith('.json')) {
-          zipfile.readEntry();
-          return;
-        }
-        found = true;
-        zipfile.openReadStream(entry, (streamErr, readStream) => {
-          if (streamErr || !readStream) return reject(streamErr || new Error('failed to read zip entry'));
-          pipeline(readStream, createWriteStream(jsonOutPath))
-            .then(() => {
-              zipfile.close();
-              resolve();
-            })
-            .catch(reject);
-        });
-      });
-      zipfile.once('end', () => {
-        if (!found) reject(new Error('json entry not found in zip'));
-      });
-      zipfile.once('error', reject);
-      return null;
-    });
-  });
+async function extractJsonFromZip(zipPath, jsonOutPath) {
+  // Uses system unzip to avoid extra runtime deps.
+  await execFileAsync('sh', ['-lc', `unzip -p ${zipPath} '*.json' > ${jsonOutPath}`]);
 }
 
 async function refreshSourceJson() {
