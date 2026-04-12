@@ -1186,7 +1186,7 @@ function IOCMatchEventDetailsPage() {
       });
       const it = data?.item || null;
       if (it) {
-        setItem(it);
+        setItem((prev) => ({ ...(prev || {}), ...it }));
         setVerdict(String(it.verdict || '').toLowerCase());
         setNote(String(it.note || ''));
       }
