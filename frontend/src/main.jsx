@@ -1013,8 +1013,8 @@ function IOCMatchEventsPage() {
           </div>
         </div>
 
-        <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto', overflowY: 'hidden' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1260 }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
                 <th style={{ width: 80 }}>ID</th>
