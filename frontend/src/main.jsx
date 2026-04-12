@@ -1775,7 +1775,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true 
   const [integrations, setIntegrations] = useState([]);
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
-  const [tableWidths, setTableWidths] = useState({ name: 180, integrationId: 190, source: 280, addedAt: 170, schedule: 140, trust: 160, status: 120, lastRun: 170, nextRun: 180, total: 120, action: 130 });
+  const [tableWidths, setTableWidths] = useState({ name: 180, integrationId: 190, source: 280, addedAt: 170, schedule: 140, status: 120, lastRun: 170, nextRun: 180, action: 130 });
   const [resizeState, setResizeState] = useState(null);
 
   async function load() {
@@ -1919,11 +1919,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true 
                 <col style={{ width: tableWidths.source }} />
                 <col style={{ width: tableWidths.addedAt }} />
                 <col style={{ width: tableWidths.schedule }} />
-                <col style={{ width: tableWidths.trust }} />
                 <col style={{ width: tableWidths.status }} />
                 <col style={{ width: tableWidths.lastRun }} />
                 <col style={{ width: tableWidths.nextRun }} />
-                <col style={{ width: tableWidths.total }} />
                 <col style={{ width: tableWidths.action }} />
               </colgroup>
               <thead>
@@ -1933,11 +1931,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true 
                   <th style={{ position: 'relative' }}>Source<div onMouseDown={(e) => startResize('source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Added At<div onMouseDown={(e) => startResize('addedAt', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Schedule<div onMouseDown={(e) => startResize('schedule', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Trust Level<div onMouseDown={(e) => startResize('trust', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Last status<div onMouseDown={(e) => startResize('status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Last run start<div onMouseDown={(e) => startResize('lastRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Next run<div onMouseDown={(e) => startResize('nextRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Total Records<div onMouseDown={(e) => startResize('total', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 </tr>
               </thead>
@@ -1960,17 +1956,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true 
                         ))}
                       </select>
                     </td>
-                    <td>
-                      <select value={i.trust_level || 'not_categorized'} onChange={(e) => updateTrustLevel(i.key, e.target.value)} disabled={!canWrite} style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box', opacity: canWrite ? 1 : 0.55 }}>
-                        <option value="guvenilir">Reliable</option>
-                        <option value="orta">Medium</option>
-                        <option value="not_categorized">Not Categorized</option>
-                      </select>
-                    </td>
                     <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusLabel(i.last_status)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.last_started_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.next_run_at)}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.total_records ?? 0}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
                   </tr>
                 ))}
