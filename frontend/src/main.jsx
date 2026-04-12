@@ -1135,6 +1135,33 @@ function IOCMatchEventsPage() {
   const safePage = Math.min(page, totalPages);
   const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
+  const quickFilterLabels = {
+    unreviewed: 'Quick: Unreviewed',
+    in_progress: 'Quick: In Progress',
+    fp: 'Quick: False Positive',
+    realtime: 'Quick: Real-time',
+    retroactive: 'Quick: Retroactive',
+    assigned_me: 'Quick: Assigned to me'
+  };
+
+  const activeFilters = [];
+  if (dateFrom || dateTo) {
+    activeFilters.push({
+      key: 'date',
+      label: `${formatRangeShort(dateFrom) || '-'} → ${formatRangeShort(dateTo) || '-'}`,
+      onClear: () => {
+        setDateFrom('');
+        setDateTo('');
+        setActiveDateQuick('');
+      }
+    });
+  }
+  if (detectionFilter !== 'all') activeFilters.push({ key: 'detection', label: `Detection: ${detectionFilter === 'realtime' ? 'Real-time' : 'Retroactive'}`, onClear: () => setDetectionFilter('all') });
+  if (verdictFilter !== 'all') activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter === 'unreviewed' ? 'Unreviewed' : verdictFilter.toUpperCase()}`, onClear: () => setVerdictFilter('all') });
+  if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'me' ? 'Me' : assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
+  if (sourceFilter !== 'all') activeFilters.push({ key: 'source', label: `Source: ${sourceFilter}`, onClear: () => setSourceFilter('all') });
+  if (activeQuickFilter) activeFilters.push({ key: 'quick', label: quickFilterLabels[activeQuickFilter] || `Quick: ${activeQuickFilter}`, onClear: () => { setActiveQuickFilter(''); setDetectionFilter('all'); setVerdictFilter('all'); setAssigneeFilter('all'); } });
+
   const highlight = (text) => {
     const raw = String(text || '');
     if (!searchTerm || searchTerm.length < 2) return raw || '-';
@@ -1176,7 +1203,18 @@ function IOCMatchEventsPage() {
               placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
-            <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {})}>Search</button>
+            <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo).catch(() => {})}>Search</button>
+          </div>
+
+          <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Active Filters</span>
+            {activeFilters.length ? activeFilters.map((f) => (
+              <span key={f.key + f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #475569', borderRadius: 999, padding: '3px 8px', fontSize: 12, color: '#cbd5e1' }}>
+                {f.label}
+                <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
+              </span>
+            )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
+            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear all</button>
           </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1209,27 +1247,6 @@ function IOCMatchEventsPage() {
               </button>
             ))}
           </div>
-
-          {(dateFrom || dateTo) ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ border: '1px solid #475569', borderRadius: 999, padding: '4px 10px', fontSize: 12, color: '#cbd5e1', background: '#0f172a' }}>
-                [{formatRangeShort(dateFrom) || '-'} → {formatRangeShort(dateTo) || '-'}]
-              </span>
-              <button
-                onClick={() => {
-                  setDateFrom('');
-                  setDateTo('');
-                  setActiveDateQuick('');
-                  loadEvents(query, assigneeFilter === 'me' ? userEmail : null, '', '').catch(() => {});
-                }}
-                title="Clear date range"
-                aria-label="Clear date range"
-                style={{ borderRadius: 999, padding: '2px 8px' }}
-              >
-                ✕
-              </button>
-            </div>
-          ) : null}
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
