@@ -945,6 +945,12 @@ function IOCMatchEventsPage() {
     return { from: toDateTimeLocal(from), to: toDateTimeLocal(now) };
   };
 
+  const formatRangeShort = (v) => {
+    const d = new Date(String(v || '').trim());
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
   const verdictMeta = (verdict) => {
     const v = String(verdict || '').toLowerCase();
     if (v === 'fp') return { label: 'FP', color: '#ef4444' };
@@ -1203,6 +1209,27 @@ function IOCMatchEventsPage() {
               </button>
             ))}
           </div>
+
+          {(dateFrom || dateTo) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ border: '1px solid #475569', borderRadius: 999, padding: '4px 10px', fontSize: 12, color: '#cbd5e1', background: '#0f172a' }}>
+                [{formatRangeShort(dateFrom) || '-'} → {formatRangeShort(dateTo) || '-'}]
+              </span>
+              <button
+                onClick={() => {
+                  setDateFrom('');
+                  setDateTo('');
+                  setActiveDateQuick('');
+                  loadEvents(query, assigneeFilter === 'me' ? userEmail : null, '', '').catch(() => {});
+                }}
+                title="Clear date range"
+                aria-label="Clear date range"
+                style={{ borderRadius: 999, padding: '2px 8px' }}
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {[
