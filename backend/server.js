@@ -909,6 +909,8 @@ app.get('/api/ioc/match-events', async (req, res) => {
           m.reviewed_at,
           m.reviewed_by,
           m.note,
+          m.assigned_to,
+          m.assigned_at,
           COALESCE(
             NULLIF(CONCAT_WS(' | ',
               NULLIF(m.source, ''),
@@ -1052,8 +1054,8 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
       ? null
       : String(rawVerdict).trim().toLowerCase();
 
-    if (verdict !== null && !['fp', 'tp', 'suspicious'].includes(verdict)) {
-      return res.status(400).json({ message: 'Invalid verdict. Use fp, tp, suspicious or null.' });
+    if (verdict !== null && !['fp', 'tp', 'suspicious', 'in_progress'].includes(verdict)) {
+      return res.status(400).json({ message: 'Invalid verdict. Use fp, tp, suspicious, in_progress or null.' });
     }
 
     const note = rawNote == null || String(rawNote).trim() === ''
@@ -1061,16 +1063,27 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
       : String(rawNote).trim().slice(0, 4000);
 
     const reviewedBy = String(req.user?.username || req.user?.email || '').trim() || null;
+    const assignTo = String(req.body?.assigned_to || '').trim() || reviewedBy;
 
     const q = await pool.query(
       `UPDATE ioc_match_events
        SET verdict = $2,
            reviewed_at = CASE WHEN $2 IS NULL THEN NULL ELSE NOW() END,
            reviewed_by = CASE WHEN $2 IS NULL THEN NULL ELSE $3 END,
-           note = $4
+           note = $4,
+           assigned_to = CASE
+             WHEN $2 = 'in_progress' THEN $5
+             WHEN $2 IS NULL THEN NULL
+             ELSE assigned_to
+           END,
+           assigned_at = CASE
+             WHEN $2 = 'in_progress' THEN NOW()
+             WHEN $2 IS NULL THEN NULL
+             ELSE assigned_at
+           END
        WHERE id = $1
        RETURNING *`,
-      [id, verdict, reviewedBy, note]
+      [id, verdict, reviewedBy, note, assignTo]
     );
 
     if (!q.rowCount) {
@@ -2762,6 +2775,8 @@ app.get('/api/ioc/details', async (req, res) => {
           m.reviewed_at,
           m.reviewed_by,
           m.note,
+          m.assigned_to,
+          m.assigned_at,
           COALESCE(NULLIF(${signalRawExpr}, ''), '-') AS matched_syslog_event,
           COALESCE(
             m.detection_type,

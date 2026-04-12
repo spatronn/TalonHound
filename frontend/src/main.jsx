@@ -908,13 +908,13 @@ function IOCMatchEventsPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [savingReview, setSavingReview] = useState(false);
   const navigate = useNavigate();
-  const { userEmail } = useSession();
 
-  const verdictMeta = (verdict) => {
+  const verdictMeta = (verdict, assignedTo) => {
     const v = String(verdict || '').toLowerCase();
     if (v === 'fp') return { label: 'FP', color: '#ef4444' };
     if (v === 'tp') return { label: 'TP', color: '#22c55e' };
     if (v === 'suspicious') return { label: 'Suspicious', color: '#f59e0b' };
+    if (v === 'in_progress') return { label: `In Progress${assignedTo ? ` (${assignedTo})` : ''}`, color: '#f59e0b' };
     return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
@@ -1006,7 +1006,7 @@ function IOCMatchEventsPage() {
               {loading ? (
                 <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
               ) : rows.length ? rows.map((evt) => {
-                const vm = verdictMeta(evt.verdict);
+                const vm = verdictMeta(evt.verdict, evt.assigned_to);
                 return (
                   <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                     <td>{evt.id}</td>
@@ -1105,6 +1105,7 @@ function IOCMatchEventsPage() {
               <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Verdict</label>
               <select value={reviewVerdict} onChange={(e) => setReviewVerdict(e.target.value)} style={{ minWidth: 220 }}>
                 <option value="">Unreviewed</option>
+                <option value="in_progress">In Progress</option>
                 <option value="fp">FP (False Positive)</option>
                 <option value="tp">TP (True Positive)</option>
                 <option value="suspicious">Suspicious</option>
@@ -1142,15 +1143,31 @@ function IOCMatchEventsPage() {
 function IOCMatchEventDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { userEmail } = useSession();
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [item, setItem] = useState(null);
+  const [verdict, setVerdict] = useState('');
+  const [note, setNote] = useState('');
+
+  const verdictMeta = (v, assignedTo) => {
+    const x = String(v || '').toLowerCase();
+    if (x === 'fp') return { label: 'FP', color: '#ef4444' };
+    if (x === 'tp') return { label: 'TP', color: '#22c55e' };
+    if (x === 'suspicious') return { label: 'Suspicious', color: '#f59e0b' };
+    if (x === 'in_progress') return { label: `In Progress${assignedTo ? ` (${assignedTo})` : ''}`, color: '#f59e0b' };
+    return { label: 'Unreviewed', color: '#94a3b8' };
+  };
 
   const loadDetail = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
       const { data } = await api.get(`/ioc/match-events/${id}`);
-      setItem(data?.item || null);
+      const it = data?.item || null;
+      setItem(it);
+      setVerdict(String(it?.verdict || '').toLowerCase());
+      setNote(String(it?.note || ''));
     } catch {
       setItem(null);
     } finally {
@@ -1158,9 +1175,35 @@ function IOCMatchEventDetailsPage() {
     }
   }, [id]);
 
+  const saveVerdict = useCallback(async (nextVerdict = verdict, nextNote = note, extra = {}) => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      const { data } = await api.patch(`/ioc/match-events/${id}/verdict`, {
+        verdict: nextVerdict || null,
+        note: String(nextNote || '').trim() || null,
+        ...extra
+      });
+      const it = data?.item || null;
+      if (it) {
+        setItem(it);
+        setVerdict(String(it.verdict || '').toLowerCase());
+        setNote(String(it.note || ''));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [id, verdict, note]);
+
+  const takeOwnership = useCallback(async () => {
+    await saveVerdict('in_progress', note, { assigned_to: userEmail || null });
+  }, [saveVerdict, note, userEmail]);
+
   useEffect(() => {
     loadDetail().catch(() => {});
   }, [loadDetail]);
+
+  const vm = verdictMeta(item?.verdict, item?.assigned_to);
 
   return (
     <AppShell>
@@ -1176,70 +1219,61 @@ function IOCMatchEventDetailsPage() {
           <div style={{ color: '#94a3b8' }}>Event detail not found.</div>
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
-            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detected At</div>
-              <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.created_at || item.event_time)}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detected At</div>
+                <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.created_at || item.event_time)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched IOC</div>
+                <div>{item.matched_ioc || '-'}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Verdict</div>
+                <span style={{
+                  display: 'inline-block', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700,
+                  border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
+                }}>{vm.label}</span>
+              </div>
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
               <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched Syslog event</div>
-              <div style={{
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                wordBreak: 'break-word',
-                lineHeight: 1.45,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace',
-                fontSize: 13,
-                background: '#020617',
-                border: '1px solid #334155',
-                borderRadius: 8,
-                padding: 10,
-                maxHeight: 280,
-                overflowY: 'auto'
-              }}>
+              <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.45, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace', fontSize: 13, background: '#020617', border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 280, overflowY: 'auto' }}>
                 {item.matched_syslog_event || '-'}
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched IOC</div>
-                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.matched_ioc || '-'}</div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 10 }}>
+              <h3 style={{ margin: 0 }}>Analyst Actions</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 12, alignItems: 'center' }}>
+                <label style={{ color: '#94a3b8', fontSize: 13 }}>Verdict</label>
+                <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
+                  <option value="">Unreviewed</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="tp">TP</option>
+                  <option value="fp">FP</option>
+                  <option value="suspicious">Suspicious</option>
+                </select>
               </div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>IOC Type</div>
-                <div style={{ textTransform: 'uppercase', fontWeight: 700 }}>{item.ioc_type || '-'}</div>
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label style={{ color: '#94a3b8', fontSize: 13 }}>Analyst Note</label>
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder="Optional analyst note" style={{ width: '100%' }} />
               </div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detection</div>
-                <span style={{
-                  display: 'inline-block',
-                  borderRadius: 999,
-                  padding: '4px 10px',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  border: `1px solid ${item.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
-                  color: item.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
-                  background: '#020617'
-                }}>
-                  {item.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
-                </span>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => takeOwnership().catch(() => {})} disabled={saving}>Take Ownership</button>
+                <button onClick={() => saveVerdict('tp', note).catch(() => {})} disabled={saving}>Mark as TP</button>
+                <button onClick={() => saveVerdict('fp', note).catch(() => {})} disabled={saving}>Mark as FP</button>
+                <button onClick={() => saveVerdict('suspicious', note).catch(() => {})} disabled={saving}>Mark as Suspicious</button>
               </div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>IOC Source</div>
-                {Array.isArray(item.source_names) && item.source_names.length ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {item.source_names.map((src) => (
-                      <span key={src} style={{ border: '1px solid #334155', borderRadius: 999, padding: '4px 10px', background: '#020617', fontSize: 12 }}>
-                        {src}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source_name || '-'}</div>
-                )}
-                <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 10, marginBottom: 6 }}>Syslog Source</div>
-                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.source || '-'}</div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                  Assigned: {item.assigned_to || '-'} {item.assigned_at ? `• ${formatUserDateTime(item.assigned_at)}` : ''}
+                </div>
+                <button onClick={() => saveVerdict().catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
               </div>
             </div>
           </div>
