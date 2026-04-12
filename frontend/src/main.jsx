@@ -908,6 +908,7 @@ function IOCMatchEventsPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [savingReview, setSavingReview] = useState(false);
   const navigate = useNavigate();
+  const { userEmail } = useSession();
 
   const verdictMeta = (verdict, assignedTo) => {
     const v = String(verdict || '').toLowerCase();
