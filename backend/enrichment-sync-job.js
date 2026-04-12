@@ -318,7 +318,7 @@ async function buildAndSwap() {
       }
 
       const owner = normalizeTextValue(obj.organization) || normalizeTextValue(obj.info?.name) || normalizeTextValue(obj.info?.descr) || null;
-      const country = normalizeTextValue(obj.info?.country) || null;
+      const country = normalizeTextValue(obj.info?.country) || normalizeTextValue(obj.organization?.country) || null;
       const asnNum = asnToNumber(entry.asnKey);
       const prefixes = Array.isArray(obj.ipv4) ? obj.ipv4 : [];
 
