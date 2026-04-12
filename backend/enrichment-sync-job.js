@@ -141,10 +141,14 @@ async function* streamTopLevelAsnEntries(filePath) {
           continue;
         }
 
-        if (ch === '"') inString = true;
-        else if (ch === '{') valueDepth += 1;
-        else if (ch === '}') {
+        if (ch === '"') {
+          inString = true;
+        } else if (ch === '{') {
+          valueDepth += 1;
+          depth += 1;
+        } else if (ch === '}') {
           valueDepth -= 1;
+          depth -= 1;
           if (valueDepth === 0) {
             yield { asnKey: currentKey, objectText: valueBuf };
             readingValue = false;
