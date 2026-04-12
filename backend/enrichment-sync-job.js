@@ -104,50 +104,95 @@ function extractRow(obj) {
   };
 }
 
-async function* streamJsonObjects(filePath) {
+async function* streamTopLevelAsnEntries(filePath) {
   const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+
   let inString = false;
   let escaped = false;
+  let started = false;
   let depth = 0;
-  let buf = '';
+
+  let readingKey = false;
+  let currentKey = '';
+
+  let readingValue = false;
+  let valueDepth = 0;
+  let valueBuf = '';
 
   for await (const chunk of stream) {
     for (let i = 0; i < chunk.length; i += 1) {
       const ch = chunk[i];
 
-      if (depth === 0) {
+      if (!started) {
         if (ch === '{') {
+          started = true;
           depth = 1;
-          inString = false;
-          escaped = false;
-          buf = '{';
         }
         continue;
       }
 
-      buf += ch;
+      if (readingValue) {
+        valueBuf += ch;
 
-      if (inString) {
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+
+        if (ch === '"') inString = true;
+        else if (ch === '{') valueDepth += 1;
+        else if (ch === '}') {
+          valueDepth -= 1;
+          if (valueDepth === 0) {
+            yield { asnKey: currentKey, objectText: valueBuf };
+            readingValue = false;
+            valueBuf = '';
+            currentKey = '';
+          }
+        }
+        continue;
+      }
+
+      if (readingKey) {
         if (escaped) {
+          currentKey += ch;
           escaped = false;
         } else if (ch === '\\') {
           escaped = true;
         } else if (ch === '"') {
-          inString = false;
+          readingKey = false;
+        } else {
+          currentKey += ch;
         }
         continue;
       }
 
-      if (ch === '"') {
-        inString = true;
-      } else if (ch === '{') {
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+
+      if (ch === '"' && depth == 1 && !currentKey) {
+        readingKey = true;
+        currentKey = '';
+        continue;
+      }
+
+      if (ch === '{') {
         depth += 1;
+        if (depth === 2 && currentKey) {
+          readingValue = true;
+          valueDepth = 1;
+          valueBuf = '{';
+          inString = false;
+          escaped = false;
+        }
       } else if (ch === '}') {
         depth -= 1;
-        if (depth === 0) {
-          yield buf;
-          buf = '';
-        }
       }
     }
   }
@@ -197,32 +242,40 @@ async function buildAndSwap() {
     `);
 
     let batch = [];
-    for await (const objText of streamJsonObjects(SOURCE_FILE)) {
+    for await (const entry of streamTopLevelAsnEntries(SOURCE_FILE)) {
       parsed += 1;
       let obj;
       try {
-        obj = JSON.parse(objText);
+        obj = JSON.parse(entry.objectText);
       } catch {
         rejected += 1;
         continue;
       }
 
-      const row = extractRow(obj);
-      if (!row) {
+      const owner = String(obj.organization ?? obj.info?.name ?? obj.info?.descr ?? '').trim() || null;
+      const country = String(obj.info?.country ?? '').trim() || null;
+      const asnNum = asnToNumber(entry.asnKey);
+      const prefixes = Array.isArray(obj.ipv4) ? obj.ipv4 : [];
+
+      if (!prefixes.length) {
         rejected += 1;
         continue;
       }
 
-      batch.push(row);
-      accepted += 1;
+      for (const prefix of prefixes) {
+        const r = parseIpRange(prefix);
+        if (!r) continue;
+        batch.push({ start_ip_int: Math.trunc(r.start), end_ip_int: Math.trunc(r.end), asn: asnNum, asn_owner: owner, country });
+        accepted += 1;
 
-      if (batch.length >= INSERT_BATCH_SIZE) {
-        await insertBatch(client, nextTable, batch);
-        batch = [];
+        if (batch.length >= INSERT_BATCH_SIZE) {
+          await insertBatch(client, nextTable, batch);
+          batch = [];
+        }
       }
 
-      if (parsed % 50000 === 0) {
-        console.log(`[enrichment-sync-job] progress parsed=${parsed} accepted=${accepted} rejected=${rejected}`);
+      if (parsed % 5000 === 0) {
+        console.log(`[enrichment-sync-job] progress parsed_asn=${parsed} accepted_ranges=${accepted} rejected_asn=${rejected}`);
       }
     }
 
