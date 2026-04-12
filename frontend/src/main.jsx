@@ -912,7 +912,6 @@ function IOCMatchEventsPage() {
   const [verdictFilter, setVerdictFilter] = useState([]);
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [activeQuickFilter, setActiveQuickFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [activeDateQuick, setActiveDateQuick] = useState('24h');
@@ -1008,7 +1007,6 @@ function IOCMatchEventsPage() {
     setVerdictFilter([]);
     setAssigneeFilter('all');
     setSourceFilter('all');
-    setActiveQuickFilter('');
     const def = buildDefault24hRange();
     setDateFrom(def.from);
     setDateTo(def.to);
@@ -1030,6 +1028,8 @@ function IOCMatchEventsPage() {
     setSavingReview(false);
   }, []);
 
+  const toggleMulti = useCallback((arr, val) => (arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]), []);
+
   const submitReview = useCallback(async () => {
     if (!selectedEvent?.id) return;
     setSavingReview(true);
@@ -1050,24 +1050,6 @@ function IOCMatchEventsPage() {
       setSavingReview(false);
     }
   }, [selectedEvent, reviewVerdict, reviewNote, closeReview]);
-
-  const toggleMulti = useCallback((arr, val) => (arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]), []);
-
-  const applyQuickFilter = useCallback((key) => {
-    setActiveQuickFilter((prev) => (prev === key ? '' : key));
-    if (activeQuickFilter === key) {
-      setDetectionFilter([]);
-      setVerdictFilter([]);
-      setAssigneeFilter('all');
-      return;
-    }
-    if (key === 'unreviewed') setVerdictFilter(['unreviewed']);
-    if (key === 'in_progress') setVerdictFilter(['in_progress']);
-    if (key === 'fp') setVerdictFilter(['fp']);
-    if (key === 'realtime') setDetectionFilter(['realtime']);
-    if (key === 'retroactive') setDetectionFilter(['retroactive']);
-    if (key === 'assigned_me') setAssigneeFilter('me');
-  }, [activeQuickFilter]);
 
   useEffect(() => {
     const def = buildDefault24hRange();
@@ -1145,21 +1127,12 @@ function IOCMatchEventsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeQuickFilter, activeDateQuick, dateFrom, dateTo, pageSize]);
+  }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeDateQuick, dateFrom, dateTo, pageSize]);
 
   const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  const quickFilterLabels = {
-    unreviewed: 'Quick: Unreviewed',
-    in_progress: 'Quick: In Progress',
-    fp: 'Quick: False Positive',
-    realtime: 'Quick: Real-time',
-    retroactive: 'Quick: Retroactive',
-    assigned_me: 'Quick: Assigned to me'
-  };
 
   const activeFilters = [];
   if (dateFrom || dateTo) {
@@ -1178,7 +1151,6 @@ function IOCMatchEventsPage() {
   if (verdictFilter.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter.map((v) => v === 'unreviewed' ? 'Unreviewed' : v === 'in_progress' ? 'In Progress' : v.toUpperCase()).join(', ')}`, onClear: () => setVerdictFilter([]) });
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'me' ? 'Me' : assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
   if (sourceFilter !== 'all') activeFilters.push({ key: 'source', label: `Source: ${sourceFilter}`, onClear: () => setSourceFilter('all') });
-  if (activeQuickFilter) activeFilters.push({ key: 'quick', label: quickFilterLabels[activeQuickFilter] || `Quick: ${activeQuickFilter}`, onClear: () => { setActiveQuickFilter(''); setDetectionFilter([]); setVerdictFilter([]); setAssigneeFilter('all'); } });
 
   const highlight = (text) => {
     const raw = String(text || '');
@@ -1262,31 +1234,6 @@ function IOCMatchEventsPage() {
                 }}
               >
                 {lbl}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {[
-              ['unreviewed', 'Unreviewed'],
-              ['in_progress', 'In Progress'],
-              ['fp', 'False Positive'],
-              ['realtime', 'Real-time'],
-              ['retroactive', 'Retroactive'],
-              ['assigned_me', 'Assigned to me']
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => applyQuickFilter(key)}
-                style={{
-                  borderRadius: 999,
-                  padding: '6px 12px',
-                  border: activeQuickFilter === key ? '1px solid #60a5fa' : '1px solid #334155',
-                  color: activeQuickFilter === key ? '#60a5fa' : '#cbd5e1',
-                  background: '#020617'
-                }}
-              >
-                {label}
               </button>
             ))}
           </div>
