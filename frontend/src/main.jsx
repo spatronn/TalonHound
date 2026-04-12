@@ -1117,7 +1117,7 @@ function IOCMatchEventsPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {}); }}
-              placeholder="ID, IP, domain, hash veya source ara... (örn: 47.104.248.7 veya #21371)"
+              placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
             <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {})}>Search</button>
