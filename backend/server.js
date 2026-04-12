@@ -857,6 +857,8 @@ app.get('/api/ioc/match-events', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query?.limit || 20), 1), 100);
     const qStr = String(req.query?.q || '').trim();
+    const fromStr = String(req.query?.from || '').trim();
+    const toStr = String(req.query?.to || '').trim();
 
     const where = [];
     const params = [];
@@ -873,6 +875,23 @@ app.get('/api/ioc/match-events', async (req, res) => {
         OR COALESCE(m.destination_ip, '') ILIKE $${idx}
         OR COALESCE(m.protocol, '') ILIKE $${idx}
       )`);
+    }
+
+
+    if (fromStr) {
+      const fromDate = new Date(fromStr);
+      if (!Number.isNaN(fromDate.getTime())) {
+        params.push(fromDate.toISOString());
+        where.push(`m.created_at >= $${params.length}::timestamptz`);
+      }
+    }
+
+    if (toStr) {
+      const toDate = new Date(toStr);
+      if (!Number.isNaN(toDate.getTime())) {
+        params.push(toDate.toISOString());
+        where.push(`m.created_at <= $${params.length}::timestamptz`);
+      }
     }
 
     params.push(limit);

@@ -913,10 +913,37 @@ function IOCMatchEventsPage() {
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [activeQuickFilter, setActiveQuickFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [activeDateQuick, setActiveDateQuick] = useState('24h');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const navigate = useNavigate();
   const { userEmail } = useSession();
+
+  const toDateTimeLocal = (d) => {
+    const dt = new Date(d);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}`;
+  };
+
+  const toIsoOrNull = (v) => {
+    const raw = String(v || '').trim();
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  };
+
+  const buildDefault24hRange = () => {
+    const now = new Date();
+    const from = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+    return { from: toDateTimeLocal(from), to: toDateTimeLocal(now) };
+  };
 
   const verdictMeta = (verdict) => {
     const v = String(verdict || '').toLowerCase();
@@ -927,11 +954,15 @@ function IOCMatchEventsPage() {
     return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
-  const loadEvents = useCallback(async (q = '', assignedTo = null) => {
+  const loadEvents = useCallback(async (q = '', assignedTo = null, fromVal = '', toVal = '') => {
     setLoading(true);
     try {
       const params = { limit: 120, q: q || undefined };
       if (assignedTo) params.assigned_to = assignedTo; // UI hint, backend may ignore
+      const fromIso = toIsoOrNull(fromVal);
+      const toIso = toIsoOrNull(toVal);
+      if (fromIso) params.from = fromIso;
+      if (toIso) params.to = toIso;
       const { data } = await api.get('/ioc/match-events', { params });
       setRows(data?.items || []);
     } catch {
@@ -968,8 +999,12 @@ function IOCMatchEventsPage() {
     setAssigneeFilter('all');
     setSourceFilter('all');
     setActiveQuickFilter('');
+    const def = buildDefault24hRange();
+    setDateFrom(def.from);
+    setDateTo(def.to);
+    setActiveDateQuick('24h');
     setQuery('');
-    loadEvents('').catch(() => {});
+    loadEvents('', null, def.from, def.to).catch(() => {});
   }, [loadEvents]);
 
   const openReview = useCallback((evt) => {
@@ -1023,7 +1058,11 @@ function IOCMatchEventsPage() {
   }, [activeQuickFilter]);
 
   useEffect(() => {
-    loadEvents('').catch(() => {});
+    const def = buildDefault24hRange();
+    setDateFrom(def.from);
+    setDateTo(def.to);
+    setActiveDateQuick('24h');
+    loadEvents('', null, def.from, def.to).catch(() => {});
     loadUsers().catch(() => {});
   }, [loadEvents, loadUsers]);
 
@@ -1083,7 +1122,7 @@ function IOCMatchEventsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeQuickFilter, pageSize]);
+  }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeQuickFilter, activeDateQuick, dateFrom, dateTo, pageSize]);
 
   const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -1127,11 +1166,41 @@ function IOCMatchEventsPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {}); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo).catch(() => {}); }}
               placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
             <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {})}>Search</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input type="datetime-local" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setActiveDateQuick('custom'); }} />
+            <input type="datetime-local" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setActiveDateQuick('custom'); }} />
+            {[['1h', 'Last 1 hour'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days'], ['custom', 'Custom']].map(([k, lbl]) => (
+              <button
+                key={k}
+                onClick={() => {
+                  setActiveDateQuick(k);
+                  if (k === 'custom') return;
+                  const now = new Date();
+                  const from = new Date(now.getTime() - (k === '1h' ? 60*60*1000 : k === '24h' ? 24*60*60*1000 : 7*24*60*60*1000));
+                  const f = toDateTimeLocal(from);
+                  const t = toDateTimeLocal(now);
+                  setDateFrom(f);
+                  setDateTo(t);
+                  loadEvents(query, assigneeFilter === 'me' ? userEmail : null, f, t).catch(() => {});
+                }}
+                style={{
+                  borderRadius: 999,
+                  padding: '6px 12px',
+                  border: activeDateQuick === k ? '1px solid #60a5fa' : '1px solid #334155',
+                  color: activeDateQuick === k ? '#60a5fa' : '#cbd5e1',
+                  background: '#020617'
+                }}
+              >
+                {lbl}
+              </button>
+            ))}
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
