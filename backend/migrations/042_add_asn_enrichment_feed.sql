@@ -1,7 +1,7 @@
 INSERT INTO integration_feeds (key, integration_id, name, source_url, schedule_cron, trust_level, active)
 VALUES (
   'asn_enrichment',
-  'ASN:geoip-oxl',
+  NULL,
   'ASN Enrichment',
   'https://geoip.oxl.app/file/asn_full.json.zip',
   '0 0 * * *',
