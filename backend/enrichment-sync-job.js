@@ -224,7 +224,8 @@ async function buildAndSwap() {
 
   const client = await pool.connect();
   const startedAt = Date.now();
-  const nextTable = 'asn_lookup_next';
+  const runId = Date.now();
+  const nextTable = `asn_lookup_next_${runId}`;
   let parsed = 0;
   let accepted = 0;
   let rejected = 0;
@@ -291,7 +292,7 @@ async function buildAndSwap() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_${nextTable}_asn ON ${nextTable} (asn)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_${nextTable}_country ON ${nextTable} (country)`);
 
-    const backupTable = `asn_lookup_prev_${Date.now()}`;
+    const backupTable = `asn_lookup_prev_${runId}`;
     await client.query('BEGIN');
     await client.query('LOCK TABLE asn_lookup IN ACCESS EXCLUSIVE MODE');
     await client.query(`ALTER TABLE asn_lookup RENAME TO ${backupTable}`);
