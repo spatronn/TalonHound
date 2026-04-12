@@ -757,6 +757,12 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                ) AS matched_syslog_event,
                m.detection_type,
                m.match_source,
+               m.verdict,
+               m.reviewed_at,
+               m.reviewed_by,
+               m.note,
+               m.assigned_to,
+               m.assigned_at,
                COALESCE(
                  m.detection_type,
                  CASE
@@ -812,6 +818,12 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
                ) AS matched_syslog_event,
                m.detection_type,
                m.match_source,
+               m.verdict,
+               m.reviewed_at,
+               m.reviewed_by,
+               m.note,
+               m.assigned_to,
+               m.assigned_at,
                COALESCE(
                  m.detection_type,
                  CASE
