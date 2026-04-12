@@ -912,11 +912,11 @@ function IOCMatchEventsPage() {
 
   const verdictMeta = (verdict, assignedTo) => {
     const v = String(verdict || '').toLowerCase();
-    if (v === 'fp') return { label: 'FP', color: '#ef4444' };
-    if (v === 'tp') return { label: 'TP', color: '#22c55e' };
-    if (v === 'suspicious') return { label: 'Suspicious', color: '#f59e0b' };
-    if (v === 'in_progress') return { label: `In Progress${assignedTo ? ` (${assignedTo})` : ''}`, color: '#f59e0b' };
-    return { label: 'Unreviewed', color: '#94a3b8' };
+    if (v === 'fp') return { label: 'FP', color: '#ef4444', assignedTo: null };
+    if (v === 'tp') return { label: 'TP', color: '#22c55e', assignedTo: null };
+    if (v === 'suspicious') return { label: 'Suspicious', color: '#f59e0b', assignedTo: null };
+    if (v === 'in_progress') return { label: 'In Progress', color: '#f59e0b', assignedTo: assignedTo || null };
+    return { label: 'Unreviewed', color: '#94a3b8', assignedTo: null };
   };
 
   const loadEvents = useCallback(async (q = '') => {
@@ -1028,18 +1028,25 @@ function IOCMatchEventsPage() {
                       </span>
                     </td>
                     <td>
-                      <span style={{
-                        display: 'inline-block',
-                        borderRadius: 999,
-                        padding: '3px 10px',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        border: `1px solid ${vm.color}`,
-                        color: vm.color,
-                        background: '#020617'
-                      }}>
-                        {vm.label}
-                      </span>
+                      <div title={vm.assignedTo ? `Assigned to ${vm.assignedTo}` : undefined}>
+                        <span style={{
+                          display: 'inline-block',
+                          borderRadius: 999,
+                          padding: '3px 10px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          border: `1px solid ${vm.color}`,
+                          color: vm.color,
+                          background: '#020617'
+                        }}>
+                          {vm.label}
+                        </span>
+                        {vm.assignedTo ? (
+                          <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {vm.assignedTo}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {evt.source_count > 1
