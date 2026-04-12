@@ -1,10 +1,17 @@
 import './lib/ensure-db-password.js';
 import fs from 'fs';
+import https from 'https';
+import { pipeline } from 'stream/promises';
+import { createWriteStream } from 'fs';
+import { tmpdir } from 'os';
+import { join as pathJoin } from 'path';
+import yauzl from 'yauzl';
 import pg from 'pg';
 
 const { Pool } = pg;
 
 const SOURCE_FILE = '/tmp/asn_full.json';
+const ENRICHMENT_SOURCE_URL = String(process.env.ENRICHMENT_SOURCE_URL || 'https://geoip.oxl.app/file/asn_full.json.zip').trim();
 const LOOP_INTERVAL_MS = Math.max(Number(process.env.ENRICHMENT_SYNC_INTERVAL_MS || 86400000), 60000);
 const INSERT_BATCH_SIZE = Math.max(Number(process.env.ENRICHMENT_SYNC_BATCH_SIZE || 5000), 500);
 const RUN_ONCE = String(process.env.ENRICHMENT_SYNC_ONCE || '0') === '1';
@@ -202,6 +209,67 @@ async function* streamTopLevelAsnEntries(filePath) {
   }
 }
 
+
+function downloadToFile(url, outPath, redirects = 3) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, (res) => {
+      if ([301, 302, 307, 308].includes(res.statusCode || 0) && res.headers.location && redirects > 0) {
+        res.resume();
+        return resolve(downloadToFile(res.headers.location, outPath, redirects - 1));
+      }
+      if ((res.statusCode || 0) < 200 || (res.statusCode || 0) >= 300) {
+        res.resume();
+        return reject(new Error(`download failed status=${res.statusCode}`));
+      }
+      pipeline(res, createWriteStream(outPath)).then(resolve).catch(reject);
+      return null;
+    });
+    req.on('error', reject);
+  });
+}
+
+async function extractJsonFromZip(zipPath, jsonOutPath) {
+  await new Promise((resolve, reject) => {
+    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
+      if (err || !zipfile) return reject(err || new Error('failed to open zip'));
+
+      let found = false;
+      zipfile.readEntry();
+      zipfile.on('entry', (entry) => {
+        const name = String(entry.fileName || '').toLowerCase();
+        if (!name.endsWith('.json')) {
+          zipfile.readEntry();
+          return;
+        }
+        found = true;
+        zipfile.openReadStream(entry, (streamErr, readStream) => {
+          if (streamErr || !readStream) return reject(streamErr || new Error('failed to read zip entry'));
+          pipeline(readStream, createWriteStream(jsonOutPath))
+            .then(() => {
+              zipfile.close();
+              resolve();
+            })
+            .catch(reject);
+        });
+      });
+      zipfile.once('end', () => {
+        if (!found) reject(new Error('json entry not found in zip'));
+      });
+      zipfile.once('error', reject);
+      return null;
+    });
+  });
+}
+
+async function refreshSourceJson() {
+  const zipPath = pathJoin(tmpdir(), `asn_full_${Date.now()}.zip`);
+  console.log(`[enrichment-sync-job] download started url=${ENRICHMENT_SOURCE_URL}`);
+  await downloadToFile(ENRICHMENT_SOURCE_URL, zipPath);
+  await extractJsonFromZip(zipPath, SOURCE_FILE);
+  await fs.promises.unlink(zipPath).catch(() => {});
+  console.log(`[enrichment-sync-job] download+extract complete target=${SOURCE_FILE}`);
+}
+
 async function insertBatch(client, tableName, rows) {
   if (!rows.length) return;
   const starts = rows.map((r) => r.start_ip_int);
@@ -317,6 +385,7 @@ async function main() {
 
   while (true) {
     try {
+      await refreshSourceJson();
       await buildAndSwap();
     } catch (err) {
       console.error('[enrichment-sync-job] failed', err?.message || err);

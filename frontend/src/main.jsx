@@ -1769,7 +1769,7 @@ function SystemStatusPage() {
   );
 }
 
-function IntegrationsPage() {
+function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true } = {}) {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
@@ -1862,7 +1862,8 @@ function IntegrationsPage() {
     { cron: '*/5 * * * *', label: 'Every 5 minutes' },
     { cron: '*/15 * * * *', label: 'Every 15 minutes' },
     { cron: '*/30 * * * *', label: 'Every 30 minutes' },
-    { cron: '0 * * * *', label: 'Every hour' }
+    { cron: '0 * * * *', label: 'Every hour' },
+    { cron: '0 0 * * *', label: 'Every 24 hours' }
   ];
 
   const humanSchedule = (cron) => {
@@ -1894,13 +1895,17 @@ function IntegrationsPage() {
     setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
   }
 
+  const visibleIntegrations = Array.isArray(onlyKeys) && onlyKeys.length
+    ? integrations.filter((i) => onlyKeys.includes(i.key))
+    : integrations;
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Feeds</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 10 }}>{title}</h2>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
+            {showRunAll ? <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button> : null}
             <button onClick={() => load().catch(() => {})}>Refresh</button>
           </div>
         </div>
@@ -1937,7 +1942,7 @@ function IntegrationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {integrations.map((i) => (
+                {visibleIntegrations.map((i) => (
                   <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.name}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.integration_id || '-'}</td>
@@ -1980,14 +1985,7 @@ function IntegrationsPage() {
 
 
 function IntegrationsEnrichmentPage() {
-  return (
-    <AppShell>
-      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
-        <h2 style={{ marginTop: 0, marginBottom: 10 }}>Enrichment</h2>
-        <div style={{ color: '#94a3b8' }}>This page is intentionally left blank for now.</div>
-      </section>
-    </AppShell>
-  );
+  return <IntegrationsPage title="Enrichment" onlyKeys={["asn_enrichment"]} showRunAll={false} />;
 }
 
 function IntegrationsQueueStatusPage() {
