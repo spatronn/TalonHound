@@ -3667,54 +3667,62 @@ function IOCDetailsPage() {
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
               <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Recent IOC Match Events (Top 20)</div>
-              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1280, fontSize: 13 }}>
+              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1380, fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th style={{ width: 90 }}>ID</th>
-                    <th style={{ width: 170 }}>Time</th>
-                    <th style={{ width: 130 }}>Detection</th>
-                    <th style={{ width: 210 }}>IOC Source</th>
-                    <th style={{ width: 110 }}>Confidence</th>
-                    <th style={{ width: 90 }}>Hits</th>
+                    <th style={{ width: 80 }}>ID</th>
+                    <th style={{ width: 170 }}>Detected At</th>
+                    <th style={{ width: 220 }}>Matched IOC</th>
+                    <th style={{ width: 140 }}>Detection</th>
+                    <th style={{ width: 140 }}>Verdict</th>
+                    <th style={{ width: 150 }}>Assignee</th>
+                    <th style={{ width: 180 }}>Source</th>
+                    <th style={{ width: 120 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.matches.length ? data.matches.map((m) => {
+                    const verdict = String(m.verdict || '').toLowerCase();
+                    const vm = verdict === 'fp'
+                      ? { label: 'FP', color: '#ef4444' }
+                      : verdict === 'tp'
+                        ? { label: 'TP', color: '#22c55e' }
+                        : verdict === 'suspicious'
+                          ? { label: 'Suspicious', color: '#f59e0b' }
+                          : verdict === 'in_progress'
+                            ? { label: 'In Progress', color: '#f59e0b' }
+                            : { label: 'Unreviewed', color: '#94a3b8' };
                     return (
                       <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>
-                        <td>
-                          {m.id != null ? (
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/analytics/ioc-match-events/${m.id}`)}
-                              style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                              title="Open IOC Match Event Details"
-                            >
-                              {m.id}
-                            </button>
-                          ) : '-'}
-                        </td>
+                        <td>{m.id ?? '-'}</td>
                         <td>{formatUserDateTime(m.event_time || m.created_at)}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matched_ioc || '-'}</td>
                         <td>
                           <span style={{
-                            display: 'inline-block',
-                            borderRadius: 999,
-                            padding: '3px 10px',
-                            fontSize: 12,
-                            fontWeight: 700,
+                            display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
                             border: `1px solid ${m.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
-                            color: m.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
-                            background: '#020617'
+                            color: m.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e', background: '#020617'
                           }}>
                             {m.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
                           </span>
                         </td>
-                        <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{m.source_name || '-'}</td>
-                        <td>{m.confidence || '-'}</td>
-                        <td>{m.hit_count ?? 1}</td>
+                        <td>
+                          <span style={{
+                            display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                            border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
+                          }}>{vm.label}</span>
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assigned_to || 'Unassigned'}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.source_name || '-'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" onClick={() => navigate(`/analytics/ioc-match-events/${m.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                            <button type="button" onClick={() => navigate(`/analytics/ioc-match-events/${m.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                          </div>
+                        </td>
                       </tr>
                     );
-                  }) : <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match event for this IOC yet.</td></tr>}
+                  }) : <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match event for this IOC yet.</td></tr>}
                 </tbody>
               </table>
             </div>
