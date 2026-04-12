@@ -908,8 +908,8 @@ function IOCMatchEventsPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [savingReview, setSavingReview] = useState(false);
   const [userLookup, setUserLookup] = useState({});
-  const [detectionFilter, setDetectionFilter] = useState('all');
-  const [verdictFilter, setVerdictFilter] = useState('all');
+  const [detectionFilter, setDetectionFilter] = useState([]);
+  const [verdictFilter, setVerdictFilter] = useState([]);
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [activeQuickFilter, setActiveQuickFilter] = useState('');
@@ -960,7 +960,7 @@ function IOCMatchEventsPage() {
     return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
-  const loadEvents = useCallback(async (q = '', assignedTo = null, fromVal = '', toVal = '') => {
+  const loadEvents = useCallback(async (q = '', assignedTo = null, fromVal = '', toVal = '', verdictVals = [], detectionVals = []) => {
     setLoading(true);
     try {
       const params = { limit: 120, q: q || undefined };
@@ -969,6 +969,8 @@ function IOCMatchEventsPage() {
       const toIso = toIsoOrNull(toVal);
       if (fromIso) params.from = fromIso;
       if (toIso) params.to = toIso;
+      if (Array.isArray(verdictVals) && verdictVals.length) params.verdict = verdictVals.join(',');
+      if (Array.isArray(detectionVals) && detectionVals.length) params.detection = detectionVals.join(',');
       const { data } = await api.get('/ioc/match-events', { params });
       setRows(data?.items || []);
     } catch {
@@ -1000,8 +1002,8 @@ function IOCMatchEventsPage() {
   }, [userLookup]);
 
   const resetFilters = useCallback(() => {
-    setDetectionFilter('all');
-    setVerdictFilter('all');
+    setDetectionFilter([]);
+    setVerdictFilter([]);
     setAssigneeFilter('all');
     setSourceFilter('all');
     setActiveQuickFilter('');
@@ -1047,19 +1049,21 @@ function IOCMatchEventsPage() {
     }
   }, [selectedEvent, reviewVerdict, reviewNote, closeReview]);
 
+  const toggleMulti = useCallback((arr, val) => (arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val]), []);
+
   const applyQuickFilter = useCallback((key) => {
     setActiveQuickFilter((prev) => (prev === key ? '' : key));
     if (activeQuickFilter === key) {
-      setDetectionFilter('all');
-      setVerdictFilter('all');
+      setDetectionFilter([]);
+      setVerdictFilter([]);
       setAssigneeFilter('all');
       return;
     }
-    if (key === 'unreviewed') setVerdictFilter('unreviewed');
-    if (key === 'in_progress') setVerdictFilter('in_progress');
-    if (key === 'fp') setVerdictFilter('fp');
-    if (key === 'realtime') setDetectionFilter('realtime');
-    if (key === 'retroactive') setDetectionFilter('retroactive');
+    if (key === 'unreviewed') setVerdictFilter(['unreviewed']);
+    if (key === 'in_progress') setVerdictFilter(['in_progress']);
+    if (key === 'fp') setVerdictFilter(['fp']);
+    if (key === 'realtime') setDetectionFilter(['realtime']);
+    if (key === 'retroactive') setDetectionFilter(['retroactive']);
     if (key === 'assigned_me') setAssigneeFilter('me');
   }, [activeQuickFilter]);
 
@@ -1095,9 +1099,11 @@ function IOCMatchEventsPage() {
       const assignee = resolveAssignee(assigneeRaw);
       const source = String((evt.source_names && evt.source_names[0]) || evt.source_name || '').trim();
 
-      if (detectionFilter !== 'all' && detection !== detectionFilter) return false;
-      if (verdictFilter === 'unreviewed' && verdict) return false;
-      if (verdictFilter !== 'all' && verdictFilter !== 'unreviewed' && verdict !== verdictFilter) return false;
+      if (Array.isArray(detectionFilter) && detectionFilter.length && !detectionFilter.includes(detection)) return false;
+      if (Array.isArray(verdictFilter) && verdictFilter.length) {
+        const verdictNorm = verdict || 'unreviewed';
+        if (!verdictFilter.includes(verdictNorm)) return false;
+      }
 
       if (assigneeFilter === 'me') {
         if (!assigneeRaw || assigneeRaw.toLowerCase() !== String(userEmail || '').toLowerCase()) return false;
@@ -1153,14 +1159,15 @@ function IOCMatchEventsPage() {
         setDateFrom('');
         setDateTo('');
         setActiveDateQuick('');
+        loadEvents(query, assigneeFilter === 'me' ? userEmail : null, '', '', verdictFilter, detectionFilter).catch(() => {});
       }
     });
   }
-  if (detectionFilter !== 'all') activeFilters.push({ key: 'detection', label: `Detection: ${detectionFilter === 'realtime' ? 'Real-time' : 'Retroactive'}`, onClear: () => setDetectionFilter('all') });
-  if (verdictFilter !== 'all') activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter === 'unreviewed' ? 'Unreviewed' : verdictFilter.toUpperCase()}`, onClear: () => setVerdictFilter('all') });
+  if (detectionFilter.length) activeFilters.push({ key: 'detection', label: `Detection: ${detectionFilter.map((d) => d === 'realtime' ? 'Real-time' : 'Retroactive').join(', ')}`, onClear: () => setDetectionFilter([]) });
+  if (verdictFilter.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter.map((v) => v === 'unreviewed' ? 'Unreviewed' : v === 'in_progress' ? 'In Progress' : v.toUpperCase()).join(', ')}`, onClear: () => setVerdictFilter([]) });
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'me' ? 'Me' : assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
   if (sourceFilter !== 'all') activeFilters.push({ key: 'source', label: `Source: ${sourceFilter}`, onClear: () => setSourceFilter('all') });
-  if (activeQuickFilter) activeFilters.push({ key: 'quick', label: quickFilterLabels[activeQuickFilter] || `Quick: ${activeQuickFilter}`, onClear: () => { setActiveQuickFilter(''); setDetectionFilter('all'); setVerdictFilter('all'); setAssigneeFilter('all'); } });
+  if (activeQuickFilter) activeFilters.push({ key: 'quick', label: quickFilterLabels[activeQuickFilter] || `Quick: ${activeQuickFilter}`, onClear: () => { setActiveQuickFilter(''); setDetectionFilter([]); setVerdictFilter([]); setAssigneeFilter('all'); } });
 
   const highlight = (text) => {
     const raw = String(text || '');
@@ -1199,11 +1206,11 @@ function IOCMatchEventsPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo).catch(() => {}); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {}); }}
               placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
-            <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo).catch(() => {})}>Search</button>
+            <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {})}>Search</button>
           </div>
 
           <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1231,7 +1238,7 @@ function IOCMatchEventsPage() {
                   const t = toDateTimeLocal(now);
                   setDateFrom(f);
                   setDateTo(t);
-                  loadEvents(query, assigneeFilter === 'me' ? userEmail : null, f, t).catch(() => {});
+                  loadEvents(query, assigneeFilter === 'me' ? userEmail : null, f, t, verdictFilter, detectionFilter).catch(() => {});
                 }}
                 style={{
                   borderRadius: 999,
@@ -1273,29 +1280,59 @@ function IOCMatchEventsPage() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-            <select value={detectionFilter} onChange={(e) => setDetectionFilter(e.target.value)}>
-              <option value="all">Detection: All</option>
-              <option value="realtime">Detection: Real-time</option>
-              <option value="retroactive">Detection: Retroactive</option>
-            </select>
-            <select value={verdictFilter} onChange={(e) => setVerdictFilter(e.target.value)}>
-              <option value="all">Verdict: All</option>
-              <option value="unreviewed">Verdict: Unreviewed</option>
-              <option value="in_progress">Verdict: In Progress</option>
-              <option value="fp">Verdict: FP</option>
-              <option value="tp">Verdict: TP</option>
-            </select>
-            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
-              <option value="all">Assignee: All</option>
-              <option value="me">Assignee: Me</option>
-              <option value="unassigned">Assignee: Unassigned</option>
-              {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-              <option value="all">Source: All</option>
-              {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 10 }}>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 10, background: '#0b1220' }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Verdict</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {[
+                  ['unreviewed', 'Unreviewed'],
+                  ['in_progress', 'In Progress'],
+                  ['fp', 'False Positive'],
+                  ['tp', 'True Positive']
+                ].map(([v, lbl]) => (
+                  <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: verdictFilter.includes(v) ? '#dbeafe' : '#cbd5e1' }}>
+                    <input type="checkbox" checked={verdictFilter.includes(v)} onChange={() => setVerdictFilter((prev) => toggleMulti(prev, v))} />
+                    <span>{lbl}</span>
+                  </label>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                <button onClick={() => setVerdictFilter(['unreviewed', 'in_progress', 'fp', 'tp'])}>Select All</button>
+                <button onClick={() => setVerdictFilter([])}>Clear</button>
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 10, background: '#0b1220' }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Detection</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {[
+                  ['realtime', 'Real-time'],
+                  ['retroactive', 'Retroactive']
+                ].map(([v, lbl]) => (
+                  <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: detectionFilter.includes(v) ? '#dbeafe' : '#cbd5e1' }}>
+                    <input type="checkbox" checked={detectionFilter.includes(v)} onChange={() => setDetectionFilter((prev) => toggleMulti(prev, v))} />
+                    <span>{lbl}</span>
+                  </label>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                <button onClick={() => setDetectionFilter(['realtime', 'retroactive'])}>Select All</button>
+                <button onClick={() => setDetectionFilter([])}>Clear</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+                <option value="all">Assignee: All</option>
+                <option value="me">Assignee: Me</option>
+                <option value="unassigned">Assignee: Unassigned</option>
+                {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+                <option value="all">Source: All</option>
+                {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 

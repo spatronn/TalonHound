@@ -859,6 +859,8 @@ app.get('/api/ioc/match-events', async (req, res) => {
     const qStr = String(req.query?.q || '').trim();
     const fromStr = String(req.query?.from || '').trim();
     const toStr = String(req.query?.to || '').trim();
+    const verdictStr = String(req.query?.verdict || '').trim();
+    const detectionStr = String(req.query?.detection || '').trim();
 
     const where = [];
     const params = [];
@@ -877,6 +879,41 @@ app.get('/api/ioc/match-events', async (req, res) => {
       )`);
     }
 
+
+
+    if (verdictStr) {
+      const verdictVals = verdictStr
+        .split(',')
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean)
+        .filter((v) => ['unreviewed', 'in_progress', 'fp', 'tp'].includes(v));
+      const parts = [];
+      for (const v of verdictVals) {
+        if (v === 'unreviewed') {
+          parts.push("(m.verdict IS NULL OR m.verdict = '')");
+        } else {
+          params.push(v);
+          parts.push(`m.verdict = $${params.length}`);
+        }
+      }
+      if (parts.length) where.push(`(${parts.join(' OR ')})`);
+    }
+
+    if (detectionStr) {
+      const detVals = detectionStr
+        .split(',')
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean)
+        .filter((v) => ['realtime', 'retroactive'].includes(v));
+      if (detVals.length) {
+        const idxs = [];
+        for (const v of detVals) {
+          params.push(v);
+          idxs.push(`$${params.length}`);
+        }
+        where.push(`COALESCE(m.detection_type, CASE WHEN COALESCE(NULLIF(m.match_context->>'processing_path',''),'realtime')='retro' OR COALESCE((m.match_context->>'retroactive')::boolean, false) THEN 'retroactive' ELSE 'realtime' END) IN (${idxs.join(',')})`);
+      }
+    }
 
     if (fromStr) {
       const fromDate = new Date(fromStr);
