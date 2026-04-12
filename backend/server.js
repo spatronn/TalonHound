@@ -1067,18 +1067,18 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
 
     const q = await pool.query(
       `UPDATE ioc_match_events
-       SET verdict = $2,
-           reviewed_at = CASE WHEN $2 IS NULL THEN NULL ELSE NOW() END,
-           reviewed_by = CASE WHEN $2 IS NULL THEN NULL ELSE $3 END,
+       SET verdict = $2::text,
+           reviewed_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END,
+           reviewed_by = CASE WHEN $2::text IS NULL THEN NULL ELSE $3::text END,
            note = $4,
            assigned_to = CASE
-             WHEN $2 = 'in_progress' THEN $5
-             WHEN $2 IS NULL THEN NULL
+             WHEN $2::text = 'in_progress' THEN $5::text
+             WHEN $2::text IS NULL THEN NULL
              ELSE assigned_to
            END,
            assigned_at = CASE
-             WHEN $2 = 'in_progress' THEN NOW()
-             WHEN $2 IS NULL THEN NULL
+             WHEN $2::text = 'in_progress' THEN NOW()
+             WHEN $2::text IS NULL THEN NULL
              ELSE assigned_at
            END
        WHERE id = $1
