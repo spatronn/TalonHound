@@ -198,7 +198,39 @@ docker compose up -d --build
   docker compose exec -T db psql -U demo -d demo -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
   ```
 
-### 10) `demo-frontend`
+
+### 10) `demo-enrichment-sync-job`
+**Purpose**
+- Daily ASN enrichment sync worker.
+- Downloads `asn_full.json.zip` from `https://geoip.oxl.app/file/asn_full.json.zip`, extracts JSON, and refreshes ASN lookup data.
+
+**What it updates**
+- `asn_lookup` (via temp table + atomic swap)
+
+**Behavior**
+- Runs every 24 hours (`ENRICHMENT_SYNC_INTERVAL_MS=86400000`).
+- Uses streaming parse for large JSON and batch insert.
+- Safety: writes to temp table, builds indexes, then swaps atomically.
+
+**Key env vars**
+- `ENRICHMENT_SOURCE_URL` (default `https://geoip.oxl.app/file/asn_full.json.zip`)
+- `ENRICHMENT_SYNC_INTERVAL_MS` (default `86400000`)
+- `ENRICHMENT_SYNC_BATCH_SIZE` (default `5000`)
+- `ENRICHMENT_SYNC_ONCE` (default `0`, set `1` for one-shot run)
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 enrichment-sync-job
+  ```
+- Quick status check:
+  ```bash
+  docker compose exec -T db psql -U demo -d demo -c "SELECT count(*) AS asn_rows FROM asn_lookup;"
+  ```
+
+---
+
+### 11) `demo-frontend`
 **Purpose**
 - Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
 
@@ -210,7 +242,7 @@ docker compose up -d --build
   - Last 10 IOC Match Events
 - Incident (placeholder for now)
 
-### 11) `demo-proxy`
+### 12) `demo-proxy`
 **Purpose**
 - TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
 
@@ -258,6 +290,8 @@ flowchart LR
     MW -->|batch aggregate + daily snapshot| DB
     IMC -->|aggregate observable hits| CH
     IMC -->|upsert snapshot + update ioc_items.match_count| DB
+    ESJ -->|download ASN source| EXT
+    ESJ -->|refresh asn_lookup| DB
     BE -->|analytics/auth queries| DB
 ```
 
@@ -293,6 +327,7 @@ docker compose logs --tail=100 signal-engine
 docker compose logs --tail=100 ioc-correlation-engine
 docker compose logs --tail=100 ioc-match-count-worker
 docker compose logs --tail=100 dashboard-map-worker
+docker compose logs --tail=100 enrichment-sync-job
 
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \
   -c "SELECT count(*) AS raw_count FROM signal_events;" \
