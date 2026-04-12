@@ -317,7 +317,7 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isIntegrationsActive)}>5. Integrations</div>
-            <Link to="/integrations" style={subMenuStyle(isActive('/integrations'))}>Overview</Link>
+            <Link to="/integrations" style={subMenuStyle(isActive('/integrations'))}>Threat Intelligence Integration</Link>
             <Link to="/integrations/queue" style={subMenuStyle(isActive('/integrations/queue'))}>Job Queue Status</Link>
             <Link to="/integrations/runs" style={subMenuStyle(isActive('/integrations/runs'))}>Recent Runs</Link>
           </div>
@@ -1897,7 +1897,7 @@ function IntegrationsPage() {
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Integrations Overview</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Threat Intelligence Integration</h2>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
