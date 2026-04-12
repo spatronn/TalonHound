@@ -918,6 +918,8 @@ function IOCMatchEventsPage() {
   const [activeDateQuick, setActiveDateQuick] = useState('24h');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef(null);
   const navigate = useNavigate();
   const { userEmail } = useSession();
 
@@ -1075,6 +1077,15 @@ function IOCMatchEventsPage() {
     loadEvents('', null, def.from, def.to).catch(() => {});
     loadUsers().catch(() => {});
   }, [loadEvents, loadUsers]);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      if (!filtersRef.current) return;
+      if (!filtersRef.current.contains(e.target)) setFiltersOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
 
   const sourceOptions = useMemo(() => {
     const set = new Set();
@@ -1280,59 +1291,65 @@ function IOCMatchEventsPage() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 10 }}>
-            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 10, background: '#0b1220' }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Verdict</div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {[
-                  ['unreviewed', 'Unreviewed'],
-                  ['in_progress', 'In Progress'],
-                  ['fp', 'False Positive'],
-                  ['tp', 'True Positive']
-                ].map(([v, lbl]) => (
-                  <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: verdictFilter.includes(v) ? '#dbeafe' : '#cbd5e1' }}>
-                    <input type="checkbox" checked={verdictFilter.includes(v)} onChange={() => setVerdictFilter((prev) => toggleMulti(prev, v))} />
-                    <span>{lbl}</span>
-                  </label>
-                ))}
-              </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                <button onClick={() => setVerdictFilter(['unreviewed', 'in_progress', 'fp', 'tp'])}>Select All</button>
-                <button onClick={() => setVerdictFilter([])}>Clear</button>
-              </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 1fr', gap: 8, alignItems: 'start' }}>
+            <div ref={filtersRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setFiltersOpen((v) => !v)}
+                style={{ minWidth: 220 }}
+              >
+                {`Filters (${verdictFilter.length} Verdict, ${detectionFilter.length} Detection)`}
+              </button>
+              {filtersOpen ? (
+                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 20, width: 360, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: 10, boxShadow: '0 10px 30px rgba(2,6,23,0.45)' }}>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Verdict</div>
+                  <div style={{ display: 'grid', gap: 6, marginBottom: 8 }}>
+                    {[
+                      ['unreviewed', 'Unreviewed'],
+                      ['in_progress', 'In Progress'],
+                      ['fp', 'False Positive'],
+                      ['tp', 'True Positive']
+                    ].map(([v, lbl]) => (
+                      <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: verdictFilter.includes(v) ? '#dbeafe' : '#cbd5e1' }}>
+                        <input type="checkbox" checked={verdictFilter.includes(v)} onChange={() => setVerdictFilter((prev) => toggleMulti(prev, v))} />
+                        <span>{lbl}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
+                    <button onClick={() => setVerdictFilter(['unreviewed', 'in_progress', 'fp', 'tp'])}>Select All</button>
+                    <button onClick={() => setVerdictFilter([])}>Clear</button>
+                  </div>
+
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>Detection</div>
+                  <div style={{ display: 'grid', gap: 6, marginBottom: 8 }}>
+                    {[
+                      ['realtime', 'Real-time'],
+                      ['retroactive', 'Retroactive']
+                    ].map(([v, lbl]) => (
+                      <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: detectionFilter.includes(v) ? '#dbeafe' : '#cbd5e1' }}>
+                        <input type="checkbox" checked={detectionFilter.includes(v)} onChange={() => setDetectionFilter((prev) => toggleMulti(prev, v))} />
+                        <span>{lbl}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setDetectionFilter(['realtime', 'retroactive'])}>Select All</button>
+                    <button onClick={() => setDetectionFilter([])}>Clear</button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
-            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 10, background: '#0b1220' }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Detection</div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {[
-                  ['realtime', 'Real-time'],
-                  ['retroactive', 'Retroactive']
-                ].map(([v, lbl]) => (
-                  <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: detectionFilter.includes(v) ? '#dbeafe' : '#cbd5e1' }}>
-                    <input type="checkbox" checked={detectionFilter.includes(v)} onChange={() => setDetectionFilter((prev) => toggleMulti(prev, v))} />
-                    <span>{lbl}</span>
-                  </label>
-                ))}
-              </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                <button onClick={() => setDetectionFilter(['realtime', 'retroactive'])}>Select All</button>
-                <button onClick={() => setDetectionFilter([])}>Clear</button>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gap: 8 }}>
-              <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
-                <option value="all">Assignee: All</option>
-                <option value="me">Assignee: Me</option>
-                <option value="unassigned">Assignee: Unassigned</option>
-                {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
-              </select>
-              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-                <option value="all">Source: All</option>
-                {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+              <option value="all">Assignee: All</option>
+              <option value="me">Assignee: Me</option>
+              <option value="unassigned">Assignee: Unassigned</option>
+              {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+              <option value="all">Source: All</option>
+              {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
         </div>
 
