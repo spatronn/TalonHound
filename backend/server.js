@@ -1330,6 +1330,7 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
           WHEN f.schedule_cron = '*/15 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 15 = 0 THEN 15 ELSE 15 - (EXTRACT(MINUTE FROM NOW())::int % 15) END) * INTERVAL '1 minute'
           WHEN f.schedule_cron = '*/30 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 30 = 0 THEN 30 ELSE 30 - (EXTRACT(MINUTE FROM NOW())::int % 30) END) * INTERVAL '1 minute'
+          WHEN f.schedule_cron = '0 0 * * *' THEN date_trunc('day', NOW()) + INTERVAL '1 day'
           ELSE date_trunc('hour', NOW()) + INTERVAL '1 hour'
         END AS next_run_at,
         COALESCE(lr.finished_at, lq.finished_at) AS last_finished_at,
