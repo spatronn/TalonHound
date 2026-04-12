@@ -921,7 +921,6 @@ function IOCMatchEventsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dateError, setDateError] = useState('');
-  const [resetHover, setResetHover] = useState(false);
   const filtersRef = useRef(null);
   const navigate = useNavigate();
   const { userEmail } = useSession();
@@ -1160,8 +1159,6 @@ function IOCMatchEventsPage() {
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
   if (sourceFilter !== 'all') activeFilters.push({ key: 'source', label: `Source: ${sourceFilter}`, onClear: () => setSourceFilter('all') });
 
-  const hasActiveFilters = activeFilters.length > 0;
-
   const highlight = (text) => {
     const raw = String(text || '');
     if (!searchTerm || searchTerm.length < 2) return raw || '-';
@@ -1185,28 +1182,6 @@ function IOCMatchEventsPage() {
               <h2 style={{ margin: 0 }}>IOC Match Events</h2>
               <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Search and inspect IOC match events.</div>
             </div>
-            <button
-              onClick={resetFilters}
-              title="Clear all filters"
-              aria-label="Clear all filters"
-              disabled={!hasActiveFilters}
-              onMouseEnter={() => setResetHover(true)}
-              onMouseLeave={() => setResetHover(false)}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 8,
-                fontSize: 18,
-                lineHeight: 1,
-                padding: 0,
-                cursor: hasActiveFilters ? 'pointer' : 'not-allowed',
-                opacity: hasActiveFilters ? 1 : 0.45,
-                boxShadow: hasActiveFilters ? (resetHover ? '0 0 0 1px rgba(147,197,253,0.5) inset, 0 0 12px rgba(96,165,250,0.35)' : '0 0 0 1px rgba(147,197,253,0.25) inset') : 'none',
-                transition: 'opacity .15s ease, box-shadow .15s ease, transform .05s ease'
-              }}
-            >
-              ⟲
-            </button>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
