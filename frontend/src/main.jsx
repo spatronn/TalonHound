@@ -1174,14 +1174,13 @@ function IOCMatchEventsPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <input type="datetime-local" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setActiveDateQuick('custom'); }} />
-            <input type="datetime-local" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setActiveDateQuick('custom'); }} />
-            {[['1h', 'Last 1 hour'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days'], ['custom', 'Custom']].map(([k, lbl]) => (
+            <input type="datetime-local" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setActiveDateQuick(''); }} />
+            <input type="datetime-local" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setActiveDateQuick(''); }} />
+            {[['1h', 'Last 1 hour'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days']].map(([k, lbl]) => (
               <button
                 key={k}
                 onClick={() => {
                   setActiveDateQuick(k);
-                  if (k === 'custom') return;
                   const now = new Date();
                   const from = new Date(now.getTime() - (k === '1h' ? 60*60*1000 : k === '24h' ? 24*60*60*1000 : 7*24*60*60*1000));
                   const f = toDateTimeLocal(from);
@@ -1193,9 +1192,11 @@ function IOCMatchEventsPage() {
                 style={{
                   borderRadius: 999,
                   padding: '6px 12px',
-                  border: activeDateQuick === k ? '1px solid #60a5fa' : '1px solid #334155',
-                  color: activeDateQuick === k ? '#60a5fa' : '#cbd5e1',
-                  background: '#020617'
+                  border: activeDateQuick === k ? '1px solid #93c5fd' : '1px solid #334155',
+                  color: activeDateQuick === k ? '#dbeafe' : '#cbd5e1',
+                  background: activeDateQuick === k ? '#1e3a8a' : '#020617',
+                  boxShadow: activeDateQuick === k ? '0 0 0 1px rgba(147,197,253,0.35) inset' : 'none',
+                  fontWeight: activeDateQuick === k ? 700 : 500
                 }}
               >
                 {lbl}
