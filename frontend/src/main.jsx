@@ -908,6 +908,11 @@ function IOCMatchEventsPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [savingReview, setSavingReview] = useState(false);
   const [userLookup, setUserLookup] = useState({});
+  const [detectionFilter, setDetectionFilter] = useState('all');
+  const [verdictFilter, setVerdictFilter] = useState('all');
+  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [activeQuickFilter, setActiveQuickFilter] = useState('');
   const navigate = useNavigate();
   const { userEmail } = useSession();
 
@@ -920,10 +925,12 @@ function IOCMatchEventsPage() {
     return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
-  const loadEvents = useCallback(async (q = '') => {
+  const loadEvents = useCallback(async (q = '', assignedTo = null) => {
     setLoading(true);
     try {
-      const { data } = await api.get('/ioc/match-events', { params: { limit: 20, q: q || undefined } });
+      const params = { limit: 120, q: q || undefined };
+      if (assignedTo) params.assigned_to = assignedTo; // UI hint, backend may ignore
+      const { data } = await api.get('/ioc/match-events', { params });
       setRows(data?.items || []);
     } catch {
       setRows([]);
@@ -950,8 +957,18 @@ function IOCMatchEventsPage() {
   const resolveAssignee = useCallback((assignedTo) => {
     const raw = String(assignedTo || '').trim();
     if (!raw) return 'Unassigned';
-    return userLookup[raw.toLowerCase()] || '-';
+    return userLookup[raw.toLowerCase()] || raw;
   }, [userLookup]);
+
+  const resetFilters = useCallback(() => {
+    setDetectionFilter('all');
+    setVerdictFilter('all');
+    setAssigneeFilter('all');
+    setSourceFilter('all');
+    setActiveQuickFilter('');
+    setQuery('');
+    loadEvents('').catch(() => {});
+  }, [loadEvents]);
 
   const openReview = useCallback((evt) => {
     setSelectedEvent(evt || null);
@@ -987,29 +1004,173 @@ function IOCMatchEventsPage() {
     }
   }, [selectedEvent, reviewVerdict, reviewNote, closeReview]);
 
+  const applyQuickFilter = useCallback((key) => {
+    setActiveQuickFilter((prev) => (prev === key ? '' : key));
+    if (activeQuickFilter === key) {
+      setDetectionFilter('all');
+      setVerdictFilter('all');
+      setAssigneeFilter('all');
+      return;
+    }
+    if (key === 'unreviewed') setVerdictFilter('unreviewed');
+    if (key === 'in_progress') setVerdictFilter('in_progress');
+    if (key === 'fp') setVerdictFilter('fp');
+    if (key === 'realtime') setDetectionFilter('realtime');
+    if (key === 'retroactive') setDetectionFilter('retroactive');
+    if (key === 'assigned_me') setAssigneeFilter('me');
+  }, [activeQuickFilter]);
+
   useEffect(() => {
     loadEvents('').catch(() => {});
     loadUsers().catch(() => {});
   }, [loadEvents, loadUsers]);
 
+  const sourceOptions = useMemo(() => {
+    const set = new Set();
+    for (const r of rows) {
+      const s = String((r.source_names && r.source_names[0]) || r.source_name || '').trim();
+      if (s) set.add(s);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const assigneeOptions = useMemo(() => {
+    const users = Object.values(userLookup);
+    return Array.from(new Set(users)).sort((a, b) => a.localeCompare(b));
+  }, [userLookup]);
+
+  const searchTerm = String(query || '').trim().toLowerCase();
+  const filteredRows = useMemo(() => {
+    return (rows || []).filter((evt) => {
+      const detection = String(evt.detection_mode || '').toLowerCase();
+      const verdict = String(evt.verdict || '').toLowerCase();
+      const assigneeRaw = String(evt.assigned_to || '').trim();
+      const assignee = resolveAssignee(assigneeRaw);
+      const source = String((evt.source_names && evt.source_names[0]) || evt.source_name || '').trim();
+
+      if (detectionFilter !== 'all' && detection !== detectionFilter) return false;
+      if (verdictFilter === 'unreviewed' && verdict) return false;
+      if (verdictFilter !== 'all' && verdictFilter !== 'unreviewed' && verdict !== verdictFilter) return false;
+
+      if (assigneeFilter === 'me') {
+        if (!assigneeRaw || assigneeRaw.toLowerCase() !== String(userEmail || '').toLowerCase()) return false;
+      } else if (assigneeFilter === 'unassigned') {
+        if (assigneeRaw) return false;
+      } else if (assigneeFilter !== 'all') {
+        if (assignee.toLowerCase() !== assigneeFilter.toLowerCase()) return false;
+      }
+
+      if (sourceFilter !== 'all' && source.toLowerCase() !== sourceFilter.toLowerCase()) return false;
+
+      if (searchTerm) {
+        const hay = [
+          `#${evt.id}`,
+          String(evt.id || ''),
+          evt.matched_ioc,
+          source,
+          assignee,
+          evt.destination_ip,
+          evt.host_name
+        ].map((x) => String(x || '').toLowerCase()).join(' | ');
+        if (!hay.includes(searchTerm)) return false;
+      }
+
+      return true;
+    });
+  }, [rows, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, resolveAssignee, userEmail, searchTerm]);
+
+  const highlight = (text) => {
+    const raw = String(text || '');
+    if (!searchTerm || searchTerm.length < 2) return raw || '-';
+    const idx = raw.toLowerCase().indexOf(searchTerm);
+    if (idx === -1) return raw || '-';
+    return (
+      <>
+        {raw.slice(0, idx)}
+        <mark style={{ background: '#fef08a', color: '#111827', padding: '0 2px', borderRadius: 3 }}>{raw.slice(idx, idx + searchTerm.length)}</mark>
+        {raw.slice(idx + searchTerm.length)}
+      </>
+    );
+  };
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <div>
-            <h2 style={{ margin: 0 }}>IOC Match Events</h2>
-            <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Search and inspect IOC match events. Default list shows last 20 events.</div>
+        <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>IOC Match Events</h2>
+              <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Search and inspect IOC match events.</div>
+            </div>
+            <button
+              onClick={resetFilters}
+              title="Filtreleri temizle"
+              aria-label="Filtreleri temizle"
+              style={{ width: 34, height: 34, borderRadius: 8, fontSize: 18, lineHeight: 1, padding: 0 }}
+            >
+              ⟲
+            </button>
           </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query).catch(() => {}); }}
-              placeholder="Search by ID / IOC / source / host / IP"
-              style={{ minWidth: 320 }}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {}); }}
+              placeholder="ID, IP, domain, hash veya source ara... (örn: 47.104.248.7 veya #21371)"
+              style={{ minWidth: 560, flex: 1 }}
             />
-            <button onClick={() => loadEvents(query).catch(() => {})}>Search</button>
-            <button onClick={() => { setQuery(''); loadEvents('').catch(() => {}); }}>Reset</button>
+            <button onClick={() => loadEvents(query, assigneeFilter === 'me' ? userEmail : null).catch(() => {})}>Search</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[
+              ['unreviewed', 'Unreviewed'],
+              ['in_progress', 'In Progress'],
+              ['fp', 'False Positive'],
+              ['realtime', 'Real-time'],
+              ['retroactive', 'Retroactive'],
+              ['assigned_me', 'Assigned to me']
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => applyQuickFilter(key)}
+                style={{
+                  borderRadius: 999,
+                  padding: '6px 12px',
+                  border: activeQuickFilter === key ? '1px solid #60a5fa' : '1px solid #334155',
+                  color: activeQuickFilter === key ? '#60a5fa' : '#cbd5e1',
+                  background: '#020617'
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+            <select value={detectionFilter} onChange={(e) => setDetectionFilter(e.target.value)}>
+              <option value="all">Detection: All</option>
+              <option value="realtime">Detection: Real-time</option>
+              <option value="retroactive">Detection: Retroactive</option>
+            </select>
+            <select value={verdictFilter} onChange={(e) => setVerdictFilter(e.target.value)}>
+              <option value="all">Verdict: All</option>
+              <option value="unreviewed">Verdict: Unreviewed</option>
+              <option value="in_progress">Verdict: In Progress</option>
+              <option value="fp">Verdict: FP</option>
+              <option value="tp">Verdict: TP</option>
+            </select>
+            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+              <option value="all">Assignee: All</option>
+              <option value="me">Assignee: Me</option>
+              <option value="unassigned">Assignee: Unassigned</option>
+              {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+              <option value="all">Source: All</option>
+              {sourceOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
         </div>
 
@@ -1030,67 +1191,42 @@ function IOCMatchEventsPage() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
-              ) : rows.length ? rows.map((evt) => {
+              ) : filteredRows.length ? filteredRows.map((evt) => {
                 const vm = verdictMeta(evt.verdict);
                 return (
                   <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                     <td>{evt.id}</td>
                     <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{highlight(evt.matched_ioc)}</td>
                     <td>
                       <span style={{
-                        display: 'inline-block',
-                        borderRadius: 999,
-                        padding: '3px 10px',
-                        fontSize: 12,
-                        fontWeight: 700,
+                        display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
                         border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
-                        color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
-                        background: '#020617'
+                        color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e', background: '#020617'
                       }}>
                         {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
                       </span>
                     </td>
                     <td>
                       <span style={{
-                        display: 'inline-block',
-                        borderRadius: 999,
-                        padding: '3px 10px',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        border: `1px solid ${vm.color}`,
-                        color: vm.color,
-                        background: '#020617'
+                        display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                        border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
                       }}>
                         {vm.label}
                       </span>
                     </td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {resolveAssignee(evt.assigned_to)}
+                      {highlight(resolveAssignee(evt.assigned_to))}
                     </td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {evt.source_count > 1
+                      {highlight(evt.source_count > 1
                         ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
-                        : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
+                        : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-'))}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)}
-                          title="View detail"
-                          aria-label="View detail"
-                          style={{ minWidth: 32, padding: '4px 8px' }}
-                        >
-                          🔍
-                        </button>
-                        <button
-                          onClick={() => openReview(evt)}
-                          title="Review verdict"
-                          aria-label="Review verdict"
-                          style={{ minWidth: 32, padding: '4px 8px' }}
-                        >
-                          ✏️
-                        </button>
+                        <button onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                        <button onClick={() => openReview(evt)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
                       </div>
                     </td>
                   </tr>
@@ -1104,22 +1240,8 @@ function IOCMatchEventsPage() {
       </section>
 
       {selectedEvent ? (
-        <div
-          onClick={closeReview}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(2, 6, 23, 0.7)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 50,
-            padding: 16
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(680px, 96vw)', background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 16 }}
-          >
+        <div onClick={closeReview} style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.7)', display: 'grid', placeItems: 'center', zIndex: 50, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(680px, 96vw)', background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Review IOC Match #{selectedEvent.id}</h3>
               <button onClick={closeReview}>Close</button>
@@ -1142,13 +1264,7 @@ function IOCMatchEventsPage() {
 
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Analyst Note</label>
-              <textarea
-                value={reviewNote}
-                onChange={(e) => setReviewNote(e.target.value)}
-                rows={5}
-                placeholder="Optional analyst note"
-                style={{ width: '100%' }}
-              />
+              <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={5} placeholder="Optional analyst note" style={{ width: '100%' }} />
             </div>
 
             <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12 }}>
@@ -1157,9 +1273,7 @@ function IOCMatchEventsPage() {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={closeReview} disabled={savingReview}>Cancel</button>
-              <button onClick={() => submitReview().catch(() => {})} disabled={savingReview}>
-                {savingReview ? 'Saving...' : 'Save Verdict'}
-              </button>
+              <button onClick={() => submitReview().catch(() => {})} disabled={savingReview}>{savingReview ? 'Saving...' : 'Save Verdict'}</button>
             </div>
           </div>
         </div>
