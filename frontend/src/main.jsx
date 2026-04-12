@@ -265,7 +265,7 @@ function AppShell({ children }) {
 
   const isActive = (path) => location.pathname === path;
   const isOpsActive = location.pathname.startsWith('/ioc');
-  const isIntegrationsActive = location.pathname.startsWith('/integrations');
+  const isIntegrationsActive = location.pathname.startsWith('/threat-intelligence');
 
   const menuStyle = (active) => ({
     display: 'block',
@@ -317,10 +317,10 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isIntegrationsActive)}>5. Threat Intelligence</div>
-            <Link to="/integrations/feeds" style={subMenuStyle(isActive('/integrations/feeds') || isActive('/integrations'))}>Feeds</Link>
-            <Link to="/integrations/enrichment" style={subMenuStyle(isActive('/integrations/enrichment'))}>Enrichment</Link>
-            <Link to="/integrations/queue" style={subMenuStyle(isActive('/integrations/queue'))}>Job Queue Status</Link>
-            <Link to="/integrations/runs" style={subMenuStyle(isActive('/integrations/runs'))}>Recent Runs</Link>
+            <Link to="/threat-intelligence/feeds" style={subMenuStyle(isActive('/threat-intelligence/feeds') || isActive('/threat-intelligence'))}>Feeds</Link>
+            <Link to="/threat-intelligence/enrichment" style={subMenuStyle(isActive('/threat-intelligence/enrichment'))}>Enrichment</Link>
+            <Link to="/threat-intelligence/queue" style={subMenuStyle(isActive('/threat-intelligence/queue'))}>Job Queue Status</Link>
+            <Link to="/threat-intelligence/runs" style={subMenuStyle(isActive('/threat-intelligence/runs'))}>Recent Runs</Link>
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -4105,11 +4105,11 @@ function App() {
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
-          <Route path="/integrations" element={<Navigate to="/integrations/feeds" replace />} />
-          <Route path="/integrations/feeds" element={<Protected><IntegrationsPage /></Protected>} />
-          <Route path="/integrations/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
-          <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
-          <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
+          <Route path="/threat-intelligence" element={<Navigate to="/threat-intelligence/feeds" replace />} />
+          <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/threat-intelligence/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
+          <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
+          <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />
