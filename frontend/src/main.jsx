@@ -1769,7 +1769,7 @@ function SystemStatusPage() {
   );
 }
 
-function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true } = {}) {
+function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, showRunAll = true } = {}) {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
   const [integrations, setIntegrations] = useState([]);
@@ -1895,9 +1895,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, showRunAll = true 
     setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
   }
 
-  const visibleIntegrations = Array.isArray(onlyKeys) && onlyKeys.length
-    ? integrations.filter((i) => onlyKeys.includes(i.key))
-    : integrations;
+  const visibleIntegrations = integrations.filter((i) => {
+    if (Array.isArray(onlyKeys) && onlyKeys.length) return onlyKeys.includes(i.key);
+    if (Array.isArray(hideKeys) && hideKeys.length) return !hideKeys.includes(i.key);
+    return true;
+  });
 
   return (
     <AppShell>
@@ -4092,7 +4094,7 @@ function App() {
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/threat-intelligence" element={<Navigate to="/threat-intelligence/feeds" replace />} />
-          <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage hideKeys={["asn_enrichment"]} /></Protected>} />
           <Route path="/threat-intelligence/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
