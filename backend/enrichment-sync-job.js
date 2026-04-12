@@ -283,9 +283,9 @@ async function buildAndSwap() {
       await insertBatch(client, nextTable, batch);
     }
 
-    await client.query(`CREATE INDEX idx_${nextTable}_start_end ON ${nextTable} (start_ip_int, end_ip_int)`);
-    await client.query(`CREATE INDEX idx_${nextTable}_asn ON ${nextTable} (asn)`);
-    await client.query(`CREATE INDEX idx_${nextTable}_country ON ${nextTable} (country)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_${nextTable}_start_end ON ${nextTable} (start_ip_int, end_ip_int)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_${nextTable}_asn ON ${nextTable} (asn)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_${nextTable}_country ON ${nextTable} (country)`);
 
     const backupTable = `asn_lookup_prev_${Date.now()}`;
     await client.query('BEGIN');
