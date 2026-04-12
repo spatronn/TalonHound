@@ -540,6 +540,7 @@ function DashboardPage() {
 
 
 function AnalyticsPage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [iocLoading, setIocLoading] = useState(false);
   const [sources, setSources] = useState([]);
@@ -664,47 +665,66 @@ function AnalyticsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                <th style={{ width: 90 }}>ID</th>
+                <th style={{ width: 80 }}>ID</th>
                 <th style={{ width: 170 }}>Detected At</th>
-                <th style={{ width: 320 }}>Matched IOC</th>
-                <th style={{ width: 150 }}>Detection</th>
-                <th style={{ width: 220 }}>Source</th>
+                <th style={{ width: 220 }}>Matched IOC</th>
+                <th style={{ width: 140 }}>Detection</th>
+                <th style={{ width: 140 }}>Verdict</th>
+                <th style={{ width: 140 }}>Assignee</th>
+                <th style={{ width: 180 }}>Source</th>
+                <th style={{ width: 120 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {iocLoading ? (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
-              ) : iocMatches.length ? iocMatches.map((evt) => (
-                <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
-                  <td>
-                    <Link to={`/analytics/ioc-match-events/${evt.id}`} style={{ color: '#93c5fd', textDecoration: 'underline' }}>
-                      {evt.id}
-                    </Link>
-                  </td>
-                  <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block',
-                      borderRadius: 999,
-                      padding: '3px 10px',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
-                      color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
-                      background: '#020617'
-                    }}>
-                      {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
-                    </span>
-                  </td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {evt.source_count > 1
-                      ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
-                      : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC matches...</td></tr>
+              ) : iocMatches.length ? iocMatches.map((evt) => {
+                const verdict = String(evt.verdict || '').toLowerCase();
+                const vm = verdict === 'fp'
+                  ? { label: 'FP', color: '#ef4444' }
+                  : verdict === 'tp'
+                    ? { label: 'TP', color: '#22c55e' }
+                    : verdict === 'suspicious'
+                      ? { label: 'Suspicious', color: '#f59e0b' }
+                      : verdict === 'in_progress'
+                        ? { label: 'In Progress', color: '#f59e0b' }
+                        : { label: 'Unreviewed', color: '#94a3b8' };
+                return (
+                  <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
+                    <td>{evt.id}</td>
+                    <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                        border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                        color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e', background: '#020617'
+                      }}>
+                        {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                        border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
+                      }}>{vm.label}</span>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.assigned_to || 'Unassigned'}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {evt.source_count > 1
+                        ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
+                        : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                        <button onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
               )}
             </tbody>
           </table>
