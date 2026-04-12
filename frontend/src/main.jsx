@@ -3354,7 +3354,7 @@ function IOCListPage() {
       )}
 
       {!listLoading && !listStatusText && rows.length === 0 && (
-        <div style={{ marginBottom: 10, padding: 10, background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 6 }}>
+        <div style={{ marginBottom: 10, padding: 10, background: '#0f172a', border: '1px solid #334155', borderRadius: 6, color: '#94a3b8' }}>
           No IOC records found.
         </div>
       )}
