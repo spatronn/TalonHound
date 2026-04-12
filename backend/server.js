@@ -905,6 +905,10 @@ app.get('/api/ioc/match-events', async (req, res) => {
           m.created_at,
           m.detection_type,
           m.match_source,
+          m.verdict,
+          m.reviewed_at,
+          m.reviewed_by,
+          m.note,
           COALESCE(
             NULLIF(CONCAT_WS(' | ',
               NULLIF(m.source, ''),
@@ -1031,6 +1035,51 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
   } catch (err) {
     console.error('[ioc-match-event-detail] failed', err);
     return res.status(500).json({ message: 'Failed to fetch IOC match event detail' });
+  }
+});
+
+
+app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
+  try {
+    const id = Number(req.params?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+
+    const rawVerdict = req.body?.verdict;
+    const rawNote = req.body?.note;
+    const verdict = rawVerdict == null || String(rawVerdict).trim() === ''
+      ? null
+      : String(rawVerdict).trim().toLowerCase();
+
+    if (verdict !== null && !['fp', 'tp', 'suspicious'].includes(verdict)) {
+      return res.status(400).json({ message: 'Invalid verdict. Use fp, tp, suspicious or null.' });
+    }
+
+    const note = rawNote == null || String(rawNote).trim() === ''
+      ? null
+      : String(rawNote).trim().slice(0, 4000);
+
+    const reviewedBy = String(req.user?.username || req.user?.email || '').trim() || null;
+
+    const q = await pool.query(
+      `UPDATE ioc_match_events
+       SET verdict = $2,
+           reviewed_at = CASE WHEN $2 IS NULL THEN NULL ELSE NOW() END,
+           reviewed_by = CASE WHEN $2 IS NULL THEN NULL ELSE $3 END,
+           note = $4
+       WHERE id = $1
+       RETURNING *`,
+      [id, verdict, reviewedBy, note]
+    );
+
+    if (!q.rowCount) {
+      return res.status(404).json({ message: 'IOC match event not found' });
+    }
+
+    return res.json({ item: q.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update verdict', detail: err.message });
   }
 });
 
@@ -2709,6 +2758,10 @@ app.get('/api/ioc/details', async (req, res) => {
           m.hit_count,
           m.detection_type,
           m.match_source,
+          m.verdict,
+          m.reviewed_at,
+          m.reviewed_by,
+          m.note,
           COALESCE(NULLIF(${signalRawExpr}, ''), '-') AS matched_syslog_event,
           COALESCE(
             m.detection_type,

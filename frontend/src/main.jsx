@@ -903,7 +903,20 @@ function IOCMatchEventsPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState([]);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [reviewVerdict, setReviewVerdict] = useState('');
+  const [reviewNote, setReviewNote] = useState('');
+  const [savingReview, setSavingReview] = useState(false);
   const navigate = useNavigate();
+  const { userEmail } = useSession();
+
+  const verdictMeta = (verdict) => {
+    const v = String(verdict || '').toLowerCase();
+    if (v === 'fp') return { label: 'FP', color: '#ef4444' };
+    if (v === 'tp') return { label: 'TP', color: '#22c55e' };
+    if (v === 'suspicious') return { label: 'Suspicious', color: '#f59e0b' };
+    return { label: 'Unreviewed', color: '#94a3b8' };
+  };
 
   const loadEvents = useCallback(async (q = '') => {
     setLoading(true);
@@ -916,6 +929,40 @@ function IOCMatchEventsPage() {
       setLoading(false);
     }
   }, []);
+
+  const openReview = useCallback((evt) => {
+    setSelectedEvent(evt || null);
+    setReviewVerdict(String(evt?.verdict || '').toLowerCase());
+    setReviewNote(String(evt?.note || ''));
+  }, []);
+
+  const closeReview = useCallback(() => {
+    setSelectedEvent(null);
+    setReviewVerdict('');
+    setReviewNote('');
+    setSavingReview(false);
+  }, []);
+
+  const submitReview = useCallback(async () => {
+    if (!selectedEvent?.id) return;
+    setSavingReview(true);
+    try {
+      const payload = {
+        verdict: reviewVerdict || null,
+        note: reviewNote.trim() || null
+      };
+      const { data } = await api.patch(`/ioc/match-events/${selectedEvent.id}/verdict`, payload);
+      const updated = data?.item || null;
+      if (updated) {
+        setRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+      }
+      closeReview();
+    } catch {
+      // keep modal open on failure
+    } finally {
+      setSavingReview(false);
+    }
+  }, [selectedEvent, reviewVerdict, reviewNote, closeReview]);
 
   useEffect(() => {
     loadEvents('').catch(() => {});
@@ -946,55 +993,134 @@ function IOCMatchEventsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                <th style={{ width: 90 }}>ID</th>
+                <th style={{ width: 80 }}>ID</th>
                 <th style={{ width: 170 }}>Detected At</th>
-                <th style={{ width: 320 }}>Matched IOC</th>
-                <th style={{ width: 150 }}>Detection</th>
-                <th style={{ width: 220 }}>Source</th>
+                <th style={{ width: 260 }}>Matched IOC</th>
+                <th style={{ width: 140 }}>Detection</th>
+                <th style={{ width: 140 }}>Verdict</th>
+                <th style={{ width: 210 }}>Source</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
-              ) : rows.length ? rows.map((evt) => (
-                <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
-                  <td>
-                    <button
-                      onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)}
-                      style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                    >
-                      {evt.id}
-                    </button>
-                  </td>
-                  <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
-                  <td>
-                    <span style={{
-                      display: 'inline-block',
-                      borderRadius: 999,
-                      padding: '3px 10px',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
-                      color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
-                      background: '#020617'
-                    }}>
-                      {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
-                    </span>
-                  </td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {evt.source_count > 1
-                      ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
-                      : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+              ) : rows.length ? rows.map((evt) => {
+                const vm = verdictMeta(evt.verdict);
+                return (
+                  <tr key={evt.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => openReview(evt)}>
+                    <td>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/analytics/ioc-match-events/${evt.id}`); }}
+                        style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                      >
+                        {evt.id}
+                      </button>
+                    </td>
+                    <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block',
+                        borderRadius: 999,
+                        padding: '3px 10px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        border: `1px solid ${evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                        color: evt.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e',
+                        background: '#020617'
+                      }}>
+                        {evt.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block',
+                        borderRadius: 999,
+                        padding: '3px 10px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        border: `1px solid ${vm.color}`,
+                        color: vm.color,
+                        background: '#020617'
+                      }}>
+                        {vm.label}
+                      </span>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {evt.source_count > 1
+                        ? `${(evt.source_names && evt.source_names[0]) || evt.source_name || '-'} +${evt.source_count - 1}`
+                        : ((evt.source_names && evt.source_names[0]) || evt.source_name || '-')}
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
+
+      {selectedEvent ? (
+        <div
+          onClick={closeReview}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.7)',
+            display: 'grid',
+            placeItems: 'center',
+            zIndex: 50,
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: 'min(680px, 96vw)', background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 16 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Review IOC Match #{selectedEvent.id}</h3>
+              <button onClick={closeReview}>Close</button>
+            </div>
+
+            <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 10 }}>
+              {selectedEvent.matched_ioc || '-'} • {formatUserDateTime(selectedEvent.created_at || selectedEvent.event_time)}
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Verdict</label>
+              <select value={reviewVerdict} onChange={(e) => setReviewVerdict(e.target.value)} style={{ minWidth: 220 }}>
+                <option value="">Unreviewed</option>
+                <option value="fp">FP (False Positive)</option>
+                <option value="tp">TP (True Positive)</option>
+                <option value="suspicious">Suspicious</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Analyst Note</label>
+              <textarea
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                rows={5}
+                placeholder="Optional analyst note"
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12 }}>
+              Reviewer: {userEmail || 'unknown'}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={closeReview} disabled={savingReview}>Cancel</button>
+              <button onClick={() => submitReview().catch(() => {})} disabled={savingReview}>
+                {savingReview ? 'Saving...' : 'Save Verdict'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }
