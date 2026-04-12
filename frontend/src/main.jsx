@@ -900,6 +900,8 @@ function AnalyticsStatisticsPage() {
 }
 
 function IOCMatchEventsPage() {
+  const ALL_VERDICTS = ['unreviewed', 'in_progress', 'fp', 'tp'];
+  const ALL_DETECTIONS = ['realtime', 'retroactive'];
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState([]);
@@ -908,8 +910,8 @@ function IOCMatchEventsPage() {
   const [reviewNote, setReviewNote] = useState('');
   const [savingReview, setSavingReview] = useState(false);
   const [userLookup, setUserLookup] = useState({});
-  const [detectionFilter, setDetectionFilter] = useState([]);
-  const [verdictFilter, setVerdictFilter] = useState([]);
+  const [detectionFilter, setDetectionFilter] = useState(ALL_DETECTIONS);
+  const [verdictFilter, setVerdictFilter] = useState(ALL_VERDICTS);
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -970,8 +972,8 @@ function IOCMatchEventsPage() {
       const toIso = toIsoOrNull(toVal);
       if (fromIso) params.from = fromIso;
       if (toIso) params.to = toIso;
-      if (Array.isArray(verdictVals) && verdictVals.length) params.verdict = verdictVals.join(',');
-      if (Array.isArray(detectionVals) && detectionVals.length) params.detection = detectionVals.join(',');
+      if (Array.isArray(verdictVals) && verdictVals.length && verdictVals.length < ALL_VERDICTS.length) params.verdict = verdictVals.join(',');
+      if (Array.isArray(detectionVals) && detectionVals.length && detectionVals.length < ALL_DETECTIONS.length) params.detection = detectionVals.join(',');
       const { data } = await api.get('/ioc/match-events', { params });
       setRows(data?.items || []);
     } catch {
@@ -1003,8 +1005,8 @@ function IOCMatchEventsPage() {
   }, [userLookup]);
 
   const resetFilters = useCallback(() => {
-    setDetectionFilter([]);
-    setVerdictFilter([]);
+    setDetectionFilter(ALL_DETECTIONS);
+    setVerdictFilter(ALL_VERDICTS);
     setAssigneeFilter('all');
     setSourceFilter('all');
     const def = buildDefault24hRange();
@@ -1092,8 +1094,8 @@ function IOCMatchEventsPage() {
       const assignee = resolveAssignee(assigneeRaw);
       const source = String((evt.source_names && evt.source_names[0]) || evt.source_name || '').trim();
 
-      if (Array.isArray(detectionFilter) && detectionFilter.length && !detectionFilter.includes(detection)) return false;
-      if (Array.isArray(verdictFilter) && verdictFilter.length) {
+      if (Array.isArray(detectionFilter) && detectionFilter.length && detectionFilter.length < ALL_DETECTIONS.length && !detectionFilter.includes(detection)) return false;
+      if (Array.isArray(verdictFilter) && verdictFilter.length && verdictFilter.length < ALL_VERDICTS.length) {
         const verdictNorm = verdict || 'unreviewed';
         if (!verdictFilter.includes(verdictNorm)) return false;
       }
@@ -1145,8 +1147,8 @@ function IOCMatchEventsPage() {
       }
     });
   }
-  if (detectionFilter.length) activeFilters.push({ key: 'detection', label: `Detection: ${detectionFilter.map((d) => d === 'realtime' ? 'Real-time' : 'Retroactive').join(', ')}`, onClear: () => setDetectionFilter([]) });
-  if (verdictFilter.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter.map((v) => v === 'unreviewed' ? 'Unreviewed' : v === 'in_progress' ? 'In Progress' : v.toUpperCase()).join(', ')}`, onClear: () => setVerdictFilter([]) });
+  if (detectionFilter.length && detectionFilter.length < ALL_DETECTIONS.length) activeFilters.push({ key: 'detection', label: `Detection: ${detectionFilter.map((d) => d === 'realtime' ? 'Real-time' : 'Retroactive').join(', ')}`, onClear: () => setDetectionFilter(ALL_DETECTIONS) });
+  if (verdictFilter.length && verdictFilter.length < ALL_VERDICTS.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdictFilter.map((v) => v === 'unreviewed' ? 'Unreviewed' : v === 'in_progress' ? 'In Progress' : v.toUpperCase()).join(', ')}`, onClear: () => setVerdictFilter(ALL_VERDICTS) });
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter === 'unassigned' ? 'Unassigned' : assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
   if (sourceFilter !== 'all') activeFilters.push({ key: 'source', label: `Source: ${sourceFilter}`, onClear: () => setSourceFilter('all') });
 
@@ -1261,7 +1263,7 @@ function IOCMatchEventsPage() {
                     ))}
                   </div>
                   <div style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
-                    <button onClick={() => setVerdictFilter(['unreviewed', 'in_progress', 'fp', 'tp'])}>Select All</button>
+                    <button onClick={() => setVerdictFilter(ALL_VERDICTS)}>Select All</button>
                     <button onClick={() => setVerdictFilter([])}>Clear</button>
                   </div>
 
@@ -1278,7 +1280,7 @@ function IOCMatchEventsPage() {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setDetectionFilter(['realtime', 'retroactive'])}>Select All</button>
+                    <button onClick={() => setDetectionFilter(ALL_DETECTIONS)}>Select All</button>
                     <button onClick={() => setDetectionFilter([])}>Clear</button>
                   </div>
                 </div>
