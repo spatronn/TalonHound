@@ -316,8 +316,9 @@ function AppShell({ children }) {
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <div style={menuStyle(isIntegrationsActive)}>5. Integrations</div>
-            <Link to="/integrations" style={subMenuStyle(isActive('/integrations'))}>Threat Intelligence Integration</Link>
+            <div style={menuStyle(isIntegrationsActive)}>5. Threat Intelligence</div>
+            <Link to="/integrations" style={subMenuStyle(isActive('/integrations'))}>Feeds</Link>
+            <Link to="/integrations/enrichment" style={subMenuStyle(isActive('/integrations/enrichment'))}>Enrichment</Link>
             <Link to="/integrations/queue" style={subMenuStyle(isActive('/integrations/queue'))}>Job Queue Status</Link>
             <Link to="/integrations/runs" style={subMenuStyle(isActive('/integrations/runs'))}>Recent Runs</Link>
           </div>
@@ -1897,7 +1898,7 @@ function IntegrationsPage() {
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Threat Intelligence Integration</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 10 }}>Feeds</h2>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
@@ -1972,6 +1973,18 @@ function IntegrationsPage() {
             </table>
           </div>
         )}
+      </section>
+    </AppShell>
+  );
+}
+
+
+function IntegrationsEnrichmentPage() {
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 10 }}>Enrichment</h2>
+        <div style={{ color: '#94a3b8' }}>This page is intentionally left blank for now.</div>
       </section>
     </AppShell>
   );
@@ -4093,6 +4106,7 @@ function App() {
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/integrations" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/integrations/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
           <Route path="/integrations/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/integrations/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
