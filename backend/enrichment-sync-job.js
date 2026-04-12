@@ -358,23 +358,6 @@ async function buildAndSwap() {
     await client.query(`ALTER TABLE asn_lookup RENAME TO ${backupTable}`);
     await client.query(`ALTER TABLE ${nextTable} RENAME TO asn_lookup`);
 
-    // Backward-compatible enrichment source for existing IOC detail / geo flows.
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS asn_ipv4_ranges (
-        id BIGSERIAL PRIMARY KEY,
-        start_ip_num BIGINT NOT NULL,
-        end_ip_num BIGINT NOT NULL,
-        asn BIGINT,
-        country_code TEXT,
-        as_name TEXT
-      )
-    `);
-    await client.query('TRUNCATE TABLE asn_ipv4_ranges');
-    await client.query(`
-      INSERT INTO asn_ipv4_ranges (start_ip_num, end_ip_num, asn, country_code, as_name)
-      SELECT start_ip_int, end_ip_int, asn, country, asn_owner
-      FROM asn_lookup
-    `);
     await client.query('COMMIT');
 
     await client.query(`DROP TABLE IF EXISTS ${backupTable}`);

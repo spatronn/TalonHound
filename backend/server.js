@@ -340,10 +340,10 @@ async function refreshGeoCache(limit = 20000) {
         NOW()
       FROM with_num w
       LEFT JOIN LATERAL (
-        SELECT r.asn, r.country_code, r.as_name
-        FROM asn_ipv4_ranges r
-        WHERE w.ip_num BETWEEN r.start_ip_num AND r.end_ip_num
-        ORDER BY (r.end_ip_num - r.start_ip_num) ASC
+        SELECT r.asn, r.country AS country_code, r.asn_owner AS as_name
+        FROM asn_lookup r
+        WHERE w.ip_num BETWEEN r.start_ip_int AND r.end_ip_int
+        ORDER BY (r.end_ip_int - r.start_ip_int) ASC
         LIMIT 1
       ) a ON TRUE
       ON CONFLICT (ip)
@@ -2807,10 +2807,10 @@ app.get('/api/ioc/details', async (req, res) => {
         FROM ip_input i
         LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
         LEFT JOIN LATERAL (
-          SELECT asn, country_code, as_name
-          FROM asn_ipv4_ranges
-          WHERE i.ip_num BETWEEN start_ip_num AND end_ip_num
-          ORDER BY (end_ip_num - start_ip_num) ASC
+          SELECT asn, country AS country_code, asn_owner AS as_name
+          FROM asn_lookup
+          WHERE i.ip_num BETWEEN start_ip_int AND end_ip_int
+          ORDER BY (end_ip_int - start_ip_int) ASC
           LIMIT 1
         ) r ON TRUE
       `;
