@@ -913,6 +913,8 @@ function IOCMatchEventsPage() {
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [activeQuickFilter, setActiveQuickFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const navigate = useNavigate();
   const { userEmail } = useSession();
 
@@ -1079,6 +1081,15 @@ function IOCMatchEventsPage() {
     });
   }, [rows, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, resolveAssignee, userEmail, searchTerm]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeQuickFilter, pageSize]);
+
+  const totalRows = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
   const highlight = (text) => {
     const raw = String(text || '');
     if (!searchTerm || searchTerm.length < 2) return raw || '-';
@@ -1191,7 +1202,7 @@ function IOCMatchEventsPage() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
-              ) : filteredRows.length ? filteredRows.map((evt) => {
+              ) : pagedRows.length ? pagedRows.map((evt) => {
                 const vm = verdictMeta(evt.verdict);
                 return (
                   <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
@@ -1236,6 +1247,22 @@ function IOCMatchEventsPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>
+            Showing {totalRows === 0 ? 0 : ((safePage - 1) * pageSize + 1)}-{Math.min(safePage * pageSize, totalRows)} of {totalRows}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select value={String(pageSize)} onChange={(e) => setPageSize(Number(e.target.value) || 20)}>
+              <option value="10">10 / page</option>
+              <option value="20">20 / page</option>
+              <option value="50">50 / page</option>
+            </select>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1}>Prev</button>
+            <span style={{ color: '#cbd5e1', fontSize: 13 }}>Page {safePage} / {totalPages}</span>
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}>Next</button>
+          </div>
         </div>
       </section>
 
