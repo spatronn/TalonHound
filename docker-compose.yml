@@ -224,6 +224,24 @@ services:
       - db
     restart: unless-stopped
 
+  enrichment-sync-job:
+    build: ./backend
+    container_name: demo-enrichment-sync-job
+    command: ["npm", "run", "enrichment-sync-job"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=demo
+      - ENRICHMENT_SYNC_INTERVAL_MS=86400000
+      - ENRICHMENT_SYNC_BATCH_SIZE=5000
+      - ENRICHMENT_SYNC_ONCE=0
+    volumes:
+      - /tmp/asn_full.json:/tmp/asn_full.json:ro
+    depends_on:
+      - db
+    restart: unless-stopped
 
   syslog-receiver:
     build: ./backend
