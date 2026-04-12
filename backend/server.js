@@ -334,7 +334,7 @@ async function refreshGeoCache(limit = 20000) {
       INSERT INTO ioc_ip_geo_cache (ip, country_code, asn, as_name, updated_at)
       SELECT
         w.ip,
-        COALESCE(NULLIF(UPPER(TRIM(a.country_code)), ''), 'UN') AS country_code,
+        NULLIF(UPPER(TRIM(a.country_code)), '') AS country_code,
         a.asn,
         a.as_name,
         NOW()
