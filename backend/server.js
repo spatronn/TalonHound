@@ -923,6 +923,23 @@ app.get('/api/ioc/match-events', async (req, res) => {
       }
     }
 
+    let fromIsoForGuard = null;
+    let toIsoForGuard = null;
+
+    if (fromStr) {
+      const fromDate = new Date(fromStr);
+      if (!Number.isNaN(fromDate.getTime())) fromIsoForGuard = fromDate.toISOString();
+    }
+
+    if (toStr) {
+      const toDate = new Date(toStr);
+      if (!Number.isNaN(toDate.getTime())) toIsoForGuard = toDate.toISOString();
+    }
+
+    if (fromIsoForGuard && toIsoForGuard && fromIsoForGuard > toIsoForGuard) {
+      return res.status(400).json({ message: 'Invalid date range: from must be <= to' });
+    }
+
     if (toStr) {
       const toDate = new Date(toStr);
       if (!Number.isNaN(toDate.getTime())) {

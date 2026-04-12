@@ -920,6 +920,7 @@ function IOCMatchEventsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [dateError, setDateError] = useState('');
   const filtersRef = useRef(null);
   const navigate = useNavigate();
   const { userEmail } = useSession();
@@ -964,12 +965,18 @@ function IOCMatchEventsPage() {
   };
 
   const loadEvents = useCallback(async (q = '', assignedTo = null, fromVal = '', toVal = '', verdictVals = [], detectionVals = []) => {
+    const fromIso = toIsoOrNull(fromVal);
+    const toIso = toIsoOrNull(toVal);
+    if (fromIso && toIso && fromIso > toIso) {
+      setDateError('Invalid date range: From must be earlier than or equal to To.');
+      setRows([]);
+      return;
+    }
+    setDateError('');
     setLoading(true);
     try {
       const params = { limit: 120, q: q || undefined };
       if (assignedTo) params.assigned_to = assignedTo; // UI hint, backend may ignore
-      const fromIso = toIsoOrNull(fromVal);
-      const toIso = toIsoOrNull(toVal);
       if (fromIso) params.from = fromIso;
       if (toIso) params.to = toIso;
       if (Array.isArray(verdictVals) && verdictVals.length && verdictVals.length < ALL_VERDICTS.length) params.verdict = verdictVals.join(',');
@@ -1237,6 +1244,10 @@ function IOCMatchEventsPage() {
               </button>
             ))}
           </div>
+
+          {dateError ? (
+            <div style={{ color: '#fca5a5', fontSize: 12 }}>{dateError}</div>
+          ) : null}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 1fr', gap: 8, alignItems: 'start' }}>
             <div ref={filtersRef} style={{ position: 'relative' }}>
