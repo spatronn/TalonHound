@@ -1730,9 +1730,26 @@ function IncidentPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [verdict, setVerdict] = useState([]);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [quickRange, setQuickRange] = useState('');
+  const [from, setFrom] = useState(() => {
+    const now = new Date();
+    const d = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}`;
+  });
+  const [to, setTo] = useState(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}`;
+  });
+  const [quickRange, setQuickRange] = useState('24h');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
