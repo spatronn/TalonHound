@@ -692,7 +692,7 @@ function AnalyticsPage() {
                 return (
                   <tr key={`ioc-${evt.id}-${evt.event_time}`} style={{ borderTop: '1px solid #334155' }}>
                     <td>{evt.id}</td>
-                    <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
+                    <td>{formatUserDateTime(evt.detected_at || evt.last_seen_at || evt.event_time || evt.created_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{evt.matched_ioc || '-'}</td>
                     <td>
                       <span style={{
@@ -1345,7 +1345,7 @@ function IOCMatchEventsPage() {
                 return (
                   <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
                     <td>{evt.id}</td>
-                    <td>{formatUserDateTime(evt.created_at || evt.event_time)}</td>
+                    <td>{formatUserDateTime(evt.detected_at || evt.last_seen_at || evt.event_time || evt.created_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{highlight(evt.matched_ioc)}</td>
                     <td>
                       <span style={{
@@ -1413,7 +1413,7 @@ function IOCMatchEventsPage() {
             </div>
 
             <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 10 }}>
-              {selectedEvent.matched_ioc || '-'} • {formatUserDateTime(selectedEvent.created_at || selectedEvent.event_time)}
+              {selectedEvent.matched_ioc || '-'} • {formatUserDateTime(selectedEvent.detected_at || selectedEvent.last_seen_at || selectedEvent.event_time || selectedEvent.created_at)}
             </div>
 
             <div style={{ marginBottom: 10 }}>
@@ -1529,7 +1529,7 @@ function IOCMatchEventDetailsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Detected At</div>
-                <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.created_at || item.event_time)}</div>
+                <div style={{ fontWeight: 700 }}>{formatUserDateTime(item.detected_at || item.last_seen_at || item.event_time || item.created_at)}</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched IOC</div>
@@ -4071,7 +4071,7 @@ function IOCDetailsPage() {
                     return (
                       <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>
                         <td>{m.id ?? '-'}</td>
-                        <td>{formatUserDateTime(m.event_time || m.created_at)}</td>
+                        <td>{formatUserDateTime(m.detected_at || m.last_seen_at || m.event_time || m.created_at)}</td>
                         <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matched_ioc || '-'}</td>
                         <td>
                           <span style={{
