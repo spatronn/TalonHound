@@ -1386,6 +1386,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
            m.last_seen_at,
            m.hit_count,
            m.created_at,
+           COALESCE(m.last_seen_at, m.event_time, m.created_at) AS detected_at,
            m.detection_type,
            m.match_source,
            m.activity_id,
@@ -1419,7 +1420,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
            ) AS detection_mode
          FROM ioc_match_events m
          WHERE m.activity_id = $1::uuid
-         ORDER BY m.created_at DESC, m.id DESC
+         ORDER BY COALESCE(m.last_seen_at, m.event_time, m.created_at) DESC, m.id DESC
          LIMIT $2
        ), source_agg AS (
          SELECT
@@ -1436,7 +1437,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
          COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
        FROM recent r
        LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
-       ORDER BY r.created_at DESC, r.id DESC`,
+       ORDER BY r.detected_at DESC, r.id DESC`,
       [incident.id, limit]
     );
 

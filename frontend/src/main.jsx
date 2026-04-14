@@ -1647,7 +1647,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
             return (
               <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
                 <td>{r.id}</td>
-                <td>{formatUserDateTime(r.created_at || r.event_time)}</td>
+                <td>{formatUserDateTime(r.detected_at || r.event_time || r.created_at)}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.matched_ioc || '-'}</td>
                 <td>
                   <span style={{
