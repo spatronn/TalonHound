@@ -1722,7 +1722,8 @@ function IncidentDetailsPage() {
         {loading ? <div style={{ color: '#94a3b8' }}>Loading incident...</div> : !item ? <div style={{ color: '#94a3b8' }}>Incident not found.</div> : (
           <div style={{ display: 'grid', gap: 12 }}>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-              <h2 style={{ margin: 0 }}>#{item.incident_id || id} • {item.ioc_value}</h2>
+              <h2 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Incident #{item.incident_id || id}</h2>
+              <div style={{ color: '#e2e8f0', marginTop: 6, fontSize: 16, fontWeight: 600 }}>{item.ioc_value}</div>
               <div style={{ color: '#94a3b8', marginTop: 6 }}>Type: {item.ioc_type} • Hits: {item.total_hits} • Assets: {item.asset_count || 0}</div>
               <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
             </div>
