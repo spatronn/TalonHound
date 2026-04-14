@@ -1455,6 +1455,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
 });
 
 app.patch('/api/incidents/:id', async (req, res) => {
+  const tx = await pool.connect();
   try {
     const idRaw = String(req.params?.id || '').trim();
     if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
@@ -1463,9 +1464,10 @@ app.patch('/api/incidents/:id', async (req, res) => {
     if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
     const bodyVerdict = req.body?.verdict;
-    const bodyStatus = req.body?.status;
     const note = req.body?.note == null ? null : String(req.body.note).trim().slice(0, 4000);
     const takeOwnership = Boolean(req.body?.take_ownership || req.body?.takeOwnership);
+    const propagateToEvents = Boolean(req.body?.propagate_to_events || req.body?.propagateToEvents);
+    const propagationNote = req.body?.propagation_note == null ? null : String(req.body.propagation_note).trim().slice(0, 4000);
     const reviewer = String(req.user?.username || req.user?.email || '').trim() || null;
 
     const verdict = bodyVerdict == null || String(bodyVerdict).trim() === ''
@@ -1477,18 +1479,38 @@ app.patch('/api/incidents/:id', async (req, res) => {
       return res.status(400).json({ message: 'Invalid verdict' });
     }
 
-    const status = bodyStatus == null || String(bodyStatus).trim() === ''
-      ? null
-      : String(bodyStatus).trim().toLowerCase();
+    const derivedStatus = (v) => {
+      if (v === 'TP' || v === 'FP' || v === 'Suspicious') return 'closed';
+      return 'open';
+    };
 
-    if (status !== null && !['open', 'closed'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
+    const eventVerdictMap = {
+      TP: 'tp',
+      FP: 'fp',
+      Suspicious: 'suspicious',
+      'In Progress': 'in_progress',
+      Unreviewed: null
+    };
+
+    await tx.query('BEGIN');
+
+    const curQ = await tx.query(
+      `SELECT * FROM ioc_activity WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+      [incident.id]
+    );
+    if (!curQ.rowCount) {
+      await tx.query('ROLLBACK');
+      return res.status(404).json({ message: 'Incident not found' });
     }
 
-    const q = await pool.query(
+    const current = curQ.rows[0];
+    const nextVerdict = verdict ?? current.verdict ?? 'Unreviewed';
+    const nextStatus = derivedStatus(nextVerdict);
+
+    const updQ = await tx.query(
       `UPDATE ioc_activity
-       SET verdict = COALESCE($2::text, verdict),
-           status = COALESCE($3::text, status),
+       SET verdict = $2::text,
+           status = $3::text,
            note = COALESCE($4::text, note),
            assigned_to = CASE
              WHEN $5::boolean = true THEN $6::text
@@ -1501,14 +1523,36 @@ app.patch('/api/incidents/:id', async (req, res) => {
            updated_at = NOW()
        WHERE id = $1::uuid
        RETURNING *`,
-      [incident.id, verdict, status, note, takeOwnership, reviewer]
+      [incident.id, nextVerdict, nextStatus, note, takeOwnership, reviewer]
     );
 
-    if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
-    return res.json({ item: q.rows[0] });
+    if (!updQ.rowCount) {
+      await tx.query('ROLLBACK');
+      return res.status(404).json({ message: 'Incident not found' });
+    }
+
+    if (propagateToEvents) {
+      await tx.query(
+        `UPDATE ioc_match_events
+         SET verdict = $2::text,
+             reviewed_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END,
+             reviewed_by = CASE WHEN $2::text IS NULL THEN NULL ELSE $3::text END,
+             assigned_to = COALESCE($3::text, assigned_to),
+             assigned_at = CASE WHEN $3::text IS NULL THEN assigned_at ELSE NOW() END,
+             note = COALESCE($4::text, note)
+         WHERE activity_id = $1::uuid`,
+        [incident.id, eventVerdictMap[nextVerdict], reviewer, propagationNote]
+      );
+    }
+
+    await tx.query('COMMIT');
+    return res.json({ item: updQ.rows[0] });
   } catch (err) {
+    await tx.query('ROLLBACK').catch(() => {});
     console.error('[incident-patch] failed', err);
     return res.status(500).json({ message: 'Failed to update incident' });
+  } finally {
+    tx.release();
   }
 });
 

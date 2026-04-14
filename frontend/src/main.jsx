@@ -1590,7 +1590,7 @@ function IOCMatchEventDetailsPage() {
   );
 }
 
-function IncidentEventsTable({ activityId }) {
+function IncidentEventsTable({ activityId, refreshKey = 0 }) {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -1610,7 +1610,7 @@ function IncidentEventsTable({ activityId }) {
     }
   }, [activityId]);
 
-  useEffect(() => { load().catch(() => {}); }, [load]);
+  useEffect(() => { load().catch(() => {}); }, [load, refreshKey]);
 
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
@@ -1685,6 +1685,9 @@ function IncidentDetailsPage() {
   const [tab, setTab] = useState('summary');
   const [verdict, setVerdict] = useState('Unreviewed');
   const [note, setNote] = useState('');
+  const [eventsRefreshKey, setEventsRefreshKey] = useState(0);
+  const [showPropagateModal, setShowPropagateModal] = useState(false);
+  const [propagationNote, setPropagationNote] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -1711,9 +1714,29 @@ function IncidentDetailsPage() {
       const { data } = await api.patch(`/incidents/${id}`, { verdict, note, ...patch });
       setItem((prev) => ({ ...(prev || {}), ...(data?.item || {}) }));
       if (data?.item?.note != null) setNote(String(data.item.note || ''));
+      setEventsRefreshKey((k) => k + 1);
     } finally {
       setSaving(false);
     }
+  }
+
+  const isFinalVerdict = verdict === 'TP' || verdict === 'FP' || verdict === 'Suspicious';
+
+  async function onClickSave() {
+    if (isFinalVerdict) {
+      setPropagationNote(String(note || ''));
+      setShowPropagateModal(true);
+      return;
+    }
+    await savePatch({});
+  }
+
+  async function applyWithPropagation(shouldPropagate) {
+    await savePatch({
+      propagate_to_events: shouldPropagate,
+      propagation_note: shouldPropagate ? propagationNote : undefined
+    });
+    setShowPropagateModal(false);
   }
 
   return (
@@ -1739,7 +1762,7 @@ function IncidentDetailsPage() {
                 <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => savePatch({}).catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                <button onClick={() => onClickSave().catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
                 <button onClick={() => savePatch({ take_ownership: true, verdict: 'In Progress' }).catch(() => {})} disabled={saving}>Take Ownership</button>
               </div>
             </div>
@@ -1757,8 +1780,24 @@ function IncidentDetailsPage() {
                 <div>Event Count: <b>{item.event_count || 0}</b></div>
               </div>
             ) : (
-              <IncidentEventsTable activityId={item.id} />
+              <IncidentEventsTable activityId={item.id} refreshKey={eventsRefreshKey} />
             )}
+          </div>
+        )}
+
+        {showPropagateModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.75)', display: 'grid', placeItems: 'center', zIndex: 60 }}>
+            <div style={{ width: 'min(640px, 92vw)', border: '1px solid #334155', borderRadius: 12, background: '#0f172a', padding: 16, display: 'grid', gap: 10 }}>
+              <h3 style={{ margin: 0 }}>Apply verdict to related events?</h3>
+              <div style={{ color: '#94a3b8' }}>Do you also want to apply this verdict to related events?</div>
+              <label style={{ color: '#cbd5e1', fontSize: 13 }}>Note for related events (optional)</label>
+              <textarea rows={3} value={propagationNote} onChange={(e) => setPropagationNote(e.target.value)} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button onClick={() => setShowPropagateModal(false)} disabled={saving}>Cancel</button>
+                <button onClick={() => applyWithPropagation(false).catch(() => {})} disabled={saving}>No</button>
+                <button onClick={() => applyWithPropagation(true).catch(() => {})} disabled={saving}>Yes</button>
+              </div>
+            </div>
           </div>
         )}
       </section>
