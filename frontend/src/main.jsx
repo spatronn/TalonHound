@@ -1722,7 +1722,7 @@ function IncidentDetailsPage() {
         {loading ? <div style={{ color: '#94a3b8' }}>Loading incident...</div> : !item ? <div style={{ color: '#94a3b8' }}>Incident not found.</div> : (
           <div style={{ display: 'grid', gap: 12 }}>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-              <h2 style={{ margin: 0 }}>{item.ioc_value}</h2>
+              <h2 style={{ margin: 0 }}>#{item.incident_id || id} • {item.ioc_value}</h2>
               <div style={{ color: '#94a3b8', marginTop: 6 }}>Type: {item.ioc_type} • Hits: {item.total_hits} • Assets: {item.asset_count || 0}</div>
               <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
             </div>
@@ -1891,12 +1891,13 @@ function IncidentPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                <th>IOC</th><th>Type</th><th>Hits</th><th>Assets</th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Action</th>
+                <th style={{ width: 110 }}>Incident ID</th><th>IOC</th><th>Type</th><th>Hits</th><th>Assets</th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Action</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={9} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
-                <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.id}`)}>
+              {loading ? <tr><td colSpan={10} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
+                <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.incident_id || it.id}`)}>
+                  <td><b>#{it.incident_id || '-'}</b></td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
                   <td>{it.ioc_type}</td>
                   <td>{it.total_hits}</td>
@@ -1905,9 +1906,9 @@ function IncidentPage() {
                   <td>{formatUserDateTime(it.last_seen)}</td>
                   <td>{it.status}</td>
                   <td>{it.verdict}</td>
-                  <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.id}`); }}>View</button></td>
+                  <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
                 </tr>
-              )) : <tr><td colSpan={9} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
+              )) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
             </tbody>
           </table>
         </div>

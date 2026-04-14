@@ -1187,6 +1187,25 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
   }
 });
 
+function resolveIncidentSelector(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return { ok: false };
+  if (/^\d+$/.test(s)) return { ok: true, by: 'incident_id', value: Number(s) };
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)) return { ok: true, by: 'id', value: s };
+  return { ok: false };
+}
+
+async function findIncidentRow(selectorRaw) {
+  const sel = resolveIncidentSelector(selectorRaw);
+  if (!sel.ok) return null;
+  if (sel.by === 'incident_id') {
+    const q = await pool.query(`SELECT id, incident_id FROM ioc_activity WHERE incident_id = $1 LIMIT 1`, [sel.value]);
+    return q.rows?.[0] || null;
+  }
+  const q = await pool.query(`SELECT id, incident_id FROM ioc_activity WHERE id = $1::uuid LIMIT 1`, [sel.value]);
+  return q.rows?.[0] || null;
+}
+
 app.get('/api/incidents', async (req, res) => {
   try {
     const page = Math.max(Number(req.query?.page || 1), 1);
@@ -1290,8 +1309,11 @@ app.get('/api/incidents', async (req, res) => {
 
 app.get('/api/incidents/:id', async (req, res) => {
   try {
-    const id = String(req.params?.id || '').trim();
-    if (!id) return res.status(400).json({ message: 'Invalid id' });
+    const idRaw = String(req.params?.id || '').trim();
+    if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
+
+    const incident = await findIncidentRow(idRaw);
+    if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
     const q = await pool.query(
       `WITH ev AS (
@@ -1315,7 +1337,7 @@ app.get('/api/incidents/:id', async (req, res) => {
        CROSS JOIN ev
        WHERE a.id = $1::uuid
        LIMIT 1`,
-      [id]
+      [incident.id]
     );
 
     if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
@@ -1331,8 +1353,11 @@ app.get('/api/incidents/:id', async (req, res) => {
 
 app.get('/api/incidents/:id/events', async (req, res) => {
   try {
-    const id = String(req.params?.id || '').trim();
-    if (!id) return res.status(400).json({ message: 'Invalid id' });
+    const idRaw = String(req.params?.id || '').trim();
+    if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
+
+    const incident = await findIncidentRow(idRaw);
+    if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
     const limit = Math.min(Math.max(Number(req.query?.limit || 200), 1), 1000);
 
@@ -1412,14 +1437,14 @@ app.get('/api/incidents/:id/events', async (req, res) => {
        FROM recent r
        LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
        ORDER BY r.created_at DESC, r.id DESC`,
-      [id, limit]
+      [incident.id, limit]
     );
 
     const totalQ = await pool.query(
       `SELECT COUNT(*)::bigint AS total
        FROM ioc_match_events
        WHERE activity_id = $1::uuid`,
-      [id]
+      [incident.id]
     );
 
     return res.json({ total: Number(totalQ.rows?.[0]?.total || 0), items: q.rows || [] });
@@ -1431,8 +1456,11 @@ app.get('/api/incidents/:id/events', async (req, res) => {
 
 app.patch('/api/incidents/:id', async (req, res) => {
   try {
-    const id = String(req.params?.id || '').trim();
-    if (!id) return res.status(400).json({ message: 'Invalid id' });
+    const idRaw = String(req.params?.id || '').trim();
+    if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
+
+    const incident = await findIncidentRow(idRaw);
+    if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
     const bodyVerdict = req.body?.verdict;
     const bodyStatus = req.body?.status;
@@ -1473,7 +1501,7 @@ app.patch('/api/incidents/:id', async (req, res) => {
            updated_at = NOW()
        WHERE id = $1::uuid
        RETURNING *`,
-      [id, verdict, status, note, takeOwnership, reviewer]
+      [incident.id, verdict, status, note, takeOwnership, reviewer]
     );
 
     if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
