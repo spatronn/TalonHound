@@ -1,6 +1,7 @@
 import './lib/ensure-db-password.js';
 import pg from 'pg';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, command as clickhouseCommand } from './lib/clickhouse.js';
+import { findOrCreateActivity } from './lib/ioc-activity.js';
 
 const { Pool } = pg;
 
@@ -227,17 +228,28 @@ async function insertMatchEvents(client, rows) {
   const deduped = Array.from(uniq.values());
   const values = [];
   const params = [];
+  const activityCache = new Map();
+
   for (let i = 0; i < deduped.length; i += 1) {
     const r = deduped[i];
-    const base = i * 20;
-    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20})`);
+    const activity = await findOrCreateActivity(client, {
+      iocValue: r.matched_ioc,
+      iocType: r.ioc_type,
+      eventTime: r.event_time,
+      hitCount: r._hitInc,
+      cache: activityCache
+    });
+
+    const base = i * 21;
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20},$${base + 21})`);
     params.push(
       r.event_time, r.host || null, null, r.destination_ip || null, null, r.protocol || null,
       r.matched_ioc, r.source_name || null, r.confidence || null, r.ioc_type, null,
       r.parser_source || null, r.source || null, JSON.stringify(r.match_context || {}),
       r._dedupKey, r._bucketStart, r.event_time, r._hitInc,
       r.detection_type || 'retroactive',
-      r.match_source ?? null
+      r.match_source ?? null,
+      activity?.id || null
     );
   }
 
@@ -246,7 +258,7 @@ async function insertMatchEvents(client, rows) {
       event_time, host_name, process_name, destination_ip, destination_port, protocol,
       matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
       parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count,
-      detection_type, match_source
+      detection_type, match_source, activity_id
     ) VALUES ${values.join(',')}
     ON CONFLICT (dedup_key, bucket_start)
     DO UPDATE SET
@@ -256,7 +268,8 @@ async function insertMatchEvents(client, rows) {
       source_name = COALESCE(EXCLUDED.source_name, ioc_match_events.source_name),
       match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context),
       detection_type = COALESCE(EXCLUDED.detection_type, ioc_match_events.detection_type),
-      match_source = COALESCE(EXCLUDED.match_source, ioc_match_events.match_source)`,
+      match_source = COALESCE(EXCLUDED.match_source, ioc_match_events.match_source),
+      activity_id = COALESCE(ioc_match_events.activity_id, EXCLUDED.activity_id)`,
     params
   );
 
