@@ -1239,7 +1239,8 @@ app.get('/api/incidents', async (req, res) => {
       }
     }
 
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    where.push(`EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`);
+    const whereSql = `WHERE ${where.join(' AND ')}`;
 
     const countQ = await pool.query(`SELECT COUNT(*)::bigint AS total FROM ioc_activity a ${whereSql}`, params);
     const total = Number(countQ.rows?.[0]?.total || 0);
@@ -1318,6 +1319,9 @@ app.get('/api/incidents/:id', async (req, res) => {
     );
 
     if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
+    if (Number(q.rows[0]?.event_count || 0) <= 0) {
+      return res.status(404).json({ message: 'Incident not found (no linked events)' });
+    }
     return res.json({ item: q.rows[0] });
   } catch (err) {
     console.error('[incident-detail] failed', err);
