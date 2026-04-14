@@ -441,7 +441,7 @@ async function insertMatchEvents(client, rows) {
       match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context),
       detection_type = COALESCE(EXCLUDED.detection_type, ioc_match_events.detection_type),
       match_source = COALESCE(EXCLUDED.match_source, ioc_match_events.match_source),
-      activity_id = COALESCE(ioc_match_events.activity_id, EXCLUDED.activity_id)
+      activity_id = COALESCE(EXCLUDED.activity_id, ioc_match_events.activity_id)
   `;
 
   await client.query(sql, params);
