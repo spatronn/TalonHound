@@ -1732,6 +1732,7 @@ function IncidentPage() {
   const [verdict, setVerdict] = useState([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [quickRange, setQuickRange] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
@@ -1756,6 +1757,25 @@ function IncidentPage() {
 
   const toggleVerdict = (v) => setVerdict((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]);
 
+  const toDateTimeLocal = (d) => {
+    const dt = new Date(d);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${hh}:${mm}`;
+  };
+
+  const applyQuickRange = (key) => {
+    const now = new Date();
+    const fromDate = new Date(now.getTime() - (key === '1h' ? 60 * 60 * 1000 : key === '24h' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000));
+    setFrom(toDateTimeLocal(fromDate));
+    setTo(toDateTimeLocal(now));
+    setQuickRange(key);
+    setPage(1);
+  };
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
@@ -1769,8 +1789,26 @@ function IncidentPage() {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
-            <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
-            <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
+            <input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setQuickRange(''); }} />
+            <input type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setQuickRange(''); }} />
+            <button
+              onClick={() => applyQuickRange('1h')}
+              style={{ borderColor: quickRange === '1h' ? '#93c5fd' : '#475569' }}
+            >
+              Last 1 hour
+            </button>
+            <button
+              onClick={() => applyQuickRange('24h')}
+              style={{ borderColor: quickRange === '24h' ? '#93c5fd' : '#475569' }}
+            >
+              Last 24 hours
+            </button>
+            <button
+              onClick={() => applyQuickRange('7d')}
+              style={{ borderColor: quickRange === '7d' ? '#93c5fd' : '#475569' }}
+            >
+              Last 7 days
+            </button>
             <button onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
