@@ -1939,11 +1939,11 @@ function IncidentPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                <th style={{ width: 110 }}>Incident ID</th><th>IOC</th><th>Type</th><th>Hits</th><th>Assets</th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Action</th>
+                <th style={{ width: 110 }}>Incident ID</th><th>IOC</th><th>Type</th><th>Hits</th><th>Assets</th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Assignee</th><th>Action</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={10} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
+              {loading ? <tr><td colSpan={11} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
                 <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.incident_id || it.id}`)}>
                   <td><b>#{it.incident_id || '-'}</b></td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
@@ -1954,9 +1954,10 @@ function IncidentPage() {
                   <td>{formatUserDateTime(it.last_seen)}</td>
                   <td>{it.status}</td>
                   <td>{it.verdict}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.assigned_to || 'Unassigned'}</td>
                   <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
                 </tr>
-              )) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
+              )) : <tr><td colSpan={11} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
             </tbody>
           </table>
         </div>
