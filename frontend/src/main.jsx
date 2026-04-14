@@ -1592,16 +1592,19 @@ function IOCMatchEventDetailsPage() {
 
 function IncidentEventsTable({ activityId }) {
   const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!activityId) return;
     setLoading(true);
     try {
-      const { data } = await api.get('/ioc/match-events', { params: { limit: 100, activity_id: activityId } });
+      const { data } = await api.get(`/incidents/${activityId}/events`, { params: { limit: 500 } });
       setRows(data?.items || []);
+      setTotal(Number(data?.total || 0));
     } catch {
       setRows([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -1611,24 +1614,63 @@ function IncidentEventsTable({ activityId }) {
 
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Events</div>
+      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
+        Events ({total})
+      </div>
       <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ textAlign: 'left', background: '#111827' }}>
-            <th>ID</th><th>Detected</th><th>IOC</th><th>Hits</th><th>Source</th><th>Verdict</th>
+            <th style={{ width: 80 }}>ID</th>
+            <th style={{ width: 170 }}>Detected At</th>
+            <th style={{ width: 220 }}>Matched IOC</th>
+            <th style={{ width: 140 }}>Detection</th>
+            <th style={{ width: 140 }}>Verdict</th>
+            <th style={{ width: 140 }}>Assignee</th>
+            <th style={{ width: 180 }}>Source</th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => (
-            <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
-              <td>{r.id}</td>
-              <td>{formatUserDateTime(r.created_at || r.event_time)}</td>
-              <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.matched_ioc || '-'}</td>
-              <td>{Number(r.hit_count || 1)}</td>
-              <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.source_names && r.source_names[0]) || r.source_name || '-'}</td>
-              <td>{r.verdict || 'Unreviewed'}</td>
-            </tr>
-          )) : <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
+          {loading ? <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => {
+            const verdict = String(r.verdict || '').toLowerCase();
+            const vm = verdict === 'fp'
+              ? { label: 'FP', color: '#ef4444' }
+              : verdict === 'tp'
+                ? { label: 'TP', color: '#22c55e' }
+                : verdict === 'suspicious'
+                  ? { label: 'Suspicious', color: '#f59e0b' }
+                  : verdict === 'in_progress'
+                    ? { label: 'In Progress', color: '#f59e0b' }
+                    : { label: 'Unreviewed', color: '#94a3b8' };
+
+            return (
+              <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
+                <td>{r.id}</td>
+                <td>{formatUserDateTime(r.created_at || r.event_time)}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.matched_ioc || '-'}</td>
+                <td>
+                  <span style={{
+                    display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                    border: `1px solid ${r.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                    color: r.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e', background: '#020617'
+                  }}>
+                    {r.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
+                  </span>
+                </td>
+                <td>
+                  <span style={{
+                    display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                    border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
+                  }}>{vm.label}</span>
+                </td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.assigned_to || 'Unassigned'}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {r.source_count > 1
+                    ? `${(r.source_names && r.source_names[0]) || r.source_name || '-'} +${r.source_count - 1}`
+                    : ((r.source_names && r.source_names[0]) || r.source_name || '-')}
+                </td>
+              </tr>
+            );
+          }) : <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
         </tbody>
       </table>
     </div>

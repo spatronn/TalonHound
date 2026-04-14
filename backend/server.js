@@ -1293,24 +1293,25 @@ app.get('/api/incidents/:id', async (req, res) => {
     if (!id) return res.status(400).json({ message: 'Invalid id' });
 
     const q = await pool.query(
-      `SELECT
-        a.*,
-        COALESCE(ev.asset_count, 0) AS asset_count,
-        COALESCE(ev.event_count, 0) AS event_count,
-        CASE
-          WHEN a.verdict = 'FP' THEN 0
-          WHEN a.verdict = 'TP' THEN LN(a.total_hits + 1)
-          WHEN a.verdict = 'Suspicious' THEN LN(a.total_hits + 1) * 0.7
-          ELSE LN(a.total_hits + 1) * 0.5
-        END AS risk_score
-       FROM ioc_activity a
-       LEFT JOIN LATERAL (
+      `WITH ev AS (
          SELECT
-           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
-           COUNT(*)::bigint AS event_count
+           COUNT(*)::bigint AS event_count,
+           COUNT(DISTINCT m.destination_ip)::int AS asset_count
          FROM ioc_match_events m
-         WHERE m.activity_id = a.id
-       ) ev ON true
+         WHERE m.activity_id = $1::uuid
+       )
+       SELECT
+         a.*,
+         COALESCE(ev.asset_count, 0) AS asset_count,
+         COALESCE(ev.event_count, 0) AS event_count,
+         CASE
+           WHEN a.verdict = 'FP' THEN 0
+           WHEN a.verdict = 'TP' THEN LN(a.total_hits + 1)
+           WHEN a.verdict = 'Suspicious' THEN LN(a.total_hits + 1) * 0.7
+           ELSE LN(a.total_hits + 1) * 0.5
+         END AS risk_score
+       FROM ioc_activity a
+       CROSS JOIN ev
        WHERE a.id = $1::uuid
        LIMIT 1`,
       [id]
@@ -1321,6 +1322,106 @@ app.get('/api/incidents/:id', async (req, res) => {
   } catch (err) {
     console.error('[incident-detail] failed', err);
     return res.status(500).json({ message: 'Failed to fetch incident' });
+  }
+});
+
+app.get('/api/incidents/:id/events', async (req, res) => {
+  try {
+    const id = String(req.params?.id || '').trim();
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+
+    const limit = Math.min(Math.max(Number(req.query?.limit || 200), 1), 1000);
+
+    const q = await pool.query(
+      `WITH recent AS (
+         SELECT
+           m.id,
+           m.signal_event_id,
+           m.event_time,
+           m.host_name,
+           m.process_name,
+           m.destination_ip,
+           m.destination_port,
+           m.protocol,
+           m.matched_ioc,
+           m.source_name,
+           m.confidence,
+           m.ioc_type,
+           m.ioc_item_id,
+           m.parser_source,
+           m.source,
+           m.match_context,
+           m.dedup_key,
+           m.bucket_start,
+           m.first_seen_at,
+           m.last_seen_at,
+           m.hit_count,
+           m.created_at,
+           m.detection_type,
+           m.match_source,
+           m.activity_id,
+           m.verdict,
+           m.reviewed_at,
+           m.reviewed_by,
+           m.note,
+           m.assigned_to,
+           m.assigned_at,
+           COALESCE(
+             NULLIF(CONCAT_WS(' | ',
+               NULLIF(m.source, ''),
+               NULLIF(m.host_name, ''),
+               NULLIF(m.process_name, ''),
+               CASE
+                 WHEN m.destination_ip IS NOT NULL AND m.destination_ip <> '' THEN m.destination_ip || COALESCE(':' || m.destination_port::text, '')
+                 ELSE NULL
+               END,
+               NULLIF(m.protocol, '')
+             ), ''),
+             '-'
+           ) AS matched_syslog_event,
+           COALESCE(
+             m.detection_type,
+             CASE
+               WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
+                 OR COALESCE((m.match_context->>'retroactive')::boolean, false)
+               THEN 'retroactive'
+               ELSE 'realtime'
+             END
+           ) AS detection_mode
+         FROM ioc_match_events m
+         WHERE m.activity_id = $1::uuid
+         ORDER BY m.created_at DESC, m.id DESC
+         LIMIT $2
+       ), source_agg AS (
+         SELECT
+           i.observable AS observable_norm,
+           COUNT(DISTINCT i.source_name)::int AS source_count,
+           ARRAY_AGG(DISTINCT i.source_name ORDER BY i.source_name) AS source_names
+         FROM ioc_items i
+         WHERE i.observable IN (SELECT DISTINCT lower(r.matched_ioc) FROM recent r)
+         GROUP BY i.observable
+       )
+       SELECT
+         r.*,
+         COALESCE(sa.source_count, 0) AS source_count,
+         COALESCE(sa.source_names, ARRAY[]::text[]) AS source_names
+       FROM recent r
+       LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
+       ORDER BY r.created_at DESC, r.id DESC`,
+      [id, limit]
+    );
+
+    const totalQ = await pool.query(
+      `SELECT COUNT(*)::bigint AS total
+       FROM ioc_match_events
+       WHERE activity_id = $1::uuid`,
+      [id]
+    );
+
+    return res.json({ total: Number(totalQ.rows?.[0]?.total || 0), items: q.rows || [] });
+  } catch (err) {
+    console.error('[incident-events] failed', err);
+    return res.status(500).json({ total: 0, items: [] });
   }
 });
 
