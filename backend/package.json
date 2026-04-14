@@ -12,7 +12,8 @@
     "ioc-match-count-worker": "node migrate.js && node ioc-match-count-worker.js",
     "enrichment-sync-job": "node migrate.js && node enrichment-sync-job.js",
     "dashboard-map-worker": "node migrate.js && node dashboard-map-worker.js",
-    "syslog-receiver": "node migrate.js && node syslog-receiver.js"
+    "syslog-receiver": "node migrate.js && node syslog-receiver.js",
+    "backfill:ioc-activities": "node scripts/backfill-ioc-activities.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
