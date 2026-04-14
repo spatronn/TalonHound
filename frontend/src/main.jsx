@@ -302,7 +302,7 @@ function AppShell({ children }) {
             <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
             <Link to="/analytics/ioc-match-events" style={subMenuStyle(isActive('/analytics/ioc-match-events'))}>IOC Match Events</Link>
           </div>
-          <Link to="/incident" style={menuStyle(isActive('/incident'))}>3. Incident</Link>
+          <Link to="/incidents" style={menuStyle(location.pathname.startsWith('/incidents'))}>3. Incidents</Link>
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isOpsActive)}>4. Operations</div>
@@ -1590,13 +1590,235 @@ function IOCMatchEventDetailsPage() {
   );
 }
 
-function IncidentPage() {
+function IncidentEventsTable({ activityId }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!activityId) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get('/ioc/match-events', { params: { limit: 100, activity_id: activityId } });
+      setRows(data?.items || []);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [activityId]);
+
+  useEffect(() => { load().catch(() => {}); }, [load]);
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Events</div>
+      <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', background: '#111827' }}>
+            <th>ID</th><th>Detected</th><th>IOC</th><th>Hits</th><th>Source</th><th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? <tr><td colSpan={6} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => (
+            <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
+              <td>{r.id}</td>
+              <td>{formatUserDateTime(r.created_at || r.event_time)}</td>
+              <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.matched_ioc || '-'}</td>
+              <td>{Number(r.hit_count || 1)}</td>
+              <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(r.source_names && r.source_names[0]) || r.source_name || '-'}</td>
+              <td>{r.verdict || 'Unreviewed'}</td>
+            </tr>
+          )) : <tr><td colSpan={6} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IncidentDetailsPage() {
+  const { id } = useParams();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [item, setItem] = useState(null);
+  const [tab, setTab] = useState('summary');
+  const [verdict, setVerdict] = useState('Unreviewed');
+  const [note, setNote] = useState('');
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/incidents/${id}`);
+      const it = data?.item || null;
+      setItem(it);
+      setVerdict(String(it?.verdict || 'Unreviewed'));
+      setNote(String(it?.note || ''));
+    } catch {
+      setItem(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => { load().catch(() => {}); }, [load]);
+
+  async function savePatch(patch = {}) {
+    if (!id) return;
+    setSaving(true);
+    try {
+      const { data } = await api.patch(`/incidents/${id}`, { verdict, note, ...patch });
+      setItem((prev) => ({ ...(prev || {}), ...(data?.item || {}) }));
+      if (data?.item?.note != null) setNote(String(data.item.note || ''));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <AppShell>
-      <section style={{ border: '1px dashed #334155', borderRadius: 12, background: '#111827', padding: 24, minHeight: 220, display: 'grid', placeItems: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Incident</h2>
-          <p style={{ margin: 0, color: '#94a3b8' }}>This page is intentionally left blank for now.</p>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        {loading ? <div style={{ color: '#94a3b8' }}>Loading incident...</div> : !item ? <div style={{ color: '#94a3b8' }}>Incident not found.</div> : (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+              <h2 style={{ margin: 0 }}>{item.ioc_value}</h2>
+              <div style={{ color: '#94a3b8', marginTop: 6 }}>Type: {item.ioc_type} • Hits: {item.total_hits} • Assets: {item.asset_count || 0}</div>
+              <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
+            </div>
+
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 10 }}>
+              <h3 style={{ margin: 0 }}>Analyst Actions</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 8, alignItems: 'center' }}>
+                <label>Verdict</label>
+                <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
+                  <option>TP</option><option>FP</option><option>Suspicious</option><option>Unreviewed</option><option>In Progress</option>
+                </select>
+                <label>Note</label>
+                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => savePatch({}).catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+                <button onClick={() => savePatch({ take_ownership: true, verdict: 'In Progress' }).catch(() => {})} disabled={saving}>Take Ownership</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setTab('summary')} style={{ borderColor: tab === 'summary' ? '#93c5fd' : '#475569' }}>Summary</button>
+              <button onClick={() => setTab('events')} style={{ borderColor: tab === 'events' ? '#93c5fd' : '#475569' }}>Events</button>
+            </div>
+
+            {tab === 'summary' ? (
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div>Risk Score: <b>{Number(item.risk_score || 0).toFixed(2)}</b></div>
+                <div>Status: <b>{item.status}</b></div>
+                <div>Verdict: <b>{item.verdict}</b></div>
+                <div>Event Count: <b>{item.event_count || 0}</b></div>
+              </div>
+            ) : (
+              <IncidentEventsTable activityId={item.id} />
+            )}
+          </div>
+        )}
+      </section>
+    </AppShell>
+  );
+}
+
+function IncidentPage() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [verdict, setVerdict] = useState([]);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = { page, page_size: pageSize, q: query || undefined, status: status || undefined, from: from || undefined, to: to || undefined };
+      if (verdict.length) params.verdict = verdict.join(',');
+      const { data } = await api.get('/incidents', { params });
+      setItems(data?.items || []);
+      setPagination(data?.pagination || { page: 1, page_size: pageSize, total: 0, total_pages: 1 });
+    } catch {
+      setItems([]);
+      setPagination({ page: 1, page_size: pageSize, total: 0, total_pages: 1 });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, query, status, verdict, from, to]);
+
+  useEffect(() => { load().catch(() => {}); }, [load]);
+
+  const toggleVerdict = (v) => setVerdict((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]);
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Incidents</h2>
+
+        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input placeholder="Search IOC..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load().catch(() => {}); } }} style={{ minWidth: 320 }} />
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Status: All</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+            <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
+            <button onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress'].map((v) => (
+              <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={verdict.includes(v)} onChange={() => toggleVerdict(v)} /> {v}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                <th>IOC</th><th>Type</th><th>Hits</th><th>Assets</th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan={9} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
+                <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.id}`)}>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
+                  <td>{it.ioc_type}</td>
+                  <td>{it.total_hits}</td>
+                  <td>{it.asset_count || 0}</td>
+                  <td>{formatUserDateTime(it.first_seen)}</td>
+                  <td>{formatUserDateTime(it.last_seen)}</td>
+                  <td>{it.status}</td>
+                  <td>{it.verdict}</td>
+                  <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.id}`); }}>View</button></td>
+                </tr>
+              )) : <tr><td colSpan={9} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>Total: {pagination.total}</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select value={String(pageSize)} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }}>
+              <option value="10">10 / page</option>
+              <option value="20">20 / page</option>
+              <option value="50">50 / page</option>
+            </select>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pagination.page <= 1}>Prev</button>
+            <span>Page {pagination.page} / {pagination.total_pages}</span>
+            <button onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))} disabled={pagination.page >= pagination.total_pages}>Next</button>
+          </div>
         </div>
       </section>
     </AppShell>
@@ -4115,7 +4337,9 @@ function App() {
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/analytics/ioc-match-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
           <Route path="/analytics/ioc-match-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
-          <Route path="/incident" element={<Protected><IncidentPage /></Protected>} />
+          <Route path="/incidents" element={<Protected><IncidentPage /></Protected>} />
+          <Route path="/incidents/:id" element={<Protected><IncidentDetailsPage /></Protected>} />
+          <Route path="/incident" element={<Navigate to="/incidents" replace />} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/hot" element={<Protected><IOCHotListPage /></Protected>} />
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />

@@ -874,6 +874,7 @@ app.get('/api/ioc/match-events', async (req, res) => {
     const toStr = String(req.query?.to || '').trim();
     const verdictStr = String(req.query?.verdict || '').trim();
     const detectionStr = String(req.query?.detection || '').trim();
+    const activityIdStr = String(req.query?.activity_id || req.query?.activityId || '').trim();
 
     const where = [];
     const params = [];
@@ -892,7 +893,10 @@ app.get('/api/ioc/match-events', async (req, res) => {
       )`);
     }
 
-
+    if (activityIdStr) {
+      params.push(activityIdStr);
+      where.push(`m.activity_id = $${params.length}::uuid`);
+    }
 
     if (verdictStr) {
       const verdictVals = verdictStr
@@ -991,6 +995,7 @@ app.get('/api/ioc/match-events', async (req, res) => {
           m.created_at,
           m.detection_type,
           m.match_source,
+          m.activity_id,
           m.verdict,
           m.reviewed_at,
           m.reviewed_by,
@@ -1179,6 +1184,198 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
     return res.json({ item: q.rows[0] });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update verdict', detail: err.message });
+  }
+});
+
+app.get('/api/incidents', async (req, res) => {
+  try {
+    const page = Math.max(Number(req.query?.page || 1), 1);
+    const pageSize = Math.min(Math.max(Number(req.query?.page_size || req.query?.pageSize || 20), 1), 100);
+    const q = String(req.query?.q || req.query?.search || '').trim();
+    const status = String(req.query?.status || '').trim().toLowerCase();
+    const verdictStr = String(req.query?.verdict || '').trim();
+    const fromStr = String(req.query?.from || '').trim();
+    const toStr = String(req.query?.to || '').trim();
+
+    const where = [];
+    const params = [];
+
+    if (q) {
+      params.push(`%${q}%`);
+      where.push(`(a.ioc_value ILIKE $${params.length} OR a.ioc_type ILIKE $${params.length})`);
+    }
+
+    if (status && ['open', 'closed'].includes(status)) {
+      params.push(status);
+      where.push(`a.status = $${params.length}`);
+    }
+
+    if (verdictStr) {
+      const allowed = new Set(['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress']);
+      const vals = verdictStr.split(',').map((v) => String(v || '').trim()).filter((v) => allowed.has(v));
+      if (vals.length) {
+        const holders = [];
+        for (const v of vals) {
+          params.push(v);
+          holders.push(`$${params.length}`);
+        }
+        where.push(`a.verdict IN (${holders.join(',')})`);
+      }
+    }
+
+    if (fromStr) {
+      const from = new Date(fromStr);
+      if (!Number.isNaN(from.getTime())) {
+        params.push(from.toISOString());
+        where.push(`a.last_seen >= $${params.length}::timestamptz`);
+      }
+    }
+
+    if (toStr) {
+      const to = new Date(toStr);
+      if (!Number.isNaN(to.getTime())) {
+        params.push(to.toISOString());
+        where.push(`a.first_seen <= $${params.length}::timestamptz`);
+      }
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const countQ = await pool.query(`SELECT COUNT(*)::bigint AS total FROM ioc_activity a ${whereSql}`, params);
+    const total = Number(countQ.rows?.[0]?.total || 0);
+
+    const offset = (page - 1) * pageSize;
+    params.push(pageSize);
+    params.push(offset);
+
+    const rowsQ = await pool.query(
+      `SELECT
+        a.*,
+        COALESCE(ev.asset_count, 0) AS asset_count,
+        CASE
+          WHEN a.verdict = 'FP' THEN 0
+          WHEN a.verdict = 'TP' THEN LN(a.total_hits + 1)
+          WHEN a.verdict = 'Suspicious' THEN LN(a.total_hits + 1) * 0.7
+          ELSE LN(a.total_hits + 1) * 0.5
+        END AS risk_score
+       FROM ioc_activity a
+       LEFT JOIN LATERAL (
+         SELECT COUNT(DISTINCT m.destination_ip)::int AS asset_count
+         FROM ioc_match_events m
+         WHERE m.activity_id = a.id
+           AND m.destination_ip IS NOT NULL
+           AND m.destination_ip <> ''
+       ) ev ON true
+       ${whereSql}
+       ORDER BY a.last_seen DESC, a.created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+
+    return res.json({
+      items: rowsQ.rows || [],
+      pagination: {
+        page,
+        page_size: pageSize,
+        total,
+        total_pages: Math.max(1, Math.ceil(total / pageSize))
+      }
+    });
+  } catch (err) {
+    console.error('[incidents-list] failed', err);
+    return res.status(500).json({ items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 } });
+  }
+});
+
+app.get('/api/incidents/:id', async (req, res) => {
+  try {
+    const id = String(req.params?.id || '').trim();
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+
+    const q = await pool.query(
+      `SELECT
+        a.*,
+        COALESCE(ev.asset_count, 0) AS asset_count,
+        COALESCE(ev.event_count, 0) AS event_count,
+        CASE
+          WHEN a.verdict = 'FP' THEN 0
+          WHEN a.verdict = 'TP' THEN LN(a.total_hits + 1)
+          WHEN a.verdict = 'Suspicious' THEN LN(a.total_hits + 1) * 0.7
+          ELSE LN(a.total_hits + 1) * 0.5
+        END AS risk_score
+       FROM ioc_activity a
+       LEFT JOIN LATERAL (
+         SELECT
+           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           COUNT(*)::bigint AS event_count
+         FROM ioc_match_events m
+         WHERE m.activity_id = a.id
+       ) ev ON true
+       WHERE a.id = $1::uuid
+       LIMIT 1`,
+      [id]
+    );
+
+    if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
+    return res.json({ item: q.rows[0] });
+  } catch (err) {
+    console.error('[incident-detail] failed', err);
+    return res.status(500).json({ message: 'Failed to fetch incident' });
+  }
+});
+
+app.patch('/api/incidents/:id', async (req, res) => {
+  try {
+    const id = String(req.params?.id || '').trim();
+    if (!id) return res.status(400).json({ message: 'Invalid id' });
+
+    const bodyVerdict = req.body?.verdict;
+    const bodyStatus = req.body?.status;
+    const note = req.body?.note == null ? null : String(req.body.note).trim().slice(0, 4000);
+    const takeOwnership = Boolean(req.body?.take_ownership || req.body?.takeOwnership);
+    const reviewer = String(req.user?.username || req.user?.email || '').trim() || null;
+
+    const verdict = bodyVerdict == null || String(bodyVerdict).trim() === ''
+      ? null
+      : String(bodyVerdict).trim();
+
+    const allowedVerdicts = new Set(['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress']);
+    if (verdict !== null && !allowedVerdicts.has(verdict)) {
+      return res.status(400).json({ message: 'Invalid verdict' });
+    }
+
+    const status = bodyStatus == null || String(bodyStatus).trim() === ''
+      ? null
+      : String(bodyStatus).trim().toLowerCase();
+
+    if (status !== null && !['open', 'closed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const q = await pool.query(
+      `UPDATE ioc_activity
+       SET verdict = COALESCE($2::text, verdict),
+           status = COALESCE($3::text, status),
+           note = COALESCE($4::text, note),
+           assigned_to = CASE
+             WHEN $5::boolean = true THEN $6::text
+             ELSE assigned_to
+           END,
+           assigned_at = CASE
+             WHEN $5::boolean = true THEN NOW()
+             ELSE assigned_at
+           END,
+           updated_at = NOW()
+       WHERE id = $1::uuid
+       RETURNING *`,
+      [id, verdict, status, note, takeOwnership, reviewer]
+    );
+
+    if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
+    return res.json({ item: q.rows[0] });
+  } catch (err) {
+    console.error('[incident-patch] failed', err);
+    return res.status(500).json({ message: 'Failed to update incident' });
   }
 });
 
