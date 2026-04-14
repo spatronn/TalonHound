@@ -1793,6 +1793,13 @@ function IncidentPage() {
     setPage(1);
   };
 
+  const resetFilters = () => {
+    setQuery('');
+    setStatus('');
+    setVerdict([]);
+    applyQuickRange('24h');
+  };
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
@@ -1827,6 +1834,7 @@ function IncidentPage() {
               Last 7 days
             </button>
             <button onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
+            <button onClick={resetFilters}>Clear</button>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress'].map((v) => (
