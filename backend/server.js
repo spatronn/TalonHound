@@ -1214,6 +1214,7 @@ app.get('/api/incidents', async (req, res) => {
     const q = String(req.query?.q || req.query?.search || '').trim();
     const status = String(req.query?.status || '').trim().toLowerCase();
     const verdictStr = String(req.query?.verdict || '').trim();
+    const assigneeStr = String(req.query?.assignee || '').trim();
     const fromStr = String(req.query?.from || '').trim();
     const toStr = String(req.query?.to || '').trim();
 
@@ -1240,6 +1241,16 @@ app.get('/api/incidents', async (req, res) => {
           holders.push(`$${params.length}`);
         }
         where.push(`a.verdict IN (${holders.join(',')})`);
+      }
+    }
+
+    if (assigneeStr) {
+      const norm = assigneeStr.toLowerCase();
+      if (norm === 'unassigned') {
+        where.push(`(a.assigned_to IS NULL OR a.assigned_to = '')`);
+      } else {
+        params.push(assigneeStr);
+        where.push(`a.assigned_to = $${params.length}`);
       }
     }
 

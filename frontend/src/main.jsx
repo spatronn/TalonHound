@@ -1820,6 +1820,7 @@ function IncidentPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [verdict, setVerdict] = useState([]);
+  const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [from, setFrom] = useState(() => {
     const now = new Date();
     const d = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -1849,6 +1850,7 @@ function IncidentPage() {
     try {
       const params = { page, page_size: pageSize, q: query || undefined, status: status || undefined, from: from || undefined, to: to || undefined };
       if (verdict.length) params.verdict = verdict.join(',');
+      if (assigneeFilter && assigneeFilter !== 'all') params.assignee = assigneeFilter;
       const { data } = await api.get('/incidents', { params });
       setItems(data?.items || []);
       setPagination(data?.pagination || { page: 1, page_size: pageSize, total: 0, total_pages: 1 });
@@ -1858,7 +1860,7 @@ function IncidentPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, query, status, verdict, from, to]);
+  }, [page, pageSize, query, status, verdict, assigneeFilter, from, to]);
 
   useEffect(() => { load().catch(() => {}); }, [load]);
 
@@ -1887,8 +1889,24 @@ function IncidentPage() {
     setQuery('');
     setStatus('');
     setVerdict([]);
+    setAssigneeFilter('all');
     applyQuickRange('24h');
   };
+
+  const assigneeOptions = useMemo(() => {
+    const set = new Set();
+    for (const it of items || []) {
+      const a = String(it?.assigned_to || '').trim();
+      if (a) set.add(a);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  const activeFilters = [];
+  if (from || to) activeFilters.push({ key: 'date', label: `${from || '-'} → ${to || '-'}`, onClear: () => { setFrom(''); setTo(''); setQuickRange(''); } });
+  if (status) activeFilters.push({ key: 'status', label: `Status: ${status}`, onClear: () => setStatus('') });
+  if (verdict.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdict.join(', ')}`, onClear: () => setVerdict([]) });
+  if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
 
   return (
     <AppShell>
@@ -1902,6 +1920,11 @@ function IncidentPage() {
               <option value="">Status: All</option>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
+            </select>
+            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+              <option value="all">Assignee: All</option>
+              <option value="unassigned">Assignee: Unassigned</option>
+              {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
             <input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setQuickRange(''); }} />
             <input type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setQuickRange(''); }} />
@@ -1926,6 +1949,17 @@ function IncidentPage() {
             <button onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
             <button onClick={resetFilters}>Clear</button>
           </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Active Filters</span>
+            {activeFilters.length ? activeFilters.map((f) => (
+              <span key={f.key + f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #475569', borderRadius: 999, padding: '3px 8px', fontSize: 12, color: '#cbd5e1' }}>
+                {f.label}
+                <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
+              </span>
+            )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
+            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear all</button>
+          </div>
+
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress'].map((v) => (
               <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
