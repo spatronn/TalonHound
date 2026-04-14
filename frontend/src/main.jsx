@@ -1591,6 +1591,7 @@ function IOCMatchEventDetailsPage() {
 }
 
 function IncidentEventsTable({ activityId, refreshKey = 0 }) {
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -1617,7 +1618,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
       <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
         Events ({total})
       </div>
-      <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+      <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1260 }}>
         <thead>
           <tr style={{ textAlign: 'left', background: '#111827' }}>
             <th style={{ width: 80 }}>ID</th>
@@ -1627,10 +1628,11 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
             <th style={{ width: 140 }}>Verdict</th>
             <th style={{ width: 140 }}>Assignee</th>
             <th style={{ width: 180 }}>Source</th>
+            <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => {
+          {loading ? <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => {
             const verdict = String(r.verdict || '').toLowerCase();
             const vm = verdict === 'fp'
               ? { label: 'FP', color: '#ef4444' }
@@ -1668,9 +1670,15 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
                     ? `${(r.source_names && r.source_names[0]) || r.source_name || '-'} +${r.source_count - 1}`
                     : ((r.source_names && r.source_names[0]) || r.source_name || '-')}
                 </td>
+                <td>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => navigate(`/analytics/ioc-match-events/${r.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                    <button onClick={() => navigate(`/analytics/ioc-match-events/${r.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                  </div>
+                </td>
               </tr>
             );
-          }) : <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
+          }) : <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
         </tbody>
       </table>
     </div>
