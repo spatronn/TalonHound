@@ -300,7 +300,7 @@ function AppShell({ children }) {
             <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
             <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
             <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
-            <Link to="/analytics/ioc-match-events" style={subMenuStyle(isActive('/analytics/ioc-match-events'))}>Detection Events</Link>
+            <Link to="/analytics/detection-events" style={subMenuStyle(isActive('/analytics/detection-events'))}>Detection Events</Link>
           </div>
           <Link to="/incidents" style={menuStyle(location.pathname.startsWith('/incidents'))}>3. Incidents</Link>
 
@@ -717,8 +717,8 @@ function AnalyticsPage() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                        <button onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
                       </div>
                     </td>
                   </tr>
@@ -1374,7 +1374,7 @@ function IOCMatchEventsPage() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => navigate(`/analytics/ioc-match-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
                         <button onClick={() => openReview(evt)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
                       </div>
                     </td>
@@ -1517,7 +1517,7 @@ function IOCMatchEventDetailsPage() {
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ margin: 0 }}>Detection Event Details #{id}</h2>
-          <button onClick={() => navigate('/analytics/ioc-match-events')}>Back</button>
+          <button onClick={() => navigate('/analytics/detection-events')}>Back</button>
         </div>
 
         {loading ? (
@@ -1672,8 +1672,8 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
                 </td>
                 <td>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => navigate(`/analytics/ioc-match-events/${r.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                    <button onClick={() => navigate(`/analytics/ioc-match-events/${r.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                    <button onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                    <button onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
                   </div>
                 </td>
               </tr>
@@ -4127,8 +4127,8 @@ function IOCDetailsPage() {
                         <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.source_name || '-'}</td>
                         <td>
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button type="button" onClick={() => navigate(`/analytics/ioc-match-events/${m.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                            <button type="button" onClick={() => navigate(`/analytics/ioc-match-events/${m.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                            <button type="button" onClick={() => navigate(`/analytics/detection-events/${m.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                            <button type="button" onClick={() => navigate(`/analytics/detection-events/${m.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
                           </div>
                         </td>
                       </tr>
@@ -4524,8 +4524,8 @@ function App() {
           <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
-          <Route path="/analytics/ioc-match-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
-          <Route path="/analytics/ioc-match-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
+          <Route path="/analytics/detection-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
+          <Route path="/analytics/detection-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
           <Route path="/incidents" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/incidents/:id" element={<Protected><IncidentDetailsPage /></Protected>} />
           <Route path="/incident" element={<Navigate to="/incidents" replace />} />
