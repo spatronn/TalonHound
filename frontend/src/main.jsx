@@ -300,7 +300,7 @@ function AppShell({ children }) {
             <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
             <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
             <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
-            <Link to="/analytics/ioc-match-events" style={subMenuStyle(isActive('/analytics/ioc-match-events'))}>IOC Match Events</Link>
+            <Link to="/analytics/ioc-match-events" style={subMenuStyle(isActive('/analytics/ioc-match-events'))}>Detection Events</Link>
           </div>
           <Link to="/incidents" style={menuStyle(location.pathname.startsWith('/incidents'))}>3. Incidents</Link>
 
@@ -660,7 +660,7 @@ function AnalyticsPage() {
 
         <div style={{ marginTop: 16, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
-            Last 10 IOC Match Events
+            Last 10 Detection Events
           </div>
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
@@ -724,7 +724,7 @@ function AnalyticsPage() {
                   </tr>
                 );
               }) : (
-                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match events yet.</td></tr>
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No detection events yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -1200,8 +1200,8 @@ function IOCMatchEventsPage() {
         <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <div>
-              <h2 style={{ margin: 0 }}>IOC Match Events</h2>
-              <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Search and inspect IOC match events.</div>
+              <h2 style={{ margin: 0 }}>Detection Events</h2>
+              <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Search and inspect detection events.</div>
             </div>
           </div>
 
@@ -1339,7 +1339,7 @@ function IOCMatchEventsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading IOC match events...</td></tr>
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading detection events...</td></tr>
               ) : pagedRows.length ? pagedRows.map((evt) => {
                 const vm = verdictMeta(evt.verdict);
                 return (
@@ -1381,7 +1381,7 @@ function IOCMatchEventsPage() {
                   </tr>
                 );
               }) : (
-                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match events found.</td></tr>
+                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No detection events found.</td></tr>
               )}
             </tbody>
           </table>
@@ -1408,7 +1408,7 @@ function IOCMatchEventsPage() {
         <div onClick={closeReview} style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.7)', display: 'grid', placeItems: 'center', zIndex: 50, padding: 16 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(680px, 96vw)', background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Review IOC Match #{selectedEvent.id}</h3>
+              <h3 style={{ margin: 0 }}>Review Detection Event #{selectedEvent.id}</h3>
               <button onClick={closeReview}>Close</button>
             </div>
 
@@ -1516,7 +1516,7 @@ function IOCMatchEventDetailsPage() {
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ margin: 0 }}>IOC Match Event Details #{id}</h2>
+          <h2 style={{ margin: 0 }}>Detection Event Details #{id}</h2>
           <button onClick={() => navigate('/analytics/ioc-match-events')}>Back</button>
         </div>
 
@@ -4000,7 +4000,7 @@ function IOCDetailsPage() {
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.source_count || 0}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>IOC Match Events</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(data.match_count || 0)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Detection Events</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(data.match_count || 0)}</div></div>
             </div>
 
             {!isHashObservable ? (
@@ -4077,7 +4077,7 @@ function IOCDetailsPage() {
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Recent IOC Match Events (Top 20)</div>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Recent Detection Events (Top 20)</div>
               <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1380, fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', background: '#111827' }}>

@@ -19,7 +19,7 @@ docker compose up -d --build
 
 ### 1) `demo-db` (PostgreSQL)
 **Purpose**
-- Primary datastore for users, IOC data, signal events, and IOC match events.
+- Primary datastore for users, IOC data, signal events, and detection events.
 
 **Key tables (relevant to current flow)**
 - `signal_events` → raw telemetry events (retention: 30 days)
@@ -239,7 +239,7 @@ docker compose up -d --build
 - Analytics
   - Connected Data Sources
   - Last 10 Raw Events
-  - Last 10 IOC Match Events
+  - Last 10 Detection Events
 - Incident (placeholder for now)
 
 ### 12) `demo-proxy`
