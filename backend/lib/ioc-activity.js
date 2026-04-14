@@ -50,12 +50,16 @@ export async function findOrCreateActivity(client, {
            last_seen = GREATEST(last_seen, $3::timestamptz),
            updated_at = NOW()
        WHERE id = $1
+         AND status = '${OPEN_STATUS}'
        RETURNING id, ioc_value, ioc_type, first_seen, last_seen, total_hits, status, verdict`,
       [cached.id, hitInc, eventIso]
     );
-    const row = upd.rows?.[0] || cached;
-    if (cache instanceof Map) cache.set(cacheKey, row);
-    return row;
+    const row = upd.rows?.[0] || null;
+    if (row) {
+      if (cache instanceof Map) cache.set(cacheKey, row);
+      return row;
+    }
+    if (cache instanceof Map) cache.delete(cacheKey);
   }
 
   const q = await client.query(
@@ -78,12 +82,15 @@ export async function findOrCreateActivity(client, {
            last_seen = GREATEST(last_seen, $3::timestamptz),
            updated_at = NOW()
        WHERE id = $1
+         AND status = '${OPEN_STATUS}'
        RETURNING id, ioc_value, ioc_type, first_seen, last_seen, total_hits, status, verdict`,
       [open.id, hitInc, eventIso]
     );
-    const row = upd.rows?.[0] || open;
-    if (cache instanceof Map) cache.set(cacheKey, row);
-    return row;
+    const row = upd.rows?.[0] || null;
+    if (row) {
+      if (cache instanceof Map) cache.set(cacheKey, row);
+      return row;
+    }
   }
 
   const ins = await client.query(
