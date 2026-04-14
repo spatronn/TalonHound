@@ -97,9 +97,10 @@ export async function findOrCreateActivity(client, {
     `INSERT INTO ioc_activity (
       ioc_value, ioc_type, first_seen, last_seen, total_hits, status, verdict
     ) VALUES ($1, $2, $3::timestamptz, $3::timestamptz, $4, '${OPEN_STATUS}', 'Unreviewed')
-    ON CONFLICT ON CONSTRAINT uq_ioc_activity_one_open_per_ioc
+    ON CONFLICT (ioc_value, ioc_type) WHERE status = '${OPEN_STATUS}'
     DO UPDATE SET
       total_hits = ioc_activity.total_hits + EXCLUDED.total_hits,
+      first_seen = LEAST(ioc_activity.first_seen, EXCLUDED.first_seen),
       last_seen = GREATEST(ioc_activity.last_seen, EXCLUDED.last_seen),
       updated_at = NOW()
     RETURNING id, ioc_value, ioc_type, first_seen, last_seen, total_hits, status, verdict`,
