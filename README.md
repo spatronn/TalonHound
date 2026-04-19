@@ -4,6 +4,7 @@
 
 - System diagram: `docs/system-diagram.md`
 - Container operations & tuning: `docs/container-operations-and-tuning.md`
+- Risk engine analytics: `docs/risk-engine-analytics.md`
 
 ## Run
 
