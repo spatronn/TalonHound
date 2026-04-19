@@ -1415,8 +1415,7 @@ app.get('/api/risk/overview', async (_req, res) => {
            WHERE m.activity_id = a.id
          ) ev ON true
          WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
-         ORDER BY a.last_seen DESC
-         LIMIT 1000`
+         ORDER BY a.last_seen DESC`
       ),
       pool.query(
         `SELECT COUNT(*)::int AS total_active_incidents
@@ -1432,7 +1431,7 @@ app.get('/api/risk/overview', async (_req, res) => {
 
     const overview = calculateInstitutionRisk(scoredIncidents);
     const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
-    const dataTruncated = scoredIncidents.length >= 1000 && totalActiveIncidents > scoredIncidents.length;
+    const dataTruncated = false;
 
     return res.json({
       ...overview,

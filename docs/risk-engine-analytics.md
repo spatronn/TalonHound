@@ -97,17 +97,15 @@ Institution breakdown alanları:
 
 ---
 
-## 4) Truncation Guard (`/api/risk/overview`)
+## 4) Coverage metadata (`/api/risk/overview`)
 
-Risk overview dataset’i performans için limitlidir (`LIMIT 1000`). Sessiz eksik hesaplama riskini önlemek için response şeffaflık alanları içerir:
+Risk overview hesaplaması aktif veri setinin tamamını kullanır (hard row limit yok).
+
+Response şeffaflık alanları:
 
 - `active_incident_count` (hesaplamaya giren satır)
 - `total_active_incidents` (COUNT query sonucu)
-- `data_truncated` (partial dataset flag)
-
-`data_truncated = true` ise frontend uyarı gösterir:
-
-> "Risk score is calculated on a partial dataset"
+- `data_truncated` (şu an `false`, ileriye dönük uyumluluk alanı)
 
 ---
 
