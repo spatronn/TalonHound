@@ -19,7 +19,7 @@ import {
 } from './lib/auth.js';
 import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
-import { calculateIncidentRiskV1 } from './lib/riskEngine.js';
+import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 
 const { Pool } = pg;
 
@@ -1284,14 +1284,22 @@ app.get('/api/incidents', async (req, res) => {
     const rowsQ = await pool.query(
       `SELECT
         a.*,
-        COALESCE(ev.asset_count, 0) AS asset_count
+        COALESCE(ev.asset_count, 0) AS asset_count,
+        COALESCE(ev.event_count, 0) AS event_count,
+        ev.confidence
        FROM ioc_activity a
        LEFT JOIN LATERAL (
-         SELECT COUNT(DISTINCT m.destination_ip)::int AS asset_count
+         SELECT
+           COUNT(*)::bigint AS event_count,
+           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           CASE
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
+             ELSE NULL
+           END AS confidence
          FROM ioc_match_events m
          WHERE m.activity_id = a.id
-           AND m.destination_ip IS NOT NULL
-           AND m.destination_ip <> ''
        ) ev ON true
        ${whereSql}
        ORDER BY a.last_seen DESC, a.created_at DESC
@@ -1299,10 +1307,13 @@ app.get('/api/incidents', async (req, res) => {
       params
     );
 
-    const items = (rowsQ.rows || []).map((row) => ({
-      ...row,
-      risk_score: calculateIncidentRiskV1(row)
-    }));
+    const items = (rowsQ.rows || []).map((row) => {
+      const risk = calculateIncidentRisk(row);
+      return {
+        ...row,
+        ...risk
+      };
+    });
 
     return res.json({
       items,
@@ -1331,14 +1342,21 @@ app.get('/api/incidents/:id', async (req, res) => {
       `WITH ev AS (
          SELECT
            COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT m.destination_ip)::int AS asset_count
+           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           CASE
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
+             ELSE NULL
+           END AS confidence
          FROM ioc_match_events m
          WHERE m.activity_id = $1::uuid
        )
        SELECT
          a.*,
          COALESCE(ev.asset_count, 0) AS asset_count,
-         COALESCE(ev.event_count, 0) AS event_count
+         COALESCE(ev.event_count, 0) AS event_count,
+         ev.confidence
        FROM ioc_activity a
        CROSS JOIN ev
        WHERE a.id = $1::uuid
@@ -1351,15 +1369,63 @@ app.get('/api/incidents/:id', async (req, res) => {
       return res.status(404).json({ message: 'Incident not found (no linked events)' });
     }
 
+    const risk = calculateIncidentRisk(q.rows[0]);
     const item = {
       ...q.rows[0],
-      risk_score: calculateIncidentRiskV1(q.rows[0])
+      ...risk
     };
 
     return res.json({ item });
   } catch (err) {
     console.error('[incident-detail] failed', err);
     return res.status(500).json({ message: 'Failed to fetch incident' });
+  }
+});
+
+app.get('/api/risk/overview', async (_req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT
+         a.id,
+         a.incident_id,
+         a.ioc_value,
+         a.ioc_type,
+         a.total_hits,
+         a.verdict,
+         a.last_seen,
+         COALESCE(ev.event_count, 0) AS event_count,
+         COALESCE(ev.asset_count, 0) AS asset_count,
+         ev.confidence
+       FROM ioc_activity a
+       LEFT JOIN LATERAL (
+         SELECT
+           COUNT(*)::bigint AS event_count,
+           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           CASE
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
+             ELSE NULL
+           END AS confidence
+         FROM ioc_match_events m
+         WHERE m.activity_id = a.id
+       ) ev ON true
+       WHERE a.status = 'open'
+         AND EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
+       ORDER BY a.last_seen DESC
+       LIMIT 1000`
+    );
+
+    const overview = calculateInstitutionRisk(q.rows || []);
+    return res.json(overview);
+  } catch (err) {
+    console.error('[risk-overview] failed', err);
+    return res.status(500).json({
+      institution_risk_score: 0,
+      active_incident_count: 0,
+      top_contributing_incidents: [],
+      breakdown: { error: 'Failed to compute institution risk overview' }
+    });
   }
 });
 

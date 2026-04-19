@@ -1,13 +1,4 @@
-import { getVerdictWeight } from './riskEngine.js';
-
 const OPEN_STATUS = 'open';
-
-export function calculateIncidentRiskScore(totalHits, verdict, baseWeight = 1) {
-  const hits = Math.max(Number(totalHits || 0), 0);
-  const w = Math.max(Number(baseWeight || 0), 0) * getVerdictWeight(verdict);
-  if (w === 0 || hits <= 0) return 0;
-  return Math.log1p(hits) * w;
-}
 
 export async function findOrCreateActivity(client, {
   iocValue,
