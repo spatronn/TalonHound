@@ -19,6 +19,7 @@ import {
 } from './lib/auth.js';
 import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
+import { calculateIncidentRiskV1 } from './lib/riskEngine.js';
 
 const { Pool } = pg;
 
@@ -1283,13 +1284,7 @@ app.get('/api/incidents', async (req, res) => {
     const rowsQ = await pool.query(
       `SELECT
         a.*,
-        COALESCE(ev.asset_count, 0) AS asset_count,
-        CASE
-          WHEN a.verdict = 'FP' THEN 0
-          WHEN a.verdict = 'TP' THEN LN(a.total_hits + 1)
-          WHEN a.verdict = 'Suspicious' THEN LN(a.total_hits + 1) * 0.7
-          ELSE LN(a.total_hits + 1) * 0.5
-        END AS risk_score
+        COALESCE(ev.asset_count, 0) AS asset_count
        FROM ioc_activity a
        LEFT JOIN LATERAL (
          SELECT COUNT(DISTINCT m.destination_ip)::int AS asset_count
@@ -1304,8 +1299,13 @@ app.get('/api/incidents', async (req, res) => {
       params
     );
 
+    const items = (rowsQ.rows || []).map((row) => ({
+      ...row,
+      risk_score: calculateIncidentRiskV1(row)
+    }));
+
     return res.json({
-      items: rowsQ.rows || [],
+      items,
       pagination: {
         page,
         page_size: pageSize,
@@ -1338,13 +1338,7 @@ app.get('/api/incidents/:id', async (req, res) => {
        SELECT
          a.*,
          COALESCE(ev.asset_count, 0) AS asset_count,
-         COALESCE(ev.event_count, 0) AS event_count,
-         CASE
-           WHEN a.verdict = 'FP' THEN 0
-           WHEN a.verdict = 'TP' THEN LN(a.total_hits + 1)
-           WHEN a.verdict = 'Suspicious' THEN LN(a.total_hits + 1) * 0.7
-           ELSE LN(a.total_hits + 1) * 0.5
-         END AS risk_score
+         COALESCE(ev.event_count, 0) AS event_count
        FROM ioc_activity a
        CROSS JOIN ev
        WHERE a.id = $1::uuid
@@ -1356,7 +1350,13 @@ app.get('/api/incidents/:id', async (req, res) => {
     if (Number(q.rows[0]?.event_count || 0) <= 0) {
       return res.status(404).json({ message: 'Incident not found (no linked events)' });
     }
-    return res.json({ item: q.rows[0] });
+
+    const item = {
+      ...q.rows[0],
+      risk_score: calculateIncidentRiskV1(q.rows[0])
+    };
+
+    return res.json({ item });
   } catch (err) {
     console.error('[incident-detail] failed', err);
     return res.status(500).json({ message: 'Failed to fetch incident' });

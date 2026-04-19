@@ -1,25 +1,10 @@
+import { getVerdictWeight } from './riskEngine.js';
+
 const OPEN_STATUS = 'open';
-
-function normalizeVerdict(v) {
-  const s = String(v || '').trim().toLowerCase();
-  if (s === 'fp') return 'FP';
-  if (s === 'tp') return 'TP';
-  if (s === 'suspicious') return 'Suspicious';
-  if (s === 'in progress' || s === 'in_progress') return 'In Progress';
-  return 'Unreviewed';
-}
-
-function verdictWeight(verdict) {
-  const v = normalizeVerdict(verdict);
-  if (v === 'FP') return 0;
-  if (v === 'TP') return 1;
-  if (v === 'Suspicious') return 0.7;
-  return 0.5; // Unreviewed / In Progress
-}
 
 export function calculateIncidentRiskScore(totalHits, verdict, baseWeight = 1) {
   const hits = Math.max(Number(totalHits || 0), 0);
-  const w = Math.max(Number(baseWeight || 0), 0) * verdictWeight(verdict);
+  const w = Math.max(Number(baseWeight || 0), 0) * getVerdictWeight(verdict);
   if (w === 0 || hits <= 0) return 0;
   return Math.log1p(hits) * w;
 }
