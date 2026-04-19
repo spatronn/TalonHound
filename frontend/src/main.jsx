@@ -1770,8 +1770,12 @@ function RiskOverviewPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Active Incidents</div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Open Incidents</div>
                 <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.active_incident_count || 0)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Considered Incidents</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.total_active_incidents || 0)}</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Raw Contribution</div>
