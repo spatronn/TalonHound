@@ -1709,6 +1709,7 @@ function RiskOverviewPage() {
   const levelColor = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#f59e0b' : '#22c55e';
   const top = Array.isArray(data?.top_contributing_incidents) ? data.top_contributing_incidents : [];
   const bd = data?.breakdown || {};
+  const dataTruncated = Boolean(data?.data_truncated);
 
   return (
     <AppShell>
@@ -1730,6 +1731,12 @@ function RiskOverviewPage() {
                 <div style={{ width: `${score}%`, height: '100%', background: `linear-gradient(90deg, #22c55e 0%, #f59e0b 55%, #ef4444 100%)` }} />
               </div>
             </div>
+
+            {dataTruncated ? (
+              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #f59e0b', color: '#fcd34d', background: 'rgba(245, 158, 11, 0.12)' }}>
+                Risk score is calculated on a partial dataset
+              </div>
+            ) : null}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>

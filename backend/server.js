@@ -1384,37 +1384,45 @@ app.get('/api/incidents/:id', async (req, res) => {
 
 app.get('/api/risk/overview', async (_req, res) => {
   try {
-    const q = await pool.query(
-      `SELECT
-         a.id,
-         a.incident_id,
-         a.ioc_value,
-         a.ioc_type,
-         a.total_hits,
-         a.verdict,
-         a.last_seen,
-         COALESCE(ev.event_count, 0) AS event_count,
-         COALESCE(ev.asset_count, 0) AS asset_count,
-         ev.confidence
-       FROM ioc_activity a
-       LEFT JOIN LATERAL (
-         SELECT
-           COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
-           CASE
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-             ELSE NULL
-           END AS confidence
-         FROM ioc_match_events m
-         WHERE m.activity_id = a.id
-       ) ev ON true
-       WHERE a.status = 'open'
-         AND EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
-       ORDER BY a.last_seen DESC
-       LIMIT 1000`
-    );
+    const [q, totalQ] = await Promise.all([
+      pool.query(
+        `SELECT
+           a.id,
+           a.incident_id,
+           a.ioc_value,
+           a.ioc_type,
+           a.total_hits,
+           a.verdict,
+           a.last_seen,
+           COALESCE(ev.event_count, 0) AS event_count,
+           COALESCE(ev.asset_count, 0) AS asset_count,
+           ev.confidence
+         FROM ioc_activity a
+         LEFT JOIN LATERAL (
+           SELECT
+             COUNT(*)::bigint AS event_count,
+             COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+             CASE
+               WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
+               WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
+               WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
+               ELSE NULL
+             END AS confidence
+           FROM ioc_match_events m
+           WHERE m.activity_id = a.id
+         ) ev ON true
+         WHERE a.status = 'open'
+           AND EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
+         ORDER BY a.last_seen DESC
+         LIMIT 1000`
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS total_active_incidents
+         FROM ioc_activity a
+         WHERE a.status = 'open'
+           AND EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`
+      )
+    ]);
 
     const scoredIncidents = (q.rows || []).map((row) => {
       const risk = calculateIncidentRisk(row);
@@ -1422,12 +1430,22 @@ app.get('/api/risk/overview', async (_req, res) => {
     });
 
     const overview = calculateInstitutionRisk(scoredIncidents);
-    return res.json(overview);
+    const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
+    const dataTruncated = scoredIncidents.length >= 1000 && totalActiveIncidents > scoredIncidents.length;
+
+    return res.json({
+      ...overview,
+      active_incident_count: scoredIncidents.length,
+      total_active_incidents: totalActiveIncidents,
+      data_truncated: dataTruncated
+    });
   } catch (err) {
     console.error('[risk-overview] failed', err);
     return res.status(500).json({
       institution_risk_score: 0,
       active_incident_count: 0,
+      total_active_incidents: 0,
+      data_truncated: false,
       top_contributing_incidents: [],
       breakdown: { error: 'Failed to compute institution risk overview' }
     });
