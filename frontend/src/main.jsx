@@ -1695,12 +1695,22 @@ function RiskOverviewPage() {
   const load = useCallback(async (selectedRange = range) => {
     setLoading(true);
     try {
-      const [{ data: ov }, { data: tr }] = await Promise.all([
+      const [ovRes, trRes] = await Promise.allSettled([
         api.get('/risk/overview'),
         api.get('/risk/trend', { params: { range: selectedRange } })
       ]);
-      setData(ov || null);
-      setTrendData(tr || null);
+
+      if (ovRes.status === 'fulfilled') {
+        setData(ovRes.value?.data || null);
+      } else {
+        setData(null);
+      }
+
+      if (trRes.status === 'fulfilled') {
+        setTrendData(trRes.value?.data || null);
+      } else {
+        setTrendData({ range: selectedRange, current: Number(ovRes.status === 'fulfilled' ? ovRes.value?.data?.institution_risk_score || 0 : 0), previous: 0, delta: 0, trend: 'stable', stats: { min: 0, max: 0, avg: 0 }, history: [] });
+      }
     } catch {
       setData(null);
       setTrendData(null);
