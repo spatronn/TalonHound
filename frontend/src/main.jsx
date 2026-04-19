@@ -1689,14 +1689,20 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
 function RiskOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [trendData, setTrendData] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/risk/overview');
-      setData(data || null);
+      const [{ data: ov }, { data: tr }] = await Promise.all([
+        api.get('/risk/overview'),
+        api.get('/risk/trend', { params: { limit: 50 } })
+      ]);
+      setData(ov || null);
+      setTrendData(tr || null);
     } catch {
       setData(null);
+      setTrendData(null);
     } finally {
       setLoading(false);
     }
@@ -1710,6 +1716,16 @@ function RiskOverviewPage() {
   const top = Array.isArray(data?.top_contributing_incidents) ? data.top_contributing_incidents : [];
   const bd = data?.breakdown || {};
   const dataTruncated = Boolean(data?.data_truncated);
+  const trend = String(trendData?.trend || 'stable');
+  const delta = Number(trendData?.delta || 0);
+  const trendArrow = trend === 'increasing' ? '↗' : trend === 'decreasing' ? '↘' : '→';
+  const trendColor = trend === 'increasing' ? '#ef4444' : trend === 'decreasing' ? '#22c55e' : '#94a3b8';
+  const snapshots = Array.isArray(trendData?.snapshots) ? trendData.snapshots : [];
+  const chartPoints = snapshots.map((s, i) => {
+    const x = snapshots.length <= 1 ? 0 : (i / (snapshots.length - 1)) * 100;
+    const y = 100 - Math.max(0, Math.min(100, Number(s?.institution_risk || 0)));
+    return `${x},${y}`;
+  }).join(' ');
 
   return (
     <AppShell>
@@ -1729,6 +1745,20 @@ function RiskOverviewPage() {
               </div>
               <div style={{ marginTop: 10, height: 12, borderRadius: 999, background: '#1f2937', overflow: 'hidden' }}>
                 <div style={{ width: `${score}%`, height: '100%', background: `linear-gradient(90deg, #22c55e 0%, #f59e0b 55%, #ef4444 100%)` }} />
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, color: trendColor, fontWeight: 700 }}>
+                <span>{trendArrow}</span>
+                <span style={{ textTransform: 'capitalize' }}>{trend}</span>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Δ {delta >= 0 ? '+' : ''}{delta.toFixed(2)}</span>
+              </div>
+              <div style={{ marginTop: 10, border: '1px solid #334155', borderRadius: 8, padding: 8, background: '#0b1220' }}>
+                {snapshots.length >= 2 ? (
+                  <svg viewBox="0 0 100 100" width="100%" height="70" preserveAspectRatio="none" aria-label="Institution risk trend">
+                    <polyline fill="none" stroke="#60a5fa" strokeWidth="2" points={chartPoints} />
+                  </svg>
+                ) : (
+                  <div style={{ color: '#64748b', fontSize: 12 }}>Not enough snapshots yet for trend chart.</div>
+                )}
               </div>
             </div>
 

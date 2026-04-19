@@ -1382,63 +1382,66 @@ app.get('/api/incidents/:id', async (req, res) => {
   }
 });
 
+async function computeInstitutionRiskOverview() {
+  const [q, totalQ] = await Promise.all([
+    pool.query(
+      `SELECT
+         a.id,
+         a.incident_id,
+         a.ioc_value,
+         a.ioc_type,
+         a.total_hits,
+         a.status,
+         a.verdict,
+         a.last_seen,
+         a.updated_at,
+         a.note,
+         COALESCE(ev.event_count, 0) AS event_count,
+         COALESCE(ev.asset_count, 0) AS asset_count,
+         ev.confidence
+       FROM ioc_activity a
+       LEFT JOIN LATERAL (
+         SELECT
+           COUNT(*)::bigint AS event_count,
+           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           CASE
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
+             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
+             ELSE NULL
+           END AS confidence
+         FROM ioc_match_events m
+         WHERE m.activity_id = a.id
+       ) ev ON true
+       WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
+       ORDER BY a.last_seen DESC`
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS total_active_incidents
+       FROM ioc_activity a
+       WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`
+    )
+  ]);
+
+  const scoredIncidents = (q.rows || []).map((row) => {
+    const risk = calculateIncidentRisk(row);
+    return { ...row, ...risk };
+  });
+
+  const overview = calculateInstitutionRisk(scoredIncidents);
+  const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
+
+  return {
+    ...overview,
+    total_active_incidents: totalActiveIncidents,
+    data_truncated: false
+  };
+}
+
 app.get('/api/risk/overview', async (_req, res) => {
   try {
-    const [q, totalQ] = await Promise.all([
-      pool.query(
-        `SELECT
-           a.id,
-           a.incident_id,
-           a.ioc_value,
-           a.ioc_type,
-           a.total_hits,
-           a.status,
-           a.verdict,
-           a.last_seen,
-           a.updated_at,
-           a.note,
-           COALESCE(ev.event_count, 0) AS event_count,
-           COALESCE(ev.asset_count, 0) AS asset_count,
-           ev.confidence
-         FROM ioc_activity a
-         LEFT JOIN LATERAL (
-           SELECT
-             COUNT(*)::bigint AS event_count,
-             COUNT(DISTINCT m.destination_ip)::int AS asset_count,
-             CASE
-               WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-               WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-               WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-               ELSE NULL
-             END AS confidence
-           FROM ioc_match_events m
-           WHERE m.activity_id = a.id
-         ) ev ON true
-         WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
-         ORDER BY a.last_seen DESC`
-      ),
-      pool.query(
-        `SELECT COUNT(*)::int AS total_active_incidents
-         FROM ioc_activity a
-         WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`
-      )
-    ]);
-
-    const scoredIncidents = (q.rows || []).map((row) => {
-      const risk = calculateIncidentRisk(row);
-      return { ...row, ...risk };
-    });
-
-    const overview = calculateInstitutionRisk(scoredIncidents);
-    const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
-    const dataTruncated = false;
-
-    return res.json({
-      ...overview,
-      active_incident_count: scoredIncidents.length,
-      total_active_incidents: totalActiveIncidents,
-      data_truncated: dataTruncated
-    });
+    const overview = await computeInstitutionRiskOverview();
+    return res.json(overview);
   } catch (err) {
     console.error('[risk-overview] failed', err);
     return res.status(500).json({
@@ -1448,6 +1451,50 @@ app.get('/api/risk/overview', async (_req, res) => {
       data_truncated: false,
       top_contributing_incidents: [],
       breakdown: { error: 'Failed to compute institution risk overview' }
+    });
+  }
+});
+
+app.get('/api/risk/trend', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query?.limit || 50), 5), 200);
+
+    const [overview, snapsQ] = await Promise.all([
+      computeInstitutionRiskOverview(),
+      pool.query(
+        `SELECT id, ts, institution_risk
+         FROM risk_snapshots
+         ORDER BY ts DESC
+         LIMIT $1`,
+        [limit]
+      )
+    ]);
+
+    const snapshots = [...(snapsQ.rows || [])].reverse();
+    const currentRisk = Number(overview.institution_risk_score || 0);
+    const previousRisk = snapshots.length >= 2
+      ? Number(snapshots[snapshots.length - 2]?.institution_risk || currentRisk)
+      : currentRisk;
+
+    const delta = Number((currentRisk - previousRisk).toFixed(2));
+    const trend = delta > 5 ? 'increasing' : delta < -5 ? 'decreasing' : 'stable';
+
+    return res.json({
+      current_risk: Number(currentRisk.toFixed(2)),
+      previous_risk: Number(previousRisk.toFixed(2)),
+      delta,
+      trend,
+      snapshots,
+      overview
+    });
+  } catch (err) {
+    console.error('[risk-trend] failed', err);
+    return res.status(500).json({
+      current_risk: 0,
+      previous_risk: 0,
+      delta: 0,
+      trend: 'stable',
+      snapshots: []
     });
   }
 });
@@ -3653,6 +3700,26 @@ async function ensureSeedDemoUser() {
   }
 }
 
+const RISK_SNAPSHOT_INTERVAL_MS = Math.max(Number(process.env.RISK_SNAPSHOT_INTERVAL_MS || 5 * 60 * 1000), 60 * 1000);
+let riskSnapshotInProgress = false;
+
+async function saveRiskSnapshot() {
+  if (riskSnapshotInProgress) return;
+  riskSnapshotInProgress = true;
+  try {
+    const overview = await computeInstitutionRiskOverview();
+    await pool.query(
+      `INSERT INTO risk_snapshots (ts, institution_risk)
+       VALUES (NOW(), $1)`,
+      [Number(overview?.institution_risk_score || 0)]
+    );
+  } catch (err) {
+    console.error('[risk-snapshot] failed', err);
+  } finally {
+    riskSnapshotInProgress = false;
+  }
+}
+
 app.listen(port, async () => {
   console.log(`Backend listening on :${port}`);
   if (IOC_LIST_TIMING) {
@@ -3663,4 +3730,9 @@ app.listen(port, async () => {
   setInterval(() => {
     refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
   }, GEO_CACHE_REFRESH_INTERVAL_MS);
+
+  saveRiskSnapshot().catch(() => {});
+  setInterval(() => {
+    saveRiskSnapshot().catch(() => {});
+  }, RISK_SNAPSHOT_INTERVAL_MS);
 });
