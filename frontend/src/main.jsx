@@ -1837,7 +1837,13 @@ function RiskOverviewPage() {
                 <tbody>
                   {top.length ? top.map((it) => (
                     <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
-                      <td>#{it.incident_id || '-'}</td>
+                      <td>
+                        {it.incident_id || it.id ? (
+                          <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link>
+                        ) : (
+                          <>-</>
+                        )}
+                      </td>
                       <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
                       <td>{Number(it.risk_score || 0).toFixed(2)}</td>
                       <td>{it.contribution != null ? Number(it.contribution).toFixed(6) : '-'}</td>
