@@ -160,60 +160,64 @@ export function calculateInstitutionRisk(incidents) {
       active_incident_count: 0,
       top_contributing_incidents: [],
       breakdown: {
-        model: 'institution-risk-central-2026-04',
+        model: 'institution-risk-central-2026-04-all-active',
         bounded_range: '0-100',
-        weighted_top_risk: 0,
-        density_factor: 0,
-        composition: {
-          weighted_top_component: 0,
-          density_component: 0
-        }
+        active_incident_count: 0,
+        total_raw_contribution: 0,
+        normalized_contribution_input: 0,
+        exponent: 2,
+        normalization_lambda: 2.4
       }
     };
   }
 
-  const scored = rows.map((r) => {
-    const incidentRisk = calculateIncidentRisk(r);
-    return { ...r, ...incidentRisk };
-  }).sort((a, b) => b.risk_score - a.risk_score);
+  const activeCount = rows.length;
 
-  let weightedNumerator = 0;
-  let weightDenominator = 0;
-  for (let i = 0; i < scored.length; i += 1) {
-    const w = 1 / Math.pow(i + 1, 0.75);
-    weightedNumerator += scored[i].risk_score * w;
-    weightDenominator += w;
-  }
-  const weightedTopRisk = weightDenominator > 0 ? (weightedNumerator / weightDenominator) : 0;
+  const withContribution = rows.map((r) => {
+    const riskScore = clamp(Number(r?.risk_score || 0), 0, 100);
+    const normalizedRisk = riskScore / 100;
+    const contribution = Math.pow(normalizedRisk, 2);
+    return {
+      ...r,
+      risk_score: Number(riskScore.toFixed(2)),
+      _normalized_risk: normalizedRisk,
+      _contribution: contribution
+    };
+  });
 
-  const activeCount = scored.length;
-  const densityNorm = clamp(1 - Math.exp(-activeCount / 15), 0, 1);
+  const totalRawContribution = withContribution.reduce((acc, r) => acc + r._contribution, 0);
 
-  const weightedTopComponent = weightedTopRisk * 0.85;
-  const densityComponent = densityNorm * 15;
-  const institutionRisk = clamp(weightedTopComponent + densityComponent, 0, 100);
+  // All incidents contribute, but crowd effect is damped so many low-risk incidents
+  // cannot linearly inflate institution risk.
+  const normalizedContributionInput = totalRawContribution / Math.sqrt(activeCount);
+  const lambda = 2.4;
+  const institutionRisk = clamp(100 * (1 - Math.exp(-lambda * normalizedContributionInput)), 0, 100);
 
-  const topContributing = scored.slice(0, 5).map((r, idx) => ({
-    id: r.id,
-    incident_id: r.incident_id,
-    ioc_value: r.ioc_value,
-    risk_score: r.risk_score,
-    rank: idx + 1
-  }));
+  const topContributing = [...withContribution]
+    .sort((a, b) => b._contribution - a._contribution)
+    .slice(0, 5)
+    .map((r, idx) => ({
+      id: r.id,
+      incident_id: r.incident_id,
+      ioc_value: r.ioc_value,
+      risk_score: r.risk_score,
+      contribution: Number(r._contribution.toFixed(6)),
+      rank: idx + 1
+    }));
 
   return {
     institution_risk_score: Number(institutionRisk.toFixed(2)),
     active_incident_count: activeCount,
     top_contributing_incidents: topContributing,
     breakdown: {
-      model: 'institution-risk-central-2026-04',
+      model: 'institution-risk-central-2026-04-all-active',
       bounded_range: '0-100',
-      weighted_top_risk: Number(weightedTopRisk.toFixed(2)),
-      density_factor: Number(densityNorm.toFixed(4)),
-      composition: {
-        weighted_top_component: Number(weightedTopComponent.toFixed(2)),
-        density_component: Number(densityComponent.toFixed(2))
-      }
+      active_incident_count: activeCount,
+      total_raw_contribution: Number(totalRawContribution.toFixed(6)),
+      normalized_contribution_input: Number(normalizedContributionInput.toFixed(6)),
+      exponent: 2,
+      normalization_lambda: lambda,
+      top_contributing_incidents: topContributing
     }
   };
 }

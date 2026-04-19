@@ -1416,7 +1416,12 @@ app.get('/api/risk/overview', async (_req, res) => {
        LIMIT 1000`
     );
 
-    const overview = calculateInstitutionRisk(q.rows || []);
+    const scoredIncidents = (q.rows || []).map((row) => {
+      const risk = calculateIncidentRisk(row);
+      return { ...row, ...risk };
+    });
+
+    const overview = calculateInstitutionRisk(scoredIncidents);
     return res.json(overview);
   } catch (err) {
     console.error('[risk-overview] failed', err);
