@@ -1701,6 +1701,10 @@ app.get('/api/integrations', async (req, res) => {
         FROM integration_runs
         ORDER BY job_type, started_at DESC
       ),
+      asn_stats AS (
+        SELECT MAX(updated_at) AS last_updated_at, COUNT(*)::int AS total_records
+        FROM asn_lookup
+      ),
       latest_queue AS (
         SELECT DISTINCT ON (integration_key_norm)
           integration_key_norm AS integration_key,
@@ -1724,8 +1728,21 @@ app.get('/api/integrations', async (req, res) => {
         f.schedule_cron AS schedule,
         f.trust_level,
         f.created_at,
-        COALESCE(lr.status, lq.status, 'never') AS last_status,
-        COALESCE(lr.started_at, lq.started_at, lq.queued_at) AS last_started_at,
+        COALESCE(
+          CASE
+            WHEN f.key = 'asn_enrichment' THEN CASE WHEN asn.last_updated_at IS NULL THEN 'never' ELSE 'success' END
+            ELSE NULL
+          END,
+          lr.status,
+          lq.status,
+          'never'
+        ) AS last_status,
+        COALESCE(
+          CASE WHEN f.key = 'asn_enrichment' THEN asn.last_updated_at ELSE NULL END,
+          lr.started_at,
+          lq.started_at,
+          lq.queued_at
+        ) AS last_started_at,
         CASE
           WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
           WHEN f.schedule_cron = '*/15 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 15 = 0 THEN 15 ELSE 15 - (EXTRACT(MINUTE FROM NOW())::int % 15) END) * INTERVAL '1 minute'
@@ -1754,9 +1771,13 @@ app.get('/api/integrations', async (req, res) => {
           WHEN f.key = 'phishtank-opendnsrr' THEN (
             SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'PhishTank:open_dnsrr'
           )
+          WHEN f.key = 'asn_enrichment' THEN asn.total_records
           ELSE COALESCE(lr.records_processed, lq.records_processed, 0)
         END AS total_records,
-        COALESCE(lr.error_message, lq.error_message) AS last_error
+        CASE
+          WHEN f.key = 'asn_enrichment' THEN NULL
+          ELSE COALESCE(lr.error_message, lq.error_message)
+        END AS last_error
       FROM integration_feeds f
       LEFT JOIN latest_runs lr
         ON lr.job_type = CASE
@@ -1770,6 +1791,7 @@ app.get('/api/integrations', async (req, res) => {
         END
       LEFT JOIN latest_queue lq
         ON lq.integration_key = f.key
+      CROSS JOIN asn_stats asn
       WHERE f.active = TRUE
       ORDER BY f.created_at ASC, f.name ASC
     `;
