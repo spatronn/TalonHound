@@ -1690,13 +1690,14 @@ function RiskOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [trendData, setTrendData] = useState(null);
+  const [range, setRange] = useState('24h');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (selectedRange = range) => {
     setLoading(true);
     try {
       const [{ data: ov }, { data: tr }] = await Promise.all([
         api.get('/risk/overview'),
-        api.get('/risk/trend', { params: { limit: 50 } })
+        api.get('/risk/trend', { params: { range: selectedRange } })
       ]);
       setData(ov || null);
       setTrendData(tr || null);
@@ -1706,9 +1707,9 @@ function RiskOverviewPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [range]);
 
-  useEffect(() => { load().catch(() => {}); }, [load]);
+  useEffect(() => { load(range).catch(() => {}); }, [load, range]);
 
   const score = Math.max(0, Math.min(100, Number(data?.institution_risk_score || 0)));
   const level = score >= 80 ? 'CRITICAL' : score >= 60 ? 'HIGH' : score >= 35 ? 'MEDIUM' : 'LOW';
@@ -1720,19 +1721,31 @@ function RiskOverviewPage() {
   const delta = Number(trendData?.delta || 0);
   const trendArrow = trend === 'increasing' ? '↗' : trend === 'decreasing' ? '↘' : '→';
   const trendColor = trend === 'increasing' ? '#ef4444' : trend === 'decreasing' ? '#22c55e' : '#94a3b8';
-  const snapshots = Array.isArray(trendData?.snapshots) ? trendData.snapshots : [];
-  const chartPoints = snapshots.map((s, i) => {
-    const x = snapshots.length <= 1 ? 0 : (i / (snapshots.length - 1)) * 100;
-    const y = 100 - Math.max(0, Math.min(100, Number(s?.institution_risk || 0)));
+  const history = Array.isArray(trendData?.history) ? trendData.history : [];
+  const chartPoints = history.map((s, i) => {
+    const x = history.length <= 1 ? 0 : (i / (history.length - 1)) * 100;
+    const y = 100 - Math.max(0, Math.min(100, Number(s?.risk_score || 0)));
     return `${x},${y}`;
   }).join(' ');
+  const stats = trendData?.stats || { min: 0, max: 0, avg: 0 };
 
   return (
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
           <h2 style={{ margin: 0 }}>Risk Overview</h2>
-          <button onClick={() => load().catch(() => {})}>Refresh</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {['24h', '7d', '30d'].map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                style={{ borderColor: range === r ? '#93c5fd' : '#475569' }}
+              >
+                {r.toUpperCase()}
+              </button>
+            ))}
+            <button onClick={() => load(range).catch(() => {})}>Refresh</button>
+          </div>
         </div>
 
         {loading ? <div style={{ color: '#94a3b8' }}>Loading risk overview...</div> : !data ? <div style={{ color: '#94a3b8' }}>Risk overview data is unavailable.</div> : (
@@ -1752,14 +1765,27 @@ function RiskOverviewPage() {
                 <span style={{ color: '#94a3b8', fontWeight: 500 }}>Δ {delta >= 0 ? '+' : ''}{delta.toFixed(2)}</span>
               </div>
               <div style={{ marginTop: 10, border: '1px solid #334155', borderRadius: 8, padding: 8, background: '#0b1220' }}>
-                {snapshots.length >= 2 ? (
-                  <svg viewBox="0 0 100 100" width="100%" height="70" preserveAspectRatio="none" aria-label="Institution risk trend">
+                {history.length >= 2 ? (
+                  <svg viewBox="0 0 100 100" width="100%" height="110" preserveAspectRatio="none" aria-label="Institution risk trend">
                     <polyline fill="none" stroke="#60a5fa" strokeWidth="2" points={chartPoints} />
+                    {history.map((p, i) => {
+                      const x = history.length <= 1 ? 0 : (i / (history.length - 1)) * 100;
+                      const y = 100 - Math.max(0, Math.min(100, Number(p?.risk_score || 0)));
+                      return <circle key={`${p.ts}-${i}`} cx={x} cy={y} r="1.2" fill="#93c5fd"><title>{`${new Date(p.ts).toLocaleString()} • ${Number(p.risk_score || 0).toFixed(2)}`}</title></circle>;
+                    })}
                   </svg>
                 ) : (
                   <div style={{ color: '#64748b', fontSize: 12 }}>Not enough snapshots yet for trend chart.</div>
                 )}
               </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: 12 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0f172a' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Current</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(trendData?.current || score).toFixed(2)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0f172a' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Peak</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(stats.max || 0).toFixed(2)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0f172a' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Min</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(stats.min || 0).toFixed(2)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0f172a' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Avg</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(stats.avg || 0).toFixed(2)}</div></div>
+              <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0f172a' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Delta</div><div style={{ fontSize: 18, fontWeight: 700, color: trendColor }}>{delta >= 0 ? '+' : ''}{delta.toFixed(2)}</div></div>
             </div>
 
             {dataTruncated ? (

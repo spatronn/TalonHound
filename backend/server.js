@@ -1457,44 +1457,90 @@ app.get('/api/risk/overview', async (_req, res) => {
 
 app.get('/api/risk/trend', async (req, res) => {
   try {
-    const limit = Math.min(Math.max(Number(req.query?.limit || 50), 5), 200);
+    const range = String(req.query?.range || '24h').trim().toLowerCase();
+    const allowedRanges = new Set(['24h', '7d', '30d']);
+    const selectedRange = allowedRanges.has(range) ? range : '24h';
 
-    const [overview, snapsQ] = await Promise.all([
+    const cfg = {
+      '24h': {
+        sinceSql: "NOW() - INTERVAL '24 hours'",
+        query: `SELECT ts, institution_risk::float8 AS risk_score
+                FROM risk_snapshots
+                WHERE ts >= NOW() - INTERVAL '24 hours'
+                ORDER BY ts ASC
+                LIMIT 400`
+      },
+      '7d': {
+        sinceSql: "NOW() - INTERVAL '7 days'",
+        query: `SELECT
+                  date_trunc('hour', ts) AS ts,
+                  AVG(institution_risk)::float8 AS risk_score
+                FROM risk_snapshots
+                WHERE ts >= NOW() - INTERVAL '7 days'
+                GROUP BY 1
+                ORDER BY 1 ASC`
+      },
+      '30d': {
+        sinceSql: "NOW() - INTERVAL '30 days'",
+        query: `SELECT
+                  date_trunc('day', ts) AS ts,
+                  AVG(institution_risk)::float8 AS risk_score
+                FROM risk_snapshots
+                WHERE ts >= NOW() - INTERVAL '30 days'
+                GROUP BY 1
+                ORDER BY 1 ASC`
+      }
+    };
+
+    const selected = cfg[selectedRange];
+
+    const [overview, trendQ, statsQ] = await Promise.all([
       computeInstitutionRiskOverview(),
+      pool.query(selected.query),
       pool.query(
-        `SELECT id, ts, institution_risk
+        `SELECT
+           COALESCE(MIN(institution_risk), 0)::float8 AS min,
+           COALESCE(MAX(institution_risk), 0)::float8 AS max,
+           COALESCE(AVG(institution_risk), 0)::float8 AS avg
          FROM risk_snapshots
-         ORDER BY ts DESC
-         LIMIT $1`,
-        [limit]
+         WHERE ts >= ${selected.sinceSql}`
       )
     ]);
 
-    const snapshots = [...(snapsQ.rows || [])].reverse();
-    const currentRisk = Number(overview.institution_risk_score || 0);
-    const previousRisk = snapshots.length >= 2
-      ? Number(snapshots[snapshots.length - 2]?.institution_risk || currentRisk)
-      : currentRisk;
+    const history = (trendQ.rows || []).map((r) => ({
+      ts: r.ts,
+      risk_score: Number(r.risk_score || 0)
+    }));
 
-    const delta = Number((currentRisk - previousRisk).toFixed(2));
+    const current = Number(overview.institution_risk_score || 0);
+    const previous = history.length >= 2 ? Number(history[history.length - 2]?.risk_score || current) : current;
+    const delta = Number((current - previous).toFixed(2));
     const trend = delta > 5 ? 'increasing' : delta < -5 ? 'decreasing' : 'stable';
 
     return res.json({
-      current_risk: Number(currentRisk.toFixed(2)),
-      previous_risk: Number(previousRisk.toFixed(2)),
+      range: selectedRange,
+      current: Number(current.toFixed(2)),
+      previous: Number(previous.toFixed(2)),
       delta,
       trend,
-      snapshots,
+      stats: {
+        min: Number(Number(statsQ.rows?.[0]?.min || 0).toFixed(2)),
+        max: Number(Number(statsQ.rows?.[0]?.max || 0).toFixed(2)),
+        avg: Number(Number(statsQ.rows?.[0]?.avg || 0).toFixed(2))
+      },
+      history,
       overview
     });
   } catch (err) {
     console.error('[risk-trend] failed', err);
     return res.status(500).json({
-      current_risk: 0,
-      previous_risk: 0,
+      range: '24h',
+      current: 0,
+      previous: 0,
       delta: 0,
       trend: 'stable',
-      snapshots: []
+      stats: { min: 0, max: 0, avg: 0 },
+      history: []
     });
   }
 });
