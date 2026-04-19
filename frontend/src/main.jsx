@@ -301,6 +301,7 @@ function AppShell({ children }) {
             <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
             <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
             <Link to="/analytics/detection-events" style={subMenuStyle(isActive('/analytics/detection-events'))}>Detection Events</Link>
+            <Link to="/risk-overview" style={subMenuStyle(isActive('/risk-overview'))}>Risk Overview</Link>
           </div>
           <Link to="/incidents" style={menuStyle(location.pathname.startsWith('/incidents'))}>3. Incidents</Link>
 
@@ -1682,6 +1683,96 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RiskOverviewPage() {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/risk/overview');
+      setData(data || null);
+    } catch {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load().catch(() => {}); }, [load]);
+
+  const score = Math.max(0, Math.min(100, Number(data?.institution_risk_score || 0)));
+  const level = score >= 80 ? 'CRITICAL' : score >= 60 ? 'HIGH' : score >= 35 ? 'MEDIUM' : 'LOW';
+  const levelColor = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#f59e0b' : '#22c55e';
+  const top = Array.isArray(data?.top_contributing_incidents) ? data.top_contributing_incidents : [];
+  const bd = data?.breakdown || {};
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <h2 style={{ margin: 0 }}>Risk Overview</h2>
+          <button onClick={() => load().catch(() => {})}>Refresh</button>
+        </div>
+
+        {loading ? <div style={{ color: '#94a3b8' }}>Loading risk overview...</div> : !data ? <div style={{ color: '#94a3b8' }}>Risk overview data is unavailable.</div> : (
+          <>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a', marginBottom: 14 }}>
+              <div style={{ fontSize: 13, color: '#94a3b8' }}>Institution Risk Score</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
+                <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1 }}>{score.toFixed(2)}</div>
+                <span style={{ border: `1px solid ${levelColor}`, color: levelColor, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{level}</span>
+              </div>
+              <div style={{ marginTop: 10, height: 12, borderRadius: 999, background: '#1f2937', overflow: 'hidden' }}>
+                <div style={{ width: `${score}%`, height: '100%', background: `linear-gradient(90deg, #22c55e 0%, #f59e0b 55%, #ef4444 100%)` }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 14 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Active Incidents</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.active_incident_count || 0)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Raw Contribution</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(bd?.total_raw_contribution || 0).toFixed(6)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Institution Risk Score</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{score.toFixed(2)}</div>
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Top Contributing Incidents</div>
+              <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', background: '#111827' }}>
+                    <th style={{ width: 120 }}>Incident ID</th>
+                    <th>IOC</th>
+                    <th style={{ width: 140 }}>Risk Score</th>
+                    <th style={{ width: 160 }}>Contribution</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {top.length ? top.map((it) => (
+                    <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
+                      <td>#{it.incident_id || '-'}</td>
+                      <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
+                      <td>{Number(it.risk_score || 0).toFixed(2)}</td>
+                      <td>{it.contribution != null ? Number(it.contribution).toFixed(6) : '-'}</td>
+                    </tr>
+                  )) : <tr><td colSpan={4} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+    </AppShell>
   );
 }
 
@@ -4526,6 +4617,7 @@ function App() {
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/analytics/detection-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
           <Route path="/analytics/detection-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
+          <Route path="/risk-overview" element={<Protected><RiskOverviewPage /></Protected>} />
           <Route path="/incidents" element={<Protected><IncidentPage /></Protected>} />
           <Route path="/incidents/:id" element={<Protected><IncidentDetailsPage /></Protected>} />
           <Route path="/incident" element={<Navigate to="/incidents" replace />} />
