@@ -1392,8 +1392,11 @@ app.get('/api/risk/overview', async (_req, res) => {
            a.ioc_value,
            a.ioc_type,
            a.total_hits,
+           a.status,
            a.verdict,
            a.last_seen,
+           a.updated_at,
+           a.note,
            COALESCE(ev.event_count, 0) AS event_count,
            COALESCE(ev.asset_count, 0) AS asset_count,
            ev.confidence
@@ -1411,16 +1414,14 @@ app.get('/api/risk/overview', async (_req, res) => {
            FROM ioc_match_events m
            WHERE m.activity_id = a.id
          ) ev ON true
-         WHERE a.status = 'open'
-           AND EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
+         WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)
          ORDER BY a.last_seen DESC
          LIMIT 1000`
       ),
       pool.query(
         `SELECT COUNT(*)::int AS total_active_incidents
          FROM ioc_activity a
-         WHERE a.status = 'open'
-           AND EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`
+         WHERE EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`
       )
     ]);
 

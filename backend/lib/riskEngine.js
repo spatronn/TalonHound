@@ -152,6 +152,44 @@ export function calculateIncidentRisk(incident) {
   };
 }
 
+function getClosedDecayFactor(incident, halfLifeDays = 14) {
+  const closedRef = new Date(incident?.updated_at || incident?.last_seen || 0).getTime();
+  if (!Number.isFinite(closedRef) || closedRef <= 0) return 0.25;
+
+  const ageDays = Math.max((Date.now() - closedRef) / (1000 * 60 * 60 * 24), 0);
+  const lambda = Math.log(2) / Math.max(Number(halfLifeDays) || 14, 1);
+  const decay = Math.exp(-lambda * ageDays);
+  return clamp(decay, 0, 1);
+}
+
+function getInstitutionContribution(incident) {
+  const status = String(incident?.status || '').trim().toLowerCase();
+  const verdict = normalizeVerdict(incident?.verdict);
+  const riskScore = clamp(Number(incident?.risk_score || 0), 0, 100);
+
+  if (verdict === 'FP') {
+    return { contribution: 0, bucket: 'excluded', reason: 'false_positive', decay_factor: 0 };
+  }
+
+  if (isSecurityTestIncident(incident)) {
+    return { contribution: 0.02, bucket: status === 'open' ? 'open' : 'closed_decay', reason: 'security_test', decay_factor: status === 'closed' ? getClosedDecayFactor(incident) : 1 };
+  }
+
+  const normalizedRisk = riskScore / 100;
+  const base = Math.pow(normalizedRisk, 2);
+
+  if (status === 'open') {
+    return { contribution: base, bucket: 'open', reason: 'open_incident', decay_factor: 1 };
+  }
+
+  if (status === 'closed' && (verdict === 'TP' || verdict === 'Suspicious')) {
+    const decay = getClosedDecayFactor(incident);
+    return { contribution: base * decay, bucket: 'closed_decay', reason: 'closed_with_decay', decay_factor: Number(decay.toFixed(6)) };
+  }
+
+  return { contribution: 0, bucket: 'excluded', reason: 'closed_non_risky_or_unreviewed', decay_factor: 0 };
+}
+
 export function calculateInstitutionRisk(incidents) {
   const rows = Array.isArray(incidents) ? incidents : [];
   if (!rows.length) {
@@ -160,10 +198,13 @@ export function calculateInstitutionRisk(incidents) {
       active_incident_count: 0,
       top_contributing_incidents: [],
       breakdown: {
-        model: 'institution-risk-central-2026-04-all-active',
+        model: 'institution-risk-central-2026-04-workflow-decoupled',
         bounded_range: '0-100',
         active_incident_count: 0,
         total_raw_contribution: 0,
+        open_incident_contribution: 0,
+        closed_decaying_contribution: 0,
+        excluded_incident_count: 0,
         normalized_contribution_input: 0,
         exponent: 2,
         normalization_lambda: 2.4
@@ -171,30 +212,37 @@ export function calculateInstitutionRisk(incidents) {
     };
   }
 
-  const activeCount = rows.length;
-
-  const withContribution = rows.map((r) => {
+  const processed = rows.map((r) => {
     const riskScore = clamp(Number(r?.risk_score || 0), 0, 100);
-    const normalizedRisk = riskScore / 100;
-    const contribution = Math.pow(normalizedRisk, 2);
+    const meta = getInstitutionContribution({ ...r, risk_score: riskScore });
     return {
       ...r,
       risk_score: Number(riskScore.toFixed(2)),
-      _normalized_risk: normalizedRisk,
-      _contribution: contribution
+      _contribution: meta.contribution,
+      _contribution_bucket: meta.bucket,
+      _contribution_reason: meta.reason,
+      _decay_factor: meta.decay_factor
     };
   });
 
-  const totalRawContribution = withContribution.reduce((acc, r) => acc + r._contribution, 0);
+  const openContribution = processed
+    .filter((r) => r._contribution_bucket === 'open')
+    .reduce((acc, r) => acc + r._contribution, 0);
+  const closedDecayContribution = processed
+    .filter((r) => r._contribution_bucket === 'closed_decay')
+    .reduce((acc, r) => acc + r._contribution, 0);
+  const excludedIncidentCount = processed.filter((r) => r._contribution_bucket === 'excluded').length;
 
-  // All incidents contribute, but crowd effect is damped so many low-risk incidents
-  // cannot linearly inflate institution risk.
-  const normalizedContributionInput = totalRawContribution / Math.sqrt(activeCount);
+  const totalRawContribution = openContribution + closedDecayContribution;
+
+  const contributingCount = Math.max(processed.length - excludedIncidentCount, 1);
+  const normalizedContributionInput = totalRawContribution / Math.sqrt(contributingCount);
   const lambda = 2.4;
   const institutionRisk = clamp(100 * (1 - Math.exp(-lambda * normalizedContributionInput)), 0, 100);
 
-  const topContributing = [...withContribution]
+  const topContributing = [...processed]
     .sort((a, b) => b._contribution - a._contribution)
+    .filter((r) => r._contribution > 0)
     .slice(0, 5)
     .map((r, idx) => ({
       id: r.id,
@@ -202,18 +250,25 @@ export function calculateInstitutionRisk(incidents) {
       ioc_value: r.ioc_value,
       risk_score: r.risk_score,
       contribution: Number(r._contribution.toFixed(6)),
+      contribution_bucket: r._contribution_bucket,
+      decay_factor: Number((r._decay_factor || 0).toFixed(6)),
       rank: idx + 1
     }));
 
+  const activeIncidentCount = processed.filter((r) => String(r.status || '').toLowerCase() === 'open').length;
+
   return {
     institution_risk_score: Number(institutionRisk.toFixed(2)),
-    active_incident_count: activeCount,
+    active_incident_count: activeIncidentCount,
     top_contributing_incidents: topContributing,
     breakdown: {
-      model: 'institution-risk-central-2026-04-all-active',
+      model: 'institution-risk-central-2026-04-workflow-decoupled',
       bounded_range: '0-100',
-      active_incident_count: activeCount,
+      active_incident_count: activeIncidentCount,
       total_raw_contribution: Number(totalRawContribution.toFixed(6)),
+      open_incident_contribution: Number(openContribution.toFixed(6)),
+      closed_decaying_contribution: Number(closedDecayContribution.toFixed(6)),
+      excluded_incident_count: excludedIncidentCount,
       normalized_contribution_input: Number(normalizedContributionInput.toFixed(6)),
       exponent: 2,
       normalization_lambda: lambda,
