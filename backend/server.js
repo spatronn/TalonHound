@@ -2338,6 +2338,165 @@ app.put('/api/users/me/preferences', async (req, res) => {
 
 registerUserManagementRoutes(app, pool);
 
+function isAdminUser(req) {
+  const role = String(req.user?.role || '').trim().toLowerCase();
+  return role === ROLES.ADMIN;
+}
+
+function parsePositiveInt(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return null;
+  return n;
+}
+
+function normalizeTagName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+const TAG_TYPES = new Set(['threat', 'actor', 'technique', 'context']);
+
+app.get('/api/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+
+  try {
+    const q = await pool.query(
+      `SELECT id, name, type, enabled
+       FROM tags
+       WHERE enabled = TRUE
+       ORDER BY type ASC, name ASC`
+    );
+    return res.json(q.rows);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
+  }
+});
+
+app.post('/api/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+
+  const name = normalizeTagName(req.body?.name);
+  const type = String(req.body?.type || '').trim().toLowerCase();
+
+  if (!name) return res.status(400).json({ message: 'name is required' });
+  if (!TAG_TYPES.has(type)) return res.status(400).json({ message: 'Invalid type' });
+
+  try {
+    const q = await pool.query(
+      `INSERT INTO tags (name, type)
+       VALUES ($1, $2::tag_type)
+       ON CONFLICT (name) DO NOTHING
+       RETURNING id, name, type, enabled`,
+      [name, type]
+    );
+
+    if (!q.rowCount) {
+      return res.status(409).json({ message: 'Tag already exists' });
+    }
+
+    return res.status(201).json(q.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
+  }
+});
+
+app.patch('/api/tags/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+
+  const tagId = parsePositiveInt(req.params?.id);
+  if (!tagId) return res.status(400).json({ message: 'Invalid id' });
+  if (typeof req.body?.enabled !== 'boolean') {
+    return res.status(400).json({ message: 'enabled must be boolean' });
+  }
+
+  try {
+    const q = await pool.query(
+      `UPDATE tags
+       SET enabled = $2
+       WHERE id = $1
+       RETURNING id, name, type, enabled`,
+      [tagId, req.body.enabled]
+    );
+
+    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    return res.json(q.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
+  }
+});
+
+app.get('/api/ioc/:id/tags', async (req, res) => {
+  const iocId = parsePositiveInt(req.params?.id);
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+
+  try {
+    const q = await pool.query(
+      `SELECT
+         i.id AS ioc_id,
+         t.id,
+         t.name,
+         t.type
+       FROM ioc_items i
+       LEFT JOIN ioc_tags it ON it.ioc_id = i.id
+       LEFT JOIN tags t ON t.id = it.tag_id
+       WHERE i.id = $1
+       ORDER BY t.type ASC NULLS LAST, t.name ASC NULLS LAST`,
+      [iocId]
+    );
+
+    if (!q.rowCount) return res.status(404).json({ message: 'IOC not found' });
+
+    return res.json(q.rows.filter((row) => row.id != null).map((row) => ({
+      id: row.id,
+      name: row.name,
+      type: row.type
+    })));
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch IOC tags', detail: err.message });
+  }
+});
+
+app.post('/api/ioc/:id/tags', async (req, res) => {
+  const iocId = parsePositiveInt(req.params?.id);
+  const tagId = parsePositiveInt(req.body?.tag_id);
+
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  if (!tagId) return res.status(400).json({ message: 'Invalid tag_id' });
+
+  try {
+    const iocExists = await pool.query('SELECT 1 FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+
+    const tagExists = await pool.query('SELECT 1 FROM tags WHERE id = $1 AND enabled = TRUE LIMIT 1', [tagId]);
+    if (!tagExists.rowCount) return res.status(404).json({ message: 'Tag not found or disabled' });
+
+    await pool.query(
+      `INSERT INTO ioc_tags (ioc_id, tag_id, created_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (ioc_id, tag_id) DO NOTHING`,
+      [iocId, tagId, req.user?.id ?? null]
+    );
+
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to add IOC tag', detail: err.message });
+  }
+});
+
+app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
+  const iocId = parsePositiveInt(req.params?.id);
+  const tagId = parsePositiveInt(req.params?.tagId);
+
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  if (!tagId) return res.status(400).json({ message: 'Invalid tag id' });
+
+  try {
+    await pool.query('DELETE FROM ioc_tags WHERE ioc_id = $1 AND tag_id = $2', [iocId, tagId]);
+    return res.status(204).end();
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to delete IOC tag', detail: err.message });
+  }
+});
+
 app.post('/api/ioc/ip', async (req, res) => {
   const { ip, source_name, source_url, confidence = 'medium', category = null, note = null } = req.body || {};
 
