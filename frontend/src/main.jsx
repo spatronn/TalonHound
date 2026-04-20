@@ -4151,6 +4151,7 @@ function IOCDetailsPage() {
     setTagsLoading(true);
     try {
       const res = await api.get('/tags');
+      console.log('[ioc-tags] /tags response', res.data);
       setAllTags(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.log('[ioc-tags] list failed', err);
@@ -4182,6 +4183,11 @@ function IOCDetailsPage() {
     if (!tagDropdownOpen) return;
     loadEnabledTags().catch(() => {});
   }, [tagDropdownOpen]);
+
+  useEffect(() => {
+    if (!tagDropdownOpen) return;
+    console.log('[ioc-tags] dropdown data', allTags);
+  }, [tagDropdownOpen, allTags]);
 
   useEffect(() => {
     if (!tagDropdownOpen) return;
@@ -4383,7 +4389,10 @@ function IOCDetailsPage() {
                               {t.name}
                             </button>
                           ))}
-                        {!tagsLoading && allTags.filter((t) => !iocTags.some((it) => Number(it.id) === Number(t.id))).filter((t) => {
+                        {!tagsLoading && allTags.length === 0 ? (
+                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tags available</div>
+                        ) : null}
+                        {!tagsLoading && allTags.length > 0 && allTags.filter((t) => !iocTags.some((it) => Number(it.id) === Number(t.id))).filter((t) => {
                           const q = String(tagSearch || '').trim().toLowerCase();
                           if (!q) return true;
                           return String(t.name || '').toLowerCase().includes(q);
