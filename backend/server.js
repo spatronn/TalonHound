@@ -2436,7 +2436,9 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
          t.name,
          t.type
        FROM ioc_items i
-       LEFT JOIN ioc_tags it ON it.ioc_id = i.id
+       LEFT JOIN ioc_tags it
+         ON it.ioc_id = i.id
+        AND it.ioc_observable_type = i.observable_type
        LEFT JOIN tags t ON t.id = it.tag_id
        WHERE i.id = $1
        ORDER BY t.type ASC NULLS LAST, t.name ASC NULLS LAST`,
@@ -2463,17 +2465,19 @@ app.post('/api/ioc/:id/tags', async (req, res) => {
   if (!tagId) return res.status(400).json({ message: 'Invalid tag_id' });
 
   try {
-    const iocExists = await pool.query('SELECT 1 FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    const iocExists = await pool.query('SELECT observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
     if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+
+    const iocObservableType = String(iocExists.rows[0].observable_type || '').trim();
 
     const tagExists = await pool.query('SELECT 1 FROM tags WHERE id = $1 AND enabled = TRUE LIMIT 1', [tagId]);
     if (!tagExists.rowCount) return res.status(404).json({ message: 'Tag not found or disabled' });
 
     await pool.query(
-      `INSERT INTO ioc_tags (ioc_id, tag_id, created_by)
-       VALUES ($1, $2, $3)
+      `INSERT INTO ioc_tags (ioc_id, ioc_observable_type, tag_id, created_by)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (ioc_id, tag_id) DO NOTHING`,
-      [iocId, tagId, req.user?.id ?? null]
+      [iocId, iocObservableType, tagId, req.user?.id ?? null]
     );
 
     return res.status(201).json({ ok: true });
@@ -2490,7 +2494,15 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
   if (!tagId) return res.status(400).json({ message: 'Invalid tag id' });
 
   try {
-    await pool.query('DELETE FROM ioc_tags WHERE ioc_id = $1 AND tag_id = $2', [iocId, tagId]);
+    await pool.query(
+      `DELETE FROM ioc_tags
+       WHERE ioc_id = $1
+         AND tag_id = $2
+         AND ioc_observable_type = (
+           SELECT observable_type FROM ioc_items WHERE id = $1 LIMIT 1
+         )`,
+      [iocId, tagId]
+    );
     return res.status(204).end();
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete IOC tag', detail: err.message });

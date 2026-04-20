@@ -18,11 +18,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_tags_name ON tags (name);
 CREATE INDEX IF NOT EXISTS idx_tags_enabled_type_name ON tags (enabled, type, name);
 
 CREATE TABLE IF NOT EXISTS ioc_tags (
-  ioc_id BIGINT NOT NULL REFERENCES ioc_items(id) ON DELETE CASCADE,
+  ioc_id BIGINT NOT NULL,
+  ioc_observable_type TEXT NOT NULL,
   tag_id BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
-  PRIMARY KEY (ioc_id, tag_id)
+  PRIMARY KEY (ioc_id, tag_id),
+  CONSTRAINT fk_ioc_tags_ioc_item
+    FOREIGN KEY (ioc_observable_type, ioc_id)
+    REFERENCES ioc_items(observable_type, id)
+    ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_ioc_tags_ioc_id ON ioc_tags (ioc_id);
