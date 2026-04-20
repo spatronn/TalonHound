@@ -4107,6 +4107,13 @@ function IOCDetailsPage() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [] });
+  const [iocTags, setIocTags] = useState([]);
+  const [allTags, setAllTags] = useState([]);
+  const [tagSearch, setTagSearch] = useState('');
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagsSaving, setTagsSaving] = useState(false);
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const tagDropdownRef = useRef(null);
 
   async function load() {
     setLoading(true);
@@ -4125,9 +4132,107 @@ function IOCDetailsPage() {
     }
   }
 
+  async function loadIocTags(iocId) {
+    if (!iocId) {
+      setIocTags([]);
+      return;
+    }
+
+    try {
+      const res = await api.get(`/ioc/${iocId}/tags`);
+      setIocTags(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.log('[ioc-tags] load failed', err);
+      setIocTags([]);
+    }
+  }
+
+  async function loadEnabledTags() {
+    setTagsLoading(true);
+    try {
+      const res = await api.get('/tags');
+      setAllTags(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.log('[ioc-tags] list failed', err);
+      setAllTags([]);
+    } finally {
+      setTagsLoading(false);
+    }
+  }
+
   useEffect(() => {
-    load().catch(() => {});
+    let active = true;
+    (async () => {
+      await load().catch(() => {});
+      if (!active) return;
+    })();
+    return () => { active = false; };
   }, [detailsPublicId]);
+
+  useEffect(() => {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) {
+      setIocTags([]);
+      return;
+    }
+    loadIocTags(iocId).catch(() => {});
+  }, [data?.summary?.id]);
+
+  useEffect(() => {
+    if (!tagDropdownOpen) return;
+    loadEnabledTags().catch(() => {});
+  }, [tagDropdownOpen]);
+
+  useEffect(() => {
+    if (!tagDropdownOpen) return;
+    const onDocMouseDown = (evt) => {
+      if (!tagDropdownRef.current) return;
+      if (!tagDropdownRef.current.contains(evt.target)) {
+        setTagDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [tagDropdownOpen]);
+
+  async function addIocTag(tagId) {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return;
+    if (!Number.isFinite(Number(tagId)) || Number(tagId) <= 0) return;
+    if (iocTags.some((t) => Number(t.id) === Number(tagId))) return;
+
+    setTagsSaving(true);
+    try {
+      await api.post(`/ioc/${iocId}/tags`, { tag_id: Number(tagId) });
+      const selected = allTags.find((t) => Number(t.id) === Number(tagId));
+      if (selected) {
+        setIocTags((prev) => prev.some((t) => Number(t.id) === Number(tagId)) ? prev : [...prev, {
+          id: selected.id,
+          name: selected.name,
+          type: selected.type
+        }]);
+      }
+    } catch (err) {
+      console.log('[ioc-tags] add failed', err);
+    } finally {
+      setTagsSaving(false);
+    }
+  }
+
+  async function removeIocTag(tagId) {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return;
+
+    setTagsSaving(true);
+    try {
+      await api.delete(`/ioc/${iocId}/tags/${Number(tagId)}`);
+      setIocTags((prev) => prev.filter((t) => Number(t.id) !== Number(tagId)));
+    } catch (err) {
+      console.log('[ioc-tags] delete failed', err);
+    } finally {
+      setTagsSaving(false);
+    }
+  }
 
   const summary = data.summary;
   const displayObservable = summary?.observable || '-';
@@ -4224,6 +4329,69 @@ function IOCDetailsPage() {
               <div style={{ fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Confidence Set</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {(summary.confidence_set || []).length ? summary.confidence_set.map((c) => <span key={c} style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #475569' }}>{c}</span>) : <span>-</span>}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+              <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {iocTags.length ? iocTags.map((tag) => (
+                  <span key={`tag-${tag.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid #475569', fontSize: 12 }}>
+                    {tag.name}
+                    <button
+                      type="button"
+                      onClick={() => removeIocTag(tag.id).catch(() => {})}
+                      title="Remove tag"
+                      aria-label={`Remove ${tag.name}`}
+                      style={{ padding: 0, border: 'none', background: 'transparent', color: '#94a3b8', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1 }}
+                      disabled={tagsSaving}
+                    >
+                      ×
+                    </button>
+                  </span>
+                )) : <span style={{ color: '#94a3b8', fontSize: 12 }}>No tags</span>}
+
+                <div style={{ position: 'relative' }} ref={tagDropdownRef}>
+                  <button type="button" onClick={() => setTagDropdownOpen((v) => !v)} disabled={tagsSaving}>
+                    + Add Tag {tagsLoading || tagsSaving ? '⏳' : ''}
+                  </button>
+
+                  {tagDropdownOpen ? (
+                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 260, maxHeight: 260, overflow: 'auto', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', zIndex: 30, padding: 8 }}>
+                      <input
+                        value={tagSearch}
+                        onChange={(e) => setTagSearch(e.target.value)}
+                        placeholder="Search tag..."
+                        style={{ width: '100%', marginBottom: 8 }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {allTags
+                          .filter((t) => !iocTags.some((it) => Number(it.id) === Number(t.id)))
+                          .filter((t) => {
+                            const q = String(tagSearch || '').trim().toLowerCase();
+                            if (!q) return true;
+                            return String(t.name || '').toLowerCase().includes(q);
+                          })
+                          .map((t) => (
+                            <button
+                              key={`opt-tag-${t.id}`}
+                              type="button"
+                              onClick={() => addIocTag(t.id).catch(() => {})}
+                              disabled={tagsSaving}
+                              style={{ textAlign: 'left', border: '1px solid #334155', borderRadius: 8, padding: '6px 8px', background: '#111827', color: '#e5e7eb', cursor: tagsSaving ? 'wait' : 'pointer' }}
+                            >
+                              {t.name}
+                            </button>
+                          ))}
+                        {!tagsLoading && allTags.filter((t) => !iocTags.some((it) => Number(it.id) === Number(t.id))).filter((t) => {
+                          const q = String(tagSearch || '').trim().toLowerCase();
+                          if (!q) return true;
+                          return String(t.name || '').toLowerCase().includes(q);
+                        }).length === 0 ? <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tag found</div> : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
