@@ -35,6 +35,13 @@ def rand_public_ip():
         return ip
 
 
+def rand_src_ip_outside_target_subnet():
+    while True:
+        ip = rand_public_ip()
+        if not ip.startswith("213.14.158."):
+            return ip
+
+
 def rand_dst_ip_from_target_subnet():
     return f"213.14.158.{random.randint(1, 254)}"
 
@@ -87,8 +94,9 @@ def main():
     source_name = os.getenv("IOC_SOURCE_NAME", "loadgen-smoke")
     confidence = os.getenv("IOC_CONFIDENCE", "90")
     note = os.getenv("IOC_NOTE", "loadgen random ioc")
+    src_ip_rotate_seconds = max(env_int("SRC_IP_ROTATE_SECONDS", 300), 1)
 
-    print(f"[loadgen] config enabled={enabled} mode={mode} eps={eps} duration_s={duration_seconds} ioc_ratio={ioc_insert_ratio} realtime_ratio={realtime_ratio}")
+    print(f"[loadgen] config enabled={enabled} mode={mode} eps={eps} duration_s={duration_seconds} ioc_ratio={ioc_insert_ratio} realtime_ratio={realtime_ratio} src_ip_rotate_s={src_ip_rotate_seconds}")
     if not enabled:
         print("[loadgen] ENABLED=0 (idle). Set ENABLED=1 to start traffic.")
         while True:
@@ -103,13 +111,20 @@ def main():
     ioc_posts = 0
     ioc_post_fail = 0
 
+    current_src_ip = rand_src_ip_outside_target_subnet()
+    current_src_ip_until = t0 + src_ip_rotate_seconds
+
     while True:
         now = time.time()
         if duration_seconds > 0 and (now - t0) >= duration_seconds:
             break
 
+        if now >= current_src_ip_until:
+            current_src_ip = rand_src_ip_outside_target_subnet()
+            current_src_ip_until = now + src_ip_rotate_seconds
+
         dst_ip = rand_dst_ip_from_target_subnet()
-        src_ip = rand_public_ip()
+        src_ip = current_src_ip
         do_ioc = random.random() < ioc_insert_ratio
 
         current_mode = mode
