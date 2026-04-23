@@ -1302,7 +1302,7 @@ app.get('/api/incidents', async (req, res) => {
          WHERE m.activity_id = a.id
        ) ev ON true
        ${whereSql}
-       ORDER BY a.last_seen DESC, a.created_at DESC
+       ORDER BY a.incident_id DESC, a.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
