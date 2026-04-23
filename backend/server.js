@@ -1259,7 +1259,7 @@ app.get('/api/incidents', async (req, res) => {
       const from = new Date(fromStr);
       if (!Number.isNaN(from.getTime())) {
         params.push(from.toISOString());
-        where.push(`a.last_seen >= $${params.length}::timestamptz`);
+        where.push(`a.created_at >= $${params.length}::timestamptz`);
       }
     }
 
@@ -1267,7 +1267,7 @@ app.get('/api/incidents', async (req, res) => {
       const to = new Date(toStr);
       if (!Number.isNaN(to.getTime())) {
         params.push(to.toISOString());
-        where.push(`a.first_seen <= $${params.length}::timestamptz`);
+        where.push(`a.created_at <= $${params.length}::timestamptz`);
       }
     }
 
