@@ -35,6 +35,10 @@ def rand_public_ip():
         return ip
 
 
+def rand_dst_ip_from_target_subnet():
+    return f"213.14.158.{random.randint(1, 254)}"
+
+
 def post_ioc(api_base, ip, source_name, confidence, note):
     url = f"{api_base.rstrip('/')}/api/ioc/ip"
     payload = {
@@ -104,7 +108,7 @@ def main():
         if duration_seconds > 0 and (now - t0) >= duration_seconds:
             break
 
-        dst_ip = rand_public_ip()
+        dst_ip = rand_dst_ip_from_target_subnet()
         src_ip = rand_public_ip()
         do_ioc = random.random() < ioc_insert_ratio
 
