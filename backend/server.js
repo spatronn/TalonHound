@@ -1223,8 +1223,20 @@ app.get('/api/incidents', async (req, res) => {
     const params = [];
 
     if (q) {
+      const searchPredicates = [];
+
       params.push(`%${q}%`);
-      where.push(`(a.ioc_value ILIKE $${params.length} OR a.ioc_type ILIKE $${params.length})`);
+      const textParamIdx = params.length;
+      searchPredicates.push(`a.ioc_value ILIKE $${textParamIdx}`);
+      searchPredicates.push(`a.ioc_type ILIKE $${textParamIdx}`);
+
+      const normalizedIncidentId = q.startsWith('#') ? q.slice(1) : q;
+      if (/^\d+$/.test(normalizedIncidentId)) {
+        params.push(Number(normalizedIncidentId));
+        searchPredicates.push(`a.incident_id = $${params.length}`);
+      }
+
+      where.push(`(${searchPredicates.join(' OR ')})`);
     }
 
     if (status && ['open', 'closed'].includes(status)) {

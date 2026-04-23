@@ -2089,7 +2089,7 @@ function IncidentPage() {
 
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input placeholder="Search IOC..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load().catch(() => {}); } }} style={{ minWidth: 320 }} />
+            <input placeholder="Search IOC or #IncidentID..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load().catch(() => {}); } }} style={{ minWidth: 320 }} />
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Status: All</option>
               <option value="open">Open</option>
