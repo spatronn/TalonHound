@@ -33,7 +33,7 @@ async function fetchAggregatesFromClickHouse() {
     FROM default.syslog_observables AS so
     WHERE so.observable != ''
       AND so.observable IN (
-        SELECT observable FROM default.ioc_lookup
+        SELECT DISTINCT observable FROM default.ioc_lookup_by_updated
       )
     GROUP BY observable_value
   `;

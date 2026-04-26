@@ -173,7 +173,7 @@ async function fetchIocLookupMatches(tupleList) {
   const parts = tupleList.map(([obs, typ]) => `('${esc(obs)}','${esc(typ)}')`).join(',');
   const q = `
     SELECT observable, observable_type, confidence, source_name, updated_at
-    FROM default.ioc_lookup
+    FROM default.ioc_lookup_by_updated
     WHERE (observable, observable_type) IN (${parts})
     ORDER BY updated_at DESC
     LIMIT 1 BY observable, observable_type

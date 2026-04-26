@@ -120,6 +120,18 @@ export async function ensureSyslogTable() {
   await command(`ALTER TABLE syslog_logs ADD COLUMN IF NOT EXISTS merged_observables String DEFAULT '[]'`);
   await command(`ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip`);
   await command(`ALTER TABLE syslog_logs DROP COLUMN IF EXISTS parsed_src_ip_private`);
+
+  // Replay queries are ingest_time-cursor based; add aligned projection for lower scan CPU.
+  await command(`
+    ALTER TABLE syslog_logs
+    ADD PROJECTION IF NOT EXISTS prj_ingest_cursor (
+      SELECT
+        ts, source, host, program, severity, facility, message, raw,
+        parser_source, parsed_query, ioc_ip, ioc_query, parsed_ip, parsed_ip_private,
+        ingest_time, merged_observables
+      ORDER BY (ingest_time, ts, host)
+    )
+  `);
 }
 
 export async function ensureIocCorrelationAssets() {
@@ -137,6 +149,28 @@ export async function ensureIocCorrelationAssets() {
     ENGINE = ReplacingMergeTree(updated_at)
     ORDER BY (observable, observable_type)
     SETTINGS index_granularity = 8192
+  `);
+
+  await command(`
+    CREATE TABLE IF NOT EXISTS ioc_lookup_by_updated (
+      observable String,
+      observable_type LowCardinality(String),
+      confidence Int32,
+      source_name String,
+      updated_at DateTime64(3),
+      row_hash UInt64 MATERIALIZED cityHash64(observable, observable_type, source_name)
+    )
+    ENGINE = ReplacingMergeTree(updated_at)
+    ORDER BY (updated_at, row_hash, observable, observable_type, source_name)
+    SETTINGS index_granularity = 8192
+  `);
+
+  await command(`
+    CREATE MATERIALIZED VIEW IF NOT EXISTS mv_ioc_lookup_to_by_updated
+    TO ioc_lookup_by_updated
+    AS
+    SELECT observable, observable_type, confidence, source_name, updated_at
+    FROM ioc_lookup
   `);
 
   await command(`

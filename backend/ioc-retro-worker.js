@@ -320,7 +320,7 @@ async function getPendingStats(ts, hash) {
       count() AS pending,
       min(updated_at) AS min_pending_ts,
       max(updated_at) AS max_pending_ts
-    FROM default.ioc_lookup
+    FROM default.ioc_lookup_by_updated
     WHERE (
       updated_at > toDateTime64('${safeTs(ts)}', 3)
       OR (updated_at = toDateTime64('${safeTs(ts)}', 3)
@@ -344,7 +344,7 @@ async function fetchIocChunk(startTs, startHash, limit) {
       confidence,
       updated_at,
       toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
-    FROM default.ioc_lookup
+    FROM default.ioc_lookup_by_updated
     WHERE (
       updated_at > toDateTime64('${safeTs(startTs)}', 3)
       OR (updated_at = toDateTime64('${safeTs(startTs)}', 3)
@@ -376,7 +376,7 @@ async function fetchWindowMatchPage({
         confidence,
         updated_at,
         toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
-      FROM default.ioc_lookup
+      FROM default.ioc_lookup_by_updated
       WHERE (
         updated_at > toDateTime64('${safeTs(startTs)}', 3)
         OR (updated_at = toDateTime64('${safeTs(startTs)}', 3)
