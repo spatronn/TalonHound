@@ -7,6 +7,8 @@ import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, r
 const { Pool } = pg;
 const pool = new Pool(config.db);
 
+const STALE_RUNNING_MINUTES = Math.max(Number(process.env.INTEGRATION_STALE_RUNNING_MINUTES || 180), 60);
+
 function resolveIntegrationKey(job) {
   if (job?.data?.integration_key) return job.data.integration_key;
   if (job?.name === 'hourly-import') return 'et-blockrules';
@@ -84,6 +86,35 @@ worker.on('error', (err) => {
   console.error('[worker] error', err);
 });
 
+async function reconcileStaleQueueRows() {
+  try {
+    const fixedFinished = await pool.query(
+      `UPDATE integration_queue_jobs
+       SET status = CASE WHEN error_message IS NULL THEN 'success' ELSE 'failed' END,
+           updated_at = NOW()
+       WHERE status = 'running'
+         AND finished_at IS NOT NULL`
+    );
+
+    const fixedStale = await pool.query(
+      `UPDATE integration_queue_jobs
+       SET status = 'failed',
+           finished_at = COALESCE(finished_at, NOW()),
+           error_message = COALESCE(error_message, 'reconciled: stale running row after worker restart/timeout'),
+           updated_at = NOW()
+       WHERE status = 'running'
+         AND started_at < NOW() - (($1 || ' minutes')::interval)`,
+      [String(STALE_RUNNING_MINUTES)]
+    );
+
+    if ((fixedFinished.rowCount || 0) > 0 || (fixedStale.rowCount || 0) > 0) {
+      console.log(`[worker] reconciled queue rows fixed_finished=${fixedFinished.rowCount || 0} fixed_stale=${fixedStale.rowCount || 0}`);
+    }
+  } catch (err) {
+    console.error('[worker] reconcile failed', err?.message || err);
+  }
+}
+
 async function shutdown(signal) {
   console.log(`[worker] shutting down: ${signal}`);
   await worker.close();
@@ -91,6 +122,8 @@ async function shutdown(signal) {
   await pool.end();
   process.exit(0);
 }
+
+await reconcileStaleQueueRows();
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => shutdown(sig));
