@@ -281,7 +281,9 @@ services:
   # Do not publish HTTP/native ports to the host in production. For ad-hoc queries:
   #   docker compose exec clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD"
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    build:
+      context: .
+      dockerfile: Dockerfile.clickhouse
     container_name: demo-clickhouse
     environment:
       - CLICKHOUSE_USER=demo
@@ -289,8 +291,6 @@ services:
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./db/clickhouse-init:/docker-entrypoint-initdb.d:ro
-      - ./db/clickhouse-config:/etc/clickhouse-server/config.d:ro
     restart: unless-stopped
 
   loadgen:

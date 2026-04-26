@@ -1,0 +1,7 @@
+FROM clickhouse/clickhouse-server:24.8
+
+# Bake runtime config into the image
+COPY db/clickhouse-config/ /etc/clickhouse-server/config.d/
+
+# Keep init scripts baked as well
+COPY db/clickhouse-init/ /docker-entrypoint-initdb.d/
