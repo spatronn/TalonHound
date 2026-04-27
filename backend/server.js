@@ -1346,6 +1346,59 @@ app.get('/api/incidents', async (req, res) => {
   }
 });
 
+async function loadIncidentWithStats(activityId) {
+  const q = await pool.query(
+    `WITH ev AS (
+       SELECT
+         COUNT(*)::bigint AS event_count,
+         COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
+         SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
+         SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
+         SUM(CASE
+               WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
+                 OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
+               THEN 1 ELSE 0
+             END)::bigint AS inbound_events,
+         SUM(CASE
+               WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
+                 OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
+               THEN 1 ELSE 0
+             END)::bigint AS outbound_events,
+         SUM(CASE
+               WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
+                 OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
+                 OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
+               THEN 1 ELSE 0
+             END)::bigint AS blacklist_hits,
+         CASE
+           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
+           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
+           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
+           ELSE NULL
+         END AS confidence
+       FROM ioc_match_events m
+       WHERE m.activity_id = $1::uuid
+     )
+     SELECT
+       a.*,
+       COALESCE(ev.asset_count, 0) AS asset_count,
+       COALESCE(ev.event_count, 0) AS event_count,
+       COALESCE(ev.accepted_connections, 0) AS accepted_connections,
+       COALESCE(ev.blocked_connections, 0) AS blocked_connections,
+       COALESCE(ev.inbound_events, 0) AS inbound_events,
+       COALESCE(ev.outbound_events, 0) AS outbound_events,
+       COALESCE(ev.blacklist_hits, 0) AS blacklist_hits,
+       ev.confidence
+     FROM ioc_activity a
+     CROSS JOIN ev
+     WHERE a.id = $1::uuid
+     LIMIT 1`,
+    [activityId]
+  );
+
+  return q;
+}
+
 app.get('/api/incidents/:id', async (req, res) => {
   try {
     const idRaw = String(req.params?.id || '').trim();
@@ -1354,49 +1407,7 @@ app.get('/api/incidents/:id', async (req, res) => {
     const incident = await findIncidentRow(idRaw);
     if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
-    const q = await pool.query(
-      `WITH ev AS (
-         SELECT
-           COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
-           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
-           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
-           SUM(CASE
-                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
-                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
-                 THEN 1 ELSE 0
-               END)::bigint AS inbound_events,
-           SUM(CASE
-                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
-                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
-                 THEN 1 ELSE 0
-               END)::bigint AS outbound_events,
-           SUM(CASE
-                 WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
-                   OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
-                   OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
-                 THEN 1 ELSE 0
-               END)::bigint AS blacklist_hits,
-           CASE
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-             ELSE NULL
-           END AS confidence
-         FROM ioc_match_events m
-         WHERE m.activity_id = $1::uuid
-       )
-       SELECT
-         a.*,
-         COALESCE(ev.asset_count, 0) AS asset_count,
-         COALESCE(ev.event_count, 0) AS event_count,
-         ev.confidence
-       FROM ioc_activity a
-       CROSS JOIN ev
-       WHERE a.id = $1::uuid
-       LIMIT 1`,
-      [incident.id]
-    );
+    const q = await loadIncidentWithStats(incident.id);
 
     if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
     if (Number(q.rows[0]?.event_count || 0) <= 0) {
@@ -1441,6 +1452,44 @@ app.get('/api/incidents/:id', async (req, res) => {
   } catch (err) {
     console.error('[incident-detail] failed', err);
     return res.status(500).json({ message: 'Failed to fetch incident' });
+  }
+});
+
+app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
+  try {
+    const idRaw = String(req.params?.id || '').trim();
+    if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
+
+    const incident = await findIncidentRow(idRaw);
+    if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
+
+    const q = await loadIncidentWithStats(incident.id);
+    if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
+    if (Number(q.rows[0]?.event_count || 0) <= 0) {
+      return res.status(404).json({ message: 'Incident not found (no linked events)' });
+    }
+
+    const risk = calculateIncidentRisk(q.rows[0]);
+    const incidentVersion = llmRiskAdvisor.computeVersion(q.rows[0]);
+    const llmRisk = await llmRiskAdvisor.evaluateAndCache({
+      incident: q.rows[0],
+      baseRisk: risk.risk_score,
+      version: incidentVersion,
+      force: true
+    });
+
+    const item = {
+      ...q.rows[0],
+      incident_version: incidentVersion,
+      ...risk,
+      ...llmRisk,
+      risk_score: llmRisk.final_risk_score
+    };
+
+    return res.json({ item });
+  } catch (err) {
+    console.error('[incident-ai-analyze] failed', err);
+    return res.status(500).json({ message: 'AI analysis failed' });
   }
 });
 

@@ -1937,6 +1937,8 @@ function IncidentDetailsPage() {
   const [eventsRefreshKey, setEventsRefreshKey] = useState(0);
   const [showPropagateModal, setShowPropagateModal] = useState(false);
   const [propagationNote, setPropagationNote] = useState('');
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -1966,6 +1968,24 @@ function IncidentDetailsPage() {
       setEventsRefreshKey((k) => k + 1);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runAiAnalyze() {
+    if (!id || aiAnalyzing) return;
+    setAiAnalyzing(true);
+    setAiError('');
+    try {
+      const { data } = await api.post(`/incidents/${id}/ai-analyze`);
+      const nextItem = data?.item || null;
+      if (nextItem) {
+        setItem((prev) => ({ ...(prev || {}), ...nextItem }));
+      }
+    } catch {
+      setAiError('AI analysis failed');
+      setTimeout(() => setAiError(''), 3000);
+    } finally {
+      setAiAnalyzing(false);
     }
   }
 
@@ -2031,7 +2051,21 @@ function IncidentDetailsPage() {
                 </div>
 
                 <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 8 }}>
-                  <h4 style={{ margin: 0, fontSize: 14, color: '#cbd5e1' }}>AI Insight</h4>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <h4 style={{ margin: 0, fontSize: 14, color: '#cbd5e1' }}>AI Insight</h4>
+                    <button
+                      onClick={() => runAiAnalyze().catch(() => {})}
+                      disabled={aiAnalyzing}
+                      style={{ fontSize: 12, padding: '4px 8px', borderColor: '#475569', background: '#111827' }}
+                    >
+                      {aiAnalyzing ? 'Analyzing...' : ((item.llm_risk_adjustment === null || item.llm_risk_adjustment === undefined) ? 'Analyze with AI' : 'Update AI Insight')}
+                    </button>
+                  </div>
+
+                  {aiError ? (
+                    <div style={{ fontSize: 12, color: '#fca5a5' }}>{aiError}</div>
+                  ) : null}
+
                   {(item.llm_risk_adjustment === null || item.llm_risk_adjustment === undefined) ? (
                     <div style={{ color: '#94a3b8', fontSize: 13 }}>No AI analysis yet</div>
                   ) : (

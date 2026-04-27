@@ -220,9 +220,9 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     }
   }
 
-  async function evaluateAndCache({ incident, baseRisk, version }) {
+  async function evaluateAndCache({ incident, baseRisk, version, force = false }) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
-    if (!enabled) return fallback(base, 'disabled');
+    if (!enabled && !force) return fallback(base, 'disabled');
 
     const verdict = String(incident?.verdict || '').trim().toLowerCase();
     if (verdict === 'fp') {
