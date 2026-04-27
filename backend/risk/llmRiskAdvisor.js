@@ -14,6 +14,20 @@ function clamp(value, min = 0, max = 100) {
   return Math.min(Math.max(Number(value) || 0, min), max);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
+}
+
+function isTimeoutError(err) {
+  const name = String(err?.name || '');
+  const code = String(err?.code || '').toUpperCase();
+  const msg = String(err?.message || '').toLowerCase();
+  if (name === 'AbortError') return true;
+  if (code === 'ETIMEDOUT') return true;
+  if (msg.includes('socket hang up')) return true;
+  return false;
+}
+
 function normalizeAdjustment(raw) {
   const n = Number(String(raw ?? '').replace(/^\+/, ''));
   if (!Number.isFinite(n)) return 0;
@@ -139,6 +153,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.26:11434/api/generate').trim();
   const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.7:7b').trim();
   const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 8000), 1000);
+  const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 25000), timeoutMs);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
 
   function fallback(baseRisk, reason = 'fallback') {
@@ -220,7 +235,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     }
   }
 
-  async function evaluateAndCache({ incident, baseRisk, version, force = false }) {
+  async function evaluateAndCache({ incident, baseRisk, version, force = false, timeoutMsOverride } = {}) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     if (!enabled && !force) return fallback(base, 'disabled');
 
@@ -231,53 +246,79 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       return out;
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const initialTimeout = Math.max(Number(timeoutMsOverride || timeoutMs), 1000);
+    const retryBackoffMs = 5000;
+    const secondTimeout = initialTimeout + 5000;
 
-    try {
-      const payload = {
-        model,
-        stream: false,
-        prompt: `${buildPrompt()}\n\nIncident Data:\n${JSON.stringify(buildIncidentPayload(incident), null, 2)}`
-      };
+    async function singleAttempt(requestTimeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+      try {
+        const payload = {
+          model,
+          stream: false,
+          prompt: `${buildPrompt()}\n\nIncident Data:\n${JSON.stringify(buildIncidentPayload(incident), null, 2)}`
+        };
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
 
-      if (!response.ok) return fallback(base, `llm_http_${response.status}`);
-
-      const body = await response.json();
-      const modelJson = extractJson(body?.response);
-      if (!modelJson) return fallback(base, 'invalid_json');
-
-      const normalized = normalizeAdvisorOutput(modelJson, 'ok');
-      await setCached({
-        incidentId: incident?.id || incident?.incident_id,
-        version,
-        value: {
-          ...normalized,
-          llm_last_updated_at: new Date().toISOString(),
-          llm_version: version || null
+        if (!response.ok) {
+          return { ok: false, kind: 'http', reason: `llm_http_${response.status}` };
         }
-      });
 
-      const finalRisk = clamp(base + normalized.adjustment, 0, 100);
-      return {
-        risk_before_llm: Number(base.toFixed(2)),
-        llm_risk_adjustment: normalized.adjustment,
-        llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: normalized.reason,
-        final_risk_score: Number(finalRisk.toFixed(2))
-      };
-    } catch (err) {
-      return fallback(base, err?.name === 'AbortError' ? 'timeout' : 'endpoint_unreachable');
-    } finally {
-      clearTimeout(timer);
+        const body = await response.json();
+        const modelJson = extractJson(body?.response);
+        if (!modelJson) {
+          return { ok: false, kind: 'parse', reason: 'invalid_json' };
+        }
+
+        return { ok: true, normalized: normalizeAdvisorOutput(modelJson, 'ok') };
+      } catch (err) {
+        if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
+        return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
+      } finally {
+        clearTimeout(timer);
+      }
     }
+
+    const first = await singleAttempt(initialTimeout);
+    let result = first;
+
+    if (!first.ok && first.kind === 'timeout') {
+      await sleep(retryBackoffMs);
+      result = await singleAttempt(secondTimeout);
+    }
+
+    if (!result.ok) {
+      return fallback(base, result.reason || 'fallback');
+    }
+
+    const normalized = result.normalized;
+    await setCached({
+      incidentId: incident?.id || incident?.incident_id,
+      version,
+      value: {
+        ...normalized,
+        llm_last_updated_at: new Date().toISOString(),
+        llm_version: version || null
+      }
+    });
+
+    const finalRisk = clamp(base + normalized.adjustment, 0, 100);
+    return {
+      risk_before_llm: Number(base.toFixed(2)),
+      llm_risk_adjustment: normalized.adjustment,
+      llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
+      llm_risk_reason: normalized.reason,
+      llm_last_updated_at: new Date().toISOString(),
+      llm_version: version || null,
+      final_risk_score: Number(finalRisk.toFixed(2))
+    };
   }
 
   function computeVersion(input) {
@@ -286,6 +327,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
 
   return {
     enabled,
+    timeoutMs,
+    manualTimeoutMs,
     fallback,
     computeVersion,
     getCached,

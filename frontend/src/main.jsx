@@ -1938,6 +1938,7 @@ function IncidentDetailsPage() {
   const [showPropagateModal, setShowPropagateModal] = useState(false);
   const [propagationNote, setPropagationNote] = useState('');
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiStillAnalyzing, setAiStillAnalyzing] = useState(false);
   const [aiError, setAiError] = useState('');
 
   const load = useCallback(async () => {
@@ -1958,6 +1959,33 @@ function IncidentDetailsPage() {
 
   useEffect(() => { load().catch(() => {}); }, [load]);
 
+  useEffect(() => {
+    if (!aiStillAnalyzing || !id) return undefined;
+
+    let stopped = false;
+    const timer = setInterval(async () => {
+      if (stopped) return;
+      try {
+        const { data } = await api.get(`/incidents/${id}`);
+        const it = data?.item || null;
+        if (!it) return;
+        setItem((prev) => ({ ...(prev || {}), ...it }));
+
+        if (it.llm_risk_adjustment !== null && it.llm_risk_adjustment !== undefined) {
+          stopped = true;
+          setAiStillAnalyzing(false);
+        }
+      } catch {
+        // keep polling silently
+      }
+    }, 2500);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [aiStillAnalyzing, id]);
+
   async function savePatch(patch = {}) {
     if (!id) return;
     setSaving(true);
@@ -1974,14 +2002,22 @@ function IncidentDetailsPage() {
   async function runAiAnalyze() {
     if (!id || aiAnalyzing) return;
     setAiAnalyzing(true);
+    setAiStillAnalyzing(false);
     setAiError('');
     try {
-      const { data } = await api.post(`/incidents/${id}/ai-analyze`);
+      const { data, status } = await api.post(`/incidents/${id}/ai-analyze`);
+      if (status === 202 || data?.status === 'processing') {
+        setAiStillAnalyzing(true);
+        return;
+      }
+
       const nextItem = data?.item || null;
       if (nextItem) {
         setItem((prev) => ({ ...(prev || {}), ...nextItem }));
       }
+      setAiStillAnalyzing(false);
     } catch {
+      setAiStillAnalyzing(false);
       setAiError('AI analysis failed');
       setTimeout(() => setAiError(''), 3000);
     } finally {
@@ -2055,12 +2091,16 @@ function IncidentDetailsPage() {
                     <h4 style={{ margin: 0, fontSize: 14, color: '#cbd5e1' }}>AI Insight</h4>
                     <button
                       onClick={() => runAiAnalyze().catch(() => {})}
-                      disabled={aiAnalyzing}
+                      disabled={aiAnalyzing || aiStillAnalyzing}
                       style={{ fontSize: 12, padding: '4px 8px', borderColor: '#475569', background: '#111827' }}
                     >
-                      {aiAnalyzing ? 'Analyzing...' : ((item.llm_risk_adjustment === null || item.llm_risk_adjustment === undefined) ? 'Analyze with AI' : 'Update AI Insight')}
+                      {aiAnalyzing ? 'Analyzing...' : aiStillAnalyzing ? 'Still analyzing...' : ((item.llm_risk_adjustment === null || item.llm_risk_adjustment === undefined) ? 'Analyze with AI' : 'Update AI Insight')}
                     </button>
                   </div>
+
+                  {aiStillAnalyzing ? (
+                    <div style={{ fontSize: 12, color: '#93c5fd' }}>Still analyzing...</div>
+                  ) : null}
 
                   {aiError ? (
                     <div style={{ fontSize: 12, color: '#fca5a5' }}>{aiError}</div>

@@ -1475,8 +1475,18 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
       incident: q.rows[0],
       baseRisk: risk.risk_score,
       version: incidentVersion,
-      force: true
+      force: true,
+      timeoutMsOverride: llmRiskAdvisor.manualTimeoutMs
     });
+
+    if (String(llmRisk?.llm_risk_reason || '').toLowerCase() === 'timeout') {
+      await llmRiskAdvisor.enqueueEvaluation({
+        incidentId: q.rows[0]?.id,
+        version: incidentVersion,
+        reason: 'manual_timeout_retry_background'
+      });
+      return res.status(202).json({ status: 'processing' });
+    }
 
     const item = {
       ...q.rows[0],
