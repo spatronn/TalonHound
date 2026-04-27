@@ -1519,12 +1519,35 @@ async function computeInstitutionRiskOverview() {
          a.note,
          COALESCE(ev.event_count, 0) AS event_count,
          COALESCE(ev.asset_count, 0) AS asset_count,
+         COALESCE(ev.accepted_connections, 0) AS accepted_connections,
+         COALESCE(ev.blocked_connections, 0) AS blocked_connections,
+         COALESCE(ev.inbound_events, 0) AS inbound_events,
+         COALESCE(ev.outbound_events, 0) AS outbound_events,
+         COALESCE(ev.blacklist_hits, 0) AS blacklist_hits,
          ev.confidence
        FROM ioc_activity a
        LEFT JOIN LATERAL (
          SELECT
            COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
+           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
+           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
+           SUM(CASE
+                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
+                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
+                 THEN 1 ELSE 0
+               END)::bigint AS inbound_events,
+           SUM(CASE
+                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
+                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
+                 THEN 1 ELSE 0
+               END)::bigint AS outbound_events,
+           SUM(CASE
+                 WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
+                   OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
+                   OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
+                 THEN 1 ELSE 0
+               END)::bigint AS blacklist_hits,
            CASE
              WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
              WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
