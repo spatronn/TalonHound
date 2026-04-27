@@ -1691,8 +1691,6 @@ function RiskOverviewPage() {
   const [data, setData] = useState(null);
   const [trendData, setTrendData] = useState(null);
   const [range, setRange] = useState('24h');
-  const [lazyLlmByIncident, setLazyLlmByIncident] = useState({});
-  const lazyRequestedRef = useRef(new Set());
 
   const load = useCallback(async (selectedRange = range) => {
     setLoading(true);
@@ -1759,60 +1757,6 @@ function RiskOverviewPage() {
   }).join(' ');
   const stats = trendData?.stats || { min: 0, max: 0, avg: 0 };
 
-  useEffect(() => {
-    const candidates = top
-      .slice(0, 5)
-      .map((it) => ({
-        key: String(it?.id || it?.incident_id || ''),
-        reqId: String(it?.id || it?.incident_id || '')
-      }))
-      .filter((x) => x.key);
-
-    const queue = candidates.filter((x) => !lazyRequestedRef.current.has(x.key));
-    if (!queue.length) return;
-
-    let cancelled = false;
-    const maxParallel = 3;
-    let cursor = 0;
-
-    async function worker() {
-      while (!cancelled) {
-        const idx = cursor;
-        cursor += 1;
-        if (idx >= queue.length) break;
-
-        const task = queue[idx];
-        if (!task?.reqId) continue;
-        lazyRequestedRef.current.add(task.key);
-
-        try {
-          const res = await api.get(`/incidents/${encodeURIComponent(task.reqId)}`);
-          const item = res?.data?.item || {};
-          const patch = {
-            risk_before_llm: item?.risk_before_llm ?? null,
-            llm_risk_adjustment: item?.llm_risk_adjustment ?? null,
-            llm_risk_confidence: item?.llm_risk_confidence ?? null,
-            llm_risk_reason: item?.llm_risk_reason ?? null,
-            final_risk_score: item?.final_risk_score ?? null,
-            risk_score: item?.risk_score ?? null
-          };
-
-          if (!cancelled) {
-            setLazyLlmByIncident((prev) => ({ ...prev, [task.key]: patch }));
-          }
-        } catch {
-          // ignore lazy preload failures
-        }
-      }
-    }
-
-    const workers = Array.from({ length: Math.min(maxParallel, queue.length) }, () => worker());
-    Promise.allSettled(workers).catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [top]);
 
   return (
     <AppShell>
@@ -1918,21 +1862,18 @@ function RiskOverviewPage() {
                 </thead>
                 <tbody>
                   {top.length ? top.map((it) => {
-                    const incidentKey = String(it?.id || it?.incident_id || '');
-                    const lazy = incidentKey ? (lazyLlmByIncident[incidentKey] || null) : null;
-
-                    const finalRiskValue = lazy?.final_risk_score ?? it?.final_risk_score;
-                    const riskScoreValue = lazy?.risk_score ?? it?.risk_score;
+                    const finalRiskValue = it?.final_risk_score;
+                    const riskScoreValue = it?.risk_score;
                     const rawRisk = finalRiskValue ?? riskScoreValue ?? 0;
                     const shownRisk = Number.isFinite(Number(rawRisk)) ? Number(rawRisk) : 0;
 
-                    const aiDelta = lazy?.llm_risk_adjustment ?? it?.llm_risk_adjustment ?? null;
+                    const aiDelta = it?.llm_risk_adjustment ?? null;
                     const aiStyle = aiDeltaStyle(aiDelta);
-                    const confidence = Number(lazy?.llm_risk_confidence ?? it?.llm_risk_confidence);
+                    const confidence = Number(it?.llm_risk_confidence);
                     const confidenceText = Number.isFinite(confidence) ? `${Math.round(Math.min(Math.max(confidence, 0), 1) * 100)}%` : '—';
                     const finalOrBaseRisk = finalRiskValue ?? riskScoreValue ?? 0;
-                    const baseRiskValue = lazy?.risk_before_llm ?? it?.risk_before_llm;
-                    const reasonValue = lazy?.llm_risk_reason ?? it?.llm_risk_reason;
+                    const baseRiskValue = it?.risk_before_llm;
+                    const reasonValue = it?.llm_risk_reason;
 
                     const tooltipLines = [
                       `Base Risk: ${Number.isFinite(Number(baseRiskValue)) ? Number(baseRiskValue).toFixed(2) : '—'}`,

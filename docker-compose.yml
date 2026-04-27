@@ -35,6 +35,12 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
       - QUEUE_NAME=integration-imports
       - SIGNAL_QUEUE_NAME=signal-events
+      - LLM_RISK_QUEUE_NAME=llm-risk-jobs
+      - LLM_RISK_ADVISOR_ENABLED=${LLM_RISK_ADVISOR_ENABLED:-false}
+      - LLM_RISK_ADVISOR_URL=${LLM_RISK_ADVISOR_URL:-http://192.168.1.26:11434/api/generate}
+      - LLM_RISK_ADVISOR_MODEL=${LLM_RISK_ADVISOR_MODEL:-qwen2.7:7b}
+      - LLM_RISK_ADVISOR_TIMEOUT_MS=${LLM_RISK_ADVISOR_TIMEOUT_MS:-8000}
+      - LLM_RISK_ADVISOR_CACHE_TTL_SECONDS=${LLM_RISK_ADVISOR_CACHE_TTL_SECONDS:-3600}
       # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
       - IOC_LIST_TIMING=1
       - LOG_STORAGE=clickhouse
@@ -147,6 +153,12 @@ services:
       - IOC_LOOKUP_SYNC_ENABLED=1
       - IOC_CORRELATION_CH_MAX_THREADS=1
       - IOC_CORRELATION_CH_MAX_EXECUTION_TIME_SECONDS=20
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - LLM_RISK_QUEUE_NAME=llm-risk-jobs
+      - LLM_RISK_TRIGGER_ENABLED=1
+      - LLM_RISK_SNAPSHOT_TTL_SECONDS=604800
     depends_on:
       - db
       - clickhouse
@@ -222,6 +234,31 @@ services:
       - DASHBOARD_MAP_INTERVAL_MS=5000
     depends_on:
       - db
+    restart: unless-stopped
+
+  llm-risk-worker:
+    build: ./backend
+    container_name: demo-llm-risk-worker
+    command: ["npm", "run", "llm-risk-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=demo
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - LLM_RISK_QUEUE_NAME=llm-risk-jobs
+      - LLM_RISK_WORKER_CONCURRENCY=1
+      - LLM_RISK_ADVISOR_ENABLED=${LLM_RISK_ADVISOR_ENABLED:-false}
+      - LLM_RISK_ADVISOR_URL=${LLM_RISK_ADVISOR_URL:-http://192.168.1.26:11434/api/generate}
+      - LLM_RISK_ADVISOR_MODEL=${LLM_RISK_ADVISOR_MODEL:-qwen2.7:7b}
+      - LLM_RISK_ADVISOR_TIMEOUT_MS=${LLM_RISK_ADVISOR_TIMEOUT_MS:-8000}
+      - LLM_RISK_ADVISOR_CACHE_TTL_SECONDS=${LLM_RISK_ADVISOR_CACHE_TTL_SECONDS:-3600}
+    depends_on:
+      - db
+      - redis
     restart: unless-stopped
 
   enrichment-sync-job:

@@ -1,3 +1,5 @@
+import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
+
 const ALLOWED_ADJUSTMENTS = new Set([-10, -5, 0, 5, 10]);
 
 function toBool(v, defaultValue = false) {
@@ -13,15 +15,9 @@ function clamp(value, min = 0, max = 100) {
 }
 
 function normalizeAdjustment(raw) {
-  if (typeof raw === 'number' && Number.isFinite(raw)) {
-    return ALLOWED_ADJUSTMENTS.has(raw) ? raw : 0;
-  }
-
-  const s = String(raw ?? '').trim();
-  if (!s) return 0;
-  const parsed = Number(s.replace(/^\+/, ''));
-  if (!Number.isFinite(parsed)) return 0;
-  return ALLOWED_ADJUSTMENTS.has(parsed) ? parsed : 0;
+  const n = Number(String(raw ?? '').replace(/^\+/, ''));
+  if (!Number.isFinite(n)) return 0;
+  return ALLOWED_ADJUSTMENTS.has(n) ? n : 0;
 }
 
 function normalizeConfidence(raw) {
@@ -86,17 +82,19 @@ Output:
 }
 
 function buildIncidentPayload(incident = {}, baseRisk = 0) {
+  const snapshot = buildIncidentStatsSnapshot(incident);
   return {
-    incident_id: incident.incident_id ?? null,
-    id: incident.id ?? null,
+    incident_id: incident.incident_id ?? incident.id ?? null,
     status: incident.status ?? null,
     verdict: incident.verdict ?? null,
     ioc_type: incident.ioc_type ?? null,
     ioc_value: incident.ioc_value ?? null,
     source_name: incident.source_name ?? null,
-    total_hits: Number(incident.total_hits || 0),
-    event_count: Number(incident.event_count || 0),
-    asset_count: Number(incident.asset_count || 0),
+    total_hits: snapshot.total_hits,
+    total_events: snapshot.total_events,
+    unique_hosts: snapshot.unique_hosts,
+    accepted_count: snapshot.accepted_count,
+    blacklist_hits: snapshot.blacklist_hits,
     confidence: incident.confidence ?? null,
     first_seen: incident.first_seen ?? null,
     last_seen: incident.last_seen ?? null,
@@ -105,70 +103,99 @@ function buildIncidentPayload(incident = {}, baseRisk = 0) {
   };
 }
 
-export function createLlmRiskAdvisor({ redis } = {}) {
+export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const enabled = toBool(process.env.LLM_RISK_ADVISOR_ENABLED, false);
   const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.26:11434/api/generate').trim();
   const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.7:7b').trim();
   const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 8000), 1000);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
 
-  async function getFromCache(cacheKey) {
-    if (!redis || typeof redis.get !== 'function') return null;
+  function fallback(baseRisk, reason = 'fallback') {
+    const base = clamp(Number(baseRisk || 0), 0, 100);
+    return {
+      risk_before_llm: Number(base.toFixed(2)),
+      llm_risk_adjustment: 0,
+      llm_risk_confidence: 0,
+      llm_risk_reason: reason,
+      final_risk_score: Number(base.toFixed(2))
+    };
+  }
+
+  function getCacheKey(incidentId, version) {
+    const id = String(incidentId || '').trim();
+    const v = String(version || '').trim();
+    if (!id || !v) return null;
+    return `risk:llm:incident:${id}:${v}`;
+  }
+
+  async function getCached({ incidentId, version, baseRisk }) {
+    const key = getCacheKey(incidentId, version);
+    if (!key || !redis || typeof redis.get !== 'function') return null;
+
     try {
-      const raw = await redis.get(cacheKey);
+      const raw = await redis.get(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      return normalizeAdvisorOutput(parsed, 'cache');
+      const normalized = normalizeAdvisorOutput(parsed, 'cache');
+      const base = clamp(Number(baseRisk || 0), 0, 100);
+      const finalRisk = clamp(base + normalized.adjustment, 0, 100);
+
+      return {
+        risk_before_llm: Number(base.toFixed(2)),
+        llm_risk_adjustment: normalized.adjustment,
+        llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
+        llm_risk_reason: normalized.reason,
+        final_risk_score: Number(finalRisk.toFixed(2))
+      };
     } catch {
       return null;
     }
   }
 
-  async function setCache(cacheKey, value) {
-    if (!redis || typeof redis.set !== 'function') return;
+  async function setCached({ incidentId, version, value }) {
+    const key = getCacheKey(incidentId, version);
+    if (!key || !redis || typeof redis.set !== 'function') return;
     try {
-      await redis.set(cacheKey, JSON.stringify(value), 'EX', cacheTtlSeconds);
+      await redis.set(key, JSON.stringify(value), 'EX', cacheTtlSeconds);
     } catch {
       // no-op
     }
   }
 
-  async function ask({ incident, baseRisk }) {
+  async function enqueueEvaluation({ incidentId, version, reason = 'manual' }) {
+    if (!enabled) return false;
+    if (!queue || typeof queue.add !== 'function') return false;
+
+    const id = String(incidentId || '').trim();
+    const v = String(version || '').trim();
+    if (!id || !v) return false;
+
+    try {
+      await queue.add(
+        'llm-risk-evaluate',
+        { incidentId: id, version: v, reason },
+        {
+          jobId: `llm-risk:${id}:${v}`,
+          removeOnComplete: true,
+          removeOnFail: 200,
+          attempts: 1
+        }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function evaluateAndCache({ incident, baseRisk, version }) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
-
-    const fallback = {
-      risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: 0,
-      llm_risk_confidence: 0,
-      llm_risk_reason: enabled ? 'fallback' : 'disabled',
-      final_risk_score: Number(base.toFixed(2))
-    };
-
-    if (!enabled) return fallback;
+    if (!enabled) return fallback(base, 'disabled');
 
     const verdict = String(incident?.verdict || '').trim().toLowerCase();
     if (verdict === 'fp') {
-      return {
-        ...fallback,
-        llm_risk_reason: 'fp_verdict_guard'
-      };
-    }
-
-    const cacheId = String(incident?.id || incident?.incident_id || '').trim();
-    const cacheKey = cacheId ? `risk:llm:incident:${cacheId}` : null;
-
-    if (cacheKey) {
-      const cached = await getFromCache(cacheKey);
-      if (cached) {
-        const finalRisk = clamp(base + cached.adjustment, 0, 100);
-        return {
-          risk_before_llm: Number(base.toFixed(2)),
-          llm_risk_adjustment: cached.adjustment,
-          llm_risk_confidence: Number(cached.confidence.toFixed(3)),
-          llm_risk_reason: cached.reason,
-          final_risk_score: Number(finalRisk.toFixed(2))
-        };
-      }
+      const out = fallback(base, 'fp_verdict_guard');
+      out.llm_risk_adjustment = 0;
+      return out;
     }
 
     const controller = new AbortController();
@@ -188,46 +215,44 @@ export function createLlmRiskAdvisor({ redis } = {}) {
         signal: controller.signal
       });
 
-      if (!response.ok) {
-        return {
-          ...fallback,
-          llm_risk_reason: `llm_http_${response.status}`
-        };
-      }
+      if (!response.ok) return fallback(base, `llm_http_${response.status}`);
 
       const body = await response.json();
       const modelJson = extractJson(body?.response);
-      if (!modelJson) {
-        return {
-          ...fallback,
-          llm_risk_reason: 'invalid_json'
-        };
-      }
+      if (!modelJson) return fallback(base, 'invalid_json');
 
       const normalized = normalizeAdvisorOutput(modelJson, 'ok');
+      await setCached({
+        incidentId: incident?.id || incident?.incident_id,
+        version,
+        value: normalized
+      });
+
       const finalRisk = clamp(base + normalized.adjustment, 0, 100);
-      const out = {
+      return {
         risk_before_llm: Number(base.toFixed(2)),
         llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: normalized.reason,
         final_risk_score: Number(finalRisk.toFixed(2))
       };
-
-      if (cacheKey) await setCache(cacheKey, normalized);
-      return out;
     } catch (err) {
-      const isAbort = err?.name === 'AbortError';
-      return {
-        ...fallback,
-        llm_risk_reason: isAbort ? 'timeout' : 'endpoint_unreachable'
-      };
+      return fallback(base, err?.name === 'AbortError' ? 'timeout' : 'endpoint_unreachable');
     } finally {
       clearTimeout(timer);
     }
   }
 
+  function computeVersion(input) {
+    return buildIncidentVersion(input);
+  }
+
   return {
-    ask
+    enabled,
+    fallback,
+    computeVersion,
+    getCached,
+    enqueueEvaluation,
+    evaluateAndCache
   };
 }

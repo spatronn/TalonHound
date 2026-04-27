@@ -1,7 +1,11 @@
 import './lib/ensure-db-password.js';
 import pg from 'pg';
+import IORedis from 'ioredis';
+import { Queue } from 'bullmq';
+import { getRedisUrl } from './lib/redis-url.js';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
+import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
 
 const { Pool } = pg;
 
@@ -12,6 +16,10 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'demo'
 });
+
+const redisUrl = getRedisUrl();
+const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+const llmRiskQueue = new Queue(LLM_RISK_QUEUE_NAME, { connection: redis });
 
 const WORKER_NAME = process.env.IOC_CORRELATION_WORKER_NAME || 'clickhouse-ioc-correlation-v1';
 const POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_CORRELATION_POLL_INTERVAL_MS || 3000), 500);
@@ -25,6 +33,9 @@ const CH_MAX_EXECUTION_TIME_SECONDS = Math.max(Number(process.env.IOC_CORRELATIO
 const REPLAY_WINDOW_SECONDS = Math.max(Number(process.env.IOC_CORRELATION_REPLAY_WINDOW_SECONDS || 600), 60);
 const REPLAY_BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_REPLAY_BATCH_SIZE || 2000), 100);
 const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || process.env.IOC_LOOKUP_SYNC_ENABLED === 'true';
+const LLM_RISK_QUEUE_NAME = process.env.LLM_RISK_QUEUE_NAME || 'llm-risk-jobs';
+const LLM_RISK_TRIGGER_ENABLED = process.env.LLM_RISK_TRIGGER_ENABLED !== '0';
+const LLM_RISK_SNAPSHOT_TTL_SECONDS = Math.max(Number(process.env.LLM_RISK_SNAPSHOT_TTL_SECONDS || 7 * 24 * 3600), 3600);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -353,7 +364,7 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
 }
 
 async function insertMatchEvents(client, rows) {
-  if (!rows.length) return 0;
+  if (!rows.length) return { inserted: 0, affectedActivityIds: [] };
 
   // Deduplicate same (dedup_key, bucket_start) inside this batch to avoid
   // "ON CONFLICT DO UPDATE command cannot affect row a second time".
@@ -386,6 +397,7 @@ async function insertMatchEvents(client, rows) {
   const values = [];
   const params = [];
   const activityCache = new Map();
+  const affectedActivityIds = new Set();
 
   for (let i = 0; i < normalizedRows.length; i += 1) {
     const r = normalizedRows[i];
@@ -396,6 +408,7 @@ async function insertMatchEvents(client, rows) {
       hitCount: r._hitInc,
       cache: activityCache
     });
+    if (activity?.id) affectedActivityIds.add(String(activity.id));
 
     const base = i * 21;
 
@@ -445,7 +458,7 @@ async function insertMatchEvents(client, rows) {
   `;
 
   await client.query(sql, params);
-  return normalizedRows.length;
+  return { inserted: normalizedRows.length, affectedActivityIds: Array.from(affectedActivityIds) };
 }
 
 async function runBatch() {
@@ -459,11 +472,11 @@ async function runBatch() {
 
     if (!scanned.length) {
       await client.query('COMMIT');
-      return { scanned: 0, matched: 0, inserted: 0, duration_ms: Date.now() - startedAtMs };
+      return { scanned: 0, matched: 0, inserted: 0, affectedActivityIds: [], duration_ms: Date.now() - startedAtMs };
     }
 
     const matchedRows = await toMatchRowsFromScanned(scanned);
-    const inserted = await insertMatchEvents(client, matchedRows);
+    const insertResult = await insertMatchEvents(client, matchedRows);
 
     const last = scanned[scanned.length - 1];
     await saveState(client, last.ts, last.row_hash);
@@ -472,7 +485,8 @@ async function runBatch() {
     return {
       scanned: scanned.length,
       matched: matchedRows.length,
-      inserted,
+      inserted: insertResult.inserted,
+      affectedActivityIds: insertResult.affectedActivityIds,
       last_ts: last.ts,
       last_row_hash: last.row_hash,
       duration_ms: Date.now() - startedAtMs
@@ -485,17 +499,95 @@ async function runBatch() {
   }
 }
 
+async function loadIncidentSnapshotsByIds(ids = []) {
+  if (!ids.length) return [];
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+  const q = await pool.query(
+    `SELECT
+       a.id,
+       a.total_hits,
+       a.verdict,
+       COUNT(m.*)::bigint AS total_events,
+       COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS unique_hosts,
+       SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_count,
+       SUM(CASE
+             WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
+               OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
+               OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
+             THEN 1 ELSE 0
+           END)::bigint AS blacklist_hits
+     FROM ioc_activity a
+     LEFT JOIN ioc_match_events m ON m.activity_id = a.id
+     WHERE a.id IN (${placeholders})
+     GROUP BY a.id, a.total_hits, a.verdict`,
+    ids
+  );
+
+  return q.rows || [];
+}
+
+async function maybeTriggerLlmForActivityIds(activityIds = []) {
+  if (!LLM_RISK_TRIGGER_ENABLED || !activityIds.length) return;
+
+  try {
+    const incidents = await loadIncidentSnapshotsByIds(activityIds);
+    for (const row of incidents) {
+      const snapshot = buildIncidentStatsSnapshot(row);
+      const incidentId = String(snapshot.incident_id || row.id || '');
+      if (!incidentId) continue;
+
+      const snapshotKey = `risk:llm:snapshot:incident:${incidentId}`;
+      let prevSnapshot = null;
+      try {
+        const prevRaw = await redis.get(snapshotKey);
+        prevSnapshot = prevRaw ? JSON.parse(prevRaw) : null;
+      } catch {
+        prevSnapshot = null;
+      }
+
+      const decision = shouldTriggerLlm(prevSnapshot, snapshot);
+      try {
+        await redis.set(snapshotKey, JSON.stringify(snapshot), 'EX', LLM_RISK_SNAPSHOT_TTL_SECONDS);
+      } catch {
+        // ignore snapshot cache failures
+      }
+
+      if (!decision.trigger) continue;
+
+      const version = buildIncidentVersion(snapshot);
+      try {
+        await llmRiskQueue.add(
+          'llm-risk-evaluate',
+          { incidentId, version, reason: decision.reason },
+          {
+            jobId: `llm-risk:${incidentId}:${version}`,
+            removeOnComplete: true,
+            removeOnFail: 200,
+            attempts: 1
+          }
+        );
+      } catch {
+        // no-op
+      }
+    }
+  } catch (err) {
+    console.error('[ioc-correlation] llm-trigger failed', err?.message || err);
+  }
+}
+
 async function tick() {
   let totalScanned = 0;
   let totalMatched = 0;
   let totalInserted = 0;
   let totalDurationMs = 0;
+  const affectedActivityIds = new Set();
 
   for (let i = 0; i < MAX_BATCHES_PER_TICK; i += 1) {
     const result = await runBatch();
     totalScanned += result.scanned;
     totalMatched += result.matched;
     totalInserted += result.inserted;
+    for (const id of (result.affectedActivityIds || [])) affectedActivityIds.add(String(id));
     totalDurationMs += Number(result.duration_ms || 0);
     if (result.scanned < BATCH_SIZE) break;
   }
@@ -524,7 +616,9 @@ async function tick() {
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
-          replayInserted = await insertMatchEvents(client, mapped);
+          const replayInsertResult = await insertMatchEvents(client, mapped);
+          replayInserted = replayInsertResult.inserted;
+          for (const id of (replayInsertResult.affectedActivityIds || [])) affectedActivityIds.add(String(id));
           await client.query('COMMIT');
         } catch (err) {
           await client.query('ROLLBACK');
@@ -538,8 +632,12 @@ async function tick() {
     }
   }
 
+  if (affectedActivityIds.size > 0) {
+    await maybeTriggerLlmForActivityIds(Array.from(affectedActivityIds));
+  }
+
   if (totalScanned > 0 || replayScanned > 0) {
-    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`);
+    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} llm_trigger_candidates=${affectedActivityIds.size} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`);
   }
 }
 
@@ -571,20 +669,23 @@ async function bootstrap() {
   }
 }
 
-process.on('SIGINT', async () => {
+async function shutdown(code = 0) {
   stopping = true;
-  await pool.end();
-  process.exit(0);
+  try { await llmRiskQueue.close(); } catch {}
+  try { await redis.quit(); } catch {}
+  try { await pool.end(); } catch {}
+  process.exit(code);
+}
+
+process.on('SIGINT', async () => {
+  await shutdown(0);
 });
 
 process.on('SIGTERM', async () => {
-  stopping = true;
-  await pool.end();
-  process.exit(0);
+  await shutdown(0);
 });
 
 bootstrap().catch(async (err) => {
   console.error('[ioc-correlation] bootstrap failed', err?.message || err);
-  await pool.end();
-  process.exit(1);
+  await shutdown(1);
 });

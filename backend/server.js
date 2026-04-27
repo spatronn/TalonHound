@@ -43,10 +43,12 @@ const pool = new Pool({
 const redisUrl = getRedisUrl();
 const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
+const llmRiskQueueName = process.env.LLM_RISK_QUEUE_NAME || 'llm-risk-jobs';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const signalQueue = new Queue(signalQueueName, { connection: redis });
-const llmRiskAdvisor = createLlmRiskAdvisor({ redis });
+const llmRiskQueue = new Queue(llmRiskQueueName, { connection: redis });
+const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue });
 
 // Geo cache refresh tuning (local/kısıtlı ortam için düşürülebilir)
 const GEO_CACHE_REFRESH_LIMIT = Math.max(Number(process.env.GEO_CACHE_REFRESH_LIMIT || 20000), 100);
@@ -1356,7 +1358,14 @@ app.get('/api/incidents/:id', async (req, res) => {
       `WITH ev AS (
          SELECT
            COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT m.destination_ip)::int AS asset_count,
+           COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
+           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_count,
+           SUM(CASE
+                 WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
+                   OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
+                   OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
+                 THEN 1 ELSE 0
+               END)::bigint AS blacklist_hits,
            CASE
              WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
              WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
@@ -1384,13 +1393,26 @@ app.get('/api/incidents/:id', async (req, res) => {
     }
 
     const risk = calculateIncidentRisk(q.rows[0]);
-    const llmRisk = await llmRiskAdvisor.ask({
-      incident: q.rows[0],
+    const incidentVersion = llmRiskAdvisor.computeVersion(q.rows[0]);
+    const cachedLlmRisk = await llmRiskAdvisor.getCached({
+      incidentId: q.rows[0]?.id,
+      version: incidentVersion,
       baseRisk: risk.risk_score
     });
 
+    let llmRisk = cachedLlmRisk;
+    if (!llmRisk) {
+      llmRisk = llmRiskAdvisor.fallback(risk.risk_score, 'pending_async');
+      await llmRiskAdvisor.enqueueEvaluation({
+        incidentId: q.rows[0]?.id,
+        version: incidentVersion,
+        reason: 'incident_detail_cache_miss'
+      });
+    }
+
     const item = {
       ...q.rows[0],
+      incident_version: incidentVersion,
       ...risk,
       ...llmRisk,
       risk_score: llmRisk.final_risk_score
