@@ -509,7 +509,8 @@ async function loadIncidentSnapshotsByIds(ids = []) {
        a.verdict,
        COUNT(m.*)::bigint AS total_events,
        COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS unique_hosts,
-       SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_count,
+       SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
+       SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
        SUM(CASE
              WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
                OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'

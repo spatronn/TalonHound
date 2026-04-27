@@ -1359,7 +1359,18 @@ app.get('/api/incidents/:id', async (req, res) => {
          SELECT
            COUNT(*)::bigint AS event_count,
            COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
-           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_count,
+           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
+           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
+           SUM(CASE
+                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
+                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
+                 THEN 1 ELSE 0
+               END)::bigint AS inbound_events,
+           SUM(CASE
+                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
+                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
+                 THEN 1 ELSE 0
+               END)::bigint AS outbound_events,
            SUM(CASE
                  WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
                    OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
@@ -1402,7 +1413,15 @@ app.get('/api/incidents/:id', async (req, res) => {
 
     let llmRisk = cachedLlmRisk;
     if (!llmRisk) {
-      llmRisk = llmRiskAdvisor.fallback(risk.risk_score, 'pending_async');
+      llmRisk = {
+        risk_before_llm: Number(risk.risk_score || 0),
+        llm_risk_adjustment: null,
+        llm_risk_confidence: null,
+        llm_risk_reason: null,
+        llm_last_updated_at: null,
+        llm_version: incidentVersion,
+        final_risk_score: Number(risk.risk_score || 0)
+      };
       await llmRiskAdvisor.enqueueEvaluation({
         incidentId: q.rows[0]?.id,
         version: incidentVersion,
@@ -1472,12 +1491,59 @@ async function computeInstitutionRiskOverview() {
   });
 
   const overview = calculateInstitutionRisk(scoredIncidents);
+
+  const incidentById = new Map(scoredIncidents.map((row) => [String(row.id), row]));
+  const topWithLlm = [];
+  for (const it of (overview.top_contributing_incidents || [])) {
+    const full = incidentById.get(String(it.id || ''));
+    if (!full) {
+      topWithLlm.push(it);
+      continue;
+    }
+
+    const version = llmRiskAdvisor.computeVersion(full);
+    const cached = await llmRiskAdvisor.getCached({
+      incidentId: full.id,
+      version,
+      baseRisk: it.risk_score
+    });
+
+    topWithLlm.push({
+      ...it,
+      risk_before_llm: cached?.risk_before_llm ?? null,
+      llm_risk_adjustment: cached?.llm_risk_adjustment ?? null,
+      llm_risk_confidence: cached?.llm_risk_confidence ?? null,
+      llm_risk_reason: cached?.llm_risk_reason ?? null,
+      llm_last_updated_at: cached?.llm_last_updated_at ?? null,
+      llm_version: cached?.llm_version ?? version,
+      final_risk_score: cached?.final_risk_score ?? null,
+      risk_score: cached?.final_risk_score ?? it.risk_score
+    });
+  }
+
+  const llmRows = topWithLlm.filter((x) => Number.isFinite(Number(x?.llm_risk_adjustment)));
+  const llmAdjustmentAggregate = llmRows.length
+    ? {
+      enabled: true,
+      total_adjustment: Number(llmRows.reduce((acc, x) => acc + Number(x.llm_risk_adjustment || 0), 0).toFixed(2)),
+      avg_confidence: Number((llmRows.reduce((acc, x) => acc + Number(x.llm_risk_confidence || 0), 0) / llmRows.length).toFixed(3)),
+      incident_count: llmRows.length
+    }
+    : null;
+
   const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
 
   return {
     ...overview,
+    top_contributing_incidents: topWithLlm,
+    llm_adjustment_aggregate: llmAdjustmentAggregate,
     total_active_incidents: totalActiveIncidents,
-    data_truncated: false
+    data_truncated: false,
+    breakdown: {
+      ...(overview.breakdown || {}),
+      top_contributing_incidents: topWithLlm,
+      llm_adjustment_aggregate: llmAdjustmentAggregate
+    }
   };
 }
 

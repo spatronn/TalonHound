@@ -81,25 +81,56 @@ Output:
 { "adjustment": <number>, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
-function buildIncidentPayload(incident = {}, baseRisk = 0) {
+function normalizeIocType(raw) {
+  const t = String(raw || '').toLowerCase();
+  if (t === 'ip') return 'ip';
+  if (t === 'domain') return 'domain';
+  if (t === 'url') return 'url';
+  if (['md5', 'sha1', 'sha256', 'hash'].includes(t)) return 'hash';
+  return 'hash';
+}
+
+function parseTags(raw) {
+  if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.split(',').map((x) => x.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeVerdict(raw) {
+  const v = String(raw || '').toLowerCase();
+  if (v === 'fp') return 'fp';
+  if (v === 'tp') return 'tp';
+  if (v === 'suspicious') return 'suspicious';
+  return 'unknown';
+}
+
+function buildIncidentPayload(incident = {}) {
   const snapshot = buildIncidentStatsSnapshot(incident);
+  const confidenceRaw = String(incident?.confidence || '').toLowerCase();
+  const confidence = ['low', 'medium', 'high'].includes(confidenceRaw) ? confidenceRaw : 'medium';
+
   return {
-    incident_id: incident.incident_id ?? incident.id ?? null,
-    status: incident.status ?? null,
-    verdict: incident.verdict ?? null,
-    ioc_type: incident.ioc_type ?? null,
-    ioc_value: incident.ioc_value ?? null,
-    source_name: incident.source_name ?? null,
-    total_hits: snapshot.total_hits,
-    total_events: snapshot.total_events,
-    unique_hosts: snapshot.unique_hosts,
-    accepted_count: snapshot.accepted_count,
-    blacklist_hits: snapshot.blacklist_hits,
-    confidence: incident.confidence ?? null,
-    first_seen: incident.first_seen ?? null,
-    last_seen: incident.last_seen ?? null,
-    note: incident.note ?? null,
-    base_risk: Number(baseRisk || 0)
+    ioc: String(incident?.ioc_value || incident?.observable_value || ''),
+    ioc_type: normalizeIocType(incident?.ioc_type || incident?.observable_type),
+    stats: {
+      total_events: snapshot.total_events,
+      accepted_connections: snapshot.accepted_connections,
+      blocked_connections: snapshot.blocked_connections,
+      inbound_events: Math.max(Number(incident?.inbound_events || 0), 0),
+      outbound_events: Math.max(Number(incident?.outbound_events || 0), 0),
+      unique_hosts: snapshot.unique_hosts
+    },
+    threat_intel: {
+      blacklist_hits: snapshot.blacklist_hits,
+      confidence,
+      tags: parseTags(incident?.tags)
+    },
+    history: {
+      previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
+      previous_verdict: normalizeVerdict(incident?.previous_verdict)
+    }
   };
 }
 
@@ -145,6 +176,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: normalized.reason,
+        llm_last_updated_at: parsed?.llm_last_updated_at || null,
+        llm_version: parsed?.llm_version || version || null,
         final_risk_score: Number(finalRisk.toFixed(2))
       };
     } catch {
@@ -205,7 +238,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const payload = {
         model,
         stream: false,
-        prompt: `${buildPrompt()}\n\nIncident context:\n${JSON.stringify(buildIncidentPayload(incident, base), null, 2)}`
+        prompt: `${buildPrompt()}\n\nIncident Data:\n${JSON.stringify(buildIncidentPayload(incident), null, 2)}`
       };
 
       const response = await fetch(url, {
@@ -225,7 +258,11 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       await setCached({
         incidentId: incident?.id || incident?.incident_id,
         version,
-        value: normalized
+        value: {
+          ...normalized,
+          llm_last_updated_at: new Date().toISOString(),
+          llm_version: version || null
+        }
       });
 
       const finalRisk = clamp(base + normalized.adjustment, 0, 100);

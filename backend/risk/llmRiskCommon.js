@@ -10,7 +10,8 @@ export function buildIncidentStatsSnapshot(input = {}) {
     incident_id: String(input?.id || input?.incident_id || ''),
     total_events: Math.max(safeNumber(input?.event_count ?? input?.total_events, 0), 0),
     unique_hosts: Math.max(safeNumber(input?.asset_count ?? input?.unique_hosts, 0), 0),
-    accepted_count: Math.max(safeNumber(input?.accepted_count, 0), 0),
+    accepted_connections: Math.max(safeNumber(input?.accepted_connections ?? input?.accepted_count, 0), 0),
+    blocked_connections: Math.max(safeNumber(input?.blocked_connections ?? input?.blocked_count, 0), 0),
     blacklist_hits: Math.max(safeNumber(input?.blacklist_hits, 0), 0),
     total_hits: Math.max(safeNumber(input?.total_hits, 0), 0),
     verdict: String(input?.verdict || '')
@@ -22,11 +23,10 @@ export function buildIncidentVersion(snapshot = {}) {
   const raw = [
     s.incident_id,
     s.total_events,
+    s.accepted_connections,
+    s.blocked_connections,
     s.unique_hosts,
-    s.accepted_count,
-    s.blacklist_hits,
-    s.total_hits,
-    s.verdict
+    s.blacklist_hits
   ].join('|');
 
   return crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16);
@@ -52,7 +52,7 @@ export function shouldTriggerLlm(prevRaw, currentRaw) {
     return { trigger: true, reason: 'unique_hosts_increase' };
   }
 
-  if (prev.accepted_count <= 0 && current.accepted_count > 0) {
+  if (prev.accepted_connections <= 0 && current.accepted_connections > 0) {
     return { trigger: true, reason: 'accepted_0_to_positive' };
   }
 
