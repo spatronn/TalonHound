@@ -266,6 +266,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         const payload = {
           model,
           stream: false,
+          format: 'json',
           prompt: `${buildPrompt()}\n\nIncident Data:\n${JSON.stringify(buildIncidentPayload(incident), null, 2)}`
         };
 
