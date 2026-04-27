@@ -1861,14 +1861,16 @@ function RiskOverviewPage() {
                 </thead>
                 <tbody>
                   {top.length ? top.map((it) => {
-                    const shownRisk = Number.isFinite(Number(it?.final_risk_score)) ? Number(it.final_risk_score) : Number(it?.risk_score || 0);
+                    const rawRisk = it?.final_risk_score ?? it?.risk_score ?? 0;
+                    const shownRisk = Number.isFinite(Number(rawRisk)) ? Number(rawRisk) : 0;
                     const aiDelta = it?.llm_risk_adjustment;
                     const aiStyle = aiDeltaStyle(aiDelta);
                     const confidence = Number(it?.llm_risk_confidence);
                     const confidenceText = Number.isFinite(confidence) ? `${Math.round(Math.min(Math.max(confidence, 0), 1) * 100)}%` : '—';
+                    const finalOrBaseRisk = it?.final_risk_score ?? it?.risk_score ?? 0;
                     const tooltipLines = [
                       `Base Risk: ${Number.isFinite(Number(it?.risk_before_llm)) ? Number(it.risk_before_llm).toFixed(2) : '—'}`,
-                      `Final Risk: ${Number.isFinite(Number(it?.final_risk_score)) ? Number(it.final_risk_score).toFixed(2) : Number(it?.risk_score || 0).toFixed(2)}`,
+                      `Final Risk: ${Number.isFinite(Number(finalOrBaseRisk)) ? Number(finalOrBaseRisk).toFixed(2) : '0.00'}`,
                       `Confidence: ${confidenceText}`,
                       `Reason: ${it?.llm_risk_reason ? String(it.llm_risk_reason) : '—'}`
                     ].join('\n');
