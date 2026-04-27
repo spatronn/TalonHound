@@ -47,6 +47,7 @@ docker compose up -d --build
 **Used queues**
 - `integration-imports` (IOC integration jobs)
 - `signal-events` (signal processing jobs)
+- `llm-risk-jobs` (LLM risk analyze/recompute jobs)
 
 **Ops notes**
 - Redis memory should be monitored if event rate increases.
@@ -230,7 +231,38 @@ docker compose up -d --build
 
 ---
 
-### 11) `demo-frontend`
+### 11) `demo-llm-risk-worker`
+**Purpose**
+- Asynchronous LLM risk advisor worker.
+- Consumes `llm-risk-jobs` queue and calls Ollama for risk adjustment output.
+- Writes versioned results to Redis cache (`risk:llm:incident:<id>:<version>`).
+
+**Behavior**
+- Triggered by incident create/significant-change logic and manual analyze action.
+- Applies timeout-only retry policy (1 retry, 5s backoff).
+- Uses short timeout for background defaults and supports longer manual timeout path.
+
+**Key env vars**
+- `LLM_RISK_QUEUE_NAME` (default `llm-risk-jobs`)
+- `LLM_RISK_ADVISOR_ENABLED` (default `false`)
+- `LLM_RISK_ADVISOR_URL` (Ollama endpoint)
+- `LLM_RISK_ADVISOR_MODEL` (default `qwen2.5:7b`)
+- `LLM_RISK_ADVISOR_TIMEOUT_MS` (default `8000`)
+- `LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS` (default `25000`)
+- `LLM_RISK_ADVISOR_AI_WEIGHT` (default `3`)
+- `LLM_RISK_ADVISOR_CACHE_TTL_SECONDS` (default `3600`)
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 llm-risk-worker
+  ```
+- Queue depth check (Redis):
+  ```bash
+  docker compose exec -T redis redis-cli -a "$REDIS_PASSWORD" LLEN bull:llm-risk-jobs:wait
+  ```
+
+### 12) `demo-frontend`
 **Purpose**
 - Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
 
@@ -242,7 +274,7 @@ docker compose up -d --build
   - Last 10 Detection Events
 - Incident (placeholder for now)
 
-### 12) `demo-proxy`
+### 13) `demo-proxy`
 **Purpose**
 - TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
 
@@ -272,6 +304,7 @@ flowchart LR
     IW[demo-integration-worker\nIOC import worker]
     MW[demo-dashboard-map-worker\nmap batch worker]
     IMC[demo-ioc-match-count-worker\nCH->PG match_count snapshot]
+    LLMW[demo-llm-risk-worker\nLLM risk queue worker]
     DB[(demo-db\nPostgreSQL)]
     CH[(demo-clickhouse\nsyslog_observables)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
@@ -279,9 +312,12 @@ flowchart LR
     FE -->|API calls| BE
 
     BE -->|enqueue signal-events| R
+    BE -->|enqueue llm-risk-jobs| R
     R -->|consume signal-events| SE
+    R -->|consume llm-risk-jobs| LLMW
     SE -->|write raw events| DB
     ICE -->|match + upsert ioc_match_events| DB
+    LLMW -->|cache llm adjustment by incident version| R
 
     IS -->|enqueue integration-imports| R
     R -->|consume integration-imports| IW
@@ -325,6 +361,7 @@ docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
 docker compose logs --tail=100 ioc-correlation-engine
+docker compose logs --tail=100 llm-risk-worker
 docker compose logs --tail=100 ioc-match-count-worker
 docker compose logs --tail=100 dashboard-map-worker
 docker compose logs --tail=100 enrichment-sync-job
