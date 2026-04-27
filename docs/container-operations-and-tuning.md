@@ -231,7 +231,77 @@ docker compose up -d --build
 
 ---
 
-### 11) `demo-llm-risk-worker`
+### 11) `demo-ioc-retro-engine`
+**Purpose**
+- Periodic retrospective IOC scan worker on ClickHouse data.
+- Detects historical matches for newly imported IOCs (lookback mode).
+
+**Behavior**
+- Runs on interval / alignment settings.
+- Writes matched events into PostgreSQL `ioc_match_events` (dedup-aware flow).
+
+**Key env vars**
+- `IOC_RETRO_SCAN_INTERVAL_SECONDS`
+- `IOC_RETRO_LOOKBACK_DAYS`
+- `IOC_RETRO_NEW_IOC_WINDOW_HOURS`
+- `IOC_RETRO_MAX_NEW_IOCS`
+- `IOC_RETRO_BATCH_SIZE`
+- `IOC_RETRO_IOC_CHUNK_SIZE`
+- `IOC_RETRO_ALIGN_ENABLED`
+- `IOC_RETRO_ALIGN_MINUTE`
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 ioc-retro-engine
+  ```
+
+---
+
+### 12) `demo-syslog-receiver`
+**Purpose**
+- Syslog ingest service (UDP receiver + buffered batch writer).
+- Persists normalized/raw log stream into ClickHouse.
+
+**Behavior**
+- Uses batching + flush workers to avoid small-part amplification.
+- Supports health endpoint with token guard.
+
+**Key env vars**
+- `SYSLOG_PORT`, `SYSLOG_HOST`
+- `SYSLOG_HEALTH_PORT`, `SYSLOG_HEALTH_TOKEN`
+- `SYSLOG_BATCH_SIZE`, `SYSLOG_FLUSH_INTERVAL_MS`, `SYSLOG_FORCE_FLUSH_MAX_MS`
+- `SYSLOG_FLUSH_WORKERS`, `SYSLOG_MAX_BUFFERED`, `SYSLOG_OVERFLOW_POLICY`
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 syslog-receiver
+  ```
+
+---
+
+### 13) `demo-clickhouse`
+**Purpose**
+- Columnar log analytics store (primary source for high-volume IOC correlation/search).
+
+**Behavior**
+- Stores large telemetry tables (e.g. syslog observables/logs).
+- Queried by correlation/retro/count workers and backend analytics paths.
+
+**Ops notes**
+- Logs:
+  ```bash
+  docker compose logs -f --tail=100 clickhouse
+  ```
+- Quick SQL check:
+  ```bash
+  docker compose exec -T clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD" -q "SELECT now();"
+  ```
+
+---
+
+### 14) `demo-llm-risk-worker`
 **Purpose**
 - Asynchronous LLM risk advisor worker.
 - Consumes `llm-risk-jobs` queue and calls Ollama for risk adjustment output.
@@ -262,7 +332,7 @@ docker compose up -d --build
   docker compose exec -T redis redis-cli -a "$REDIS_PASSWORD" LLEN bull:llm-risk-jobs:wait
   ```
 
-### 12) `demo-frontend`
+### 15) `demo-frontend`
 **Purpose**
 - Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
 
@@ -272,9 +342,11 @@ docker compose up -d --build
   - Connected Data Sources
   - Last 10 Raw Events
   - Last 10 Detection Events
-- Incident (placeholder for now)
+- Incidents
+  - Incident list
+  - Incident detail (AI Insight + manual AI analyze action)
 
-### 13) `demo-proxy`
+### 16) `demo-proxy`
 **Purpose**
 - TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
 
@@ -361,7 +433,10 @@ docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
 docker compose logs --tail=100 ioc-correlation-engine
+docker compose logs --tail=100 ioc-retro-engine
 docker compose logs --tail=100 llm-risk-worker
+docker compose logs --tail=100 syslog-receiver
+docker compose logs --tail=100 clickhouse
 docker compose logs --tail=100 ioc-match-count-worker
 docker compose logs --tail=100 dashboard-map-worker
 docker compose logs --tail=100 enrichment-sync-job
