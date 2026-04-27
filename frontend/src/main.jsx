@@ -2022,11 +2022,43 @@ function IncidentDetailsPage() {
             </div>
 
             {tab === 'summary' ? (
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div>Risk Score: <b>{Number(item.risk_score || 0).toFixed(2)}</b></div>
-                <div>Status: <b>{item.status}</b></div>
-                <div>Verdict: <b>{item.verdict}</b></div>
-                <div>Event Count: <b>{item.event_count || 0}</b></div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+                  <div>Risk Score: <b>{Number(item.risk_score || 0).toFixed(2)}</b></div>
+                  <div>Status: <b>{item.status}</b></div>
+                  <div>Verdict: <b>{item.verdict}</b></div>
+                  <div>Event Count: <b>{item.event_count || 0}</b></div>
+                </div>
+
+                <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 8 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, color: '#cbd5e1' }}>AI Insight</h4>
+                  {(item.llm_risk_adjustment === null || item.llm_risk_adjustment === undefined) ? (
+                    <div style={{ color: '#94a3b8', fontSize: 13 }}>No AI analysis yet</div>
+                  ) : (
+                    <>
+                      {(() => {
+                        const adj = Number(item.llm_risk_adjustment || 0);
+                        const adjColor = adj > 0 ? '#fca5a5' : adj < 0 ? '#86efac' : '#94a3b8';
+                        const adjText = adj > 0 ? `+${adj}` : `${adj}`;
+                        const conf = Number(item.llm_risk_confidence);
+                        const confText = Number.isFinite(conf) ? `${Math.round(Math.min(Math.max(conf, 0), 1) * 100)}%` : '—';
+
+                        return (
+                          <>
+                            <div style={{ fontSize: 13 }}>Adjustment: <b style={{ color: adjColor }}>{adjText}</b></div>
+                            <div style={{ fontSize: 13 }}>Confidence: <b>{confText}</b></div>
+                            <div style={{ fontSize: 13, display: 'grid', gridTemplateColumns: '60px 1fr', gap: 8, alignItems: 'start' }}>
+                              <span>Reason:</span>
+                              <span style={{ color: '#cbd5e1', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }} title={item.llm_risk_reason || ''}>
+                                {item.llm_risk_reason || '—'}
+                              </span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
               <IncidentEventsTable activityId={item.id} refreshKey={eventsRefreshKey} />
