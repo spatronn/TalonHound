@@ -96,6 +96,10 @@ Rules:
 - Never claim facts not present in Incident Data
 - If evidence is insufficient, return adjustment=0 with a cautious reason
 - Reason must reference only provided Incident Data fields
+- Reason must cite at least two Incident Data fields by name (e.g., accepted_connections, blocked_connections, blacklist_hits, unique_hosts, total_events)
+- Avoid vague explanations such as "low activity" alone
+- If adjustment is 0, explain why evidence is insufficient to increase or decrease risk
+- Keep reason concise (max 18 words), analyst-friendly, and action-oriented
 
 Output:
 { "adjustment": <number>, "confidence": 0-1, "reason": "short explanation" }`;
