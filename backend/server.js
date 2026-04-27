@@ -20,6 +20,7 @@ import {
 import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
+import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 
 const { Pool } = pg;
 
@@ -45,6 +46,7 @@ const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const signalQueue = new Queue(signalQueueName, { connection: redis });
+const llmRiskAdvisor = createLlmRiskAdvisor({ redis });
 
 // Geo cache refresh tuning (local/kısıtlı ortam için düşürülebilir)
 const GEO_CACHE_REFRESH_LIMIT = Math.max(Number(process.env.GEO_CACHE_REFRESH_LIMIT || 20000), 100);
@@ -1382,9 +1384,16 @@ app.get('/api/incidents/:id', async (req, res) => {
     }
 
     const risk = calculateIncidentRisk(q.rows[0]);
+    const llmRisk = await llmRiskAdvisor.ask({
+      incident: q.rows[0],
+      baseRisk: risk.risk_score
+    });
+
     const item = {
       ...q.rows[0],
-      ...risk
+      ...risk,
+      ...llmRisk,
+      risk_score: llmRisk.final_risk_score
     };
 
     return res.json({ item });
