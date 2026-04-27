@@ -155,6 +155,15 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 8000), 1000);
   const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 25000), timeoutMs);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
+  const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 2), 0);
+
+  function computeFinalRisk(baseRisk, adjustment, confidence) {
+    const base = clamp(Number(baseRisk || 0), 0, 100);
+    const adj = Number(adjustment || 0);
+    const conf = clamp(Number(confidence || 0), 0, 1);
+    const weighted = adj * conf * aiWeight;
+    return clamp(base + weighted, 0, 100);
+  }
 
   function fallback(baseRisk, reason = 'fallback') {
     const base = clamp(Number(baseRisk || 0), 0, 100);
@@ -184,7 +193,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const parsed = JSON.parse(raw);
       const normalized = normalizeAdvisorOutput(parsed, 'cache');
       const base = clamp(Number(baseRisk || 0), 0, 100);
-      const finalRisk = clamp(base + normalized.adjustment, 0, 100);
+      const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
 
       return {
         risk_before_llm: Number(base.toFixed(2)),
@@ -309,7 +318,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       }
     });
 
-    const finalRisk = clamp(base + normalized.adjustment, 0, 100);
+    const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
     return {
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: normalized.adjustment,

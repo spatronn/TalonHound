@@ -1567,10 +1567,38 @@ async function computeInstitutionRiskOverview() {
     )
   ]);
 
-  const scoredIncidents = (q.rows || []).map((row) => {
+  const scoredIncidentsBase = (q.rows || []).map((row) => {
     const risk = calculateIncidentRisk(row);
     return { ...row, ...risk };
   });
+
+  const scoredIncidents = await Promise.all(scoredIncidentsBase.map(async (row) => {
+    const version = llmRiskAdvisor.computeVersion(row);
+    const cached = await llmRiskAdvisor.getCached({
+      incidentId: row.id,
+      version,
+      baseRisk: row.risk_score
+    });
+
+    if (!cached) {
+      return {
+        ...row,
+        risk_before_llm: null,
+        llm_risk_adjustment: null,
+        llm_risk_confidence: null,
+        llm_risk_reason: null,
+        llm_last_updated_at: null,
+        llm_version: version,
+        final_risk_score: null
+      };
+    }
+
+    return {
+      ...row,
+      ...cached,
+      risk_score: cached.final_risk_score
+    };
+  }));
 
   const overview = calculateInstitutionRisk(scoredIncidents);
 
