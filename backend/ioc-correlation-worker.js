@@ -17,10 +17,6 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'demo'
 });
 
-const redisUrl = getRedisUrl();
-const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
-const llmRiskQueue = new Queue(LLM_RISK_QUEUE_NAME, { connection: redis });
-
 const WORKER_NAME = process.env.IOC_CORRELATION_WORKER_NAME || 'clickhouse-ioc-correlation-v1';
 const POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_CORRELATION_POLL_INTERVAL_MS || 3000), 500);
 const BATCH_SIZE = Math.max(Number(process.env.IOC_CORRELATION_BATCH_SIZE || 5000), 100);
@@ -36,6 +32,10 @@ const IOC_LOOKUP_SYNC_ENABLED = process.env.IOC_LOOKUP_SYNC_ENABLED === '1' || p
 const LLM_RISK_QUEUE_NAME = process.env.LLM_RISK_QUEUE_NAME || 'llm-risk-jobs';
 const LLM_RISK_TRIGGER_ENABLED = process.env.LLM_RISK_TRIGGER_ENABLED !== '0';
 const LLM_RISK_SNAPSHOT_TTL_SECONDS = Math.max(Number(process.env.LLM_RISK_SNAPSHOT_TTL_SECONDS || 7 * 24 * 3600), 3600);
+
+const redisUrl = getRedisUrl();
+const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+const llmRiskQueue = new Queue(LLM_RISK_QUEUE_NAME, { connection: redis });
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
