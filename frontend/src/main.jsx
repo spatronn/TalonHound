@@ -1726,7 +1726,25 @@ function RiskOverviewPage() {
   const levelColor = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#f59e0b' : '#22c55e';
   const top = Array.isArray(data?.top_contributing_incidents) ? data.top_contributing_incidents : [];
   const bd = data?.breakdown || {};
+  const llmAggregate = data?.llm_adjustment_aggregate || bd?.llm_adjustment_aggregate || null;
   const dataTruncated = Boolean(data?.data_truncated);
+
+  function formatAiDelta(value) {
+    if (value == null || value === '') return '—';
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n > 0) return `+${n}`;
+    if (n < 0) return `${n}`;
+    return '0';
+  }
+
+  function aiDeltaStyle(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return { color: '#94a3b8', borderColor: '#475569', background: '#0f172a' };
+    if (n > 0) return { color: '#fca5a5', borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.25)' };
+    if (n < 0) return { color: '#86efac', borderColor: '#14532d', background: 'rgba(20,83,45,0.25)' };
+    return { color: '#cbd5e1', borderColor: '#475569', background: '#0f172a' };
+  }
   const trend = String(trendData?.trend || 'stable');
   const delta = Number(trendData?.delta || 0);
   const trendArrow = trend === 'increasing' ? '↗' : trend === 'decreasing' ? '↘' : '→';
@@ -1774,6 +1792,12 @@ function RiskOverviewPage() {
                 <span style={{ textTransform: 'capitalize' }}>{trend}</span>
                 <span style={{ color: '#94a3b8', fontWeight: 500 }}>Δ {delta >= 0 ? '+' : ''}{delta.toFixed(2)}</span>
               </div>
+              {llmAggregate?.enabled ? (
+                <div style={{ marginTop: 8, fontSize: 12, color: '#93c5fd', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <span>AI adjusted risk enabled</span>
+                  <span>AI Δ {Number(llmAggregate.total_adjustment || 0) >= 0 ? '+' : ''}{Number(llmAggregate.total_adjustment || 0).toFixed(2)}</span>
+                </div>
+              ) : null}
               <div style={{ marginTop: 10, border: '1px solid #334155', borderRadius: 8, padding: 8, background: '#0b1220' }}>
                 {history.length >= 2 ? (
                   <svg viewBox="0 0 100 100" width="100%" height="110" preserveAspectRatio="none" aria-label="Institution risk trend">
@@ -1830,25 +1854,59 @@ function RiskOverviewPage() {
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
                     <th style={{ width: 120 }}>Incident ID</th>
                     <th>IOC</th>
-                    <th style={{ width: 140 }}>Risk Score</th>
-                    <th style={{ width: 160 }}>Contribution</th>
+                    <th style={{ width: 120 }}>Risk Score</th>
+                    <th style={{ width: 90 }}>AI Δ</th>
+                    <th style={{ width: 140 }}>Contribution</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {top.length ? top.map((it) => (
-                    <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
-                      <td>
-                        {it.incident_id || it.id ? (
-                          <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link>
-                        ) : (
-                          <>-</>
-                        )}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
-                      <td>{Number(it.risk_score || 0).toFixed(2)}</td>
-                      <td>{it.contribution != null ? Number(it.contribution).toFixed(6) : '-'}</td>
-                    </tr>
-                  )) : <tr><td colSpan={4} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}
+                  {top.length ? top.map((it) => {
+                    const shownRisk = Number.isFinite(Number(it?.final_risk_score)) ? Number(it.final_risk_score) : Number(it?.risk_score || 0);
+                    const aiDelta = it?.llm_risk_adjustment;
+                    const aiStyle = aiDeltaStyle(aiDelta);
+                    const confidence = Number(it?.llm_risk_confidence);
+                    const confidenceText = Number.isFinite(confidence) ? `${Math.round(Math.min(Math.max(confidence, 0), 1) * 100)}%` : '—';
+                    const tooltipLines = [
+                      `Base Risk: ${Number.isFinite(Number(it?.risk_before_llm)) ? Number(it.risk_before_llm).toFixed(2) : '—'}`,
+                      `Final Risk: ${Number.isFinite(Number(it?.final_risk_score)) ? Number(it.final_risk_score).toFixed(2) : Number(it?.risk_score || 0).toFixed(2)}`,
+                      `Confidence: ${confidenceText}`,
+                      `Reason: ${it?.llm_risk_reason ? String(it.llm_risk_reason) : '—'}`
+                    ].join('\n');
+
+                    return (
+                      <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
+                        <td>
+                          {it.incident_id || it.id ? (
+                            <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link>
+                          ) : (
+                            <>-</>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
+                        <td>{shownRisk.toFixed(2)}</td>
+                        <td>
+                          <span
+                            title={tooltipLines}
+                            style={{
+                              display: 'inline-block',
+                              minWidth: 44,
+                              textAlign: 'center',
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              border: `1px solid ${aiStyle.borderColor}`,
+                              color: aiStyle.color,
+                              background: aiStyle.background,
+                              fontWeight: 700,
+                              fontSize: 12
+                            }}
+                          >
+                            {formatAiDelta(aiDelta)}
+                          </span>
+                        </td>
+                        <td>{it.contribution != null ? Number(it.contribution).toFixed(6) : '-'}</td>
+                      </tr>
+                    );
+                  }) : <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}
                 </tbody>
               </table>
             </div>

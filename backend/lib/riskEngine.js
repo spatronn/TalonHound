@@ -197,6 +197,7 @@ export function calculateInstitutionRisk(incidents) {
       institution_risk_score: 0,
       active_incident_count: 0,
       top_contributing_incidents: [],
+      llm_adjustment_aggregate: null,
       breakdown: {
         model: 'institution-risk-central-2026-04-workflow-decoupled',
         bounded_range: '0-100',
@@ -207,7 +208,8 @@ export function calculateInstitutionRisk(incidents) {
         excluded_incident_count: 0,
         normalized_contribution_input: 0,
         exponent: 2,
-        normalization_lambda: 2.4
+        normalization_lambda: 2.4,
+        llm_adjustment_aggregate: null
       }
     };
   }
@@ -244,23 +246,50 @@ export function calculateInstitutionRisk(incidents) {
     .sort((a, b) => b._contribution - a._contribution)
     .filter((r) => r._contribution > 0)
     .slice(0, 5)
-    .map((r, idx) => ({
-      id: r.id,
-      incident_id: r.incident_id,
-      ioc_value: r.ioc_value,
-      risk_score: r.risk_score,
-      contribution: Number(r._contribution.toFixed(6)),
-      contribution_bucket: r._contribution_bucket,
-      decay_factor: Number((r._decay_factor || 0).toFixed(6)),
-      rank: idx + 1
-    }));
+    .map((r, idx) => {
+      const riskBeforeLlmRaw = Number(r?.risk_before_llm);
+      const llmAdjustmentRaw = Number(r?.llm_risk_adjustment);
+      const llmConfidenceRaw = Number(r?.llm_risk_confidence);
+      const finalRiskRaw = Number(r?.final_risk_score);
+
+      return {
+        id: r.id,
+        incident_id: r.incident_id,
+        ioc_value: r.ioc_value,
+        risk_score: r.risk_score,
+        risk_before_llm: Number.isFinite(riskBeforeLlmRaw) ? Number(riskBeforeLlmRaw.toFixed(2)) : null,
+        llm_risk_adjustment: Number.isFinite(llmAdjustmentRaw) ? llmAdjustmentRaw : null,
+        llm_risk_confidence: Number.isFinite(llmConfidenceRaw) ? Number(llmConfidenceRaw.toFixed(3)) : null,
+        llm_risk_reason: r?.llm_risk_reason != null ? String(r.llm_risk_reason).slice(0, 240) : null,
+        final_risk_score: Number.isFinite(finalRiskRaw) ? Number(finalRiskRaw.toFixed(2)) : null,
+        contribution: Number(r._contribution.toFixed(6)),
+        contribution_bucket: r._contribution_bucket,
+        decay_factor: Number((r._decay_factor || 0).toFixed(6)),
+        rank: idx + 1
+      };
+    });
 
   const activeIncidentCount = processed.filter((r) => String(r.status || '').toLowerCase() === 'open').length;
+
+  const llmRows = processed.filter((r) => Number.isFinite(Number(r?.llm_risk_adjustment)));
+  const llmAdjustmentTotal = llmRows.reduce((acc, r) => acc + Number(r?.llm_risk_adjustment || 0), 0);
+  const llmConfidenceAvg = llmRows.length
+    ? llmRows.reduce((acc, r) => acc + Math.min(Math.max(Number(r?.llm_risk_confidence || 0), 0), 1), 0) / llmRows.length
+    : null;
+  const llmAdjustmentAggregate = llmRows.length
+    ? {
+      enabled: true,
+      total_adjustment: Number(llmAdjustmentTotal.toFixed(2)),
+      avg_confidence: llmConfidenceAvg == null ? null : Number(llmConfidenceAvg.toFixed(3)),
+      incident_count: llmRows.length
+    }
+    : null;
 
   return {
     institution_risk_score: Number(institutionRisk.toFixed(2)),
     active_incident_count: activeIncidentCount,
     top_contributing_incidents: topContributing,
+    llm_adjustment_aggregate: llmAdjustmentAggregate,
     breakdown: {
       model: 'institution-risk-central-2026-04-workflow-decoupled',
       bounded_range: '0-100',
@@ -272,6 +301,7 @@ export function calculateInstitutionRisk(incidents) {
       normalized_contribution_input: Number(normalizedContributionInput.toFixed(6)),
       exponent: 2,
       normalization_lambda: lambda,
+      llm_adjustment_aggregate: llmAdjustmentAggregate,
       top_contributing_incidents: topContributing
     }
   };
