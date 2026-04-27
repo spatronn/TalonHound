@@ -90,6 +90,12 @@ Rules:
 - High volume alone is NOT enough
 - Blocked traffic or scanner-like behavior -> decrease risk
 - Accepted connections + blacklist + persistence -> increase risk
+- If IOC is high-severity (e.g., cobaltstrike, c2, ransomware, botnet, apt), do NOT downscore based on low volume alone
+- A single confirmed high-severity hit can be significant
+- For high-severity IOC, prefer 0 or positive adjustment unless evidence strongly indicates false positive
+- Never claim facts not present in Incident Data
+- If evidence is insufficient, return adjustment=0 with a cautious reason
+- Reason must reference only provided Incident Data fields
 
 Output:
 { "adjustment": <number>, "confidence": 0-1, "reason": "short explanation" }`;
