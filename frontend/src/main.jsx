@@ -2390,7 +2390,6 @@ function SystemStatusPage() {
   const queueRows = Object.entries(queues).filter(([key]) => key !== 'error');
   const integrations = status?.integrations || {};
   const telemetry = status?.telemetry || {};
-  const mapSnapshot = status?.map_snapshot || {};
 
   const statusDot = (ok) => ({
     display: 'inline-flex',
@@ -2520,17 +2519,6 @@ function SystemStatusPage() {
             </div>
           </div>
 
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Threat Map Snapshot</div>
-            <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
-              <div><b>Total records:</b> {mapSnapshot?.total_records ?? '-'}</div>
-              <div><b>Unique IPs:</b> {mapSnapshot?.unique_ips ?? '-'}</div>
-              <div><b>Snapshot time:</b> {renderTimestamp(mapSnapshot?.snapshot_time)}</div>
-              <div><b>Last refresh:</b> {renderTimestamp(mapSnapshot?.snapshot_last_refreshed_at)}</div>
-              <div><b>Full rebuild pending:</b> {mapSnapshot?.full_rebuild_pending ? 'Yes' : 'No'}</div>
-              {mapSnapshot?.error && <div style={{ color: '#f87171' }}>{mapSnapshot.error}</div>}
-            </div>
-          </div>
 
           <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Telemetry</div>
