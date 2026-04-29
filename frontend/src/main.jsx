@@ -2254,6 +2254,57 @@ function IncidentPage() {
   if (verdict.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdict.join(', ')}`, onClear: () => setVerdict([]) });
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
 
+  const [tableWidths, setTableWidths] = useState({
+    incidentId: 110,
+    createdAt: 170,
+    ioc: 240,
+    type: 90,
+    hits: 90,
+    observedHosts: 130,
+    firstSeen: 170,
+    lastSeen: 170,
+    status: 100,
+    verdict: 120,
+    assignee: 160,
+    action: 100
+  });
+  const [resizeState, setResizeState] = useState(null);
+
+  useEffect(() => {
+    if (!resizeState) return;
+    const onMove = (e) => {
+      const delta = e.clientX - resizeState.startX;
+      const next = Math.max(80, resizeState.startWidth + delta);
+      setTableWidths((prev) => ({ ...prev, [resizeState.col]: next }));
+    };
+    const onUp = () => setResizeState(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [resizeState]);
+
+  const startResize = (e, col) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
+  };
+
+  const headerCell = (label, col, extraProps = {}) => (
+    <th style={{ position: 'relative', ...(col ? { width: tableWidths[col] } : {}), ...extraProps }}>
+      {label}
+      {col && (
+        <span
+          onMouseDown={(e) => startResize(e, col)}
+          style={{ position: 'absolute', right: 0, top: 0, width: 8, height: '100%', cursor: 'col-resize', userSelect: 'none' }}
+          title="Resize"
+        />
+      )}
+    </th>
+  );
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
@@ -2315,11 +2366,36 @@ function IncidentPage() {
           </div>
         </div>
 
-        <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1650 }}>
+            <colgroup>
+              <col style={{ width: tableWidths.incidentId }} />
+              <col style={{ width: tableWidths.createdAt }} />
+              <col style={{ width: tableWidths.ioc }} />
+              <col style={{ width: tableWidths.type }} />
+              <col style={{ width: tableWidths.hits }} />
+              <col style={{ width: tableWidths.observedHosts }} />
+              <col style={{ width: tableWidths.firstSeen }} />
+              <col style={{ width: tableWidths.lastSeen }} />
+              <col style={{ width: tableWidths.status }} />
+              <col style={{ width: tableWidths.verdict }} />
+              <col style={{ width: tableWidths.assignee }} />
+              <col style={{ width: tableWidths.action }} />
+            </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                <th style={{ width: 110 }}>Incident ID</th><th style={{ width: 170 }}>Created At</th><th>IOC</th><th>Type</th><th>Hits</th><th><span title="Number of unique hosts where this IOC was observed in logs">Observed Hosts</span></th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Assignee</th><th>Action</th>
+                {headerCell('Incident ID', 'incidentId')}
+                {headerCell('Created At', 'createdAt')}
+                {headerCell('IOC', 'ioc')}
+                {headerCell('Type', 'type')}
+                {headerCell('Hits', 'hits')}
+                {headerCell(<span title="Number of unique hosts where this IOC was observed in logs">Observed Hosts</span>, 'observedHosts')}
+                {headerCell('First Seen', 'firstSeen')}
+                {headerCell('Last Seen', 'lastSeen')}
+                {headerCell('Status', 'status')}
+                {headerCell('Verdict', 'verdict')}
+                {headerCell('Assignee', 'assignee')}
+                {headerCell('Action', 'action')}
               </tr>
             </thead>
             <tbody>
