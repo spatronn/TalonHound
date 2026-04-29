@@ -4,7 +4,9 @@ import os
 import random
 import socket
 import time
+import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 
 
 def env_int(name, default):
@@ -28,32 +30,33 @@ def rand_public_ip():
         c = random.randint(0, 255)
         d = random.randint(1, 254)
         ip = f"{a}.{b}.{c}.{d}"
-        if ip.startswith("10.") or ip.startswith("192.168.") or ip.startswith("127."):
+        if ip.startswith(("10.", "192.168.", "127.")):
             continue
-        if 16 <= b <= 31 and a == 172:
+        if a == 172 and 16 <= b <= 31:
             continue
         return ip
 
 
-def rand_src_ip_outside_target_subnet():
-    while True:
-        ip = rand_public_ip()
-        if not ip.startswith("213.14.158."):
-            return ip
+def rand_private_ip():
+    return f"10.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
 
 
 def rand_dst_ip_from_target_subnet():
     return f"213.14.158.{random.randint(1, 254)}"
 
 
-def post_ioc(api_base, ip, source_name, confidence, note):
+def utc_parts():
+    now = datetime.now(timezone.utc)
+    return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
+
+
+def rand_sha256():
+    return "".join(random.choice("0123456789abcdef") for _ in range(64))
+
+
+def post_ioc_ip(api_base, ip, source_name, confidence, note):
     url = f"{api_base.rstrip('/')}/api/ioc/ip"
-    payload = {
-        "ip": ip,
-        "source_name": source_name,
-        "confidence": str(confidence),
-        "note": note,
-    }
+    payload = {"ip": ip, "source_name": source_name, "confidence": str(confidence), "note": note}
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     ingest = os.getenv("API_INGEST_TOKEN", "").strip() or os.getenv("API_BEARER_TOKEN", "").strip()
@@ -64,16 +67,38 @@ def post_ioc(api_base, ip, source_name, confidence, note):
         return resp.status
 
 
-def build_syslog(dst_ip, src_ip):
+def build_firewall_log(src_ip, dst_ip, dst_port):
+    d, t = utc_parts()
     return (
-        f'date=2019-03-31 time=06:42:54 logid="0002000012" type="traffic" subtype="multicast" '
-        f'level="notice" vd="vdom1" eventtime=1554039772 srcip={src_ip} srcport={random.randint(1024,65535)} '
-        f'dstip={dst_ip} dstport={random.randint(1000,65000)} srcintf="port25" srcintfrole="undefined" '
-        f'dstintf="port3" dstintfrole="undefined" sessionid={random.randint(100000,999999)} proto=17 '
-        f'action="accept" policyid=1 policytype="multicast-policy" service="udp/7878" '
-        f'dstcountry="Reserved" srccountry="Reserved" trandisp="noop" duration={random.randint(30,300)} '
-        f'sentbyte={random.randint(5000,30000)} rcvdbyte={random.randint(100,15000)} '
-        f'sentpkt={random.randint(1,40)} rcvdpkt={random.randint(1,20)} appcat="unscanned"'
+        f'date={d} time={t} type="traffic" subtype="forward" level="notice" '
+        f'srcip={src_ip} srcport={random.randint(1024,65535)} dstip={dst_ip} dstport={dst_port} '
+        f'proto=6 action="accept" service="tcp/{dst_port}" sessionid={random.randint(100000,999999)} '
+        f'sentbyte={random.randint(400,9000)} rcvdbyte={random.randint(200,7000)}'
+    )
+
+
+def build_dns_log(client_ip, domain, response_ip):
+    d, t = utc_parts()
+    return (
+        f"date={d} time={t} type=dns client_ip={client_ip} "
+        f"query={domain} query_type=A response_ip={response_ip}"
+    )
+
+
+def build_proxy_log(src_ip, url):
+    d, t = utc_parts()
+    return (
+        f"date={d} time={t} type=proxy srcip={src_ip} "
+        f"url={url} method={random.choice(['GET','POST'])} status={random.choice([200,301,302,403,404])} "
+        f"bytes={random.randint(512,8192)}"
+    )
+
+
+def build_endpoint_log(host, filename, sha256):
+    d, t = utc_parts()
+    return (
+        f"date={d} time={t} type=endpoint host={host} file={filename} "
+        f"sha256={sha256} action={random.choice(['executed','blocked','quarantined'])}"
     )
 
 
@@ -84,21 +109,19 @@ def main():
     udp_ingest_key = os.getenv("SYSLOG_UDP_SHARED_SECRET", "").strip()
     api_base = os.getenv("IOC_API_BASE", "http://backend:3000")
 
-    eps = max(env_int("EPS", 400), 1)
-    duration_seconds = env_int("DURATION_SECONDS", 0)  # 0 = infinite
-    mode = os.getenv("MODE", "mixed").strip().lower()  # realtime|retro|mixed
-    realtime_ratio = max(0.0, min(env_float("REALTIME_RATIO", 0.5), 1.0))
-    ioc_insert_ratio = max(0.0, min(env_float("IOC_INSERT_RATIO", 0.3), 1.0))
-    retro_delay_ms = max(env_int("RETRO_DELAY_MS", 1500), 0)
+    eps = max(env_int("EPS", 200), 1)
+    duration_seconds = env_int("DURATION_SECONDS", 0)
     stats_every_sec = max(env_int("STATS_EVERY_SEC", 10), 1)
-    source_name = os.getenv("IOC_SOURCE_NAME", "loadgen-smoke")
+    source_name = os.getenv("IOC_SOURCE_NAME", "loadgen-advanced")
     confidence = os.getenv("IOC_CONFIDENCE", "90")
-    note = os.getenv("IOC_NOTE", "loadgen random ioc")
-    src_ip_rotate_seconds = max(env_int("SRC_IP_ROTATE_SECONDS", 300), 1)
+    note = os.getenv("IOC_NOTE", "advanced scenario loadgen")
+    ioc_insert_ratio = max(0.0, min(env_float("IOC_INSERT_RATIO", 0.25), 1.0))
 
-    print(f"[loadgen] config enabled={enabled} mode={mode} eps={eps} duration_s={duration_seconds} ioc_ratio={ioc_insert_ratio} realtime_ratio={realtime_ratio} src_ip_rotate_s={src_ip_rotate_seconds}")
+    scenario = os.getenv("SCENARIO", "mixed").strip().upper()
+
+    print(f"[loadgen] enabled={enabled} scenario={scenario} eps={eps} duration={duration_seconds}")
     if not enabled:
-        print("[loadgen] ENABLED=0 (idle). Set ENABLED=1 to start traffic.")
+        print("[loadgen] ENABLED=0 (idle)")
         while True:
             time.sleep(30)
 
@@ -110,56 +133,86 @@ def main():
     sent = 0
     ioc_posts = 0
     ioc_post_fail = 0
+    by_type = {"firewall": 0, "dns": 0, "proxy": 0, "endpoint": 0}
 
-    current_src_ip = rand_src_ip_outside_target_subnet()
-    current_src_ip_until = t0 + src_ip_rotate_seconds
+    # Realism pools/correlation
+    domain_to_ip = {
+        "cdn-login-security.com": "45.9.148.77",
+        "auth-checkpoint365.net": "185.234.219.41",
+        "malicious-domain.com": "5.6.7.8",
+        "update-microsoft-secure.net": "91.214.124.22",
+    }
+    domain_paths = ["/login", "/admin", "/panel", "/index.php", "/oauth/callback", "/invoice/view"]
+    endpoint_files = ["invoice.exe", "update.dll", "vpn_helper.exe", "chrome_updater.tmp"]
+    hosts = [f"host-{i:02d}" for i in range(1, 25)]
+    shared_hashes = [rand_sha256() for _ in range(8)]
+
+    scenario_map = {
+        "PORT_SCAN": ["firewall"],
+        "C2_BEACON": ["firewall", "dns"],
+        "MALWARE_SPREAD": ["endpoint", "proxy", "dns"],
+        "PHISHING": ["proxy", "dns"],
+    }
 
     while True:
-        now = time.time()
-        if duration_seconds > 0 and (now - t0) >= duration_seconds:
+        start = time.time()
+        if duration_seconds > 0 and (start - t0) >= duration_seconds:
             break
 
-        if now >= current_src_ip_until:
-            current_src_ip = rand_src_ip_outside_target_subnet()
-            current_src_ip_until = now + src_ip_rotate_seconds
+        chosen = scenario
+        if scenario == "MIXED":
+            chosen = random.choice(list(scenario_map.keys()))
+        log_types = scenario_map.get(chosen, ["firewall", "dns", "proxy", "endpoint"])
 
-        dst_ip = rand_dst_ip_from_target_subnet()
-        src_ip = current_src_ip
+        src_ip = rand_private_ip()
+        domain = random.choice(list(domain_to_ip.keys()))
+        resolved_ip = domain_to_ip[domain]
+        url = f"http://{domain}{random.choice(domain_paths)}"
+        host = random.choice(hosts)
+        sha256 = random.choice(shared_hashes)
+        file_name = random.choice(endpoint_files)
+
+        records = []
+        if "dns" in log_types:
+            records.append(("dns", build_dns_log(src_ip, domain, resolved_ip)))
+        if "proxy" in log_types:
+            records.append(("proxy", build_proxy_log(src_ip, url)))
+        if "firewall" in log_types:
+            records.append(("firewall", build_firewall_log(src_ip, resolved_ip, random.choice([80,443,8080]))))
+        if "endpoint" in log_types:
+            records.append(("endpoint", build_endpoint_log(host, file_name, sha256)))
+
+        # IOC pipeline hinting: currently API supports IP insert; domain/url/hash correlation comes from logs
         do_ioc = random.random() < ioc_insert_ratio
-
-        current_mode = mode
-        if mode == "mixed":
-            current_mode = "realtime" if random.random() < realtime_ratio else "retro"
-
-        try:
-            if do_ioc and current_mode == "realtime":
-                post_ioc(api_base, dst_ip, source_name, confidence, note)
+        if do_ioc:
+            try:
+                post_ioc_ip(api_base, resolved_ip, source_name, confidence, f"{note} scenario={chosen} domain={domain}")
                 ioc_posts += 1
-            msg = build_syslog(dst_ip, src_ip)
+            except Exception:
+                ioc_post_fail += 1
+
+        for typ, msg in records:
             payload = msg.encode("utf-8")
             if udp_ingest_key:
                 payload = f"{udp_ingest_key}|".encode("utf-8") + payload
             sock.sendto(payload, (target_host, target_port))
+            by_type[typ] += 1
             sent += 1
-            if do_ioc and current_mode == "retro":
-                if retro_delay_ms > 0:
-                    time.sleep(retro_delay_ms / 1000.0)
-                post_ioc(api_base, dst_ip, source_name, confidence, note)
-                ioc_posts += 1
-        except Exception:
-            ioc_post_fail += 1
 
-        now2 = time.time()
-        if (now2 - last_stats) >= stats_every_sec:
-            elapsed = max(now2 - t0, 1e-6)
-            print(f"[loadgen] sent={sent} ioc_posts={ioc_posts} ioc_post_fail={ioc_post_fail} eps_avg={sent/elapsed:.1f}")
-            last_stats = now2
+        now = time.time()
+        if (now - last_stats) >= stats_every_sec:
+            elapsed = max(now - t0, 1e-6)
+            print(
+                f"[loadgen] sent={sent} ioc_posts={ioc_posts} fail={ioc_post_fail} eps_avg={sent/elapsed:.1f} "
+                f"fw={by_type['firewall']} dns={by_type['dns']} proxy={by_type['proxy']} endpoint={by_type['endpoint']}"
+            )
+            last_stats = now
 
-        sleep_for = interval - (time.time() - now)
+        sleep_for = interval - (time.time() - start)
         if sleep_for > 0:
             time.sleep(sleep_for)
 
-    print(f"[loadgen] done sent={sent} ioc_posts={ioc_posts} ioc_post_fail={ioc_post_fail}")
+    print(f"[loadgen] done sent={sent} by_type={by_type} ioc_posts={ioc_posts} fail={ioc_post_fail}")
 
 
 if __name__ == "__main__":
