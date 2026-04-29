@@ -207,8 +207,9 @@ export function calculateInstitutionRisk(incidents) {
         closed_decaying_contribution: 0,
         excluded_incident_count: 0,
         normalized_contribution_input: 0,
-        exponent: 2,
-        normalization_lambda: 2.4,
+        normalization_formula: '1 - exp(-incident_risk/50)',
+        saturation_formula: '100 * (1 - exp(-sum_normalized/5))',
+        low_incident_dampening: 1,
         llm_adjustment_aggregate: null
       }
     };
@@ -237,10 +238,32 @@ export function calculateInstitutionRisk(incidents) {
 
   const totalRawContribution = openContribution + closedDecayContribution;
 
-  const contributingCount = Math.max(processed.length - excludedIncidentCount, 1);
-  const normalizedContributionInput = totalRawContribution / Math.sqrt(contributingCount);
-  const lambda = 2.4;
-  const institutionRisk = clamp(100 * (1 - Math.exp(-lambda * normalizedContributionInput)), 0, 100);
+  const contributingRows = processed.filter((r) => r._contribution > 0);
+  const contributingCount = contributingRows.length;
+
+  // STEP 1: incident normalization
+  // normalized_incident = 1 - exp(-incident_risk/50)
+  const normalizedIncidents = contributingRows.map((r) => {
+    const incidentRisk = clamp(Number(r.risk_score || 0), 0, 100);
+    const norm = 1 - Math.exp(-incidentRisk / 50);
+    return Number.isFinite(norm) ? norm : 0;
+  });
+
+  // STEP 2: total aggregation
+  const totalNormalized = normalizedIncidents.reduce((acc, v) => acc + v, 0);
+
+  // STEP 3: saturation curve
+  // final_score = 100 * (1 - exp(-total_normalized/5))
+  let institutionRisk = 100 * (1 - Math.exp(-(totalNormalized / 5)));
+
+  // STEP 4: low incident dampening
+  if (contributingCount > 0 && contributingCount < 5) {
+    institutionRisk *= 0.6;
+  }
+
+  // STEP 5: safety guards
+  if (!Number.isFinite(institutionRisk)) institutionRisk = 0;
+  institutionRisk = clamp(institutionRisk, 0, 100);
 
   const topContributing = [...processed]
     .sort((a, b) => b._contribution - a._contribution)
@@ -298,9 +321,10 @@ export function calculateInstitutionRisk(incidents) {
       open_incident_contribution: Number(openContribution.toFixed(6)),
       closed_decaying_contribution: Number(closedDecayContribution.toFixed(6)),
       excluded_incident_count: excludedIncidentCount,
-      normalized_contribution_input: Number(normalizedContributionInput.toFixed(6)),
-      exponent: 2,
-      normalization_lambda: lambda,
+      normalized_contribution_input: Number(totalNormalized.toFixed(6)),
+      normalization_formula: '1 - exp(-incident_risk/50)',
+      saturation_formula: '100 * (1 - exp(-sum_normalized/5))',
+      low_incident_dampening: contributingCount > 0 && contributingCount < 5 ? 0.6 : 1,
       llm_adjustment_aggregate: llmAdjustmentAggregate,
       top_contributing_incidents: topContributing
     }
