@@ -160,7 +160,7 @@ function buildIncidentPayload(incident = {}) {
 
 export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const enabled = toBool(process.env.LLM_RISK_ADVISOR_ENABLED, false);
-  const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.26:11434/api/generate').trim();
+  const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.8:11434/api/generate').trim();
   const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.7:7b').trim();
   const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 8000), 1000);
   const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 25000), timeoutMs);
