@@ -8,6 +8,10 @@ const { Pool } = pg;
 const pool = new Pool(config.db);
 
 const STALE_RUNNING_MINUTES = Math.max(Number(process.env.INTEGRATION_STALE_RUNNING_MINUTES || 180), 60);
+const WORKER_CONCURRENCY = Math.max(Number(process.env.WORKER_CONCURRENCY || 1), 1);
+const WORKER_LOCK_DURATION_MS = Math.max(Number(process.env.WORKER_LOCK_DURATION_MS || 300000), 60000);
+const WORKER_STALLED_INTERVAL_MS = Math.max(Number(process.env.WORKER_STALLED_INTERVAL_MS || 60000), 10000);
+const WORKER_MAX_STALLED_COUNT = Math.max(Number(process.env.WORKER_MAX_STALLED_COUNT || 5), 1);
 
 function resolveIntegrationKey(job) {
   if (job?.data?.integration_key) return job.data.integration_key;
@@ -62,7 +66,10 @@ const worker = new Worker(
   },
   {
     connection: redis,
-    concurrency: Number(process.env.WORKER_CONCURRENCY || 1)
+    concurrency: WORKER_CONCURRENCY,
+    lockDuration: WORKER_LOCK_DURATION_MS,
+    stalledInterval: WORKER_STALLED_INTERVAL_MS,
+    maxStalledCount: WORKER_MAX_STALLED_COUNT
   }
 );
 
