@@ -3942,44 +3942,7 @@ app.get('/api/ioc/recent', async (req, res) => {
 });
 
 app.get('/api/ioc/map/countries', async (_req, res) => {
-  try {
-    const snapshotQ = `
-      SELECT snapshot_time, total_records, unique_ips, countries
-      FROM dashboard_map_display_snapshot
-      WHERE singleton = TRUE
-      LIMIT 1
-    `;
-
-    const stateQ = `
-      SELECT full_rebuild_pending, last_run_at, snapshot_last_refreshed_at
-      FROM dashboard_map_job_state
-      WHERE singleton = TRUE
-      LIMIT 1
-    `;
-
-    const [{ rows: snapshotRows }, { rows: stateRows }] = await Promise.all([
-      pool.query(snapshotQ).catch(() => ({ rows: [] })),
-      pool.query(stateQ).catch(() => ({ rows: [] }))
-    ]);
-
-    const snapshot = snapshotRows[0] || null;
-    const state = stateRows[0] || null;
-
-    return res.json({
-      total: Number(snapshot?.total_records || 0),
-      unique_ips: Number(snapshot?.unique_ips || 0),
-      countries: Array.isArray(snapshot?.countries) ? snapshot.countries : [],
-      snapshot_time: snapshot?.snapshot_time || null,
-      note: 'This map shows a processed snapshot of the last 24 hours and is refreshed once per day around midnight (server local time).',
-      batch: {
-        full_rebuild_pending: Boolean(state?.full_rebuild_pending),
-        last_run_at: state?.last_run_at || null,
-        snapshot_last_refreshed_at: state?.snapshot_last_refreshed_at || null
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to fetch map data', detail: err.message });
-  }
+  return res.status(410).json({ message: 'Threat World Map feature removed' });
 });
 
 app.get('/api/ioc/summary/today', async (req, res) => {

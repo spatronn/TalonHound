@@ -295,7 +295,6 @@ function AppShell({ children }) {
 
         <nav>
           <Link to="/system" style={menuStyle(isActive('/system'))}>0. System</Link>
-          <Link to="/dashboard" style={menuStyle(isActive('/dashboard'))}>1. Dashboard</Link>
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
             <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
@@ -5046,7 +5045,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
-          <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+          
           <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
           <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/analytics/detection-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
