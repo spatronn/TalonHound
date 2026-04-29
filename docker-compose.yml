@@ -45,6 +45,7 @@ services:
       - LLM_RISK_ADVISOR_CACHE_TTL_SECONDS=${LLM_RISK_ADVISOR_CACHE_TTL_SECONDS:-3600}
       # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
       - IOC_LIST_TIMING=1
+      - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
       - LOG_STORAGE=clickhouse
       - CLICKHOUSE_URL=http://demo-clickhouse:8123
       - CLICKHOUSE_USER=demo
