@@ -51,10 +51,6 @@ const llmRiskQueue = new Queue(llmRiskQueueName, { connection: redis });
 const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue });
 
 // Geo cache refresh tuning (local/kısıtlı ortam için düşürülebilir)
-const GEO_CACHE_REFRESH_LIMIT = Math.max(Number(process.env.GEO_CACHE_REFRESH_LIMIT || 20000), 100);
-const GEO_CACHE_REFRESH_INTERVAL_MS = Math.max(Number(process.env.GEO_CACHE_REFRESH_INTERVAL_MS || 60_000), 10_000);
-const GEO_CACHE_ON_ADD_LIMIT = Math.max(Number(process.env.GEO_CACHE_ON_ADD_LIMIT || 500), 50);
-const GEO_CACHE_DEBOUNCE_MS = Math.max(Number(process.env.GEO_CACHE_DEBOUNCE_MS || 2000), 500);
 
 /** IOC list timing: IOC_LIST_TIMING=1 or query ?timing=1 to log searchStringParse, dbConnectionAcquired, dbQuery, countQuery, resultMapping, jsonSerialization, responseSent (ms). */
 const IOC_LIST_TIMING = process.env.IOC_LIST_TIMING === '1' || process.env.IOC_LIST_TIMING === 'true';
@@ -367,11 +363,7 @@ async function refreshGeoCache(limit = 20000) {
 
 /** Yeni IOC eklendiğinde tek tek ağır refresh yerine debounce: kısa süre içinde tek seferde hafif limit ile çalışır. */
 function scheduleGeoCacheRefreshAfterAdd() {
-  if (geoCacheDebounceTimer) clearTimeout(geoCacheDebounceTimer);
-  geoCacheDebounceTimer = setTimeout(() => {
-    geoCacheDebounceTimer = null;
-    refreshGeoCache(GEO_CACHE_ON_ADD_LIMIT).catch(() => {});
-  }, GEO_CACHE_DEBOUNCE_MS);
+  // Threat map removed: geo cache refresh disabled.
 }
 
 // schema migrations are handled by migrate.js
@@ -4125,11 +4117,6 @@ app.listen(port, async () => {
     console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
   }
   await ensureSeedDemoUser();
-  refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
-  setInterval(() => {
-    refreshGeoCache(GEO_CACHE_REFRESH_LIMIT).catch(() => {});
-  }, GEO_CACHE_REFRESH_INTERVAL_MS);
-
   saveRiskSnapshot().catch(() => {});
   setInterval(() => {
     saveRiskSnapshot().catch(() => {});
