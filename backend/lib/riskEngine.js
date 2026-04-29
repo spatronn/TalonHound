@@ -268,7 +268,6 @@ export function calculateInstitutionRisk(incidents) {
   const topContributing = [...processed]
     .sort((a, b) => b._contribution - a._contribution)
     .filter((r) => r._contribution > 0)
-    .slice(0, 5)
     .map((r, idx) => {
       const riskBeforeLlmRaw = Number(r?.risk_before_llm);
       const llmAdjustmentRaw = Number(r?.llm_risk_adjustment);

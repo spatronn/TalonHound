@@ -1848,7 +1848,7 @@ function RiskOverviewPage() {
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Top Contributing Incidents</div>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>All Contributing Incidents</div>
               <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
