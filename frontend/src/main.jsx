@@ -2052,7 +2052,7 @@ function IncidentDetailsPage() {
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
               <h2 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>Incident #{item.incident_id || id}</h2>
               <div style={{ color: '#e2e8f0', marginTop: 6, fontSize: 16, fontWeight: 600 }}>{item.ioc_value}</div>
-              <div style={{ color: '#94a3b8', marginTop: 6 }}>Type: {item.ioc_type} • Hits: {item.total_hits} • Assets: {item.asset_count || 0}</div>
+              <div style={{ color: '#94a3b8', marginTop: 6 }}>Type: {item.ioc_type} • Hits: {item.total_hits} • Observed Hosts: {item.asset_count || 0}</div>
               <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
             </div>
 
@@ -2320,7 +2320,7 @@ function IncidentPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                <th style={{ width: 110 }}>Incident ID</th><th style={{ width: 170 }}>Created At</th><th>IOC</th><th>Type</th><th>Hits</th><th>Assets</th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Assignee</th><th>Action</th>
+                <th style={{ width: 110 }}>Incident ID</th><th style={{ width: 170 }}>Created At</th><th>IOC</th><th>Type</th><th>Hits</th><th><span title="Number of unique hosts where this IOC was observed in logs">Observed Hosts</span></th><th>First Seen</th><th>Last Seen</th><th>Status</th><th>Verdict</th><th>Assignee</th><th>Action</th>
               </tr>
             </thead>
             <tbody>
