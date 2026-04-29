@@ -115,11 +115,12 @@ def main():
     source_name = os.getenv("IOC_SOURCE_NAME", "loadgen-advanced")
     confidence = os.getenv("IOC_CONFIDENCE", "90")
     note = os.getenv("IOC_NOTE", "advanced scenario loadgen")
-    ioc_insert_ratio = max(0.0, min(env_float("IOC_INSERT_RATIO", 0.25), 1.0))
+    ioc_insert_ratio = max(0.0, min(env_float("IOC_INSERT_RATIO", 0.05), 1.0))  # target noisy-realistic ratio
+    benign_ratio = max(0.0, min(env_float("BENIGN_RATIO", 0.95), 1.0))
 
     scenario = os.getenv("SCENARIO", "mixed").strip().upper()
 
-    print(f"[loadgen] enabled={enabled} scenario={scenario} eps={eps} duration={duration_seconds}")
+    print(f"[loadgen] enabled={enabled} scenario={scenario} eps={eps} duration={duration_seconds} benign_ratio={benign_ratio} ioc_ratio={ioc_insert_ratio}")
     if not enabled:
         print("[loadgen] ENABLED=0 (idle)")
         while True:
@@ -134,15 +135,23 @@ def main():
     ioc_posts = 0
     ioc_post_fail = 0
     by_type = {"firewall": 0, "dns": 0, "proxy": 0, "endpoint": 0}
+    by_class = {"benign": 0, "ioc": 0}
 
     # Realism pools/correlation
-    domain_to_ip = {
+    malicious_domain_to_ip = {
         "cdn-login-security.com": "45.9.148.77",
         "auth-checkpoint365.net": "185.234.219.41",
         "malicious-domain.com": "5.6.7.8",
         "update-microsoft-secure.net": "91.214.124.22",
     }
-    domain_paths = ["/login", "/admin", "/panel", "/index.php", "/oauth/callback", "/invoice/view"]
+    benign_domain_to_ip = {
+        "google.com": "142.250.186.14",
+        "microsoft.com": "20.112.52.29",
+        "cloudflare.com": "104.16.132.229",
+        "github.com": "140.82.121.4",
+        "wikipedia.org": "208.80.154.224",
+    }
+    domain_paths = ["/login", "/admin", "/panel", "/index.php", "/oauth/callback", "/invoice/view", "/search", "/docs", "/api/v1/ping"]
     endpoint_files = ["invoice.exe", "update.dll", "vpn_helper.exe", "chrome_updater.tmp"]
     hosts = [f"host-{i:02d}" for i in range(1, 25)]
     shared_hashes = [rand_sha256() for _ in range(8)]
@@ -159,17 +168,29 @@ def main():
         if duration_seconds > 0 and (start - t0) >= duration_seconds:
             break
 
-        chosen = scenario
-        if scenario == "MIXED":
+        is_benign = random.random() < benign_ratio
+        chosen = "BENIGN" if is_benign else scenario
+        if not is_benign and scenario == "MIXED":
             chosen = random.choice(list(scenario_map.keys()))
-        log_types = scenario_map.get(chosen, ["firewall", "dns", "proxy", "endpoint"])
+
+        if is_benign:
+            log_types = random.choices(
+                population=[["dns", "proxy"], ["proxy"], ["dns"], ["firewall"], ["dns", "proxy", "firewall"]],
+                weights=[40, 20, 20, 10, 10],
+                k=1,
+            )[0]
+            domain = random.choice(list(benign_domain_to_ip.keys()))
+            resolved_ip = benign_domain_to_ip[domain]
+            sha256 = rand_sha256()
+        else:
+            log_types = scenario_map.get(chosen, ["firewall", "dns", "proxy", "endpoint"])
+            domain = random.choice(list(malicious_domain_to_ip.keys()))
+            resolved_ip = malicious_domain_to_ip[domain]
+            sha256 = random.choice(shared_hashes)
 
         src_ip = rand_private_ip()
-        domain = random.choice(list(domain_to_ip.keys()))
-        resolved_ip = domain_to_ip[domain]
         url = f"http://{domain}{random.choice(domain_paths)}"
         host = random.choice(hosts)
-        sha256 = random.choice(shared_hashes)
         file_name = random.choice(endpoint_files)
 
         records = []
@@ -182,8 +203,8 @@ def main():
         if "endpoint" in log_types:
             records.append(("endpoint", build_endpoint_log(host, file_name, sha256)))
 
-        # IOC pipeline hinting: currently API supports IP insert; domain/url/hash correlation comes from logs
-        do_ioc = random.random() < ioc_insert_ratio
+        # IOC pipeline hinting: only part of events should hit IOCs
+        do_ioc = (not is_benign) and (random.random() < min(1.0, ioc_insert_ratio / max(1e-6, (1.0 - benign_ratio))))
         if do_ioc:
             try:
                 post_ioc_ip(api_base, resolved_ip, source_name, confidence, f"{note} scenario={chosen} domain={domain}")
@@ -198,13 +219,18 @@ def main():
             sock.sendto(payload, (target_host, target_port))
             by_type[typ] += 1
             sent += 1
+        by_class["benign" if is_benign else "ioc"] += len(records)
 
         now = time.time()
         if (now - last_stats) >= stats_every_sec:
             elapsed = max(now - t0, 1e-6)
+            total_cls = max(1, by_class['benign'] + by_class['ioc'])
+            benign_pct = (by_class['benign'] * 100.0) / total_cls
+            ioc_pct = (by_class['ioc'] * 100.0) / total_cls
             print(
                 f"[loadgen] sent={sent} ioc_posts={ioc_posts} fail={ioc_post_fail} eps_avg={sent/elapsed:.1f} "
-                f"fw={by_type['firewall']} dns={by_type['dns']} proxy={by_type['proxy']} endpoint={by_type['endpoint']}"
+                f"fw={by_type['firewall']} dns={by_type['dns']} proxy={by_type['proxy']} endpoint={by_type['endpoint']} "
+                f"benign={benign_pct:.1f}% ioc={ioc_pct:.1f}%"
             )
             last_stats = now
 
