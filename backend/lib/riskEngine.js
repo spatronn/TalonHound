@@ -44,31 +44,33 @@ function isSecurityTestIncident(incident) {
 export function calculateIncidentRisk(incident) {
   const verdict = normalizeVerdict(incident?.verdict);
   const totalHits = Math.max(Number(incident?.total_hits || 0), 0);
-  const eventCount = Math.max(Number(incident?.event_count || 0), 0);
-  const assetCount = Math.max(Number(incident?.asset_count || 0), 0);
-  const spreadInput = Math.max(eventCount, assetCount, 0);
+  const observedHosts = Math.max(Number(incident?.asset_count || 0), 0);
 
   if (verdict === 'FP') {
     return {
       risk_score: 0,
       risk_breakdown: {
-        model: 'incident-risk-central-2026-04',
-        bounded_range: '0-100',
+        model: 'incident-risk-central-2026-05-calibrated',
+        bounded_range: '0-90',
         verdict,
         reason: 'false_positive',
         components: {
-          activity_signal: 0,
-          spread_signal: 0,
-          recency_signal: 0,
+          base_score: 0,
+          hits_signal: 0,
+          observed_hosts_signal: 0,
+          action_signal: 0,
+          detection_type_signal: 0,
           confidence_signal: 0,
-          verdict_boost: 0
+          verdict_signal: 0,
+          ioc_type_bonus: 0
         },
         raw: {
           total_hits: totalHits,
-          event_count: eventCount,
-          asset_count: assetCount,
-          last_seen: incident?.last_seen || null,
-          confidence: incident?.confidence || null
+          observed_hosts: observedHosts,
+          ioc_type: incident?.ioc_type || null,
+          confidence: incident?.confidence || null,
+          action: incident?.action || null,
+          detection_type: incident?.detection_type || null
         }
       }
     };
@@ -79,74 +81,72 @@ export function calculateIncidentRisk(incident) {
     return {
       risk_score: fixed,
       risk_breakdown: {
-        model: 'incident-risk-central-2026-04',
-        bounded_range: '0-100',
+        model: 'incident-risk-central-2026-05-calibrated',
+        bounded_range: '0-90',
         verdict,
         reason: 'security_test_low_fixed',
         components: {
-          activity_signal: 0,
-          spread_signal: 0,
-          recency_signal: 0,
+          base_score: fixed,
+          hits_signal: 0,
+          observed_hosts_signal: 0,
+          action_signal: 0,
+          detection_type_signal: 0,
           confidence_signal: 0,
-          verdict_boost: 0
-        },
-        raw: {
-          total_hits: totalHits,
-          event_count: eventCount,
-          asset_count: assetCount,
-          last_seen: incident?.last_seen || null,
-          confidence: incident?.confidence || null
+          verdict_signal: 0,
+          ioc_type_bonus: 0
         }
       }
     };
   }
 
-  const activityNorm = clamp(Math.log1p(totalHits) / Math.log1p(500), 0, 1);
-  const spreadNorm = clamp(Math.log1p(spreadInput) / Math.log1p(100), 0, 1);
+  const baseScore = 10;
+  const hitsSignal = Math.log1p(totalHits) * 5;
+  const observedHostsSignal = Math.log1p(observedHosts) * 10;
 
-  const lastSeenMs = new Date(incident?.last_seen || 0).getTime();
-  const ageHours = Number.isFinite(lastSeenMs) && lastSeenMs > 0
-    ? Math.max((Date.now() - lastSeenMs) / (1000 * 60 * 60), 0)
-    : 24 * 30;
-  const recencyNorm = clamp(Math.exp(-ageHours / 72), 0, 1);
+  const acceptedConnections = Math.max(Number(incident?.accepted_connections || 0), 0);
+  const blockedConnections = Math.max(Number(incident?.blocked_connections || 0), 0);
+  const actionSignal = acceptedConnections > blockedConnections ? 10 : blockedConnections > 0 ? 2 : 0;
 
-  const confidenceNorm = confidenceSignal(incident?.confidence);
+  const detectionTypeRaw = String(incident?.detection_type || '').trim().toLowerCase();
+  const detectionTypeSignal = detectionTypeRaw === 'realtime' ? 5 : detectionTypeRaw === 'retro' ? 2 : 0;
 
-  const activitySignal = activityNorm * 45;
-  const spreadSignal = spreadNorm * 25;
-  const recencySignal = recencyNorm * 20;
-  const confidenceSignalScore = confidenceNorm * 10;
-  const boost = verdictBoost(verdict);
+  const confidenceRaw = String(incident?.confidence || '').trim().toLowerCase();
+  const confidenceSignalScore = confidenceRaw === 'high' ? 10 : confidenceRaw === 'medium' ? 5 : confidenceRaw === 'low' ? 2 : 0;
 
-  const rawScore = activitySignal + spreadSignal + recencySignal + confidenceSignalScore + boost;
-  const riskScore = clamp(rawScore, 0, 100);
+  const verdictSignal = verdict === 'TP' ? 20 : verdict === 'Suspicious' ? 10 : 0;
+
+  const iocType = String(incident?.ioc_type || '').trim().toLowerCase();
+  const iocTypeBonus = iocType === 'sha256' ? 25 : (iocType === 'domain' || iocType === 'url') ? 10 : 0;
+
+  let score = baseScore + hitsSignal + observedHostsSignal + actionSignal + detectionTypeSignal + confidenceSignalScore + verdictSignal + iocTypeBonus;
+  if (!Number.isFinite(score)) score = 0;
+  score = Math.min(score, 90);
+  score = clamp(score, 0, 90);
 
   return {
-    risk_score: Number(riskScore.toFixed(2)),
+    risk_score: Number(score.toFixed(2)),
     risk_breakdown: {
-      model: 'incident-risk-central-2026-04',
-      bounded_range: '0-100',
+      model: 'incident-risk-central-2026-05-calibrated',
+      bounded_range: '0-90',
       verdict,
       components: {
-        activity_signal: Number(activitySignal.toFixed(2)),
-        spread_signal: Number(spreadSignal.toFixed(2)),
-        recency_signal: Number(recencySignal.toFixed(2)),
+        base_score: Number(baseScore.toFixed(2)),
+        hits_signal: Number(hitsSignal.toFixed(2)),
+        observed_hosts_signal: Number(observedHostsSignal.toFixed(2)),
+        action_signal: Number(actionSignal.toFixed(2)),
+        detection_type_signal: Number(detectionTypeSignal.toFixed(2)),
         confidence_signal: Number(confidenceSignalScore.toFixed(2)),
-        verdict_boost: Number(boost.toFixed(2))
-      },
-      normalized: {
-        activity: Number(activityNorm.toFixed(4)),
-        spread: Number(spreadNorm.toFixed(4)),
-        recency: Number(recencyNorm.toFixed(4)),
-        confidence: Number(confidenceNorm.toFixed(4))
+        verdict_signal: Number(verdictSignal.toFixed(2)),
+        ioc_type_bonus: Number(iocTypeBonus.toFixed(2))
       },
       raw: {
         total_hits: totalHits,
-        event_count: eventCount,
-        asset_count: assetCount,
-        age_hours: Number(ageHours.toFixed(2)),
-        last_seen: incident?.last_seen || null,
-        confidence: incident?.confidence || null
+        observed_hosts: observedHosts,
+        ioc_type: iocType || null,
+        confidence: confidenceRaw || null,
+        detection_type: detectionTypeRaw || null,
+        accepted_connections: acceptedConnections,
+        blocked_connections: blockedConnections
       }
     }
   };
