@@ -505,7 +505,14 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.size_bytes = sizeBytes;
       clickhouse.size_mb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
       clickhouse.table = 'syslog_logs';
-      clickhouse.retro_pending_ioc = Number(retroRows?.[0]?.pending || 0);
+      const rawPendingIoc = Number(retroRows?.[0]?.pending || 0);
+      const activeChunkIoc = Number(latestState?.chunk_ioc_count || 0);
+      const chunkActive = Number(latestState?.chunk_active || 0) === 1;
+      // When a chunk is active, those IOC rows are already being processed by retro worker.
+      // Exclude them from pending to avoid a misleading "stuck" value on /system.
+      clickhouse.retro_pending_ioc = chunkActive
+        ? Math.max(0, rawPendingIoc - activeChunkIoc)
+        : rawPendingIoc;
       clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || latestState?.cursor_ts || null;
       clickhouse.retro_cursor_ts_iso = isoFromEpochMs(latestState?.cursor_ts_ms);
       clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
