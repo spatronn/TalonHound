@@ -274,6 +274,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     return conf < minConfidenceToApplyAdjustment ? 0 : adj;
   }
 
+  function applyReasonConsistencyGate(adjustment, reason) {
+    const adj = Number(adjustment || 0);
+    const text = String(reason || '').toLowerCase();
+    if (/\b(inconclusive|uncertain)\b/.test(text)) return 0;
+    return adj;
+  }
+
   function withLowConfidenceSuffix(reason, isLowConfidence) {
     const text = String(reason || '').trim();
     if (!isLowConfidence) return text;
@@ -331,7 +338,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const iocType = normalizeIocType(parsed?.ioc_type);
       const cachedAdjustmentRaw = Number(parsed?.deterministic_adjustment ?? parsed?.adjustment ?? parsed?.llm_risk_adjustment);
       const deterministicAdjustment = Number.isFinite(cachedAdjustmentRaw) ? cachedAdjustmentRaw : 0;
-      const effectiveAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
+      const confidenceGatedAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
+      const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, normalized.reason);
       const base = clamp(Number(baseRisk || 0), 0, 100);
       const finalRisk = computeFinalRisk(base, effectiveAdjustment);
 
@@ -481,7 +489,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       toUserReason(normalized.reason, iocType),
       incidentPayload?.activity
     );
-    const effectiveAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
+    const confidenceGatedAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
+    const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, reasonForUi);
     const isLowConfidence = normalized.confidence < minConfidenceToApplyAdjustment;
     await setCached({
       incidentId: incident?.id || incident?.incident_id,
