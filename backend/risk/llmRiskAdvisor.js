@@ -249,7 +249,6 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 25000), timeoutMs);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
   const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 2), 0);
-  const dnsHighQueryThreshold = Math.max(Number(process.env.LLM_RISK_DNS_HIGH_QUERY_THRESHOLD || 50), 1);
   const minConfidenceToApplyAdjustment = clamp(Number(process.env.LLM_RISK_MIN_CONFIDENCE || 0.6), 0, 1);
 
   function computeFinalRisk(baseRisk, adjustment) {
@@ -264,13 +263,9 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     if (type !== 'dns') return 0;
 
     const hasConnection = Boolean(activity?.has_execution);
-    const dnsQueries = Math.max(Number(activity?.signals?.dns_queries || 0), 0);
-    const uniqueHosts = Math.max(Number(activity?.unique_hosts || 0), 0);
     const isBlocked = Boolean(activity?.is_blocked);
-    const highDnsQueries = dnsQueries >= dnsHighQueryThreshold;
 
     if (hasConnection) return 10;
-    if (highDnsQueries && uniqueHosts > 1) return 5;
     if (isBlocked) return -5;
     return 0;
   }
@@ -284,7 +279,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   function applyReasonConsistencyGate(adjustment, reason) {
     const adj = Number(adjustment || 0);
     const text = String(reason || '').toLowerCase();
-    if (/\b(inconclusive|uncertain)\b/.test(text)) return 0;
+    if (/\b(limited evidence|inconclusive|uncertain|insufficient)\b/.test(text)) return 0;
     return adj;
   }
 
@@ -302,6 +297,10 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     if (!text) return text;
 
     const lower = text.toLowerCase();
+    if (/limited evidence for a strong threat indication/i.test(text)) {
+      return 'Observed indicators do not provide sufficient evidence of confirmed malicious activity and should be monitored.';
+    }
+
     if (/\b(safe|benign|no threat|not a threat|not\s+a\s+fully\s+realized\s+threat)\b/.test(lower)) {
       return 'Observed indicators suggest suspicious communication patterns, but available evidence remains limited and warrants further investigation.';
     }
