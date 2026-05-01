@@ -101,20 +101,27 @@ function buildDomainPrompt() {
 IMPORTANT:
 - DNS activity is meaningful
 - Even without accepted connections, DNS queries may indicate compromise
-- High volume DNS queries increases risk
+- Absence of blacklist does NOT mean safe
+- Unknown domains can still be malicious
+
+DNS behavior rules:
+- High volume repeated DNS queries may indicate beaconing
+- Persistent DNS queries over time increases risk
 - Multiple hosts querying same domain increases risk
 
-Rules:
-Increase risk if:
-- dns_queries is high
-- multiple hosts query the domain
-- domain is in blacklist
-- repeated queries over time
-Decrease risk if:
+Critical rule:
+- If dns_queries is high AND persistent, increase risk EVEN IF blacklist_hits == 0
+
+Domain-name awareness:
+- Suspicious-looking domain names (malicious patterns, random-looking strings, deceptive names) increase risk
+
+Decrease risk ONLY if ALL are true:
 - very low query count
 - single host
 - no persistence
-Do NOT rely on accepted/blocked connections (DNS doesn't have that)
+
+Never decrease risk when DNS query volume is high.
+Do NOT rely on accepted/blocked connections (DNS doesn't have that).
 Return ONLY JSON:
 { "adjustment": number, "confidence": number, "reason": string }`;
 }
