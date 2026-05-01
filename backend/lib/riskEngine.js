@@ -1,6 +1,7 @@
 function clamp(value, min = 0, max = 100) {
   return Math.min(Math.max(Number(value) || 0, min), max);
 }
+const MAX_REASON_LENGTH = Math.max(Number(process.env.LLM_RISK_REASON_MAX_LENGTH || 1200), 240);
 
 function normalizeVerdict(v) {
   const s = String(v || '').trim().toLowerCase();
@@ -282,7 +283,7 @@ export function calculateInstitutionRisk(incidents) {
         risk_before_llm: Number.isFinite(riskBeforeLlmRaw) ? Number(riskBeforeLlmRaw.toFixed(2)) : null,
         llm_risk_adjustment: Number.isFinite(llmAdjustmentRaw) ? llmAdjustmentRaw : null,
         llm_risk_confidence: Number.isFinite(llmConfidenceRaw) ? Number(llmConfidenceRaw.toFixed(3)) : null,
-        llm_risk_reason: r?.llm_risk_reason != null ? String(r.llm_risk_reason).slice(0, 240) : null,
+        llm_risk_reason: r?.llm_risk_reason != null ? String(r.llm_risk_reason).slice(0, MAX_REASON_LENGTH) : null,
         final_risk_score: Number.isFinite(finalRiskRaw) ? Number(finalRiskRaw.toFixed(2)) : null,
         contribution: Number(r._contribution.toFixed(6)),
         contribution_bucket: r._contribution_bucket,

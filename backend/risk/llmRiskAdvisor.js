@@ -3,6 +3,7 @@ import { buildLlmAdvisorPayload } from './llmAdvisor.js';
 import { normalizeIocType } from './activityBuilder.js';
 
 const logger = console;
+const MAX_REASON_LENGTH = Math.max(Number(process.env.LLM_RISK_REASON_MAX_LENGTH || 1200), 240);
 
 function toBool(v, defaultValue = false) {
   if (v == null) return defaultValue;
@@ -107,7 +108,7 @@ function isInternalReason(reason) {
 function toUserReason(reason, iocType) {
   const text = String(reason || '').trim();
   if (isInternalReason(text)) return buildReasonFallback(iocType);
-  return text.slice(0, 240);
+  return text.slice(0, MAX_REASON_LENGTH);
 }
 
 function extractJson(text) {
@@ -133,7 +134,7 @@ function extractJson(text) {
 function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const confidence = normalizeConfidence(parsed.confidence);
-  let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
+  let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, MAX_REASON_LENGTH);
   const reasonValidation = validateReason(reason);
 
   return {
