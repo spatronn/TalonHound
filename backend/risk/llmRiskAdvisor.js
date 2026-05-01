@@ -80,29 +80,97 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   };
 }
 
-function buildPrompt() {
+function buildGenericPrompt() {
   return `You are a cybersecurity risk assistant. Your task is NOT to calculate full risk. ONLY return a small adjustment score.
 
 Rules:
 - Return ONLY JSON
 - adjustment must be one of: -10, -5, 0, +5, +10
 - Be conservative
-- High volume alone is NOT enough
-- Blocked traffic or scanner-like behavior -> decrease risk
-- Accepted connections + blacklist + persistence -> increase risk
-- If IOC is high-severity (e.g., cobaltstrike, c2, ransomware, botnet, apt), do NOT downscore based on low volume alone
-- A single confirmed high-severity hit can be significant
-- For high-severity IOC, prefer 0 or positive adjustment unless evidence strongly indicates false positive
 - Never claim facts not present in Incident Data
 - If evidence is insufficient, return adjustment=0 with a cautious reason
-- Reason must reference only provided Incident Data fields
-- Reason must cite at least two Incident Data fields by name (e.g., accepted_connections, blocked_connections, blacklist_hits, unique_hosts, total_events)
-- Avoid vague explanations such as "low activity" alone
-- If adjustment is 0, explain why evidence is insufficient to increase or decrease risk
-- Keep reason concise (max 18 words), analyst-friendly, and action-oriented
+- Reason must cite at least two Incident Data fields by name
+- Keep reason concise (max 18 words)
 
 Output:
 { "adjustment": <number>, "confidence": 0-1, "reason": "short explanation" }`;
+}
+
+function buildDomainPrompt() {
+  return `You are a cybersecurity risk adjustment assistant.
+IMPORTANT:
+- DNS activity is meaningful
+- Even without accepted connections, DNS queries may indicate compromise
+- High volume DNS queries increases risk
+- Multiple hosts querying same domain increases risk
+
+Rules:
+Increase risk if:
+- dns_queries is high
+- multiple hosts query the domain
+- domain is in blacklist
+- repeated queries over time
+Decrease risk if:
+- very low query count
+- single host
+- no persistence
+Do NOT rely on accepted/blocked connections (DNS doesn't have that)
+Return ONLY JSON:
+{ "adjustment": number, "confidence": number, "reason": string }`;
+}
+
+function buildIpPrompt() {
+  return `You are a cybersecurity risk adjustment assistant.
+Rules:
+- accepted vs blocked is critical
+- inbound/outbound direction is important
+- scanning behavior should reduce risk
+Increase risk:
+- accepted_connections > blocked_connections
+- multiple hosts affected
+- blacklist hits exist
+Decrease risk:
+- mostly blocked traffic
+- scanning pattern
+Return ONLY JSON:
+{ "adjustment": number, "confidence": number, "reason": string }`;
+}
+
+function buildUrlPrompt() {
+  return `You are a cybersecurity risk adjustment assistant.
+Rules:
+- HTTP activity is important
+- path-level risk and user interaction signals matter
+Increase risk:
+- successful HTTP requests
+- multiple users/hosts
+- repeated access
+Return ONLY JSON:
+{ "adjustment": number, "confidence": number, "reason": string }`;
+}
+
+function buildHashPrompt() {
+  return `You are a cybersecurity risk adjustment assistant.
+Rules:
+- endpoint activity is important
+- execution/spread signals are important
+Increase risk:
+- multiple hosts
+- execution evidence
+- persistence
+Decrease risk:
+- single host
+- no spread
+Return ONLY JSON:
+{ "adjustment": number, "confidence": number, "reason": string }`;
+}
+
+function buildPromptByType(iocType) {
+  if (iocType === 'domain') return buildDomainPrompt();
+  if (iocType === 'ip') return buildIpPrompt();
+  if (iocType === 'url') return buildUrlPrompt();
+  if (iocType === 'hash') return buildHashPrompt();
+  return buildGenericPrompt();
 }
 
 function normalizeIocType(raw) {
@@ -110,8 +178,8 @@ function normalizeIocType(raw) {
   if (t === 'ip') return 'ip';
   if (t === 'domain') return 'domain';
   if (t === 'url') return 'url';
-  if (['md5', 'sha1', 'sha256', 'hash'].includes(t)) return 'hash';
-  return 'hash';
+  if (['md5', 'sha1', 'sha256', 'hash', 'file_hash'].includes(t)) return 'hash';
+  return 'unknown';
 }
 
 function parseTags(raw) {
@@ -134,18 +202,11 @@ function buildIncidentPayload(incident = {}) {
   const snapshot = buildIncidentStatsSnapshot(incident);
   const confidenceRaw = String(incident?.confidence || '').toLowerCase();
   const confidence = ['low', 'medium', 'high'].includes(confidenceRaw) ? confidenceRaw : 'medium';
+  const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
 
-  return {
+  const base = {
     ioc: String(incident?.ioc_value || incident?.observable_value || ''),
-    ioc_type: normalizeIocType(incident?.ioc_type || incident?.observable_type),
-    stats: {
-      total_events: snapshot.total_events,
-      accepted_connections: snapshot.accepted_connections,
-      blocked_connections: snapshot.blocked_connections,
-      inbound_events: Math.max(Number(incident?.inbound_events || 0), 0),
-      outbound_events: Math.max(Number(incident?.outbound_events || 0), 0),
-      unique_hosts: snapshot.unique_hosts
-    },
+    ioc_type: iocType,
     threat_intel: {
       blacklist_hits: snapshot.blacklist_hits,
       confidence,
@@ -154,6 +215,65 @@ function buildIncidentPayload(incident = {}) {
     history: {
       previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
       previous_verdict: normalizeVerdict(incident?.previous_verdict)
+    }
+  };
+
+  if (iocType === 'domain') {
+    return {
+      ...base,
+      stats: {
+        total_events: snapshot.total_events,
+        dns_queries: snapshot.total_events,
+        unique_hosts: snapshot.unique_hosts
+      }
+    };
+  }
+
+  if (iocType === 'ip') {
+    return {
+      ...base,
+      stats: {
+        total_events: snapshot.total_events,
+        accepted_connections: snapshot.accepted_connections,
+        blocked_connections: snapshot.blocked_connections,
+        inbound_events: Math.max(Number(incident?.inbound_events || 0), 0),
+        outbound_events: Math.max(Number(incident?.outbound_events || 0), 0),
+        unique_hosts: snapshot.unique_hosts
+      }
+    };
+  }
+
+  if (iocType === 'url') {
+    return {
+      ...base,
+      stats: {
+        total_events: snapshot.total_events,
+        successful_http_requests: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
+        repeated_access: Math.max(Number(snapshot.total_events || 0), 0),
+        unique_hosts: snapshot.unique_hosts
+      }
+    };
+  }
+
+  if (iocType === 'hash') {
+    return {
+      ...base,
+      stats: {
+        total_events: snapshot.total_events,
+        execution_evidence: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
+        spread_hosts: snapshot.unique_hosts,
+        persistence_signals: Math.max(Number(incident?.previous_incident_count || 0), 0)
+      }
+    };
+  }
+
+  return {
+    ...base,
+    stats: {
+      total_events: snapshot.total_events,
+      accepted_connections: snapshot.accepted_connections,
+      blocked_connections: snapshot.blocked_connections,
+      unique_hosts: snapshot.unique_hosts
     }
   };
 }
@@ -273,11 +393,12 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
       try {
+        const incidentPayload = buildIncidentPayload(incident);
         const payload = {
           model,
           stream: false,
           format: 'json',
-          prompt: `${buildPrompt()}\n\nIncident Data:\n${JSON.stringify(buildIncidentPayload(incident), null, 2)}`
+          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
