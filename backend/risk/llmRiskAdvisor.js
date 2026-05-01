@@ -64,8 +64,8 @@ function validateReason(reason) {
   }
 
   // Avoid unsafe certainty language in ambiguous IOC context.
-  if (/\b(safe|benign)\b/.test(lower)) {
-    return { valid: false, code: 'invalid_reason_overconfident_safe_benign' };
+  if (/\b(safe|benign|no threat|not a threat|not\s+a\s+fully\s+realized\s+threat)\b/.test(lower)) {
+    return { valid: false, code: 'invalid_reason_overconfident_safety_claim' };
   }
 
   // Enforce observation + conclusion structure with causal language.
@@ -77,12 +77,12 @@ function validateReason(reason) {
 
 function buildReasonFallback(iocType) {
   if (iocType === 'domain') {
-    return 'Observed DNS activity across multiple hosts suggests repeated communication behavior, but available signals are inconclusive.';
+    return 'Observed DNS activity across multiple hosts suggests repeated communication behavior, but lack of confirmed execution or connection activity limits confidence and warrants further investigation.';
   }
   if (iocType === 'ip') {
-    return 'Network activity observed, but signals are insufficient to determine a strong risk adjustment.';
+    return 'Network activity is observed, but available evidence remains limited and should be monitored.';
   }
-  return 'Observed activity does not provide sufficient evidence for a strong risk adjustment.';
+  return 'Observed activity provides limited evidence and should be monitored.';
 }
 
 function isInternalReason(reason) {
@@ -171,11 +171,14 @@ Rules:
   - DNS + blocked tends to lower risk
   - Lack of execution or connection evidence does NOT imply low risk; it implies inconclusive or uncertain evidence
 - Do not use "safe" or "benign" wording.
+- Do not use "not a threat" or "no threat" wording.
 - Do not label DNS-only patterns as low risk when execution/connection is unconfirmed.
 - Do not assume specific attack stages (e.g., reconnaissance, exploitation) without strong supporting evidence.
 - For DNS-only patterns, avoid attack-stage labels and prefer neutral terms like "suspicious communication pattern" or "repeated activity".
 - Use "reconnaissance" only when there is clear scanning/probing/network behavior evidence.
 - Prefer terms like: inconclusive, uncertain, unconfirmed activity.
+- Prefer neutral SOC language such as: limited evidence, low confidence signal.
+- If appropriate, end with a soft action cue such as "warrants further investigation" or "should be monitored".
 - Reason must be 1-2 sentences and include observation + conclusion.
 - You do not decide adjustment; deterministic engine decides it.
 Output:
@@ -195,6 +198,7 @@ CRITICAL:
 - Lack of connection or execution does NOT imply low risk.
 - It only means the signal is inconclusive.
 - Do NOT say "low risk" or "safe".
+- Do NOT say "benign", "not a threat", or "no threat".
 - Do NOT use accepted/blocked logic (not valid for DNS).
 - Do NOT mention blacklist.
 - Do NOT assume attack stages (no "reconnaissance" unless strong evidence).
@@ -202,6 +206,8 @@ CRITICAL:
 Use neutral terms:
 - "suspicious communication pattern"
 - "repeated activity"
+- "limited evidence"
+- "low confidence signal"
 
 Decision logic:
 - DNS only -> inconclusive
@@ -291,6 +297,23 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     return `${normalized}, making the signal inconclusive.`;
   }
 
+  function enforceReasonSafetyAndGuidance(reason) {
+    const text = String(reason || '').trim();
+    if (!text) return text;
+
+    const lower = text.toLowerCase();
+    if (/\b(safe|benign|no threat|not a threat|not\s+a\s+fully\s+realized\s+threat)\b/.test(lower)) {
+      return 'Observed indicators suggest suspicious communication patterns, but available evidence remains limited and warrants further investigation.';
+    }
+
+    if (!/(warrants further investigation|should be monitored)/i.test(text)) {
+      const normalized = /[.!?]$/.test(text) ? text.slice(0, -1) : text;
+      return `${normalized}, and the activity should be monitored.`;
+    }
+
+    return text;
+  }
+
   function enforceDnsReasonGuard(reason, activity = {}) {
     const text = String(reason || '').trim();
     const type = String(activity?.type || '').toLowerCase();
@@ -305,7 +328,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     if (!containsUnsafeDnsConclusion && !(hasAttackStageClaim && !hasNetworkEvidence)) return text;
     if (hasExecution && !containsUnsafeDnsConclusion) return text;
 
-    return 'Observed DNS query volume and persistence suggest repeated communication behavior, but lack of confirmed connection or execution activity makes the signal inconclusive.';
+    return 'Observed DNS query volume and persistence suggest repeated communication behavior, but lack of confirmed connection or execution activity limits confidence and warrants further investigation.';
   }
 
   function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
@@ -348,9 +371,11 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         risk_before_llm: Number(base.toFixed(2)),
         llm_risk_adjustment: effectiveAdjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: withLowConfidenceSuffix(
-          toUserReason(normalized.reason, iocType),
-          normalized.confidence < minConfidenceToApplyAdjustment
+        llm_risk_reason: enforceReasonSafetyAndGuidance(
+          withLowConfidenceSuffix(
+            toUserReason(normalized.reason, iocType),
+            normalized.confidence < minConfidenceToApplyAdjustment
+          )
         ),
         llm_low_confidence: normalized.confidence < minConfidenceToApplyAdjustment,
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
@@ -513,7 +538,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: effectiveAdjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: withLowConfidenceSuffix(reasonForUi, isLowConfidence),
+      llm_risk_reason: enforceReasonSafetyAndGuidance(withLowConfidenceSuffix(reasonForUi, isLowConfidence)),
       llm_low_confidence: isLowConfidence,
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
