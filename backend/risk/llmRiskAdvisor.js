@@ -1,9 +1,6 @@
-import { buildIncidentVersion } from './llmRiskCommon.js';
-import { buildLlmAdvisorPayload } from './llmAdvisor.js';
-import { normalizeIocType } from './activityBuilder.js';
+import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
 
-const logger = console;
-const MAX_REASON_LENGTH = Math.max(Number(process.env.LLM_RISK_REASON_MAX_LENGTH || 1200), 240);
+const ALLOWED_ADJUSTMENTS = new Set([-10, -5, 0, 5, 10]);
 
 function toBool(v, defaultValue = false) {
   if (v == null) return defaultValue;
@@ -31,84 +28,16 @@ function isTimeoutError(err) {
   return false;
 }
 
+function normalizeAdjustment(raw) {
+  const n = Number(String(raw ?? '').replace(/^\+/, ''));
+  if (!Number.isFinite(n)) return 0;
+  return ALLOWED_ADJUSTMENTS.has(n) ? n : 0;
+}
+
 function normalizeConfidence(raw) {
   const c = Number(raw);
   if (!Number.isFinite(c)) return 0;
   return clamp(c, 0, 1);
-}
-
-function countSentences(text) {
-  const cleaned = String(text || '').trim();
-  if (!cleaned) return 0;
-  return cleaned
-    .split(/[.!?]+/g)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .length;
-}
-
-function validateReason(reason) {
-  const text = String(reason || '').trim();
-  const lower = text.toLowerCase();
-  if (!text) return { valid: false, code: 'invalid_reason_empty' };
-
-  // Keep reasons short and analyst-friendly.
-  if (countSentences(text) > 2) return { valid: false, code: 'invalid_reason_too_long' };
-
-  if (
-    /blacklist/.test(lower) ||
-    /no blacklist hits/.test(lower) ||
-    /domain not in blacklist/.test(lower)
-  ) {
-    return { valid: false, code: 'invalid_reason_blacklist_reference' };
-  }
-
-  // Avoid unsafe certainty language in ambiguous IOC context.
-  if (/\b(safe|benign|no threat|not a threat|not\s+a\s+fully\s+realized\s+threat)\b/.test(lower)) {
-    return { valid: false, code: 'invalid_reason_overconfident_safety_claim' };
-  }
-
-  // Enforce observation + conclusion structure with causal language.
-  const hasCausalLink = /(suggests|indicates|therefore|which|because|thus|so)\b/i.test(text);
-  if (!hasCausalLink) return { valid: false, code: 'invalid_reason_observation_only' };
-
-  return { valid: true, code: 'ok' };
-}
-
-function buildReasonFallback(iocType) {
-  if (iocType === 'domain') {
-    return 'Observed DNS activity across multiple hosts suggests repeated communication behavior, but lack of confirmed execution or connection activity limits confidence and warrants further investigation.';
-  }
-  if (iocType === 'ip') {
-    return 'Network activity is observed, but available evidence remains limited and should be monitored.';
-  }
-  return 'Observed activity provides limited evidence and should be monitored.';
-}
-
-function isInternalReason(reason) {
-  const text = String(reason || '').trim().toLowerCase();
-  if (!text) return true;
-  return [
-    /^invalid_reason_/,
-    /^validation_failed$/,
-    /^parse_error$/,
-    /^invalid_json$/,
-    /^low_confidence$/,
-    /^fallback$/,
-    /^disabled$/,
-    /^fp_verdict_guard$/,
-    /^timeout$/,
-    /^endpoint_unreachable$/,
-    /^cache$/,
-    /^ok$/,
-    /^llm_http_/
-  ].some((pattern) => pattern.test(text));
-}
-
-function toUserReason(reason, iocType) {
-  const text = String(reason || '').trim();
-  if (isInternalReason(text)) return buildReasonFallback(iocType);
-  return text.slice(0, MAX_REASON_LENGTH);
 }
 
 function extractJson(text) {
@@ -134,103 +63,113 @@ function extractJson(text) {
 function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const confidence = normalizeConfidence(parsed.confidence);
-  let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, MAX_REASON_LENGTH);
-  const reasonValidation = validateReason(reason);
+  let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
+
+  if (/blacklist/i.test(reason)) {
+    return {
+      adjustment: 0,
+      confidence: 0,
+      reason: 'invalid_reason_blacklist_reference'
+    };
+  }
+
+  if (confidence < 0.6) {
+    return {
+      adjustment: 0,
+      confidence,
+      reason: reason || 'low_confidence'
+    };
+  }
 
   return {
+    adjustment: normalizeAdjustment(parsed.adjustment),
     confidence,
-    reason,
-    reasonValidation,
-    reasonValid: reasonValidation.valid
+    reason
   };
 }
 
 function buildGenericPrompt() {
-  return `You are a cybersecurity risk assistant. Produce explainability text only.
+  return `You are a cybersecurity risk assistant. Return a small adjustment score only.
 Rules:
-- Return ONLY JSON.
-- Never claim facts not present in Incident Data.
-- Do not mention blacklist status.
-- Use the unified activity model fields:
-  - activity.type
-  - activity.volume
-  - activity.unique_hosts
-  - activity.persistence
-  - activity.has_execution
-  - activity.is_blocked
-  - activity.signals
-- Core risk logic:
-  - has_execution => risk increases strongly
-  - is_blocked => risk reduces
-  - high volume alone is not enough; combine with spread/persistence/execution
-  - higher unique_hosts => risk increases
-  - higher persistence => risk increases
-- DNS special rule:
-  - DNS only (no execution) is weak
-  - DNS + connection/execution is strong
-  - DNS + blocked tends to lower risk
-  - Lack of execution or connection evidence does NOT imply low risk; it implies inconclusive or uncertain evidence
-- Do not use "safe" or "benign" wording.
-- Do not use "not a threat" or "no threat" wording.
-- Do not label DNS-only patterns as low risk when execution/connection is unconfirmed.
-- Do not assume specific attack stages (e.g., reconnaissance, exploitation) without strong supporting evidence.
-- For DNS-only patterns, avoid attack-stage labels and prefer neutral terms like "suspicious communication pattern" or "repeated activity".
-- Use "reconnaissance" only when there is clear scanning/probing/network behavior evidence.
-- Prefer terms like: inconclusive, uncertain, unconfirmed activity.
-- Prefer neutral SOC language such as: limited evidence, low confidence signal.
-- If appropriate, end with a soft action cue such as "warrants further investigation" or "should be monitored".
-- Reason must be 1-2 sentences and include observation + conclusion.
-- You do not decide adjustment; deterministic engine decides it.
+- Return ONLY JSON
+- adjustment must be one of: -10, -5, 0, +5, +10
+- Never claim facts not present in Incident Data
+- Do not mention blacklist
+- Reason should focus on: ioc_type, total_hits/hits, event_count, observed_hosts/unique_hosts, duration, persistence
 Output:
-{ "confidence": 0-1, "reason": "short explanation" }`;
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildDomainPrompt() {
-  return `You are a cybersecurity risk assistant for DNS-based activity.
-
-IMPORTANT:
-- DNS activity is the primary signal.
-- DNS queries alone do NOT indicate execution.
-- High DNS query volume + persistence suggests repeated communication patterns.
-- Multiple hosts increase concern.
-
-CRITICAL:
-- Lack of connection or execution does NOT imply low risk.
-- It only means the signal is inconclusive.
-- Do NOT say "low risk" or "safe".
-- Do NOT say "benign", "not a threat", or "no threat".
-- Do NOT use accepted/blocked logic (not valid for DNS).
-- Do NOT mention blacklist.
-- Do NOT assume attack stages (no "reconnaissance" unless strong evidence).
-
-Use neutral terms:
-- "suspicious communication pattern"
-- "repeated activity"
-- "limited evidence"
-- "low confidence signal"
-
-Decision logic:
-- DNS only -> inconclusive
-- DNS + persistence -> repeated activity pattern; confidence is limited
-- DNS + execution -> strong signal
-
-Output:
-{
-  "confidence": 0-1,
-  "reason": "1-2 sentences, observation + conclusion"
-}`;
+  return `DOMAIN IOC ANALYSIS RULES:
+- Domain IOC incidents must be evaluated using DNS behavior, not accepted/blocked traffic.
+- DNS queries to suspicious or matched IOC domains are meaningful security signals.
+- Use total_hits/hits as the main volume signal.
+- Use event_count only as the number of sampled/correlated detection events, not as total activity volume.
+- Multiple observed hosts increase concern.
+- Persistence over time increases concern.
+- Repeated DNS queries over a long duration may indicate beaconing, malware communication, or misconfigured repeated access.
+- Do not mention blacklist status.
+- Do not decrease risk when DNS volume is high or persistent.
+Increase risk if:
+- total_hits is high
+- observed_hosts >= 2
+- duration is long
+- repeated DNS queries are observed
+Return neutral if:
+- total_hits is low
+- single host
+- short duration
+- no persistence
+Decrease risk only if:
+- there is clear evidence of benign/test activity
+- very low volume and no persistence
+Return ONLY JSON:
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildIpPrompt() {
-  return buildGenericPrompt();
+  return `IP IOC ANALYSIS RULES:
+- accepted/blocked logic applies only for IP/network IOC.
+- Use accepted_connections, blocked_connections, inbound_events, outbound_events, unique_hosts/observed_hosts, and persistence.
+- Do not mention blacklist status.
+Increase risk:
+- accepted traffic is meaningful
+- multiple hosts affected
+- persistent activity over time
+Decrease risk:
+- mostly blocked traffic
+- clear scanning/noise pattern with low persistence
+Return ONLY JSON:
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildUrlPrompt() {
-  return buildGenericPrompt();
+  return `URL IOC ANALYSIS RULES:
+- Focus on url_requests/request_count, successful access, unique users/hosts, persistence, and suspicious path patterns.
+- Do not mention blacklist status.
+Increase risk:
+- successful and repeated URL access
+- multiple hosts/users
+- persistent activity or suspicious path behavior
+Decrease risk:
+- very low request volume and no persistence
+Return ONLY JSON:
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildHashPrompt() {
-  return buildGenericPrompt();
+  return `HASH IOC ANALYSIS RULES:
+- Focus on affected_hosts, file_observations, execution evidence, and persistence/spread behavior.
+- Do not mention blacklist status.
+Increase risk:
+- multiple affected hosts
+- execution evidence
+- persistence or spread over time
+Decrease risk:
+- single host, very low observations, no spread evidence
+Return ONLY JSON:
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildPromptByType(iocType) {
@@ -241,131 +180,160 @@ function buildPromptByType(iocType) {
   return buildGenericPrompt();
 }
 
+function normalizeIocType(raw) {
+  const t = String(raw || '').toLowerCase();
+  if (t === 'ip') return 'ip';
+  if (t === 'domain') return 'domain';
+  if (t === 'url') return 'url';
+  if (['md5', 'sha1', 'sha256', 'hash', 'file_hash'].includes(t)) return 'hash';
+  return 'unknown';
+}
+
+function parseTags(raw) {
+  if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.split(',').map((x) => x.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeVerdict(raw) {
+  const v = String(raw || '').toLowerCase();
+  if (v === 'fp') return 'fp';
+  if (v === 'tp') return 'tp';
+  if (v === 'suspicious') return 'suspicious';
+  return 'unknown';
+}
+
+function buildIncidentPayload(incident = {}) {
+  const snapshot = buildIncidentStatsSnapshot(incident);
+  const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
+  const totalHits = Math.max(Number((incident?.hits ?? incident?.total_hits ?? snapshot.total_events) ?? 0), 0);
+  const eventCount = Math.max(Number((incident?.event_count ?? snapshot.total_events) ?? 0), 0);
+  const observedHosts = Math.max(Number((incident?.observed_hosts ?? incident?.asset_count ?? snapshot.unique_hosts) ?? 0), 0);
+  const firstSeenMs = incident?.first_seen ? new Date(incident.first_seen).getTime() : NaN;
+  const lastSeenMs = incident?.last_seen ? new Date(incident.last_seen).getTime() : NaN;
+  const durationMinutes = Number.isFinite(firstSeenMs) && Number.isFinite(lastSeenMs) && lastSeenMs >= firstSeenMs
+    ? Math.round((lastSeenMs - firstSeenMs) / 60000)
+    : 0;
+
+  const base = {
+    ioc: String(incident?.ioc_value || incident?.observable_value || ''),
+    ioc_type: iocType,
+    activity_type: iocType === 'domain' ? 'dns' : iocType,
+    first_seen: incident?.first_seen || null,
+    last_seen: incident?.last_seen || null,
+    duration_minutes: durationMinutes,
+    history: {
+      previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
+      previous_verdict: normalizeVerdict(incident?.previous_verdict)
+    }
+  };
+
+  if (iocType === 'domain') {
+    return {
+      ...base,
+      stats: {
+        total_hits: totalHits,
+        hits: totalHits,
+        dns_queries: totalHits,
+        event_count: eventCount,
+        observed_hosts: observedHosts,
+        unique_hosts: observedHosts,
+        duration_minutes: durationMinutes
+      }
+    };
+  }
+
+  if (iocType === 'ip') {
+    return {
+      ...base,
+      stats: {
+        total_hits: totalHits,
+        event_count: eventCount,
+        observed_hosts: observedHosts,
+        unique_hosts: observedHosts,
+        accepted_connections: snapshot.accepted_connections,
+        blocked_connections: snapshot.blocked_connections,
+        inbound_events: Math.max(Number(incident?.inbound_events || 0), 0),
+        outbound_events: Math.max(Number(incident?.outbound_events || 0), 0),
+        duration_minutes: durationMinutes
+      }
+    };
+  }
+
+  if (iocType === 'url') {
+    return {
+      ...base,
+      stats: {
+        total_hits: totalHits,
+        event_count: eventCount,
+        url_requests: totalHits,
+        successful_access: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
+        observed_hosts: observedHosts,
+        unique_hosts: observedHosts,
+        duration_minutes: durationMinutes
+      }
+    };
+  }
+
+  if (iocType === 'hash') {
+    return {
+      ...base,
+      stats: {
+        total_hits: totalHits,
+        event_count: eventCount,
+        file_observations: totalHits,
+        affected_hosts: observedHosts,
+        execution_evidence: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
+        persistence_signals: Math.max(Number(incident?.previous_incident_count || 0), 0),
+        duration_minutes: durationMinutes
+      }
+    };
+  }
+
+  return {
+    ...base,
+    stats: {
+      total_hits: totalHits,
+      event_count: eventCount,
+      observed_hosts: observedHosts,
+      unique_hosts: observedHosts,
+      accepted_connections: snapshot.accepted_connections,
+      blocked_connections: snapshot.blocked_connections,
+      duration_minutes: durationMinutes
+    }
+  };
+}
+
 export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const enabled = toBool(process.env.LLM_RISK_ADVISOR_ENABLED, false);
   const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.8:11434/api/generate').trim();
-  const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.7:7b').trim();
-  const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 8000), 1000);
-  const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 25000), timeoutMs);
+  const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.5:14b').trim();
+  const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 15000), 1000);
+  const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 30000), timeoutMs);
+  const llmTemperature = Number(process.env.LLM_RISK_TEMPERATURE ?? 0.2);
+  const llmNumCtx = Math.max(Number(process.env.LLM_RISK_NUM_CTX ?? 2048), 256);
+  const llmNumPredict = Math.max(Number(process.env.LLM_RISK_NUM_PREDICT ?? 180), 1);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
   const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 2), 0);
-  const minConfidenceToApplyAdjustment = clamp(Number(process.env.LLM_RISK_MIN_CONFIDENCE || 0.6), 0, 1);
 
-  function computeFinalRisk(baseRisk, adjustment) {
+  function computeFinalRisk(baseRisk, adjustment, confidence) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     const adj = Number(adjustment || 0);
-    const weighted = adj * aiWeight;
+    const conf = clamp(Number(confidence || 0), 0, 1);
+    const weighted = adj * conf * aiWeight;
     return clamp(base + weighted, 0, 100);
   }
 
-  function computeDeterministicAdjustment(activity = {}) {
-    const type = String(activity?.type || '').toLowerCase();
-    if (type !== 'dns') return 0;
-
-    const hasConnection = Boolean(activity?.has_execution);
-    const isBlocked = Boolean(activity?.is_blocked);
-
-    if (hasConnection) return 10;
-    if (isBlocked) return -5;
-    return 0;
-  }
-
-  function applyConfidenceGate(adjustment, confidence) {
-    const conf = clamp(Number(confidence || 0), 0, 1);
-    const adj = Number(adjustment || 0);
-    return conf < minConfidenceToApplyAdjustment ? 0 : adj;
-  }
-
-  function applyReasonConsistencyGate(adjustment, reason) {
-    const adj = Number(adjustment || 0);
-    const text = String(reason || '').toLowerCase();
-    if (/\b(limited evidence|inconclusive|uncertain|insufficient(?: evidence)?|limits confidence)\b/.test(text)) return 0;
-    return adj;
-  }
-
-  function withLowConfidenceSuffix(reason, isLowConfidence) {
-    const text = String(reason || '').trim();
-    if (!isLowConfidence) return text;
-    // Keep context-aware reason text; only adjustment is neutralized.
-    return text;
-  }
-
-  function normalizeReasonPhrases(reason) {
-    const text = String(reason || '').trim();
-    if (!text) return text;
-
-    let normalized = text;
-    normalized = normalized.replace(/suspicious but inconclusive signal/gi, 'limited confidence');
-    normalized = normalized.replace(/(?:,\s*)?making the signal inconclusive\.?/gi, '');
-    normalized = normalized.replace(/\b(no execution indicates low risk|lack of execution indicates low risk)\b/gi, 'lack of confirmed execution limits confidence');
-    normalized = normalized.replace(/\s{2,}/g, ' ').trim();
-    if (normalized && !/[.!?]$/.test(normalized)) normalized = `${normalized}.`;
-    return normalized;
-  }
-
-  function enforceReasonSafetyAndGuidance(reason) {
-    const text = normalizeReasonPhrases(reason);
-    if (!text) return text;
-
-    const lower = text.toLowerCase();
-    if (/limited evidence for a strong threat indication/i.test(text)) {
-      return 'Observed indicators do not provide sufficient evidence of confirmed malicious activity and should be monitored.';
-    }
-
-    if (/\b(safe|benign|no threat|not a threat|not\s+a\s+fully\s+realized\s+threat)\b/.test(lower)) {
-      return 'Observed indicators suggest suspicious communication patterns, but available evidence remains limited and warrants further investigation.';
-    }
-
-    // Keep one clear conclusion: if action guidance exists, avoid inconclusive wording.
-    if (/(warrants further investigation|should be monitored)/i.test(text) && /\b(inconclusive|uncertain)\b/i.test(text)) {
-      const normalized = text
-        .replace(/\b(inconclusive|uncertain)\b/gi, 'limits confidence')
-        .replace(/\s{2,}/g, ' ')
-        .trim();
-      return normalized;
-    }
-
-    if (!/(warrants further investigation|should be monitored)/i.test(text)) {
-      const normalized = /[.!?]$/.test(text) ? text.slice(0, -1) : text;
-      return `${normalized}, and the activity should be monitored.`;
-    }
-
-    return text;
-  }
-
-  function enforceDnsReasonGuard(reason, activity = {}) {
-    const text = normalizeReasonPhrases(reason);
-    const type = String(activity?.type || '').toLowerCase();
-    if (!text || type !== 'dns') return text;
-
-    const hasExecution = Boolean(activity?.has_execution);
-    const lower = text.toLowerCase();
-    const containsUnsafeDnsConclusion = /\blow(?:\s+to\s+moderate)?\s+risk\b|\bsafe\b|\bbenign\b|\bno threat\b|\bnot a threat\b/.test(lower);
-    const hasAttackStageClaim = /\b(reconnaissance|exploitation)\b/.test(lower);
-    const hasNetworkEvidence = hasExecution || Math.max(Number(activity?.signals?.connections || 0), 0) > 0;
-
-    if (!containsUnsafeDnsConclusion && !(hasAttackStageClaim && !hasNetworkEvidence)) return text;
-    if (hasExecution && !containsUnsafeDnsConclusion) return text;
-
-    return 'Observed DNS query volume and persistence suggest repeated communication behavior, but lack of confirmed connection or execution activity limits confidence and warrants further investigation.';
-  }
-
-  function buildFinalReason(reason, { iocType, activity, isLowConfidence } = {}) {
-    const userReason = toUserReason(reason, iocType);
-    const dnsGuarded = enforceDnsReasonGuard(userReason, activity);
-    const lowConfidenceHandled = withLowConfidenceSuffix(dnsGuarded, isLowConfidence);
-    return enforceReasonSafetyAndGuidance(lowConfidenceHandled);
-  }
-
-  function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
+  function fallback(baseRisk, reason = 'fallback') {
     const base = clamp(Number(baseRisk || 0), 0, 100);
-    const finalRisk = computeFinalRisk(base, deterministicAdjustment);
     return {
       risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: Number(deterministicAdjustment || 0),
+      llm_risk_adjustment: 0,
       llm_risk_confidence: 0,
-      llm_risk_reason: toUserReason(reason, normalizeIocType(iocType)),
-      final_risk_score: Number(finalRisk.toFixed(2))
+      llm_risk_reason: reason,
+      final_risk_score: Number(base.toFixed(2))
     };
   }
 
@@ -385,26 +353,14 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       const normalized = normalizeAdvisorOutput(parsed, 'cache');
-      const iocType = normalizeIocType(parsed?.ioc_type);
-      const cachedActivity = parsed?.activity && typeof parsed.activity === 'object' ? parsed.activity : null;
-      const cachedAdjustmentRaw = Number(parsed?.deterministic_adjustment ?? parsed?.adjustment ?? parsed?.llm_risk_adjustment);
-      const deterministicAdjustment = Number.isFinite(cachedAdjustmentRaw) ? cachedAdjustmentRaw : 0;
-      const finalReason = buildFinalReason(normalized.reason, {
-        iocType,
-        activity: cachedActivity,
-        isLowConfidence: normalized.confidence < minConfidenceToApplyAdjustment
-      });
-      const confidenceGatedAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
-      const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, finalReason);
       const base = clamp(Number(baseRisk || 0), 0, 100);
-      const finalRisk = computeFinalRisk(base, effectiveAdjustment);
+      const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
 
       return {
         risk_before_llm: Number(base.toFixed(2)),
-        llm_risk_adjustment: effectiveAdjustment,
+        llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: finalReason,
-        llm_low_confidence: normalized.confidence < minConfidenceToApplyAdjustment,
+        llm_risk_reason: normalized.reason,
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
         llm_version: parsed?.llm_version || version || null,
         final_risk_score: Number(finalRisk.toFixed(2))
@@ -451,14 +407,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
 
   async function evaluateAndCache({ incident, baseRisk, version, force = false, timeoutMsOverride } = {}) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
-    const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
-    const incidentPayload = buildLlmAdvisorPayload(incident);
-    const deterministicAdjustment = computeDeterministicAdjustment(incidentPayload?.activity);
-    if (!enabled && !force) return fallback(base, 'disabled', iocType, deterministicAdjustment);
+    if (!enabled && !force) return fallback(base, 'disabled');
 
     const verdict = String(incident?.verdict || '').trim().toLowerCase();
     if (verdict === 'fp') {
-      return fallback(base, 'fp_verdict_guard', iocType, 0);
+      const out = fallback(base, 'fp_verdict_guard');
+      out.llm_risk_adjustment = 0;
+      return out;
     }
 
     const initialTimeout = Math.max(Number(timeoutMsOverride || timeoutMs), 1000);
@@ -466,16 +421,20 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const secondTimeout = initialTimeout + 5000;
 
     async function singleAttempt(requestTimeoutMs) {
-      let lastNormalized = null;
-      for (let i = 0; i < 2; i += 1) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
-        try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+      try {
+        const incidentPayload = buildIncidentPayload(incident);
         const payload = {
           model,
           stream: false,
           format: 'json',
-          prompt: `${buildPromptByType(iocType)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
+          options: {
+            temperature: Number.isFinite(llmTemperature) ? llmTemperature : 0.2,
+            num_ctx: llmNumCtx,
+            num_predict: llmNumPredict
+          },
+          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
@@ -495,34 +454,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           return { ok: false, kind: 'parse', reason: 'invalid_json' };
         }
 
-        const normalized = normalizeAdvisorOutput(modelJson, 'ok');
-        if (!normalized.reasonValid) {
-          logger.warn({
-            incident_id: incident?.id || incident?.incident_id || null,
-            reason_validation_failed: true,
-            llm_response: modelJson
-          });
-          lastNormalized = normalized;
-          continue;
-        }
-        return { ok: true, normalized };
-        } catch (err) {
-          if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
-          return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
-        } finally {
-          clearTimeout(timer);
-        }
+        return { ok: true, normalized: normalizeAdvisorOutput(modelJson, 'ok') };
+      } catch (err) {
+        if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
+        return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
+      } finally {
+        clearTimeout(timer);
       }
-      const fallbackReason = buildReasonFallback(incidentPayload?.ioc_type);
-      return {
-        ok: true,
-        normalized: {
-          confidence: lastNormalized?.confidence ?? 0,
-          reason: fallbackReason,
-          reasonValidation: { valid: true, code: 'fallback_applied' },
-          reasonValid: true
-        }
-      };
     }
 
     const first = await singleAttempt(initialTimeout);
@@ -534,41 +472,26 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     }
 
     if (!result.ok) {
-      return fallback(base, result.reason || 'fallback', iocType, deterministicAdjustment);
+      return fallback(base, result.reason || 'fallback');
     }
 
     const normalized = result.normalized;
-    const reasonForUi = buildFinalReason(normalized.reason, {
-      iocType,
-      activity: incidentPayload?.activity,
-      isLowConfidence: normalized.confidence < minConfidenceToApplyAdjustment
-    });
-    const confidenceGatedAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
-    const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, reasonForUi);
-    const isLowConfidence = normalized.confidence < minConfidenceToApplyAdjustment;
     await setCached({
       incidentId: incident?.id || incident?.incident_id,
       version,
       value: {
-        deterministic_adjustment: deterministicAdjustment,
-        effective_adjustment: effectiveAdjustment,
-        confidence: normalized.confidence,
-        reason: reasonForUi,
-        activity: incidentPayload?.activity || null,
-        low_confidence: isLowConfidence,
-        ioc_type: iocType,
+        ...normalized,
         llm_last_updated_at: new Date().toISOString(),
         llm_version: version || null
       }
     });
 
-    const finalRisk = computeFinalRisk(base, effectiveAdjustment);
+    const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
     return {
       risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: effectiveAdjustment,
+      llm_risk_adjustment: normalized.adjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: reasonForUi,
-      llm_low_confidence: isLowConfidence,
+      llm_risk_reason: normalized.reason,
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
       final_risk_score: Number(finalRisk.toFixed(2))
