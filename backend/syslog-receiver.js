@@ -253,7 +253,43 @@ function parseFortiTraffic(line) {
     parsed_ip_private: dstIp ? dstIpPrivate : srcIpPrivate,
     ioc_ip: dstIp && dstIpPrivate === false ? dstIp : null,
     ioc_ip_secondary: srcIp && srcIpPrivate === false ? srcIp : null,
-    ioc_query: null
+    ioc_query: null,
+    context: {
+      srcip: srcIp,
+      dstip: dstIp,
+      dstport: kv.dstport || null,
+      service: kv.service || null,
+      action: kv.action || null,
+      sentbyte: kv.sentbyte || null,
+      rcvdbyte: kv.rcvdbyte || null
+    }
+  };
+}
+
+function parseDnsKv(line) {
+  const raw = normalizeTail(line);
+  if (!/(?:^|\s)type=dns(?:\s|$)/i.test(raw)) return null;
+  const kv = parseKvPairs(raw);
+  const query = (kv.query || '').toLowerCase() || null;
+  const responseIp = kv.response_ip || kv.responseip || null;
+  const clientIp = kv.client_ip || kv.clientip || null;
+  if (!query && !responseIp) return null;
+  const responseIsPublic = responseIp && !isPrivateIPv4(responseIp);
+  return {
+    parser_source: 'dns_kv',
+    parsed_ip: responseIp || clientIp || null,
+    parsed_query: query,
+    parsed_ip_private: responseIp ? isPrivateIPv4(responseIp) : (clientIp ? isPrivateIPv4(clientIp) : null),
+    ioc_ip: responseIsPublic ? responseIp : null,
+    ioc_query: query,
+    context: {
+      activity_type: 'dns',
+      query,
+      query_type: kv.query_type || null,
+      response_ip: responseIp,
+      client_ip: clientIp,
+      raw_source: 'syslog'
+    }
   };
 }
 
@@ -287,7 +323,7 @@ function parseSyslogLine(line, sourceIp) {
     out.message = normalizeTail(m[3] || raw);
   }
 
-  const parsed = parseFortiTraffic(raw) || parseMicrosoftDnsDebug(raw);
+  const parsed = parseFortiTraffic(raw) || parseDnsKv(raw) || parseMicrosoftDnsDebug(raw);
   out.parser_source = parsed?.parser_source || 'unknown';
   out.parsed_ip = parsed?.parsed_ip || null;
   out.parsed_query = parsed?.parsed_query || null;

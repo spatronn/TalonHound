@@ -216,9 +216,20 @@ function collectLookupTuplesForBatch(chRows) {
   return tupleList;
 }
 
+function parseKv(raw) {
+  const out = {};
+  const re = /(\w+)=((?:"[^"]*")|\S+)/g;
+  let m;
+  while ((m = re.exec(String(raw || ''))) !== null) {
+    out[m[1]] = m[2].startsWith('"') && m[2].endsWith('"') ? m[2].slice(1, -1) : m[2];
+  }
+  return out;
+}
+
 function rowToMatchEvents(r, lookupMap) {
   const out = [];
   const ingestMs = r.ingest_time ? new Date(r.ingest_time).getTime() : 0;
+  const kv = parseKv(r.raw || '');
   for (const obs of expandRowObservables(r)) {
     const hit = matchObsToLookup(obs, lookupMap);
     if (!hit) continue;
@@ -243,6 +254,16 @@ function rowToMatchEvents(r, lookupMap) {
         parsed_ip: r.parsed_ip || null,
         ioc_query: r.ioc_query || null,
         ioc_ip: r.ioc_ip || null,
+        response_ip: kv.response_ip || kv.responseip || null,
+        client_ip: kv.client_ip || kv.clientip || null,
+        query_type: kv.query_type || null,
+        action: kv.action || null,
+        srcip: kv.srcip || null,
+        dstip: kv.dstip || null,
+        dstport: kv.dstport || null,
+        service: kv.service || null,
+        sentbyte: kv.sentbyte || null,
+        rcvdbyte: kv.rcvdbyte || null,
         processing_path: 'realtime',
         observable_merge_type: obs.type,
         detection_type: 'realtime',
@@ -313,6 +334,7 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
       ioc_ip,
       ioc_query,
       ifNull(merged_observables, '') AS merged_observables,
+      ifNull(raw, '') AS raw,
       toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
     FROM default.syslog_logs
     WHERE (
@@ -349,6 +371,7 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
       ioc_ip,
       ioc_query,
       ifNull(merged_observables, '') AS merged_observables,
+      ifNull(raw, '') AS raw,
       toString(cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
     FROM default.syslog_logs
     WHERE ingest_time >= now() - INTERVAL ${win} SECOND
