@@ -1,4 +1,6 @@
-import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
+import { buildIncidentVersion } from './llmRiskCommon.js';
+import { buildLlmAdvisorPayload } from './llmAdvisor.js';
+import { normalizeIocType } from './activityBuilder.js';
 
 const ALLOWED_ADJUSTMENTS = new Set([-10, -5, 0, 5, 10]);
 const logger = console;
@@ -157,263 +159,40 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
 }
 
 function buildGenericPrompt() {
-  return `You are a cybersecurity risk assistant. Return a small adjustment score only.
+  return `You are a cybersecurity risk assistant. Return only a small risk adjustment.
 Rules:
-- Return ONLY JSON
+- Return ONLY JSON.
 - adjustment must be one of: -10, -5, 0, +5, +10
-- Never claim facts not present in Incident Data
-- Do not mention blacklist
-- Reason should focus on: ioc_type, total_hits/hits, event_count, observed_hosts/unique_hosts, duration, persistence
-- Do not just describe the data.
-- Always explain WHY the adjustment was given.
-- The explanation must connect observed signals to the final decision.
-- Reason format is mandatory: <Observation> + <Conclusion>
+- Never claim facts not present in Incident Data.
+- Do not mention blacklist status.
+- Use the unified activity model fields:
+  - activity.type
+  - activity.volume
+  - activity.unique_hosts
+  - activity.persistence
+  - activity.has_execution
+  - activity.is_blocked
+  - activity.signals
+- Core risk logic:
+  - has_execution => risk increases strongly
+  - is_blocked => risk reduces
+  - high volume alone is not enough; combine with spread/persistence/execution
+  - higher unique_hosts => risk increases
+  - higher persistence => risk increases
+- DNS special rule:
+  - DNS only (no execution) is weak
+  - DNS + connection/execution is strong
+  - DNS + blocked tends to lower risk
+- Reason must be 1-2 sentences and include observation + conclusion.
 - If adjustment > 0, reason must explicitly say risk increases.
 - If adjustment < 0, reason must explicitly say risk reduces.
 - If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
-- Keep reason to 1-2 sentences max with no repetition.
 Output:
 { "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
-function buildDomainPrompt() {
-  return `DOMAIN IOC ANALYSIS RULES:
-- Domain IOC incidents must be evaluated using DNS behavior, not accepted/blocked traffic.
-- DNS queries to suspicious or matched IOC domains are meaningful security signals.
-- Use total_hits/hits as the main volume signal.
-- Use event_count only as the number of sampled/correlated detection events, not as total activity volume.
-- Multiple observed hosts increase concern.
-- Persistence over time increases concern.
-- Repeated DNS queries over a long duration may indicate beaconing, malware communication, or misconfigured repeated access.
-- DNS behavior must be interpreted, not only described.
-- High DNS volume with persistence should be interpreted as possible beaconing or automated communication.
-- Do not mention blacklist status.
-- Do not decrease risk when DNS volume is high or persistent.
-- Do not just describe the data.
-- Always explain WHY the adjustment was given.
-- The explanation must connect observed signals to the final decision.
-- Reason format is mandatory: <Observation> + <Conclusion>
-- If adjustment > 0, reason must explicitly say risk increases.
-- If adjustment < 0, reason must explicitly say risk reduces.
-- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
-- Keep reason to 1-2 sentences max with no repetition.
-Increase risk if:
-- total_hits is high
-- observed_hosts >= 2
-- duration is long
-- repeated DNS queries are observed
-Return neutral if:
-- total_hits is low
-- single host
-- short duration
-- no persistence
-Decrease risk only if:
-- there is clear evidence of benign/test activity
-- very low volume and no persistence
-Return ONLY JSON:
-{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
-}
-
-function buildIpPrompt() {
-  return `IP IOC ANALYSIS RULES:
-- accepted/blocked logic applies only for IP/network IOC.
-- Use accepted_connections, blocked_connections, inbound_events, outbound_events, unique_hosts/observed_hosts, and persistence.
-- Do not mention blacklist status.
-- Do not just describe the data.
-- Always explain WHY the adjustment was given.
-- The explanation must connect observed signals to the final decision.
-- Reason format is mandatory: <Observation> + <Conclusion>
-- If adjustment > 0, reason must explicitly say risk increases.
-- If adjustment < 0, reason must explicitly say risk reduces.
-- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
-- Keep reason to 1-2 sentences max with no repetition.
-Increase risk:
-- accepted traffic is meaningful
-- multiple hosts affected
-- persistent activity over time
-Decrease risk:
-- mostly blocked traffic
-- clear scanning/noise pattern with low persistence
-Return ONLY JSON:
-{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
-}
-
-function buildUrlPrompt() {
-  return `URL IOC ANALYSIS RULES:
-- Focus on url_requests/request_count, successful access, unique users/hosts, persistence, and suspicious path patterns.
-- Do not mention blacklist status.
-- Do not just describe the data.
-- Always explain WHY the adjustment was given.
-- The explanation must connect observed signals to the final decision.
-- Reason format is mandatory: <Observation> + <Conclusion>
-- If adjustment > 0, reason must explicitly say risk increases.
-- If adjustment < 0, reason must explicitly say risk reduces.
-- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
-- Keep reason to 1-2 sentences max with no repetition.
-Increase risk:
-- successful and repeated URL access
-- multiple hosts/users
-- persistent activity or suspicious path behavior
-Decrease risk:
-- very low request volume and no persistence
-Return ONLY JSON:
-{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
-}
-
-function buildHashPrompt() {
-  return `HASH IOC ANALYSIS RULES:
-- Focus on affected_hosts, file_observations, execution evidence, and persistence/spread behavior.
-- Do not mention blacklist status.
-- Do not just describe the data.
-- Always explain WHY the adjustment was given.
-- The explanation must connect observed signals to the final decision.
-- Reason format is mandatory: <Observation> + <Conclusion>
-- If adjustment > 0, reason must explicitly say risk increases.
-- If adjustment < 0, reason must explicitly say risk reduces.
-- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
-- Keep reason to 1-2 sentences max with no repetition.
-Increase risk:
-- multiple affected hosts
-- execution evidence
-- persistence or spread over time
-Decrease risk:
-- single host, very low observations, no spread evidence
-Return ONLY JSON:
-{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
-}
-
-function buildPromptByType(iocType) {
-  if (iocType === 'domain') return buildDomainPrompt();
-  if (iocType === 'ip') return buildIpPrompt();
-  if (iocType === 'url') return buildUrlPrompt();
-  if (iocType === 'hash') return buildHashPrompt();
+function buildPromptByType() {
   return buildGenericPrompt();
-}
-
-function normalizeIocType(raw) {
-  const t = String(raw || '').toLowerCase();
-  if (t === 'ip') return 'ip';
-  if (t === 'domain') return 'domain';
-  if (t === 'url') return 'url';
-  if (['md5', 'sha1', 'sha256', 'hash', 'file_hash'].includes(t)) return 'hash';
-  return 'unknown';
-}
-
-function parseTags(raw) {
-  if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
-  if (typeof raw === 'string' && raw.trim()) {
-    return raw.split(',').map((x) => x.trim()).filter(Boolean);
-  }
-  return [];
-}
-
-function normalizeVerdict(raw) {
-  const v = String(raw || '').toLowerCase();
-  if (v === 'fp') return 'fp';
-  if (v === 'tp') return 'tp';
-  if (v === 'suspicious') return 'suspicious';
-  return 'unknown';
-}
-
-function buildIncidentPayload(incident = {}) {
-  const snapshot = buildIncidentStatsSnapshot(incident);
-  const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
-  const totalHits = Math.max(Number((incident?.hits ?? incident?.total_hits ?? snapshot.total_events) ?? 0), 0);
-  const eventCount = Math.max(Number((incident?.event_count ?? snapshot.total_events) ?? 0), 0);
-  const observedHosts = Math.max(Number((incident?.observed_hosts ?? incident?.asset_count ?? snapshot.unique_hosts) ?? 0), 0);
-  const firstSeenMs = incident?.first_seen ? new Date(incident.first_seen).getTime() : NaN;
-  const lastSeenMs = incident?.last_seen ? new Date(incident.last_seen).getTime() : NaN;
-  const durationMinutes = Number.isFinite(firstSeenMs) && Number.isFinite(lastSeenMs) && lastSeenMs >= firstSeenMs
-    ? Math.round((lastSeenMs - firstSeenMs) / 60000)
-    : 0;
-
-  const base = {
-    ioc: String(incident?.ioc_value || incident?.observable_value || ''),
-    ioc_type: iocType,
-    activity_type: iocType === 'domain' ? 'dns' : iocType,
-    first_seen: incident?.first_seen || null,
-    last_seen: incident?.last_seen || null,
-    duration_minutes: durationMinutes,
-    history: {
-      previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
-      previous_verdict: normalizeVerdict(incident?.previous_verdict)
-    }
-  };
-
-  if (iocType === 'domain') {
-    return {
-      ...base,
-      stats: {
-        total_hits: totalHits,
-        hits: totalHits,
-        dns_queries: totalHits,
-        event_count: eventCount,
-        observed_hosts: observedHosts,
-        unique_hosts: observedHosts,
-        duration_minutes: durationMinutes
-      }
-    };
-  }
-
-  if (iocType === 'ip') {
-    return {
-      ...base,
-      stats: {
-        total_hits: totalHits,
-        event_count: eventCount,
-        observed_hosts: observedHosts,
-        unique_hosts: observedHosts,
-        accepted_connections: snapshot.accepted_connections,
-        blocked_connections: snapshot.blocked_connections,
-        inbound_events: Math.max(Number(incident?.inbound_events || 0), 0),
-        outbound_events: Math.max(Number(incident?.outbound_events || 0), 0),
-        duration_minutes: durationMinutes
-      }
-    };
-  }
-
-  if (iocType === 'url') {
-    return {
-      ...base,
-      stats: {
-        total_hits: totalHits,
-        event_count: eventCount,
-        url_requests: totalHits,
-        successful_access: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
-        observed_hosts: observedHosts,
-        unique_hosts: observedHosts,
-        duration_minutes: durationMinutes
-      }
-    };
-  }
-
-  if (iocType === 'hash') {
-    return {
-      ...base,
-      stats: {
-        total_hits: totalHits,
-        event_count: eventCount,
-        file_observations: totalHits,
-        affected_hosts: observedHosts,
-        execution_evidence: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
-        persistence_signals: Math.max(Number(incident?.previous_incident_count || 0), 0),
-        duration_minutes: durationMinutes
-      }
-    };
-  }
-
-  return {
-    ...base,
-    stats: {
-      total_hits: totalHits,
-      event_count: eventCount,
-      observed_hosts: observedHosts,
-      unique_hosts: observedHosts,
-      accepted_connections: snapshot.accepted_connections,
-      blocked_connections: snapshot.blocked_connections,
-      duration_minutes: durationMinutes
-    }
-  };
 }
 
 export function createLlmRiskAdvisor({ redis, queue } = {}) {
@@ -530,7 +309,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const secondTimeout = initialTimeout + 5000;
 
     async function singleAttempt(requestTimeoutMs) {
-      const incidentPayload = buildIncidentPayload(incident);
+      const incidentPayload = buildLlmAdvisorPayload(incident);
       let lastNormalized = null;
       for (let i = 0; i < 2; i += 1) {
         const controller = new AbortController();
@@ -540,7 +319,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           model,
           stream: false,
           format: 'json',
-          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
+          prompt: `${buildPromptByType()}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
