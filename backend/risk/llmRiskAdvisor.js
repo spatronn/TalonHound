@@ -60,8 +60,9 @@ function extractJson(text) {
   }
 }
 
-function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
+function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData = null) {
   const parsed = raw && typeof raw === 'object' ? raw : {};
+  const data = incidentData && typeof incidentData === 'object' ? incidentData : {};
   let confidence = normalizeConfidence(parsed.confidence);
   let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
   const rawModelAdjustment = normalizeAdjustment(parsed.adjustment ?? parsed.risk_adjustment);
@@ -76,31 +77,64 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const reducing = Array.isArray(parsed.risk_reducing_factors) ? parsed.risk_reducing_factors.map((x) => String(x)) : [];
   const evidenceText = `${reason} ${drivers.join(' ')}`.toLowerCase();
 
-  const hasHighVolume = /(high total_hits|high volume|many queries|high dns|high hits)/i.test(evidenceText);
-  const hasMultipleHosts = /(multiple hosts|many hosts|multiple observed hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
-  const hasLongDuration = /(long duration|persistence|persistent|over several hours|over time|repeated over long duration)/i.test(evidenceText);
+  const stats = data?.stats || {};
+  const iocType = String(data?.ioc_type || '').toLowerCase();
+  const activityType = String(data?.activity_type || '').toLowerCase();
+  const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+  const highVolumeMinHits = Math.max(Number(process.env.AI_INSIGHT_HIGH_VOLUME_MIN_HITS || 1000), 1);
+  const multipleHostsMin = Math.max(Number(process.env.AI_INSIGHT_MULTIPLE_HOSTS_MIN || 2), 1);
+  const longDurationHoursMin = Math.max(Number(process.env.AI_INSIGHT_LONG_DURATION_MIN_HOURS || 24), 1);
+  const dnsLongDurationMinMinutes = Math.max(Number(process.env.AI_INSIGHT_DNS_LONG_DURATION_MIN_MINUTES || 720), 1);
+
+  const totalHits = toNum(stats.total_hits ?? stats.hits ?? stats.dns_queries ?? stats.event_count ?? data.total_hits ?? data.hits ?? data.dns_queries ?? data.event_count);
+  const hostCount = toNum(stats.observed_hosts ?? stats.unique_hosts ?? stats.affected_hosts ?? data.observed_hosts ?? data.unique_hosts ?? data.affected_hosts);
+  const durationMinutesFromField = toNum(stats.duration_minutes ?? data.duration_minutes);
+  const durationHoursFromField = toNum(stats.duration_hours ?? data.duration_hours);
+  const firstSeenMs = data?.first_seen ? new Date(data.first_seen).getTime() : (data?.first_seen_at ? new Date(data.first_seen_at).getTime() : NaN);
+  const lastSeenMs = data?.last_seen ? new Date(data.last_seen).getTime() : (data?.last_seen_at ? new Date(data.last_seen_at).getTime() : NaN);
+  const durationMinutes = durationMinutesFromField > 0
+    ? durationMinutesFromField
+    : (durationHoursFromField > 0 ? durationHoursFromField * 60 : (Number.isFinite(firstSeenMs) && Number.isFinite(lastSeenMs) && lastSeenMs >= firstSeenMs ? (lastSeenMs - firstSeenMs) / 60000 : 0));
+
+  const hasHighVolumeMetric = totalHits >= highVolumeMinHits;
+  const hasMultipleHostsMetric = hostCount >= multipleHostsMin;
+  const isDnsLike = activityType === 'dns' || iocType === 'domain';
+  const hasLongDurationMetric = isDnsLike
+    ? durationMinutes >= dnsLongDurationMinMinutes
+    : (durationHoursFromField > 0 ? durationHoursFromField >= longDurationHoursMin : (durationMinutes / 60) >= longDurationHoursMin);
+
+  const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0;
+  const hasStrongMaliciousContextMetric = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText)
+    || String(data?.history?.previous_verdict || '').toLowerCase() === 'tp';
+  const hasBenignEvidenceMetric = /(false positive|\bfp\b|allowlisted|trusted benign|known internal test|smoke test|benign destination|internal security test)/i.test(evidenceText)
+    || reducing.some((x) => /(allowlisted|trusted|benign|internal test|false positive|fp)/i.test(String(x)))
+    || String(data?.history?.previous_verdict || '').toLowerCase() === 'fp';
+
+  // text fallback only when metrics are unavailable
+  const hasHighVolume = totalHits > 0 ? hasHighVolumeMetric : /(high total_hits|high volume|many queries|high dns|high hits)/i.test(evidenceText);
+  const hasMultipleHosts = hostCount > 0 ? hasMultipleHostsMetric : /(multiple hosts|many hosts|multiple observed hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
+  const hasLongDuration = durationMinutes > 0 ? hasLongDurationMetric : /(long duration|persistence|persistent|over several hours|over time|repeated over long duration)/i.test(evidenceText);
   const hasRepeatedOnly = /(repeated dns|repeated)/i.test(evidenceText);
-  const hasAcceptedOrSuccessful = /(accepted|successful)/i.test(evidenceText);
-  const hasTpOrHighConfidenceOrMalicious = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText);
-  const explicitBenign = /(false positive|\bfp\b|allowlisted|trusted benign|known internal test|smoke test|benign destination|internal security test)/i.test(evidenceText)
-    || reducing.some((x) => /(allowlisted|trusted|benign|internal test|false positive|fp)/i.test(String(x)));
+  const hasAcceptedOrSuccessful = hasAcceptedOrSuccessfulMetric || /(accepted|successful)/i.test(evidenceText);
+  const hasStrongMaliciousContext = hasStrongMaliciousContextMetric;
+  const explicitBenign = hasBenignEvidenceMetric;
 
   let floor = 0;
   if (!explicitBenign) {
     if (hasHighVolume && hasMultipleHosts && hasLongDuration) floor = 5;
-    if (floor >= 5 && (hasAcceptedOrSuccessful || hasTpOrHighConfidenceOrMalicious)) floor = 10;
-    if (!hasHighVolume && !hasMultipleHosts && hasRepeatedOnly) floor = Math.max(floor, 0);
+    if (floor >= 5 && (hasAcceptedOrSuccessful || hasStrongMaliciousContext)) floor = 10;
   }
 
   let normalizationReason = null;
   if (!explicitBenign && adjustment < floor) {
     adjustment = floor;
-    confidence = Math.min(Math.max(confidence, 0.6), 0.6);
+    confidence = Math.min(confidence || 0.6, 0.6);
     normalizationReason = 'deterministic_guardrail_floor';
-    reason = appendOnce(reason, 'Final adjustment was normalized by deterministic guardrails because the stated drivers are risk-increasing.').slice(0, 240);
+    reason = appendOnce(reason, 'Final adjustment was normalized by deterministic guardrails based on incident metrics.').slice(0, 240);
   } else if (!explicitBenign && rawModelAdjustment < 0 && floor === 0 && (hasHighVolume || hasRepeatedOnly || hasMultipleHosts || hasLongDuration)) {
     adjustment = 0;
-    confidence = Math.min(Math.max(confidence, 0.6), 0.6);
+    confidence = Math.min(confidence || 0.6, 0.6);
     normalizationReason = 'negative_neutralized';
     reason = appendOnce(reason, 'Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.').slice(0, 240);
   }
@@ -111,12 +145,24 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
     reason,
     raw_model_adjustment: rawModelAdjustment,
     normalization_reason: normalizationReason,
+    hasHighVolume,
+    hasMultipleHosts,
+    hasLongDuration,
+    hasAcceptedOrSuccessfulTraffic: hasAcceptedOrSuccessful,
+    hasStrongMaliciousContext,
+    hasBenignEvidence: explicitBenign,
+    thresholds_used: {
+      AI_INSIGHT_HIGH_VOLUME_MIN_HITS: highVolumeMinHits,
+      AI_INSIGHT_MULTIPLE_HOSTS_MIN: multipleHostsMin,
+      AI_INSIGHT_LONG_DURATION_MIN_HOURS: longDurationHoursMin,
+      AI_INSIGHT_DNS_LONG_DURATION_MIN_MINUTES: dnsLongDurationMinMinutes
+    },
     detected_positive_factors: [
       hasHighVolume ? 'high_volume' : null,
       hasMultipleHosts ? 'multiple_hosts' : null,
       hasLongDuration ? 'long_duration_or_persistence' : null,
       hasAcceptedOrSuccessful ? 'accepted_or_successful' : null,
-      hasTpOrHighConfidenceOrMalicious ? 'tp_or_high_confidence_or_malicious' : null
+      hasStrongMaliciousContext ? 'strong_malicious_context' : null
     ].filter(Boolean),
     detected_negative_factors: explicitBenign ? ['explicit_benign_or_fp'] : []
   };
@@ -509,7 +555,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           return { ok: false, kind: 'parse', reason: 'invalid_json' };
         }
 
-        return { ok: true, normalized: normalizeAdvisorOutput(modelJson, 'ok') };
+        return { ok: true, normalized: normalizeAdvisorOutput(modelJson, 'ok', incidentPayload) };
       } catch (err) {
         if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
         return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
