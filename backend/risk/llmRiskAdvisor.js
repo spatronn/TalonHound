@@ -40,6 +40,49 @@ function normalizeConfidence(raw) {
   return clamp(c, 0, 1);
 }
 
+function countSentences(text) {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return 0;
+  return cleaned
+    .split(/[.!?]+/g)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .length;
+}
+
+function validateDecisionAwareReason(reason, adjustment) {
+  const text = String(reason || '').trim();
+  const lower = text.toLowerCase();
+  if (!text) return { valid: false, code: 'invalid_reason_empty' };
+
+  // Keep reasons short and analyst-friendly.
+  if (countSentences(text) > 2) return { valid: false, code: 'invalid_reason_too_long' };
+
+  if (
+    /blacklist/.test(lower) ||
+    /no blacklist hits/.test(lower) ||
+    /domain not in blacklist/.test(lower)
+  ) {
+    return { valid: false, code: 'invalid_reason_blacklist_reference' };
+  }
+
+  // Enforce observation + conclusion structure with causal language.
+  const hasCausalLink = /(suggests|indicates|therefore|which|because|thus|so)\b/i.test(text);
+  if (!hasCausalLink) return { valid: false, code: 'invalid_reason_observation_only' };
+
+  if (adjustment > 0 && !/increase(?:s|d)? risk|higher risk|elevates? risk/i.test(text)) {
+    return { valid: false, code: 'invalid_reason_adjustment_mismatch_positive' };
+  }
+  if (adjustment < 0 && !/reduce(?:s|d)? risk|lower risk|decreases? risk/i.test(text)) {
+    return { valid: false, code: 'invalid_reason_adjustment_mismatch_negative' };
+  }
+  if (adjustment === 0 && !/inconclusive|neutral/i.test(text)) {
+    return { valid: false, code: 'invalid_reason_adjustment_mismatch_neutral' };
+  }
+
+  return { valid: true, code: 'ok' };
+}
+
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
 
@@ -63,13 +106,14 @@ function extractJson(text) {
 function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const confidence = normalizeConfidence(parsed.confidence);
+  const adjustment = normalizeAdjustment(parsed.adjustment);
   let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
-
-  if (/blacklist/i.test(reason)) {
+  const reasonValidation = validateDecisionAwareReason(reason, adjustment);
+  if (!reasonValidation.valid) {
     return {
       adjustment: 0,
       confidence: 0,
-      reason: 'invalid_reason_blacklist_reference'
+      reason: reasonValidation.code
     };
   }
 
@@ -82,7 +126,7 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   }
 
   return {
-    adjustment: normalizeAdjustment(parsed.adjustment),
+    adjustment,
     confidence,
     reason
   };
@@ -96,6 +140,14 @@ Rules:
 - Never claim facts not present in Incident Data
 - Do not mention blacklist
 - Reason should focus on: ioc_type, total_hits/hits, event_count, observed_hosts/unique_hosts, duration, persistence
+- Do not just describe the data.
+- Always explain WHY the adjustment was given.
+- The explanation must connect observed signals to the final decision.
+- Reason format is mandatory: <Observation> + <Conclusion>
+- If adjustment > 0, reason must explicitly say risk increases.
+- If adjustment < 0, reason must explicitly say risk reduces.
+- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
+- Keep reason to 1-2 sentences max with no repetition.
 Output:
 { "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
@@ -109,8 +161,18 @@ function buildDomainPrompt() {
 - Multiple observed hosts increase concern.
 - Persistence over time increases concern.
 - Repeated DNS queries over a long duration may indicate beaconing, malware communication, or misconfigured repeated access.
+- DNS behavior must be interpreted, not only described.
+- High DNS volume with persistence should be interpreted as possible beaconing or automated communication.
 - Do not mention blacklist status.
 - Do not decrease risk when DNS volume is high or persistent.
+- Do not just describe the data.
+- Always explain WHY the adjustment was given.
+- The explanation must connect observed signals to the final decision.
+- Reason format is mandatory: <Observation> + <Conclusion>
+- If adjustment > 0, reason must explicitly say risk increases.
+- If adjustment < 0, reason must explicitly say risk reduces.
+- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
+- Keep reason to 1-2 sentences max with no repetition.
 Increase risk if:
 - total_hits is high
 - observed_hosts >= 2
@@ -133,6 +195,14 @@ function buildIpPrompt() {
 - accepted/blocked logic applies only for IP/network IOC.
 - Use accepted_connections, blocked_connections, inbound_events, outbound_events, unique_hosts/observed_hosts, and persistence.
 - Do not mention blacklist status.
+- Do not just describe the data.
+- Always explain WHY the adjustment was given.
+- The explanation must connect observed signals to the final decision.
+- Reason format is mandatory: <Observation> + <Conclusion>
+- If adjustment > 0, reason must explicitly say risk increases.
+- If adjustment < 0, reason must explicitly say risk reduces.
+- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
+- Keep reason to 1-2 sentences max with no repetition.
 Increase risk:
 - accepted traffic is meaningful
 - multiple hosts affected
@@ -148,6 +218,14 @@ function buildUrlPrompt() {
   return `URL IOC ANALYSIS RULES:
 - Focus on url_requests/request_count, successful access, unique users/hosts, persistence, and suspicious path patterns.
 - Do not mention blacklist status.
+- Do not just describe the data.
+- Always explain WHY the adjustment was given.
+- The explanation must connect observed signals to the final decision.
+- Reason format is mandatory: <Observation> + <Conclusion>
+- If adjustment > 0, reason must explicitly say risk increases.
+- If adjustment < 0, reason must explicitly say risk reduces.
+- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
+- Keep reason to 1-2 sentences max with no repetition.
 Increase risk:
 - successful and repeated URL access
 - multiple hosts/users
@@ -162,6 +240,14 @@ function buildHashPrompt() {
   return `HASH IOC ANALYSIS RULES:
 - Focus on affected_hosts, file_observations, execution evidence, and persistence/spread behavior.
 - Do not mention blacklist status.
+- Do not just describe the data.
+- Always explain WHY the adjustment was given.
+- The explanation must connect observed signals to the final decision.
+- Reason format is mandatory: <Observation> + <Conclusion>
+- If adjustment > 0, reason must explicitly say risk increases.
+- If adjustment < 0, reason must explicitly say risk reduces.
+- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
+- Keep reason to 1-2 sentences max with no repetition.
 Increase risk:
 - multiple affected hosts
 - execution evidence
@@ -418,6 +504,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const secondTimeout = initialTimeout + 5000;
 
     async function singleAttempt(requestTimeoutMs) {
+      let correctionHint = '';
+      for (let i = 0; i < 2; i += 1) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
       try {
@@ -426,7 +514,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           model,
           stream: false,
           format: 'json',
-          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
+          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}${correctionHint}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
@@ -446,13 +534,21 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           return { ok: false, kind: 'parse', reason: 'invalid_json' };
         }
 
-        return { ok: true, normalized: normalizeAdvisorOutput(modelJson, 'ok') };
+        const normalized = normalizeAdvisorOutput(modelJson, 'ok');
+        if (String(normalized.reason || '').startsWith('invalid_reason_') && i === 0) {
+          correctionHint = `\n\nValidation failure in previous answer: ${normalized.reason}.
+Regenerate with a valid decision-aware reason that links observation to conclusion, aligns with adjustment direction, and does not mention blacklist.`;
+          continue;
+        }
+        return { ok: true, normalized };
       } catch (err) {
         if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
         return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
       } finally {
         clearTimeout(timer);
       }
+      }
+      return { ok: false, kind: 'validation', reason: 'invalid_reason_observation_only' };
     }
 
     const first = await singleAttempt(initialTimeout);
