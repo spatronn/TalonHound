@@ -181,7 +181,56 @@ Output:
 { "confidence": 0-1, "reason": "short explanation" }`;
 }
 
-function buildPromptByType() {
+function buildDomainPrompt() {
+  return `You are a cybersecurity risk assistant for DNS-based activity.
+
+IMPORTANT:
+- DNS activity is the primary signal.
+- DNS queries alone do NOT indicate execution.
+- High DNS query volume + persistence suggests repeated communication patterns.
+- Multiple hosts increase concern.
+
+CRITICAL:
+- Lack of connection or execution does NOT imply low risk.
+- It only means the signal is inconclusive.
+- Do NOT say "low risk" or "safe".
+- Do NOT use accepted/blocked logic (not valid for DNS).
+- Do NOT mention blacklist.
+- Do NOT assume attack stages (no "reconnaissance" unless strong evidence).
+
+Use neutral terms:
+- "suspicious communication pattern"
+- "repeated activity"
+
+Decision logic:
+- DNS only -> inconclusive
+- DNS + persistence -> suspicious but inconclusive
+- DNS + execution -> strong signal
+
+Output:
+{
+  "confidence": 0-1,
+  "reason": "1-2 sentences, observation + conclusion"
+}`;
+}
+
+function buildIpPrompt() {
+  return buildGenericPrompt();
+}
+
+function buildUrlPrompt() {
+  return buildGenericPrompt();
+}
+
+function buildHashPrompt() {
+  return buildGenericPrompt();
+}
+
+function buildPromptByType(iocType) {
+  if (iocType === 'domain') return buildDomainPrompt();
+  if (iocType === 'ip') return buildIpPrompt();
+  if (iocType === 'url') return buildUrlPrompt();
+  if (iocType === 'hash') return buildHashPrompt();
   return buildGenericPrompt();
 }
 
@@ -365,7 +414,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           model,
           stream: false,
           format: 'json',
-          prompt: `${buildPromptByType()}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
+          prompt: `${buildPromptByType(iocType)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
