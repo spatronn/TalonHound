@@ -62,6 +62,11 @@ function validateReason(reason) {
     return { valid: false, code: 'invalid_reason_blacklist_reference' };
   }
 
+  // Avoid unsafe certainty language in ambiguous IOC context.
+  if (/\b(safe|benign)\b/.test(lower)) {
+    return { valid: false, code: 'invalid_reason_overconfident_safe_benign' };
+  }
+
   // Enforce observation + conclusion structure with causal language.
   const hasCausalLink = /(suggests|indicates|therefore|which|because|thus|so)\b/i.test(text);
   if (!hasCausalLink) return { valid: false, code: 'invalid_reason_observation_only' };
@@ -163,6 +168,10 @@ Rules:
   - DNS only (no execution) is weak
   - DNS + connection/execution is strong
   - DNS + blocked tends to lower risk
+  - Lack of execution or connection evidence does NOT imply low risk; it implies inconclusive or uncertain evidence
+- Do not use "safe" or "benign" wording.
+- Do not label DNS-only patterns as low risk when execution/connection is unconfirmed.
+- Prefer terms like: inconclusive, uncertain, unconfirmed activity.
 - Reason must be 1-2 sentences and include observation + conclusion.
 - You do not decide adjustment; deterministic engine decides it.
 Output:
@@ -220,6 +229,21 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     if (/inconclusive|uncertain|low confidence|insufficient/i.test(text)) return text;
     const normalized = /[.!?]$/.test(text) ? text.slice(0, -1) : text;
     return `${normalized}, making the signal inconclusive.`;
+  }
+
+  function enforceDnsReasonGuard(reason, activity = {}) {
+    const text = String(reason || '').trim();
+    const type = String(activity?.type || '').toLowerCase();
+    if (!text || type !== 'dns') return text;
+
+    const hasExecution = Boolean(activity?.has_execution);
+    const lower = text.toLowerCase();
+    const containsUnsafeDnsConclusion = /\blow(?:\s+to\s+moderate)?\s+risk\b|\bsafe\b|\bbenign\b/.test(lower);
+
+    if (hasExecution) return text;
+    if (!containsUnsafeDnsConclusion) return text;
+
+    return 'Observed DNS query volume and persistence suggest repeated communication behavior, but lack of confirmed connection or execution activity makes the signal inconclusive.';
   }
 
   function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
@@ -399,7 +423,10 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     }
 
     const normalized = result.normalized;
-    const reasonForUi = toUserReason(normalized.reason, iocType);
+    const reasonForUi = enforceDnsReasonGuard(
+      toUserReason(normalized.reason, iocType),
+      incidentPayload?.activity
+    );
     const effectiveAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
     const isLowConfidence = normalized.confidence < minConfidenceToApplyAdjustment;
     await setCached({
