@@ -104,9 +104,16 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData =
     ? durationMinutes >= dnsLongDurationMinMinutes
     : (durationHoursFromField > 0 ? durationHoursFromField >= longDurationHoursMin : (durationMinutes / 60) >= longDurationHoursMin);
 
-  const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0;
+  const relatedIocs = Array.isArray(data?.related_iocs) ? data.related_iocs : [];
+  const relatedAccepted = relatedIocs.some((r) => Number(r?.traffic?.accepted_count || 0) > 0);
+  const relatedInList = relatedIocs.some((r) => r?.related_ioc_in_ioc_list === true);
+  const hasSameHostChain = relatedIocs.some((r) => r?.chain_type === 'same_host_dns_to_connection');
+  const hasEnvChain = relatedIocs.some((r) => r?.chain_type === 'environment_level_related_activity');
+
+  const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0 || relatedAccepted;
   const hasStrongMaliciousContextMetric = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText)
-    || String(data?.history?.previous_verdict || '').toLowerCase() === 'tp';
+    || String(data?.history?.previous_verdict || '').toLowerCase() === 'tp'
+    || relatedInList;
   const hasBenignEvidenceMetric = /(false positive|\bfp\b|allowlisted|trusted benign|known internal test|smoke test|benign destination|internal security test)/i.test(evidenceText)
     || reducing.some((x) => /(allowlisted|trusted|benign|internal test|false positive|fp)/i.test(String(x)))
     || String(data?.history?.previous_verdict || '').toLowerCase() === 'fp';
@@ -122,8 +129,10 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData =
 
   let floor = 0;
   if (!explicitBenign) {
-    if (hasHighVolume && hasMultipleHosts && hasLongDuration) floor = 5;
-    if (floor >= 5 && (hasAcceptedOrSuccessful || hasStrongMaliciousContext)) floor = 10;
+    if (hasEnvChain && relatedAccepted) floor = Math.max(floor, 5);
+    if (hasSameHostChain && relatedAccepted) floor = Math.max(floor, 10);
+    if (hasHighVolume && hasMultipleHosts && hasLongDuration) floor = Math.max(floor, 5);
+    if (floor >= 5 && (hasAcceptedOrSuccessful || hasStrongMaliciousContext)) floor = Math.max(floor, 10);
   }
 
   let normalizationReason = null;
@@ -162,7 +171,9 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData =
       hasMultipleHosts ? 'multiple_hosts' : null,
       hasLongDuration ? 'long_duration_or_persistence' : null,
       hasAcceptedOrSuccessful ? 'accepted_or_successful' : null,
-      hasStrongMaliciousContext ? 'strong_malicious_context' : null
+      hasStrongMaliciousContext ? 'strong_malicious_context' : null,
+      hasSameHostChain ? 'same_host_dns_to_connection' : null,
+      hasEnvChain ? 'environment_level_related_activity' : null
     ].filter(Boolean),
     detected_negative_factors: explicitBenign ? ['explicit_benign_or_fp'] : []
   };
@@ -268,6 +279,10 @@ function buildConsistencyRules() {
 - Negative risk_adjustment is allowed only for explicit benign evidence (FP verdict, known internal test, allowlisted/trusted benign IOC, blocked-only with no successful activity and limited scope, or low-confidence IOC source with no meaningful internal activity).
 - If evidence is mixed/insufficient, use risk_adjustment=0.
 - confidence can be high only when output is internally consistent; use 0.40-0.70 for limited/contradictory evidence.
+- If a domain resolves to an IP that is also an IOC, treat it as linked infrastructure.
+- Accepted traffic to related IOC IP is stronger than DNS-only activity.
+- same_host_dns_to_connection implies stronger evidence than environment_level_related_activity.
+- Do not overclaim; use "possible communication" unless evidence is strong.
 - Use risk_adjustment range -20..20.
 Return ONLY JSON:
 {
@@ -322,6 +337,7 @@ function buildIncidentPayload(incident = {}) {
     ioc: String(incident?.ioc_value || incident?.observable_value || ''),
     ioc_type: iocType,
     activity_type: iocType === 'domain' ? 'dns' : iocType,
+    related_iocs: Array.isArray(incident?.related_iocs) ? incident.related_iocs : [],
     first_seen: incident?.first_seen || null,
     last_seen: incident?.last_seen || null,
     duration_minutes: durationMinutes,

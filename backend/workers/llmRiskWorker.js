@@ -24,6 +24,89 @@ const pool = new Pool({
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const advisor = createLlmRiskAdvisor({ redis });
 
+async function loadRelatedIocs(activity) {
+  if (!activity?.id || String(activity?.ioc_type || '').toLowerCase() !== 'domain') return [];
+  const lookbackHours = Math.max(Number(process.env.AI_INSIGHT_RELATED_IOC_LOOKBACK_HOURS || 24), 1);
+  const lookforwardHours = Math.max(Number(process.env.AI_INSIGHT_RELATED_IOC_LOOKFORWARD_HOURS || 24), 1);
+
+  const dnsQ = await pool.query(
+    `SELECT
+       COALESCE(NULLIF(m.match_context->>'response_ip',''), NULLIF(m.destination_ip,'')) AS response_ip,
+       MIN(m.event_time) AS first_seen,
+       MAX(m.event_time) AS last_seen,
+       ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(COALESCE(m.match_context->>'client_ip', m.host_name),'')), NULL) AS client_ips
+     FROM ioc_match_events m
+     WHERE m.activity_id = $1::uuid
+       AND LOWER(COALESCE(m.ioc_type,'')) = 'domain'
+     GROUP BY 1
+     HAVING COALESCE(NULLIF(m.match_context->>'response_ip',''), NULLIF(m.destination_ip,'')) ~ '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'`,
+    [activity.id]
+  );
+
+  const out = [];
+  for (const row of dnsQ.rows || []) {
+    const responseIp = row.response_ip;
+    const inIoc = await pool.query(`SELECT 1 FROM ioc_activity WHERE ioc_type='ip' AND ioc_value=$1 LIMIT 1`, [responseIp]);
+
+    const traffic = await pool.query(
+      `SELECT
+         SUM(CASE WHEN LOWER(COALESCE(match_context->>'action','')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_count,
+         SUM(CASE WHEN LOWER(COALESCE(match_context->>'action','')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_count,
+         MIN(event_time) AS first_seen,
+         MAX(event_time) AS last_seen,
+         ARRAY_REMOVE(ARRAY_AGG(DISTINCT NULLIF(COALESCE(match_context->>'srcip', host_name),'')), NULL) AS internal_hosts,
+         ARRAY_REMOVE(ARRAY_AGG(DISTINCT (match_context->>'service')), NULL) AS services,
+         ARRAY_REMOVE(ARRAY_AGG(DISTINCT (match_context->>'dstport')), NULL) AS ports,
+         SUM(COALESCE(NULLIF(match_context->>'sentbyte','')::bigint,0))::bigint AS sent_bytes,
+         SUM(COALESCE(NULLIF(match_context->>'rcvdbyte','')::bigint,0))::bigint AS received_bytes
+       FROM ioc_match_events
+       WHERE event_time BETWEEN ($2::timestamptz - ($4 || ' hours')::interval) AND ($3::timestamptz + ($5 || ' hours')::interval)
+         AND (
+           COALESCE(match_context->>'dstip', destination_ip) = $1
+           OR COALESCE(match_context->>'srcip', host_name) = $1
+         )`,
+      [responseIp, activity.first_seen, activity.last_seen, lookbackHours, lookforwardHours]
+    );
+
+    const t = traffic.rows?.[0] || {};
+    const clientIps = row.client_ips || [];
+    const internalHosts = t.internal_hosts || [];
+    const sameHost = clientIps.some((ip) => internalHosts.includes(ip));
+
+    out.push({
+      relationship: 'dns_response_ip',
+      source_ioc: activity.ioc_value,
+      source_ioc_type: 'domain',
+      related_ioc: responseIp,
+      related_ioc_type: 'ip',
+      related_ioc_in_ioc_list: inIoc.rowCount > 0,
+      chain_type: sameHost ? 'same_host_dns_to_connection' : 'environment_level_related_activity',
+      dns: {
+        query: activity.ioc_value,
+        response_ip: responseIp,
+        client_ips: clientIps,
+        first_seen: row.first_seen,
+        last_seen: row.last_seen
+      },
+      traffic: {
+        accepted_count: Number(t.accepted_count || 0),
+        blocked_count: Number(t.blocked_count || 0),
+        unique_internal_hosts: internalHosts.length,
+        internal_hosts: internalHosts,
+        ports: (t.ports || []).map((x) => Number(x)).filter(Boolean),
+        services: t.services || [],
+        first_seen: t.first_seen || null,
+        last_seen: t.last_seen || null,
+        sent_bytes: Number(t.sent_bytes || 0),
+        received_bytes: Number(t.received_bytes || 0)
+      },
+      risk_signal: sameHost ? 'high' : 'medium'
+    });
+  }
+
+  return out;
+}
+
 async function loadIncident(id) {
   const q = await pool.query(
     `WITH ev AS (
@@ -94,7 +177,10 @@ async function loadIncident(id) {
     [id]
   );
 
-  return q.rows?.[0] || null;
+  const incident = q.rows?.[0] || null;
+  if (!incident) return null;
+  incident.related_iocs = await loadRelatedIocs(incident);
+  return incident;
 }
 
 const worker = new Worker(
