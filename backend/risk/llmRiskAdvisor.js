@@ -1,6 +1,7 @@
 import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
 
 const ALLOWED_ADJUSTMENTS = new Set([-10, -5, 0, 5, 10]);
+const logger = console;
 
 function toBool(v, defaultValue = false) {
   if (v == null) return defaultValue;
@@ -83,6 +84,42 @@ function validateDecisionAwareReason(reason, adjustment) {
   return { valid: true, code: 'ok' };
 }
 
+function buildReasonFallback(iocType) {
+  if (iocType === 'domain') {
+    return 'Observed DNS activity across multiple hosts suggests repeated communication behavior, but available signals are inconclusive.';
+  }
+  if (iocType === 'ip') {
+    return 'Network activity observed, but signals are insufficient to determine a strong risk adjustment.';
+  }
+  return 'Observed activity does not provide sufficient evidence for a strong risk adjustment.';
+}
+
+function isInternalReason(reason) {
+  const text = String(reason || '').trim().toLowerCase();
+  if (!text) return true;
+  return [
+    /^invalid_reason_/,
+    /^validation_failed$/,
+    /^parse_error$/,
+    /^invalid_json$/,
+    /^low_confidence$/,
+    /^fallback$/,
+    /^disabled$/,
+    /^fp_verdict_guard$/,
+    /^timeout$/,
+    /^endpoint_unreachable$/,
+    /^cache$/,
+    /^ok$/,
+    /^llm_http_/
+  ].some((pattern) => pattern.test(text));
+}
+
+function toUserReason(reason, iocType) {
+  const text = String(reason || '').trim();
+  if (isInternalReason(text)) return buildReasonFallback(iocType);
+  return text.slice(0, 240);
+}
+
 function extractJson(text) {
   if (!text || typeof text !== 'string') return null;
 
@@ -109,26 +146,13 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const adjustment = normalizeAdjustment(parsed.adjustment);
   let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
   const reasonValidation = validateDecisionAwareReason(reason, adjustment);
-  if (!reasonValidation.valid) {
-    return {
-      adjustment: 0,
-      confidence: 0,
-      reason: reasonValidation.code
-    };
-  }
-
-  if (confidence < 0.6) {
-    return {
-      adjustment: 0,
-      confidence,
-      reason: reason || 'low_confidence'
-    };
-  }
 
   return {
-    adjustment,
+    adjustment: confidence < 0.6 ? 0 : adjustment,
     confidence,
-    reason
+    reason,
+    reasonValidation,
+    reasonValid: reasonValidation.valid
   };
 }
 
@@ -409,13 +433,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     return clamp(base + weighted, 0, 100);
   }
 
-  function fallback(baseRisk, reason = 'fallback') {
+  function fallback(baseRisk, reason = 'fallback', iocType = 'unknown') {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     return {
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: 0,
       llm_risk_confidence: 0,
-      llm_risk_reason: reason,
+      llm_risk_reason: toUserReason(reason, normalizeIocType(iocType)),
       final_risk_score: Number(base.toFixed(2))
     };
   }
@@ -436,6 +460,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       const normalized = normalizeAdvisorOutput(parsed, 'cache');
+      const iocType = normalizeIocType(parsed?.ioc_type);
       const base = clamp(Number(baseRisk || 0), 0, 100);
       const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
 
@@ -443,7 +468,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         risk_before_llm: Number(base.toFixed(2)),
         llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: normalized.reason,
+        llm_risk_reason: toUserReason(normalized.reason, iocType),
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
         llm_version: parsed?.llm_version || version || null,
         final_risk_score: Number(finalRisk.toFixed(2))
@@ -490,11 +515,12 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
 
   async function evaluateAndCache({ incident, baseRisk, version, force = false, timeoutMsOverride } = {}) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
-    if (!enabled && !force) return fallback(base, 'disabled');
+    const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
+    if (!enabled && !force) return fallback(base, 'disabled', iocType);
 
     const verdict = String(incident?.verdict || '').trim().toLowerCase();
     if (verdict === 'fp') {
-      const out = fallback(base, 'fp_verdict_guard');
+      const out = fallback(base, 'fp_verdict_guard', iocType);
       out.llm_risk_adjustment = 0;
       return out;
     }
@@ -504,17 +530,17 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const secondTimeout = initialTimeout + 5000;
 
     async function singleAttempt(requestTimeoutMs) {
-      let correctionHint = '';
+      const incidentPayload = buildIncidentPayload(incident);
+      let lastNormalized = null;
       for (let i = 0; i < 2; i += 1) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
-      try {
-        const incidentPayload = buildIncidentPayload(incident);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+        try {
         const payload = {
           model,
           stream: false,
           format: 'json',
-          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}${correctionHint}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
+          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
@@ -535,20 +561,34 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         }
 
         const normalized = normalizeAdvisorOutput(modelJson, 'ok');
-        if (String(normalized.reason || '').startsWith('invalid_reason_') && i === 0) {
-          correctionHint = `\n\nValidation failure in previous answer: ${normalized.reason}.
-Regenerate with a valid decision-aware reason that links observation to conclusion, aligns with adjustment direction, and does not mention blacklist.`;
+        if (!normalized.reasonValid) {
+          logger.warn({
+            incident_id: incident?.id || incident?.incident_id || null,
+            reason_validation_failed: true,
+            llm_response: modelJson
+          });
+          lastNormalized = normalized;
           continue;
         }
         return { ok: true, normalized };
-      } catch (err) {
-        if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
-        return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
-      } finally {
-        clearTimeout(timer);
+        } catch (err) {
+          if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
+          return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
+        } finally {
+          clearTimeout(timer);
+        }
       }
-      }
-      return { ok: false, kind: 'validation', reason: 'invalid_reason_observation_only' };
+      const fallbackReason = buildReasonFallback(incidentPayload?.ioc_type);
+      return {
+        ok: true,
+        normalized: {
+          adjustment: lastNormalized?.adjustment ?? 0,
+          confidence: lastNormalized?.confidence ?? 0,
+          reason: fallbackReason,
+          reasonValidation: { valid: true, code: 'fallback_applied' },
+          reasonValid: true
+        }
+      };
     }
 
     const first = await singleAttempt(initialTimeout);
@@ -560,15 +600,19 @@ Regenerate with a valid decision-aware reason that links observation to conclusi
     }
 
     if (!result.ok) {
-      return fallback(base, result.reason || 'fallback');
+      return fallback(base, result.reason || 'fallback', iocType);
     }
 
     const normalized = result.normalized;
+    const reasonForUi = toUserReason(normalized.reason, iocType);
     await setCached({
       incidentId: incident?.id || incident?.incident_id,
       version,
       value: {
-        ...normalized,
+        adjustment: normalized.adjustment,
+        confidence: normalized.confidence,
+        reason: reasonForUi,
+        ioc_type: iocType,
         llm_last_updated_at: new Date().toISOString(),
         llm_version: version || null
       }
@@ -579,7 +623,7 @@ Regenerate with a valid decision-aware reason that links observation to conclusi
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: normalized.adjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: normalized.reason,
+      llm_risk_reason: reasonForUi,
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
       final_risk_score: Number(finalRisk.toFixed(2))
