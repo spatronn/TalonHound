@@ -61,7 +61,7 @@ function extractJson(text) {
   }
 }
 
-function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData = null) {
+export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData = null) {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const data = incidentData && typeof incidentData === 'object' ? incidentData : {};
   let confidence = normalizeConfidence(parsed.confidence);
@@ -481,6 +481,12 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: normalized.reason,
+        raw_model_adjustment: normalized.raw_model_adjustment,
+        normalization_reason: normalized.normalization_reason,
+        hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
+        hasStrongMaliciousContext: normalized.hasStrongMaliciousContext,
+        detected_positive_factors: normalized.detected_positive_factors || [],
+        detected_negative_factors: normalized.detected_negative_factors || [],
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
         llm_version: parsed?.llm_version || version || null,
         final_risk_score: Number(finalRisk.toFixed(2))
@@ -614,6 +620,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       llm_risk_reason: normalized.reason,
       raw_model_adjustment: normalized.raw_model_adjustment,
       normalization_reason: normalized.normalization_reason,
+      hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
+      hasStrongMaliciousContext: normalized.hasStrongMaliciousContext,
       detected_positive_factors: normalized.detected_positive_factors || [],
       detected_negative_factors: normalized.detected_negative_factors || [],
       llm_last_updated_at: new Date().toISOString(),

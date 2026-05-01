@@ -21,6 +21,7 @@ import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
+import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
 const { Pool } = pg;
 
@@ -1398,6 +1399,12 @@ async function loadIncidentWithStats(activityId) {
   return q;
 }
 
+async function buildIncidentAiInsightContext(activityId) {
+  const q = await loadIncidentWithStats(activityId);
+  if (!q.rowCount) return null;
+  return enrichIncidentContextWithRelatedIocs(q.rows[0], { pool });
+}
+
 app.get('/api/incidents/:id', async (req, res) => {
   try {
     const idRaw = String(req.params?.id || '').trim();
@@ -1406,17 +1413,16 @@ app.get('/api/incidents/:id', async (req, res) => {
     const incident = await findIncidentRow(idRaw);
     if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
-    const q = await loadIncidentWithStats(incident.id);
-
-    if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
-    if (Number(q.rows[0]?.event_count || 0) <= 0) {
+    const context = await buildIncidentAiInsightContext(incident.id);
+    if (!context) return res.status(404).json({ message: 'Incident not found' });
+    if (Number(context?.event_count || 0) <= 0) {
       return res.status(404).json({ message: 'Incident not found (no linked events)' });
     }
 
-    const risk = calculateIncidentRisk(q.rows[0]);
-    const incidentVersion = llmRiskAdvisor.computeVersion(q.rows[0]);
+    const risk = calculateIncidentRisk(context);
+    const incidentVersion = llmRiskAdvisor.computeVersion(context);
     const cachedLlmRisk = await llmRiskAdvisor.getCached({
-      incidentId: q.rows[0]?.id,
+      incidentId: context?.id,
       version: incidentVersion,
       baseRisk: risk.risk_score
     });
@@ -1433,14 +1439,14 @@ app.get('/api/incidents/:id', async (req, res) => {
         final_risk_score: Number(risk.risk_score || 0)
       };
       await llmRiskAdvisor.enqueueEvaluation({
-        incidentId: q.rows[0]?.id,
+        incidentId: context?.id,
         version: incidentVersion,
         reason: 'incident_detail_cache_miss'
       });
     }
 
     const item = {
-      ...q.rows[0],
+      ...context,
       incident_version: incidentVersion,
       ...risk,
       ...llmRisk,
@@ -1462,16 +1468,16 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
     const incident = await findIncidentRow(idRaw);
     if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
-    const q = await loadIncidentWithStats(incident.id);
-    if (!q.rowCount) return res.status(404).json({ message: 'Incident not found' });
-    if (Number(q.rows[0]?.event_count || 0) <= 0) {
+    const context = await buildIncidentAiInsightContext(incident.id);
+    if (!context) return res.status(404).json({ message: 'Incident not found' });
+    if (Number(context?.event_count || 0) <= 0) {
       return res.status(404).json({ message: 'Incident not found (no linked events)' });
     }
 
-    const risk = calculateIncidentRisk(q.rows[0]);
-    const incidentVersion = llmRiskAdvisor.computeVersion(q.rows[0]);
+    const risk = calculateIncidentRisk(context);
+    const incidentVersion = llmRiskAdvisor.computeVersion(context);
     const llmRisk = await llmRiskAdvisor.evaluateAndCache({
-      incident: q.rows[0],
+      incident: context,
       baseRisk: risk.risk_score,
       version: incidentVersion,
       force: true,
@@ -1480,15 +1486,27 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
 
     if (String(llmRisk?.llm_risk_reason || '').toLowerCase() === 'timeout') {
       await llmRiskAdvisor.enqueueEvaluation({
-        incidentId: q.rows[0]?.id,
+        incidentId: context?.id,
         version: incidentVersion,
         reason: 'manual_timeout_retry_background'
       });
       return res.status(202).json({ status: 'processing' });
     }
 
+    const relatedSignals = summarizeRelatedIocSignals(context?.related_iocs);
+    console.log('[incident-ai-analyze][debug]', {
+      incident_id: context?.incident_id || null,
+      context_path: 'manual_update',
+      ...relatedSignals,
+      hasAcceptedOrSuccessfulTraffic: llmRisk?.hasAcceptedOrSuccessfulTraffic ?? null,
+      hasStrongMaliciousContext: llmRisk?.hasStrongMaliciousContext ?? null,
+      raw_model_adjustment: llmRisk?.raw_model_adjustment ?? null,
+      final_adjustment: llmRisk?.llm_risk_adjustment ?? null,
+      normalization_reason: llmRisk?.normalization_reason ?? null
+    });
+
     const item = {
-      ...q.rows[0],
+      ...context,
       incident_version: incidentVersion,
       ...risk,
       ...llmRisk,
