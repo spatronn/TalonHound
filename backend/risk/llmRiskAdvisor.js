@@ -292,9 +292,9 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const text = String(reason || '').trim();
     if (!isLowConfidence) return text;
     if (!text) return text;
-    if (/inconclusive|uncertain|low confidence|insufficient/i.test(text)) return text;
+    if (/should be monitored|warrants further investigation/i.test(text)) return text;
     const normalized = /[.!?]$/.test(text) ? text.slice(0, -1) : text;
-    return `${normalized}, making the signal inconclusive.`;
+    return `${normalized}, and the activity should be monitored.`;
   }
 
   function enforceReasonSafetyAndGuidance(reason) {
@@ -304,6 +304,15 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const lower = text.toLowerCase();
     if (/\b(safe|benign|no threat|not a threat|not\s+a\s+fully\s+realized\s+threat)\b/.test(lower)) {
       return 'Observed indicators suggest suspicious communication patterns, but available evidence remains limited and warrants further investigation.';
+    }
+
+    // Keep one clear conclusion: if action guidance exists, avoid inconclusive wording.
+    if (/(warrants further investigation|should be monitored)/i.test(text) && /\b(inconclusive|uncertain)\b/i.test(text)) {
+      const normalized = text
+        .replace(/\b(inconclusive|uncertain)\b/gi, 'limited confidence')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      return normalized;
     }
 
     if (!/(warrants further investigation|should be monitored)/i.test(text)) {
