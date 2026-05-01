@@ -208,9 +208,9 @@ function normalizeVerdict(raw) {
 function buildIncidentPayload(incident = {}) {
   const snapshot = buildIncidentStatsSnapshot(incident);
   const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
-  const totalHits = Math.max(Number(incident?.hits ?? incident?.total_hits ?? snapshot.total_events || 0), 0);
-  const eventCount = Math.max(Number(incident?.event_count ?? snapshot.total_events || 0), 0);
-  const observedHosts = Math.max(Number(incident?.observed_hosts ?? incident?.asset_count ?? snapshot.unique_hosts || 0), 0);
+  const totalHits = Math.max(Number((incident?.hits ?? incident?.total_hits ?? snapshot.total_events) ?? 0), 0);
+  const eventCount = Math.max(Number((incident?.event_count ?? snapshot.total_events) ?? 0), 0);
+  const observedHosts = Math.max(Number((incident?.observed_hosts ?? incident?.asset_count ?? snapshot.unique_hosts) ?? 0), 0);
   const firstSeenMs = incident?.first_seen ? new Date(incident.first_seen).getTime() : NaN;
   const lastSeenMs = incident?.last_seen ? new Date(incident.last_seen).getTime() : NaN;
   const durationMinutes = Number.isFinite(firstSeenMs) && Number.isFinite(lastSeenMs) && lastSeenMs >= firstSeenMs
