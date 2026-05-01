@@ -64,57 +64,61 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   let confidence = normalizeConfidence(parsed.confidence);
   let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
-  const adjustmentRaw = parsed.adjustment ?? parsed.risk_adjustment;
-  let adjustment = normalizeAdjustment(adjustmentRaw);
+  const rawModelAdjustment = normalizeAdjustment(parsed.adjustment ?? parsed.risk_adjustment);
+  let adjustment = rawModelAdjustment;
 
   if (/blacklist/i.test(reason)) {
-    return {
-      adjustment: 0,
-      confidence: 0,
-      reason: 'invalid_reason_blacklist_reference'
-    };
+    return { adjustment: 0, confidence: 0, reason: 'invalid_reason_blacklist_reference', raw_model_adjustment: rawModelAdjustment };
   }
 
+  const appendOnce = (base, msg) => (String(base).includes(msg) ? String(base) : `${base} ${msg}`.trim());
   const drivers = Array.isArray(parsed.main_risk_drivers) ? parsed.main_risk_drivers.map((x) => String(x)) : [];
   const reducing = Array.isArray(parsed.risk_reducing_factors) ? parsed.risk_reducing_factors.map((x) => String(x)) : [];
   const evidenceText = `${reason} ${drivers.join(' ')}`.toLowerCase();
 
   const hasHighVolume = /(high total_hits|high volume|many queries|high dns|high hits)/i.test(evidenceText);
-  const hasMultipleHosts = /(multiple hosts|many hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
-  const hasLongDuration = /(long duration|persistence|persistent|over several hours|over time)/i.test(evidenceText);
+  const hasMultipleHosts = /(multiple hosts|many hosts|multiple observed hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
+  const hasLongDuration = /(long duration|persistence|persistent|over several hours|over time|repeated over long duration)/i.test(evidenceText);
+  const hasRepeatedOnly = /(repeated dns|repeated)/i.test(evidenceText);
   const hasAcceptedOrSuccessful = /(accepted|successful)/i.test(evidenceText);
   const hasTpOrHighConfidenceOrMalicious = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText);
   const explicitBenign = /(false positive|\bfp\b|allowlisted|trusted benign|known internal test|smoke test|benign destination|internal security test)/i.test(evidenceText)
     || reducing.some((x) => /(allowlisted|trusted|benign|internal test|false positive|fp)/i.test(String(x)));
 
-  const riskIncreasing = hasHighVolume || hasMultipleHosts || hasLongDuration || /(repeated|accepted|successful|many hosts)/i.test(evidenceText);
-
-  if (adjustment < 0 && !explicitBenign && (riskIncreasing || reducing.length === 0)) {
-    let normalized = 0;
-    if (hasHighVolume && hasMultipleHosts && hasLongDuration) normalized = 5;
-    if (hasAcceptedOrSuccessful || hasTpOrHighConfidenceOrMalicious) normalized = Math.max(normalized, 10);
-
-    adjustment = normalized;
-    confidence = Math.min(confidence || 0.6, 0.6);
-    if (normalized > 0) {
-      reason = `${reason} Negative adjustment was converted to a positive adjustment because the stated drivers are risk-increasing.`.slice(0, 240);
-    } else {
-      reason = `${reason} Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.`.slice(0, 240);
-    }
+  let floor = 0;
+  if (!explicitBenign) {
+    if (hasHighVolume && hasMultipleHosts && hasLongDuration) floor = 5;
+    if (floor >= 5 && (hasAcceptedOrSuccessful || hasTpOrHighConfidenceOrMalicious)) floor = 10;
+    if (!hasHighVolume && !hasMultipleHosts && hasRepeatedOnly) floor = Math.max(floor, 0);
   }
 
-  if (confidence < 0.6) {
-    return {
-      adjustment: 0,
-      confidence,
-      reason: reason || 'low_confidence'
-    };
+  let normalizationReason = null;
+  if (!explicitBenign && adjustment < floor) {
+    adjustment = floor;
+    confidence = Math.min(Math.max(confidence, 0.6), 0.6);
+    normalizationReason = 'deterministic_guardrail_floor';
+    reason = appendOnce(reason, 'Final adjustment was normalized by deterministic guardrails because the stated drivers are risk-increasing.').slice(0, 240);
+  } else if (!explicitBenign && rawModelAdjustment < 0 && floor === 0 && (hasHighVolume || hasRepeatedOnly || hasMultipleHosts || hasLongDuration)) {
+    adjustment = 0;
+    confidence = Math.min(Math.max(confidence, 0.6), 0.6);
+    normalizationReason = 'negative_neutralized';
+    reason = appendOnce(reason, 'Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.').slice(0, 240);
   }
 
   return {
     adjustment,
     confidence,
-    reason
+    reason,
+    raw_model_adjustment: rawModelAdjustment,
+    normalization_reason: normalizationReason,
+    detected_positive_factors: [
+      hasHighVolume ? 'high_volume' : null,
+      hasMultipleHosts ? 'multiple_hosts' : null,
+      hasLongDuration ? 'long_duration_or_persistence' : null,
+      hasAcceptedOrSuccessful ? 'accepted_or_successful' : null,
+      hasTpOrHighConfidenceOrMalicious ? 'tp_or_high_confidence_or_malicious' : null
+    ].filter(Boolean),
+    detected_negative_factors: explicitBenign ? ['explicit_benign_or_fp'] : []
   };
 }
 
@@ -543,6 +547,10 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       llm_risk_adjustment: normalized.adjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
       llm_risk_reason: normalized.reason,
+      raw_model_adjustment: normalized.raw_model_adjustment,
+      normalization_reason: normalized.normalization_reason,
+      detected_positive_factors: normalized.detected_positive_factors || [],
+      detected_negative_factors: normalized.detected_negative_factors || [],
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
       final_risk_score: Number(finalRisk.toFixed(2))

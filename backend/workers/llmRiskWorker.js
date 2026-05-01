@@ -128,7 +128,11 @@ const worker = new Worker(
     return {
       incidentId,
       version: currentVersion,
-      adjustment: output.llm_risk_adjustment,
+      raw_model_adjustment: output.raw_model_adjustment ?? null,
+      final_adjustment: output.llm_risk_adjustment,
+      normalization_reason: output.normalization_reason ?? null,
+      detected_positive_factors: output.detected_positive_factors || [],
+      detected_negative_factors: output.detected_negative_factors || [],
       confidence: output.llm_risk_confidence,
       reason: output.llm_risk_reason
     };
