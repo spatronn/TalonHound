@@ -1,6 +1,6 @@
 import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
 
-const ALLOWED_ADJUSTMENTS = new Set([-10, -5, 0, 5, 10]);
+const ALLOWED_ADJUSTMENTS = new Set([-20, -10, -5, 0, 5, 10, 15, 20]);
 
 function toBool(v, defaultValue = false) {
   if (v == null) return defaultValue;
@@ -62,8 +62,10 @@ function extractJson(text) {
 
 function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
-  const confidence = normalizeConfidence(parsed.confidence);
+  let confidence = normalizeConfidence(parsed.confidence);
   let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
+  const adjustmentRaw = parsed.adjustment ?? parsed.risk_adjustment;
+  let adjustment = normalizeAdjustment(adjustmentRaw);
 
   if (/blacklist/i.test(reason)) {
     return {
@@ -71,6 +73,17 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
       confidence: 0,
       reason: 'invalid_reason_blacklist_reference'
     };
+  }
+
+  const drivers = Array.isArray(parsed.main_risk_drivers) ? parsed.main_risk_drivers.map((x) => String(x)) : [];
+  const reducing = Array.isArray(parsed.risk_reducing_factors) ? parsed.risk_reducing_factors.map((x) => String(x)) : [];
+  const evidenceText = `${reason} ${drivers.join(' ')}`.toLowerCase();
+  const riskIncreasing = /(high total_hits|high volume|multiple hosts|many hosts|long duration|persistence|repeated|accepted|successful)/i.test(evidenceText);
+
+  if (adjustment < 0 && (riskIncreasing || reducing.length === 0)) {
+    adjustment = 0;
+    confidence = Math.min(confidence || 0.6, 0.6);
+    reason = `${reason} Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.`.slice(0, 240);
   }
 
   if (confidence < 0.6) {
@@ -82,7 +95,7 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   }
 
   return {
-    adjustment: normalizeAdjustment(parsed.adjustment),
+    adjustment,
     confidence,
     reason
   };
@@ -178,6 +191,27 @@ function buildPromptByType(iocType) {
   if (iocType === 'url') return buildUrlPrompt();
   if (iocType === 'hash') return buildHashPrompt();
   return buildGenericPrompt();
+}
+
+function buildConsistencyRules() {
+  return `Global consistency rules:
+- Do not reduce risk unless you can name a concrete risk-reducing factor.
+- High activity, multiple hosts, long duration, persistence, or accepted traffic are never risk-reducing factors by themselves.
+- If risk_reducing_factors is empty, risk_adjustment must be >= 0.
+- Negative risk_adjustment is allowed only for explicit benign evidence (FP verdict, known internal test, allowlisted/trusted benign IOC, blocked-only with no successful activity and limited scope, or low-confidence IOC source with no meaningful internal activity).
+- If evidence is mixed/insufficient, use risk_adjustment=0.
+- confidence can be high only when output is internally consistent; use 0.40-0.70 for limited/contradictory evidence.
+- Use risk_adjustment range -20..20.
+Return ONLY JSON:
+{
+  "ai_risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+  "risk_adjustment": -20|-10|-5|0|5|10|15|20,
+  "confidence": 0-1,
+  "main_risk_drivers": [],
+  "risk_reducing_factors": [],
+  "reason": "",
+  "recommended_action": ""
+}`;
 }
 
 function normalizeIocType(raw) {
@@ -434,7 +468,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
             num_ctx: llmNumCtx,
             num_predict: llmNumPredict
           },
-          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
+          prompt: `${buildPromptByType(incidentPayload?.ioc_type)}\n\n${buildConsistencyRules()}\n\nIncident Data:\n${JSON.stringify(incidentPayload, null, 2)}`
         };
 
         const response = await fetch(url, {
