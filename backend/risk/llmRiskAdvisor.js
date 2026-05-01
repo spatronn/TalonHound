@@ -78,12 +78,29 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const drivers = Array.isArray(parsed.main_risk_drivers) ? parsed.main_risk_drivers.map((x) => String(x)) : [];
   const reducing = Array.isArray(parsed.risk_reducing_factors) ? parsed.risk_reducing_factors.map((x) => String(x)) : [];
   const evidenceText = `${reason} ${drivers.join(' ')}`.toLowerCase();
-  const riskIncreasing = /(high total_hits|high volume|multiple hosts|many hosts|long duration|persistence|repeated|accepted|successful)/i.test(evidenceText);
 
-  if (adjustment < 0 && (riskIncreasing || reducing.length === 0)) {
-    adjustment = 0;
+  const hasHighVolume = /(high total_hits|high volume|many queries|high dns|high hits)/i.test(evidenceText);
+  const hasMultipleHosts = /(multiple hosts|many hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
+  const hasLongDuration = /(long duration|persistence|persistent|over several hours|over time)/i.test(evidenceText);
+  const hasAcceptedOrSuccessful = /(accepted|successful)/i.test(evidenceText);
+  const hasTpOrHighConfidenceOrMalicious = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText);
+  const explicitBenign = /(false positive|\bfp\b|allowlisted|trusted benign|known internal test|smoke test|benign destination|internal security test)/i.test(evidenceText)
+    || reducing.some((x) => /(allowlisted|trusted|benign|internal test|false positive|fp)/i.test(String(x)));
+
+  const riskIncreasing = hasHighVolume || hasMultipleHosts || hasLongDuration || /(repeated|accepted|successful|many hosts)/i.test(evidenceText);
+
+  if (adjustment < 0 && !explicitBenign && (riskIncreasing || reducing.length === 0)) {
+    let normalized = 0;
+    if (hasHighVolume && hasMultipleHosts && hasLongDuration) normalized = 5;
+    if (hasAcceptedOrSuccessful || hasTpOrHighConfidenceOrMalicious) normalized = Math.max(normalized, 10);
+
+    adjustment = normalized;
     confidence = Math.min(confidence || 0.6, 0.6);
-    reason = `${reason} Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.`.slice(0, 240);
+    if (normalized > 0) {
+      reason = `${reason} Negative adjustment was converted to a positive adjustment because the stated drivers are risk-increasing.`.slice(0, 240);
+    } else {
+      reason = `${reason} Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.`.slice(0, 240);
+    }
   }
 
   if (confidence < 0.6) {
