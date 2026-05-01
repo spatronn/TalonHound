@@ -182,6 +182,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
   const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 2), 0);
   const dnsHighQueryThreshold = Math.max(Number(process.env.LLM_RISK_DNS_HIGH_QUERY_THRESHOLD || 50), 1);
+  const minConfidenceToApplyAdjustment = clamp(Number(process.env.LLM_RISK_MIN_CONFIDENCE || 0.6), 0, 1);
 
   function computeFinalRisk(baseRisk, adjustment) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
@@ -204,6 +205,12 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     if (highDnsQueries && uniqueHosts > 1) return 5;
     if (isBlocked) return -5;
     return 0;
+  }
+
+  function applyConfidenceGate(adjustment, confidence) {
+    const conf = clamp(Number(confidence || 0), 0, 1);
+    const adj = Number(adjustment || 0);
+    return conf < minConfidenceToApplyAdjustment ? 0 : adj;
   }
 
   function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
@@ -237,14 +244,18 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const iocType = normalizeIocType(parsed?.ioc_type);
       const cachedAdjustmentRaw = Number(parsed?.deterministic_adjustment ?? parsed?.adjustment ?? parsed?.llm_risk_adjustment);
       const deterministicAdjustment = Number.isFinite(cachedAdjustmentRaw) ? cachedAdjustmentRaw : 0;
+      const effectiveAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
       const base = clamp(Number(baseRisk || 0), 0, 100);
-      const finalRisk = computeFinalRisk(base, deterministicAdjustment);
+      const finalRisk = computeFinalRisk(base, effectiveAdjustment);
 
       return {
         risk_before_llm: Number(base.toFixed(2)),
-        llm_risk_adjustment: deterministicAdjustment,
+        llm_risk_adjustment: effectiveAdjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: toUserReason(normalized.reason, iocType),
+        llm_risk_reason: normalized.confidence < minConfidenceToApplyAdjustment
+          ? 'Low confidence AI signal'
+          : toUserReason(normalized.reason, iocType),
+        llm_low_confidence: normalized.confidence < minConfidenceToApplyAdjustment,
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
         llm_version: parsed?.llm_version || version || null,
         final_risk_score: Number(finalRisk.toFixed(2))
@@ -379,25 +390,30 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
 
     const normalized = result.normalized;
     const reasonForUi = toUserReason(normalized.reason, iocType);
+    const effectiveAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
+    const isLowConfidence = normalized.confidence < minConfidenceToApplyAdjustment;
     await setCached({
       incidentId: incident?.id || incident?.incident_id,
       version,
       value: {
         deterministic_adjustment: deterministicAdjustment,
+        effective_adjustment: effectiveAdjustment,
         confidence: normalized.confidence,
         reason: reasonForUi,
+        low_confidence: isLowConfidence,
         ioc_type: iocType,
         llm_last_updated_at: new Date().toISOString(),
         llm_version: version || null
       }
     });
 
-    const finalRisk = computeFinalRisk(base, deterministicAdjustment);
+    const finalRisk = computeFinalRisk(base, effectiveAdjustment);
     return {
       risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: deterministicAdjustment,
+      llm_risk_adjustment: effectiveAdjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: reasonForUi,
+      llm_risk_reason: isLowConfidence ? 'Low confidence AI signal' : reasonForUi,
+      llm_low_confidence: isLowConfidence,
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
       final_risk_score: Number(finalRisk.toFixed(2))
