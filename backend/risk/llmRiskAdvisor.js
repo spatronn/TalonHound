@@ -63,7 +63,15 @@ function extractJson(text) {
 function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const confidence = normalizeConfidence(parsed.confidence);
-  const reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
+  let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
+
+  if (/blacklist/i.test(reason)) {
+    return {
+      adjustment: 0,
+      confidence: 0,
+      reason: 'invalid_reason_blacklist_reference'
+    };
+  }
 
   if (confidence < 0.6) {
     return {
@@ -81,95 +89,87 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
 }
 
 function buildGenericPrompt() {
-  return `You are a cybersecurity risk assistant. Your task is NOT to calculate full risk. ONLY return a small adjustment score.
-
+  return `You are a cybersecurity risk assistant. Return a small adjustment score only.
 Rules:
 - Return ONLY JSON
 - adjustment must be one of: -10, -5, 0, +5, +10
-- Be conservative
 - Never claim facts not present in Incident Data
-- If evidence is insufficient, return adjustment=0 with a cautious reason
-- Reason must cite at least two Incident Data fields by name
-- Keep reason concise (max 18 words)
-
+- Do not mention blacklist
+- Reason should focus on: ioc_type, total_hits/hits, event_count, observed_hosts/unique_hosts, duration, persistence
 Output:
-{ "adjustment": <number>, "confidence": 0-1, "reason": "short explanation" }`;
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildDomainPrompt() {
-  return `You are a cybersecurity risk adjustment assistant.
-IMPORTANT:
-- DNS activity is meaningful
-- Even without accepted connections, DNS queries may indicate compromise
-- Absence of blacklist does NOT mean safe
-- Unknown domains can still be malicious
-
-DNS behavior rules:
-- High volume repeated DNS queries may indicate beaconing
-- Persistent DNS queries over time increases risk
-- Multiple hosts querying same domain increases risk
-
-Critical rule:
-- If dns_queries is high AND persistent, increase risk EVEN IF blacklist_hits == 0
-
-Domain-name awareness:
-- Suspicious-looking domain names (malicious patterns, random-looking strings, deceptive names) increase risk
-
-Decrease risk ONLY if ALL are true:
-- very low query count
+  return `DOMAIN IOC ANALYSIS RULES:
+- Domain IOC incidents must be evaluated using DNS behavior, not accepted/blocked traffic.
+- DNS queries to suspicious or matched IOC domains are meaningful security signals.
+- Use total_hits/hits as the main volume signal.
+- Use event_count only as the number of sampled/correlated detection events, not as total activity volume.
+- Multiple observed hosts increase concern.
+- Persistence over time increases concern.
+- Repeated DNS queries over a long duration may indicate beaconing, malware communication, or misconfigured repeated access.
+- Do not mention blacklist status.
+- Do not decrease risk when DNS volume is high or persistent.
+Increase risk if:
+- total_hits is high
+- observed_hosts >= 2
+- duration is long
+- repeated DNS queries are observed
+Return neutral if:
+- total_hits is low
 - single host
+- short duration
 - no persistence
-
-Never decrease risk when DNS query volume is high.
-Do NOT rely on accepted/blocked connections (DNS doesn't have that).
+Decrease risk only if:
+- there is clear evidence of benign/test activity
+- very low volume and no persistence
 Return ONLY JSON:
-{ "adjustment": number, "confidence": number, "reason": string }`;
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildIpPrompt() {
-  return `You are a cybersecurity risk adjustment assistant.
-Rules:
-- accepted vs blocked is critical
-- inbound/outbound direction is important
-- scanning behavior should reduce risk
+  return `IP IOC ANALYSIS RULES:
+- accepted/blocked logic applies only for IP/network IOC.
+- Use accepted_connections, blocked_connections, inbound_events, outbound_events, unique_hosts/observed_hosts, and persistence.
+- Do not mention blacklist status.
 Increase risk:
-- accepted_connections > blocked_connections
+- accepted traffic is meaningful
 - multiple hosts affected
-- blacklist hits exist
+- persistent activity over time
 Decrease risk:
 - mostly blocked traffic
-- scanning pattern
+- clear scanning/noise pattern with low persistence
 Return ONLY JSON:
-{ "adjustment": number, "confidence": number, "reason": string }`;
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildUrlPrompt() {
-  return `You are a cybersecurity risk adjustment assistant.
-Rules:
-- HTTP activity is important
-- path-level risk and user interaction signals matter
+  return `URL IOC ANALYSIS RULES:
+- Focus on url_requests/request_count, successful access, unique users/hosts, persistence, and suspicious path patterns.
+- Do not mention blacklist status.
 Increase risk:
-- successful HTTP requests
-- multiple users/hosts
-- repeated access
+- successful and repeated URL access
+- multiple hosts/users
+- persistent activity or suspicious path behavior
+Decrease risk:
+- very low request volume and no persistence
 Return ONLY JSON:
-{ "adjustment": number, "confidence": number, "reason": string }`;
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildHashPrompt() {
-  return `You are a cybersecurity risk adjustment assistant.
-Rules:
-- endpoint activity is important
-- execution/spread signals are important
+  return `HASH IOC ANALYSIS RULES:
+- Focus on affected_hosts, file_observations, execution evidence, and persistence/spread behavior.
+- Do not mention blacklist status.
 Increase risk:
-- multiple hosts
+- multiple affected hosts
 - execution evidence
-- persistence
+- persistence or spread over time
 Decrease risk:
-- single host
-- no spread
+- single host, very low observations, no spread evidence
 Return ONLY JSON:
-{ "adjustment": number, "confidence": number, "reason": string }`;
+{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildPromptByType(iocType) {
@@ -207,18 +207,23 @@ function normalizeVerdict(raw) {
 
 function buildIncidentPayload(incident = {}) {
   const snapshot = buildIncidentStatsSnapshot(incident);
-  const confidenceRaw = String(incident?.confidence || '').toLowerCase();
-  const confidence = ['low', 'medium', 'high'].includes(confidenceRaw) ? confidenceRaw : 'medium';
   const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
+  const totalHits = Math.max(Number(incident?.hits ?? incident?.total_hits ?? snapshot.total_events || 0), 0);
+  const eventCount = Math.max(Number(incident?.event_count ?? snapshot.total_events || 0), 0);
+  const observedHosts = Math.max(Number(incident?.observed_hosts ?? incident?.asset_count ?? snapshot.unique_hosts || 0), 0);
+  const firstSeenMs = incident?.first_seen ? new Date(incident.first_seen).getTime() : NaN;
+  const lastSeenMs = incident?.last_seen ? new Date(incident.last_seen).getTime() : NaN;
+  const durationMinutes = Number.isFinite(firstSeenMs) && Number.isFinite(lastSeenMs) && lastSeenMs >= firstSeenMs
+    ? Math.round((lastSeenMs - firstSeenMs) / 60000)
+    : 0;
 
   const base = {
     ioc: String(incident?.ioc_value || incident?.observable_value || ''),
     ioc_type: iocType,
-    threat_intel: {
-      blacklist_hits: snapshot.blacklist_hits,
-      confidence,
-      tags: parseTags(incident?.tags)
-    },
+    activity_type: iocType === 'domain' ? 'dns' : iocType,
+    first_seen: incident?.first_seen || null,
+    last_seen: incident?.last_seen || null,
+    duration_minutes: durationMinutes,
     history: {
       previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
       previous_verdict: normalizeVerdict(incident?.previous_verdict)
@@ -229,9 +234,13 @@ function buildIncidentPayload(incident = {}) {
     return {
       ...base,
       stats: {
-        total_events: snapshot.total_events,
-        dns_queries: snapshot.total_events,
-        unique_hosts: snapshot.unique_hosts
+        total_hits: totalHits,
+        hits: totalHits,
+        dns_queries: totalHits,
+        event_count: eventCount,
+        observed_hosts: observedHosts,
+        unique_hosts: observedHosts,
+        duration_minutes: durationMinutes
       }
     };
   }
@@ -240,12 +249,15 @@ function buildIncidentPayload(incident = {}) {
     return {
       ...base,
       stats: {
-        total_events: snapshot.total_events,
+        total_hits: totalHits,
+        event_count: eventCount,
+        observed_hosts: observedHosts,
+        unique_hosts: observedHosts,
         accepted_connections: snapshot.accepted_connections,
         blocked_connections: snapshot.blocked_connections,
         inbound_events: Math.max(Number(incident?.inbound_events || 0), 0),
         outbound_events: Math.max(Number(incident?.outbound_events || 0), 0),
-        unique_hosts: snapshot.unique_hosts
+        duration_minutes: durationMinutes
       }
     };
   }
@@ -254,10 +266,13 @@ function buildIncidentPayload(incident = {}) {
     return {
       ...base,
       stats: {
-        total_events: snapshot.total_events,
-        successful_http_requests: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
-        repeated_access: Math.max(Number(snapshot.total_events || 0), 0),
-        unique_hosts: snapshot.unique_hosts
+        total_hits: totalHits,
+        event_count: eventCount,
+        url_requests: totalHits,
+        successful_access: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
+        observed_hosts: observedHosts,
+        unique_hosts: observedHosts,
+        duration_minutes: durationMinutes
       }
     };
   }
@@ -266,10 +281,13 @@ function buildIncidentPayload(incident = {}) {
     return {
       ...base,
       stats: {
-        total_events: snapshot.total_events,
+        total_hits: totalHits,
+        event_count: eventCount,
+        file_observations: totalHits,
+        affected_hosts: observedHosts,
         execution_evidence: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
-        spread_hosts: snapshot.unique_hosts,
-        persistence_signals: Math.max(Number(incident?.previous_incident_count || 0), 0)
+        persistence_signals: Math.max(Number(incident?.previous_incident_count || 0), 0),
+        duration_minutes: durationMinutes
       }
     };
   }
@@ -277,10 +295,13 @@ function buildIncidentPayload(incident = {}) {
   return {
     ...base,
     stats: {
-      total_events: snapshot.total_events,
+      total_hits: totalHits,
+      event_count: eventCount,
+      observed_hosts: observedHosts,
+      unique_hosts: observedHosts,
       accepted_connections: snapshot.accepted_connections,
       blocked_connections: snapshot.blocked_connections,
-      unique_hosts: snapshot.unique_hosts
+      duration_minutes: durationMinutes
     }
   };
 }
