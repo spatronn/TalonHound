@@ -213,6 +213,15 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     return conf < minConfidenceToApplyAdjustment ? 0 : adj;
   }
 
+  function withLowConfidenceSuffix(reason, isLowConfidence) {
+    const text = String(reason || '').trim();
+    if (!isLowConfidence) return text;
+    if (!text) return text;
+    if (/inconclusive|uncertain|low confidence|insufficient/i.test(text)) return text;
+    const normalized = /[.!?]$/.test(text) ? text.slice(0, -1) : text;
+    return `${normalized}, making the signal inconclusive.`;
+  }
+
   function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     const finalRisk = computeFinalRisk(base, deterministicAdjustment);
@@ -252,9 +261,10 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         risk_before_llm: Number(base.toFixed(2)),
         llm_risk_adjustment: effectiveAdjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: normalized.confidence < minConfidenceToApplyAdjustment
-          ? 'Low confidence AI signal'
-          : toUserReason(normalized.reason, iocType),
+        llm_risk_reason: withLowConfidenceSuffix(
+          toUserReason(normalized.reason, iocType),
+          normalized.confidence < minConfidenceToApplyAdjustment
+        ),
         llm_low_confidence: normalized.confidence < minConfidenceToApplyAdjustment,
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
         llm_version: parsed?.llm_version || version || null,
@@ -412,7 +422,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: effectiveAdjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: isLowConfidence ? 'Low confidence AI signal' : reasonForUi,
+      llm_risk_reason: withLowConfidenceSuffix(reasonForUi, isLowConfidence),
       llm_low_confidence: isLowConfidence,
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
