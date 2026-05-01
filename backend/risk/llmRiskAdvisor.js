@@ -2,7 +2,6 @@ import { buildIncidentVersion } from './llmRiskCommon.js';
 import { buildLlmAdvisorPayload } from './llmAdvisor.js';
 import { normalizeIocType } from './activityBuilder.js';
 
-const ALLOWED_ADJUSTMENTS = new Set([-10, -5, 0, 5, 10]);
 const logger = console;
 
 function toBool(v, defaultValue = false) {
@@ -31,12 +30,6 @@ function isTimeoutError(err) {
   return false;
 }
 
-function normalizeAdjustment(raw) {
-  const n = Number(String(raw ?? '').replace(/^\+/, ''));
-  if (!Number.isFinite(n)) return 0;
-  return ALLOWED_ADJUSTMENTS.has(n) ? n : 0;
-}
-
 function normalizeConfidence(raw) {
   const c = Number(raw);
   if (!Number.isFinite(c)) return 0;
@@ -53,7 +46,7 @@ function countSentences(text) {
     .length;
 }
 
-function validateDecisionAwareReason(reason, adjustment) {
+function validateReason(reason) {
   const text = String(reason || '').trim();
   const lower = text.toLowerCase();
   if (!text) return { valid: false, code: 'invalid_reason_empty' };
@@ -72,16 +65,6 @@ function validateDecisionAwareReason(reason, adjustment) {
   // Enforce observation + conclusion structure with causal language.
   const hasCausalLink = /(suggests|indicates|therefore|which|because|thus|so)\b/i.test(text);
   if (!hasCausalLink) return { valid: false, code: 'invalid_reason_observation_only' };
-
-  if (adjustment > 0 && !/increase(?:s|d)? risk|higher risk|elevates? risk/i.test(text)) {
-    return { valid: false, code: 'invalid_reason_adjustment_mismatch_positive' };
-  }
-  if (adjustment < 0 && !/reduce(?:s|d)? risk|lower risk|decreases? risk/i.test(text)) {
-    return { valid: false, code: 'invalid_reason_adjustment_mismatch_negative' };
-  }
-  if (adjustment === 0 && !/inconclusive|neutral/i.test(text)) {
-    return { valid: false, code: 'invalid_reason_adjustment_mismatch_neutral' };
-  }
 
   return { valid: true, code: 'ok' };
 }
@@ -145,12 +128,10 @@ function extractJson(text) {
 function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const confidence = normalizeConfidence(parsed.confidence);
-  const adjustment = normalizeAdjustment(parsed.adjustment);
   let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
-  const reasonValidation = validateDecisionAwareReason(reason, adjustment);
+  const reasonValidation = validateReason(reason);
 
   return {
-    adjustment: confidence < 0.6 ? 0 : adjustment,
     confidence,
     reason,
     reasonValidation,
@@ -159,10 +140,9 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback') {
 }
 
 function buildGenericPrompt() {
-  return `You are a cybersecurity risk assistant. Return only a small risk adjustment.
+  return `You are a cybersecurity risk assistant. Produce explainability text only.
 Rules:
 - Return ONLY JSON.
-- adjustment must be one of: -10, -5, 0, +5, +10
 - Never claim facts not present in Incident Data.
 - Do not mention blacklist status.
 - Use the unified activity model fields:
@@ -184,11 +164,9 @@ Rules:
   - DNS + connection/execution is strong
   - DNS + blocked tends to lower risk
 - Reason must be 1-2 sentences and include observation + conclusion.
-- If adjustment > 0, reason must explicitly say risk increases.
-- If adjustment < 0, reason must explicitly say risk reduces.
-- If adjustment == 0, reason must explicitly say risk is inconclusive or neutral.
+- You do not decide adjustment; deterministic engine decides it.
 Output:
-{ "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
+{ "confidence": 0-1, "reason": "short explanation" }`;
 }
 
 function buildPromptByType() {
@@ -203,23 +181,40 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 25000), timeoutMs);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
   const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 2), 0);
+  const dnsHighQueryThreshold = Math.max(Number(process.env.LLM_RISK_DNS_HIGH_QUERY_THRESHOLD || 50), 1);
 
-  function computeFinalRisk(baseRisk, adjustment, confidence) {
+  function computeFinalRisk(baseRisk, adjustment) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     const adj = Number(adjustment || 0);
-    const conf = clamp(Number(confidence || 0), 0, 1);
-    const weighted = adj * conf * aiWeight;
+    const weighted = adj * aiWeight;
     return clamp(base + weighted, 0, 100);
   }
 
-  function fallback(baseRisk, reason = 'fallback', iocType = 'unknown') {
+  function computeDeterministicAdjustment(activity = {}) {
+    const type = String(activity?.type || '').toLowerCase();
+    if (type !== 'dns') return 0;
+
+    const hasConnection = Boolean(activity?.has_execution);
+    const dnsQueries = Math.max(Number(activity?.signals?.dns_queries || 0), 0);
+    const uniqueHosts = Math.max(Number(activity?.unique_hosts || 0), 0);
+    const isBlocked = Boolean(activity?.is_blocked);
+    const highDnsQueries = dnsQueries >= dnsHighQueryThreshold;
+
+    if (hasConnection) return 10;
+    if (highDnsQueries && uniqueHosts > 1) return 5;
+    if (isBlocked) return -5;
+    return 0;
+  }
+
+  function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
+    const finalRisk = computeFinalRisk(base, deterministicAdjustment);
     return {
       risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: 0,
+      llm_risk_adjustment: Number(deterministicAdjustment || 0),
       llm_risk_confidence: 0,
       llm_risk_reason: toUserReason(reason, normalizeIocType(iocType)),
-      final_risk_score: Number(base.toFixed(2))
+      final_risk_score: Number(finalRisk.toFixed(2))
     };
   }
 
@@ -240,12 +235,14 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const parsed = JSON.parse(raw);
       const normalized = normalizeAdvisorOutput(parsed, 'cache');
       const iocType = normalizeIocType(parsed?.ioc_type);
+      const cachedAdjustmentRaw = Number(parsed?.deterministic_adjustment ?? parsed?.adjustment ?? parsed?.llm_risk_adjustment);
+      const deterministicAdjustment = Number.isFinite(cachedAdjustmentRaw) ? cachedAdjustmentRaw : 0;
       const base = clamp(Number(baseRisk || 0), 0, 100);
-      const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
+      const finalRisk = computeFinalRisk(base, deterministicAdjustment);
 
       return {
         risk_before_llm: Number(base.toFixed(2)),
-        llm_risk_adjustment: normalized.adjustment,
+        llm_risk_adjustment: deterministicAdjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: toUserReason(normalized.reason, iocType),
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
@@ -295,13 +292,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   async function evaluateAndCache({ incident, baseRisk, version, force = false, timeoutMsOverride } = {}) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     const iocType = normalizeIocType(incident?.ioc_type || incident?.observable_type);
-    if (!enabled && !force) return fallback(base, 'disabled', iocType);
+    const incidentPayload = buildLlmAdvisorPayload(incident);
+    const deterministicAdjustment = computeDeterministicAdjustment(incidentPayload?.activity);
+    if (!enabled && !force) return fallback(base, 'disabled', iocType, deterministicAdjustment);
 
     const verdict = String(incident?.verdict || '').trim().toLowerCase();
     if (verdict === 'fp') {
-      const out = fallback(base, 'fp_verdict_guard', iocType);
-      out.llm_risk_adjustment = 0;
-      return out;
+      return fallback(base, 'fp_verdict_guard', iocType, 0);
     }
 
     const initialTimeout = Math.max(Number(timeoutMsOverride || timeoutMs), 1000);
@@ -309,7 +306,6 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const secondTimeout = initialTimeout + 5000;
 
     async function singleAttempt(requestTimeoutMs) {
-      const incidentPayload = buildLlmAdvisorPayload(incident);
       let lastNormalized = null;
       for (let i = 0; i < 2; i += 1) {
         const controller = new AbortController();
@@ -361,7 +357,6 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       return {
         ok: true,
         normalized: {
-          adjustment: lastNormalized?.adjustment ?? 0,
           confidence: lastNormalized?.confidence ?? 0,
           reason: fallbackReason,
           reasonValidation: { valid: true, code: 'fallback_applied' },
@@ -379,7 +374,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     }
 
     if (!result.ok) {
-      return fallback(base, result.reason || 'fallback', iocType);
+      return fallback(base, result.reason || 'fallback', iocType, deterministicAdjustment);
     }
 
     const normalized = result.normalized;
@@ -388,7 +383,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       incidentId: incident?.id || incident?.incident_id,
       version,
       value: {
-        adjustment: normalized.adjustment,
+        deterministic_adjustment: deterministicAdjustment,
         confidence: normalized.confidence,
         reason: reasonForUi,
         ioc_type: iocType,
@@ -397,10 +392,10 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       }
     });
 
-    const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
+    const finalRisk = computeFinalRisk(base, deterministicAdjustment);
     return {
       risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: normalized.adjustment,
+      llm_risk_adjustment: deterministicAdjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
       llm_risk_reason: reasonForUi,
       llm_last_updated_at: new Date().toISOString(),
