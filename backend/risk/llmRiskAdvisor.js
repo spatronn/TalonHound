@@ -211,7 +211,7 @@ Use neutral terms:
 
 Decision logic:
 - DNS only -> inconclusive
-- DNS + persistence -> suspicious but inconclusive
+- DNS + persistence -> repeated activity pattern; confidence is limited
 - DNS + execution -> strong signal
 
 Output:
@@ -279,21 +279,32 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   function applyReasonConsistencyGate(adjustment, reason) {
     const adj = Number(adjustment || 0);
     const text = String(reason || '').toLowerCase();
-    if (/\b(limited evidence|inconclusive|uncertain|insufficient)\b/.test(text)) return 0;
+    if (/\b(limited evidence|inconclusive|uncertain|insufficient(?: evidence)?|limits confidence)\b/.test(text)) return 0;
     return adj;
   }
 
   function withLowConfidenceSuffix(reason, isLowConfidence) {
     const text = String(reason || '').trim();
     if (!isLowConfidence) return text;
+    // Keep context-aware reason text; only adjustment is neutralized.
+    return text;
+  }
+
+  function normalizeReasonPhrases(reason) {
+    const text = String(reason || '').trim();
     if (!text) return text;
-    if (/should be monitored|warrants further investigation/i.test(text)) return text;
-    const normalized = /[.!?]$/.test(text) ? text.slice(0, -1) : text;
-    return `${normalized}, and the activity should be monitored.`;
+
+    let normalized = text;
+    normalized = normalized.replace(/suspicious but inconclusive signal/gi, 'limited confidence');
+    normalized = normalized.replace(/(?:,\s*)?making the signal inconclusive\.?/gi, '');
+    normalized = normalized.replace(/\b(no execution indicates low risk|lack of execution indicates low risk)\b/gi, 'lack of confirmed execution limits confidence');
+    normalized = normalized.replace(/\s{2,}/g, ' ').trim();
+    if (normalized && !/[.!?]$/.test(normalized)) normalized = `${normalized}.`;
+    return normalized;
   }
 
   function enforceReasonSafetyAndGuidance(reason) {
-    const text = String(reason || '').trim();
+    const text = normalizeReasonPhrases(reason);
     if (!text) return text;
 
     const lower = text.toLowerCase();
@@ -308,7 +319,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     // Keep one clear conclusion: if action guidance exists, avoid inconclusive wording.
     if (/(warrants further investigation|should be monitored)/i.test(text) && /\b(inconclusive|uncertain)\b/i.test(text)) {
       const normalized = text
-        .replace(/\b(inconclusive|uncertain)\b/gi, 'limited confidence')
+        .replace(/\b(inconclusive|uncertain)\b/gi, 'limits confidence')
         .replace(/\s{2,}/g, ' ')
         .trim();
       return normalized;
@@ -323,13 +334,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   }
 
   function enforceDnsReasonGuard(reason, activity = {}) {
-    const text = String(reason || '').trim();
+    const text = normalizeReasonPhrases(reason);
     const type = String(activity?.type || '').toLowerCase();
     if (!text || type !== 'dns') return text;
 
     const hasExecution = Boolean(activity?.has_execution);
     const lower = text.toLowerCase();
-    const containsUnsafeDnsConclusion = /\blow(?:\s+to\s+moderate)?\s+risk\b|\bsafe\b|\bbenign\b/.test(lower);
+    const containsUnsafeDnsConclusion = /\blow(?:\s+to\s+moderate)?\s+risk\b|\bsafe\b|\bbenign\b|\bno threat\b|\bnot a threat\b/.test(lower);
     const hasAttackStageClaim = /\b(reconnaissance|exploitation)\b/.test(lower);
     const hasNetworkEvidence = hasExecution || Math.max(Number(activity?.signals?.connections || 0), 0) > 0;
 
@@ -337,6 +348,13 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     if (hasExecution && !containsUnsafeDnsConclusion) return text;
 
     return 'Observed DNS query volume and persistence suggest repeated communication behavior, but lack of confirmed connection or execution activity limits confidence and warrants further investigation.';
+  }
+
+  function buildFinalReason(reason, { iocType, activity, isLowConfidence } = {}) {
+    const userReason = toUserReason(reason, iocType);
+    const dnsGuarded = enforceDnsReasonGuard(userReason, activity);
+    const lowConfidenceHandled = withLowConfidenceSuffix(dnsGuarded, isLowConfidence);
+    return enforceReasonSafetyAndGuidance(lowConfidenceHandled);
   }
 
   function fallback(baseRisk, reason = 'fallback', iocType = 'unknown', deterministicAdjustment = 0) {
@@ -368,10 +386,16 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const parsed = JSON.parse(raw);
       const normalized = normalizeAdvisorOutput(parsed, 'cache');
       const iocType = normalizeIocType(parsed?.ioc_type);
+      const cachedActivity = parsed?.activity && typeof parsed.activity === 'object' ? parsed.activity : null;
       const cachedAdjustmentRaw = Number(parsed?.deterministic_adjustment ?? parsed?.adjustment ?? parsed?.llm_risk_adjustment);
       const deterministicAdjustment = Number.isFinite(cachedAdjustmentRaw) ? cachedAdjustmentRaw : 0;
+      const finalReason = buildFinalReason(normalized.reason, {
+        iocType,
+        activity: cachedActivity,
+        isLowConfidence: normalized.confidence < minConfidenceToApplyAdjustment
+      });
       const confidenceGatedAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
-      const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, normalized.reason);
+      const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, finalReason);
       const base = clamp(Number(baseRisk || 0), 0, 100);
       const finalRisk = computeFinalRisk(base, effectiveAdjustment);
 
@@ -379,12 +403,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         risk_before_llm: Number(base.toFixed(2)),
         llm_risk_adjustment: effectiveAdjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-        llm_risk_reason: enforceReasonSafetyAndGuidance(
-          withLowConfidenceSuffix(
-            toUserReason(normalized.reason, iocType),
-            normalized.confidence < minConfidenceToApplyAdjustment
-          )
-        ),
+        llm_risk_reason: finalReason,
         llm_low_confidence: normalized.confidence < minConfidenceToApplyAdjustment,
         llm_last_updated_at: parsed?.llm_last_updated_at || null,
         llm_version: parsed?.llm_version || version || null,
@@ -519,10 +538,11 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     }
 
     const normalized = result.normalized;
-    const reasonForUi = enforceDnsReasonGuard(
-      toUserReason(normalized.reason, iocType),
-      incidentPayload?.activity
-    );
+    const reasonForUi = buildFinalReason(normalized.reason, {
+      iocType,
+      activity: incidentPayload?.activity,
+      isLowConfidence: normalized.confidence < minConfidenceToApplyAdjustment
+    });
     const confidenceGatedAdjustment = applyConfidenceGate(deterministicAdjustment, normalized.confidence);
     const effectiveAdjustment = applyReasonConsistencyGate(confidenceGatedAdjustment, reasonForUi);
     const isLowConfidence = normalized.confidence < minConfidenceToApplyAdjustment;
@@ -534,6 +554,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         effective_adjustment: effectiveAdjustment,
         confidence: normalized.confidence,
         reason: reasonForUi,
+        activity: incidentPayload?.activity || null,
         low_confidence: isLowConfidence,
         ioc_type: iocType,
         llm_last_updated_at: new Date().toISOString(),
@@ -546,7 +567,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: effectiveAdjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: enforceReasonSafetyAndGuidance(withLowConfidenceSuffix(reasonForUi, isLowConfidence)),
+      llm_risk_reason: reasonForUi,
       llm_low_confidence: isLowConfidence,
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
