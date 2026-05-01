@@ -171,6 +171,9 @@ Rules:
   - Lack of execution or connection evidence does NOT imply low risk; it implies inconclusive or uncertain evidence
 - Do not use "safe" or "benign" wording.
 - Do not label DNS-only patterns as low risk when execution/connection is unconfirmed.
+- Do not assume specific attack stages (e.g., reconnaissance, exploitation) without strong supporting evidence.
+- For DNS-only patterns, avoid attack-stage labels and prefer neutral terms like "suspicious communication pattern" or "repeated activity".
+- Use "reconnaissance" only when there is clear scanning/probing/network behavior evidence.
 - Prefer terms like: inconclusive, uncertain, unconfirmed activity.
 - Reason must be 1-2 sentences and include observation + conclusion.
 - You do not decide adjustment; deterministic engine decides it.
@@ -239,9 +242,11 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     const hasExecution = Boolean(activity?.has_execution);
     const lower = text.toLowerCase();
     const containsUnsafeDnsConclusion = /\blow(?:\s+to\s+moderate)?\s+risk\b|\bsafe\b|\bbenign\b/.test(lower);
+    const hasAttackStageClaim = /\b(reconnaissance|exploitation)\b/.test(lower);
+    const hasNetworkEvidence = hasExecution || Math.max(Number(activity?.signals?.connections || 0), 0) > 0;
 
-    if (hasExecution) return text;
-    if (!containsUnsafeDnsConclusion) return text;
+    if (!containsUnsafeDnsConclusion && !(hasAttackStageClaim && !hasNetworkEvidence)) return text;
+    if (hasExecution && !containsUnsafeDnsConclusion) return text;
 
     return 'Observed DNS query volume and persistence suggest repeated communication behavior, but lack of confirmed connection or execution activity makes the signal inconclusive.';
   }
