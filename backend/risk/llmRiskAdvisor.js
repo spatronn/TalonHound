@@ -61,11 +61,66 @@ function extractJson(text) {
   }
 }
 
+function cleanReason(text, max = 900) {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function formatServicePort(traffic = {}) {
+  const service = Array.isArray(traffic?.services) ? String(traffic.services.find(Boolean) || '').trim() : '';
+  const port = Array.isArray(traffic?.ports) ? Number(traffic.ports.find((p) => Number.isFinite(Number(p)) && Number(p) > 0) || 0) : 0;
+  if (service && port) return `${service}/${port}`;
+  if (port) return `port ${port}`;
+  if (service) return service;
+  return 'not specified';
+}
+
+function buildRelatedIocEvidenceReason({ data, relatedIocs, hasHighVolume, hasMultipleHosts, hasLongDuration }) {
+  const candidate = relatedIocs.find((r) =>
+    r?.relationship === 'dns_response_ip'
+    && r?.related_ioc_in_ioc_list === true
+    && Number(r?.traffic?.accepted_count || 0) > 0
+  );
+  if (!candidate) return null;
+
+  const domain = String(data?.ioc || data?.ioc_value || data?.observable_value || candidate?.source_ioc || 'the domain IOC');
+  const relatedIp = String(candidate?.related_ioc || candidate?.dns?.response_ip || '');
+  if (!relatedIp) return null;
+
+  const acceptedCount = Number(candidate?.traffic?.accepted_count || 0);
+  const servicePort = formatServicePort(candidate?.traffic || {});
+  const chainType = String(candidate?.chain_type || '');
+  const hasDurableDnsSignals = hasHighVolume && hasMultipleHosts && hasLongDuration;
+  const dnsLead = hasDurableDnsSignals
+    ? `High volume DNS activity was observed for ${domain} across multiple hosts over a persistent period.`
+    : `DNS activity was observed for ${domain}.`;
+
+  let chainSentence = '';
+  if (chainType === 'same_host_dns_to_connection') {
+    chainSentence = `The domain resolved to ${relatedIp}, which is also present in the IOC list, and the same internal host later established accepted traffic to ${relatedIp}${servicePort !== 'not specified' ? ` on ${servicePort}` : ''}. This suggests a possible DNS-to-connection chain to malicious infrastructure.`;
+  } else if (chainType === 'environment_level_related_activity') {
+    chainSentence = `The domain resolved to ${relatedIp}, which is also present in the IOC list, and accepted traffic to ${relatedIp}${servicePort !== 'not specified' ? ` on ${servicePort}` : ''} was observed from another internal host. This suggests environment-level related malicious infrastructure activity rather than DNS-only noise.`;
+  } else {
+    chainSentence = `The domain resolved to ${relatedIp}, which is also present in the IOC list, and accepted traffic to that related IOC IP${servicePort !== 'not specified' ? ` on ${servicePort}` : ''} was observed (${acceptedCount} events). Host attribution was inconclusive, so this should be treated as related infrastructure evidence, not a confirmed same-host chain.`;
+  }
+
+  return {
+    reasonText: cleanReason(`${dnsLead} ${chainSentence}`),
+    evidence: {
+      domain,
+      resolved_ip: relatedIp,
+      resolved_ip_in_ioc_list: true,
+      accepted_traffic: acceptedCount > 0,
+      service_port: servicePort,
+      chain_type: chainType || 'related_infrastructure_activity'
+    }
+  };
+}
+
 export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData = null) {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const data = incidentData && typeof incidentData === 'object' ? incidentData : {};
   let confidence = normalizeConfidence(parsed.confidence);
-  let reason = String(parsed.reason || fallbackReason || 'fallback').slice(0, 240);
+  let reason = cleanReason(parsed.reason || fallbackReason || 'fallback');
   const rawModelAdjustment = normalizeAdjustment(parsed.adjustment ?? parsed.risk_adjustment);
   let adjustment = rawModelAdjustment;
 
@@ -128,6 +183,17 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasAcceptedOrSuccessful = hasAcceptedOrSuccessfulMetric || /(accepted|successful)/i.test(evidenceText);
   const hasStrongMaliciousContext = hasStrongMaliciousContextMetric;
   const explicitBenign = hasBenignEvidenceMetric;
+  const relatedReason = buildRelatedIocEvidenceReason({
+    data,
+    relatedIocs,
+    hasHighVolume,
+    hasMultipleHosts,
+    hasLongDuration
+  });
+
+  if (relatedReason?.reasonText) {
+    reason = relatedReason.reasonText;
+  }
 
   let floor = 0;
   if (!explicitBenign) {
@@ -143,12 +209,12 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     adjustment = floor;
     confidence = Math.min(confidence || 0.6, 0.6);
     normalizationReason = 'deterministic_guardrail_floor';
-    reason = appendOnce(reason, 'Final adjustment was normalized by deterministic guardrails based on incident metrics.').slice(0, 240);
+    reason = cleanReason(appendOnce(reason, 'Final adjustment was normalized by deterministic guardrails based on incident metrics.'));
   } else if (!explicitBenign && rawModelAdjustment < 0 && floor === 0 && (hasHighVolume || hasRepeatedOnly || hasMultipleHosts || hasLongDuration)) {
     adjustment = 0;
     confidence = Math.min(confidence || 0.6, 0.6);
     normalizationReason = 'negative_neutralized';
-    reason = appendOnce(reason, 'Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.').slice(0, 240);
+    reason = cleanReason(appendOnce(reason, 'Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.'));
   }
 
   return {
@@ -162,6 +228,7 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     hasLongDuration,
     hasAcceptedOrSuccessfulTraffic: hasAcceptedOrSuccessful,
     hasStrongMaliciousContext,
+    llm_related_evidence: relatedReason?.evidence || null,
     hasBenignEvidence: explicitBenign,
     thresholds_used: {
       AI_INSIGHT_HIGH_VOLUME_MIN_HITS: highVolumeMinHits,
@@ -481,6 +548,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: normalized.reason,
+        llm_related_evidence: parsed?.llm_related_evidence || normalized.llm_related_evidence || null,
         raw_model_adjustment: normalized.raw_model_adjustment,
         normalization_reason: normalized.normalization_reason,
         hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
@@ -618,6 +686,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       llm_risk_adjustment: normalized.adjustment,
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
       llm_risk_reason: normalized.reason,
+      llm_related_evidence: normalized.llm_related_evidence || null,
       raw_model_adjustment: normalized.raw_model_adjustment,
       normalization_reason: normalized.normalization_reason,
       hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,

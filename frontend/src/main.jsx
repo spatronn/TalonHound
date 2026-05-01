@@ -2132,6 +2132,17 @@ function IncidentDetailsPage() {
                                 {item.llm_risk_reason || '—'}
                               </span>
                             </div>
+                            {item.llm_related_evidence ? (
+                              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                                <div style={{ color: '#cbd5e1', marginBottom: 4 }}>Related Evidence:</div>
+                                <div>- Domain: {item.llm_related_evidence.domain || '—'}</div>
+                                <div>- Resolved IP: {item.llm_related_evidence.resolved_ip || '—'}</div>
+                                <div>- Resolved IP in IOC list: {item.llm_related_evidence.resolved_ip_in_ioc_list ? 'yes' : 'no'}</div>
+                                <div>- Accepted traffic: {item.llm_related_evidence.accepted_traffic ? 'yes' : 'no'}</div>
+                                <div>- Service/port: {item.llm_related_evidence.service_port || 'not specified'}</div>
+                                <div>- Chain type: {String(item.llm_related_evidence.chain_type || 'related_infrastructure_activity').replaceAll('_', ' ')}</div>
+                              </div>
+                            ) : null}
                           </>
                         );
                       })()}
