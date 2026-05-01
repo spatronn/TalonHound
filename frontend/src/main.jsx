@@ -1940,6 +1940,12 @@ function IncidentDetailsPage() {
   const [aiStillAnalyzing, setAiStillAnalyzing] = useState(false);
   const [aiError, setAiError] = useState('');
 
+  useEffect(() => {
+    const reason = item?.llm_risk_reason;
+    if (typeof reason !== 'string' || !reason) return;
+    console.log(reason.length, reason);
+  }, [item?.llm_risk_reason]);
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -2122,7 +2128,7 @@ function IncidentDetailsPage() {
                             <div style={{ fontSize: 13 }}>Confidence: <b>{confText}</b></div>
                             <div style={{ fontSize: 13, display: 'grid', gridTemplateColumns: '60px 1fr', gap: 8, alignItems: 'start' }}>
                               <span>Reason:</span>
-                              <span style={{ color: '#cbd5e1', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }} title={item.llm_risk_reason || ''}>
+                              <span style={{ color: '#cbd5e1', whiteSpace: 'normal', overflow: 'visible', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.4 }}>
                                 {item.llm_risk_reason || '—'}
                               </span>
                             </div>
