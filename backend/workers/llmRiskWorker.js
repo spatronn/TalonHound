@@ -276,6 +276,11 @@ const worker = new Worker(
       version: currentVersion
     });
 
+    if (String(incident?.incident_id || '') === '869') {
+      console.log('[llm-risk-worker][debug-869] related_iocs', JSON.stringify(incident.related_iocs || []));
+      console.log('[llm-risk-worker][debug-869] output', JSON.stringify(output || {}));
+    }
+
     return {
       incidentId,
       version: currentVersion,
