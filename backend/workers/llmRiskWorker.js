@@ -24,10 +24,37 @@ const pool = new Pool({
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const advisor = createLlmRiskAdvisor({ redis });
 
+function ipToLong(ip) {
+  const p = String(ip || '').split('.').map((x) => Number(x));
+  if (p.length !== 4 || p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return (((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]) >>> 0;
+}
+
+function cidrContains(ip, cidr) {
+  const [base, maskStr] = String(cidr || '').split('/');
+  const mask = Number(maskStr);
+  if (!base || !Number.isInteger(mask) || mask < 0 || mask > 32) return false;
+  const ipN = ipToLong(ip);
+  const baseN = ipToLong(base);
+  if (ipN == null || baseN == null) return false;
+  const m = mask === 0 ? 0 : ((0xffffffff << (32 - mask)) >>> 0);
+  return (ipN & m) === (baseN & m);
+}
+
+function buildIgnoreCidrs() {
+  const raw = String(process.env.AI_INSIGHT_HOST_IGNORE_CIDRS || '127.0.0.0/8,169.254.0.0/16,224.0.0.0/4,172.18.0.0/16');
+  return raw.split(',').map((x) => x.trim()).filter(Boolean);
+}
+
+function isIgnoredHost(ip, cidrs) {
+  return cidrs.some((c) => cidrContains(ip, c));
+}
+
 async function loadRelatedIocs(activity) {
   if (!activity?.id || String(activity?.ioc_type || '').toLowerCase() !== 'domain') return [];
   const lookbackHours = Math.max(Number(process.env.AI_INSIGHT_RELATED_IOC_LOOKBACK_HOURS || 24), 1);
   const lookforwardHours = Math.max(Number(process.env.AI_INSIGHT_RELATED_IOC_LOOKFORWARD_HOURS || 24), 1);
+  const ignoreCidrs = buildIgnoreCidrs();
 
   const dnsQ = await pool.query(
     `SELECT
@@ -69,9 +96,40 @@ async function loadRelatedIocs(activity) {
     );
 
     const t = traffic.rows?.[0] || {};
-    const clientIps = row.client_ips || [];
-    const internalHosts = t.internal_hosts || [];
-    const sameHost = clientIps.some((ip) => internalHosts.includes(ip));
+    const rawDnsClientIps = row.client_ips || [];
+    const rawTrafficHosts = t.internal_hosts || [];
+    const ignoredHosts = [];
+    const filteredDnsClientHosts = rawDnsClientIps.filter((ip) => {
+      const ignored = isIgnoredHost(ip, ignoreCidrs);
+      if (ignored) ignoredHosts.push(ip);
+      return !ignored;
+    });
+    const filteredTrafficInternalHosts = rawTrafficHosts.filter((ip) => {
+      const ignored = isIgnoredHost(ip, ignoreCidrs);
+      if (ignored && !ignoredHosts.includes(ip)) ignoredHosts.push(ip);
+      return !ignored;
+    });
+
+    const acceptedCount = Number(t.accepted_count || 0);
+    const sameHost = filteredDnsClientHosts.some((ip) => filteredTrafficInternalHosts.includes(ip));
+    const hasValidAttribution = filteredDnsClientHosts.length > 0 && filteredTrafficInternalHosts.length > 0;
+
+    let chainType = 'linked_ioc_without_accepted_traffic';
+    let attributionStatus = null;
+    let riskSignal = 'low_to_medium';
+    if (acceptedCount > 0 && sameHost) {
+      chainType = 'same_host_dns_to_connection';
+      riskSignal = 'high';
+    } else if (acceptedCount > 0 && filteredTrafficInternalHosts.length > 0) {
+      chainType = 'environment_level_related_activity';
+      riskSignal = 'medium';
+    } else if (acceptedCount > 0) {
+      chainType = 'accepted_traffic_to_related_ioc';
+      riskSignal = 'medium';
+      attributionStatus = 'accepted_traffic_without_valid_host_attribution';
+    } else if (filteredDnsClientHosts.length === 0) {
+      attributionStatus = 'no_valid_dns_client_after_filter';
+    }
 
     out.push({
       relationship: 'dns_response_ip',
@@ -80,19 +138,26 @@ async function loadRelatedIocs(activity) {
       related_ioc: responseIp,
       related_ioc_type: 'ip',
       related_ioc_in_ioc_list: inIoc.rowCount > 0,
-      chain_type: sameHost ? 'same_host_dns_to_connection' : 'environment_level_related_activity',
+      chain_type: chainType,
+      attribution_status: attributionStatus,
+      raw_dns_client_ips: rawDnsClientIps,
+      filtered_dns_client_hosts: filteredDnsClientHosts,
+      raw_traffic_hosts: rawTrafficHosts,
+      filtered_traffic_internal_hosts: filteredTrafficInternalHosts,
+      ignored_hosts: ignoredHosts,
+      ignore_cidrs_used: ignoreCidrs,
       dns: {
         query: activity.ioc_value,
         response_ip: responseIp,
-        client_ips: clientIps,
+        client_ips: filteredDnsClientHosts,
         first_seen: row.first_seen,
         last_seen: row.last_seen
       },
       traffic: {
-        accepted_count: Number(t.accepted_count || 0),
+        accepted_count: acceptedCount,
         blocked_count: Number(t.blocked_count || 0),
-        unique_internal_hosts: internalHosts.length,
-        internal_hosts: internalHosts,
+        unique_internal_hosts: filteredTrafficInternalHosts.length,
+        internal_hosts: filteredTrafficInternalHosts,
         ports: (t.ports || []).map((x) => Number(x)).filter(Boolean),
         services: t.services || [],
         first_seen: t.first_seen || null,
@@ -100,7 +165,7 @@ async function loadRelatedIocs(activity) {
         sent_bytes: Number(t.sent_bytes || 0),
         received_bytes: Number(t.received_bytes || 0)
       },
-      risk_signal: sameHost ? 'high' : 'medium'
+      risk_signal: riskSignal
     });
   }
 

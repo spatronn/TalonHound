@@ -110,6 +110,7 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData =
   const relatedInList = relatedIocs.some((r) => r?.related_ioc_in_ioc_list === true);
   const hasSameHostChain = relatedIocs.some((r) => r?.chain_type === 'same_host_dns_to_connection');
   const hasEnvChain = relatedIocs.some((r) => r?.chain_type === 'environment_level_related_activity');
+  const hasAcceptedTrafficNoAttribution = relatedIocs.some((r) => r?.chain_type === 'accepted_traffic_to_related_ioc');
 
   const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0 || relatedAccepted;
   const hasStrongMaliciousContextMetric = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText)
@@ -130,7 +131,8 @@ function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData =
 
   let floor = 0;
   if (!explicitBenign) {
-    if (hasEnvChain && relatedAccepted) floor = Math.max(floor, 5);
+    if (hasAcceptedTrafficNoAttribution && relatedAccepted && relatedInList) floor = Math.max(floor, 5);
+    if (hasEnvChain && relatedAccepted) floor = Math.max(floor, (hasHighVolume && hasMultipleHosts && hasLongDuration) ? 10 : 5);
     if (hasSameHostChain && relatedAccepted) floor = Math.max(floor, 10);
     if (hasHighVolume && hasMultipleHosts && hasLongDuration) floor = Math.max(floor, 5);
     if (floor >= 5 && (hasAcceptedOrSuccessful || hasStrongMaliciousContext)) floor = Math.max(floor, 10);
