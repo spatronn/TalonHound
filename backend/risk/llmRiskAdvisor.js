@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
 
 const ALLOWED_ADJUSTMENTS = new Set([-20, -10, -5, 0, 5, 10, 15, 20]);
@@ -620,7 +621,22 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
   }
 
   function computeVersion(input) {
-    return buildIncidentVersion(input);
+    const base = buildIncidentVersion(input);
+    const related = Array.isArray(input?.related_iocs) ? input.related_iocs : [];
+    if (!related.length) return base;
+
+    const relatedRaw = related
+      .map((r) => [
+        r?.related_ioc || '',
+        r?.chain_type || '',
+        Number(r?.traffic?.accepted_count || 0),
+        r?.related_ioc_in_ioc_list ? 1 : 0
+      ].join('|'))
+      .sort()
+      .join(';');
+
+    const extra = crypto.createHash('sha1').update(relatedRaw).digest('hex').slice(0, 8);
+    return `${base}${extra}`.slice(0, 24);
   }
 
   return {
