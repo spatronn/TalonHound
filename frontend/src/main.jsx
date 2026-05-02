@@ -1847,6 +1847,27 @@ function RiskOverviewPage() {
               </div>
             </div>
 
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 14 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Threat Exposure Score (v2)</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.threat_exposure_score || 0).toFixed(2)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Threat Activity Score (v2)</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.threat_activity_score || 0).toFixed(2)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Institution Risk Estimate (v2)</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.institution_risk_estimate || 0).toFixed(2)}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Allowed / Blocked / Unknown (v2)</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {Number(data?.control_outcome?.allowed_count || 0)} / {Number(data?.control_outcome?.blocked_count || 0)} / {Number(data?.control_outcome?.unknown_count || 0)}
+                </div>
+              </div>
+            </div>
+
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
               <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>All Contributing Incidents</div>
               <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>

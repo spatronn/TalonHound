@@ -1520,6 +1520,144 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
   }
 });
 
+function classifyControlPoint(row) {
+  const t = String(row?.ioc_type || '').toLowerCase();
+  const note = String(row?.note || '').toLowerCase();
+  if (t === 'domain') return 'dns';
+  if (t === 'url') return 'proxy';
+  if (t === 'ip' || t === 'ip6') return 'firewall';
+  if (/(waf|xss|sqli|attack)/.test(note)) return 'waf';
+  if (/(mail|smtp|phish)/.test(note)) return 'mail_gateway';
+  return 'generic';
+}
+
+function classifyScenario(row, controlPoint) {
+  const t = String(row?.ioc_type || '').toLowerCase();
+  if (t === 'url' && controlPoint === 'proxy') return 'malicious_url_access';
+  if (t === 'domain' && controlPoint === 'dns') return 'malicious_domain_dns_query';
+  if ((t === 'ip' || t === 'ip6') && Number(row?.outbound_events || 0) > 0) return 'malicious_ip_outbound';
+  if ((t === 'ip' || t === 'ip6') && Number(row?.inbound_events || 0) > 0) return 'malicious_ip_inbound';
+  if (controlPoint === 'waf') return 'web_attack_payload';
+  if (controlPoint === 'mail_gateway') return 'mail_threat_observed';
+  return 'unknown_ioc_match';
+}
+
+function calculateThreatMetricsV2(incidents = []) {
+  const rows = Array.isArray(incidents) ? incidents : [];
+  const uniqueIocs = new Set(rows.map((r) => `${r.ioc_type}:${r.ioc_value}`));
+  const uniqueIocTypes = new Set(rows.map((r) => String(r.ioc_type || '').toLowerCase()).filter(Boolean));
+  const uniqueHosts = rows.reduce((acc, r) => acc + Math.max(Number(r.asset_count || 0), 0), 0);
+  const totalHits = rows.reduce((acc, r) => acc + Math.max(Number(r.total_hits || 0), 0), 0);
+  const uniqueSources = new Set(rows.map((r) => String(r.source_name || 'unknown')));
+
+  const allowedCount = rows.reduce((a, r) => a + Math.max(Number(r.accepted_connections || 0), 0), 0);
+  const blockedCount = rows.reduce((a, r) => a + Math.max(Number(r.blocked_connections || 0), 0), 0);
+  const unknownCount = Math.max(totalHits - allowedCount - blockedCount, 0);
+  const totalOutcome = Math.max(allowedCount + blockedCount + unknownCount, 1);
+
+  const persistencePoints = Math.min(rows.filter((r) => {
+    const f = new Date(r.first_seen || 0).getTime();
+    const l = new Date(r.last_seen || 0).getTime();
+    return Number.isFinite(f) && Number.isFinite(l) && (l - f) >= 12 * 3600000;
+  }).length * 1.5, 10);
+
+  const exposurePoints = Math.min(uniqueIocs.size * 2, 20)
+    + Math.min(uniqueIocTypes.size * 5, 15)
+    + Math.min(uniqueSources.size * 4, 12)
+    + Math.min(uniqueHosts * 2, 20)
+    + Math.min(Math.log10(totalHits + 1) * 5, 20)
+    + persistencePoints;
+  const threatExposureScore = Math.min(100, Number(exposurePoints.toFixed(2)));
+
+  const activitySeverities = rows.map((r) => {
+    const cp = classifyControlPoint(r);
+    const scenario = classifyScenario(r, cp);
+    const allowed = Number(r.accepted_connections || 0) > 0;
+    const blocked = Number(r.blocked_connections || 0) > 0 && !allowed;
+    let sev = 5;
+    if (scenario === 'malicious_url_access') sev = allowed ? 35 : blocked ? 15 : 8;
+    else if (scenario === 'malicious_domain_dns_query') sev = allowed ? 10 : blocked ? 5 : 6;
+    else if (scenario === 'malicious_ip_outbound') sev = allowed ? 60 : blocked ? 20 : 10;
+    else if (scenario === 'malicious_ip_inbound') sev = allowed ? 45 : blocked ? 10 : 8;
+    else if (scenario === 'web_attack_payload') sev = allowed ? 55 : 20;
+    else if (scenario === 'mail_threat_observed') sev = allowed ? 50 : 15;
+    return { row: r, cp, scenario, sev, outcome: allowed ? 'allowed' : blocked ? 'blocked' : 'unknown' };
+  }).sort((a, b) => b.sev - a.sev);
+
+  const maxSev = activitySeverities[0]?.sev || 0;
+  const otherSum = activitySeverities.slice(1).reduce((a, x) => a + x.sev, 0);
+  const threatActivityScore = Math.min(100, Number((maxSev + Math.min(15, 0.15 * otherSum)).toFixed(2)));
+
+  const spreadScore = Math.min(20, rows.filter((r) => Number(r.asset_count || 0) >= 2).length * 2);
+  let institutionRiskEstimate = 0.60 * threatActivityScore + 0.25 * threatExposureScore + 0.15 * spreadScore;
+
+  const hasTp = rows.some((r) => String(r.verdict || '').toLowerCase() === 'tp');
+  const hasAllowed = allowedCount > 0;
+  const allBlockedOnly = blockedCount > 0 && allowedCount === 0;
+  const genericUnknownCount = activitySeverities.filter((x) => x.scenario === 'unknown_ioc_match').length;
+  if (!hasTp && !hasAllowed) institutionRiskEstimate = Math.min(institutionRiskEstimate, 30);
+  if (genericUnknownCount === rows.length) institutionRiskEstimate = Math.min(institutionRiskEstimate, 15);
+  if (allBlockedOnly) institutionRiskEstimate = Math.min(institutionRiskEstimate, 25);
+
+  const byCp = {};
+  for (const k of ['dns', 'proxy', 'firewall', 'waf', 'mail_gateway', 'generic', 'unknown']) {
+    byCp[k] = { allowed_count: 0, blocked_count: 0, unknown_count: 0, total: 0 };
+  }
+  for (const a of activitySeverities) {
+    const bucket = byCp[a.cp] ? a.cp : 'unknown';
+    byCp[bucket].total += 1;
+    if (a.outcome === 'allowed') byCp[bucket].allowed_count += 1;
+    else if (a.outcome === 'blocked') byCp[bucket].blocked_count += 1;
+    else byCp[bucket].unknown_count += 1;
+  }
+
+  return {
+    score_model_version: 'v2',
+    threat_exposure_score: threatExposureScore,
+    threat_activity_score: threatActivityScore,
+    institution_risk_estimate: Number(institutionRiskEstimate.toFixed(2)),
+    control_outcome: {
+      allowed_count: allowedCount,
+      blocked_count: blockedCount,
+      unknown_count: unknownCount,
+      allowed_ratio: Number((allowedCount / totalOutcome).toFixed(4)),
+      blocked_ratio: Number((blockedCount / totalOutcome).toFixed(4))
+    },
+    activity_by_control_point: byCp,
+    score_debug: {
+      observed_ioc_count: uniqueIocs.size,
+      incident_count: rows.length,
+      strong_evidence_count: activitySeverities.filter((x) => x.outcome === 'allowed' || String(x.row?.verdict || '').toLowerCase() === 'tp').length,
+      generic_unknown_count: genericUnknownCount,
+      caps_applied: [
+        !hasTp && !hasAllowed ? 'cap_no_tp_no_allowed_30' : null,
+        genericUnknownCount === rows.length ? 'cap_generic_only_15' : null,
+        allBlockedOnly ? 'cap_blocked_only_25' : null
+      ].filter(Boolean),
+      notes: ['v2 is parallel metric; existing institution_risk_score remains unchanged'],
+      top_incident_v2: activitySeverities.slice(0, 20).map((x) => ({
+        incident_id: x.row.incident_id,
+        ioc: x.row.ioc_value,
+        ioc_type: x.row.ioc_type,
+        event_family: x.cp,
+        scenario_type: x.scenario,
+        outcome: x.outcome,
+        classification_confidence: x.cp === 'generic' ? 0.4 : 0.75,
+        outcome_confidence: x.outcome === 'unknown' ? 0.5 : 0.8,
+        unique_hosts: Number(x.row.asset_count || 0),
+        total_hits: Number(x.row.total_hits || 0),
+        verdict: x.row.verdict,
+        source_category: x.row.source_name || 'unknown',
+        source_confidence: x.row.confidence || 'unknown',
+        exposure_points: Number(Math.min(Math.log10(Number(x.row.total_hits || 0) + 1) * 5, 20).toFixed(2)),
+        activity_severity: x.sev,
+        risk_cap_applied: null,
+        explanation: `${x.scenario} via ${x.cp} with outcome=${x.outcome}`
+      }))
+    }
+  };
+}
+
 async function computeInstitutionRiskOverview() {
   const [q, totalQ] = await Promise.all([
     pool.query(
@@ -1659,9 +1797,11 @@ async function computeInstitutionRiskOverview() {
     : null;
 
   const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
+  const v2 = calculateThreatMetricsV2(scoredIncidents);
 
   return {
     ...overview,
+    ...v2,
     top_contributing_incidents: topWithLlm,
     llm_adjustment_aggregate: llmAdjustmentAggregate,
     total_active_incidents: totalActiveIncidents,
