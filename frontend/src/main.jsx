@@ -1720,9 +1720,14 @@ function RiskOverviewPage() {
 
   useEffect(() => { load(range).catch(() => {}); }, [load, range]);
 
-  const score = Math.max(0, Math.min(100, Number(data?.institution_risk_score || 0)));
-  const level = score >= 80 ? 'CRITICAL' : score >= 60 ? 'HIGH' : score >= 35 ? 'MEDIUM' : 'LOW';
-  const levelColor = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#f59e0b' : '#22c55e';
+  const legacyScore = Math.max(0, Math.min(100, Number(data?.institution_risk_score || 0)));
+  const v2ScoreRaw = data?.institution_risk_estimate;
+  const useV2 = Number.isFinite(Number(v2ScoreRaw));
+  const score = Math.max(0, Math.min(100, Number(useV2 ? v2ScoreRaw : legacyScore)));
+  const level = score >= 80 ? 'CRITICAL' : score >= 60 ? 'HIGH' : score >= 40 ? 'MEDIUM' : score >= 20 ? 'GUARDED' : 'LOW';
+  const levelColor = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#f59e0b' : level === 'GUARDED' ? '#eab308' : '#22c55e';
+  const exposureScore = Math.max(0, Math.min(100, Number(data?.threat_exposure_score || 0)));
+  const activityScore = Math.max(0, Math.min(100, Number(data?.threat_activity_score || 0)));
   const top = Array.isArray(data?.top_contributing_incidents) ? data.top_contributing_incidents : [];
   const bd = data?.breakdown || {};
   const llmAggregate = data?.llm_adjustment_aggregate || bd?.llm_adjustment_aggregate || null;
@@ -1779,11 +1784,12 @@ function RiskOverviewPage() {
         {loading ? <div style={{ color: '#94a3b8' }}>Loading risk overview...</div> : !data ? <div style={{ color: '#94a3b8' }}>Risk overview data is unavailable.</div> : (
           <>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a', marginBottom: 14 }}>
-              <div style={{ fontSize: 13, color: '#94a3b8' }}>Institution Risk Score</div>
+              <div style={{ fontSize: 13, color: '#94a3b8' }}>Institution Risk Estimate</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
                 <div style={{ fontSize: 42, fontWeight: 800, lineHeight: 1 }}>{score.toFixed(2)}</div>
                 <span style={{ border: `1px solid ${levelColor}`, color: levelColor, borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>{level}</span>
               </div>
+              <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8' }}>Conservative estimate based on observed threat activity, exposure, and available event context.</div>
               <div style={{ marginTop: 10, height: 12, borderRadius: 999, background: '#1f2937', overflow: 'hidden' }}>
                 <div style={{ width: `${score}%`, height: '100%', background: `linear-gradient(90deg, #22c55e 0%, #f59e0b 55%, #ef4444 100%)` }} />
               </div>
@@ -1842,19 +1848,21 @@ function RiskOverviewPage() {
                 <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(bd?.total_raw_contribution || 0).toFixed(6)}</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Institution Risk Score</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{score.toFixed(2)}</div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Score Model</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{useV2 ? 'v2' : 'legacy'}</div>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>Threat Exposure Score (v2)</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.threat_exposure_score || 0).toFixed(2)}</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{exposureScore.toFixed(2)}</div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>How much threat-intel activity was observed in environment logs.</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>Threat Activity Score (v2)</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.threat_activity_score || 0).toFixed(2)}</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{activityScore.toFixed(2)}</div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Severity of observed activity based on available event context.</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>Institution Risk Estimate (v2)</div>
