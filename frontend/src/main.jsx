@@ -1885,8 +1885,8 @@ function RiskOverviewPage() {
                     <th style={{ width: 90 }}>Exposure</th>
                     <th style={{ width: 90 }}>Activity</th>
                     <th style={{ width: 110 }}>Risk Estimate</th>
-                    <th style={{ width: 130 }}>Scenario</th>
-                    <th style={{ width: 90 }}>Outcome</th>
+                    <th style={{ width: 170 }}>Dominant Context</th>
+                    <th style={{ width: 170 }}>Strongest Evidence</th>
                     <th style={{ width: 130 }}>Confidence / Context</th>
                     <th style={{ width: 90 }}>Verdict</th>
                   </tr>
@@ -1909,8 +1909,8 @@ function RiskOverviewPage() {
                         <td>{Number.isFinite(exposure) ? exposure.toFixed(2) : '—'}</td>
                         <td>{Number.isFinite(activity) ? activity.toFixed(2) : '—'}</td>
                         <td>{Number.isFinite(riskEstimate) ? riskEstimate.toFixed(2) : '—'}</td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v2?.scenario_type || '—'}</td>
-                        <td>{v2?.outcome || '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it?.incident_context_summary?.dominant_scenario || v2?.scenario_type || '—'}{it?.incident_context_summary?.event_family_counts ? ` · ${Object.values(it.incident_context_summary.event_family_counts).reduce((a,b)=>a+Number(b||0),0)} events` : ''}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it?.incident_context_summary?.strongest_activity_scenario || 'Observed only')} · {(it?.incident_context_summary?.strongest_activity_outcome || v2?.outcome || 'observed')}</td>
                         <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{confText}</td>
                         <td>{it.verdict || '—'}</td>
                       </tr>

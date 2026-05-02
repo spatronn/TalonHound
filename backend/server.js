@@ -1129,7 +1129,8 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
       return res.status(404).json({ message: 'IOC match event not found' });
     }
 
-    const item = USE_CLICKHOUSE ? await withRawSyslogEvent(q.rows[0]) : q.rows[0];
+    const itemRaw = USE_CLICKHOUSE ? await withRawSyslogEvent(q.rows[0]) : q.rows[0];
+    const item = { ...itemRaw, v2_context: classifyEventContext(itemRaw) };
     return res.json({ item });
   } catch (err) {
     console.error('[ioc-match-event-detail] failed', err);
@@ -1520,6 +1521,45 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
   }
 });
 
+function classifyEventContext(ev = {}) {
+  const mc = ev?.match_context || {};
+  const iocType = String(ev?.ioc_type || '').toLowerCase();
+  const t = String(mc.type || mc.log_type || '').toLowerCase();
+  const hasDns = t === 'dns' || mc.query || mc.query_type || mc.response_ip;
+  const hasProxy = t === 'proxy' || (mc.url && (mc.method || mc.status));
+  const hasFirewall = t === 'firewall' || mc.srcip || mc.dstip || mc.dstport || mc.service;
+  const isWaf = /waf|xss|sqli|attack/.test(String(mc.attack_type || mc.rule_id || t || ''));
+  const isMail = mc.sender || mc.recipient || mc.subject || /mail|smtp/.test(String(t));
+
+  let event_family = hasDns ? 'dns' : hasProxy ? 'proxy' : hasFirewall ? 'firewall' : isWaf ? 'waf' : isMail ? 'mail_gateway' : 'generic';
+  let control_point = event_family;
+  let matched_field = String(mc.matched_field || '').toLowerCase() || (mc.response_ip ? 'response_ip' : mc.dstip ? 'dstip' : mc.srcip ? 'srcip' : mc.url ? 'url' : mc.query ? 'query' : 'unknown');
+
+  const action = String(mc.action || mc.decision || '').toLowerCase();
+  const status = String(mc.status || '').toLowerCase();
+  const blockSig = /(block|deny|drop|reject|quarantine|sinkhole)/.test(`${action} ${status} ${mc.block_reason || ''}`.toLowerCase());
+  const allowSig = /(allow|accept|permit|pass|delivered|success)/.test(`${action} ${status}`.toLowerCase());
+  let outcome = blockSig ? 'blocked' : allowSig ? 'allowed' : (event_family === 'dns' ? 'observed' : 'unknown');
+
+  let direction = String(mc.direction || mc.flow || '').toLowerCase() || (event_family === 'dns' ? 'dns' : 'unknown');
+  let scenario_type = 'unknown_ioc_match';
+  if (event_family === 'dns' && matched_field === 'response_ip' && iocType === 'ip') scenario_type = 'dns_response_ip_ioc_observed';
+  else if (event_family === 'dns') scenario_type = 'malicious_domain_dns_query';
+  else if (event_family === 'proxy' && iocType === 'url') scenario_type = 'malicious_url_access';
+  else if (event_family === 'firewall' && iocType === 'ip' && direction === 'outbound') scenario_type = 'malicious_ip_outbound';
+  else if (event_family === 'firewall' && iocType === 'ip' && direction === 'inbound') scenario_type = 'malicious_ip_inbound';
+  else if (event_family === 'waf') scenario_type = 'web_attack_payload';
+  else if (event_family === 'mail_gateway') scenario_type = 'mail_threat_observed';
+
+  const classification_confidence = event_family === 'generic' ? 0.4 : matched_field !== 'unknown' ? 0.85 : 0.75;
+  const outcome_confidence = outcome === 'unknown' ? 0.5 : outcome === 'observed' ? 0.7 : 0.8;
+  const context_explanation = scenario_type === 'dns_response_ip_ioc_observed'
+    ? 'IP IOC observed in DNS response_ip; no direct connection evidence.'
+    : `${scenario_type} via ${event_family} with outcome=${outcome}`;
+
+  return { event_family, control_point, matched_field, scenario_type, direction, outcome, classification_confidence, outcome_confidence, context_explanation };
+}
+
 function classifyControlPoint(row) {
   const t = String(row?.ioc_type || '').toLowerCase();
   const note = String(row?.note || '').toLowerCase();
@@ -1798,12 +1838,44 @@ async function computeInstitutionRiskOverview() {
 
   const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
   const v2 = calculateThreatMetricsV2(scoredIncidents);
+  const evAggQ = await pool.query(`
+    SELECT activity_id,
+      COALESCE(match_context->>'type','') AS t,
+      COUNT(*)::int AS c,
+      SUM(CASE WHEN LOWER(COALESCE(match_context->>'action','')) IN ('accept','accepted','allow','allowed','permit','pass') THEN 1 ELSE 0 END)::int AS allowed_c,
+      SUM(CASE WHEN LOWER(COALESCE(match_context->>'action','')) IN ('deny','denied','drop','blocked','block','reject') THEN 1 ELSE 0 END)::int AS blocked_c
+    FROM ioc_match_events WHERE activity_id IS NOT NULL GROUP BY 1,2`);
+  const aggByAct = new Map();
+  for (const r of evAggQ.rows || []) {
+    const k = String(r.activity_id);
+    const fam = String(r.t || 'generic').toLowerCase() || 'generic';
+    const cur = aggByAct.get(k) || { event_family_counts: {}, outcome_counts: {}, total: 0 };
+    cur.event_family_counts[fam] = (cur.event_family_counts[fam] || 0) + Number(r.c || 0);
+    cur.outcome_counts.allowed = (cur.outcome_counts.allowed || 0) + Number(r.allowed_c || 0);
+    cur.outcome_counts.blocked = (cur.outcome_counts.blocked || 0) + Number(r.blocked_c || 0);
+    cur.outcome_counts.observed = (cur.outcome_counts.observed || 0) + Math.max(Number(r.c || 0) - Number(r.allowed_c || 0) - Number(r.blocked_c || 0), 0);
+    cur.total += Number(r.c || 0);
+    aggByAct.set(k, cur);
+  }
+
   const v2ByIncident = new Map((v2?.score_debug?.top_incident_v2 || []).map((x) => [String(x.incident_id), x]));
   const topWithV2 = topWithLlm.map((it) => {
     const vx = v2ByIncident.get(String(it.incident_id));
+    const ax = aggByAct.get(String(it.id || '')) || { event_family_counts: {}, outcome_counts: {}, total: 0 };
+    const domFam = Object.entries(ax.event_family_counts).sort((a,b)=>b[1]-a[1])[0];
+    const strongest = (ax.outcome_counts.allowed || 0) > 0 ? 'allowed' : (ax.outcome_counts.blocked || 0) > 0 ? 'blocked' : 'observed';
     return {
       ...it,
       ioc: it.ioc_value,
+      incident_context_summary: {
+        event_family_counts: ax.event_family_counts,
+        outcome_counts: ax.outcome_counts,
+        dominant_scenario: vx?.scenario_type || 'unknown_ioc_match',
+        dominant_outcome: vx?.outcome || strongest,
+        strongest_activity_scenario: (ax.outcome_counts.allowed || 0) > 0 ? 'malicious_ip_outbound' : (vx?.scenario_type || 'unknown_ioc_match'),
+        strongest_activity_outcome: strongest,
+        activity_mix_summary: `Context Mix: ${Object.entries(ax.event_family_counts).map(([k,v])=>`${k} ${v}`).join(' · ')}`
+      },
       v2: vx ? {
         exposure: vx.exposure_points ?? null,
         activity: vx.activity_severity ?? null,
@@ -2041,7 +2113,8 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       [incident.id]
     );
 
-    return res.json({ total: Number(totalQ.rows?.[0]?.total || 0), items: q.rows || [] });
+    const items = (q.rows || []).map((r) => ({ ...r, v2_context: classifyEventContext(r) }));
+    return res.json({ total: Number(totalQ.rows?.[0]?.total || 0), items });
   } catch (err) {
     console.error('[incident-events] failed', err);
     return res.status(500).json({ total: 0, items: [] });
