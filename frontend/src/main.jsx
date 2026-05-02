@@ -1545,6 +1545,21 @@ function IOCMatchEventDetailsPage() {
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Event Context (v2)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, fontSize: 13 }}>
+                <div><b>Event Family:</b> {item?.v2_context?.event_family || '—'}</div>
+                <div><b>Control Point:</b> {item?.v2_context?.control_point || '—'}</div>
+                <div><b>Matched Field:</b> {item?.v2_context?.matched_field || '—'}</div>
+                <div><b>Scenario:</b> {item?.v2_context?.scenario_type || '—'}</div>
+                <div><b>Direction:</b> {item?.v2_context?.direction || '—'}</div>
+                <div><b>Outcome:</b> {item?.v2_context?.outcome || '—'}</div>
+                <div><b>Classification Confidence:</b> {Number.isFinite(Number(item?.v2_context?.classification_confidence)) ? Number(item.v2_context.classification_confidence).toFixed(2) : '—'}</div>
+                <div><b>Outcome Confidence:</b> {Number.isFinite(Number(item?.v2_context?.outcome_confidence)) ? Number(item.v2_context.outcome_confidence).toFixed(2) : '—'}</div>
+                <div style={{ gridColumn: '1 / -1' }}><b>Context Explanation:</b> {item?.v2_context?.context_explanation || '—'}</div>
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
               <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Matched Syslog event</div>
               <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.45, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace', fontSize: 13, background: '#020617', border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 280, overflowY: 'auto' }}>
                 {item.matched_syslog_event || '-'}
@@ -1624,6 +1639,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
             <th style={{ width: 80 }}>ID</th>
             <th style={{ width: 170 }}>Detected At</th>
             <th style={{ width: 220 }}>Matched IOC</th>
+            <th style={{ width: 200 }}>Context</th>
             <th style={{ width: 140 }}>Detection</th>
             <th style={{ width: 140 }}>Verdict</th>
             <th style={{ width: 140 }}>Assignee</th>
@@ -1632,7 +1648,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
           </tr>
         </thead>
         <tbody>
-          {loading ? <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => {
+          {loading ? <tr><td colSpan={9} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => {
             const verdict = String(r.verdict || '').toLowerCase();
             const vm = verdict === 'fp'
               ? { label: 'FP', color: '#ef4444' }
@@ -1649,6 +1665,9 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
                 <td>{r.id}</td>
                 <td>{formatUserDateTime(r.detected_at || r.event_time || r.created_at)}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.matched_ioc || '-'}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {r?.v2_context?.event_family || 'generic'} · {r?.v2_context?.matched_field || 'raw'} · {r?.v2_context?.outcome || 'unknown'}
+                </td>
                 <td>
                   <span style={{
                     display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
@@ -1678,7 +1697,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
                 </td>
               </tr>
             );
-          }) : <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
+          }) : <tr><td colSpan={9} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
         </tbody>
       </table>
     </div>
