@@ -163,32 +163,74 @@ function getClosedDecayFactor(incident, halfLifeDays = 14) {
   return clamp(decay, 0, 1);
 }
 
+function mapAiAdjustmentDelta(rawAdj) {
+  const n = Number(rawAdj);
+  if (!Number.isFinite(n)) return 0;
+  if (n <= -10) return -1;
+  if (n < 0) return -0.5;
+  if (n >= 10) return 1;
+  if (n > 0) return 0.5;
+  return 0;
+}
+
+function getRecencyMultiplier(lastSeen) {
+  const t = new Date(lastSeen || 0).getTime();
+  if (!Number.isFinite(t) || t <= 0) return 0.4;
+  const ageDays = Math.max((Date.now() - t) / (1000 * 60 * 60 * 24), 0);
+  if (ageDays <= 1) return 1.0;
+  if (ageDays <= 7) return 0.7;
+  if (ageDays <= 30) return 0.4;
+  return 0.2;
+}
+
 function getInstitutionContribution(incident) {
-  const status = String(incident?.status || '').trim().toLowerCase();
   const verdict = normalizeVerdict(incident?.verdict);
-  const riskScore = clamp(Number(incident?.risk_score || 0), 0, 100);
+  const confidence = String(incident?.confidence || '').trim().toLowerCase();
+  const iocType = String(incident?.ioc_type || '').trim().toLowerCase();
+  const activityType = String(incident?.activity_type || (iocType === 'domain' ? 'dns' : iocType)).trim().toLowerCase();
+  const totalHits = Math.max(Number(incident?.total_hits || 0), 0);
+  const observedHosts = Math.max(Number(incident?.asset_count || 0), 0);
+  const acceptedCount = Math.max(Number(incident?.accepted_connections || 0), 0);
+  const blockedCount = Math.max(Number(incident?.blocked_connections || 0), 0);
+  const durationHours = Math.max((new Date(incident?.last_seen || 0).getTime() - new Date(incident?.first_seen || 0).getTime()) / 3600000, 0);
 
   if (verdict === 'FP') {
-    return { contribution: 0, bucket: 'excluded', reason: 'false_positive', decay_factor: 0 };
+    return { contribution: 0, final_contribution: 0, bucket: 'excluded', reason: 'false_positive', recency_multiplier: 0, caps_applied: ['fp_force_zero'], components: {} };
   }
 
-  if (isSecurityTestIncident(incident)) {
-    return { contribution: 0.02, bucket: status === 'open' ? 'open' : 'closed_decay', reason: 'security_test', decay_factor: status === 'closed' ? getClosedDecayFactor(incident) : 1 };
-  }
+  const confidenceWeight = confidence === 'high' ? 3 : confidence === 'medium' ? 2 : 1;
+  let activityWeight = 1.0;
+  if (iocType === 'domain' || activityType === 'dns') activityWeight = 0.5;
+  if (iocType === 'url' || activityType === 'url' || activityType === 'proxy') activityWeight = 1.5;
+  if (acceptedCount > 0) activityWeight = 4.0;
+  if (verdict === 'TP') activityWeight = 6.0;
 
-  const normalizedRisk = riskScore / 100;
-  const base = Math.pow(normalizedRisk, 2);
+  const hitFactor = Math.min(Math.log10(totalHits + 1), 5) * 0.4;
+  const hostSpread = observedHosts >= 20 ? 2.5 : observedHosts >= 6 ? 1.5 : observedHosts >= 2 ? 0.75 : 0;
+  const persistence = durationHours >= 24 * 2 ? 2 : durationHours > 24 ? 1.5 : durationHours >= 12 ? 1 : durationHours >= 1 ? 0.5 : 0;
+  const verdictMultiplier = verdict === 'TP' ? 1.4 : verdict === 'Suspicious' ? 1.0 : 0.8;
+  const aiDelta = mapAiAdjustmentDelta(incident?.llm_risk_adjustment);
 
-  if (status === 'open') {
-    return { contribution: base, bucket: 'open', reason: 'open_incident', decay_factor: 1 };
-  }
+  let raw = ((confidenceWeight + activityWeight + hitFactor + hostSpread + persistence) * verdictMultiplier) + aiDelta;
+  const caps = [];
 
-  if (status === 'closed' && (verdict === 'TP' || verdict === 'Suspicious')) {
-    const decay = getClosedDecayFactor(incident);
-    return { contribution: base * decay, bucket: 'closed_decay', reason: 'closed_with_decay', decay_factor: Number(decay.toFixed(6)) };
-  }
+  const blockedOnly = blockedCount > 0 && acceptedCount === 0;
+  const dnsOnly = (iocType === 'domain' || activityType === 'dns') && acceptedCount === 0;
+  if (blockedOnly && verdict !== 'TP' && raw > 3) { raw = 3; caps.push('blocked_only_cap_3'); }
+  if (dnsOnly && verdict !== 'TP' && raw > 4) { raw = 4; caps.push('dns_only_cap_4'); }
 
-  return { contribution: 0, bucket: 'excluded', reason: 'closed_non_risky_or_unreviewed', decay_factor: 0 };
+  const recency = getRecencyMultiplier(incident?.last_seen);
+  const finalContribution = Math.max(0, raw * recency);
+
+  return {
+    contribution: raw,
+    final_contribution: finalContribution,
+    bucket: String(incident?.status || '').toLowerCase() === 'open' ? 'open' : 'closed_decay',
+    reason: 'quality_weighted_contribution',
+    recency_multiplier: recency,
+    caps_applied: caps,
+    components: { confidenceWeight, activityWeight, hitFactor: Number(hitFactor.toFixed(4)), hostSpread, persistence, verdictMultiplier, aiDelta }
+  };
 }
 
 export function calculateInstitutionRisk(incidents) {
@@ -223,52 +265,40 @@ export function calculateInstitutionRisk(incidents) {
       ...r,
       risk_score: Number(riskScore.toFixed(2)),
       _contribution: meta.contribution,
+      _final_contribution: Number((meta.final_contribution ?? meta.contribution ?? 0).toFixed(6)),
       _contribution_bucket: meta.bucket,
       _contribution_reason: meta.reason,
-      _decay_factor: meta.decay_factor
+      _decay_factor: meta.decay_factor,
+      _recency_multiplier: meta.recency_multiplier ?? 1,
+      _caps_applied: meta.caps_applied || [],
+      _components: meta.components || {}
     };
   });
 
   const openContribution = processed
     .filter((r) => r._contribution_bucket === 'open')
-    .reduce((acc, r) => acc + r._contribution, 0);
+    .reduce((acc, r) => acc + r._final_contribution, 0);
   const closedDecayContribution = processed
     .filter((r) => r._contribution_bucket === 'closed_decay')
-    .reduce((acc, r) => acc + r._contribution, 0);
+    .reduce((acc, r) => acc + r._final_contribution, 0);
   const excludedIncidentCount = processed.filter((r) => r._contribution_bucket === 'excluded').length;
 
   const totalRawContribution = openContribution + closedDecayContribution;
 
-  const contributingRows = processed.filter((r) => r._contribution > 0);
+  const contributingRows = processed.filter((r) => r._final_contribution > 0);
   const contributingCount = contributingRows.length;
 
-  // STEP 1: incident normalization
-  // normalized_incident = 1 - exp(-incident_risk/50)
-  const normalizedIncidents = contributingRows.map((r) => {
-    const incidentRisk = clamp(Number(r.risk_score || 0), 0, 100);
-    const norm = 1 - Math.exp(-incidentRisk / 50);
-    return Number.isFinite(norm) ? norm : 0;
-  });
-
-  // STEP 2: total aggregation
-  const totalNormalized = normalizedIncidents.reduce((acc, v) => acc + v, 0);
-
-  // STEP 3: saturation curve
-  // final_score = 100 * (1 - exp(-total_normalized/5))
-  let institutionRisk = 100 * (1 - Math.exp(-(totalNormalized / 5)));
-
-  // STEP 4: low incident dampening
-  if (contributingCount > 0 && contributingCount < 5) {
-    institutionRisk *= 0.6;
-  }
+  const totalNormalized = contributingRows.reduce((acc, r) => acc + Number(r._final_contribution || 0), 0);
+  const riskScoreScale = Math.max(Number(process.env.RISK_SCORE_SCALE || 35), 1);
+  let institutionRisk = 100 * (1 - Math.exp(-(totalNormalized / riskScoreScale)));
 
   // STEP 5: safety guards
   if (!Number.isFinite(institutionRisk)) institutionRisk = 0;
   institutionRisk = clamp(institutionRisk, 0, 100);
 
   const topContributing = [...processed]
-    .sort((a, b) => b._contribution - a._contribution)
-    .filter((r) => r._contribution > 0)
+    .sort((a, b) => b._final_contribution - a._final_contribution)
+    .filter((r) => r._final_contribution > 0)
     .map((r, idx) => {
       const riskBeforeLlmRaw = Number(r?.risk_before_llm);
       const llmAdjustmentRaw = Number(r?.llm_risk_adjustment);
@@ -285,9 +315,20 @@ export function calculateInstitutionRisk(incidents) {
         llm_risk_confidence: Number.isFinite(llmConfidenceRaw) ? Number(llmConfidenceRaw.toFixed(3)) : null,
         llm_risk_reason: r?.llm_risk_reason != null ? String(r.llm_risk_reason).slice(0, MAX_REASON_LENGTH) : null,
         final_risk_score: Number.isFinite(finalRiskRaw) ? Number(finalRiskRaw.toFixed(2)) : null,
-        contribution: Number(r._contribution.toFixed(6)),
+        contribution: Number(r._final_contribution.toFixed(6)),
+        raw_contribution: Number((r._contribution || 0).toFixed(6)),
         contribution_bucket: r._contribution_bucket,
         decay_factor: Number((r._decay_factor || 0).toFixed(6)),
+        recency_multiplier: Number((r._recency_multiplier || 1).toFixed(3)),
+        caps_applied: Array.isArray(r._caps_applied) ? r._caps_applied : [],
+        components: r._components || {},
+        total_hits: Number(r?.total_hits || 0),
+        observed_hosts: Number(r?.asset_count || 0),
+        activity_type: String(r?.activity_type || r?.ioc_type || ''),
+        accepted_count: Number(r?.accepted_connections || 0),
+        blocked_count: Number(r?.blocked_connections || 0),
+        confidence: r?.confidence || null,
+        verdict: normalizeVerdict(r?.verdict),
         rank: idx + 1
       };
     });
