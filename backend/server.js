@@ -2155,7 +2155,10 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       [incident.id]
     );
 
-    const items = (q.rows || []).map((r) => ({ ...r, v2_context: classifyEventContext(r) }));
+    const baseItems = USE_CLICKHOUSE
+      ? await Promise.all((q.rows || []).map((r) => withRawSyslogEvent(r)))
+      : (q.rows || []);
+    const items = baseItems.map((r) => ({ ...r, v2_context: classifyEventContext(r) }));
     return res.json({ total: Number(totalQ.rows?.[0]?.total || 0), items });
   } catch (err) {
     console.error('[incident-events] failed', err);
