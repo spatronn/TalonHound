@@ -208,7 +208,7 @@ function getInstitutionContribution(incident) {
   const hitFactor = Math.min(Math.log10(totalHits + 1), 5) * 0.4;
   const hostSpread = observedHosts >= 20 ? 2.5 : observedHosts >= 6 ? 1.5 : observedHosts >= 2 ? 0.75 : 0;
   const persistence = durationHours >= 24 * 2 ? 2 : durationHours > 24 ? 1.5 : durationHours >= 12 ? 1 : durationHours >= 1 ? 0.5 : 0;
-  const verdictMultiplier = verdict === 'TP' ? 1.4 : verdict === 'Suspicious' ? 1.0 : 0.8;
+  const verdictMultiplier = verdict === 'TP' ? 1.3 : verdict === 'Suspicious' ? 0.9 : 0.55;
   const aiDelta = mapAiAdjustmentDelta(incident?.llm_risk_adjustment);
 
   let raw = ((confidenceWeight + activityWeight + hitFactor + hostSpread + persistence) * verdictMultiplier) + aiDelta;
@@ -216,8 +216,29 @@ function getInstitutionContribution(incident) {
 
   const blockedOnly = blockedCount > 0 && acceptedCount === 0;
   const dnsOnly = (iocType === 'domain' || activityType === 'dns') && acceptedCount === 0;
-  if (blockedOnly && verdict !== 'TP' && raw > 3) { raw = 3; caps.push('blocked_only_cap_3'); }
-  if (dnsOnly && verdict !== 'TP' && raw > 4) { raw = 4; caps.push('dns_only_cap_4'); }
+  const urlProxy = (iocType === 'url' || activityType === 'url' || activityType === 'proxy');
+  const ipIoc = iocType === 'ip' || iocType === 'ip6';
+  const unknownOutcome = acceptedCount === 0 && blockedCount === 0;
+
+  if (verdict === 'Unreviewed') {
+    if (dnsOnly && raw > 1.5) { raw = 1.5; caps.push('unreviewed_dns_only_cap_1_5'); }
+    if (blockedOnly && raw > 2.0) { raw = 2.0; caps.push('unreviewed_blocked_only_cap_2'); }
+    if (urlProxy && raw > 3.0) { raw = 3.0; caps.push('unreviewed_url_proxy_cap_3'); }
+    if (ipIoc && unknownOutcome && raw > 3.0) { raw = 3.0; caps.push('unreviewed_ip_unknown_outcome_cap_3'); }
+  }
+
+  if (ipIoc) {
+    if (acceptedCount > 0) {
+      raw += 1.5;
+      if (raw > 6.0 && verdict !== 'TP') { raw = 6.0; caps.push('ip_accepted_non_tp_cap_6'); }
+    } else if (blockedOnly) {
+      raw = Math.min(raw, 2.0);
+      caps.push('ip_blocked_only_cap_2');
+    } else if (unknownOutcome) {
+      raw = Math.min(raw, 2.5);
+      caps.push('ip_unknown_outcome_cap_2_5');
+    }
+  }
 
   const recency = getRecencyMultiplier(incident?.last_seen);
   const finalContribution = Math.max(0, raw * recency);
@@ -292,6 +313,13 @@ export function calculateInstitutionRisk(incidents) {
   const riskScoreScale = Math.max(Number(process.env.RISK_SCORE_SCALE || 35), 1);
   let institutionRisk = 100 * (1 - Math.exp(-(totalNormalized / riskScoreScale)));
 
+  const strongEvidenceCount = processed.filter((r) => {
+    const v = normalizeVerdict(r?.verdict);
+    const accepted = Number(r?.accepted_connections || 0) > 0;
+    const highConf = String(r?.confidence || '').toLowerCase() === 'high' && Number(r?.asset_count || 0) >= 2;
+    return v === 'TP' || accepted || highConf;
+  }).length;
+
   // STEP 5: safety guards
   if (!Number.isFinite(institutionRisk)) institutionRisk = 0;
   institutionRisk = clamp(institutionRisk, 0, 100);
@@ -349,8 +377,12 @@ export function calculateInstitutionRisk(incidents) {
     }
     : null;
 
+  let institutionRiskLabel = institutionRisk >= 80 ? 'CRITICAL' : institutionRisk >= 60 ? 'HIGH' : institutionRisk >= 35 ? 'MEDIUM' : 'LOW';
+  if (strongEvidenceCount === 0 && (institutionRiskLabel === 'HIGH' || institutionRiskLabel === 'CRITICAL')) institutionRiskLabel = 'ELEVATED';
+
   return {
     institution_risk_score: Number(institutionRisk.toFixed(2)),
+    institution_risk_label: institutionRiskLabel,
     active_incident_count: activeIncidentCount,
     top_contributing_incidents: topContributing,
     llm_adjustment_aggregate: llmAdjustmentAggregate,
