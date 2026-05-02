@@ -166,10 +166,10 @@ function getClosedDecayFactor(incident, halfLifeDays = 14) {
 function mapAiAdjustmentDelta(rawAdj) {
   const n = Number(rawAdj);
   if (!Number.isFinite(n)) return 0;
-  if (n <= -10) return -1;
-  if (n < 0) return -0.5;
-  if (n >= 10) return 1;
-  if (n > 0) return 0.5;
+  if (n <= -10) return -0.5;
+  if (n < 0) return -0.25;
+  if (n >= 10) return 0.5;
+  if (n > 0) return 0.25;
   return 0;
 }
 
@@ -229,14 +229,40 @@ function getInstitutionContribution(incident) {
 
   if (ipIoc) {
     if (acceptedCount > 0) {
-      raw += 1.5;
-      if (raw > 6.0 && verdict !== 'TP') { raw = 6.0; caps.push('ip_accepted_non_tp_cap_6'); }
+      raw += 1.0;
+      if (verdict !== 'TP' && raw > 4.0) { raw = 4.0; caps.push('ip_accepted_non_tp_cap_4'); }
+      if (verdict === 'TP' && raw > 6.0) { raw = 6.0; caps.push('ip_tp_cap_6'); }
     } else if (blockedOnly) {
-      raw = Math.min(raw, 2.0);
-      caps.push('ip_blocked_only_cap_2');
+      raw = Math.min(raw, 1.5);
+      caps.push('ip_blocked_only_cap_1_5');
     } else if (unknownOutcome) {
-      raw = Math.min(raw, 2.5);
-      caps.push('ip_unknown_outcome_cap_2_5');
+      raw = Math.min(raw, 2.0);
+      caps.push('ip_unknown_outcome_cap_2');
+    }
+  }
+
+  if (urlProxy) {
+    if (acceptedCount > 0 && verdict !== 'TP') {
+      raw = Math.min(raw, 2.0);
+      caps.push('url_accepted_non_tp_cap_2');
+    } else if (acceptedCount === 0 && verdict !== 'TP') {
+      raw = Math.min(raw, 1.5);
+      caps.push('url_match_only_non_tp_cap_1_5');
+    }
+    if (observedHosts >= 2 && durationHours >= 12 && verdict !== 'TP') {
+      raw = Math.min(raw + 0.5, 2.5);
+      caps.push('url_persistent_multi_host_bonus_cap_2_5');
+    }
+    if (verdict === 'TP') raw = Math.min(raw, 5.0);
+  }
+
+  if (dnsOnly) {
+    if (verdict === 'Unreviewed') {
+      raw = Math.min(raw, (observedHosts >= 2 && durationHours >= 12) ? 1.5 : 1.0);
+      caps.push('dns_only_unreviewed_cap');
+    } else if (verdict === 'TP') {
+      raw = Math.min(raw, 4.0);
+      caps.push('dns_only_tp_cap_4');
     }
   }
 
@@ -252,6 +278,23 @@ function getInstitutionContribution(incident) {
     caps_applied: caps,
     components: { confidenceWeight, activityWeight, hitFactor: Number(hitFactor.toFixed(4)), hostSpread, persistence, verdictMultiplier, aiDelta }
   };
+}
+
+function rootDomainLike(v) {
+  const s = String(v || '').toLowerCase().trim();
+  if (!s) return '';
+  const noProto = s.replace(/^https?:\/\//, '').split('/')[0].split(':')[0];
+  const parts = noProto.split('.').filter(Boolean);
+  if (parts.length >= 2) return `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+  return noProto;
+}
+
+function buildClusterKey(row) {
+  const t = String(row?.ioc_type || '').toLowerCase();
+  const ioc = String(row?.ioc_value || '').trim();
+  if (t === 'ip' || t === 'ip6') return `ip:${ioc}`;
+  if (t === 'domain' || t === 'url') return `domain:${rootDomainLike(ioc)}`;
+  return `${t}:${ioc}`;
 }
 
 export function calculateInstitutionRisk(incidents) {
@@ -309,9 +352,33 @@ export function calculateInstitutionRisk(incidents) {
   const contributingRows = processed.filter((r) => r._final_contribution > 0);
   const contributingCount = contributingRows.length;
 
-  const totalNormalized = contributingRows.reduce((acc, r) => acc + Number(r._final_contribution || 0), 0);
-  const riskScoreScale = Math.max(Number(process.env.RISK_SCORE_SCALE || 35), 1);
-  let institutionRisk = 100 * (1 - Math.exp(-(totalNormalized / riskScoreScale)));
+  const totalIncidentContribution = contributingRows.reduce((acc, r) => acc + Number(r._final_contribution || 0), 0);
+
+  const clustersMap = new Map();
+  for (const r of contributingRows) {
+    const key = buildClusterKey(r);
+    if (!clustersMap.has(key)) clustersMap.set(key, []);
+    clustersMap.get(key).push(r);
+  }
+
+  const clusters = [...clustersMap.entries()].map(([cluster_key, rowsIn]) => {
+    const sorted = [...rowsIn].sort((a, b) => Number(b._final_contribution || 0) - Number(a._final_contribution || 0));
+    const maxContribution = Number(sorted[0]?._final_contribution || 0);
+    const others = sorted.slice(1).reduce((acc, r) => acc + Number(r._final_contribution || 0), 0);
+    const diminishedExtra = 0.25 * others;
+    return {
+      cluster_key,
+      incidents: sorted.map((x) => x.incident_id),
+      max_contribution: Number(maxContribution.toFixed(6)),
+      diminished_extra_contribution: Number(diminishedExtra.toFixed(6)),
+      final_cluster_contribution: Number((maxContribution + diminishedExtra).toFixed(6)),
+      caps_applied: [...new Set(sorted.flatMap((x) => Array.isArray(x._caps_applied) ? x._caps_applied : []))]
+    };
+  });
+
+  const clusterTotal = clusters.reduce((acc, c) => acc + Number(c.final_cluster_contribution || 0), 0);
+  const riskScoreScale = Math.max(Number(process.env.RISK_SCORE_SCALE || 50), 1);
+  let institutionRisk = 100 * (1 - Math.exp(-(clusterTotal / riskScoreScale)));
 
   const strongEvidenceCount = processed.filter((r) => {
     const v = normalizeVerdict(r?.verdict);
@@ -377,8 +444,8 @@ export function calculateInstitutionRisk(incidents) {
     }
     : null;
 
-  let institutionRiskLabel = institutionRisk >= 80 ? 'CRITICAL' : institutionRisk >= 60 ? 'HIGH' : institutionRisk >= 35 ? 'MEDIUM' : 'LOW';
-  if (strongEvidenceCount === 0 && (institutionRiskLabel === 'HIGH' || institutionRiskLabel === 'CRITICAL')) institutionRiskLabel = 'ELEVATED';
+  let institutionRiskLabel = institutionRisk >= 80 ? 'CRITICAL' : institutionRisk >= 60 ? 'HIGH' : institutionRisk >= 40 ? 'MEDIUM' : institutionRisk >= 20 ? 'GUARDED' : 'LOW';
+  if (strongEvidenceCount === 0 && (institutionRiskLabel === 'HIGH' || institutionRiskLabel === 'CRITICAL')) institutionRiskLabel = 'MEDIUM';
 
   return {
     institution_risk_score: Number(institutionRisk.toFixed(2)),
@@ -394,9 +461,13 @@ export function calculateInstitutionRisk(incidents) {
       open_incident_contribution: Number(openContribution.toFixed(6)),
       closed_decaying_contribution: Number(closedDecayContribution.toFixed(6)),
       excluded_incident_count: excludedIncidentCount,
-      normalized_contribution_input: Number(totalNormalized.toFixed(6)),
-      normalization_formula: '1 - exp(-incident_risk/50)',
-      saturation_formula: '100 * (1 - exp(-sum_normalized/5))',
+      total_raw_incident_contribution: Number(totalIncidentContribution.toFixed(6)),
+      total_clustered_contribution: Number(clusterTotal.toFixed(6)),
+      cluster_count: clusters.length,
+      clusters,
+      normalized_contribution_input: Number(clusterTotal.toFixed(6)),
+      normalization_formula: 'cluster_score = max + 0.25 * sum(others)',
+      saturation_formula: '100 * (1 - exp(-cluster_total / RISK_SCORE_SCALE))',
       low_incident_dampening: contributingCount > 0 && contributingCount < 5 ? 0.6 : 1,
       llm_adjustment_aggregate: llmAdjustmentAggregate,
       top_contributing_incidents: topContributing
