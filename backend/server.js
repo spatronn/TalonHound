@@ -1523,13 +1523,20 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
 
 function classifyEventContext(ev = {}) {
   const mc = ev?.match_context || {};
+  const raw = String(ev?.matched_syslog_event || '');
+  const kv = {};
+  raw.replace(/(\w+)=([^\s]+)/g, (_, k, v) => { kv[String(k).toLowerCase()] = String(v); return ''; });
   const ioc = String(ev?.matched_ioc || '').toLowerCase();
   const iocType = String(ev?.ioc_type || '').toLowerCase();
-  const explicitType = String(mc.type || mc.log_type || mc.parser_type || '').toLowerCase();
+  const explicitType = String(mc.type || mc.log_type || mc.parser_type || kv.type || '').toLowerCase();
 
-  const hasProxyFields = Boolean(mc.url || mc.method || mc.status);
-  const hasDnsFields = Boolean(mc.query || mc.query_type || mc.response_ip);
-  const hasFwFields = Boolean(mc.srcip || mc.dstip || mc.dstport || mc.service);
+  const merged = {
+    ...kv,
+    ...Object.fromEntries(Object.entries(mc || {}).map(([k, v]) => [String(k).toLowerCase(), v]))
+  };
+  const hasProxyFields = Boolean(merged.url || merged.method || merged.status);
+  const hasDnsFields = Boolean(merged.query || merged.query_type || merged.response_ip);
+  const hasFwFields = Boolean(merged.srcip || merged.dstip || merged.dstport || merged.service);
 
   let event_family = 'generic';
   let classification_confidence = 0.4;
@@ -1542,29 +1549,29 @@ function classifyEventContext(ev = {}) {
 
   const control_point = event_family;
 
-  let matched_field = String(mc.matched_field || '').toLowerCase();
-  const rawUrl = String(mc.url || '');
+  let matched_field = String(merged.matched_field || '').toLowerCase();
+  const rawUrl = String(merged.url || '');
   let urlHost = '';
   try { if (rawUrl) urlHost = new URL(rawUrl).hostname.toLowerCase(); } catch {}
 
   if (!matched_field) {
-    if (event_family === 'dns' && iocType === 'domain' && String(mc.query || '').toLowerCase() === ioc) matched_field = 'query';
-    else if (event_family === 'dns' && iocType === 'ip' && String(mc.response_ip || '').toLowerCase() === ioc) matched_field = 'response_ip';
+    if (event_family === 'dns' && iocType === 'domain' && String(merged.query || '').toLowerCase() === ioc) matched_field = 'query';
+    else if (event_family === 'dns' && iocType === 'ip' && String(merged.response_ip || '').toLowerCase() === ioc) matched_field = 'response_ip';
     else if (event_family === 'proxy' && (iocType === 'domain' || iocType === 'url')) {
       if (iocType === 'domain' && urlHost && (urlHost === ioc || urlHost.endsWith(`.${ioc}`))) matched_field = 'url_host';
       else if (iocType === 'url' && rawUrl.toLowerCase().includes(ioc)) matched_field = 'url';
     } else if (event_family === 'firewall' && iocType === 'ip') {
-      if (String(mc.dstip || '').toLowerCase() === ioc) matched_field = 'dstip';
-      else if (String(mc.srcip || '').toLowerCase() === ioc) matched_field = 'srcip';
+      if (String(merged.dstip || '').toLowerCase() === ioc) matched_field = 'dstip';
+      else if (String(merged.srcip || '').toLowerCase() === ioc) matched_field = 'srcip';
     }
   }
 
   if (!matched_field) matched_field = (event_family === 'proxy' ? 'url' : event_family === 'dns' ? 'query' : 'raw');
   if (iocType === 'domain' && ['srcip', 'dstip', 'client_ip'].includes(matched_field)) matched_field = event_family === 'proxy' ? 'url_host' : 'raw';
 
-  const action = String(mc.action || mc.decision || '').toLowerCase();
-  const statusCode = Number(mc.status);
-  const blockSig = /(block|deny|drop|reject|quarantine|sinkhole|policy_block|block_page)/.test(`${action} ${mc.block_reason || ''} ${mc.response_page || ''}`.toLowerCase());
+  const action = String(merged.action || merged.decision || '').toLowerCase();
+  const statusCode = Number(merged.status);
+  const blockSig = /(block|deny|drop|reject|quarantine|sinkhole|policy_block|block_page)/.test(`${action} ${merged.block_reason || ''} ${merged.response_page || ''}`.toLowerCase());
   const allowSig = /(allow|accept|permit|pass|delivered|success)/.test(action);
 
   let outcome = 'unknown';
