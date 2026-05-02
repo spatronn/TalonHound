@@ -31,6 +31,11 @@ export async function enrichIncidentContextWithRelatedIocs(context, { pool } = {
     return { ...context, related_iocs: [] };
   }
 
+  const enableDnsResponseIpRelation = String(process.env.AI_INSIGHT_ENABLE_DNS_RESPONSE_IP_RELATION || 'false').trim().toLowerCase() === 'true';
+  if (!enableDnsResponseIpRelation) {
+    return { ...context, related_iocs: [] };
+  }
+
   const lookbackHours = Math.max(Number(process.env.AI_INSIGHT_RELATED_IOC_LOOKBACK_HOURS || 24), 1);
   const lookforwardHours = Math.max(Number(process.env.AI_INSIGHT_RELATED_IOC_LOOKFORWARD_HOURS || 24), 1);
   const ignoreCidrs = buildIgnoreCidrs();

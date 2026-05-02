@@ -161,11 +161,13 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     : (durationHoursFromField > 0 ? durationHoursFromField >= longDurationHoursMin : (durationMinutes / 60) >= longDurationHoursMin);
 
   const relatedIocs = Array.isArray(data?.related_iocs) ? data.related_iocs : [];
-  const relatedAccepted = relatedIocs.some((r) => Number(r?.traffic?.accepted_count || 0) > 0);
-  const relatedInList = relatedIocs.some((r) => r?.related_ioc_in_ioc_list === true);
-  const hasSameHostChain = relatedIocs.some((r) => r?.chain_type === 'same_host_dns_to_connection');
-  const hasEnvChain = relatedIocs.some((r) => r?.chain_type === 'environment_level_related_activity');
-  const hasAcceptedTrafficNoAttribution = relatedIocs.some((r) => r?.chain_type === 'accepted_traffic_to_related_ioc');
+  const dnsResponseIpRelations = relatedIocs.filter((r) => String(r?.relationship || '').toLowerCase() === 'dns_response_ip');
+  const nonDnsRelatedIocs = relatedIocs.filter((r) => String(r?.relationship || '').toLowerCase() !== 'dns_response_ip');
+  const relatedAccepted = nonDnsRelatedIocs.some((r) => Number(r?.traffic?.accepted_count || 0) > 0);
+  const relatedInList = nonDnsRelatedIocs.some((r) => r?.related_ioc_in_ioc_list === true);
+  const hasSameHostChain = nonDnsRelatedIocs.some((r) => r?.chain_type === 'same_host_dns_to_connection');
+  const hasEnvChain = nonDnsRelatedIocs.some((r) => r?.chain_type === 'environment_level_related_activity');
+  const hasAcceptedTrafficNoAttribution = nonDnsRelatedIocs.some((r) => r?.chain_type === 'accepted_traffic_to_related_ioc');
 
   const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0 || relatedAccepted;
   const hasStrongMaliciousContextMetric = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText)
@@ -245,7 +247,10 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
       hasSameHostChain ? 'same_host_dns_to_connection' : null,
       hasEnvChain ? 'environment_level_related_activity' : null
     ].filter(Boolean),
-    detected_negative_factors: explicitBenign ? ['explicit_benign_or_fp'] : []
+    detected_negative_factors: [
+      explicitBenign ? 'explicit_benign_or_fp' : null,
+      dnsResponseIpRelations.length > 0 ? 'dns_response_ip_forensic_only' : null
+    ].filter(Boolean)
   };
 }
 
@@ -349,9 +354,8 @@ function buildConsistencyRules() {
 - Negative risk_adjustment is allowed only for explicit benign evidence (FP verdict, known internal test, allowlisted/trusted benign IOC, blocked-only with no successful activity and limited scope, or low-confidence IOC source with no meaningful internal activity).
 - If evidence is mixed/insufficient, use risk_adjustment=0.
 - confidence can be high only when output is internally consistent; use 0.40-0.70 for limited/contradictory evidence.
-- If a domain resolves to an IP that is also an IOC, treat it as linked infrastructure.
-- Accepted traffic to related IOC IP is stronger than DNS-only activity.
-- same_host_dns_to_connection implies stronger evidence than environment_level_related_activity.
+- Domain DNS resolved IPs may appear in context, but are forensic-only and must not be used as risk-boosting evidence.
+- Do not treat domain -> dns_response_ip -> IP chains as accepted/successful evidence for domain risk changes.
 - Do not overclaim; use "possible communication" unless evidence is strong.
 - Use risk_adjustment range -20..20.
 Return ONLY JSON:
