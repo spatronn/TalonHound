@@ -1861,10 +1861,8 @@ function RiskOverviewPage() {
                 <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.institution_risk_estimate || 0).toFixed(2)}</div>
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Allowed / Blocked / Unknown (v2)</div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>
-                  {Number(data?.control_outcome?.allowed_count || 0)} / {Number(data?.control_outcome?.blocked_count || 0)} / {Number(data?.control_outcome?.unknown_count || 0)}
-                </div>
+                <div style={{ fontSize: 12, color: '#94a3b8' }}>Observed IOCs (v2 debug)</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.score_debug?.observed_ioc_count || 0)}</div>
               </div>
             </div>
 
