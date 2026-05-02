@@ -1798,17 +1798,40 @@ async function computeInstitutionRiskOverview() {
 
   const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
   const v2 = calculateThreatMetricsV2(scoredIncidents);
+  const v2ByIncident = new Map((v2?.score_debug?.top_incident_v2 || []).map((x) => [String(x.incident_id), x]));
+  const topWithV2 = topWithLlm.map((it) => {
+    const vx = v2ByIncident.get(String(it.incident_id));
+    return {
+      ...it,
+      ioc: it.ioc_value,
+      v2: vx ? {
+        exposure: vx.exposure_points ?? null,
+        activity: vx.activity_severity ?? null,
+        risk_estimate: null,
+        scenario_type: vx.scenario_type ?? null,
+        outcome: vx.outcome ?? null,
+        event_family: vx.event_family ?? null,
+        classification_confidence: vx.classification_confidence ?? null,
+        outcome_confidence: vx.outcome_confidence ?? null,
+        explanation: vx.explanation ?? null
+      } : null,
+      legacy: {
+        risk_score: it.risk_score ?? null,
+        contribution: it.contribution ?? null
+      }
+    };
+  });
 
   return {
     ...overview,
     ...v2,
-    top_contributing_incidents: topWithLlm,
+    top_contributing_incidents: topWithV2,
     llm_adjustment_aggregate: llmAdjustmentAggregate,
     total_active_incidents: totalActiveIncidents,
     data_truncated: false,
     breakdown: {
       ...(overview.breakdown || {}),
-      top_contributing_incidents: topWithLlm,
+      top_contributing_incidents: topWithV2,
       llm_adjustment_aggregate: llmAdjustmentAggregate
     }
   };

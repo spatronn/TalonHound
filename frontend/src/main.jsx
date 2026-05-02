@@ -1875,73 +1875,47 @@ function RiskOverviewPage() {
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>All Contributing Incidents</div>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Incident Evidence Breakdown</div>
               <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th style={{ width: 120 }}>Incident ID</th>
+                    <th style={{ width: 100 }}>Incident ID</th>
                     <th>IOC</th>
-                    <th style={{ width: 120 }}>Risk Score</th>
-                    <th style={{ width: 90 }}>AI Δ</th>
-                    <th style={{ width: 140 }}>Contribution</th>
+                    <th style={{ width: 80 }}>Type</th>
+                    <th style={{ width: 90 }}>Exposure</th>
+                    <th style={{ width: 90 }}>Activity</th>
+                    <th style={{ width: 110 }}>Risk Estimate</th>
+                    <th style={{ width: 130 }}>Scenario</th>
+                    <th style={{ width: 90 }}>Outcome</th>
+                    <th style={{ width: 130 }}>Confidence / Context</th>
+                    <th style={{ width: 90 }}>Verdict</th>
                   </tr>
                 </thead>
                 <tbody>
                   {top.length ? top.map((it) => {
-                    const finalRiskValue = it?.final_risk_score;
-                    const riskScoreValue = it?.risk_score;
-                    const rawRisk = finalRiskValue ?? riskScoreValue ?? 0;
-                    const shownRisk = Number.isFinite(Number(rawRisk)) ? Number(rawRisk) : 0;
-
-                    const aiDelta = it?.llm_risk_adjustment ?? null;
-                    const aiStyle = aiDeltaStyle(aiDelta);
-                    const confidence = Number(it?.llm_risk_confidence);
-                    const confidenceText = Number.isFinite(confidence) ? `${Math.round(Math.min(Math.max(confidence, 0), 1) * 100)}%` : '—';
-                    const finalOrBaseRisk = finalRiskValue ?? riskScoreValue ?? 0;
-                    const baseRiskValue = it?.risk_before_llm;
-                    const reasonValue = it?.llm_risk_reason;
-
-                    const tooltipLines = [
-                      `Base Risk: ${Number.isFinite(Number(baseRiskValue)) ? Number(baseRiskValue).toFixed(2) : '—'}`,
-                      `Final Risk: ${Number.isFinite(Number(finalOrBaseRisk)) ? Number(finalOrBaseRisk).toFixed(2) : '0.00'}`,
-                      `Confidence: ${confidenceText}`,
-                      `Reason: ${reasonValue ? String(reasonValue) : '—'}`
-                    ].join('\n');
-
+                    const v2 = it?.v2 || {};
+                    const exposure = Number(v2?.exposure);
+                    const activity = Number(v2?.activity);
+                    const riskEstimate = Number(v2?.risk_estimate);
+                    const ctx = Number(v2?.classification_confidence);
+                    const confText = Number.isFinite(ctx)
+                      ? `${v2?.event_family || 'unknown'} · ${ctx.toFixed(2)}`
+                      : `${v2?.event_family || '—'} · ${it?.confidence || '—'}`;
                     return (
-                      <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
-                        <td>
-                          {it.incident_id || it.id ? (
-                            <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link>
-                          ) : (
-                            <>-</>
-                          )}
-                        </td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
-                        <td>{shownRisk.toFixed(2)}</td>
-                        <td>
-                          <span
-                            title={tooltipLines}
-                            style={{
-                              display: 'inline-block',
-                              minWidth: 44,
-                              textAlign: 'center',
-                              padding: '2px 8px',
-                              borderRadius: 999,
-                              border: `1px solid ${aiStyle.borderColor}`,
-                              color: aiStyle.color,
-                              background: aiStyle.background,
-                              fontWeight: 700,
-                              fontSize: 12
-                            }}
-                          >
-                            {formatAiDelta(aiDelta)}
-                          </span>
-                        </td>
-                        <td>{it.contribution != null ? Number(it.contribution).toFixed(6) : '-'}</td>
+                      <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }} title={v2?.explanation || ''}>
+                        <td>{it.incident_id || it.id ? <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link> : '-'}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc || it.ioc_value || '-'}</td>
+                        <td>{it.ioc_type || '-'}</td>
+                        <td>{Number.isFinite(exposure) ? exposure.toFixed(2) : '—'}</td>
+                        <td>{Number.isFinite(activity) ? activity.toFixed(2) : '—'}</td>
+                        <td>{Number.isFinite(riskEstimate) ? riskEstimate.toFixed(2) : '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v2?.scenario_type || '—'}</td>
+                        <td>{v2?.outcome || '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{confText}</td>
+                        <td>{it.verdict || '—'}</td>
                       </tr>
                     );
-                  }) : <tr><td colSpan={5} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}
+                  }) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}
                 </tbody>
               </table>
             </div>
