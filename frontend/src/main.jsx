@@ -1900,7 +1900,6 @@ function RiskOverviewPage() {
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
                     <th style={{ width: 100 }}>Incident ID</th>
                     <th>IOC</th>
-                    <th style={{ width: 80 }}>Type</th>
                     <th style={{ width: 90 }}>Exposure</th>
                     <th style={{ width: 90 }}>Activity</th>
                     <th style={{ width: 110 }}>Risk Estimate</th>
@@ -1921,7 +1920,6 @@ function RiskOverviewPage() {
                       <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }} title={v2?.explanation || ''}>
                         <td>{it.incident_id || it.id ? <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link> : '-'}</td>
                         <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc || it.ioc_value || '-'}</td>
-                        <td>{it.ioc_type || '-'}</td>
                         <td>{Number.isFinite(exposure) ? exposure.toFixed(2) : '—'}</td>
                         <td>{Number.isFinite(activity) ? activity.toFixed(2) : '—'}</td>
                         <td>{Number.isFinite(riskEstimate) ? riskEstimate.toFixed(2) : '—'}</td>
