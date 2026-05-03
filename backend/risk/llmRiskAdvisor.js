@@ -181,6 +181,17 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasHighVolume = totalHits > 0 ? hasHighVolumeMetric : /(high total_hits|high volume|many queries|high dns|high hits)/i.test(evidenceText);
   const hasMultipleHosts = hostCount > 0 ? hasMultipleHostsMetric : /(multiple hosts|many hosts|multiple observed hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
   const hasLongDuration = durationMinutes > 0 ? hasLongDurationMetric : /(long duration|persistence|persistent|over several hours|over time|repeated over long duration)/i.test(evidenceText);
+
+  const urlPersistenceMismatch = iocType === 'url' && durationMinutes > 60 && /no persistence|lack of persistence|without persistence/i.test(reason);
+  if (urlPersistenceMismatch) {
+    return {
+      adjustment: 0,
+      confidence: 0,
+      reason: 'Repeated proxy requests across multiple hosts over a long duration indicate persistent web access attempts. Lack of confirmed successful access limits confidence, and the activity should be monitored.',
+      raw_model_adjustment: rawModelAdjustment,
+      normalization_reason: 'invalid_reason_no_persistence_with_long_duration'
+    };
+  }
   const hasRepeatedOnly = /(repeated dns|repeated)/i.test(evidenceText);
   const hasAcceptedOrSuccessful = hasAcceptedOrSuccessfulMetric || /(accepted|successful)/i.test(evidenceText);
   const hasStrongMaliciousContext = hasStrongMaliciousContextMetric;
@@ -322,6 +333,10 @@ function buildUrlPrompt() {
 - HTTP 401/403/407/4xx reduce confidence in successful access.
 - If most outcomes are unknown, avoid strong conclusions.
 - Lack of confirmed execution limits confidence.
+- Do not say "no persistence" when duration_minutes > 60.
+- If duration_minutes > 60, describe activity as persistent or repeated over time.
+- High event_count over long duration should be described as repeated activity over time.
+- Successful access and persistence are different concepts; lack of confirmed success does not mean lack of persistence.
 - Prefer action-oriented conclusions such as "should be monitored" or "warrants further investigation".
 - Do not mention blacklist status.
 Return ONLY JSON:

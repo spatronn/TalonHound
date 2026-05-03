@@ -212,6 +212,7 @@ async function loadIncident(id) {
   }));
 
   console.info(`[llm-payload] incident_id=${incident?.incident_id || id} ioc_type=${incident?.ioc_type || ''} event_count=${rows.length} sample_events=${incident.sample_events.length} source_types=${JSON.stringify(sourceTypes)} duration_minutes=${durationMinutes}`);
+  console.info(`[llm-payload-debug] incident_id=${incident?.incident_id || id} ioc_type=${incident?.ioc_type || ''} hits=${incident?.total_hits || incident?.hits || 0} event_count=${incident?.event_count || rows.length} observed_hosts=${incident?.asset_count || 0} first_seen=${incident?.first_seen || ''} last_seen=${incident?.last_seen || ''} duration_minutes=${durationMinutes} event_summary.persistence.duration_minutes=${incident?.event_summary?.persistence?.duration_minutes || 0} event_summary.persistence.events_per_hour=${incident?.event_summary?.persistence?.events_per_hour || 0} event_summary.source_types=${JSON.stringify(sourceTypes)} event_summary.http.status_codes=${JSON.stringify(statusCodes)} event_summary.http.status_classes=${JSON.stringify(statusClasses)} event_summary.http.methods=${JSON.stringify(methods)} event_summary.outcomes=${JSON.stringify(outcomes)} sample_events_count=${incident.sample_events.length}`);
 
   return enrichIncidentContextWithRelatedIocs(incident, { pool });
 }
