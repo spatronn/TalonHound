@@ -1129,8 +1129,33 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
       return res.status(404).json({ message: 'IOC match event not found' });
     }
 
-    const itemRaw = USE_CLICKHOUSE ? await withRawSyslogEvent(q.rows[0]) : q.rows[0];
-    const item = { ...itemRaw, v2_context: classifyEventContext(itemRaw) };
+    const pgRow = q.rows[0];
+    let evidenceSource = 'match_context_fallback';
+    let itemRaw = pgRow;
+
+    if (pgRow?.raw_log_snapshot && String(pgRow.raw_log_snapshot).trim()) {
+      evidenceSource = 'pg_snapshot';
+      itemRaw = { ...pgRow, matched_syslog_event: String(pgRow.raw_log_snapshot) };
+    } else if (USE_CLICKHOUSE) {
+      const enriched = await withRawSyslogEvent(pgRow);
+      if (String(enriched?.matched_syslog_event || '').trim() && String(enriched?.matched_syslog_event || '').trim() !== String(pgRow?.matched_syslog_event || '').trim()) {
+        evidenceSource = 'clickhouse_enrich';
+      }
+      itemRaw = enriched;
+    }
+
+    if (!String(itemRaw?.matched_syslog_event || '').trim() || String(itemRaw?.matched_syslog_event || '').trim() === '-') {
+      evidenceSource = pgRow?.match_context ? 'match_context_fallback' : 'unavailable';
+    }
+
+    const item = {
+      ...itemRaw,
+      raw_log_snapshot: pgRow?.raw_log_snapshot || null,
+      normalized_event_json: pgRow?.normalized_event_json || null,
+      source_type: pgRow?.source_type || null,
+      v2_context: classifyEventContext(itemRaw)
+    };
+    console.info(`[ioc-match-event-detail] id=${id} evidence_source=${evidenceSource}`);
     return res.json({ item });
   } catch (err) {
     console.error('[ioc-match-event-detail] failed', err);

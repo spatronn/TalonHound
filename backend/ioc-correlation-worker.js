@@ -1,5 +1,6 @@
 import './lib/ensure-db-password.js';
 import pg from 'pg';
+import { createHash } from 'node:crypto';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
@@ -226,6 +227,18 @@ function parseKv(raw) {
   return out;
 }
 
+function normalizeSourceType(r = {}, matchContext = {}) {
+  const tokens = [r.parser_source, r.source, r.host, matchContext?.parsed_query, matchContext?.query_type]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  if (/(proxy|url|http|webproxy|swg)/.test(tokens)) return 'proxy';
+  if (/(^|\s)dns(\s|$)|resolver|query_type/.test(tokens)) return 'dns';
+  if (/(waf|f5|asm|modsecurity|nginx-waf)/.test(tokens)) return 'waf';
+  if (/(endpoint|edr|xdr|sysmon|process|file)/.test(tokens)) return 'endpoint';
+  if (/(firewall|traffic|forti|palo|pan-os|checkpoint|netflow)/.test(tokens)) return 'firewall';
+  return 'generic';
+}
+
 function rowToMatchEvents(r, lookupMap) {
   const out = [];
   const ingestMs = r.ingest_time ? new Date(r.ingest_time).getTime() : 0;
@@ -235,6 +248,46 @@ function rowToMatchEvents(r, lookupMap) {
     if (!hit) continue;
     const iocUpdatedMs = hit.updated_at ? new Date(hit.updated_at).getTime() : 0;
     const iocWasPresent = ingestMs > 0 && iocUpdatedMs > 0 && iocUpdatedMs <= ingestMs;
+    const matchedIoc = matchedIocValue(obs);
+    const iocType = iocTypeForPg(obs.type);
+    const rawLogSnapshot = r.raw ? String(r.raw) : null;
+    const normalizedEvent = {
+      source_type: null,
+      src_ip: kv.srcip || kv.client_ip || kv.clientip || null,
+      dst_ip: kv.dstip || r.parsed_ip || null,
+      url: kv.url || null,
+      domain: kv.query || r.parsed_query || null,
+      method: kv.method || null,
+      status: kv.status || null,
+      action: kv.action || null,
+      parser_source: r.parser_source || null,
+      matched_ioc: matchedIoc,
+      ioc_type: iocType
+    };
+    const matchContext = {
+      parsed_query: r.parsed_query || null,
+      parsed_ip: r.parsed_ip || null,
+      ioc_query: r.ioc_query || null,
+      ioc_ip: r.ioc_ip || null,
+      response_ip: kv.response_ip || kv.responseip || null,
+      client_ip: kv.client_ip || kv.clientip || null,
+      query_type: kv.query_type || null,
+      action: kv.action || null,
+      srcip: kv.srcip || null,
+      dstip: kv.dstip || null,
+      dstport: kv.dstport || null,
+      service: kv.service || null,
+      sentbyte: kv.sentbyte || null,
+      rcvdbyte: kv.rcvdbyte || null,
+      processing_path: 'realtime',
+      observable_merge_type: obs.type,
+      detection_type: 'realtime',
+      match_source: obs.source,
+      ioc_was_present_at_ingest: iocWasPresent
+    };
+    const sourceType = normalizeSourceType(r, matchContext);
+    normalizedEvent.source_type = sourceType;
+
     out.push({
       event_time: r.ts,
       host: r.host,
@@ -242,34 +295,19 @@ function rowToMatchEvents(r, lookupMap) {
       parser_source: r.parser_source,
       destination_ip: r.parsed_ip || null,
       protocol: 'syslog',
-      matched_ioc: matchedIocValue(obs),
-      ioc_type: iocTypeForPg(obs.type),
+      matched_ioc: matchedIoc,
+      ioc_type: iocType,
       ioc_item_id: null,
       source_name: hit.source_name || null,
       confidence: String(hit.confidence != null ? hit.confidence : ''),
       detection_type: 'realtime',
       match_source: obs.source,
-      match_context: {
-        parsed_query: r.parsed_query || null,
-        parsed_ip: r.parsed_ip || null,
-        ioc_query: r.ioc_query || null,
-        ioc_ip: r.ioc_ip || null,
-        response_ip: kv.response_ip || kv.responseip || null,
-        client_ip: kv.client_ip || kv.clientip || null,
-        query_type: kv.query_type || null,
-        action: kv.action || null,
-        srcip: kv.srcip || null,
-        dstip: kv.dstip || null,
-        dstport: kv.dstport || null,
-        service: kv.service || null,
-        sentbyte: kv.sentbyte || null,
-        rcvdbyte: kv.rcvdbyte || null,
-        processing_path: 'realtime',
-        observable_merge_type: obs.type,
-        detection_type: 'realtime',
-        match_source: obs.source,
-        ioc_was_present_at_ingest: iocWasPresent
-      }
+      match_context: matchContext,
+      normalized_event_json: normalizedEvent,
+      raw_log_snapshot: rawLogSnapshot,
+      raw_log_hash: rawLogSnapshot ? createHash('sha256').update(rawLogSnapshot).digest('hex') : null,
+      syslog_log_id: null,
+      source_type: sourceType
     });
   }
   return out;
@@ -433,9 +471,9 @@ async function insertMatchEvents(client, rows) {
     });
     if (activity?.id) affectedActivityIds.add(String(activity.id));
 
-    const base = i * 21;
+    const base = i * 26;
 
-    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20},$${base + 21})`);
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20},$${base + 21},$${base + 22},$${base + 23},$${base + 24},$${base + 25},$${base + 26})`);
     params.push(
       r.event_time,
       r.host || null,
@@ -457,7 +495,12 @@ async function insertMatchEvents(client, rows) {
       r._hitInc,
       r.detection_type || 'realtime',
       r.match_source ?? null,
-      activity?.id || null
+      activity?.id || null,
+      r.normalized_event_json ? JSON.stringify(r.normalized_event_json) : null,
+      r.raw_log_snapshot || null,
+      r.raw_log_hash || null,
+      r.syslog_log_id || null,
+      r.source_type || null
     );
   }
 
@@ -466,7 +509,8 @@ async function insertMatchEvents(client, rows) {
       event_time, host_name, process_name, destination_ip, destination_port, protocol,
       matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
       parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count,
-      detection_type, match_source, activity_id
+      detection_type, match_source, activity_id,
+      normalized_event_json, raw_log_snapshot, raw_log_hash, syslog_log_id, source_type
     ) VALUES ${values.join(',')}
     ON CONFLICT (dedup_key, bucket_start)
     DO UPDATE SET
@@ -481,6 +525,9 @@ async function insertMatchEvents(client, rows) {
   `;
 
   await client.query(sql, params);
+  const withRaw = normalizedRows.filter((r) => Boolean(r.raw_log_snapshot)).length;
+  const withNorm = normalizedRows.filter((r) => Boolean(r.normalized_event_json)).length;
+  console.info(`[ioc-event-create] inserted=${normalizedRows.length} source_type_sample=${normalizedRows[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
   return { inserted: normalizedRows.length, affectedActivityIds: Array.from(affectedActivityIds) };
 }
 
