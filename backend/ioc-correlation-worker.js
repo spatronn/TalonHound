@@ -371,13 +371,13 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
       ioc_query,
       ifNull(merged_observables, '') AS merged_observables,
       ifNull(raw, '') AS raw,
-      toString(cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
+      toString(cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, '')))) AS row_hash
     FROM default.syslog_logs
     WHERE (
-      ts > toDateTime('${ingestTs}')
+      ingest_time > toDateTime('${ingestTs}')
       OR (
-        ts = toDateTime('${ingestTs}')
-        AND cityHash64(concat(toString(ts), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')
+        ingest_time = toDateTime('${ingestTs}')
+        AND cityHash64(concat(toString(ingest_time), '|', coalesce(source, ''), '|', coalesce(raw, ''))) > toUInt64('${hash}')
       )
     )
       AND (
@@ -385,7 +385,7 @@ function buildScanQuery(lastTs, lastRowHash, limit) {
         OR notEmpty(ifNull(ioc_query, ''))
         OR notEmpty(ifNull(ioc_ip, ''))
       )
-    ORDER BY ts, row_hash
+    ORDER BY ingest_time, row_hash
     LIMIT ${lim}
     SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}
   `;
@@ -550,7 +550,7 @@ async function runBatch() {
     const insertResult = await insertMatchEvents(client, matchedRows);
 
     const last = scanned[scanned.length - 1];
-    await saveState(client, last.ts, last.row_hash);
+    await saveState(client, last.ingest_time || last.ts, last.row_hash);
     await client.query('COMMIT');
 
     return {
@@ -558,7 +558,7 @@ async function runBatch() {
       matched: matchedRows.length,
       inserted: insertResult.inserted,
       affectedActivityIds: insertResult.affectedActivityIds,
-      last_ts: last.ts,
+      last_ts: last.ingest_time || last.ts,
       last_row_hash: last.row_hash,
       duration_ms: Date.now() - startedAtMs
     };
