@@ -173,6 +173,30 @@ function sanitizeSourceNote(note) {
   return filtered.length ? filtered.join(' | ') : '-';
 }
 
+function normalizeEventContext(event) {
+  const tokens = [
+    event?.type,
+    event?.log_type,
+    event?.parser_type,
+    event?.source_type,
+    event?.context,
+    event?.v2_context?.event_family,
+    event?.v2_context?.control_point,
+    event?.v2_context?.scenario_type,
+    event?.matched_syslog_event
+  ]
+    .map((v) => String(v || '').toLowerCase())
+    .filter(Boolean)
+    .join(' ');
+
+  if (/(proxy|url|http|webproxy|secure web gateway|swg)/i.test(tokens)) return 'Proxy';
+  if (/(^|\s)dns(\s|$)|resolver|query_type|resolved_ip/i.test(tokens)) return 'DNS';
+  if (/(waf|f5|asm|application firewall|modsecurity|nginx-waf)/i.test(tokens)) return 'WAF';
+  if (/(endpoint|edr|xdr|process|file[_\s-]?event|sysmon)/i.test(tokens)) return 'Endpoint';
+  if (/(firewall|traffic|fortigate|forti|paloalto|pan-os|checkpoint|netflow|forward)/i.test(tokens)) return 'Firewall';
+  return 'Generic';
+}
+
 function LoginPage() {
   const navigate = useNavigate();
   const { refreshSession } = useSession();
@@ -1666,7 +1690,20 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
                 <td>{formatUserDateTime(r.detected_at || r.event_time || r.created_at)}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.matched_ioc || '-'}</td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {r?.v2_context?.event_family || 'generic'} · {r?.v2_context?.matched_field || 'raw'} · {r?.v2_context?.outcome || 'unknown'}
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      borderRadius: 999,
+                      padding: '3px 10px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      border: '1px solid #475569',
+                      color: '#cbd5e1',
+                      background: '#020617'
+                    }}
+                  >
+                    {normalizeEventContext(r)}
+                  </span>
                 </td>
                 <td>
                   <span style={{
