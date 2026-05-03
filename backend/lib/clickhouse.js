@@ -228,6 +228,18 @@ function pgLiteralForPostgresqlEngine(value) {
   return String(value ?? '').replace(/'/g, "''");
 }
 
+function canonicalizeUrlForLookup(v) {
+  try {
+    const u = new URL(String(v || '').trim());
+    u.hostname = u.hostname.toLowerCase();
+    if ((u.protocol === 'http:' && u.port === '80') || (u.protocol === 'https:' && u.port === '443')) u.port = '';
+    if (!u.pathname) u.pathname = '/';
+    return u.toString().toLowerCase();
+  } catch {
+    return String(v || '').trim().toLowerCase();
+  }
+}
+
 export async function syncIocLookupFromPostgres(opts = {}) {
   const workerName = opts.workerName || 'ioc-correlation-sync-v1';
   const batchSize = Math.max(Number(opts.batchSize || 20000), 1000);
@@ -272,14 +284,16 @@ export async function syncIocLookupFromPostgres(opts = {}) {
 
   const agg = new Map();
   for (const r of delta) {
-    const key = `${r.observable}|${r.observable_type}`;
+    const observableType = String(r.observable_type || '').toLowerCase();
+    const observable = observableType === 'url' ? canonicalizeUrlForLookup(r.observable) : String(r.observable || '').toLowerCase();
+    const key = `${observable}|${observableType}`;
     const conf = confidenceToInt(r.confidence);
     const created = String(r.created_at || '1970-01-01 00:00:00.000');
     const prev = agg.get(key);
     if (!prev || conf > prev.confidence || created > prev.updated_at) {
       agg.set(key, {
-        observable: r.observable,
-        observable_type: r.observable_type,
+        observable,
+        observable_type: observableType,
         confidence: conf,
         source_name: r.source_name || 'unknown',
         updated_at: created

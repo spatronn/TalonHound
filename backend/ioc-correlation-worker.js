@@ -77,6 +77,18 @@ function dedupKeyOf(row) {
 
 const MERGE_TYPES = new Set(['ipv4', 'domain', 'url', 'sha256']);
 
+function canonicalizeUrlForMatch(v) {
+  try {
+    const u = new URL(String(v || '').trim());
+    u.hostname = u.hostname.toLowerCase();
+    if ((u.protocol === 'http:' && u.port === '80') || (u.protocol === 'https:' && u.port === '443')) u.port = '';
+    if (!u.pathname) u.pathname = '/';
+    return u.toString().toLowerCase();
+  } catch {
+    return String(v || '').trim().toLowerCase();
+  }
+}
+
 function normalizeMergedObs(o) {
   if (!o || typeof o !== 'object') return null;
   const type = String(o.type || '').toLowerCase();
@@ -131,7 +143,7 @@ function lookupTuplesForObs(obs) {
       [lv, 'url']
     ];
   }
-  if (t === 'url') return [[v.toLowerCase(), 'url']];
+  if (t === 'url') return [[canonicalizeUrlForMatch(v), 'url']];
   return [];
 }
 
