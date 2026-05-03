@@ -196,10 +196,22 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasCompromiseOverclaim = /(confirmed compromise|successful compromise|malicious activity is confirmed|confirmed threat)/i.test(reason) && !hasAcceptedOrSuccessful;
   const hasPlaybookObserved = /(proxy requests|url access attempts|web access attempts)/i.test(reason);
   const hasPlaybookMissing = /(endpoint process context|content analysis|confirmed successful access|user interaction|dns resolution)/i.test(reason);
+  const hasProxyEvidence = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1 || Number(data?.event_summary?.source_types?.proxy || 0) > 0;
+  const hasMultipleHostsForUrl = hostCount >= 2;
+  const hasExtendedDurationForUrl = durationMinutes > 60;
+  const isUrlPlaybookLimited = iocType === 'url'
+    && hasProxyEvidence
+    && hasMultipleHostsForUrl
+    && hasExtendedDurationForUrl
+    && !Boolean(data?.playbook_coverage?.confirmed_successful_access)
+    && !Boolean(data?.playbook_coverage?.endpoint_process_evidence)
+    && !Boolean(data?.playbook_coverage?.content_analysis_evidence);
+
   if (urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement || hasCompromiseOverclaim || !hasPlaybookObserved || !hasPlaybookMissing) {
+    const limitedConfidence = isUrlPlaybookLimited ? clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65) : 0;
     return {
       adjustment: 0,
-      confidence: 0,
+      confidence: limitedConfidence,
       reason: 'Repeated URL requests from multiple hosts over an extended period indicate persistent web access attempts. Available events do not include confirmed successful access, endpoint process context, or content analysis evidence, so confidence is limited and the activity should be investigated.',
       raw_model_adjustment: rawModelAdjustment,
       normalization_reason: 'invalid_reason_persistence_contradiction'
@@ -244,6 +256,9 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
 
   if (/(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(reason)) {
     adjustment = 0;
+    if (iocType === 'url' && hasProxyEvidence && hasMultipleHostsForUrl && hasExtendedDurationForUrl) {
+      confidence = clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65);
+    }
   }
 
   return {
