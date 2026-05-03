@@ -199,13 +199,7 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasProxyEvidence = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1 || Number(data?.event_summary?.source_types?.proxy || 0) > 0;
   const hasMultipleHostsForUrl = hostCount >= 2;
   const hasExtendedDurationForUrl = durationMinutes > 60;
-  const isUrlPlaybookLimited = iocType === 'url'
-    && hasProxyEvidence
-    && hasMultipleHostsForUrl
-    && hasExtendedDurationForUrl
-    && !Boolean(data?.playbook_coverage?.confirmed_successful_access)
-    && !Boolean(data?.playbook_coverage?.endpoint_process_evidence)
-    && !Boolean(data?.playbook_coverage?.content_analysis_evidence);
+  const isUrlPlaybookLimited = iocType === 'url' && hasExtendedDurationForUrl;
 
   if (urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement || hasCompromiseOverclaim || !hasPlaybookObserved || !hasPlaybookMissing) {
     const limitedConfidence = isUrlPlaybookLimited ? clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65) : 0;
