@@ -256,8 +256,8 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
 
   if (/(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(reason)) {
     adjustment = 0;
-    if (iocType === 'url' && hasProxyEvidence && hasMultipleHostsForUrl && hasExtendedDurationForUrl) {
-      confidence = clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65);
+    if (iocType === 'url') {
+      confidence = clamp(Math.max(confidence || 0.5, 0.45), 0.45, 0.65);
     }
   }
 
@@ -617,6 +617,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       const normalized = normalizeAdvisorOutput(parsed, 'cache');
+      console.info(`[llm-confidence-trace] incident_id=${incidentId} ioc_type=cache model_raw_confidence=${Number(parsed?.confidence ?? parsed?.llm_risk_confidence ?? 0)} normalized_confidence=${Number(normalized?.confidence ?? 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'cache'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=true cache_write_value=na`);
       const base = clamp(Number(baseRisk || 0), 0, 100);
       const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
 
@@ -725,7 +726,9 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
           return { ok: false, kind: 'parse', reason: 'invalid_json' };
         }
 
-        return { ok: true, normalized: normalizeAdvisorOutput(modelJson, 'ok', incidentPayload) };
+        const normalized = normalizeAdvisorOutput(modelJson, 'ok', incidentPayload);
+        console.info(`[llm-confidence-trace] incident_id=${incident?.incident_id || incident?.id || ''} ioc_type=${incidentPayload?.ioc_type || ''} model_raw_confidence=${Number(modelJson?.confidence || 0)} normalized_confidence=${Number(normalized?.confidence || 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'ok'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=false cache_write_value=pending`);
+        return { ok: true, normalized };
       } catch (err) {
         if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
         return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
