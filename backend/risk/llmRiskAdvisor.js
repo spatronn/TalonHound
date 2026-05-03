@@ -182,14 +182,21 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasMultipleHosts = hostCount > 0 ? hasMultipleHostsMetric : /(multiple hosts|many hosts|multiple observed hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
   const hasLongDuration = durationMinutes > 0 ? hasLongDurationMetric : /(long duration|persistence|persistent|over several hours|over time|repeated over long duration)/i.test(evidenceText);
 
-  const urlPersistenceMismatch = iocType === 'url' && durationMinutes > 60 && /no persistence|lack of persistence|without persistence/i.test(reason);
+  const hasPersistencePositivePhrase = /(prolonged period|over a long duration|repeated|persistent)/i.test(reason);
+  const hasPersistenceNegativePhrase = /(no persistence|lacks persistence|without persistence|lack of persistence)/i.test(reason);
+  const hasCoupledBadPhrase = /(successful access\s+or\s+persistence|no confirmed successful access\s+or\s+persistence|lacks confirmed successful access\s+or\s+persistence|no successful access\s+or\s+persistence)/i.test(reason);
+  const urlPersistenceMismatch = iocType === 'url' && (
+    (durationMinutes > 60 && hasPersistenceNegativePhrase)
+    || (hasPersistencePositivePhrase && hasPersistenceNegativePhrase)
+    || hasCoupledBadPhrase
+  );
   if (urlPersistenceMismatch) {
     return {
       adjustment: 0,
       confidence: 0,
-      reason: 'Repeated proxy requests across multiple hosts over a long duration indicate persistent web access attempts. Lack of confirmed successful access limits confidence, and the activity should be monitored.',
+      reason: 'Repeated proxy requests across multiple hosts over a prolonged period indicate persistent web access attempts. Lack of confirmed successful access or execution limits confidence, and the activity should be monitored.',
       raw_model_adjustment: rawModelAdjustment,
-      normalization_reason: 'invalid_reason_no_persistence_with_long_duration'
+      normalization_reason: 'invalid_reason_persistence_contradiction'
     };
   }
   const hasRepeatedOnly = /(repeated dns|repeated)/i.test(evidenceText);
@@ -333,7 +340,8 @@ function buildUrlPrompt() {
 - HTTP 401/403/407/4xx reduce confidence in successful access.
 - If most outcomes are unknown, avoid strong conclusions.
 - Lack of confirmed execution limits confidence.
-- Do not say "no persistence" when duration_minutes > 60.
+- Do not use phrases like "successful access or persistence"; successful access and persistence are different concepts.
+- If duration_minutes > 60 or activity is described as repeated/prolonged, NEVER say "no persistence" or "lacks persistence".
 - If duration_minutes > 60, describe activity as persistent or repeated over time.
 - High event_count over long duration should be described as repeated activity over time.
 - Successful access and persistence are different concepts; lack of confirmed success does not mean lack of persistence.
