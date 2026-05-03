@@ -334,6 +334,28 @@ services:
       - clickhouse_data:/var/lib/clickhouse
     restart: unless-stopped
 
+  lab-log-forwarder:
+    build: ./tools/lab-log-forwarder
+    container_name: demo-lab-log-forwarder
+    profiles: ["lab"]
+    environment:
+      - LOG_FORWARDER_ENABLED=${LOG_FORWARDER_ENABLED:-true}
+      - SYSLOG_FORWARD_TARGET_HOST=${SYSLOG_FORWARD_TARGET_HOST:-syslog-receiver}
+      - SYSLOG_FORWARD_TARGET_PORT=${SYSLOG_FORWARD_TARGET_PORT:-514}
+      - BIND_LOG_PATH=${BIND_LOG_PATH:-/logs/bind-query.log}
+      - SQUID_LOG_PATH=${SQUID_LOG_PATH:-/logs/squid-access.log}
+      - LOG_FORWARDER_START_FROM_BEGINNING=${LOG_FORWARDER_START_FROM_BEGINNING:-false}
+      - LOG_FORWARDER_BIND_TAG=${LOG_FORWARDER_BIND_TAG:-bind_dns}
+      - LOG_FORWARDER_SQUID_TAG=${LOG_FORWARDER_SQUID_TAG:-squid_proxy}
+      - LOG_FORWARDER_HOSTNAME=${LOG_FORWARDER_HOSTNAME:-lab-forwarder}
+      - LOG_FORWARDER_POLL_MS=${LOG_FORWARDER_POLL_MS:-1000}
+    volumes:
+      - ${LAB_BIND_LOG_HOST_PATH:-/var/cache/bind/query.log}:/logs/bind-query.log:ro
+      - ${LAB_SQUID_LOG_HOST_PATH:-/var/log/squid/access.log}:/logs/squid-access.log:ro
+    depends_on:
+      - syslog-receiver
+    restart: unless-stopped
+
   loadgen:
     build: ./tools/loadgen
     container_name: demo-loadgen

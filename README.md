@@ -32,3 +32,13 @@ docker compose logs --tail=100 enrichment-sync-job
 - Schedule: every 24 hours (`ENRICHMENT_SYNC_INTERVAL_MS=86400000`)
 - Source URL (default): `https://geoip.oxl.app/file/asn_full.json.zip`
 
+## Lab Log Forwarder (BIND/Squid)
+
+For lab/test file-to-syslog forwarding (BIND query logs + Squid access logs), see:
+- `docs/lab-log-forwarder.md`
+
+Quick start:
+```bash
+docker compose --profile lab up -d lab-log-forwarder
+```
+
