@@ -1,6 +1,7 @@
 import './ensure-db-password.js';
 import './ensure-clickhouse-password.js';
 import { createClient } from '@clickhouse/client';
+import { normalizeObservable } from './observable-normalization.js';
 
 const clickhouseUrl = process.env.CLICKHOUSE_URL || 'http://demo-clickhouse:8123';
 const clickhouseDb = process.env.CLICKHOUSE_DB || 'default';
@@ -226,18 +227,6 @@ function confidenceToInt(v) {
 
 function pgLiteralForPostgresqlEngine(value) {
   return String(value ?? '').replace(/'/g, "''");
-}
-
-function canonicalizeUrlForLookup(v) {
-  try {
-    const u = new URL(String(v || '').trim());
-    u.hostname = u.hostname.toLowerCase();
-    if ((u.protocol === 'http:' && u.port === '80') || (u.protocol === 'https:' && u.port === '443')) u.port = '';
-    if (!u.pathname) u.pathname = '/';
-    return u.toString().toLowerCase();
-  } catch {
-    return String(v || '').trim().toLowerCase();
-  }
 }
 
 export async function syncIocLookupFromPostgres(opts = {}) {
