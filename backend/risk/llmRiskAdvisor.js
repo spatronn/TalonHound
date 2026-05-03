@@ -182,19 +182,22 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasMultipleHosts = hostCount > 0 ? hasMultipleHostsMetric : /(multiple hosts|many hosts|multiple observed hosts|observed_hosts\s*>=\s*2|unique_hosts\s*>=\s*2)/i.test(evidenceText);
   const hasLongDuration = durationMinutes > 0 ? hasLongDurationMetric : /(long duration|persistence|persistent|over several hours|over time|repeated over long duration)/i.test(evidenceText);
 
-  const hasPersistencePositivePhrase = /(prolonged period|over a long duration|repeated|persistent)/i.test(reason);
+  const hasPersistencePositivePhrase = /(prolonged period|extended period|over a long duration|repeated|persistent|over time)/i.test(reason);
   const hasPersistenceNegativePhrase = /(no persistence|lacks persistence|without persistence|lack of persistence)/i.test(reason);
-  const hasCoupledBadPhrase = /(successful access\s+or\s+persistence|no confirmed successful access\s+or\s+persistence|lacks confirmed successful access\s+or\s+persistence|no successful access\s+or\s+persistence)/i.test(reason);
+  const hasCoupledBadPhrase = /(successful access\s+or\s+persistence|no confirmed successful access\s+or\s+persistence|lacks confirmed successful access\s+or\s+persistence|no successful access\s+or\s+persistence|lacks successful access\s+or\s+persistence)/i.test(reason);
   const urlPersistenceMismatch = iocType === 'url' && (
     (durationMinutes > 60 && hasPersistenceNegativePhrase)
     || (hasPersistencePositivePhrase && hasPersistenceNegativePhrase)
     || hasCoupledBadPhrase
   );
-  if (urlPersistenceMismatch) {
+  const hasInternalGuardrailWords = /(deterministic guardrails|final adjustment|normalized by guardrails|adjustment was normalized|based on incident metrics)/i.test(reason);
+  const hasForbiddenWords = /(blacklist|\bsafe\b|\bbenign\b|not a threat|no threat)/i.test(reason);
+  const hasRiskOverstatement = /increases the risk/i.test(reason) && !hasAcceptedOrSuccessful;
+  if (urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement) {
     return {
       adjustment: 0,
       confidence: 0,
-      reason: 'Repeated proxy requests across multiple hosts over a prolonged period indicate persistent web access attempts. Lack of confirmed successful access or execution limits confidence, and the activity should be monitored.',
+      reason: 'Repeated URL requests from multiple hosts over an extended period indicate persistent web access attempts. Lack of confirmed successful access or execution limits confidence, and the activity should be monitored.',
       raw_model_adjustment: rawModelAdjustment,
       normalization_reason: 'invalid_reason_persistence_contradiction'
     };
@@ -229,12 +232,15 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     adjustment = floor;
     confidence = Math.min(confidence || 0.6, 0.6);
     normalizationReason = 'deterministic_guardrail_floor';
-    reason = cleanReason(appendOnce(reason, 'Final adjustment was normalized by deterministic guardrails based on incident metrics.'));
   } else if (!explicitBenign && rawModelAdjustment < 0 && floor === 0 && (hasHighVolume || hasRepeatedOnly || hasMultipleHosts || hasLongDuration)) {
     adjustment = 0;
     confidence = Math.min(confidence || 0.6, 0.6);
     normalizationReason = 'negative_neutralized';
     reason = cleanReason(appendOnce(reason, 'Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.'));
+  }
+
+  if (/(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(reason)) {
+    adjustment = 0;
   }
 
   return {
