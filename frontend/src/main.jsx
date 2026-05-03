@@ -174,6 +174,14 @@ function sanitizeSourceNote(note) {
 }
 
 function normalizeEventContext(event) {
+  const sourceType = String(event?.source_type || '').toLowerCase();
+  if (sourceType === 'proxy') return 'Proxy';
+  if (sourceType === 'dns') return 'DNS';
+  if (sourceType === 'firewall') return 'Firewall';
+  if (sourceType === 'waf') return 'WAF';
+  if (sourceType === 'endpoint') return 'Endpoint';
+  if (event?.context_label) return String(event.context_label);
+
   const tokens = [
     event?.type,
     event?.log_type,
@@ -1644,7 +1652,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
     setError('');
     try {
       const { data } = await api.get(`/incidents/${activityId}/events`, { params: { limit: pageSize, offset: nextOffset } });
-      const incoming = data?.items || [];
+      const incoming = data?.events || data?.items || [];
       setRows((prev) => (append ? [...prev, ...incoming] : incoming));
       setTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : null);
       setOffset(nextOffset + incoming.length);

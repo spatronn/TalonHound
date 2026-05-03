@@ -2085,7 +2085,7 @@ app.get('/api/risk/trend', async (req, res) => {
 
 app.get('/api/incidents/:id/events', async (req, res) => {
   const t0 = Date.now();
-  const perf = { dbMs: 0, enrichMs: 0, countMs: 0, rows: 0, db: USE_CLICKHOUSE ? 'postgres+clickhouse' : 'postgres' };
+  const perf = { dbMs: 0, enrichMs: 0, countMs: 0, rows: 0, db: 'postgres', chUsed: false };
   try {
     const idRaw = String(req.params?.id || '').trim();
     if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
@@ -2101,37 +2101,18 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       `WITH recent AS (
          SELECT
            m.id,
-           m.signal_event_id,
            m.event_time,
-           m.host_name,
-           m.process_name,
-           m.destination_ip,
-           m.destination_port,
-           m.protocol,
            m.matched_ioc,
-           m.source_name,
-           m.confidence,
            m.ioc_type,
-           m.ioc_item_id,
-           m.parser_source,
-           m.source,
-           m.match_context,
-           m.dedup_key,
-           m.bucket_start,
-           m.first_seen_at,
-           m.last_seen_at,
-           m.hit_count,
-           m.created_at,
-           COALESCE(m.last_seen_at, m.event_time, m.created_at) AS detected_at,
+           m.source_name,
+           m.source_type,
            m.detection_type,
-           m.match_source,
            m.activity_id,
            m.verdict,
-           m.reviewed_at,
-           m.reviewed_by,
-           m.note,
            m.assigned_to,
-           m.assigned_at,
+           m.created_at,
+           m.match_context,
+           COALESCE(m.last_seen_at, m.event_time, m.created_at) AS detected_at,
            COALESCE(
              NULLIF(CONCAT_WS(' | ',
                NULLIF(m.source, ''),
@@ -2192,12 +2173,21 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     const enrichStart = Date.now();
     const baseItems = (q.rows || []);
     perf.rows = baseItems.length;
-    const items = baseItems.map((r) => ({ ...r, v2_context: classifyEventContext(r) }));
+    const items = baseItems.map((r) => {
+      const st = String(r?.source_type || '').toLowerCase();
+      const context_label = st === 'proxy' ? 'Proxy'
+        : st === 'dns' ? 'DNS'
+          : st === 'firewall' ? 'Firewall'
+            : st === 'waf' ? 'WAF'
+              : st === 'endpoint' ? 'Endpoint'
+                : 'Generic';
+      return { ...r, context_label, v2_context: classifyEventContext(r) };
+    });
     perf.enrichMs = Date.now() - enrichStart;
     const total = Number(totalQ.rows?.[0]?.total || 0);
     const totalMs = Date.now() - t0;
-    console.info(`[incident-events] incident_id=${idRaw} activity_id=${incident.id} rows=${perf.rows} total=${total} db=${perf.db} db_ms=${perf.dbMs} count_ms=${perf.countMs} enrich_ms=${perf.enrichMs} total_ms=${totalMs} limit=${limit} offset=${offset} table=ioc_match_events`);
-    return res.json({ total, limit, offset, items });
+    console.info(`[incident-events] incident_id=${idRaw} activity_id=${incident.id} rows=${perf.rows} total=${total} db=${perf.db} ch_used=${perf.chUsed} db_ms=${perf.dbMs} count_ms=${perf.countMs} enrich_ms=${perf.enrichMs} total_ms=${totalMs} limit=${limit} offset=${offset} table=ioc_match_events`);
+    return res.json({ events: items, total, limit, offset, items });
   } catch (err) {
     const totalMs = Date.now() - t0;
     console.error(`[incident-events] failed incident_id=${String(req.params?.id || '')} total_ms=${totalMs}`, err);
