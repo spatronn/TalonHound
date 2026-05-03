@@ -65,6 +65,18 @@ function cleanReason(text, max = 900) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function normalizeUrlTelemetryWording(reasonText = '') {
+  let r = cleanReason(reasonText);
+  r = r.replace(/Missing DNS resolution/gi, 'DNS resolution was not correlated in the current evidence set');
+  r = r.replace(/Missing endpoint process/gi, 'Endpoint process telemetry is not available in the current evidence set');
+  r = r.replace(/Missing content analysis/gi, 'Content-analysis evidence is not present in the available telemetry');
+  r = r.replace(/no endpoint process evidence/gi, 'endpoint process context is not available in the current evidence set');
+  r = r.replace(/no content analysis evidence/gi, 'content-analysis evidence is not present in the available telemetry');
+  r = r.replace(/no user interaction/gi, 'available events do not confirm user interaction');
+  r = r.replace(/no file was downloaded/gi, 'available events do not show downloaded content');
+  return cleanReason(r);
+}
+
 function formatServicePort(traffic = {}) {
   const service = Array.isArray(traffic?.services) ? String(traffic.services.find(Boolean) || '').trim() : '';
   const port = Array.isArray(traffic?.ports) ? Number(traffic.ports.find((p) => Number.isFinite(Number(p)) && Number(p) > 0) || 0) : 0;
@@ -206,7 +218,7 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     return {
       adjustment: 0,
       confidence: limitedConfidence,
-      reason: 'Repeated URL requests from multiple hosts over an extended period indicate persistent web access attempts. Available events do not include confirmed successful access, endpoint process context, or content analysis evidence, so confidence is limited and the activity should be investigated.',
+      reason: 'Repeated proxy URL access attempts were observed across multiple hosts over an extended period, indicating persistent web activity. The current evidence set does not confirm successful access, user interaction, endpoint process context, or downloaded content, so the activity should be investigated.',
       raw_model_adjustment: rawModelAdjustment,
       normalization_reason: 'invalid_reason_persistence_contradiction'
     };
@@ -254,6 +266,8 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
       confidence = clamp(Math.max(confidence || 0.5, 0.45), 0.45, 0.65);
     }
   }
+
+  if (iocType === 'url') reason = normalizeUrlTelemetryWording(reason);
 
   return {
     adjustment,
@@ -362,7 +376,8 @@ function buildUrlPrompt() {
 - Do not claim execution without endpoint/process evidence.
 - Do not claim phishing impact without user interaction or TI support.
 - Do not claim malware execution without file/process evidence.
-- If only proxy evidence exists, explicitly say confidence is limited by missing DNS/endpoint/content-analysis evidence.
+- If only proxy evidence exists, explicitly say confidence is limited by what is available in the current telemetry/evidence set.
+- Use telemetry-scope wording: "not available" / "not correlated" / "not present in available telemetry" instead of hard "missing" claims.
 - Do not use "successful access or persistence" coupling.
 - Do not say "no persistence" when duration is high or activity is repeated/prolonged.
 - Do not mention blacklist status or internal guardrail/adjustment details.
