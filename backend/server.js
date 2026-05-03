@@ -2174,14 +2174,17 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     const baseItems = (q.rows || []);
     perf.rows = baseItems.length;
     const items = baseItems.map((r) => {
+      const v2 = classifyEventContext(r);
       const st = String(r?.source_type || '').toLowerCase();
-      const context_label = st === 'proxy' ? 'Proxy'
-        : st === 'dns' ? 'DNS'
-          : st === 'firewall' ? 'Firewall'
-            : st === 'waf' ? 'WAF'
-              : st === 'endpoint' ? 'Endpoint'
+      const inferredFamily = String(v2?.event_family || '').toLowerCase();
+      const family = st || inferredFamily;
+      const context_label = family === 'proxy' ? 'Proxy'
+        : family === 'dns' ? 'DNS'
+          : family === 'firewall' ? 'Firewall'
+            : family === 'waf' ? 'WAF'
+              : family === 'endpoint' ? 'Endpoint'
                 : 'Generic';
-      return { ...r, context_label, v2_context: classifyEventContext(r) };
+      return { ...r, context_label, v2_context: v2 };
     });
     perf.enrichMs = Date.now() - enrichStart;
     const total = Number(totalQ.rows?.[0]?.total || 0);
