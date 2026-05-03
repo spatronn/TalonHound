@@ -616,8 +616,16 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       const raw = await redis.get(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      const normalized = normalizeAdvisorOutput(parsed, 'cache');
-      console.info(`[llm-confidence-trace] incident_id=${incidentId} ioc_type=cache model_raw_confidence=${Number(parsed?.confidence ?? parsed?.llm_risk_confidence ?? 0)} normalized_confidence=${Number(normalized?.confidence ?? 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'cache'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=true cache_write_value=na`);
+      const normalized = normalizeAdvisorOutput(parsed, 'cache', parsed?.incident_payload || null);
+      let cachedConfidence = Number(normalized?.confidence);
+      if (!Number.isFinite(cachedConfidence)) cachedConfidence = Number(parsed?.llm_risk_confidence ?? parsed?.confidence ?? 0);
+      const cachedIocType = String(parsed?.ioc_type || parsed?.incident_payload?.ioc_type || '').toLowerCase();
+      const cachedReason = String(normalized?.reason || parsed?.reason || '');
+      if (cachedIocType === 'url' && /(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(cachedReason)) {
+        cachedConfidence = clamp(Math.max(cachedConfidence || 0.5, 0.45), 0.45, 0.65);
+      }
+      normalized.confidence = cachedConfidence;
+      console.info(`[llm-confidence-trace] incident_id=${incidentId} ioc_type=${cachedIocType || 'cache'} model_raw_confidence=${Number(parsed?.confidence ?? parsed?.llm_risk_confidence ?? 0)} normalized_confidence=${Number(normalized?.confidence ?? 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'cache'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=true cache_write_value=na`);
       const base = clamp(Number(baseRisk || 0), 0, 100);
       const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
 
@@ -755,6 +763,8 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       version,
       value: {
         ...normalized,
+        ioc_type: incident?.ioc_type || null,
+        incident_payload: buildIncidentPayload(incident),
         llm_last_updated_at: new Date().toISOString(),
         llm_version: version || null
       }
