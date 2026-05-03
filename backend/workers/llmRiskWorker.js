@@ -25,6 +25,29 @@ const pool = new Pool({
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const advisor = createLlmRiskAdvisor({ redis });
 
+function normSourceType(ev = {}) {
+  const st = String(ev?.source_type || '').toLowerCase();
+  if (st) return st;
+  const p = String(ev?.parser_source || '').toLowerCase();
+  if (/(proxy|url|http|webproxy|swg)/.test(p)) return 'proxy';
+  if (/(^|\s)dns(\s|$)|resolver|query/.test(p)) return 'dns';
+  if (/(waf|f5|asm|modsecurity|nginx-waf)/.test(p)) return 'waf';
+  if (/(endpoint|edr|xdr|sysmon|process|file)/.test(p)) return 'endpoint';
+  if (/(firewall|traffic|forti|palo|pan-os|checkpoint|netflow)/.test(p)) return 'firewall';
+  return 'generic';
+}
+
+function eventOutcome(ev = {}) {
+  const action = String(ev?.match_context?.action || ev?.normalized_event_json?.action || '').toLowerCase();
+  const status = Number(ev?.normalized_event_json?.status || ev?.match_context?.status || 0);
+  if (['accept', 'accepted', 'allow', 'allowed', 'permit', 'pass'].includes(action)) return 'allowed_or_successful';
+  if (['deny', 'denied', 'drop', 'blocked', 'block', 'reject'].includes(action)) return 'blocked_or_denied';
+  if (status >= 200 && status < 400) return 'allowed_or_successful';
+  if (status === 401 || status === 403 || status === 407) return 'blocked_or_denied';
+  if (status >= 400) return 'failed';
+  return 'unknown';
+}
+
 async function loadIncident(id) {
   const q = await pool.query(
     `WITH ev AS (
@@ -97,6 +120,99 @@ async function loadIncident(id) {
 
   const incident = q.rows?.[0] || null;
   if (!incident) return null;
+
+  const evQ = await pool.query(
+    `SELECT
+       id, activity_id, matched_ioc, ioc_type, source_type, parser_source, detection_type,
+       host_name, event_time, created_at, normalized_event_json, match_context
+     FROM ioc_match_events
+     WHERE activity_id = $1::uuid
+     ORDER BY COALESCE(last_seen_at, event_time, created_at) DESC, id DESC
+     LIMIT 500`,
+    [id]
+  );
+
+  const rows = evQ.rows || [];
+  const sourceTypes = {};
+  const detectionTypes = { realtime: 0, retroactive: 0, unknown: 0 };
+  const outcomes = { allowed_or_successful: 0, blocked_or_denied: 0, failed: 0, unknown: 0 };
+  const methods = { GET: 0, POST: 0, PUT: 0, DELETE: 0, OTHER: 0 };
+  const statusCodes = {};
+  const statusClasses = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, unknown: 0 };
+  const hostCounts = new Map();
+
+  for (const r of rows) {
+    const st = normSourceType(r);
+    sourceTypes[st] = (sourceTypes[st] || 0) + 1;
+    const dt = String(r?.detection_type || '').toLowerCase();
+    if (dt === 'realtime') detectionTypes.realtime += 1;
+    else if (dt === 'retroactive') detectionTypes.retroactive += 1;
+    else detectionTypes.unknown += 1;
+
+    const out = eventOutcome(r);
+    outcomes[out] = (outcomes[out] || 0) + 1;
+
+    const method = String(r?.normalized_event_json?.method || r?.match_context?.method || '').toUpperCase();
+    if (method === 'GET' || method === 'POST' || method === 'PUT' || method === 'DELETE') methods[method] += 1;
+    else if (method) methods.OTHER += 1;
+
+    const status = Number(r?.normalized_event_json?.status || r?.match_context?.status || 0);
+    if (Number.isFinite(status) && status > 0) {
+      const k = String(status);
+      statusCodes[k] = (statusCodes[k] || 0) + 1;
+      if (status >= 200 && status < 300) statusClasses['2xx'] += 1;
+      else if (status < 400) statusClasses['3xx'] += 1;
+      else if (status < 500) statusClasses['4xx'] += 1;
+      else statusClasses['5xx'] += 1;
+    } else {
+      statusClasses.unknown += 1;
+    }
+
+    const host = String(r?.normalized_event_json?.src_ip || r?.normalized_event_json?.client_ip || r?.host_name || r?.match_context?.srcip || r?.match_context?.client_ip || '').trim();
+    if (host) hostCounts.set(host, (hostCounts.get(host) || 0) + 1);
+  }
+
+  const firstTs = rows.length ? new Date(rows[rows.length - 1].event_time || rows[rows.length - 1].created_at).getTime() : NaN;
+  const lastTs = rows.length ? new Date(rows[0].event_time || rows[0].created_at).getTime() : NaN;
+  const durationMinutes = Number.isFinite(firstTs) && Number.isFinite(lastTs) && lastTs >= firstTs ? Math.round((lastTs - firstTs) / 60000) : 0;
+  const eventsPerHour = durationMinutes > 0 ? Number((rows.length / (durationMinutes / 60)).toFixed(2)) : rows.length;
+
+  incident.event_summary = {
+    source_types: sourceTypes,
+    detection_types: detectionTypes,
+    outcomes,
+    http: {
+      total_requests: rows.length,
+      methods,
+      status_codes: statusCodes,
+      status_classes: statusClasses,
+      successful_or_redirect_count: statusClasses['2xx'] + statusClasses['3xx'],
+      blocked_or_failed_count: outcomes.blocked_or_denied + outcomes.failed
+    },
+    hosts: {
+      unique_count: hostCounts.size,
+      top_hosts: Array.from(hostCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([host, events]) => ({ host, events }))
+    },
+    persistence: {
+      first_event_at: Number.isFinite(firstTs) ? new Date(firstTs).toISOString() : null,
+      last_event_at: Number.isFinite(lastTs) ? new Date(lastTs).toISOString() : null,
+      duration_minutes: durationMinutes,
+      events_per_hour: eventsPerHour
+    }
+  };
+
+  incident.sample_events = rows.slice(0, 5).map((r) => ({
+    detected_at: r.event_time || r.created_at || null,
+    source_type: normSourceType(r),
+    matched_ioc: r.matched_ioc,
+    src_ip: r?.normalized_event_json?.src_ip || r?.normalized_event_json?.client_ip || r?.host_name || r?.match_context?.srcip || r?.match_context?.client_ip || null,
+    method: r?.normalized_event_json?.method || r?.match_context?.method || null,
+    status: r?.normalized_event_json?.status || r?.match_context?.status || null,
+    outcome: eventOutcome(r)
+  }));
+
+  console.info(`[llm-payload] incident_id=${incident?.incident_id || id} ioc_type=${incident?.ioc_type || ''} event_count=${rows.length} sample_events=${incident.sample_events.length} source_types=${JSON.stringify(sourceTypes)} duration_minutes=${durationMinutes}`);
+
   return enrichIncidentContextWithRelatedIocs(incident, { pool });
 }
 

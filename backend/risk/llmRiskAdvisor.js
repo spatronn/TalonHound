@@ -312,14 +312,18 @@ Return ONLY JSON:
 
 function buildUrlPrompt() {
   return `URL IOC ANALYSIS RULES:
-- Focus on url_requests/request_count, successful access, unique users/hosts, persistence, and suspicious path patterns.
+- URL IOC incidents must be evaluated using proxy/web access behavior.
+- Use event_summary as the primary behavior source.
+- Use sample_events only as examples.
+- Do not confuse hits with event_count: hits = total observed activity volume, event_count = persisted detection events.
+- Repeated URL requests across multiple hosts increase concern.
+- POST requests may indicate interactive or automated submission behavior.
+- HTTP 2xx/3xx may indicate successful or redirected access.
+- HTTP 401/403/407/4xx reduce confidence in successful access.
+- If most outcomes are unknown, avoid strong conclusions.
+- Lack of confirmed execution limits confidence.
+- Prefer action-oriented conclusions such as "should be monitored" or "warrants further investigation".
 - Do not mention blacklist status.
-Increase risk:
-- successful and repeated URL access
-- multiple hosts/users
-- persistent activity or suspicious path behavior
-Decrease risk:
-- very low request volume and no persistence
 Return ONLY JSON:
 { "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
@@ -408,6 +412,19 @@ function buildIncidentPayload(incident = {}) {
     : 0;
 
   const base = {
+    incident: {
+      id: incident?.incident_id || incident?.id || null,
+      ioc: String(incident?.ioc_value || incident?.observable_value || ''),
+      ioc_type: iocType,
+      risk_before_llm: Number(incident?.risk_score || 0),
+      hits: totalHits,
+      event_count: eventCount,
+      observed_hosts: observedHosts,
+      first_seen: incident?.first_seen || null,
+      last_seen: incident?.last_seen || null,
+      duration_minutes: durationMinutes,
+      verdict: String(incident?.verdict || 'unknown').toLowerCase()
+    },
     ioc: String(incident?.ioc_value || incident?.observable_value || ''),
     ioc_type: iocType,
     activity_type: iocType === 'domain' ? 'dns' : iocType,
@@ -415,6 +432,13 @@ function buildIncidentPayload(incident = {}) {
     first_seen: incident?.first_seen || null,
     last_seen: incident?.last_seen || null,
     duration_minutes: durationMinutes,
+    event_summary: incident?.event_summary || null,
+    sample_events: Array.isArray(incident?.sample_events) ? incident.sample_events.slice(0, 10) : [],
+    field_notes: {
+      hits: 'total observed IOC matches or activity volume',
+      event_count: 'number of persisted detection events',
+      sample_events: 'examples only, not total counts'
+    },
     history: {
       previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
       previous_verdict: normalizeVerdict(incident?.previous_verdict)
