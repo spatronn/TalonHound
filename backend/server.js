@@ -2177,7 +2177,13 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       const v2 = classifyEventContext(r);
       const st = String(r?.source_type || '').toLowerCase();
       const inferredFamily = String(v2?.event_family || '').toLowerCase();
-      const family = st || inferredFamily;
+      let family = st || inferredFamily;
+      if (!family || family === 'generic') {
+        const iocType = String(r?.ioc_type || '').toLowerCase();
+        const iocVal = String(r?.matched_ioc || '').toLowerCase();
+        if (iocType === 'url' || iocVal.startsWith('http://') || iocVal.startsWith('https://')) family = 'proxy';
+        else if (iocType === 'domain') family = 'dns';
+      }
       const context_label = family === 'proxy' ? 'Proxy'
         : family === 'dns' ? 'DNS'
           : family === 'firewall' ? 'Firewall'
