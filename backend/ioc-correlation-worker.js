@@ -71,9 +71,7 @@ function dedupKeyOf(row) {
     row.matched_ioc || '',
     row.host || '',
     row.source || '',
-    row.parser_source || 'unknown',
-    row.detection_type || 'realtime',
-    row.match_source || ''
+    row.parser_source || 'unknown'
   ].join('|');
 }
 
@@ -519,7 +517,10 @@ async function insertMatchEvents(client, rows) {
       confidence = COALESCE(EXCLUDED.confidence, ioc_match_events.confidence),
       source_name = COALESCE(EXCLUDED.source_name, ioc_match_events.source_name),
       match_context = COALESCE(EXCLUDED.match_context, ioc_match_events.match_context),
-      detection_type = COALESCE(EXCLUDED.detection_type, ioc_match_events.detection_type),
+      detection_type = CASE
+        WHEN COALESCE(ioc_match_events.detection_type, 'realtime') = 'realtime' THEN ioc_match_events.detection_type
+        ELSE COALESCE(EXCLUDED.detection_type, ioc_match_events.detection_type)
+      END,
       match_source = COALESCE(EXCLUDED.match_source, ioc_match_events.match_source),
       activity_id = COALESCE(EXCLUDED.activity_id, ioc_match_events.activity_id)
   `;
