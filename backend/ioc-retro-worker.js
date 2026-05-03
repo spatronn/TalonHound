@@ -1,5 +1,6 @@
 import './lib/ensure-db-password.js';
 import pg from 'pg';
+import { createHash } from 'node:crypto';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, command as clickhouseCommand } from './lib/clickhouse.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 
@@ -240,8 +241,8 @@ async function insertMatchEvents(client, rows) {
       cache: activityCache
     });
 
-    const base = i * 21;
-    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20},$${base + 21})`);
+    const base = i * 26;
+    values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20},$${base + 21},$${base + 22},$${base + 23},$${base + 24},$${base + 25},$${base + 26})`);
     params.push(
       r.event_time, r.host || null, null, r.destination_ip || null, null, r.protocol || null,
       r.matched_ioc, r.source_name || null, r.confidence || null, r.ioc_type, null,
@@ -249,7 +250,12 @@ async function insertMatchEvents(client, rows) {
       r._dedupKey, r._bucketStart, r.event_time, r._hitInc,
       r.detection_type || 'retroactive',
       r.match_source ?? null,
-      activity?.id || null
+      activity?.id || null,
+      r.normalized_event_json ? JSON.stringify(r.normalized_event_json) : null,
+      r.raw_log_snapshot || null,
+      r.raw_log_hash || null,
+      r.syslog_log_id || null,
+      r.source_type || null
     );
   }
 
@@ -258,7 +264,8 @@ async function insertMatchEvents(client, rows) {
       event_time, host_name, process_name, destination_ip, destination_port, protocol,
       matched_ioc, source_name, confidence, ioc_type, ioc_item_id,
       parser_source, source, match_context, dedup_key, bucket_start, last_seen_at, hit_count,
-      detection_type, match_source, activity_id
+      detection_type, match_source, activity_id,
+      normalized_event_json, raw_log_snapshot, raw_log_hash, syslog_log_id, source_type
     ) VALUES ${values.join(',')}
     ON CONFLICT (dedup_key, bucket_start)
     DO UPDATE SET
@@ -273,13 +280,57 @@ async function insertMatchEvents(client, rows) {
     params
   );
 
+  const withRaw = deduped.filter((r) => Boolean(r.raw_log_snapshot)).length;
+  const withNorm = deduped.filter((r) => Boolean(r.normalized_event_json)).length;
+  console.info(`[retro-event-create] inserted=${deduped.length} source_type_sample=${deduped[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
   return rows.length;
+}
+
+function normalizeSourceType(event = {}) {
+  const tokens = [event.parser_source, event.source, event.protocol, event?.match_context?.query_type]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  if (/(proxy|url|http|webproxy|swg)/.test(tokens)) return 'proxy';
+  if (/(^|\s)dns(\s|$)|resolver|query/.test(tokens)) return 'dns';
+  if (/(waf|f5|asm|modsecurity|nginx-waf)/.test(tokens)) return 'waf';
+  if (/(endpoint|edr|xdr|sysmon|process|file)/.test(tokens)) return 'endpoint';
+  if (/(firewall|traffic|forti|palo|pan-os|checkpoint|netflow)/.test(tokens)) return 'firewall';
+  return 'generic';
 }
 
 function mapRowToEvent(r) {
   const eventMs = r?.ts ? new Date(r.ts).getTime() : 0;
   const iocUpdatedMs = r?.ioc_updated_at ? new Date(r.ioc_updated_at).getTime() : 0;
   const iocWasPresentAtIngest = eventMs > 0 && iocUpdatedMs > 0 ? iocUpdatedMs <= eventMs : false;
+  const rawLogSnapshot = r?.raw_log ? String(r.raw_log) : null;
+  const matchContext = {
+    retroactive: true,
+    observable_source: 'syslog_observables',
+    processing_path: 'retro-window',
+    detection_type: 'retroactive',
+    ioc_was_present_at_ingest: iocWasPresentAtIngest,
+    ioc_updated_at: r.ioc_updated_at || null
+  };
+  const sourceType = normalizeSourceType({ parser_source: 'syslog_observables', source: r.source, protocol: 'dns', match_context: matchContext });
+  const normalizedEvent = {
+    source_type: sourceType,
+    parser_source: 'syslog_observables',
+    matched_ioc: r.matched_ioc,
+    ioc_type: r.ioc_type,
+    src_ip: null,
+    client_ip: null,
+    dst_ip: null,
+    response_ip: null,
+    domain: r.ioc_type === 'domain' ? r.matched_ioc : null,
+    query: r.ioc_type === 'domain' ? r.matched_ioc : null,
+    url: r.ioc_type === 'url' ? r.matched_ioc : null,
+    action: null,
+    status: null,
+    method: null,
+    port: null,
+    protocol: 'dns',
+    event_time: r.ts || null
+  };
   return {
     event_time: r.ts,
     host: r.host,
@@ -293,14 +344,12 @@ function mapRowToEvent(r) {
     confidence: String(r.confidence || ''),
     detection_type: 'retroactive',
     match_source: null,
-    match_context: {
-      retroactive: true,
-      observable_source: 'syslog_observables',
-      processing_path: 'retro-window',
-      detection_type: 'retroactive',
-      ioc_was_present_at_ingest: iocWasPresentAtIngest,
-      ioc_updated_at: r.ioc_updated_at || null
-    }
+    match_context: matchContext,
+    normalized_event_json: normalizedEvent,
+    raw_log_snapshot: rawLogSnapshot,
+    raw_log_hash: rawLogSnapshot ? createHash('sha256').update(rawLogSnapshot).digest('hex') : null,
+    syslog_log_id: r?.event_id || r?.log_id || r?.id || null,
+    source_type: sourceType
   };
 }
 
