@@ -2059,6 +2059,8 @@ app.get('/api/risk/trend', async (req, res) => {
 });
 
 app.get('/api/incidents/:id/events', async (req, res) => {
+  const t0 = Date.now();
+  const perf = { dbMs: 0, enrichMs: 0, countMs: 0, rows: 0, db: USE_CLICKHOUSE ? 'postgres+clickhouse' : 'postgres' };
   try {
     const idRaw = String(req.params?.id || '').trim();
     if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
@@ -2066,8 +2068,10 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     const incident = await findIncidentRow(idRaw);
     if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
-    const limit = Math.min(Math.max(Number(req.query?.limit || 200), 1), 1000);
+    const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 500);
+    const offset = Math.max(Number(req.query?.offset || 0), 0);
 
+    const dbStart = Date.now();
     const q = await pool.query(
       `WITH recent AS (
          SELECT
@@ -2128,7 +2132,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
          FROM ioc_match_events m
          WHERE m.activity_id = $1::uuid
          ORDER BY COALESCE(m.last_seen_at, m.event_time, m.created_at) DESC, m.id DESC
-         LIMIT $2
+         LIMIT $2 OFFSET $3
        ), source_agg AS (
          SELECT
            i.observable AS observable_norm,
@@ -2145,9 +2149,11 @@ app.get('/api/incidents/:id/events', async (req, res) => {
        FROM recent r
        LEFT JOIN source_agg sa ON sa.observable_norm = lower(r.matched_ioc)
        ORDER BY r.detected_at DESC, r.id DESC`,
-      [incident.id, limit]
+      [incident.id, limit, offset]
     );
+    perf.dbMs = Date.now() - dbStart;
 
+    const countStart = Date.now();
     const totalQ = await pool.query(
       `SELECT COUNT(*)::bigint AS total
        FROM ioc_match_events
@@ -2155,13 +2161,21 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       [incident.id]
     );
 
-    const baseItems = USE_CLICKHOUSE
-      ? await Promise.all((q.rows || []).map((r) => withRawSyslogEvent(r)))
-      : (q.rows || []);
+    perf.countMs = Date.now() - countStart;
+
+    // Important: keep list endpoint lean (no per-row raw log lookup / no N+1).
+    const enrichStart = Date.now();
+    const baseItems = (q.rows || []);
+    perf.rows = baseItems.length;
     const items = baseItems.map((r) => ({ ...r, v2_context: classifyEventContext(r) }));
-    return res.json({ total: Number(totalQ.rows?.[0]?.total || 0), items });
+    perf.enrichMs = Date.now() - enrichStart;
+    const total = Number(totalQ.rows?.[0]?.total || 0);
+    const totalMs = Date.now() - t0;
+    console.info(`[incident-events] incident_id=${idRaw} activity_id=${incident.id} rows=${perf.rows} total=${total} db=${perf.db} db_ms=${perf.dbMs} count_ms=${perf.countMs} enrich_ms=${perf.enrichMs} total_ms=${totalMs} limit=${limit} offset=${offset} table=ioc_match_events`);
+    return res.json({ total, limit, offset, items });
   } catch (err) {
-    console.error('[incident-events] failed', err);
+    const totalMs = Date.now() - t0;
+    console.error(`[incident-events] failed incident_id=${String(req.params?.id || '')} total_ms=${totalMs}`, err);
     return res.status(500).json({ total: 0, items: [] });
   }
 });

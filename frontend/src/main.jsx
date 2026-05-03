@@ -1632,30 +1632,39 @@ function IOCMatchEventDetailsPage() {
 function IncidentEventsTable({ activityId, refreshKey = 0 }) {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [offset, setOffset] = useState(0);
+  const pageSize = 50;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (nextOffset = 0, append = false) => {
     if (!activityId) return;
     setLoading(true);
+    setError('');
     try {
-      const { data } = await api.get(`/incidents/${activityId}/events`, { params: { limit: 500 } });
-      setRows(data?.items || []);
-      setTotal(Number(data?.total || 0));
+      const { data } = await api.get(`/incidents/${activityId}/events`, { params: { limit: pageSize, offset: nextOffset } });
+      const incoming = data?.items || [];
+      setRows((prev) => (append ? [...prev, ...incoming] : incoming));
+      setTotal(Number.isFinite(Number(data?.total)) ? Number(data.total) : null);
+      setOffset(nextOffset + incoming.length);
     } catch {
-      setRows([]);
-      setTotal(0);
+      if (!append) setRows([]);
+      setError('Failed to load events');
+      if (!append) setTotal(null);
     } finally {
       setLoading(false);
     }
   }, [activityId]);
 
-  useEffect(() => { load().catch(() => {}); }, [load, refreshKey]);
+  useEffect(() => { load(0, false).catch(() => {}); }, [load, refreshKey]);
+
+  const hasMore = total == null ? false : rows.length < total;
 
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
-        Events ({total})
+        {total == null ? 'Events' : `Events (${total})`}
       </div>
       <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1260 }}>
         <thead>
@@ -1672,7 +1681,7 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
           </tr>
         </thead>
         <tbody>
-          {loading ? <tr><td colSpan={9} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : rows.length ? rows.map((r) => {
+          {loading && rows.length === 0 ? <tr><td colSpan={9} style={{ color: '#94a3b8' }}>Loading events...</td></tr> : error ? <tr><td colSpan={9} style={{ color: '#fca5a5' }}>{error}</td></tr> : rows.length ? rows.map((r) => {
             const verdict = String(r.verdict || '').toLowerCase();
             const vm = verdict === 'fp'
               ? { label: 'FP', color: '#ef4444' }
@@ -1737,6 +1746,12 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
           }) : <tr><td colSpan={9} style={{ color: '#94a3b8' }}>No events linked to this incident.</td></tr>}
         </tbody>
       </table>
+      <div style={{ padding: 10, borderTop: '1px solid #334155', background: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>
+          Showing {rows.length}{total == null ? '' : ` / ${total}`}
+        </span>
+        {hasMore ? <button onClick={() => load(offset, true).catch(() => {})} disabled={loading}>{loading ? 'Loading...' : 'Load more'}</button> : null}
+      </div>
     </div>
   );
 }
