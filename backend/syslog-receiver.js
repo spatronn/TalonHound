@@ -296,8 +296,22 @@ function parseDnsKv(line) {
 function parseSyslogLine(line, sourceIp) {
   const raw = normalizeTail(line);
   const now = new Date();
+
+  const bindTsMatch = raw.match(/\b(\d{2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)\b/);
+  const squidTsMatch = raw.match(/\bsquid_proxy:\s*(\d{10}(?:\.\d+)?)\b/);
+
+  let parsedTs = now;
+  if (squidTsMatch) {
+    const ms = Math.floor(Number(squidTsMatch[1]) * 1000);
+    if (Number.isFinite(ms) && ms > 0) parsedTs = new Date(ms);
+  } else if (bindTsMatch) {
+    const p = bindTsMatch[1].replace(/\.(\d{1,3})$/, '');
+    const d = new Date(`${p} UTC`);
+    if (!Number.isNaN(d.getTime())) parsedTs = d;
+  }
+
   const out = {
-    ts: now.toISOString().slice(0, 19).replace("T", " "),
+    ts: parsedTs.toISOString().slice(0, 19).replace("T", " "),
     source: `syslog:${sourceIp}`,
     host: sourceIp || "unknown",
     program: "unknown",
@@ -323,8 +337,11 @@ function parseSyslogLine(line, sourceIp) {
     out.message = normalizeTail(m[3] || raw);
   }
 
+  const isSquid = /\bsquid_proxy:\s*\d{10}(?:\.\d+)?\s+\d+\s+\d{1,3}(?:\.\d{1,3}){3}\s+[A-Z_]+\/\d{3}\s+\d+\s+[A-Z]+\s+\S+/i.test(raw);
+  const isBind = /\bbind_dns:\s*\d{2}-[A-Za-z]{3}-\d{4}\b.*\bquery:\s*\S+/i.test(raw);
+
   const parsed = parseFortiTraffic(raw) || parseDnsKv(raw) || parseMicrosoftDnsDebug(raw);
-  out.parser_source = parsed?.parser_source || 'unknown';
+  out.parser_source = parsed?.parser_source || (isSquid ? 'squid_proxy' : (isBind ? 'bind_dns' : 'unknown'));
   out.parsed_ip = parsed?.parsed_ip || null;
   out.parsed_query = parsed?.parsed_query || null;
   out.parsed_ip_private = parsed?.parsed_ip_private ?? null;
