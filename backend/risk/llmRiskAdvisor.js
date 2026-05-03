@@ -193,11 +193,14 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasInternalGuardrailWords = /(deterministic guardrails|final adjustment|normalized by guardrails|adjustment was normalized|based on incident metrics)/i.test(reason);
   const hasForbiddenWords = /(blacklist|\bsafe\b|\bbenign\b|not a threat|no threat)/i.test(reason);
   const hasRiskOverstatement = /increases the risk/i.test(reason) && !hasAcceptedOrSuccessful;
-  if (urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement) {
+  const hasCompromiseOverclaim = /(confirmed compromise|successful compromise|malicious activity is confirmed|confirmed threat)/i.test(reason) && !hasAcceptedOrSuccessful;
+  const hasPlaybookObserved = /(proxy requests|url access attempts|web access attempts)/i.test(reason);
+  const hasPlaybookMissing = /(endpoint process context|content analysis|confirmed successful access|user interaction|dns resolution)/i.test(reason);
+  if (urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement || hasCompromiseOverclaim || !hasPlaybookObserved || !hasPlaybookMissing) {
     return {
       adjustment: 0,
       confidence: 0,
-      reason: 'Repeated URL requests from multiple hosts over an extended period indicate persistent web access attempts. Lack of confirmed successful access or execution limits confidence, and the activity should be monitored.',
+      reason: 'Repeated URL requests from multiple hosts over an extended period indicate persistent web access attempts. Available events do not include confirmed successful access, endpoint process context, or content analysis evidence, so confidence is limited and the activity should be investigated.',
       raw_model_adjustment: rawModelAdjustment,
       normalization_reason: 'invalid_reason_persistence_contradiction'
     };
@@ -337,22 +340,23 @@ Return ONLY JSON:
 function buildUrlPrompt() {
   return `URL IOC ANALYSIS RULES:
 - URL IOC incidents must be evaluated using proxy/web access behavior.
-- Use event_summary as the primary behavior source.
-- Use sample_events only as examples.
+- Use event_summary as the main source of behavior and sample_events only as examples.
+- Analysts usually look for DNS resolution evidence, proxy/web access evidence, blocked vs successful outcome, HTTP method/status, POST/form signals, content analysis/sandbox evidence, endpoint process evidence, TI classification, and user interaction evidence.
+- Explain which evidence is present in Incident Data and which is not available.
+- Use exactly 1-2 sentences in reason.
+- Sentence 1: observation (repeated proxy/URL/web access attempts, host count, duration, method/status/outcome if available).
+- Sentence 2: missing evidence + action (limits confidence + should be monitored/investigated).
 - Do not confuse hits with event_count: hits = total observed activity volume, event_count = persisted detection events.
-- Repeated URL requests across multiple hosts increase concern.
-- POST requests may indicate interactive or automated submission behavior.
-- HTTP 2xx/3xx may indicate successful or redirected access.
-- HTTP 401/403/407/4xx reduce confidence in successful access.
-- If most outcomes are unknown, avoid strong conclusions.
-- Lack of confirmed execution limits confidence.
-- Do not use phrases like "successful access or persistence"; successful access and persistence are different concepts.
-- If duration_minutes > 60 or activity is described as repeated/prolonged, NEVER say "no persistence" or "lacks persistence".
-- If duration_minutes > 60, describe activity as persistent or repeated over time.
-- High event_count over long duration should be described as repeated activity over time.
-- Successful access and persistence are different concepts; lack of confirmed success does not mean lack of persistence.
-- Prefer action-oriented conclusions such as "should be monitored" or "warrants further investigation".
-- Do not mention blacklist status.
+- Repeated URL requests across multiple hosts over extended duration indicate persistent access attempts.
+- POST requests may indicate submission behavior but do not prove user submission unless confirmed.
+- HTTP 2xx/3xx can suggest successful/redirected access; 401/403/407/4xx limits confidence in successful access.
+- Do not claim execution without endpoint/process evidence.
+- Do not claim phishing impact without user interaction or TI support.
+- Do not claim malware execution without file/process evidence.
+- If only proxy evidence exists, explicitly say confidence is limited by missing DNS/endpoint/content-analysis evidence.
+- Do not use "successful access or persistence" coupling.
+- Do not say "no persistence" when duration is high or activity is repeated/prolonged.
+- Do not mention blacklist status or internal guardrail/adjustment details.
 Return ONLY JSON:
 { "adjustment": -10 | -5 | 0 | 5 | 10, "confidence": 0-1, "reason": "short explanation" }`;
 }
@@ -462,6 +466,7 @@ function buildIncidentPayload(incident = {}) {
     last_seen: incident?.last_seen || null,
     duration_minutes: durationMinutes,
     event_summary: incident?.event_summary || null,
+    playbook_coverage: incident?.playbook_coverage || null,
     sample_events: Array.isArray(incident?.sample_events) ? incident.sample_events.slice(0, 10) : [],
     field_notes: {
       hits: 'total observed IOC matches or activity volume',

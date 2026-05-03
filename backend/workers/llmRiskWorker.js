@@ -177,6 +177,11 @@ async function loadIncident(id) {
   const durationMinutes = Number.isFinite(firstTs) && Number.isFinite(lastTs) && lastTs >= firstTs ? Math.round((lastTs - firstTs) / 60000) : 0;
   const eventsPerHour = durationMinutes > 0 ? Number((rows.length / (durationMinutes / 60)).toFixed(2)) : rows.length;
 
+  const hasProxyEvidence = (sourceTypes.proxy || 0) > 0;
+  const hasDnsEvidence = (sourceTypes.dns || 0) > 0;
+  const hasConfirmedSuccessfulAccess = (statusClasses['2xx'] + statusClasses['3xx']) > 0 || outcomes.allowed_or_successful > 0;
+  const hasPostSignals = methods.POST > 0;
+
   incident.event_summary = {
     source_types: sourceTypes,
     detection_types: detectionTypes,
@@ -199,6 +204,18 @@ async function loadIncident(id) {
       duration_minutes: durationMinutes,
       events_per_hour: eventsPerHour
     }
+  };
+
+  incident.playbook_coverage = {
+    dns_evidence: hasDnsEvidence,
+    proxy_evidence: hasProxyEvidence,
+    content_analysis_evidence: false,
+    endpoint_process_evidence: false,
+    confirmed_successful_access: hasConfirmedSuccessfulAccess,
+    confirmed_user_interaction: false,
+    file_download_evidence: false,
+    ti_classification: null,
+    post_submission_signal: hasPostSignals
   };
 
   incident.sample_events = rows.slice(0, 5).map((r) => ({
