@@ -175,12 +175,30 @@ function sanitizeSourceNote(note) {
 
 function normalizeEventContext(event) {
   const sourceType = String(event?.source_type || '').toLowerCase();
-  if (sourceType === 'proxy') return 'Proxy';
-  if (sourceType === 'dns') return 'DNS';
-  if (sourceType === 'firewall') return 'Firewall';
-  if (sourceType === 'waf') return 'WAF';
-  if (sourceType === 'endpoint') return 'Endpoint';
-  if (event?.context_label) return String(event.context_label);
+  const parserSource = String(event?.parser_source || '').toLowerCase();
+  const match = event?.match_context || {};
+  const norm = event?.normalized_event_json || {};
+
+  const dnsParser = /(dns|microsoft_dns|bind_dns|dns_debug|microsoft_dns_debug|dns_kv)/i.test(parserSource);
+  const dnsSource = sourceType === 'dns';
+  const dnsFields = [match?.ioc_query, match?.query_type, match?.response_ip, norm?.query, norm?.dns_query, norm?.domain_query]
+    .some((v) => String(v || '').trim() !== '');
+  if (dnsParser || dnsSource || dnsFields) return 'DNS';
+
+  const proxySource = /(proxy|web|url)/i.test(sourceType) || /(proxy|squid|web|url)/i.test(parserSource);
+  const proxyFields = [norm?.url, norm?.http_host, norm?.request_url, norm?.method, norm?.status_code, match?.url, match?.http_host, match?.request_url]
+    .some((v) => String(v || '').trim() !== '');
+  if (proxySource || proxyFields) return 'Proxy';
+
+  const firewallSource = /(firewall|traffic)/i.test(sourceType) || /(fortigate|firewall|traffic|paloalto|pan-os|checkpoint|netflow)/i.test(parserSource);
+  const trafficFields = [match?.srcip, match?.dstip, match?.dstport, match?.proto, match?.action, norm?.src_ip, norm?.dst_ip, norm?.destination_port]
+    .some((v) => String(v || '').trim() !== '');
+  if (firewallSource || trafficFields) return 'Firewall';
+
+  if (sourceType === 'waf' || /(waf|f5|asm|modsecurity|nginx-waf)/i.test(parserSource)) return 'WAF';
+  if (sourceType === 'endpoint' || /(endpoint|edr|xdr|sysmon)/i.test(parserSource)) return 'Endpoint';
+
+  if ((sourceType === 'generic' || sourceType === '') && (parserSource === 'unknown' || parserSource === '')) return 'Generic';
 
   const tokens = [
     event?.type,
@@ -202,6 +220,8 @@ function normalizeEventContext(event) {
   if (/(waf|f5|asm|application firewall|modsecurity|nginx-waf)/i.test(tokens)) return 'WAF';
   if (/(endpoint|edr|xdr|process|file[_\s-]?event|sysmon)/i.test(tokens)) return 'Endpoint';
   if (/(firewall|traffic|fortigate|forti|paloalto|pan-os|checkpoint|netflow|forward)/i.test(tokens)) return 'Firewall';
+
+  if (event?.context_label) return String(event.context_label);
   return 'Generic';
 }
 
