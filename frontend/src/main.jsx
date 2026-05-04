@@ -2152,7 +2152,7 @@ function IncidentDetailsPage() {
               <div style={{ color: '#94a3b8', marginTop: 6 }}>
                 Type: {item.ioc_type}
                 {' • '}Detection Events: {item.detection_event_count ?? item.event_count ?? 0}
-                {Number.isFinite(Number(item.evidence_log_count)) ? ` • Evidence Logs: ${Number(item.evidence_log_count)}` : ''}
+                {(item.related_log_count !== null && item.related_log_count !== undefined) ? ` • Related Logs: ${Number(item.related_log_count)}` : ''}
                 {' • '}Observed Hosts: {item.asset_count || 0}
               </div>
               <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>

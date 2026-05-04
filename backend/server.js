@@ -1471,25 +1471,37 @@ app.get('/api/incidents/:id', async (req, res) => {
       });
     }
 
-    let evidence_log_count = null;
+    let related_log_count = null;
     try {
       const iocValue = String(context?.ioc_value || '').trim().toLowerCase();
-      if (iocValue) {
-        const chObs = await clickhouseQuery(
-          `SELECT count() AS c FROM syslog_observables WHERE lower(observable) = {ioc:String}`,
-          { ioc: iocValue }
-        );
-        evidence_log_count = Number(chObs?.[0]?.c || 0);
+      const firstSeen = context?.first_seen ? new Date(context.first_seen) : null;
+      const lastSeen = context?.last_seen ? new Date(context.last_seen) : null;
+      const hasWindow = firstSeen && lastSeen && !Number.isNaN(firstSeen.getTime()) && !Number.isNaN(lastSeen.getTime());
+
+      if (iocValue && hasWindow) {
+        const fromIso = firstSeen.toISOString().slice(0, 19).replace('T', ' ');
+        const toIso = lastSeen.toISOString().slice(0, 19).replace('T', ' ');
+        const escaped = escapeChString(iocValue);
+
+        const q = await clickhouseQuery(`
+          SELECT count() AS c
+          FROM syslog_observables
+          WHERE lower(observable) = '${escaped}'
+            AND ts >= toDateTime('${fromIso}')
+            AND ts <= toDateTime('${toIso}')
+        `);
+        related_log_count = Number(q?.[0]?.c);
+        if (!Number.isFinite(related_log_count)) related_log_count = null;
       }
     } catch (e) {
-      console.warn('[incident-detail] evidence_log_count unavailable', e?.message || e);
-      evidence_log_count = null;
+      console.warn('[incident-detail] related_log_count unavailable', e?.message || e);
+      related_log_count = null;
     }
 
     const item = {
       ...context,
       detection_event_count: Number(context?.event_count || 0),
-      evidence_log_count,
+      related_log_count,
       incident_version: incidentVersion,
       ...risk,
       ...llmRisk,
