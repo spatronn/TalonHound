@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
-import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
+import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, clickhouse } from './lib/clickhouse.js';
 import { normalizeObservable } from './lib/observable-normalization.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
@@ -531,47 +531,43 @@ async function insertMatchEvents(client, rows) {
 
   await client.query(sql, params);
 
-  const relValues = [];
-  const relParams = [];
-  let relIdx = 1;
+  const relRows = [];
+  const sampleMax = Math.max(Number(process.env.RELATED_LOG_SAMPLE_MAX_LENGTH || 2000), 256);
   for (const r of normalizedRows) {
-    if (!r?.matched_ioc || !r?._dedupKey) continue;
-    const activityId = r?.activity_id || null;
-    const actId = activityId || null;
+    if (!r?.matched_ioc || !r?._dedupKey || !r?.activity_id) continue;
     const eventTs = r?.event_time || null;
-    const rawSample = r?.raw_log_snapshot ? String(r.raw_log_snapshot).slice(0, 1000) : null;
-    const rawHash = r?.raw_log_hash || (rawSample ? createHash('sha256').update(rawSample).digest('hex') : null);
-    const observedHost = r?.match_context?.src_ip || r?.match_context?.client_ip || null;
-    const contextType = r?.match_context?.type || null;
-    const evidenceSeed = [r._dedupKey, eventTs || '', rawHash || '', String(r.matched_ioc || '').toLowerCase(), String(r.ioc_type || '').toLowerCase()].join('|');
+    const rawSample = r?.raw_log_snapshot ? String(r.raw_log_snapshot).slice(0, sampleMax) : '';
+    const rawHash = r?.raw_log_hash || createHash('sha256').update(rawSample).digest('hex');
+    const observedHost = r?.match_context?.src_ip || r?.match_context?.client_ip || '';
+    const evidenceSeed = [r.host || '', eventTs || '', observedHost || '', rawHash || '', String(r.matched_ioc || '').toLowerCase(), String(r.ioc_type || '').toLowerCase()].join('|');
     const evidenceHash = createHash('sha256').update(evidenceSeed).digest('hex');
-
-    relValues.push(`($${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++})`);
-    relParams.push(
-      actId,
-      evidenceHash,
-      r.matched_ioc,
-      r.ioc_type,
-      'syslog_logs',
-      eventTs,
-      r.host || null,
-      observedHost,
-      r.parser_source || null,
-      r.source_type || null,
-      contextType,
-      rawHash
-    );
+    relRows.push({
+      activity_id: String(r.activity_id),
+      incident_id: Number(r?.incident_id || 0),
+      match_event_id: Number(r?.id || 0),
+      evidence_hash: evidenceHash,
+      log_ts: eventTs,
+      matched_ioc: String(r.matched_ioc || ''),
+      observable_type: String(r.ioc_type || ''),
+      log_host: String(r.host || ''),
+      observed_host: String(observedHost || ''),
+      parser_source: String(r.parser_source || ''),
+      source_type: String(r.source_type || ''),
+      raw_message_hash: String(rawHash || ''),
+      raw_message_sample: rawSample
+    });
   }
 
-  if (relValues.length) {
-    await client.query(
-      `INSERT INTO ioc_match_event_related_logs (
-        activity_id, evidence_hash, observable_value, observable_type, source_table,
-        log_ts, log_host, observed_host, parser_source, source_type, context_type, raw_message_hash
-      ) VALUES ${relValues.join(',')}
-      ON CONFLICT (activity_id, evidence_hash) DO NOTHING`,
-      relParams
-    );
+  if (relRows.length) {
+    try {
+      await clickhouse.insert({
+        table: 'security_evidence.incident_related_logs',
+        values: relRows,
+        format: 'JSONEachRow'
+      });
+    } catch (e) {
+      console.warn('[ioc-event-create] related-logs insert failed (non-fatal)', e?.message || e);
+    }
   }
 
   const withRaw = normalizedRows.filter((r) => Boolean(r.raw_log_snapshot)).length;
