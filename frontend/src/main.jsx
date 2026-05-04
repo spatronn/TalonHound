@@ -2373,7 +2373,6 @@ function IncidentPage() {
     createdAt: 170,
     ioc: 240,
     type: 90,
-    hits: 90,
     observedHosts: 130,
     firstSeen: 170,
     lastSeen: 170,
@@ -2481,13 +2480,12 @@ function IncidentPage() {
         </div>
 
         <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1650 }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1500 }}>
             <colgroup>
               <col style={{ width: tableWidths.incidentId }} />
               <col style={{ width: tableWidths.createdAt }} />
               <col style={{ width: tableWidths.ioc }} />
               <col style={{ width: tableWidths.type }} />
-              <col style={{ width: tableWidths.hits }} />
               <col style={{ width: tableWidths.observedHosts }} />
               <col style={{ width: tableWidths.firstSeen }} />
               <col style={{ width: tableWidths.lastSeen }} />
@@ -2502,7 +2500,6 @@ function IncidentPage() {
                 {headerCell('Created At', 'createdAt')}
                 {headerCell('IOC', 'ioc')}
                 {headerCell('Type', 'type')}
-                {headerCell('Hits', 'hits')}
                 {headerCell(<span title="Number of unique hosts where this IOC was observed in logs">Observed Hosts</span>, 'observedHosts')}
                 {headerCell('First Seen', 'firstSeen')}
                 {headerCell('Last Seen', 'lastSeen')}
@@ -2513,13 +2510,12 @@ function IncidentPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={12} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
+              {loading ? <tr><td colSpan={11} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
                 <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.incident_id || it.id}`)}>
                   <td><b>#{it.incident_id || '-'}</b></td>
                   <td>{formatUserDateTime(it.created_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
                   <td>{it.ioc_type}</td>
-                  <td>{it.total_hits}</td>
                   <td>{it.asset_count || 0}</td>
                   <td>{formatUserDateTime(it.first_seen)}</td>
                   <td>{formatUserDateTime(it.last_seen)}</td>
@@ -2528,7 +2524,7 @@ function IncidentPage() {
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.assigned_to || 'Unassigned'}</td>
                   <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
                 </tr>
-              )) : <tr><td colSpan={12} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
+              )) : <tr><td colSpan={11} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
             </tbody>
           </table>
         </div>
