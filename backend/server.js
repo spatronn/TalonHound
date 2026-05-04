@@ -1473,25 +1473,34 @@ app.get('/api/incidents/:id', async (req, res) => {
 
     let related_log_count = null;
     try {
-      const iocValue = String(context?.ioc_value || '').trim().toLowerCase();
-      const firstSeen = context?.first_seen ? new Date(context.first_seen) : null;
-      const lastSeen = context?.last_seen ? new Date(context.last_seen) : null;
-      const hasWindow = firstSeen && lastSeen && !Number.isNaN(firstSeen.getTime()) && !Number.isNaN(lastSeen.getTime());
-
-      if (iocValue && hasWindow) {
-        const fromIso = firstSeen.toISOString().slice(0, 19).replace('T', ' ');
-        const toIso = lastSeen.toISOString().slice(0, 19).replace('T', ' ');
-        const escaped = escapeChString(iocValue);
-
-        const q = await clickhouseQuery(`
-          SELECT count() AS c
-          FROM syslog_observables
-          WHERE lower(observable) = '${escaped}'
-            AND ts >= toDateTime('${fromIso}')
-            AND ts <= toDateTime('${toIso}')
-        `);
-        related_log_count = Number(q?.[0]?.c);
-        if (!Number.isFinite(related_log_count)) related_log_count = null;
+      const relQ = await pool.query(
+        `SELECT COUNT(*)::bigint AS c
+         FROM ioc_match_event_related_logs
+         WHERE activity_id = $1::uuid`,
+        [context.id]
+      );
+      const pgCount = Number(relQ.rows?.[0]?.c);
+      if (Number.isFinite(pgCount) && pgCount > 0) {
+        related_log_count = pgCount;
+      } else {
+        const iocValue = String(context?.ioc_value || '').trim().toLowerCase();
+        const firstSeen = context?.first_seen ? new Date(context.first_seen) : null;
+        const lastSeen = context?.last_seen ? new Date(context.last_seen) : null;
+        const hasWindow = firstSeen && lastSeen && !Number.isNaN(firstSeen.getTime()) && !Number.isNaN(lastSeen.getTime());
+        if (iocValue && hasWindow) {
+          const fromIso = new Date(firstSeen.getTime() - (5 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+          const toIso = new Date(lastSeen.getTime() + (5 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+          const escaped = escapeChString(iocValue);
+          const q = await clickhouseQuery(`
+            SELECT count() AS c
+            FROM syslog_observables
+            WHERE lower(observable) = '${escaped}'
+              AND ts >= toDateTime('${fromIso}')
+              AND ts <= toDateTime('${toIso}')
+          `);
+          const chCount = Number(q?.[0]?.c);
+          if (Number.isFinite(chCount) && chCount > 0) related_log_count = chCount;
+        }
       }
     } catch (e) {
       console.warn('[incident-detail] related_log_count unavailable', e?.message || e);

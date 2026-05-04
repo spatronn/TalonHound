@@ -238,6 +238,7 @@ async function insertMatchEvents(client, rows) {
       hitCount: r._hitInc,
       cache: activityCache
     });
+    if (activity?.id) r.activity_id = activity.id;
 
     const base = i * 26;
     values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18},$${base + 19},$${base + 20},$${base + 21},$${base + 22},$${base + 23},$${base + 24},$${base + 25},$${base + 26})`);
@@ -280,6 +281,41 @@ async function insertMatchEvents(client, rows) {
       activity_id = COALESCE(EXCLUDED.activity_id, ioc_match_events.activity_id)`,
     params
   );
+
+  const relValues = [];
+  const relParams = [];
+  let relIdx = 1;
+  for (const r of deduped) {
+    if (!r?.activity_id || !r?._dedupKey) continue;
+    const evidenceSeed = [r._dedupKey, r.event_time || '', r.raw_log_hash || '', String(r.matched_ioc || '').toLowerCase(), String(r.ioc_type || '').toLowerCase()].join('|');
+    const evidenceHash = createHash('sha256').update(evidenceSeed).digest('hex');
+    relValues.push(`($${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++})`);
+    relParams.push(
+      r.activity_id,
+      evidenceHash,
+      r.matched_ioc,
+      r.ioc_type,
+      'syslog_observables',
+      r.event_time || null,
+      r.host || null,
+      null,
+      r.parser_source || null,
+      r.source_type || null,
+      r.match_context?.type || null,
+      r.raw_log_hash || null
+    );
+  }
+
+  if (relValues.length) {
+    await client.query(
+      `INSERT INTO ioc_match_event_related_logs (
+        activity_id, evidence_hash, observable_value, observable_type, source_table,
+        log_ts, log_host, observed_host, parser_source, source_type, context_type, raw_message_hash
+      ) VALUES ${relValues.join(',')}
+      ON CONFLICT (activity_id, evidence_hash) DO NOTHING`,
+      relParams
+    );
+  }
 
   const withRaw = deduped.filter((r) => Boolean(r.raw_log_snapshot)).length;
   const withNorm = deduped.filter((r) => Boolean(r.normalized_event_json)).length;
