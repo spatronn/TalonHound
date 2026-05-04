@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
-import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, clickhouse } from './lib/clickhouse.js';
+import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
+import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 import { normalizeObservable } from './lib/observable-normalization.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
@@ -531,43 +532,22 @@ async function insertMatchEvents(client, rows) {
 
   await client.query(sql, params);
 
-  const relRows = [];
-  const sampleMax = Math.max(Number(process.env.RELATED_LOG_SAMPLE_MAX_LENGTH || 2000), 256);
   for (const r of normalizedRows) {
     if (!r?.matched_ioc || !r?._dedupKey || !r?.activity_id) continue;
-    const eventTs = r?.event_time || null;
-    const rawSample = r?.raw_log_snapshot ? String(r.raw_log_snapshot).slice(0, sampleMax) : '';
-    const rawHash = r?.raw_log_hash || createHash('sha256').update(rawSample).digest('hex');
-    const observedHost = r?.match_context?.src_ip || r?.match_context?.client_ip || '';
-    const evidenceSeed = [r.host || '', eventTs || '', observedHost || '', rawHash || '', String(r.matched_ioc || '').toLowerCase(), String(r.ioc_type || '').toLowerCase()].join('|');
-    const evidenceHash = createHash('sha256').update(evidenceSeed).digest('hex');
-    relRows.push({
-      activity_id: String(r.activity_id),
-      incident_id: Number(r?.incident_id || 0),
-      match_event_id: Number(r?.id || 0),
-      evidence_hash: evidenceHash,
-      log_ts: eventTs,
-      matched_ioc: String(r.matched_ioc || ''),
-      observable_type: String(r.ioc_type || ''),
-      log_host: String(r.host || ''),
-      observed_host: String(observedHost || ''),
-      parser_source: String(r.parser_source || ''),
-      source_type: String(r.source_type || ''),
-      raw_message_hash: String(rawHash || ''),
-      raw_message_sample: rawSample
+    const row = buildRelatedEvidenceRow({
+      activityId: r.activity_id,
+      incidentId: r?.incident_id || 0,
+      matchEventId: r?.id || 0,
+      logTs: r?.event_time || null,
+      matchedIoc: r.matched_ioc,
+      observableType: r.ioc_type,
+      logHost: r.host || '',
+      observedHost: r?.match_context?.src_ip || r?.match_context?.client_ip || '',
+      parserSource: r.parser_source || '',
+      sourceType: r.source_type || '',
+      rawMessage: r.raw_log_snapshot || ''
     });
-  }
-
-  if (relRows.length) {
-    try {
-      await clickhouse.insert({
-        table: 'security_evidence.incident_related_logs',
-        values: relRows,
-        format: 'JSONEachRow'
-      });
-    } catch (e) {
-      console.warn('[ioc-event-create] related-logs insert failed (non-fatal)', e?.message || e);
-    }
+    await insertIncidentRelatedLogEvidenceSafe(row);
   }
 
   const withRaw = normalizedRows.filter((r) => Boolean(r.raw_log_snapshot)).length;
