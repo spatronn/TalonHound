@@ -1471,8 +1471,25 @@ app.get('/api/incidents/:id', async (req, res) => {
       });
     }
 
+    let evidence_log_count = null;
+    try {
+      const iocValue = String(context?.ioc_value || '').trim().toLowerCase();
+      if (iocValue) {
+        const chObs = await clickhouseQuery(
+          `SELECT count() AS c FROM syslog_observables WHERE lower(observable) = {ioc:String}`,
+          { ioc: iocValue }
+        );
+        evidence_log_count = Number(chObs?.[0]?.c || 0);
+      }
+    } catch (e) {
+      console.warn('[incident-detail] evidence_log_count unavailable', e?.message || e);
+      evidence_log_count = null;
+    }
+
     const item = {
       ...context,
+      detection_event_count: Number(context?.event_count || 0),
+      evidence_log_count,
       incident_version: incidentVersion,
       ...risk,
       ...llmRisk,
