@@ -2152,7 +2152,6 @@ function IncidentDetailsPage() {
               <div style={{ color: '#94a3b8', marginTop: 6 }}>
                 Type: {item.ioc_type}
                 {' • '}Detection Events: {item.detection_event_count ?? item.event_count ?? 0}
-                {(item.related_log_count !== null && item.related_log_count !== undefined) ? ` • Related Logs: ${Number(item.related_log_count)}` : ''}
                 {' • '}Observed Hosts: {item.asset_count || 0}
               </div>
               <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
@@ -2176,7 +2175,8 @@ function IncidentDetailsPage() {
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setTab('summary')} style={{ borderColor: tab === 'summary' ? '#93c5fd' : '#475569' }}>Summary</button>
-              <button onClick={() => setTab('events')} style={{ borderColor: tab === 'events' ? '#93c5fd' : '#475569' }}>Events</button>
+              <button onClick={() => setTab('events')} style={{ borderColor: tab === 'events' ? '#93c5fd' : '#475569' }}>Detection Events</button>
+              <button onClick={() => setTab('relatedLogs')} style={{ borderColor: tab === 'relatedLogs' ? '#93c5fd' : '#475569' }}>Related Logs</button>
             </div>
 
             {tab === 'summary' ? (
@@ -2247,8 +2247,10 @@ function IncidentDetailsPage() {
                   )}
                 </div>
               </div>
-            ) : (
+            ) : tab === 'events' ? (
               <IncidentEventsTable activityId={item.id} refreshKey={eventsRefreshKey} />
+            ) : (
+              <IncidentRelatedLogsTable incidentId={item.incident_id || id} />
             )}
           </div>
         )}
@@ -2270,6 +2272,83 @@ function IncidentDetailsPage() {
         )}
       </section>
     </AppShell>
+  );
+}
+
+function IncidentRelatedLogsTable({ incidentId }) {
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!incidentId) return;
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/incidents/${incidentId}/related-logs`, { params: { page, pageSize } });
+      setItems(data?.items || []);
+      setTotal(Number(data?.total || 0));
+    } catch {
+      setItems([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [incidentId, page, pageSize]);
+
+  useEffect(() => { load().catch(() => {}); }, [load]);
+
+  const start = total ? ((page - 1) * pageSize) + 1 : 0;
+  const end = total ? Math.min(page * pageSize, total) : 0;
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h4 style={{ margin: 0 }}>Related Logs</h4>
+          <div style={{ color: '#94a3b8', fontSize: 12 }}>Logs linked to this incident at detection time.</div>
+        </div>
+        <a href={`/api/incidents/${incidentId}/related-logs/export.csv`} target="_blank" rel="noreferrer"><button>Download CSV</button></a>
+      </div>
+
+      {loading ? <div style={{ color: '#94a3b8' }}>Loading related logs...</div> : !items.length ? (
+        <div style={{ color: '#94a3b8' }}>No related logs are available for this incident.</div>
+      ) : (
+        <>
+          <div style={{ color: '#94a3b8', fontSize: 12 }}>Showing {start}-{end} of {total} linked logs</div>
+          <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 8 }}>
+            <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', minWidth: 1200 }}>
+              <thead><tr style={{ background: '#1f2937', textAlign: 'left' }}>
+                <th>Time</th><th>Observed Host</th><th>Matched IOC</th><th>Detection Event ID</th><th>Source Host</th><th>Parser Source</th><th>Source Type</th><th>Raw Log</th>
+              </tr></thead>
+              <tbody>
+                {items.map((r, i) => (
+                  <tr key={`${r.evidence_hash || i}`} style={{ borderTop: '1px solid #334155' }}>
+                    <td>{formatUserDateTime(r.log_ts)}</td>
+                    <td>{r.observed_host || '-'}</td>
+                    <td>{r.matched_ioc || '-'}</td>
+                    <td>{r.match_event_id || '-'}</td>
+                    <td>{r.log_host || '-'}</td>
+                    <td>{r.parser_source || '-'}</td>
+                    <td>{r.source_type || '-'}</td>
+                    <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{r.raw_message_sample || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Prev</button>
+            <span>Page {page}</span>
+            <button onClick={() => setPage((p) => (p * pageSize < total ? p + 1 : p))} disabled={page * pageSize >= total}>Next</button>
+            <select value={String(pageSize)} onChange={(e) => { setPage(1); setPageSize(Math.min(Math.max(Number(e.target.value), 1), 200)); }}>
+              <option value="50">50 / page</option><option value="100">100 / page</option><option value="200">200 / page</option>
+            </select>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

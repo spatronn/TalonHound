@@ -2121,6 +2121,89 @@ app.get('/api/risk/trend', async (req, res) => {
   }
 });
 
+app.get('/api/incidents/:id/related-logs', async (req, res) => {
+  try {
+    const idRaw = String(req.params?.id || '').trim();
+    if (!idRaw) return res.status(400).json({ message: 'Invalid id' });
+    const incident = await findIncidentRow(idRaw);
+    if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
+
+    const page = Math.max(Number(req.query?.page || 1), 1);
+    const pageSize = Math.min(Math.max(Number(req.query?.pageSize || 50), 1), 200);
+    const offset = (page - 1) * pageSize;
+    const sort = String(req.query?.sort || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+
+    const activityId = String(incident.id);
+    const countRows = await clickhouseQuery(`
+      SELECT uniqExact(evidence_hash) AS related_log_count
+      FROM security_evidence.incident_related_logs
+      WHERE activity_id = toUUID('${escapeChString(activityId)}')
+    `);
+    const total = Number(countRows?.[0]?.related_log_count || 0);
+
+    const rows = await clickhouseQuery(`
+      SELECT
+        any(activity_id) AS activity_id,
+        any(incident_id) AS incident_id,
+        any(match_event_id) AS match_event_id,
+        evidence_hash,
+        min(log_ts) AS log_ts,
+        any(matched_ioc) AS matched_ioc,
+        any(observable_type) AS observable_type,
+        any(log_host) AS log_host,
+        any(observed_host) AS observed_host,
+        any(parser_source) AS parser_source,
+        any(source_type) AS source_type,
+        any(raw_message_sample) AS raw_message_sample,
+        any(raw_message_hash) AS raw_message_hash
+      FROM security_evidence.incident_related_logs
+      WHERE activity_id = toUUID('${escapeChString(activityId)}')
+      GROUP BY evidence_hash
+      ORDER BY log_ts ${sort}
+      LIMIT ${pageSize} OFFSET ${offset}
+    `);
+
+    return res.json({ items: rows || [], page, pageSize, total });
+  } catch (err) {
+    console.error('[incident-related-logs] failed', err);
+    return res.status(500).json({ items: [], page: 1, pageSize: 50, total: 0 });
+  }
+});
+
+app.get('/api/incidents/:id/related-logs/export.csv', async (req, res) => {
+  try {
+    const idRaw = String(req.params?.id || '').trim();
+    if (!idRaw) return res.status(400).send('Invalid id');
+    const incident = await findIncidentRow(idRaw);
+    if (!incident?.id) return res.status(404).send('Incident not found');
+    const maxRows = Math.max(Number(process.env.RELATED_LOG_EXPORT_MAX_ROWS || 10000), 1000);
+    const activityId = String(incident.id);
+    const rows = await clickhouseQuery(`
+      SELECT any(incident_id) AS incident_id, any(activity_id) AS activity_id, any(match_event_id) AS match_event_id,
+             evidence_hash, min(log_ts) AS log_ts, any(observed_host) AS observed_host, any(log_host) AS log_host,
+             any(matched_ioc) AS matched_ioc, any(observable_type) AS observable_type, any(parser_source) AS parser_source,
+             any(source_type) AS source_type, any(raw_message_sample) AS raw_message_sample, any(raw_message_hash) AS raw_message_hash
+      FROM security_evidence.incident_related_logs
+      WHERE activity_id = toUUID('${escapeChString(activityId)}')
+      GROUP BY evidence_hash
+      ORDER BY log_ts ASC
+      LIMIT ${maxRows}
+    `);
+    const esc = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+    const header = ['incident_id','activity_id','match_event_id','log_ts','observed_host','log_host','matched_ioc','observable_type','parser_source','source_type','raw_message_sample','raw_message_hash'];
+    const lines = [header.join(',')];
+    for (const r of (rows || [])) lines.push([
+      r.incident_id, r.activity_id, r.match_event_id, r.log_ts, r.observed_host, r.log_host, r.matched_ioc, r.observable_type, r.parser_source, r.source_type, r.raw_message_sample, r.raw_message_hash
+    ].map(esc).join(','));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="incident-${incident.incident_id}-related-logs.csv"`);
+    return res.send(lines.join('\n'));
+  } catch (err) {
+    console.error('[incident-related-logs-export] failed', err);
+    return res.status(500).send('Export failed');
+  }
+});
+
 app.get('/api/incidents/:id/events', async (req, res) => {
   const t0 = Date.now();
   const perf = { dbMs: 0, enrichMs: 0, countMs: 0, rows: 0, db: 'postgres', chUsed: false };
