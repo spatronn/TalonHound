@@ -304,7 +304,9 @@ export async function syncIocLookupFromPostgres(opts = {}) {
   const agg = new Map();
   for (const r of delta) {
     const observableType = String(r.observable_type || '').toLowerCase();
-    const observable = observableType === 'url' ? canonicalizeUrlForLookup(r.observable) : String(r.observable || '').toLowerCase();
+    const observable = observableType === 'url'
+      ? normalizeObservable('url', String(r.observable || ''))
+      : String(r.observable || '').toLowerCase();
     const key = `${observable}|${observableType}`;
     const conf = confidenceToInt(r.confidence);
     const created = String(r.created_at || '1970-01-01 00:00:00.000');
