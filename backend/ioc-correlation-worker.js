@@ -534,10 +534,23 @@ async function insertMatchEvents(client, rows) {
 
   for (const r of normalizedRows) {
     if (!r?.matched_ioc || !r?._dedupKey || !r?.activity_id) continue;
+
+    const evq = await client.query(
+      `SELECT e.id, e.activity_id, COALESCE(a.incident_id, 0) AS incident_id
+       FROM ioc_match_events e
+       LEFT JOIN ioc_activity a ON a.id = e.activity_id
+       WHERE e.dedup_key = $1 AND e.bucket_start = $2
+       ORDER BY e.id DESC
+       LIMIT 1`,
+      [r._dedupKey, r._bucketStart]
+    );
+    const eventId = Number(evq.rows?.[0]?.id || 0);
+    const incidentId = Number(evq.rows?.[0]?.incident_id || 0);
+
     const row = buildRelatedEvidenceRow({
       activityId: r.activity_id,
-      incidentId: r?.incident_id || 0,
-      matchEventId: r?.id || 0,
+      incidentId,
+      matchEventId: eventId,
       logTs: r?.event_time || null,
       matchedIoc: r.matched_ioc,
       observableType: r.ioc_type,
