@@ -1,7 +1,19 @@
 import { createHash } from 'node:crypto';
-import { clickhouse } from './clickhouse.js';
+import { clickhouse, ensureRelatedLogsEvidenceTable } from './clickhouse.js';
 
 const SAMPLE_MAX = Math.max(Number(process.env.RELATED_LOG_SAMPLE_MAX_LENGTH || 2000), 256);
+let ensureEvidenceTablePromise = null;
+
+async function ensureEvidenceTableReady() {
+  if (!ensureEvidenceTablePromise) {
+    ensureEvidenceTablePromise = ensureRelatedLogsEvidenceTable().catch((e) => {
+      console.error('[related-logs] ensureRelatedLogsEvidenceTable failed (non-fatal)', e?.message || e);
+      ensureEvidenceTablePromise = null;
+      return false;
+    });
+  }
+  return ensureEvidenceTablePromise;
+}
 
 export function buildRelatedEvidenceRow(input = {}) {
   const logHost = String(input.logHost || '');
@@ -35,6 +47,7 @@ export function buildRelatedEvidenceRow(input = {}) {
 export async function insertIncidentRelatedLogEvidenceSafe(row) {
   try {
     if (!row?.activity_id || !row?.log_ts || !row?.matched_ioc) return false;
+    await ensureEvidenceTableReady();
     await clickhouse.insert({
       table: 'security_evidence.incident_related_logs',
       values: [row],
