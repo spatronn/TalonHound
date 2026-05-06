@@ -3,6 +3,7 @@ import pg from 'pg';
 import { createHash } from 'node:crypto';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, command as clickhouseCommand } from './lib/clickhouse.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
+import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 
 const { Pool } = pg;
 
@@ -282,39 +283,22 @@ async function insertMatchEvents(client, rows) {
     params
   );
 
-  const relValues = [];
-  const relParams = [];
-  let relIdx = 1;
   for (const r of deduped) {
-    if (!r?.activity_id || !r?._dedupKey) continue;
-    const evidenceSeed = [r._dedupKey, r.event_time || '', r.raw_log_hash || '', String(r.matched_ioc || '').toLowerCase(), String(r.ioc_type || '').toLowerCase()].join('|');
-    const evidenceHash = createHash('sha256').update(evidenceSeed).digest('hex');
-    relValues.push(`($${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++})`);
-    relParams.push(
-      r.activity_id,
-      evidenceHash,
-      r.matched_ioc,
-      r.ioc_type,
-      'syslog_observables',
-      r.event_time || null,
-      r.host || null,
-      null,
-      r.parser_source || null,
-      r.source_type || null,
-      r.match_context?.type || null,
-      r.raw_log_hash || null
-    );
-  }
-
-  if (relValues.length) {
-    await client.query(
-      `INSERT INTO ioc_match_event_related_logs (
-        activity_id, evidence_hash, observable_value, observable_type, source_table,
-        log_ts, log_host, observed_host, parser_source, source_type, context_type, raw_message_hash
-      ) VALUES ${relValues.join(',')}
-      ON CONFLICT (activity_id, evidence_hash) DO NOTHING`,
-      relParams
-    );
+    if (!r?.activity_id) continue;
+    const row = buildRelatedEvidenceRow({
+      activityId: r.activity_id,
+      incidentId: r?.incident_id || 0,
+      matchEventId: r?.id || 0,
+      logTs: r.event_time || null,
+      matchedIoc: r.matched_ioc,
+      observableType: r.ioc_type,
+      logHost: r.host || '',
+      observedHost: r?.match_context?.src_ip || r?.match_context?.client_ip || '',
+      parserSource: r.parser_source || '',
+      sourceType: r.source_type || '',
+      rawMessage: r.raw_log_snapshot || ''
+    });
+    await insertIncidentRelatedLogEvidenceSafe(row);
   }
 
   const withRaw = deduped.filter((r) => Boolean(r.raw_log_snapshot)).length;

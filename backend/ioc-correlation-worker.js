@@ -5,6 +5,7 @@ import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
+import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 import { normalizeObservable } from './lib/observable-normalization.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
@@ -531,47 +532,22 @@ async function insertMatchEvents(client, rows) {
 
   await client.query(sql, params);
 
-  const relValues = [];
-  const relParams = [];
-  let relIdx = 1;
   for (const r of normalizedRows) {
-    if (!r?.matched_ioc || !r?._dedupKey) continue;
-    const activityId = r?.activity_id || null;
-    const actId = activityId || null;
-    const eventTs = r?.event_time || null;
-    const rawSample = r?.raw_log_snapshot ? String(r.raw_log_snapshot).slice(0, 1000) : null;
-    const rawHash = r?.raw_log_hash || (rawSample ? createHash('sha256').update(rawSample).digest('hex') : null);
-    const observedHost = r?.match_context?.src_ip || r?.match_context?.client_ip || null;
-    const contextType = r?.match_context?.type || null;
-    const evidenceSeed = [r._dedupKey, eventTs || '', rawHash || '', String(r.matched_ioc || '').toLowerCase(), String(r.ioc_type || '').toLowerCase()].join('|');
-    const evidenceHash = createHash('sha256').update(evidenceSeed).digest('hex');
-
-    relValues.push(`($${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++},$${relIdx++})`);
-    relParams.push(
-      actId,
-      evidenceHash,
-      r.matched_ioc,
-      r.ioc_type,
-      'syslog_logs',
-      eventTs,
-      r.host || null,
-      observedHost,
-      r.parser_source || null,
-      r.source_type || null,
-      contextType,
-      rawHash
-    );
-  }
-
-  if (relValues.length) {
-    await client.query(
-      `INSERT INTO ioc_match_event_related_logs (
-        activity_id, evidence_hash, observable_value, observable_type, source_table,
-        log_ts, log_host, observed_host, parser_source, source_type, context_type, raw_message_hash
-      ) VALUES ${relValues.join(',')}
-      ON CONFLICT (activity_id, evidence_hash) DO NOTHING`,
-      relParams
-    );
+    if (!r?.matched_ioc || !r?._dedupKey || !r?.activity_id) continue;
+    const row = buildRelatedEvidenceRow({
+      activityId: r.activity_id,
+      incidentId: r?.incident_id || 0,
+      matchEventId: r?.id || 0,
+      logTs: r?.event_time || null,
+      matchedIoc: r.matched_ioc,
+      observableType: r.ioc_type,
+      logHost: r.host || '',
+      observedHost: r?.match_context?.src_ip || r?.match_context?.client_ip || '',
+      parserSource: r.parser_source || '',
+      sourceType: r.source_type || '',
+      rawMessage: r.raw_log_snapshot || ''
+    });
+    await insertIncidentRelatedLogEvidenceSafe(row);
   }
 
   const withRaw = normalizedRows.filter((r) => Boolean(r.raw_log_snapshot)).length;
