@@ -2143,7 +2143,7 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
 
     const rows = await clickhouseQuery(`
       SELECT
-        any(activity_id) AS activity_id,
+        activity_id,
         any(incident_id) AS incident_id,
         any(match_event_id) AS match_event_id,
         evidence_hash,
@@ -2158,7 +2158,7 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
         any(raw_message_hash) AS raw_message_hash
       FROM security_evidence.incident_related_logs
       WHERE activity_id = toUUID('${escapeChString(activityId)}')
-      GROUP BY evidence_hash
+      GROUP BY activity_id, evidence_hash
       ORDER BY log_ts ${sort}
       LIMIT ${pageSize} OFFSET ${offset}
     `);
@@ -2179,13 +2179,13 @@ app.get('/api/incidents/:id/related-logs/export.csv', async (req, res) => {
     const maxRows = Math.max(Number(process.env.RELATED_LOG_EXPORT_MAX_ROWS || 10000), 1000);
     const activityId = String(incident.id);
     const rows = await clickhouseQuery(`
-      SELECT any(incident_id) AS incident_id, any(activity_id) AS activity_id, any(match_event_id) AS match_event_id,
+      SELECT any(incident_id) AS incident_id, activity_id, any(match_event_id) AS match_event_id,
              evidence_hash, min(log_ts) AS log_ts, any(observed_host) AS observed_host, any(log_host) AS log_host,
              any(matched_ioc) AS matched_ioc, any(observable_type) AS observable_type, any(parser_source) AS parser_source,
              any(source_type) AS source_type, any(raw_message_sample) AS raw_message_sample, any(raw_message_hash) AS raw_message_hash
       FROM security_evidence.incident_related_logs
       WHERE activity_id = toUUID('${escapeChString(activityId)}')
-      GROUP BY evidence_hash
+      GROUP BY activity_id, evidence_hash
       ORDER BY log_ts ASC
       LIMIT ${maxRows}
     `);
