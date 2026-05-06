@@ -552,7 +552,7 @@ async function insertMatchEvents(client, rows) {
 
   const withRaw = normalizedRows.filter((r) => Boolean(r.raw_log_snapshot)).length;
   const withNorm = normalizedRows.filter((r) => Boolean(r.normalized_event_json)).length;
-  console.info(`[ioc-event-create] inserted=${normalizedRows.length} related_logs=${relValues.length} source_type_sample=${normalizedRows[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
+  console.info(`[ioc-event-create] inserted=${normalizedRows.length} related_logs=${normalizedRows.length} source_type_sample=${normalizedRows[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
   return { inserted: normalizedRows.length, affectedActivityIds: Array.from(affectedActivityIds) };
 }
 
