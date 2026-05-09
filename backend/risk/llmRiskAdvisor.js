@@ -162,21 +162,21 @@ function buildTieredDomainInsightReason(data = {}, domainSignals, { hostCount = 
     ? `Incident has ${detectionEvents} normalized detection events supported by ${Math.round(evidenceLogsNum)} raw evidence logs.`
     : `Incident has ${detectionEvents} normalized detection events.`;
 
-  const tailShort = 'This supports network-level access, but does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.';
+  const tailShort = 'This supports network-level access based on correlated evidence, but the available correlated data alone does not prove compromise or payload execution.';
 
   if (domainSignals.tier === 'dns_and_proxy_tunnel') {
-    return cleanReason(`${countsLead} DNS query and proxy CONNECT/200 activity to ${ioc} were observed from ${hostPhrase} ${timePhrase}. This indicates network-level access to the IOC, but there is no endpoint/process, download, or content-analysis evidence to confirm execution or compromise.`);
+    return cleanReason(`${countsLead} DNS query and proxy CONNECT/200 activity to ${ioc} were observed from ${hostPhrase} ${timePhrase}. This indicates network-level access based on correlated DNS and proxy evidence, but the available correlated data alone does not prove compromise or payload execution.`);
   }
   if (domainSignals.tier === 'dns_and_proxy') {
     return cleanReason(`${countsLead} DNS and proxy activity involving ${ioc} were observed from ${hostPhrase} ${timePhrase}. ${tailShort}`);
   }
   if (domainSignals.tier === 'dns_only') {
-    return cleanReason(`${countsLead} DNS activity related to ${ioc} was observed from ${hostPhrase} ${timePhrase}. Available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.`);
+    return cleanReason(`${countsLead} DNS activity related to ${ioc} was observed from ${hostPhrase} ${timePhrase}. The available correlated data alone does not prove compromise or payload execution.`);
   }
   if (domainSignals.tier === 'proxy_only') {
-    return cleanReason(`${countsLead} Proxy network-level access involving ${ioc} was observed from ${hostPhrase} ${timePhrase}. Available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.`);
+    return cleanReason(`${countsLead} Proxy network-level activity involving ${ioc} was observed from ${hostPhrase} ${timePhrase}. The available correlated data alone does not prove compromise or payload execution.`);
   }
-  return cleanReason(`${countsLead} Network activity involving ${ioc} was observed from ${hostPhrase} ${timePhrase}. Available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.`);
+  return cleanReason(`${countsLead} Network activity involving ${ioc} was observed from ${hostPhrase} ${timePhrase}. The available correlated data alone does not prove compromise or payload execution.`);
 }
 
 function domainReasonOmitsProxyEvidence(reasonText = '') {
@@ -229,9 +229,9 @@ function buildDomainEvidenceReasonOverride(data = {}, currentReason = '') {
   const hostPhrase = observedHosts > 1 ? 'multiple hosts' : 'a single host';
   const windowPhrase = durationMinutes >= 60 ? 'over an extended time window' : 'within a short time window';
   if (hasDnsEvidence) {
-    return `DNS query and proxy CONNECT/200 activity to the IOC domain were observed from ${hostPhrase} ${windowPhrase}. This indicates network-level access to the IOC, but there is no endpoint/process, download, or content-analysis evidence to confirm execution or compromise.`;
+    return `DNS query and proxy CONNECT/200 activity to the IOC domain were observed from ${hostPhrase} ${windowPhrase}. This indicates network-level access based on correlated DNS and proxy evidence, but the available correlated data alone does not prove compromise or payload execution.`;
   }
-  return `Proxy network activity to the IOC domain was observed from ${hostPhrase} ${windowPhrase}. This indicates network-level access to the IOC, but there is no endpoint/process, download, or content-analysis evidence to confirm execution or compromise.`;
+  return `Proxy network activity to the IOC domain was observed from ${hostPhrase} ${windowPhrase}. This indicates network-level access based on correlated evidence, but the available correlated data alone does not prove compromise or payload execution.`;
 }
 
 function formatServicePort(traffic = {}) {
@@ -578,7 +578,9 @@ function buildUrlPrompt() {
 - Do not claim phishing impact without user interaction or TI support.
 - Do not claim malware execution without file/process evidence.
 - If only proxy evidence exists, explicitly say confidence is limited by what is available in the current telemetry/evidence set.
-- Use telemetry-scope wording: "not available" / "not correlated" / "not present in available telemetry" instead of hard "missing" claims.
+- Only interpret correlated evidence provided in Incident Data.
+- Do not list missing telemetry/product types (endpoint, process, download, sandbox, EDR, content-analysis, payload) unless explicitly present in Incident Data.
+- If compromise or execution is not proven by correlated evidence, state that directly without enumerating unavailable telemetry sources.
 - Do not use "successful access or persistence" coupling.
 - Do not say "no persistence" when duration is high or activity is repeated/prolonged.
 - Do not mention blacklist status or internal guardrail/adjustment details.
@@ -617,7 +619,7 @@ function buildConsistencyRules() {
 - Higher evidence_log_count can matter only when it shows meaningful repeated activity over time or across hosts.
 - Prefer source/outcome semantics over raw log volume.
 - DNS-only signal is weaker; DNS + successful proxy/firewall access from same observed host is stronger than DNS-only.
-- Successful network access does not by itself prove malware execution or host compromise without endpoint/process/download/content evidence.
+- Successful network access does not by itself prove compromise or payload execution.
 - Do not reduce risk unless you can name a concrete risk-reducing factor.
 - High activity, multiple hosts, long duration, persistence, or accepted traffic are never risk-reducing factors by themselves.
 - If risk_reducing_factors is empty, risk_adjustment must be >= 0.
