@@ -215,8 +215,8 @@ function buildDomainEvidenceReasonOverride(data = {}, currentReason = '') {
   const observedHosts = Number(data?.incident?.observed_hosts ?? data?.stats?.observed_hosts ?? 0) || 0;
   const durationMinutes = Number(data?.incident?.duration_minutes ?? data?.duration_minutes ?? data?.stats?.duration_minutes ?? 0) || 0;
 
-  const isDnsOnlyPhrase = /(high volume of dns queries|moderate dns query volume|dns query volume|dns-only|dns queries)/i.test(reason)
-    && !/(proxy|connect|tunnel|get)/i.test(reason);
+  const isDnsOnlyPhrase = /(high volume of dns queries|moderate dns query volume|moderate dns activity|high dns query volume|dns query volume|dns-only|dns queries|single host and short duration indicate low risk|no persistence or repeated queries)/i.test(reason)
+    && !/(proxy|connect|tunnel|get|network-level access)/i.test(reason);
 
   if (String(data?.ioc_type || '').toLowerCase() !== 'domain') return null;
   if (!hasProxyEvidence) return null;
