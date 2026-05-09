@@ -2207,7 +2207,6 @@ function IncidentDetailsPage() {
                   <div>Risk Score: <b>{Number(item.risk_score || 0).toFixed(2)}</b></div>
                   <div>Status: <b>{item.status}</b></div>
                   <div>Verdict: <b>{item.verdict}</b></div>
-                  <div>Event Count: <b>{item.event_count || 0}</b></div>
                 </div>
 
                 <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 8 }}>
