@@ -2121,6 +2121,44 @@ app.get('/api/risk/trend', async (req, res) => {
   }
 });
 
+function normalizeEvidenceRecord(r) {
+  const parserSource = String(r?.parser_source || '').toLowerCase();
+  const rawLog = String(r?.raw_message_sample || '').trim();
+  if (!rawLog || rawLog === '-' || parserSource === 'syslog_observables') return null;
+
+  const srcTypeRaw = String(r?.source_type || '').toLowerCase();
+  const lowerRaw = rawLog.toLowerCase();
+  const dnsHint = /\bdns\b|\bquery\b|\bqname\b|\brrtype\b/.test(lowerRaw) || /dns/.test(parserSource);
+  const proxyHint = /squid|access\.log|\bconnect\b|\bhttp\/1\./.test(lowerRaw) || /proxy|squid|web/.test(parserSource);
+  const fwHint = /fortigate|\bsrcip=|\bdstip=|\baction=/.test(lowerRaw) || /fortigate|firewall|traffic/.test(parserSource);
+
+  let source_type = 'generic';
+  if (proxyHint) source_type = 'proxy';
+  else if (dnsHint) source_type = 'dns';
+  else if (fwHint) source_type = 'firewall';
+  else if (srcTypeRaw) source_type = srcTypeRaw;
+
+  let observed_host = String(r?.observed_host || '').trim();
+  if (!observed_host || observed_host === '-') {
+    const srcIpMatch = rawLog.match(/\bsrcip=([0-9]{1,3}(?:\.[0-9]{1,3}){3})\b/i);
+    const squidIpMatch = rawLog.match(/\b(?:TCP_[A-Z]+|CONNECT|GET|POST|HEAD|PUT|DELETE|OPTIONS)\b.*?\s([0-9]{1,3}(?:\.[0-9]{1,3}){3})\s/i)
+      || rawLog.match(/\bclient(?:ip)?[=:]([0-9]{1,3}(?:\.[0-9]{1,3}){3})\b/i)
+      || rawLog.match(/\b([0-9]{1,3}(?:\.[0-9]{1,3}){3})\s+TCP_/i);
+    const dnsClientMatch = rawLog.match(/\bclient(?:\s+|=|:)?([0-9]{1,3}(?:\.[0-9]{1,3}){3})\b/i);
+
+    if (source_type === 'firewall' && srcIpMatch) observed_host = srcIpMatch[1];
+    else if (source_type === 'proxy' && squidIpMatch) observed_host = squidIpMatch[1];
+    else if (source_type === 'dns' && dnsClientMatch) observed_host = dnsClientMatch[1];
+  }
+
+  return {
+    ...r,
+    source_type,
+    observed_host: observed_host || null,
+    detection_event_id: (Number(r?.match_event_id || 0) > 0 ? Number(r.match_event_id) : null)
+  };
+}
+
 app.get('/api/incidents/:id/related-logs', async (req, res) => {
   try {
     const idRaw = String(req.params?.id || '').trim();
@@ -2134,13 +2172,6 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
     const sort = String(req.query?.sort || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
 
     const activityId = String(incident.id);
-    const countRows = await clickhouseQuery(`
-      SELECT uniqExact(evidence_hash) AS related_log_count
-      FROM security_evidence.incident_related_logs
-      WHERE activity_id = toUUID('${escapeChString(activityId)}')
-    `);
-    const total = Number(countRows?.[0]?.related_log_count || 0);
-
     const rows = await clickhouseQuery(`
       SELECT
         activity_id,
@@ -2160,13 +2191,16 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
       WHERE activity_id = toUUID('${escapeChString(activityId)}')
       GROUP BY activity_id, evidence_hash
       ORDER BY log_ts ${sort}
-      LIMIT ${pageSize} OFFSET ${offset}
     `);
 
-    return res.json({ items: rows || [], page, pageSize, total });
+    const normalized = (rows || []).map(normalizeEvidenceRecord).filter(Boolean);
+    const total = normalized.length;
+    const paged = normalized.slice(offset, offset + pageSize);
+
+    return res.json({ items: paged, page, pageSize, total });
   } catch (err) {
     console.error('[incident-related-logs] failed', err);
-    return res.status(500).json({ items: [], page: 1, pageSize: 50, total: 0 });
+    return res.status(500).json({ items: [], page: 1, pageSize: 50, total: 0, error: 'unavailable' });
   }
 });
 
@@ -2180,7 +2214,7 @@ app.get('/api/incidents/:id/related-logs/export.csv', async (req, res) => {
     const activityId = String(incident.id);
     const rows = await clickhouseQuery(`
       SELECT any(incident_id) AS incident_id, activity_id, any(match_event_id) AS match_event_id,
-             evidence_hash, min(log_ts) AS log_ts, any(observed_host) AS observed_host, any(log_host) AS log_host,
+             evidence_hash, min(log_ts) AS log_ts, min(ingested_at) AS ingest_time, any(observed_host) AS observed_host, any(log_host) AS log_host,
              any(matched_ioc) AS matched_ioc, any(observable_type) AS observable_type, any(parser_source) AS parser_source,
              any(source_type) AS source_type, any(raw_message_sample) AS raw_message_sample, any(raw_message_hash) AS raw_message_hash
       FROM security_evidence.incident_related_logs
@@ -2189,11 +2223,13 @@ app.get('/api/incidents/:id/related-logs/export.csv', async (req, res) => {
       ORDER BY log_ts ASC
       LIMIT ${maxRows}
     `);
+    const normalized = (rows || []).map(normalizeEvidenceRecord).filter(Boolean);
     const esc = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
-    const header = ['incident_id','activity_id','match_event_id','log_ts','observed_host','log_host','matched_ioc','observable_type','parser_source','source_type','raw_message_sample','raw_message_hash'];
+    const header = ['time','ingest_time','observed_host','matched_ioc','observable_type','source_type','parser_source','source_host','detection_event_id','evidence_hash','raw_log'];
     const lines = [header.join(',')];
-    for (const r of (rows || [])) lines.push([
-      r.incident_id, r.activity_id, r.match_event_id, r.log_ts, r.observed_host, r.log_host, r.matched_ioc, r.observable_type, r.parser_source, r.source_type, r.raw_message_sample, r.raw_message_hash
+    for (const r of normalized) lines.push([
+      r.log_ts, r.ingest_time, r.observed_host, r.matched_ioc, r.observable_type, r.source_type, r.parser_source, r.log_host,
+      (Number(r.match_event_id || 0) > 0 ? r.match_event_id : ''), r.evidence_hash, r.raw_message_sample
     ].map(esc).join(','));
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="incident-${incident.incident_id}-related-logs.csv"`);
