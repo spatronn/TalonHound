@@ -2031,6 +2031,7 @@ function IncidentDetailsPage() {
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiStillAnalyzing, setAiStillAnalyzing] = useState(false);
   const [aiError, setAiError] = useState('');
+  const [evidenceSummary, setEvidenceSummary] = useState({ count: null, unavailable: false });
 
   useEffect(() => {
     const reason = item?.llm_risk_reason;
@@ -2055,6 +2056,26 @@ function IncidentDetailsPage() {
   }, [id]);
 
   useEffect(() => { load().catch(() => {}); }, [load]);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    async function loadEvidenceSummary() {
+      try {
+        const { data } = await api.get(`/incidents/${id}/related-logs`, { params: { page: 1, pageSize: 1 } });
+        if (cancelled) return;
+        setEvidenceSummary({
+          count: Number.isFinite(Number(data?.total)) ? Number(data.total) : null,
+          unavailable: Boolean(data?.error === 'unavailable')
+        });
+      } catch {
+        if (cancelled) return;
+        setEvidenceSummary({ count: null, unavailable: true });
+      }
+    }
+    loadEvidenceSummary().catch(() => {});
+    return () => { cancelled = true; };
+  }, [id, eventsRefreshKey]);
 
   useEffect(() => {
     if (!aiStillAnalyzing || !id) return undefined;
@@ -2152,6 +2173,7 @@ function IncidentDetailsPage() {
               <div style={{ color: '#94a3b8', marginTop: 6 }}>
                 Type: {item.ioc_type}
                 {' • '}Detection Events: {item.detection_event_count ?? item.event_count ?? 0}
+                {' • '}Evidence Logs: {evidenceSummary.unavailable ? '-' : (Number.isFinite(Number(evidenceSummary.count)) ? Number(evidenceSummary.count) : (item.related_log_count ?? 0))}
                 {' • '}Observed Hosts: {item.asset_count || 0}
               </div>
               <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
@@ -2175,8 +2197,8 @@ function IncidentDetailsPage() {
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setTab('summary')} style={{ borderColor: tab === 'summary' ? '#93c5fd' : '#475569' }}>Summary</button>
-              <button onClick={() => setTab('events')} style={{ borderColor: tab === 'events' ? '#93c5fd' : '#475569' }}>Detection Events</button>
-              <button onClick={() => setTab('relatedLogs')} style={{ borderColor: tab === 'relatedLogs' ? '#93c5fd' : '#475569' }}>Evidence Logs</button>
+              <button onClick={() => setTab('events')} style={{ borderColor: tab === 'events' ? '#93c5fd' : '#475569' }}>Detection Events ({item.detection_event_count ?? item.event_count ?? 0})</button>
+              <button onClick={() => setTab('relatedLogs')} style={{ borderColor: tab === 'relatedLogs' ? '#93c5fd' : '#475569' }}>Evidence Logs ({evidenceSummary.unavailable ? '-' : (Number.isFinite(Number(evidenceSummary.count)) ? Number(evidenceSummary.count) : (item.related_log_count ?? 0))})</button>
             </div>
 
             {tab === 'summary' ? (
