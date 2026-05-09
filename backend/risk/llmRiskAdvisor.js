@@ -199,6 +199,37 @@ function normalizeUrlTelemetryWording(reasonText = '') {
   return cleanReason(r);
 }
 
+function buildDomainEvidenceReasonOverride(data = {}, currentReason = '') {
+  const reason = String(currentReason || '');
+  const sourceTypes = data?.event_summary?.source_types || {};
+  const sampleEvents = Array.isArray(data?.sample_events) ? data.sample_events : [];
+  const evidenceSummary = data?.evidence_summary && typeof data.evidence_summary === 'object' ? data.evidence_summary : {};
+  const evidenceSourceTypes = Array.isArray(evidenceSummary?.source_types) ? evidenceSummary.source_types.map((x) => String(x).toLowerCase()) : [];
+
+  const hasProxyByType = Number(sourceTypes?.proxy || 0) > 0 || evidenceSourceTypes.includes('proxy');
+  const sampleText = sampleEvents.map((s) => JSON.stringify(s)).join(' ').toLowerCase();
+  const hasProxyBySample = /(tcp_tunnel\/200|connect\/200|\bconnect\b|tcp_miss\/200|get\s+http|squid_proxy|\bproxy\b)/i.test(sampleText);
+  const hasProxyEvidence = hasProxyByType || hasProxyBySample || Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1;
+  const hasDnsEvidence = Number(sourceTypes?.dns || 0) > 0 || Number(data?.playbook_coverage?.dns_evidence ? 1 : 0) === 1;
+
+  const observedHosts = Number(data?.incident?.observed_hosts ?? data?.stats?.observed_hosts ?? 0) || 0;
+  const durationMinutes = Number(data?.incident?.duration_minutes ?? data?.duration_minutes ?? data?.stats?.duration_minutes ?? 0) || 0;
+
+  const isDnsOnlyPhrase = /(high volume of dns queries|moderate dns query volume|dns query volume|dns-only|dns queries)/i.test(reason)
+    && !/(proxy|connect|tunnel|get)/i.test(reason);
+
+  if (String(data?.ioc_type || '').toLowerCase() !== 'domain') return null;
+  if (!hasProxyEvidence) return null;
+  if (!isDnsOnlyPhrase) return null;
+
+  const hostPhrase = observedHosts > 1 ? 'multiple hosts' : 'a single host';
+  const windowPhrase = durationMinutes >= 60 ? 'over an extended time window' : 'within a short time window';
+  if (hasDnsEvidence) {
+    return `DNS query and proxy CONNECT/200 activity to the IOC domain were observed from ${hostPhrase} ${windowPhrase}. This indicates network-level access to the IOC, but there is no endpoint/process, download, or content-analysis evidence to confirm execution or compromise.`;
+  }
+  return `Proxy network activity to the IOC domain was observed from ${hostPhrase} ${windowPhrase}. This indicates network-level access to the IOC, but there is no endpoint/process, download, or content-analysis evidence to confirm execution or compromise.`;
+}
+
 function formatServicePort(traffic = {}) {
   const service = Array.isArray(traffic?.services) ? String(traffic.services.find(Boolean) || '').trim() : '';
   const port = Array.isArray(traffic?.ports) ? Number(traffic.ports.find((p) => Number.isFinite(Number(p)) && Number(p) > 0) || 0) : 0;
@@ -426,6 +457,8 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   }
 
   if (iocType === 'url') reason = normalizeUrlTelemetryWording(reason);
+  const domainOverride = buildDomainEvidenceReasonOverride(data, reason);
+  if (domainOverride) reason = cleanReason(domainOverride);
 
   reason = applyFactualReasonGuards(reason, {
     hostCount,
