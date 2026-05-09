@@ -409,6 +409,14 @@ function buildPromptByType(iocType) {
 
 function buildConsistencyRules() {
   return `Global consistency rules:
+- Detection Events are normalized detection records and may be used as primary scoring signals.
+- Evidence Logs are raw supporting logs captured around the incident window. Do NOT count Evidence Logs as additional Detection Events.
+- Use Evidence Logs only for context (DNS query, proxy CONNECT, firewall allow/block, repeated pattern timing, observed hosts).
+- Do not increase risk solely because evidence_log_count > detection_event_count.
+- Higher evidence_log_count can matter only when it shows meaningful repeated activity over time or across hosts.
+- Prefer source/outcome semantics over raw log volume.
+- DNS-only signal is weaker; DNS + successful proxy/firewall access from same observed host is stronger than DNS-only.
+- Successful network access does not by itself prove malware execution or host compromise without endpoint/process/download/content evidence.
 - Do not reduce risk unless you can name a concrete risk-reducing factor.
 - High activity, multiple hosts, long duration, persistence, or accepted traffic are never risk-reducing factors by themselves.
 - If risk_reducing_factors is empty, risk_adjustment must be >= 0.
@@ -468,6 +476,15 @@ function buildIncidentPayload(incident = {}) {
     ? Math.round((lastSeenMs - firstSeenMs) / 60000)
     : 0;
 
+  const evidenceLogCount = Math.max(Number((incident?.evidence_log_count ?? incident?.related_log_count ?? 0) || 0), 0);
+  const evidenceSummary = incident?.evidence_summary && typeof incident.evidence_summary === 'object'
+    ? incident.evidence_summary
+    : {
+      note: 'raw evidence samples, not additional detection events',
+      source_types: Array.isArray(incident?.evidence_source_types) ? incident.evidence_source_types : [],
+      observed_host_count: observedHosts
+    };
+
   const base = {
     incident: {
       id: incident?.incident_id || incident?.id || null,
@@ -476,6 +493,8 @@ function buildIncidentPayload(incident = {}) {
       risk_before_llm: Number(incident?.risk_score || 0),
       hits: totalHits,
       event_count: eventCount,
+      detection_event_count: eventCount,
+      evidence_log_count: evidenceLogCount,
       observed_hosts: observedHosts,
       first_seen: incident?.first_seen || null,
       last_seen: incident?.last_seen || null,
@@ -492,9 +511,15 @@ function buildIncidentPayload(incident = {}) {
     event_summary: incident?.event_summary || null,
     playbook_coverage: incident?.playbook_coverage || null,
     sample_events: Array.isArray(incident?.sample_events) ? incident.sample_events.slice(0, 10) : [],
+    evidence_logs_note: 'Evidence Logs are raw supporting logs, not additional detection events.',
+    evidence_log_count: evidenceLogCount,
+    evidence_summary: evidenceSummary,
     field_notes: {
       hits: 'total observed IOC matches or activity volume',
       event_count: 'number of persisted detection events',
+      detection_event_count: 'normalized detection records used for primary scoring',
+      evidence_log_count: 'raw supporting evidence log count; do not treat as additional events',
+      evidence_summary: 'context-only summary of raw evidence patterns (dns/proxy/firewall etc.)',
       sample_events: 'examples only, not total counts'
     },
     history: {
