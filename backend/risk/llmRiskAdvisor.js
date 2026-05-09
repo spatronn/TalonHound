@@ -91,6 +91,102 @@ function applyFactualReasonGuards(reasonText, { hostCount = 0, durationMinutes =
   return cleanReason(r);
 }
 
+function safeJsonSnippet(obj, max = 12000) {
+  try {
+    const s = JSON.stringify(obj ?? '');
+    return s.length > max ? `${s.slice(0, max)}…` : s;
+  } catch {
+    return '';
+  }
+}
+
+/** Concatenate structured incident payload fields for proxy/DNS substring signals (not scored as extra events). */
+function buildEvidenceHaystack(data = {}) {
+  return [
+    safeJsonSnippet(data.evidence_summary),
+    safeJsonSnippet(data.sample_events),
+    safeJsonSnippet(data.event_summary),
+    safeJsonSnippet(data.playbook_coverage),
+    safeJsonSnippet(data.incident),
+    typeof data.evidence_logs_note === 'string' ? data.evidence_logs_note : ''
+  ].join('\n').toLowerCase();
+}
+
+const PROXY_EVIDENCE_PHRASE_RE = /(squid_proxy|tcp_tunnel\s*\/\s*200|tcp_tunnel\/200|tcp_miss\s*\/\s*200|connect\s*\/\s*200|connect\/200|\bconnect\b|\bproxy\b|http\s+200|\bhttp\s*200\b|get\s+http|http\s+get)/i;
+const TUNNEL_OR_CONNECT_200_RE = /(tcp_tunnel\s*\/\s*200|tcp_tunnel\/200|connect\s*\/\s*200|connect\/200)/i;
+
+function inferDomainNetworkSignals(data = {}, hayFull = '') {
+  const hay = String(hayFull || '').toLowerCase();
+  const st = data?.event_summary?.source_types && typeof data.event_summary.source_types === 'object'
+    ? data.event_summary.source_types
+    : {};
+  const dnsFromSummary = Math.max(
+    Number(st.dns ?? st.DNS ?? st.dns_queries ?? 0) || 0,
+    0
+  );
+  const proxyFromSummary = Math.max(Number(st.proxy ?? st.squid_proxy ?? 0) || 0, 0);
+  const playbookProxy = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1;
+
+  const hasDnsSignal = dnsFromSummary > 0
+    || String(data?.activity_type || '').toLowerCase() === 'dns'
+    || /\bdns\b|dns_query|dns_resolver|dns query/i.test(hay);
+  const hasProxySignal = playbookProxy || proxyFromSummary > 0 || PROXY_EVIDENCE_PHRASE_RE.test(hay);
+  const hasTunnelOrConnect200 = TUNNEL_OR_CONNECT_200_RE.test(hay)
+    || /\btcp_tunnel\b.*\b200\b|\bconnect\b.*\b200\b/i.test(hay);
+
+  let tier = 'generic_network';
+  if (hasDnsSignal && hasProxySignal && hasTunnelOrConnect200) tier = 'dns_and_proxy_tunnel';
+  else if (hasDnsSignal && hasProxySignal) tier = 'dns_and_proxy';
+  else if (hasDnsSignal && !hasProxySignal) tier = 'dns_only';
+  else if (!hasDnsSignal && hasProxySignal) tier = 'proxy_only';
+
+  return {
+    hasDnsSignal,
+    hasProxySignal,
+    hasTunnelOrConnect200,
+    tier
+  };
+}
+
+function buildTieredDomainInsightReason(data = {}, domainSignals, { hostCount = 0, durationMinutes = 0 } = {}) {
+  const toN = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const inc = data?.incident || {};
+  const detectionEvents = Math.max(0, toN(inc.detection_event_count ?? inc.event_count ?? data?.stats?.event_count ?? data?.event_count));
+  const evidenceLogs = Math.max(0, toN(data?.evidence_log_count ?? inc.evidence_log_count));
+  const ioc = cleanReason(String(data?.ioc || data?.ioc_value || data?.observable_value || 'the IOC domain')).slice(0, 200);
+  const hostPhrase = hostCount >= 2 ? 'multiple observed hosts' : 'a single observed host';
+  const timePhrase = durationMinutes >= 60 ? 'over an extended period' : 'within a short time window';
+  const countsLead = `Incident has ${detectionEvents} normalized detection events supported by ${evidenceLogs} raw evidence logs.`;
+
+  const tailShort = 'This supports network-level access, but does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.';
+
+  if (domainSignals.tier === 'dns_and_proxy_tunnel') {
+    return cleanReason(`${countsLead} DNS query and proxy CONNECT/200 activity to ${ioc} were observed from ${hostPhrase} ${timePhrase}. This indicates network-level access to the IOC, but there is no endpoint/process, download, or content-analysis evidence to confirm execution or compromise.`);
+  }
+  if (domainSignals.tier === 'dns_and_proxy') {
+    return cleanReason(`${countsLead} DNS and proxy activity involving ${ioc} were observed from ${hostPhrase} ${timePhrase}. ${tailShort}`);
+  }
+  if (domainSignals.tier === 'dns_only') {
+    return cleanReason(`${countsLead} DNS activity related to ${ioc} was observed from ${hostPhrase} ${timePhrase}. Available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.`);
+  }
+  if (domainSignals.tier === 'proxy_only') {
+    return cleanReason(`${countsLead} Proxy network-level access involving ${ioc} was observed from ${hostPhrase} ${timePhrase}. Available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.`);
+  }
+  return cleanReason(`${countsLead} Network activity involving ${ioc} was observed from ${hostPhrase} ${timePhrase}. Available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.`);
+}
+
+function domainReasonOmitsProxyEvidence(reasonText = '') {
+  const r = String(reasonText || '');
+  return !/(proxy|tcp_tunnel|connect\s*\/?\s*200|connect\/200|network-level|squid)/i.test(r);
+}
+
+function domainReasonLooksDnsHeavy(reasonText = '') {
+  const r = String(reasonText || '');
+  if (/moderate dns|dns query volume/i.test(r)) return true;
+  if (/dns/i.test(r) && domainReasonOmitsProxyEvidence(r)) return true;
+  return false;
+}
+
 function normalizeUrlTelemetryWording(reasonText = '') {
   let r = cleanReason(reasonText);
   r = r.replace(/Missing DNS resolution/gi, 'DNS resolution was not correlated in the current evidence set');
@@ -191,6 +287,12 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     ? durationMinutesFromField
     : (durationHoursFromField > 0 ? durationHoursFromField * 60 : (Number.isFinite(firstSeenMs) && Number.isFinite(lastSeenMs) && lastSeenMs >= firstSeenMs ? (lastSeenMs - firstSeenMs) / 60000 : 0));
 
+  const evidenceHaystack = buildEvidenceHaystack(data);
+  const hayFull = `${evidenceHaystack}\n${evidenceText}`;
+  const domainSignals = iocType === 'domain'
+    ? inferDomainNetworkSignals(data, hayFull)
+    : { tier: 'generic_network', hasDnsSignal: false, hasProxySignal: false, hasTunnelOrConnect200: false };
+
   const hasHighVolumeMetric = totalHits >= highVolumeMinHits;
   const hasMultipleHostsMetric = hostCount >= multipleHostsMin;
   const isDnsLike = activityType === 'dns' || iocType === 'domain';
@@ -207,8 +309,10 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasEnvChain = nonDnsRelatedIocs.some((r) => r?.chain_type === 'environment_level_related_activity');
   const hasAcceptedTrafficNoAttribution = nonDnsRelatedIocs.some((r) => r?.chain_type === 'accepted_traffic_to_related_ioc');
 
-  const hasProxyCoverage = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1 || Number(data?.event_summary?.source_types?.proxy || 0) > 0;
-  const hasNetworkAccessInText = /(tcp_tunnel|connect\s*\/\s*200|connect\/200|\bhttp\s*200\b|http\s+200)/i.test(evidenceText);
+  const proxySourceCount = Number(data?.event_summary?.source_types?.proxy ?? data?.event_summary?.source_types?.squid_proxy ?? 0);
+  const hasProxyCoverage = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1 || proxySourceCount > 0
+    || PROXY_EVIDENCE_PHRASE_RE.test(evidenceHaystack);
+  const hasNetworkAccessInText = /(tcp_tunnel|connect\s*\/\s*200|connect\/200|\bhttp\s*200\b|http\s+200)/i.test(hayFull);
   const hasDnsResponseIpAccepted = dnsResponseIpRelations.some((r) => Number(r?.traffic?.accepted_count || 0) > 0);
   const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0 || relatedAccepted
     || hasProxyCoverage || hasNetworkAccessInText || hasDnsResponseIpAccepted;
@@ -247,7 +351,11 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   if (triggersInvalidPersistencePath) {
     const urlHardcodedReason = 'Repeated proxy URL access attempts were observed across multiple hosts over an extended period, indicating persistent web activity. The current evidence set does not confirm successful access, user interaction, endpoint process context, or downloaded content, so the activity should be investigated.';
     const nonUrlFallbackReason = 'The evidence indicates network activity involving the IOC, but available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.';
-    const baseFallbackReason = iocType === 'url' ? urlHardcodedReason : nonUrlFallbackReason;
+    const baseFallbackReason = iocType === 'url'
+      ? urlHardcodedReason
+      : (iocType === 'domain'
+        ? buildTieredDomainInsightReason(data, domainSignals, { hostCount, durationMinutes })
+        : nonUrlFallbackReason);
     const hasNetworkLevelAccess = Boolean(hasAcceptedOrSuccessful);
     const reasonOut = applyFactualReasonGuards(baseFallbackReason, {
       hostCount,
@@ -299,11 +407,22 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     reason = cleanReason(appendOnce(reason, 'Negative adjustment was neutralized because the stated drivers are risk-increasing, not risk-reducing.'));
   }
 
+  if (iocType === 'domain' && !relatedReason?.reasonText && domainSignals.hasProxySignal
+    && (domainReasonOmitsProxyEvidence(reason) || domainReasonLooksDnsHeavy(reason))) {
+    reason = buildTieredDomainInsightReason(data, domainSignals, { hostCount, durationMinutes });
+  }
+
   if (/(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(reason)) {
     adjustment = 0;
     if (iocType === 'url') {
       confidence = clamp(Math.max(confidence || 0.5, 0.45), 0.45, 0.65);
     }
+  }
+
+  if (iocType === 'domain' && !explicitBenign && adjustment === 0 && rawModelAdjustment >= 0 && rawModelAdjustment <= 5
+    && domainSignals.hasDnsSignal && domainSignals.hasProxySignal && domainSignals.hasTunnelOrConnect200) {
+    adjustment = 5;
+    if (!normalizationReason) normalizationReason = 'domain_dns_proxy_tunnel_adjustment';
   }
 
   if (iocType === 'url') reason = normalizeUrlTelemetryWording(reason);

@@ -53,7 +53,7 @@ test('worker/manual equivalent enriched context yields same signals and adjustme
   assert.equal(workerOut.adjustment, manualOut.adjustment);
 });
 
-test('domain invalid_reason path uses generic fallback, not URL hardcoded string', () => {
+test('domain invalid_reason path uses tiered fallback, not URL hardcoded string', () => {
   const out = normalizeAdvisorOutput(
     { risk_adjustment: 5, confidence: 0.2, reason: 'this increases the risk of breach' },
     'ok',
@@ -63,7 +63,31 @@ test('domain invalid_reason path uses generic fallback, not URL hardcoded string
   assert.equal(out.adjustment, 0);
   assert.ok(out.confidence >= 0.45 && out.confidence <= 0.65);
   assert.ok(!out.reason.includes('Repeated proxy URL access attempts'));
-  assert.ok(out.reason.includes('network activity involving the IOC'));
+  assert.ok(out.reason.includes('normalized detection events supported by'));
+});
+
+test('domain model DNS-heavy reason is rewritten when proxy signals exist in payload evidence', () => {
+  const payload = {
+    ioc: 'kapindakimutlulukhemenal.com',
+    ioc_type: 'domain',
+    activity_type: 'dns',
+    incident: { detection_event_count: 2, evidence_log_count: 5 },
+    evidence_log_count: 5,
+    stats: { observed_hosts: 1, duration_minutes: 3, event_count: 2 },
+    event_summary: { source_types: { dns: 1, proxy: 1 } },
+    playbook_coverage: { proxy_evidence: true },
+    evidence_summary: { samples: ['TCP_TUNNEL/200 CONNECT kapindakimutlulukhemenal.com'] },
+    sample_events: []
+  };
+  const out = normalizeAdvisorOutput(
+    { risk_adjustment: 0, confidence: 0.6, reason: 'Moderate DNS query volume with no persistence or a single observed host, and short duration.' },
+    'ok',
+    payload
+  );
+  assert.match(out.reason, /proxy|CONNECT|network-level/i);
+  assert.ok(!/^moderate dns query volume/i.test(out.reason.trim()));
+  assert.equal(out.adjustment, 5);
+  assert.equal(out.normalization_reason, 'domain_dns_proxy_tunnel_adjustment');
 });
 
 test('URL playbook incomplete still uses URL-specific fallback', () => {
