@@ -1425,10 +1425,51 @@ async function loadIncidentWithStats(activityId) {
   return q;
 }
 
+function llmNormSourceType(ev = {}) {
+  const st = String(ev?.source_type || '').toLowerCase();
+  if (st) return st;
+  const p = String(ev?.parser_source || '').toLowerCase();
+  if (/(proxy|url|http|webproxy|swg|squid)/.test(p)) return 'proxy';
+  if (/(^|\s)dns(\s|$)|resolver|query|bind_dns/.test(p)) return 'dns';
+  if (/(firewall|traffic|forti|palo|pan-os|checkpoint|netflow)/.test(p)) return 'firewall';
+  return 'generic';
+}
+
 async function buildIncidentAiInsightContext(activityId) {
   const q = await loadIncidentWithStats(activityId);
   if (!q.rowCount) return null;
-  return enrichIncidentContextWithRelatedIocs(q.rows[0], { pool });
+  const context = await enrichIncidentContextWithRelatedIocs(q.rows[0], { pool });
+
+  const evQ = await pool.query(
+    `SELECT event_time, created_at, source_type, parser_source, match_context, normalized_event_json, matched_ioc, host_name, raw_log_snapshot
+     FROM ioc_match_events
+     WHERE activity_id = $1::uuid
+     ORDER BY COALESCE(last_seen_at, event_time, created_at) DESC
+     LIMIT 20`,
+    [context.id]
+  );
+  const rows = evQ.rows || [];
+  const sourceTypes = {};
+  for (const r of rows) {
+    const st = llmNormSourceType(r);
+    sourceTypes[st] = (sourceTypes[st] || 0) + 1;
+  }
+  context.event_summary = { ...(context.event_summary || {}), source_types: sourceTypes };
+  context.playbook_coverage = {
+    ...(context.playbook_coverage || {}),
+    dns_evidence: Number(sourceTypes.dns || 0) > 0,
+    proxy_evidence: Number(sourceTypes.proxy || 0) > 0
+  };
+  context.sample_events = rows.slice(0, 5).map((r) => ({
+    detected_at: r.event_time || r.created_at || null,
+    source_type: llmNormSourceType(r),
+    matched_ioc: r.matched_ioc,
+    raw_sample: String(r.raw_log_snapshot || '').slice(0, 500),
+    method: r?.normalized_event_json?.method || r?.match_context?.method || null,
+    status: r?.normalized_event_json?.status || r?.match_context?.status || null
+  }));
+
+  return context;
 }
 
 app.get('/api/incidents/:id', async (req, res) => {
