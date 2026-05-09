@@ -2030,6 +2030,7 @@ function IncidentDetailsPage() {
   const [propagationNote, setPropagationNote] = useState('');
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiStillAnalyzing, setAiStillAnalyzing] = useState(false);
+  const [aiAnalyzeStartedAt, setAiAnalyzeStartedAt] = useState(null);
   const [aiError, setAiError] = useState('');
   const [evidenceSummary, setEvidenceSummary] = useState({ count: null, unavailable: false });
 
@@ -2089,9 +2090,14 @@ function IncidentDetailsPage() {
         if (!it) return;
         setItem((prev) => ({ ...(prev || {}), ...it }));
 
-        if (it.llm_risk_adjustment !== null && it.llm_risk_adjustment !== undefined) {
+        const hasAdjustment = it.llm_risk_adjustment !== null && it.llm_risk_adjustment !== undefined;
+        const updatedAtMs = it.llm_last_updated_at ? Date.parse(it.llm_last_updated_at) : NaN;
+        const startedAtMs = aiAnalyzeStartedAt ? Date.parse(aiAnalyzeStartedAt) : NaN;
+        const isFresh = Number.isFinite(updatedAtMs) && Number.isFinite(startedAtMs) ? updatedAtMs >= startedAtMs : true;
+        if (hasAdjustment && isFresh) {
           stopped = true;
           setAiStillAnalyzing(false);
+          await load();
         }
       } catch {
         // keep polling silently
@@ -2102,7 +2108,7 @@ function IncidentDetailsPage() {
       stopped = true;
       clearInterval(timer);
     };
-  }, [aiStillAnalyzing, id]);
+  }, [aiStillAnalyzing, aiAnalyzeStartedAt, id, load]);
 
   async function savePatch(patch = {}) {
     if (!id) return;
@@ -2121,6 +2127,7 @@ function IncidentDetailsPage() {
     if (!id || aiAnalyzing) return;
     setAiAnalyzing(true);
     setAiStillAnalyzing(false);
+    setAiAnalyzeStartedAt(new Date().toISOString());
     setAiError('');
     try {
       const { data, status } = await api.post(`/incidents/${id}/ai-analyze`);
@@ -2134,6 +2141,7 @@ function IncidentDetailsPage() {
         setItem((prev) => ({ ...(prev || {}), ...nextItem }));
       }
       setAiStillAnalyzing(false);
+      await load();
     } catch {
       setAiStillAnalyzing(false);
       setAiError('AI analysis failed');
