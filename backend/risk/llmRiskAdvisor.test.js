@@ -52,3 +52,26 @@ test('worker/manual equivalent enriched context yields same signals and adjustme
   assert.equal(workerOut.hasStrongMaliciousContext, manualOut.hasStrongMaliciousContext);
   assert.equal(workerOut.adjustment, manualOut.adjustment);
 });
+
+test('domain invalid_reason path uses generic fallback, not URL hardcoded string', () => {
+  const out = normalizeAdvisorOutput(
+    { risk_adjustment: 5, confidence: 0.2, reason: 'this increases the risk of breach' },
+    'ok',
+    { ioc_type: 'domain', activity_type: 'dns', stats: { observed_hosts: 1, duration_minutes: 2 } }
+  );
+  assert.equal(out.normalization_reason, 'invalid_reason_persistence_contradiction');
+  assert.equal(out.adjustment, 0);
+  assert.ok(out.confidence >= 0.45 && out.confidence <= 0.65);
+  assert.ok(!out.reason.includes('Repeated proxy URL access attempts'));
+  assert.ok(out.reason.includes('network activity involving the IOC'));
+});
+
+test('URL playbook incomplete still uses URL-specific fallback', () => {
+  const out = normalizeAdvisorOutput(
+    { risk_adjustment: 10, confidence: 0.8, reason: 'nothing useful here' },
+    'ok',
+    { ioc_type: 'url', stats: { observed_hosts: 1, duration_minutes: 5 } }
+  );
+  assert.equal(out.normalization_reason, 'invalid_reason_persistence_contradiction');
+  assert.ok(out.reason.includes('proxy URL') || out.reason.includes('observed network activity'));
+});

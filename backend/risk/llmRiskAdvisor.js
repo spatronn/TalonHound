@@ -65,6 +65,32 @@ function cleanReason(text, max = 900) {
   return String(text || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+/** Strip or soften claims in reason text when they are not supported by incident metrics or evidence. */
+function applyFactualReasonGuards(reasonText, { hostCount = 0, durationMinutes = 0, hasNetworkLevelAccess = false } = {}) {
+  let r = cleanReason(reasonText);
+  const multiHostSupported = Number(hostCount) >= 2;
+  const longDurationSupported = Number(durationMinutes) >= 60;
+  if (!multiHostSupported) {
+    r = r.replace(/\bacross multiple hosts\b/gi, 'from the observed host');
+    r = r.replace(/\bmultiple hosts\b/gi, 'a single observed host');
+    r = r.replace(/\bmultiple observed hosts\b/gi, 'a single observed host');
+  }
+  if (!longDurationSupported) {
+    r = r.replace(/\bover an extended period\b/gi, 'within a short time window');
+    r = r.replace(/\bextended period\b/gi, 'a short time window');
+    r = r.replace(/\blong period\b/gi, 'a short time window');
+    r = r.replace(/\bpersistent over time\b/gi, 'within a short time window');
+    r = r.replace(/\bpersistent web activity\b/gi, 'observed network activity');
+  }
+  if (hasNetworkLevelAccess) {
+    r = r.replace(/\bthe current evidence set does not confirm successful access\b/gi, 'network-level access was observed, but execution or compromise is not confirmed');
+    r = r.replace(/\bsuccessful access not confirmed\b/gi, 'network-level access was observed, but execution or compromise is not confirmed');
+    r = r.replace(/\bdoes not confirm successful access\b/gi, 'does not confirm endpoint execution or compromise beyond network-level access');
+    r = r.replace(/\bdoes not confirm successful access, user interaction\b/gi, 'confirms network-level activity but not user interaction');
+  }
+  return cleanReason(r);
+}
+
 function normalizeUrlTelemetryWording(reasonText = '') {
   let r = cleanReason(reasonText);
   r = r.replace(/Missing DNS resolution/gi, 'DNS resolution was not correlated in the current evidence set');
@@ -181,10 +207,17 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasEnvChain = nonDnsRelatedIocs.some((r) => r?.chain_type === 'environment_level_related_activity');
   const hasAcceptedTrafficNoAttribution = nonDnsRelatedIocs.some((r) => r?.chain_type === 'accepted_traffic_to_related_ioc');
 
-  const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0 || relatedAccepted;
+  const hasProxyCoverage = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1 || Number(data?.event_summary?.source_types?.proxy || 0) > 0;
+  const hasNetworkAccessInText = /(tcp_tunnel|connect\s*\/\s*200|connect\/200|\bhttp\s*200\b|http\s+200)/i.test(evidenceText);
+  const hasDnsResponseIpAccepted = dnsResponseIpRelations.some((r) => Number(r?.traffic?.accepted_count || 0) > 0);
+  const hasAcceptedOrSuccessfulMetric = toNum(stats.accepted_connections ?? stats.successful_access ?? data.accepted_count ?? data.successful_count) > 0 || relatedAccepted
+    || hasProxyCoverage || hasNetworkAccessInText || hasDnsResponseIpAccepted;
+  const hasAcceptedOrSuccessful = hasAcceptedOrSuccessfulMetric || /(accepted|successful)/i.test(evidenceText);
+
+  const relatedDnsIpInIocList = dnsResponseIpRelations.some((r) => r?.related_ioc_in_ioc_list === true);
   const hasStrongMaliciousContextMetric = /(\btp\b|high-confidence|high confidence|\bc2\b|malware|ransomware|phishing|botnet|scanner|exploit)/i.test(evidenceText)
     || String(data?.history?.previous_verdict || '').toLowerCase() === 'tp'
-    || relatedInList;
+    || relatedInList || relatedDnsIpInIocList;
   const hasBenignEvidenceMetric = /(false positive|\bfp\b|allowlisted|trusted benign|known internal test|smoke test|benign destination|internal security test)/i.test(evidenceText)
     || reducing.some((x) => /(allowlisted|trusted|benign|internal test|false positive|fp)/i.test(String(x)))
     || String(data?.history?.previous_verdict || '').toLowerCase() === 'fp';
@@ -206,25 +239,31 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   const hasForbiddenWords = /(blacklist|\bsafe\b|\bbenign\b|not a threat|no threat)/i.test(reason);
   const hasRiskOverstatement = /increases the risk/i.test(reason) && !hasAcceptedOrSuccessful;
   const hasCompromiseOverclaim = /(confirmed compromise|successful compromise|malicious activity is confirmed|confirmed threat)/i.test(reason) && !hasAcceptedOrSuccessful;
-  const hasPlaybookObserved = /(proxy requests|url access attempts|web access attempts)/i.test(reason);
+  const hasPlaybookObserved = /(proxy requests|url access attempts|web access attempts|\bproxy\b|\bconnect\b|tcp_tunnel|connect\s*\/\s*200|connect\/200|http\s+200|\bhttp\s*200\b|web access)/i.test(reason);
   const hasPlaybookMissing = /(endpoint process context|content analysis|confirmed successful access|user interaction|dns resolution)/i.test(reason);
-  const hasProxyEvidence = Number(data?.playbook_coverage?.proxy_evidence ? 1 : 0) === 1 || Number(data?.event_summary?.source_types?.proxy || 0) > 0;
-  const hasMultipleHostsForUrl = hostCount >= 2;
-  const hasExtendedDurationForUrl = durationMinutes > 60;
-  const isUrlPlaybookLimited = iocType === 'url' && hasExtendedDurationForUrl;
+  const urlPlaybookIncomplete = iocType === 'url' && (!hasPlaybookObserved || !hasPlaybookMissing);
 
-  if (urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement || hasCompromiseOverclaim || !hasPlaybookObserved || !hasPlaybookMissing) {
-    const limitedConfidence = isUrlPlaybookLimited ? clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65) : 0;
+  const triggersInvalidPersistencePath = urlPersistenceMismatch || hasInternalGuardrailWords || hasForbiddenWords || hasRiskOverstatement || hasCompromiseOverclaim || urlPlaybookIncomplete;
+  if (triggersInvalidPersistencePath) {
+    const urlHardcodedReason = 'Repeated proxy URL access attempts were observed across multiple hosts over an extended period, indicating persistent web activity. The current evidence set does not confirm successful access, user interaction, endpoint process context, or downloaded content, so the activity should be investigated.';
+    const nonUrlFallbackReason = 'The evidence indicates network activity involving the IOC, but available telemetry does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.';
+    const baseFallbackReason = iocType === 'url' ? urlHardcodedReason : nonUrlFallbackReason;
+    const hasNetworkLevelAccess = Boolean(hasAcceptedOrSuccessful);
+    const reasonOut = applyFactualReasonGuards(baseFallbackReason, {
+      hostCount,
+      durationMinutes,
+      hasNetworkLevelAccess
+    });
+    const limitedConfidence = clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65);
     return {
       adjustment: 0,
       confidence: limitedConfidence,
-      reason: 'Repeated proxy URL access attempts were observed across multiple hosts over an extended period, indicating persistent web activity. The current evidence set does not confirm successful access, user interaction, endpoint process context, or downloaded content, so the activity should be investigated.',
+      reason: reasonOut,
       raw_model_adjustment: rawModelAdjustment,
       normalization_reason: 'invalid_reason_persistence_contradiction'
     };
   }
   const hasRepeatedOnly = /(repeated dns|repeated)/i.test(evidenceText);
-  const hasAcceptedOrSuccessful = hasAcceptedOrSuccessfulMetric || /(accepted|successful)/i.test(evidenceText);
   const hasStrongMaliciousContext = hasStrongMaliciousContextMetric;
   const explicitBenign = hasBenignEvidenceMetric;
   const relatedReason = buildRelatedIocEvidenceReason({
@@ -268,6 +307,12 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   }
 
   if (iocType === 'url') reason = normalizeUrlTelemetryWording(reason);
+
+  reason = applyFactualReasonGuards(reason, {
+    hostCount,
+    durationMinutes,
+    hasNetworkLevelAccess: Boolean(hasAcceptedOrSuccessful)
+  });
 
   return {
     adjustment,
