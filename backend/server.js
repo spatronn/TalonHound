@@ -2214,7 +2214,7 @@ app.get('/api/incidents/:id/related-logs/export.csv', async (req, res) => {
     const activityId = String(incident.id);
     const rows = await clickhouseQuery(`
       SELECT any(incident_id) AS incident_id, activity_id, any(match_event_id) AS match_event_id,
-             evidence_hash, min(log_ts) AS log_ts, min(ingested_at) AS ingest_time, any(observed_host) AS observed_host, any(log_host) AS log_host,
+             evidence_hash, min(log_ts) AS log_ts, toNullable(NULL) AS ingest_time, any(observed_host) AS observed_host, any(log_host) AS log_host,
              any(matched_ioc) AS matched_ioc, any(observable_type) AS observable_type, any(parser_source) AS parser_source,
              any(source_type) AS source_type, any(raw_message_sample) AS raw_message_sample, any(raw_message_hash) AS raw_message_hash
       FROM security_evidence.incident_related_logs
