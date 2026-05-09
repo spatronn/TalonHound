@@ -152,11 +152,15 @@ function buildTieredDomainInsightReason(data = {}, domainSignals, { hostCount = 
   const toN = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const inc = data?.incident || {};
   const detectionEvents = Math.max(0, toN(inc.detection_event_count ?? inc.event_count ?? data?.stats?.event_count ?? data?.event_count));
-  const evidenceLogs = Math.max(0, toN(data?.evidence_log_count ?? inc.evidence_log_count));
+  const evidenceLogsRaw = data?.evidence_log_count ?? inc.evidence_log_count ?? data?.related_log_count ?? inc?.related_log_count;
+  const evidenceLogsNum = Number(evidenceLogsRaw);
+  const evidenceLogsReliable = Number.isFinite(evidenceLogsNum) && evidenceLogsNum > 0;
   const ioc = cleanReason(String(data?.ioc || data?.ioc_value || data?.observable_value || 'the IOC domain')).slice(0, 200);
   const hostPhrase = hostCount >= 2 ? 'multiple observed hosts' : 'a single observed host';
   const timePhrase = durationMinutes >= 60 ? 'over an extended period' : 'within a short time window';
-  const countsLead = `Incident has ${detectionEvents} normalized detection events supported by ${evidenceLogs} raw evidence logs.`;
+  const countsLead = evidenceLogsReliable
+    ? `Incident has ${detectionEvents} normalized detection events supported by ${Math.round(evidenceLogsNum)} raw evidence logs.`
+    : `Incident has ${detectionEvents} normalized detection events.`;
 
   const tailShort = 'This supports network-level access, but does not confirm endpoint execution, compromise, downloaded content, or malicious payload execution.';
 
