@@ -4421,7 +4421,32 @@ app.get('/api/ioc/details', async (req, res) => {
       return incidentsRes.rows || [];
     })();
 
-    const [geo, incidents] = await Promise.all([geoPromise, incidentsPromise]);
+    const [geo, incidentsRaw] = await Promise.all([geoPromise, incidentsPromise]);
+
+    let incidents = incidentsRaw;
+    try {
+      const activityIds = (incidentsRaw || []).map((x) => String(x?.id || '').trim()).filter(Boolean);
+      if (activityIds.length) {
+        const inList = activityIds.map((id) => `toUUID('${escapeChString(id)}')`).join(', ');
+        const chRows = await clickhouseQuery(`
+          SELECT activity_id, countDistinct(evidence_hash) AS c
+          FROM security_evidence.incident_related_logs
+          WHERE activity_id IN (${inList})
+          GROUP BY activity_id
+        `);
+        const chMap = new Map((chRows || []).map((r) => [String(r.activity_id || '').toLowerCase(), Number(r.c || 0)]));
+        incidents = (incidentsRaw || []).map((it) => {
+          const k = String(it?.id || '').toLowerCase();
+          const chCount = chMap.get(k);
+          return {
+            ...it,
+            evidence_logs: Number.isFinite(chCount) && chCount > 0 ? chCount : (it?.evidence_logs ?? null)
+          };
+        });
+      }
+    } catch {
+      incidents = incidentsRaw;
+    }
 
     const summary = {
       id: rows[0].id,
