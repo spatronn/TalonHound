@@ -4069,20 +4069,40 @@ app.get('/api/ioc/hot', async (req, res) => {
     const offIdx = params.length + 2;
 
     const listQ = `
+      WITH grouped AS (
+        SELECT
+          MIN(id) AS id,
+          MIN(public_id::text) AS public_id,
+          observable,
+          observable_type,
+          COUNT(DISTINCT source_name)::bigint AS source_count,
+          MIN(first_seen_log) AS first_seen_log,
+          MAX(last_seen_log) AS last_seen_log,
+          MAX(match_count) AS sort_match_count
+        FROM ioc_items
+        WHERE ${baseWhere}
+        GROUP BY observable, observable_type
+        ORDER BY MAX(last_seen_log) DESC NULLS LAST, MAX(match_count) DESC, observable ASC
+        LIMIT $${limIdx} OFFSET $${offIdx}
+      )
       SELECT
-        MIN(id) AS id,
-        MIN(public_id::text) AS public_id,
-        observable,
-        observable_type,
-        MAX(match_count)::bigint AS total_hits,
-        COUNT(DISTINCT source_name)::bigint AS source_count,
-        MIN(first_seen_log) AS first_seen_log,
-        MAX(last_seen_log) AS last_seen_log
-      FROM ioc_items
-      WHERE ${baseWhere}
-      GROUP BY observable, observable_type
-      ORDER BY MAX(last_seen_log) DESC NULLS LAST, MAX(match_count) DESC, observable ASC
-      LIMIT $${limIdx} OFFSET $${offIdx}
+        g.id,
+        g.public_id,
+        g.observable,
+        g.observable_type,
+        ev.evidence_logs,
+        g.source_count,
+        g.first_seen_log,
+        g.last_seen_log
+      FROM grouped g
+      LEFT JOIN LATERAL (
+        SELECT NULLIF(COUNT(DISTINCT rl.evidence_hash)::bigint, 0) AS evidence_logs
+        FROM ioc_activity a
+        JOIN ioc_match_event_related_logs rl ON rl.activity_id = a.id
+        WHERE lower(a.ioc_value) = lower(g.observable)
+          AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE(g.observable_type, a.ioc_type, ''))
+      ) ev ON TRUE
+      ORDER BY g.last_seen_log DESC NULLS LAST, g.sort_match_count DESC, g.observable ASC
     `;
 
     const { rows: items } = await pool.query(listQ, listParams);

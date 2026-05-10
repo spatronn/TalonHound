@@ -4043,7 +4043,7 @@ function IOCHotListPage() {
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                 <th>IOC</th>
                 <th style={{ width: 110 }}>Type</th>
-                <th style={{ width: 88 }}>Hits</th>
+                <th style={{ width: 110 }}>Evidence Logs</th>
                 <th style={{ width: 96 }}>Sources</th>
                 <th style={{ width: 200 }}>First Seen</th>
                 <th style={{ width: 200 }}>Last Seen</th>
@@ -4064,13 +4064,13 @@ function IOCHotListPage() {
                       {isNewlyActiveHotIoc(r.first_seen_log) ? (
                         <span style={hotBadge('#312e81', '#c7d2fe')}>Newly active</span>
                       ) : null}
-                      {Number(r.total_hits ?? 0) > 100 ? (
+                      {Number(r.evidence_logs ?? 0) > 100 ? (
                         <span style={hotBadge('#78350f', '#fcd34d')}>High activity</span>
                       ) : null}
                     </span>
                   </td>
                   <td style={{ textTransform: 'lowercase' }}>{r.observable_type || '-'}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.total_hits ?? 0)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number.isFinite(Number(r.evidence_logs)) ? Number(r.evidence_logs) : '-'}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.source_count ?? 0)}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.first_seen_log)}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.last_seen_log)}</td>
