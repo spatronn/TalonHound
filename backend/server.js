@@ -1343,9 +1343,12 @@ app.get('/api/incidents', async (req, res) => {
                  ELSE NULL
                END,
                CASE
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bclient\\s+[^\\s]*\\s*(\\d{1,3}(?:\\.\\d{1,3}){3})#\\d+'))[1], '')
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\b(?:TCP_[A-Z_]+|NONE)\\/(?:\\d{3}|-)\\s+(\\d{1,3}(?:\\.\\d{1,3}){3})\\s'))[1], '')
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'firewall' OR LOWER(COALESCE(m.parser_source, '')) ~ '(firewall|forti|palo|pan-os|checkpoint|traffic)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bsrcip=(\\d{1,3}(?:\\.\\d{1,3}){3})\\b'))[1], '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bclient\\s+[^\\s]*\\s*([0-9]{1,3}(?:\\.[0-9]{1,3}){3})#[0-9]+'))[1], '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN COALESCE(
+                   NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\s([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\\s+TCP_[A-Z_]+\\/[0-9]{3}'))[1], ''),
+                   NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\b(?:TCP_[A-Z_]+|NONE)\\/(?:[0-9]{3}|-)\\s+([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\\s'))[1], '')
+                 )
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'firewall' OR LOWER(COALESCE(m.parser_source, '')) ~ '(firewall|forti|palo|pan-os|checkpoint|traffic)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bsrcip=([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\\b'))[1], '')
                  ELSE NULL
                END
              ),
