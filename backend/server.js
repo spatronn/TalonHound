@@ -49,7 +49,7 @@ const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const signalQueue = new Queue(signalQueueName, { connection: redis });
 const llmRiskQueue = new Queue(llmRiskQueueName, { connection: redis });
-const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue });
+const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue, db: pool });
 
 // Geo cache refresh tuning (local/kısıtlı ortam için düşürülebilir)
 

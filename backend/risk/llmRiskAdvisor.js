@@ -807,7 +807,7 @@ function buildIncidentPayload(incident = {}) {
   };
 }
 
-export function createLlmRiskAdvisor({ redis, queue } = {}) {
+export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
   const enabled = toBool(process.env.LLM_RISK_ADVISOR_ENABLED, false);
   const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.8:11434/api/generate').trim();
   const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.5:14b').trim();
@@ -845,24 +845,57 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
     return `risk:llm:incident:${id}:${v}`;
   }
 
+  async function loadPersistedInsight({ incidentId, version }) {
+    if (!db || typeof db.query !== 'function') return null;
+    const id = String(incidentId || '').trim();
+    if (!id) return null;
+    try {
+      const q = await db.query(
+        `SELECT *
+         FROM incident_ai_insights
+         WHERE activity_id = $1::uuid
+           AND ($2::text IS NULL OR insight_version = $2::text)
+         ORDER BY llm_last_updated_at DESC, updated_at DESC
+         LIMIT 1`,
+        [id, version ? String(version) : null]
+      );
+      return q.rows?.[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
   async function getCached({ incidentId, version, baseRisk }) {
     const key = getCacheKey(incidentId, version);
-    if (!key || !redis || typeof redis.get !== 'function') return null;
+    let raw = null;
+    if (key && redis && typeof redis.get === 'function') {
+      try { raw = await redis.get(key); } catch {}
+    }
 
     try {
-      const raw = await redis.get(key);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      const normalized = normalizeAdvisorOutput(parsed, 'cache', parsed?.incident_payload || null);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const persisted = !parsed ? await loadPersistedInsight({ incidentId, version }) : null;
+      const source = parsed || (persisted ? {
+        llm_risk_adjustment: persisted.llm_risk_adjustment,
+        llm_risk_confidence: persisted.llm_risk_confidence,
+        llm_risk_reason: persisted.llm_risk_reason,
+        llm_related_evidence: persisted.llm_related_evidence,
+        raw_model_adjustment: persisted.raw_model_adjustment,
+        normalization_reason: persisted.normalization_reason,
+        llm_last_updated_at: persisted.llm_last_updated_at,
+        llm_version: persisted.insight_version
+      } : null);
+      if (!source) return null;
+      const normalized = normalizeAdvisorOutput(source, 'cache', source?.incident_payload || null);
       let cachedConfidence = Number(normalized?.confidence);
-      if (!Number.isFinite(cachedConfidence)) cachedConfidence = Number(parsed?.llm_risk_confidence ?? parsed?.confidence ?? 0);
-      const cachedIocType = String(parsed?.ioc_type || parsed?.incident_payload?.ioc_type || '').toLowerCase();
-      const cachedReason = String(normalized?.reason || parsed?.reason || '');
+      if (!Number.isFinite(cachedConfidence)) cachedConfidence = Number(source?.llm_risk_confidence ?? source?.confidence ?? 0);
+      const cachedIocType = String(source?.ioc_type || source?.incident_payload?.ioc_type || '').toLowerCase();
+      const cachedReason = String(normalized?.reason || source?.reason || '');
       if (cachedIocType === 'url' && /(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(cachedReason)) {
         cachedConfidence = clamp(Math.max(cachedConfidence || 0.5, 0.45), 0.45, 0.65);
       }
       normalized.confidence = cachedConfidence;
-      console.info(`[llm-confidence-trace] incident_id=${incidentId} ioc_type=${cachedIocType || 'cache'} model_raw_confidence=${Number(parsed?.confidence ?? parsed?.llm_risk_confidence ?? 0)} normalized_confidence=${Number(normalized?.confidence ?? 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'cache'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=true cache_write_value=na`);
+      console.info(`[llm-confidence-trace] incident_id=${incidentId} ioc_type=${cachedIocType || 'cache'} model_raw_confidence=${Number(source?.confidence ?? source?.llm_risk_confidence ?? 0)} normalized_confidence=${Number(normalized?.confidence ?? 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'cache'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=${raw ? 'true' : 'false'} cache_write_value=na`);
       const base = clamp(Number(baseRisk || 0), 0, 100);
       const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
 
@@ -871,15 +904,15 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         llm_risk_adjustment: normalized.adjustment,
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: normalized.reason,
-        llm_related_evidence: parsed?.llm_related_evidence || normalized.llm_related_evidence || null,
+        llm_related_evidence: source?.llm_related_evidence || normalized.llm_related_evidence || null,
         raw_model_adjustment: normalized.raw_model_adjustment,
         normalization_reason: normalized.normalization_reason,
         hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
         hasStrongMaliciousContext: normalized.hasStrongMaliciousContext,
         detected_positive_factors: normalized.detected_positive_factors || [],
         detected_negative_factors: normalized.detected_negative_factors || [],
-        llm_last_updated_at: parsed?.llm_last_updated_at || null,
-        llm_version: parsed?.llm_version || version || null,
+        llm_last_updated_at: source?.llm_last_updated_at || null,
+        llm_version: source?.llm_version || version || null,
         final_risk_score: Number(finalRisk.toFixed(2))
       };
     } catch {
@@ -894,6 +927,50 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
       await redis.set(key, JSON.stringify(value), 'EX', cacheTtlSeconds);
     } catch {
       // no-op
+    }
+  }
+
+  async function persistInsight({ incident, version, normalized }) {
+    if (!db || typeof db.query !== 'function') return;
+    const activityId = String(incident?.id || incident?.incident_id || '').trim();
+    if (!activityId || !version) return;
+    try {
+      await db.query(
+        `INSERT INTO incident_ai_insights (
+           activity_id, incident_id, insight_version,
+           llm_risk_adjustment, llm_risk_confidence, llm_risk_reason,
+           llm_related_evidence, raw_model_adjustment, normalization_reason,
+           llm_last_updated_at, updated_at
+         ) VALUES (
+           $1::uuid, $2::bigint, $3::text,
+           $4::int, $5::double precision, $6::text,
+           $7::jsonb, $8::int, $9::text,
+           NOW(), NOW()
+         )
+         ON CONFLICT (activity_id, insight_version)
+         DO UPDATE SET
+           llm_risk_adjustment = EXCLUDED.llm_risk_adjustment,
+           llm_risk_confidence = EXCLUDED.llm_risk_confidence,
+           llm_risk_reason = EXCLUDED.llm_risk_reason,
+           llm_related_evidence = EXCLUDED.llm_related_evidence,
+           raw_model_adjustment = EXCLUDED.raw_model_adjustment,
+           normalization_reason = EXCLUDED.normalization_reason,
+           llm_last_updated_at = NOW(),
+           updated_at = NOW()`,
+        [
+          activityId,
+          Number.isFinite(Number(incident?.incident_id)) ? Number(incident.incident_id) : null,
+          String(version),
+          normalized?.adjustment ?? null,
+          Number.isFinite(Number(normalized?.confidence)) ? Number(normalized.confidence) : null,
+          normalized?.reason ?? null,
+          normalized?.llm_related_evidence ? JSON.stringify(normalized.llm_related_evidence) : null,
+          Number.isFinite(Number(normalized?.raw_model_adjustment)) ? Number(normalized.raw_model_adjustment) : null,
+          normalized?.normalization_reason ?? null
+        ]
+      );
+    } catch {
+      // no-op: cache path still works
     }
   }
 
@@ -1006,6 +1083,7 @@ export function createLlmRiskAdvisor({ redis, queue } = {}) {
         llm_version: version || null
       }
     });
+    await persistInsight({ incident, version, normalized });
 
     const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
     return {

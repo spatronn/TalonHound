@@ -23,7 +23,7 @@ const pool = new Pool({
 });
 
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
-const advisor = createLlmRiskAdvisor({ redis });
+const advisor = createLlmRiskAdvisor({ redis, db: pool });
 
 function normSourceType(ev = {}) {
   const st = String(ev?.source_type || '').toLowerCase();
