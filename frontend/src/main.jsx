@@ -1826,14 +1826,10 @@ function RiskOverviewPage() {
 
   useEffect(() => { load(range).catch(() => {}); }, [load, range]);
 
-  const legacyScore = Math.max(0, Math.min(100, Number(data?.institution_risk_score || 0)));
-  const v2ScoreRaw = data?.institution_risk_estimate;
-  const useV2 = Number.isFinite(Number(v2ScoreRaw));
-  const score = Math.max(0, Math.min(100, Number(useV2 ? v2ScoreRaw : legacyScore)));
+  const score = Math.max(0, Math.min(100, Number(data?.institution_risk_score || 0)));
   const level = score >= 80 ? 'CRITICAL' : score >= 60 ? 'HIGH' : score >= 40 ? 'MEDIUM' : score >= 20 ? 'GUARDED' : 'LOW';
   const levelColor = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#f59e0b' : level === 'GUARDED' ? '#eab308' : '#22c55e';
-  const exposureScore = Math.max(0, Math.min(100, Number(data?.threat_exposure_score || 0)));
-  const activityScore = Math.max(0, Math.min(100, Number(data?.threat_activity_score || 0)));
+  const _deprecatedV2MetricsHidden = true;
   const top = Array.isArray(data?.top_contributing_incidents) ? data.top_contributing_incidents : [];
   const bd = data?.breakdown || {};
   const llmAggregate = data?.llm_adjustment_aggregate || bd?.llm_adjustment_aggregate || null;
@@ -1955,28 +1951,7 @@ function RiskOverviewPage() {
               </div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
                 <div style={{ fontSize: 12, color: '#94a3b8' }}>Score Model</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{useV2 ? 'v2' : 'legacy'}</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 14 }}>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Threat Exposure Score (v2)</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{exposureScore.toFixed(2)}</div>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>How much threat-intel activity was observed in environment logs.</div>
-              </div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Threat Activity Score (v2)</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{activityScore.toFixed(2)}</div>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Severity of observed activity based on available event context.</div>
-              </div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Institution Risk Estimate (v2)</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.institution_risk_estimate || 0).toFixed(2)}</div>
-              </div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0b1220' }}>
-                <div style={{ fontSize: 12, color: '#94a3b8' }}>Observed IOCs (v2 debug)</div>
-                <div style={{ fontSize: 24, fontWeight: 700 }}>{Number(data?.score_debug?.observed_ioc_count || 0)}</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>evidence-aware</div>
               </div>
             </div>
 
@@ -1987,30 +1962,22 @@ function RiskOverviewPage() {
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
                     <th style={{ width: 100 }}>Incident ID</th>
                     <th>IOC</th>
-                    <th style={{ width: 90 }}>Exposure</th>
-                    <th style={{ width: 90 }}>Activity</th>
-                    <th style={{ width: 110 }}>Risk Estimate</th>
+                    <th style={{ width: 110 }}>Risk Score</th>
+                    <th style={{ width: 110 }}>Contribution</th>
                     <th style={{ width: 90 }}>Verdict</th>
+                    <th style={{ width: 110 }}>Confidence</th>
                   </tr>
                 </thead>
                 <tbody>
                   {top.length ? top.map((it) => {
-                    const v2 = it?.v2 || {};
-                    const exposure = Number(v2?.exposure);
-                    const activity = Number(v2?.activity);
-                    const riskEstimate = Number(v2?.risk_estimate);
-                    const ctx = Number(v2?.classification_confidence);
-                    const confText = Number.isFinite(ctx)
-                      ? `${v2?.event_family || 'unknown'} · ${ctx.toFixed(2)}`
-                      : `${v2?.event_family || '—'} · ${it?.confidence || '—'}`;
                     return (
-                      <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }} title={v2?.explanation || ''}>
+                      <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
                         <td>{it.incident_id || it.id ? <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link> : '-'}</td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc || it.ioc_value || '-'}</td>
-                        <td>{Number.isFinite(exposure) ? exposure.toFixed(2) : '—'}</td>
-                        <td>{Number.isFinite(activity) ? activity.toFixed(2) : '—'}</td>
-                        <td>{Number.isFinite(riskEstimate) ? riskEstimate.toFixed(2) : '—'}</td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
+                        <td>{Number.isFinite(Number(it?.risk_score)) ? Number(it.risk_score).toFixed(2) : '—'}</td>
+                        <td>{Number.isFinite(Number(it?.contribution)) ? Number(it.contribution).toFixed(3) : '—'}</td>
                         <td>{it.verdict || '—'}</td>
+                        <td>{it.confidence || '—'}</td>
                       </tr>
                     );
                   }) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}

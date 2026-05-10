@@ -2033,73 +2033,16 @@ async function computeInstitutionRiskOverview() {
     : null;
 
   const totalActiveIncidents = Number(totalQ.rows?.[0]?.total_active_incidents || 0);
-  const v2 = calculateThreatMetricsV2(scoredIncidents);
-  const evAggQ = await pool.query(`
-    SELECT activity_id,
-      COALESCE(match_context->>'type','') AS t,
-      COUNT(*)::int AS c,
-      SUM(CASE WHEN LOWER(COALESCE(match_context->>'action','')) IN ('accept','accepted','allow','allowed','permit','pass') THEN 1 ELSE 0 END)::int AS allowed_c,
-      SUM(CASE WHEN LOWER(COALESCE(match_context->>'action','')) IN ('deny','denied','drop','blocked','block','reject') THEN 1 ELSE 0 END)::int AS blocked_c
-    FROM ioc_match_events WHERE activity_id IS NOT NULL GROUP BY 1,2`);
-  const aggByAct = new Map();
-  for (const r of evAggQ.rows || []) {
-    const k = String(r.activity_id);
-    const fam = String(r.t || 'generic').toLowerCase() || 'generic';
-    const cur = aggByAct.get(k) || { event_family_counts: {}, outcome_counts: {}, total: 0 };
-    cur.event_family_counts[fam] = (cur.event_family_counts[fam] || 0) + Number(r.c || 0);
-    cur.outcome_counts.allowed = (cur.outcome_counts.allowed || 0) + Number(r.allowed_c || 0);
-    cur.outcome_counts.blocked = (cur.outcome_counts.blocked || 0) + Number(r.blocked_c || 0);
-    cur.outcome_counts.observed = (cur.outcome_counts.observed || 0) + Math.max(Number(r.c || 0) - Number(r.allowed_c || 0) - Number(r.blocked_c || 0), 0);
-    cur.total += Number(r.c || 0);
-    aggByAct.set(k, cur);
-  }
-
-  const v2ByIncident = new Map((v2?.score_debug?.top_incident_v2 || []).map((x) => [String(x.incident_id), x]));
-  const topWithV2 = topWithLlm.map((it) => {
-    const vx = v2ByIncident.get(String(it.incident_id));
-    const ax = aggByAct.get(String(it.id || '')) || { event_family_counts: {}, outcome_counts: {}, total: 0 };
-    const domFam = Object.entries(ax.event_family_counts).sort((a,b)=>b[1]-a[1])[0];
-    const strongest = (ax.outcome_counts.allowed || 0) > 0 ? 'allowed' : (ax.outcome_counts.blocked || 0) > 0 ? 'blocked' : 'observed';
-    return {
-      ...it,
-      ioc: it.ioc_value,
-      incident_context_summary: {
-        event_family_counts: ax.event_family_counts,
-        outcome_counts: ax.outcome_counts,
-        dominant_scenario: vx?.scenario_type || 'unknown_ioc_match',
-        dominant_outcome: vx?.outcome || strongest,
-        strongest_activity_scenario: (ax.outcome_counts.allowed || 0) > 0 ? 'malicious_ip_outbound' : (vx?.scenario_type || 'unknown_ioc_match'),
-        strongest_activity_outcome: strongest,
-        activity_mix_summary: `Context Mix: ${Object.entries(ax.event_family_counts).map(([k,v])=>`${k} ${v}`).join(' · ')}`
-      },
-      v2: vx ? {
-        exposure: vx.exposure_points ?? null,
-        activity: vx.activity_severity ?? null,
-        risk_estimate: null,
-        scenario_type: vx.scenario_type ?? null,
-        outcome: vx.outcome ?? null,
-        event_family: vx.event_family ?? null,
-        classification_confidence: vx.classification_confidence ?? null,
-        outcome_confidence: vx.outcome_confidence ?? null,
-        explanation: vx.explanation ?? null
-      } : null,
-      legacy: {
-        risk_score: it.risk_score ?? null,
-        contribution: it.contribution ?? null
-      }
-    };
-  });
 
   return {
     ...overview,
-    ...v2,
-    top_contributing_incidents: topWithV2,
+    top_contributing_incidents: topWithLlm,
     llm_adjustment_aggregate: llmAdjustmentAggregate,
     total_active_incidents: totalActiveIncidents,
     data_truncated: false,
     breakdown: {
       ...(overview.breakdown || {}),
-      top_contributing_incidents: topWithV2,
+      top_contributing_incidents: topWithLlm,
       llm_adjustment_aggregate: llmAdjustmentAggregate
     }
   };
