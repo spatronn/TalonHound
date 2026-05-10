@@ -25,7 +25,56 @@ function confidenceSignal(confidenceRaw) {
   if (c === 'high') return 1;
   if (c === 'medium') return 0.6;
   if (c === 'low') return 0.3;
-  return 0.4; // Unknown -> light neutral contribution
+  return 0.4;
+}
+
+function inferEvidenceTier(incident = {}) {
+  const verdict = normalizeVerdict(incident?.verdict);
+  if (verdict === 'FP') return 'false_positive';
+
+  const iocType = String(incident?.ioc_type || '').toLowerCase();
+  const accepted = Math.max(Number(incident?.accepted_connections || 0), 0);
+  const blocked = Math.max(Number(incident?.blocked_connections || 0), 0);
+  const hosts = Math.max(Number(incident?.asset_count || 0), 0);
+  const hits = Math.max(Number(incident?.total_hits || 0), 0);
+  const conf = String(incident?.confidence || '').toLowerCase();
+
+  const src = String(incident?.source_type || incident?.dominant_source_type || '').toLowerCase();
+  const parser = String(incident?.parser_source || incident?.dominant_parser_source || '').toLowerCase();
+  const unknownHeavy = (!src || src === 'generic' || src === 'unknown') && (!parser || parser === 'unknown');
+
+  const endpointLike = /(endpoint|edr|xdr|sysmon|process|file|hash)/.test(`${src} ${parser}`) || ['sha256', 'md5', 'sha1', 'imphash', 'tlsh', 'ssdeep'].includes(iocType);
+  const proxyLike = /(proxy|squid|web|url)/.test(`${src} ${parser}`) || iocType === 'url';
+  const dnsLike = /(dns|bind_dns|resolver|dns_kv)/.test(`${src} ${parser}`) || iocType === 'domain';
+  const fwLike = /(firewall|forti|palo|pan-os|checkpoint|traffic|netflow)/.test(`${src} ${parser}`) || iocType === 'ip' || iocType === 'ip6';
+
+  if (endpointLike) return 'endpoint_or_file';
+  if (accepted > 0 && fwLike) return 'firewall_allowed';
+  if (accepted > 0 && proxyLike && hosts >= 2) return 'multi_source_network';
+  if (proxyLike && accepted === 0) return 'proxy_only';
+  if (dnsLike && accepted === 0 && blocked === 0) return 'dns_only';
+  if (blocked > 0 && accepted === 0) return 'blocked_only';
+  if (unknownHeavy && conf !== 'high' && hits > 0) return 'generic_only';
+  if (unknownHeavy) return 'unknown';
+  return 'multi_source_network';
+}
+
+function getHitContribution(totalHits, tier) {
+  const raw = Math.log1p(Math.max(Number(totalHits || 0), 0)) * 3.2;
+  const caps = {
+    dns_only: 10, generic_only: 6, unknown: 6, blocked_only: 8,
+    proxy_only: 15, firewall_allowed: 20, multi_source_network: 25, endpoint_or_file: 30
+  };
+  return Math.min(raw, caps[tier] ?? 10);
+}
+
+function getLowEvidenceCap(tier, verdict) {
+  const isTP = normalizeVerdict(verdict) === 'TP';
+  const base = {
+    false_positive: 0, generic_only: 15, unknown: 20, dns_only: 25, blocked_only: 25,
+    proxy_only: 35, firewall_allowed: 45, multi_source_network: 60, endpoint_or_file: 85
+  }[tier] ?? 30;
+  return isTP ? Math.min(90, base + 10) : base;
 }
 
 function isSecurityTestIncident(incident) {
@@ -100,26 +149,28 @@ export function calculateIncidentRisk(incident) {
     };
   }
 
-  const baseScore = 10;
-  const hitsSignal = Math.log1p(totalHits) * 5;
-  const observedHostsSignal = Math.log1p(observedHosts) * 10;
+  const evidenceTier = inferEvidenceTier(incident);
+  const baseScore = 8;
+  const hitsSignal = getHitContribution(totalHits, evidenceTier);
+  const observedHostsSignal = Math.min(Math.log1p(observedHosts) * 8, evidenceTier === 'endpoint_or_file' ? 14 : 10);
 
   const acceptedConnections = Math.max(Number(incident?.accepted_connections || 0), 0);
   const blockedConnections = Math.max(Number(incident?.blocked_connections || 0), 0);
-  const actionSignal = acceptedConnections > blockedConnections ? 10 : blockedConnections > 0 ? 2 : 0;
+  const actionSignal = acceptedConnections > 0 ? 10 : blockedConnections > 0 ? 3 : 0;
 
   const detectionTypeRaw = String(incident?.detection_type || '').trim().toLowerCase();
-  const detectionTypeSignal = detectionTypeRaw === 'realtime' ? 5 : detectionTypeRaw === 'retro' ? 2 : 0;
+  const detectionTypeSignal = detectionTypeRaw === 'realtime' ? 3 : detectionTypeRaw === 'retro' ? 1 : 0;
 
   const confidenceRaw = String(incident?.confidence || '').trim().toLowerCase();
-  const confidenceSignalScore = confidenceRaw === 'high' ? 10 : confidenceRaw === 'medium' ? 5 : confidenceRaw === 'low' ? 2 : 0;
+  const confidenceSignalScore = confidenceRaw === 'high' ? 8 : confidenceRaw === 'medium' ? 4 : confidenceRaw === 'low' ? 1 : 0;
 
-  const verdictSignal = verdict === 'TP' ? 20 : verdict === 'Suspicious' ? 10 : 0;
+  const verdictSignal = verdict === 'TP' ? 18 : verdict === 'Suspicious' ? 8 : verdict === 'In Progress' ? 2 : 0;
 
   const iocType = String(incident?.ioc_type || '').trim().toLowerCase();
-  const iocTypeBonus = iocType === 'sha256' ? 25 : (iocType === 'domain' || iocType === 'url') ? 10 : 0;
+  const iocTypeBonus = iocType === 'sha256' ? 20 : (iocType === 'domain' || iocType === 'url') ? 6 : 2;
 
   let score = baseScore + hitsSignal + observedHostsSignal + actionSignal + detectionTypeSignal + confidenceSignalScore + verdictSignal + iocTypeBonus;
+  score = Math.min(score, getLowEvidenceCap(evidenceTier, verdict));
   if (!Number.isFinite(score)) score = 0;
   score = Math.min(score, 90);
   score = clamp(score, 0, 90);
@@ -147,7 +198,9 @@ export function calculateIncidentRisk(incident) {
         confidence: confidenceRaw || null,
         detection_type: detectionTypeRaw || null,
         accepted_connections: acceptedConnections,
-        blocked_connections: blockedConnections
+        blocked_connections: blockedConnections,
+        evidence_tier: evidenceTier,
+        low_evidence_cap: getLowEvidenceCap(evidenceTier, verdict)
       }
     }
   };
@@ -198,15 +251,16 @@ function getInstitutionContribution(incident) {
     return { contribution: 0, final_contribution: 0, bucket: 'excluded', reason: 'false_positive', recency_multiplier: 0, caps_applied: ['fp_force_zero'], components: {} };
   }
 
-  const confidenceWeight = confidence === 'high' ? 3 : confidence === 'medium' ? 2 : 1;
-  let activityWeight = 1.0;
+  const evidenceTier = inferEvidenceTier(incident);
+  const confidenceWeight = confidence === 'high' ? 2.2 : confidence === 'medium' ? 1.5 : 0.8;
+  let activityWeight = 0.8;
   if (iocType === 'domain' || activityType === 'dns') activityWeight = 0.5;
   if (iocType === 'url' || activityType === 'url' || activityType === 'proxy') activityWeight = 1.5;
   if (acceptedCount > 0) activityWeight = 4.0;
   if (verdict === 'TP') activityWeight = 6.0;
 
-  const hitFactor = Math.min(Math.log10(totalHits + 1), 5) * 0.4;
-  const hostSpread = observedHosts >= 20 ? 2.5 : observedHosts >= 6 ? 1.5 : observedHosts >= 2 ? 0.75 : 0;
+  const hitFactor = Math.min(Math.log10(totalHits + 1), 5) * 0.25;
+  const hostSpread = observedHosts >= 20 ? 2.0 : observedHosts >= 6 ? 1.2 : observedHosts >= 2 ? 0.6 : 0;
   const persistence = durationHours >= 24 * 2 ? 2 : durationHours > 24 ? 1.5 : durationHours >= 12 ? 1 : durationHours >= 1 ? 0.5 : 0;
   const verdictMultiplier = verdict === 'TP' ? 1.3 : verdict === 'Suspicious' ? 0.9 : 0.55;
   const aiDelta = mapAiAdjustmentDelta(incident?.llm_risk_adjustment);
@@ -266,6 +320,19 @@ function getInstitutionContribution(incident) {
     }
   }
 
+  const tierCaps = {
+    generic_only: 0.6,
+    unknown: 0.7,
+    dns_only: 0.9,
+    blocked_only: 1.0,
+    proxy_only: 1.6,
+    firewall_allowed: 2.2,
+    multi_source_network: 3.5,
+    endpoint_or_file: 6.0
+  };
+  const cap = tierCaps[evidenceTier] ?? 1.2;
+  if (raw > cap) { raw = cap; caps.push(`tier_cap_${evidenceTier}_${cap}`); }
+
   const recency = getRecencyMultiplier(incident?.last_seen);
   const finalContribution = Math.max(0, raw * recency);
 
@@ -276,7 +343,7 @@ function getInstitutionContribution(incident) {
     reason: 'quality_weighted_contribution',
     recency_multiplier: recency,
     caps_applied: caps,
-    components: { confidenceWeight, activityWeight, hitFactor: Number(hitFactor.toFixed(4)), hostSpread, persistence, verdictMultiplier, aiDelta }
+    components: { confidenceWeight, activityWeight, hitFactor: Number(hitFactor.toFixed(4)), hostSpread, persistence, verdictMultiplier, aiDelta, evidenceTier }
   };
 }
 
@@ -376,7 +443,12 @@ export function calculateInstitutionRisk(incidents) {
     };
   });
 
-  const clusterTotal = clusters.reduce((acc, c) => acc + Number(c.final_cluster_contribution || 0), 0);
+  const rankedClusters = [...clusters].sort((a, b) => Number(b.final_cluster_contribution || 0) - Number(a.final_cluster_contribution || 0));
+  const rankWeight = (idx) => (idx === 0 ? 1 : idx === 1 ? 0.6 : idx === 2 ? 0.35 : idx <= 9 ? 0.12 : 0.03);
+  const weightedClusterTotal = rankedClusters.reduce((acc, c, idx) => acc + Number(c.final_cluster_contribution || 0) * rankWeight(idx), 0);
+  const activeNonFpCount = processed.filter((r) => normalizeVerdict(r?.verdict) !== 'FP').length;
+  const densityBonus = Math.min(6, Math.log1p(activeNonFpCount) * 1.5);
+  const clusterTotal = weightedClusterTotal + densityBonus;
   const riskScoreScale = Math.max(Number(process.env.RISK_SCORE_SCALE || 50), 1);
   let institutionRisk = 100 * (1 - Math.exp(-(clusterTotal / riskScoreScale)));
 
@@ -463,6 +535,8 @@ export function calculateInstitutionRisk(incidents) {
       excluded_incident_count: excludedIncidentCount,
       total_raw_incident_contribution: Number(totalIncidentContribution.toFixed(6)),
       total_clustered_contribution: Number(clusterTotal.toFixed(6)),
+      weighted_cluster_total: Number(weightedClusterTotal.toFixed(6)),
+      density_bonus: Number(densityBonus.toFixed(6)),
       cluster_count: clusters.length,
       clusters,
       normalized_contribution_input: Number(clusterTotal.toFixed(6)),
