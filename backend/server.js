@@ -4396,7 +4396,7 @@ app.get('/api/ioc/details', async (req, res) => {
           a.asset_count AS observed_hosts,
           a.verdict,
           a.status,
-          a.risk_score
+          NULL::double precision AS risk_score
         FROM ioc_activity a
         WHERE lower(a.ioc_value) = lower($1)
           AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, a.ioc_type, ''))
