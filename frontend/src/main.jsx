@@ -198,7 +198,13 @@ function normalizeEventContext(event) {
   if (sourceType === 'waf' || /(waf|f5|asm|modsecurity|nginx-waf)/i.test(parserSource)) return 'WAF';
   if (sourceType === 'endpoint' || /(endpoint|edr|xdr|sysmon)/i.test(parserSource)) return 'Endpoint';
 
-  if ((sourceType === 'generic' || sourceType === '') && (parserSource === 'unknown' || parserSource === '')) return 'Generic';
+  const v2Family = String(event?.v2_context?.event_family || '').toLowerCase();
+  const v2Control = String(event?.v2_context?.control_point || '').toLowerCase();
+  if (v2Family === 'dns' || v2Control === 'dns_resolver') return 'DNS';
+  if (v2Family === 'proxy') return 'Proxy';
+  if (v2Family === 'firewall') return 'Firewall';
+  if (v2Family === 'waf') return 'WAF';
+  if (v2Family === 'endpoint') return 'Endpoint';
 
   const tokens = [
     event?.type,
@@ -222,6 +228,7 @@ function normalizeEventContext(event) {
   if (/(firewall|traffic|fortigate|forti|paloalto|pan-os|checkpoint|netflow|forward)/i.test(tokens)) return 'Firewall';
 
   if (event?.context_label) return String(event.context_label);
+  if ((sourceType === 'generic' || sourceType === '') && (parserSource === 'unknown' || parserSource === '')) return 'Generic';
   return 'Generic';
 }
 
