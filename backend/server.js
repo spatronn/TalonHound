@@ -4391,13 +4391,20 @@ app.get('/api/ioc/details', async (req, res) => {
           a.incident_id,
           a.first_seen,
           a.last_seen,
-          a.event_count AS detection_events,
-          a.total_hits AS evidence_logs,
-          a.asset_count AS observed_hosts,
+          COALESCE(stats.detection_events, 0)::int AS detection_events,
+          COALESCE(a.total_hits, 0)::bigint AS evidence_logs,
+          COALESCE(stats.observed_hosts, 0)::int AS observed_hosts,
           a.verdict,
           a.status,
           NULL::double precision AS risk_score
         FROM ioc_activity a
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*)::int AS detection_events,
+            COUNT(DISTINCT NULLIF(m.host_name, ''))::int AS observed_hosts
+          FROM ioc_match_events m
+          WHERE m.activity_id = a.id
+        ) stats ON TRUE
         WHERE lower(a.ioc_value) = lower($1)
           AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, a.ioc_type, ''))
         ORDER BY a.last_seen DESC NULLS LAST, a.incident_id DESC
