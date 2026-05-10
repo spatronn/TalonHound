@@ -4893,63 +4893,39 @@ function IOCDetailsPage() {
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Recent Detection Events (Top 20)</div>
+              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Related Incidents</div>
               <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1380, fontSize: 13 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th style={{ width: 80 }}>ID</th>
-                    <th style={{ width: 170 }}>Detected At</th>
-                    <th style={{ width: 220 }}>Matched IOC</th>
-                    <th style={{ width: 140 }}>Detection</th>
-                    <th style={{ width: 140 }}>Verdict</th>
-                    <th style={{ width: 150 }}>Assignee</th>
-                    <th style={{ width: 180 }}>Source</th>
+                    <th style={{ width: 100 }}>Incident ID</th>
+                    <th style={{ width: 160 }}>First Seen</th>
+                    <th style={{ width: 160 }}>Last Seen</th>
+                    <th style={{ width: 120 }}>Detection Events</th>
+                    <th style={{ width: 110 }}>Evidence Logs</th>
+                    <th style={{ width: 120 }}>Observed Hosts</th>
+                    <th style={{ width: 120 }}>Verdict</th>
+                    <th style={{ width: 100 }}>Status</th>
+                    <th style={{ width: 100 }}>Risk Score</th>
                     <th style={{ width: 120 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.matches.length ? data.matches.map((m) => {
-                    const verdict = String(m.verdict || '').toLowerCase();
-                    const vm = verdict === 'fp'
-                      ? { label: 'FP', color: '#ef4444' }
-                      : verdict === 'tp'
-                        ? { label: 'TP', color: '#22c55e' }
-                        : verdict === 'suspicious'
-                          ? { label: 'Suspicious', color: '#f59e0b' }
-                          : verdict === 'in_progress'
-                            ? { label: 'In Progress', color: '#f59e0b' }
-                            : { label: 'Unreviewed', color: '#94a3b8' };
-                    return (
-                      <tr key={`m-${m.id}-${m.created_at}`} style={{ borderTop: '1px solid #334155' }}>
-                        <td>{m.id ?? '-'}</td>
-                        <td>{formatUserDateTime(m.detected_at || m.last_seen_at || m.event_time || m.created_at)}</td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matched_ioc || '-'}</td>
-                        <td>
-                          <span style={{
-                            display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
-                            border: `1px solid ${m.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
-                            color: m.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e', background: '#020617'
-                          }}>
-                            {m.detection_mode === 'retroactive' ? 'Retroactive Match' : 'Real-Time Match'}
-                          </span>
-                        </td>
-                        <td>
-                          <span style={{
-                            display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
-                            border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
-                          }}>{vm.label}</span>
-                        </td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assigned_to || 'Unassigned'}</td>
-                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.source_name || '-'}</td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button type="button" onClick={() => navigate(`/analytics/detection-events/${m.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                            <button type="button" onClick={() => navigate(`/analytics/detection-events/${m.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }) : <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No IOC match event for this IOC yet.</td></tr>}
+                  {(data.incidents || []).length ? (data.incidents || []).map((inc) => (
+                    <tr key={`inc-${inc.id}`} style={{ borderTop: '1px solid #334155' }}>
+                      <td>#{inc.incident_id ?? '-'}</td>
+                      <td>{formatUserDateTime(inc.first_seen)}</td>
+                      <td>{formatUserDateTime(inc.last_seen)}</td>
+                      <td>{Number(inc.detection_events || 0)}</td>
+                      <td>{Number(inc.evidence_logs || 0)}</td>
+                      <td>{Number(inc.observed_hosts || 0)}</td>
+                      <td>{inc.verdict || 'Unreviewed'}</td>
+                      <td>{inc.status || '-'}</td>
+                      <td>{Number.isFinite(Number(inc.risk_score)) ? Number(inc.risk_score).toFixed(2) : '-'}</td>
+                      <td>
+                        <button type="button" onClick={() => navigate(`/incidents/${inc.incident_id || inc.id}`)} title="View incident" aria-label="View incident" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                      </td>
+                    </tr>
+                  )) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No related incidents found for this IOC.</td></tr>}
                 </tbody>
               </table>
             </div>

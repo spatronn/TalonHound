@@ -4313,7 +4313,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const rows = itemRes.rows;
     if (!rows.length) {
-      const payload = { summary: null, sources: [], matches: [] };
+      const payload = { summary: null, sources: [], matches: [], incidents: [] };
       iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
       console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=0 matches=0`);
       return res.json(payload);
@@ -4384,62 +4384,32 @@ app.get('/api/ioc/details', async (req, res) => {
       };
     })();
 
-    const matchesPromise = (async () => {
-      const matchesQ = `
+    const incidentsPromise = (async () => {
+      const incidentsQ = `
         SELECT
-          m.id,
-          m.signal_event_id,
-          m.event_time,
-          m.host_name,
-          m.process_name,
-          m.destination_ip,
-          m.destination_port,
-          m.protocol,
-          m.source,
-          m.parser_source,
-          m.matched_ioc,
-          m.source_name,
-          m.confidence,
-          m.hit_count,
-          m.last_seen_at,
-          COALESCE(m.last_seen_at, m.event_time, m.created_at) AS detected_at,
-          m.detection_type,
-          m.match_source,
-          m.verdict,
-          m.reviewed_at,
-          m.reviewed_by,
-          m.note,
-          m.assigned_to,
-          m.assigned_at,
-          COALESCE(NULLIF(${signalRawExpr}, ''), '-') AS matched_syslog_event,
-          COALESCE(
-            m.detection_type,
-            CASE
-              WHEN COALESCE(NULLIF(m.match_context->>'processing_path', ''), 'realtime') = 'retro'
-                OR COALESCE((m.match_context->>'retroactive')::boolean, false)
-              THEN 'retroactive'
-              ELSE 'realtime'
-            END
-          ) AS detection_mode,
-          m.created_at
-        FROM ioc_match_events m
-        WHERE m.matched_ioc = $1
-        ORDER BY m.created_at DESC
+          a.id,
+          a.incident_id,
+          a.first_seen,
+          a.last_seen,
+          a.event_count AS detection_events,
+          a.total_hits AS evidence_logs,
+          a.asset_count AS observed_hosts,
+          a.verdict,
+          a.status,
+          a.risk_score
+        FROM ioc_activity a
+        WHERE lower(a.ioc_value) = lower($1)
+          AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, a.ioc_type, ''))
+        ORDER BY a.last_seen DESC NULLS LAST, a.incident_id DESC
         LIMIT 20
       `;
-      const tMatches = Date.now();
-      const matchesRes = await pool.query(matchesQ, [observable]);
-      pgMs += Date.now() - tMatches;
-
-      if (!USE_CLICKHOUSE) return matchesRes.rows;
-
-      const tCh = Date.now();
-      const enriched = await Promise.all((matchesRes.rows || []).map((row) => withRawSyslogEvent(row)));
-      chMs += Date.now() - tCh;
-      return enriched;
+      const tInc = Date.now();
+      const incidentsRes = await pool.query(incidentsQ, [observable, observableType]);
+      pgMs += Date.now() - tInc;
+      return incidentsRes.rows || [];
     })();
 
-    const [geo, matches] = await Promise.all([geoPromise, matchesPromise]);
+    const [geo, incidents] = await Promise.all([geoPromise, incidentsPromise]);
 
     const summary = {
       id: rows[0].id,
@@ -4462,11 +4432,12 @@ app.get('/api/ioc/details', async (req, res) => {
       summary,
       match_count: Number(summary.match_count || 0),
       sources: rows,
-      matches
+      matches: [],
+      incidents
     };
 
     iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
-    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=${rows.length} matches=${matches.length}`);
+    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=${rows.length} incidents=${incidents.length}`);
 
     return res.json(payload);
   } catch (err) {
