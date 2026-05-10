@@ -4105,7 +4105,36 @@ app.get('/api/ioc/hot', async (req, res) => {
       ORDER BY g.last_seen_log DESC NULLS LAST, g.sort_match_count DESC, g.observable ASC
     `;
 
-    const { rows: items } = await pool.query(listQ, listParams);
+    const { rows: baseItems } = await pool.query(listQ, listParams);
+
+    let items = baseItems;
+    try {
+      const pairs = (baseItems || [])
+        .map((r) => ({ o: String(r?.observable || '').trim().toLowerCase(), t: String(r?.observable_type || '').trim().toLowerCase() }))
+        .filter((x) => x.o && x.t);
+      if (pairs.length) {
+        const tupleIn = pairs
+          .map((p) => `('${escapeChString(p.o)}','${escapeChString(p.t)}')`)
+          .join(', ');
+        const chRows = await clickhouseQuery(`
+          SELECT
+            lower(matched_ioc) AS observable,
+            lower(observable_type) AS observable_type,
+            countDistinct(evidence_hash) AS c
+          FROM security_evidence.incident_related_logs
+          WHERE (lower(matched_ioc), lower(observable_type)) IN (${tupleIn})
+          GROUP BY observable, observable_type
+        `);
+        const chMap = new Map((chRows || []).map((r) => [`${String(r.observable)}|${String(r.observable_type)}`, Number(r.c || 0)]));
+        items = (baseItems || []).map((it) => {
+          const key = `${String(it?.observable || '').toLowerCase()}|${String(it?.observable_type || '').toLowerCase()}`;
+          const ev = chMap.get(key);
+          return { ...it, evidence_logs: Number.isFinite(ev) && ev > 0 ? ev : null };
+        });
+      }
+    } catch {
+      items = (baseItems || []).map((it) => ({ ...it, evidence_logs: null }));
+    }
 
     const statsQ = `
       WITH grouped AS (
