@@ -454,10 +454,10 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     }
   }
 
-  if (iocType === 'domain' && !explicitBenign && adjustment === 0 && rawModelAdjustment >= 0 && rawModelAdjustment <= 5
+  if (iocType === 'domain' && !explicitBenign && adjustment <= 0
     && domainSignals.hasDnsSignal && domainSignals.hasProxySignal && domainSignals.hasTunnelOrConnect200) {
     adjustment = 5;
-    if (!normalizationReason) normalizationReason = 'domain_dns_proxy_tunnel_adjustment';
+    normalizationReason = 'domain_dns_proxy_tunnel_adjustment';
   }
 
   if (iocType === 'url') reason = normalizeUrlTelemetryWording(reason);
