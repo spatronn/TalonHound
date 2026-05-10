@@ -1642,16 +1642,24 @@ function classifyEventContext(ev = {}) {
   const hasDnsFields = Boolean(merged.query || merged.query_type || merged.response_ip);
   const hasFwFields = Boolean(merged.srcip || merged.dstip || merged.dstport || merged.service);
 
+  const bindDnsSig = /\bbind_dns:\b/i.test(raw)
+    || /\bqueries:\s*info:\s*client\b/i.test(raw)
+    || /\bquery:\s*\S+\s+IN\s+[A-Z]+\b/i.test(raw);
+  const bindClientMatch = raw.match(/\bclient\s+[^\s]*\s*(\d{1,3}(?:\.\d{1,3}){3})#\d+/i);
+  const bindQueryMatch = raw.match(/\bquery:\s*([^\s]+)\s+IN\s+([A-Z]+)/i);
+  const bindResolverMatch = raw.match(/\(([0-9]{1,3}(?:\.[0-9]{1,3}){3})\)\s*$/);
+
   let event_family = 'generic';
   let classification_confidence = 0.4;
-  if (explicitType === 'proxy') { event_family = 'proxy'; classification_confidence = 0.9; }
+  if (bindDnsSig) { event_family = 'dns'; classification_confidence = 0.9; }
+  else if (explicitType === 'proxy') { event_family = 'proxy'; classification_confidence = 0.9; }
   else if (explicitType === 'dns') { event_family = 'dns'; classification_confidence = 0.9; }
   else if (explicitType === 'firewall') { event_family = 'firewall'; classification_confidence = 0.9; }
   else if (hasProxyFields) { event_family = 'proxy'; classification_confidence = 0.85; }
   else if (hasDnsFields) { event_family = 'dns'; classification_confidence = 0.85; }
   else if (hasFwFields) { event_family = 'firewall'; classification_confidence = 0.75; }
 
-  const control_point = event_family;
+  const control_point = event_family === 'dns' ? 'dns_resolver' : event_family;
 
   let matched_field = String(merged.matched_field || '').toLowerCase();
   const rawUrl = String(merged.url || '');
@@ -1659,7 +1667,14 @@ function classifyEventContext(ev = {}) {
   try { if (rawUrl) urlHost = new URL(rawUrl).hostname.toLowerCase(); } catch {}
 
   if (!matched_field) {
-    if (event_family === 'dns' && iocType === 'domain' && String(merged.query || '').toLowerCase() === ioc) matched_field = 'query';
+    if (event_family === 'dns' && bindDnsSig) {
+      if (bindQueryMatch?.[1]) merged.query = bindQueryMatch[1].toLowerCase();
+      if (bindQueryMatch?.[2]) merged.query_type = bindQueryMatch[2].toUpperCase();
+      if (bindClientMatch?.[1]) merged.client_ip = bindClientMatch[1];
+      if (bindResolverMatch?.[1]) merged.resolver_ip = bindResolverMatch[1];
+      matched_field = iocType === 'domain' ? 'query' : 'raw';
+    }
+    if (!matched_field && event_family === 'dns' && iocType === 'domain' && String(merged.query || '').toLowerCase() === ioc) matched_field = 'query';
     else if (event_family === 'dns' && iocType === 'ip' && String(merged.response_ip || '').toLowerCase() === ioc) matched_field = 'response_ip';
     else if (event_family === 'proxy' && (iocType === 'domain' || iocType === 'url')) {
       if (iocType === 'domain' && urlHost && (urlHost === ioc || urlHost.endsWith(`.${ioc}`))) matched_field = 'url_host';
@@ -1687,11 +1702,11 @@ function classifyEventContext(ev = {}) {
   } else if (event_family === 'dns') { outcome = 'observed'; outcome_confidence = 0.7; }
 
   let direction = String(mc.direction || mc.flow || '').toLowerCase();
-  if (!direction) direction = event_family === 'proxy' ? 'outbound_web' : event_family === 'dns' ? 'dns' : 'unknown';
+  if (!direction) direction = event_family === 'proxy' ? 'outbound_web' : event_family === 'dns' ? 'resolution' : 'unknown';
 
   let scenario_type = 'unknown_ioc_match';
   if (event_family === 'dns' && matched_field === 'response_ip' && iocType === 'ip') scenario_type = 'dns_response_ip_ioc_observed';
-  else if (event_family === 'dns') scenario_type = 'malicious_domain_dns_query';
+  else if (event_family === 'dns') scenario_type = 'dns_query_to_ioc_domain';
   else if (event_family === 'proxy' && iocType === 'domain') scenario_type = 'malicious_domain_url_access';
   else if (event_family === 'proxy' && iocType === 'url') scenario_type = 'malicious_url_access';
   else if (event_family === 'firewall' && iocType === 'ip' && direction === 'outbound') scenario_type = 'malicious_ip_outbound';
@@ -1699,11 +1714,26 @@ function classifyEventContext(ev = {}) {
 
   const context_explanation = (event_family === 'proxy' && iocType === 'domain' && matched_field === 'url_host')
     ? 'Domain IOC matched the host portion of a proxy URL. HTTP status indicates web response and no explicit block signal was present.'
-    : scenario_type === 'dns_response_ip_ioc_observed'
-      ? 'IP IOC observed in DNS response_ip; no direct connection evidence.'
-      : `${scenario_type} via ${event_family} with outcome=${outcome}`;
+    : (event_family === 'dns' && bindClientMatch?.[1])
+      ? `DNS query for the matched IOC domain was observed from client ${bindClientMatch[1]}.`
+      : scenario_type === 'dns_response_ip_ioc_observed'
+        ? 'IP IOC observed in DNS response_ip; no direct connection evidence.'
+        : `${scenario_type} via ${event_family} with outcome=${outcome}`;
 
-  return { event_family, control_point, matched_field, scenario_type, direction, outcome, classification_confidence, outcome_confidence, context_explanation };
+  return {
+    event_family,
+    control_point,
+    matched_field,
+    scenario_type,
+    direction,
+    outcome,
+    classification_confidence,
+    outcome_confidence,
+    context_explanation,
+    observed_host: merged.client_ip || null,
+    resolver_ip: merged.resolver_ip || null,
+    source_type: event_family === 'dns' ? 'dns' : null
+  };
 }
 
 function classifyControlPoint(row) {
