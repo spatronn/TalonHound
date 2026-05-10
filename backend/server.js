@@ -4392,7 +4392,7 @@ app.get('/api/ioc/details', async (req, res) => {
           a.first_seen,
           a.last_seen,
           COALESCE(stats.detection_events, 0)::int AS detection_events,
-          COALESCE(a.total_hits, 0)::bigint AS evidence_logs,
+          rel.evidence_logs AS evidence_logs,
           COALESCE(stats.observed_hosts, 0)::int AS observed_hosts,
           a.verdict,
           a.status,
@@ -4405,6 +4405,11 @@ app.get('/api/ioc/details', async (req, res) => {
           FROM ioc_match_events m
           WHERE m.activity_id = a.id
         ) stats ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT NULLIF(COUNT(*)::bigint, 0) AS evidence_logs
+          FROM ioc_match_event_related_logs rl
+          WHERE rl.activity_id = a.id
+        ) rel ON TRUE
         WHERE lower(a.ioc_value) = lower($1)
           AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, a.ioc_type, ''))
         ORDER BY a.last_seen DESC NULLS LAST, a.incident_id DESC

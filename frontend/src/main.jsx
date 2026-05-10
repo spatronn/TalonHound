@@ -4916,7 +4916,7 @@ function IOCDetailsPage() {
                       <td>{formatUserDateTime(inc.first_seen)}</td>
                       <td>{formatUserDateTime(inc.last_seen)}</td>
                       <td>{Number(inc.detection_events || 0)}</td>
-                      <td>{Number(inc.evidence_logs || 0)}</td>
+                      <td>{Number.isFinite(Number(inc.evidence_logs)) ? Number(inc.evidence_logs) : '-'}</td>
                       <td>{Number(inc.observed_hosts || 0)}</td>
                       <td>{inc.verdict || 'Unreviewed'}</td>
                       <td>{inc.status || '-'}</td>
