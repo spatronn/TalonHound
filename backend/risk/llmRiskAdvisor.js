@@ -949,7 +949,13 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
          )
          ON CONFLICT (activity_id, insight_version)
          DO UPDATE SET
-           llm_risk_adjustment = EXCLUDED.llm_risk_adjustment,
+           llm_risk_adjustment = CASE
+             WHEN EXCLUDED.llm_risk_adjustment = 0
+               AND incident_ai_insights.llm_risk_adjustment IS NOT NULL
+               AND incident_ai_insights.llm_risk_adjustment <> 0
+             THEN incident_ai_insights.llm_risk_adjustment
+             ELSE EXCLUDED.llm_risk_adjustment
+           END,
            llm_risk_confidence = EXCLUDED.llm_risk_confidence,
            llm_risk_reason = EXCLUDED.llm_risk_reason,
            llm_related_evidence = EXCLUDED.llm_related_evidence,
