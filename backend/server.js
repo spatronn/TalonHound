@@ -4497,6 +4497,11 @@ app.get('/api/ioc/details', async (req, res) => {
       incidents = incidentsRaw;
     }
 
+    const totalEvidenceLogsCount = (incidents || []).reduce((acc, it) => {
+      const n = Number(it?.evidence_logs);
+      return acc + (Number.isFinite(n) && n > 0 ? n : 0);
+    }, 0);
+
     const summary = {
       id: rows[0].id,
       public_id: rows[0].public_id,
@@ -4505,6 +4510,7 @@ app.get('/api/ioc/details', async (req, res) => {
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
       match_count: computedMatchCount,
+      evidence_logs_count: totalEvidenceLogsCount,
       first_seen_log: firstSeenLog,
       last_seen_log: lastSeenLog,
       source_count: new Set(rows.map((r) => r.source_name)).size,
