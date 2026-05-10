@@ -1337,15 +1337,15 @@ app.get('/api/incidents', async (req, res) => {
              COALESCE(
                NULLIF(m.match_context->>'observed_host', ''),
                CASE
-                 WHEN LOWER(COALESCE(m.source_type, '')) = 'dns' THEN NULLIF(m.match_context->>'client_ip', '')
-                 WHEN LOWER(COALESCE(m.source_type, '')) = 'proxy' THEN NULLIF(m.match_context->>'client_ip', '')
-                 WHEN LOWER(COALESCE(m.source_type, '')) = 'firewall' THEN NULLIF(m.match_context->>'srcip', '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF(m.match_context->>'client_ip', '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN NULLIF(m.match_context->>'client_ip', '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'firewall' OR LOWER(COALESCE(m.parser_source, '')) ~ '(firewall|forti|palo|pan-os|checkpoint|traffic)') THEN NULLIF(m.match_context->>'srcip', '')
                  ELSE NULL
                END,
                CASE
-                 WHEN LOWER(COALESCE(m.source_type, '')) = 'dns' THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bclient\\s+[^\\s]*\\s*(\\d{1,3}(?:\\.\\d{1,3}){3})#\\d+'))[1], '')
-                 WHEN LOWER(COALESCE(m.source_type, '')) = 'proxy' THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\b(?:TCP_[A-Z_]+|NONE)\\/(?:\\d{3}|-)\\s+(\\d{1,3}(?:\\.\\d{1,3}){3})\\s'))[1], '')
-                 WHEN LOWER(COALESCE(m.source_type, '')) = 'firewall' THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bsrcip=(\\d{1,3}(?:\\.\\d{1,3}){3})\\b'))[1], '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bclient\\s+[^\\s]*\\s*(\\d{1,3}(?:\\.\\d{1,3}){3})#\\d+'))[1], '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\b(?:TCP_[A-Z_]+|NONE)\\/(?:\\d{3}|-)\\s+(\\d{1,3}(?:\\.\\d{1,3}){3})\\s'))[1], '')
+                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'firewall' OR LOWER(COALESCE(m.parser_source, '')) ~ '(firewall|forti|palo|pan-os|checkpoint|traffic)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bsrcip=(\\d{1,3}(?:\\.\\d{1,3}){3})\\b'))[1], '')
                  ELSE NULL
                END
              ),
