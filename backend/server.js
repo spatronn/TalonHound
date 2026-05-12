@@ -2578,11 +2578,6 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       await Promise.all(workers);
       return out;
     }
-      }
-      const workers = Array.from({ length: Math.max(1, Math.min(limit, arr.length)) }, () => worker());
-      await Promise.all(workers);
-      return out;
-    }
 
     const enrichedRows = await mapWithConcurrency(baseItems, 8, async (r) => {
       try {
@@ -2607,7 +2602,6 @@ app.get('/api/incidents/:id/events', async (req, res) => {
         source_type: r?.source_type || null,
         raw_log_snapshot: r?.raw_log_snapshot || null,
         matched_syslog_event: r?.matched_syslog_event || r?.raw_log_snapshot || r?.matched_syslog_event || '-'
-      };
       };
       const v2 = classifyEventContext(enrichedForContext);
       const st = String(enrichedForContext?.source_type || '').toLowerCase();
