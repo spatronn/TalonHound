@@ -2158,7 +2158,7 @@ app.get('/api/risk/trend', async (req, res) => {
 function normalizeEvidenceRecord(r) {
   const parserSource = String(r?.parser_source || '').toLowerCase();
   const rawLog = String(r?.raw_message_sample || '').trim();
-  if (!rawLog || rawLog === '-' || parserSource === 'syslog_observables') return null;
+  if (!rawLog || rawLog === '-') return null;
 
   const srcTypeRaw = String(r?.source_type || '').toLowerCase();
   const lowerRaw = rawLog.toLowerCase();
@@ -2227,7 +2227,47 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
       ORDER BY log_ts ${sort}
     `);
 
-    const normalized = (rows || []).map(normalizeEvidenceRecord).filter(Boolean);
+    let normalized = (rows || []).map(normalizeEvidenceRecord).filter(Boolean).map((r) => ({
+      ...r,
+      evidence_origin: 'clickhouse_related_logs',
+      fallback: false
+    }));
+
+    if (normalized.length === 0) {
+      const pgQ = await pool.query(
+        `SELECT
+           id AS match_event_id,
+           activity_id,
+           event_time AS log_ts,
+           matched_ioc,
+           ioc_type AS observable_type,
+           host_name AS log_host,
+           source_type,
+           parser_source,
+           COALESCE(raw_log_snapshot, '') AS raw_log_snapshot,
+           normalized_event_json
+         FROM ioc_match_events
+         WHERE activity_id = $1::uuid
+         ORDER BY COALESCE(last_seen_at, event_time, created_at) ${sort}, id ${sort}`,
+        [activityId]
+      );
+
+      normalized = (pgQ.rows || []).map((r) => {
+        const raw = String(r?.raw_log_snapshot || '').trim();
+        const normJson = r?.normalized_event_json ? JSON.stringify(r.normalized_event_json) : '';
+        const evidenceText = raw || normJson;
+        if (!evidenceText) return null;
+        return normalizeEvidenceRecord({
+          ...r,
+          raw_message_sample: evidenceText
+        });
+      }).filter(Boolean).map((r) => ({
+        ...r,
+        evidence_origin: 'pg_detection_event_snapshot',
+        fallback: true
+      }));
+    }
+
     const total = normalized.length;
     const paged = normalized.slice(offset, offset + pageSize);
 
