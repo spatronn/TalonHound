@@ -177,6 +177,10 @@ function normalizeEventContext(event) {
   const sourceType = String(event?.source_type || '').toLowerCase();
   const parserSource = String(event?.parser_source || '').toLowerCase();
   const match = event?.match_context || {};
+  const lab = String(event?.context_label || '');
+  const v2famEarly = String(event?.v2_context?.event_family || '').toLowerCase();
+  if (lab === 'DNS' && v2famEarly === 'proxy') return 'Proxy';
+
   if (event?.context_label) return String(event.context_label);
   if (event?.inferred_context) return String(event.inferred_context);
 

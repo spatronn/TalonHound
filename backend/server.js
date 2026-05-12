@@ -179,7 +179,8 @@ function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
       match_event_id: id,
       raw_message_sample: bulkRaw,
       parser_source: String(bulkHit?.parser_source || relEv?.parser_source || ''),
-      source_type: String(bulkHit?.source_type || relEv?.source_type || '')
+      source_type: String(bulkHit?.source_type || relEv?.source_type || ''),
+      evidence_lane: 'bulk_squid_over_related'
     };
   }
   if (relRaw) {
@@ -187,7 +188,8 @@ function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
       match_event_id: Number(relEv?.match_event_id || id),
       raw_message_sample: relRaw,
       parser_source: String(relEv?.parser_source || ''),
-      source_type: String(relEv?.source_type || '')
+      source_type: String(relEv?.source_type || ''),
+      evidence_lane: 'incident_related_logs'
     };
   }
   if (bulkRaw) {
@@ -195,7 +197,8 @@ function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
       match_event_id: id,
       raw_message_sample: bulkRaw,
       parser_source: String(bulkHit?.parser_source || ''),
-      source_type: String(bulkHit?.source_type || '')
+      source_type: String(bulkHit?.source_type || ''),
+      evidence_lane: 'syslog_logs_bulk'
     };
   }
   return null;
@@ -293,30 +296,88 @@ async function bulkRawSyslogEvidence(rows = []) {
 
   const fromIso = new Date(Math.min(...times) - (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
   const toIso = new Date(Math.max(...times) + (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+  // Page-scoped IOCs only (caller passes current page rows); max 100 distinct observables.
   const iocClause = iocs.map((ioc) => `positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapeChString(ioc)}') > 0`).join(' OR ');
+  if (!String(iocClause || '').trim()) return new Map();
 
-  const candidates = await clickhouseQuery(`
-    SELECT ts, host, source, parser_source, source_type, COALESCE(raw, message) AS raw_message
-    FROM syslog_logs
-    WHERE ts BETWEEN toDateTime('${fromIso}') AND toDateTime('${toIso}')
-      AND (${iocClause})
-    ORDER BY ts DESC
-    LIMIT 5000
-  `);
+  const RELAX_PAD_MS = 14 * 24 * 60 * 60 * 1000;
+  const relaxFromIso = new Date(Math.min(...times) - RELAX_PAD_MS).toISOString().slice(0, 19).replace('T', ' ');
+  const relaxToIso = new Date(Math.max(...times) + RELAX_PAD_MS).toISOString().slice(0, 19).replace('T', ' ');
+  const chSettings = { max_execution_time: 12 };
 
+  let timedRows = [];
+  let relaxRows = [];
+  try {
+    timedRows = await clickhouseQuery(
+      `
+      SELECT ts, host, source, parser_source, source_type, COALESCE(raw, message) AS raw_message
+      FROM syslog_logs
+      WHERE ts BETWEEN toDateTime('${fromIso}') AND toDateTime('${toIso}')
+        AND (${iocClause})
+      ORDER BY ts DESC
+      LIMIT 5000
+    `,
+      { logTag: 'bulk_raw_syslog_timed', settings: chSettings }
+    );
+  } catch (e) {
+    console.warn('[bulkRawSyslogEvidence] timed syslog_logs query failed', e?.message || e);
+  }
+  try {
+    relaxRows = await clickhouseQuery(
+      `
+      SELECT ts, host, source, parser_source, source_type, COALESCE(raw, message) AS raw_message
+      FROM syslog_logs
+      WHERE ts BETWEEN toDateTime('${relaxFromIso}') AND toDateTime('${relaxToIso}')
+        AND (${iocClause})
+      ORDER BY ts DESC
+      LIMIT 5000
+    `,
+      { logTag: 'bulk_raw_syslog_relax', settings: chSettings }
+    );
+  } catch (e) {
+    console.warn('[bulkRawSyslogEvidence] relaxed-window syslog_logs query failed; using timed pool only', e?.message || e);
+  }
+
+  const seen = new Set();
+  const pool = [];
+  for (const c of [...(timedRows || []), ...(relaxRows || [])]) {
+    const raw = String(c?.raw_message || '');
+    const k = `${c?.ts}\0${raw.slice(0, 280)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    pool.push(c);
+  }
+
+  const WINDOW_MS = 10 * 60 * 1000;
   const byEventId = new Map();
   for (const r of items) {
     const ioc = String(r?.matched_ioc || '').toLowerCase();
     const t = new Date(r?.event_time || r?.created_at || Date.now()).getTime();
-    const pick = (requireHost) => (candidates || []).find((c) => {
-      const raw = String(c?.raw_message || '').toLowerCase();
-      if (!raw.includes(ioc)) return false;
+    const rowHost = String(r?.host_name || '').trim();
+    const rowSource = String(r?.source || '').trim();
+    const scored = [];
+    for (const c of pool) {
+      const raw = String(c?.raw_message || '');
+      const rawL = raw.toLowerCase();
+      if (!rawL.includes(ioc)) continue;
       const ct = new Date(c?.ts || 0).getTime();
-      if (!Number.isFinite(ct) || Math.abs(ct - t) > 10 * 60 * 1000) return false;
-      if (requireHost && r?.host_name && String(c?.host || '') !== String(r.host_name || '')) return false;
-      return true;
+      const dt = Number.isFinite(ct) ? Math.abs(ct - t) : Infinity;
+      const squid = rawLooksLikeSquidOrHttpProxy(raw);
+      const hostMatch = !rowHost || String(c?.host || '').trim() === rowHost;
+      const inWin = dt <= WINDOW_MS;
+      const sourceMatch = !rowSource || String(c?.source || '').trim() === rowSource;
+      scored.push({ c, dt, squid, hostMatch, inWin, sourceMatch, ct });
+    }
+    if (!scored.length) continue;
+    scored.sort((a, b) => {
+      if (a.squid !== b.squid) return a.squid ? -1 : 1;
+      if (a.inWin !== b.inWin) return a.inWin ? -1 : 1;
+      if (a.hostMatch !== b.hostMatch) return a.hostMatch ? -1 : 1;
+      if (a.sourceMatch !== b.sourceMatch) return a.sourceMatch ? -1 : 1;
+      if (a.dt !== b.dt) return a.dt - b.dt;
+      return (b.ct || 0) - (a.ct || 0);
     });
-    const hit = pick(true) || pick(false);
+    const hit = scored[0]?.c;
     if (hit) byEventId.set(Number(r.id), hit);
   }
   return byEventId;
@@ -2419,6 +2480,8 @@ app.get('/api/incidents/:id/events', async (req, res) => {
 
     const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 500);
     const offset = Math.max(Number(req.query?.offset || 0), 0);
+    const debugContext = ['1', 'true', 'yes'].includes(String(req.query?.debugContext || req.query?.debug_context || '').toLowerCase());
+    // context_debug is attached per-event only when debugContext is truthy; default JSON contract unchanged.
 
     const dbStart = Date.now();
     const q = await pool.query(
@@ -2429,6 +2492,8 @@ app.get('/api/incidents/:id/events', async (req, res) => {
            m.matched_ioc,
            m.ioc_type,
            m.source_name,
+           m.source,
+           m.host_name,
            m.source_type,
            m.parser_source,
            m.raw_log_snapshot,
@@ -2558,7 +2623,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
             : family === 'waf' ? 'WAF'
               : family === 'endpoint' ? 'Endpoint'
                 : 'Generic';
-      return {
+      const out = {
         ...r,
         parser_source: enrichedForContext?.parser_source || r?.parser_source || null,
         source_type: enrichedForContext?.source_type || r?.source_type || null,
@@ -2571,6 +2636,35 @@ app.get('/api/incidents/:id/events', async (req, res) => {
         matched_field: v2?.matched_field || null,
         v2_context: v2
       };
+      if (debugContext) {
+        const lane = String(ev?.evidence_lane || '');
+        let selectedRawSource = 'none';
+        if (lane === 'bulk_squid_over_related') selectedRawSource = 'bulk_squid_over_related_logs';
+        else if (lane === 'incident_related_logs') selectedRawSource = 'incident_related_logs';
+        else if (lane === 'syslog_logs_bulk') selectedRawSource = 'syslog_logs_bulk';
+        else if (snapRaw) selectedRawSource = 'pg_raw_log_snapshot';
+        else if (pgSummary && pgSummary !== '-') selectedRawSource = 'pg_matched_syslog_summary';
+        out.context_debug = {
+          event_id: r.id,
+          source_type_before: r.source_type,
+          parser_source_before: r.parser_source,
+          evidence_lane: lane || null,
+          selected_raw_source: selectedRawSource,
+          selected_raw_sample: rawForClassify ? rawForClassify.slice(0, 420) : '',
+          raw_contains_squid: rawLooksLikeSquidOrHttpProxy(rawForClassify),
+          inferred_family: inferredFamily,
+          final_context_label: context_label,
+          used_v2_context: {
+            event_family: v2?.event_family,
+            control_point: v2?.control_point,
+            scenario_type: v2?.scenario_type,
+            matched_field: v2?.matched_field,
+            direction: v2?.direction
+          },
+          used_match_context: r.match_context || null
+        };
+      }
+      return out;
     });
     perf.enrichMs = Date.now() - enrichStart;
     const total = Number(totalQ.rows?.[0]?.total || 0);
