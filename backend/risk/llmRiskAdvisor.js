@@ -938,6 +938,10 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       } : null);
       if (!source) return null;
       const normalized = normalizeAdvisorOutput(source, 'cache', source?.incident_payload || null);
+      const persistedReason = String(source?.llm_risk_reason || source?.reason || '').trim();
+      if (persistedReason && (String(normalized?.reason || '').trim() === '' || String(normalized?.reason || '').trim().toLowerCase() === 'cache')) {
+        normalized.reason = persistedReason;
+      }
       let cachedConfidence = Number(normalized?.confidence);
       if (!Number.isFinite(cachedConfidence)) cachedConfidence = Number(source?.llm_risk_confidence ?? source?.confidence ?? 0);
       const cachedIocType = String(source?.ioc_type || source?.incident_payload?.ioc_type || '').toLowerCase();
