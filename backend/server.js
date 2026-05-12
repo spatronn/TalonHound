@@ -2432,7 +2432,16 @@ app.get('/api/incidents/:id/events', async (req, res) => {
             : family === 'waf' ? 'WAF'
               : family === 'endpoint' ? 'Endpoint'
                 : 'Generic';
-      return { ...r, context_label, v2_context: v2 };
+      return {
+        ...r,
+        context_label,
+        inferred_context: family || 'generic',
+        event_family: family || 'generic',
+        control_point: v2?.control_point || (family === 'dns' ? 'dns_resolver' : family || 'generic'),
+        scenario: v2?.scenario_type || null,
+        matched_field: v2?.matched_field || null,
+        v2_context: v2
+      };
     });
     perf.enrichMs = Date.now() - enrichStart;
     const total = Number(totalQ.rows?.[0]?.total || 0);

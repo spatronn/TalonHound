@@ -177,18 +177,29 @@ function normalizeEventContext(event) {
   const sourceType = String(event?.source_type || '').toLowerCase();
   const parserSource = String(event?.parser_source || '').toLowerCase();
   const match = event?.match_context || {};
+  if (event?.context_label) return String(event.context_label);
+  if (event?.inferred_context) return String(event.inferred_context);
+
+  const v2Family = String(event?.event_family || event?.v2_context?.event_family || '').toLowerCase();
+  const v2Control = String(event?.control_point || event?.v2_context?.control_point || '').toLowerCase();
+  if (v2Family === 'proxy' || v2Control === 'proxy') return 'Proxy';
+  if (v2Family === 'dns' || v2Control === 'dns_resolver') return 'DNS';
+  if (v2Family === 'firewall' || v2Control === 'firewall') return 'Firewall';
+  if (v2Family === 'waf') return 'WAF';
+  if (v2Family === 'endpoint') return 'Endpoint';
+
   const norm = event?.normalized_event_json || {};
+
+  const proxySource = /(proxy|web|url)/i.test(sourceType) || /(proxy|squid|web|url|http)/i.test(parserSource);
+  const proxyFields = [norm?.url, norm?.http_host, norm?.request_url, norm?.method, norm?.status_code, match?.url, match?.http_host, match?.request_url]
+    .some((v) => String(v || '').trim() !== '');
+  if (proxySource || proxyFields) return 'Proxy';
 
   const dnsParser = /(dns|microsoft_dns|bind_dns|dns_debug|microsoft_dns_debug|dns_kv)/i.test(parserSource);
   const dnsSource = sourceType === 'dns';
   const dnsFields = [match?.ioc_query, match?.query_type, match?.response_ip, norm?.query, norm?.dns_query, norm?.domain_query]
     .some((v) => String(v || '').trim() !== '');
   if (dnsParser || dnsSource || dnsFields) return 'DNS';
-
-  const proxySource = /(proxy|web|url)/i.test(sourceType) || /(proxy|squid|web|url)/i.test(parserSource);
-  const proxyFields = [norm?.url, norm?.http_host, norm?.request_url, norm?.method, norm?.status_code, match?.url, match?.http_host, match?.request_url]
-    .some((v) => String(v || '').trim() !== '');
-  if (proxySource || proxyFields) return 'Proxy';
 
   const firewallSource = /(firewall|traffic)/i.test(sourceType) || /(fortigate|firewall|traffic|paloalto|pan-os|checkpoint|netflow)/i.test(parserSource);
   const trafficFields = [match?.srcip, match?.dstip, match?.dstport, match?.proto, match?.action, norm?.src_ip, norm?.dst_ip, norm?.destination_port]
@@ -197,16 +208,6 @@ function normalizeEventContext(event) {
 
   if (sourceType === 'waf' || /(waf|f5|asm|modsecurity|nginx-waf)/i.test(parserSource)) return 'WAF';
   if (sourceType === 'endpoint' || /(endpoint|edr|xdr|sysmon)/i.test(parserSource)) return 'Endpoint';
-
-  const v2Family = String(event?.v2_context?.event_family || '').toLowerCase();
-  const v2Control = String(event?.v2_context?.control_point || '').toLowerCase();
-  if (v2Family === 'dns' || v2Control === 'dns_resolver') return 'DNS';
-  if (v2Family === 'proxy') return 'Proxy';
-  if (v2Family === 'firewall') return 'Firewall';
-  if (v2Family === 'waf') return 'WAF';
-  if (v2Family === 'endpoint') return 'Endpoint';
-
-  if (event?.context_label) return String(event.context_label);
 
   const tokens = [
     event?.type,
