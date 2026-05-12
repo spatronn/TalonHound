@@ -159,6 +159,48 @@ function escapeChString(v) {
   return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+/** Squid / explicit HTTP proxy evidence in a raw syslog line (shared list + detail context). */
+function rawLooksLikeSquidOrHttpProxy(raw) {
+  return /\bsquid[_\s-]?proxy\b|\bTCP_(?:TUNNEL|MISS|HIT|DENIED|REFRESH|MEM_HIT|CLIENT_REFRESH)\/[0-9-]{3}|\bCONNECT\s+[^\s]+:[0-9]+|\bHIER_DIRECT\//i.test(String(raw || ''));
+}
+
+/**
+ * Prefer ClickHouse syslog_logs bulk match when incident_related_logs snapshot is missing
+ * proxy-shaped evidence (common when source_type/parser metadata is stale).
+ */
+function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
+  const id = Number(pgRow?.id || 0);
+  const relRaw = String(relEv?.raw_message_sample || '').trim();
+  const bulkRaw = String(bulkHit?.raw_message || '').trim();
+  const relSquid = rawLooksLikeSquidOrHttpProxy(relRaw);
+  const bulkSquid = rawLooksLikeSquidOrHttpProxy(bulkRaw);
+  if (bulkSquid && !relSquid) {
+    return {
+      match_event_id: id,
+      raw_message_sample: bulkRaw,
+      parser_source: String(bulkHit?.parser_source || relEv?.parser_source || ''),
+      source_type: String(bulkHit?.source_type || relEv?.source_type || '')
+    };
+  }
+  if (relRaw) {
+    return {
+      match_event_id: Number(relEv?.match_event_id || id),
+      raw_message_sample: relRaw,
+      parser_source: String(relEv?.parser_source || ''),
+      source_type: String(relEv?.source_type || '')
+    };
+  }
+  if (bulkRaw) {
+    return {
+      match_event_id: id,
+      raw_message_sample: bulkRaw,
+      parser_source: String(bulkHit?.parser_source || ''),
+      source_type: String(bulkHit?.source_type || '')
+    };
+  }
+  return null;
+}
+
 async function withRawSyslogEvent(row) {
   if (!USE_CLICKHOUSE) return row;
 
@@ -266,14 +308,15 @@ async function bulkRawSyslogEvidence(rows = []) {
   for (const r of items) {
     const ioc = String(r?.matched_ioc || '').toLowerCase();
     const t = new Date(r?.event_time || r?.created_at || Date.now()).getTime();
-    const hit = (candidates || []).find((c) => {
+    const pick = (requireHost) => (candidates || []).find((c) => {
       const raw = String(c?.raw_message || '').toLowerCase();
       if (!raw.includes(ioc)) return false;
       const ct = new Date(c?.ts || 0).getTime();
       if (!Number.isFinite(ct) || Math.abs(ct - t) > 10 * 60 * 1000) return false;
-      const hostOk = !r?.host_name || String(c?.host || '') === String(r.host_name || '');
-      return hostOk;
+      if (requireHost && r?.host_name && String(c?.host || '') !== String(r.host_name || '')) return false;
+      return true;
     });
+    const hit = pick(true) || pick(false);
     if (hit) byEventId.set(Number(r.id), hit);
   }
   return byEventId;
@@ -1704,7 +1747,7 @@ function classifyEventContext(ev = {}) {
   const hasDnsFields = Boolean(merged.query || merged.query_type || merged.response_ip);
   const hasFwFields = Boolean(merged.srcip || merged.dstip || merged.dstport || merged.service);
 
-  const squidSig = /\bsquid[_\s-]?proxy\b|\bTCP_(?:TUNNEL|MISS|HIT|DENIED|REFRESH|MEM_HIT|CLIENT_REFRESH)\/[0-9-]{3}|\bCONNECT\s+[^\s]+:[0-9]+|\bHIER_DIRECT\//i.test(raw);
+  const squidSig = rawLooksLikeSquidOrHttpProxy(raw);
   const proxyMethodMatch = raw.match(/\b(CONNECT|GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\b/i);
   const proxyHostMatch = raw.match(/\bCONNECT\s+([^\s:]+):\d+/i)
     || raw.match(/\bhttps?:\/\/([^\s\/]+)\//i);
@@ -2459,8 +2502,9 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     const eventIds = baseItems.map((r) => Number(r?.id || 0)).filter((v) => Number.isFinite(v) && v > 0);
 
     let evidenceByEventId = new Map();
-    if (eventIds.length) {
+    if (eventIds.length && USE_CLICKHOUSE) {
       try {
+        perf.chUsed = true;
         const idCsv = eventIds.join(',');
         const evRows = await clickhouseQuery(`
           SELECT
@@ -2472,18 +2516,15 @@ app.get('/api/incidents/:id/events', async (req, res) => {
           WHERE match_event_id IN (${idCsv})
           GROUP BY match_event_id
         `);
-        evidenceByEventId = new Map((evRows || []).map((r) => [Number(r?.match_event_id || 0), r]));
-
-        const unresolved = baseItems.filter((r) => !evidenceByEventId.has(Number(r?.id || 0)));
-        if (unresolved.length) {
-          const rawMap = await bulkRawSyslogEvidence(unresolved);
-          for (const [k, v] of rawMap.entries()) evidenceByEventId.set(k, {
-            match_event_id: k,
-            raw_message_sample: v?.raw_message || '',
-            parser_source: v?.parser_source || '',
-            source_type: v?.source_type || ''
-          });
+        const relatedById = new Map((evRows || []).map((row) => [Number(row?.match_event_id || 0), row]));
+        const rawMap = await bulkRawSyslogEvidence(baseItems);
+        const mergedById = new Map();
+        for (const r of baseItems) {
+          const eid = Number(r?.id || 0);
+          const merged = mergeIncidentEventsPageEvidence(r, relatedById.get(eid), rawMap.get(eid));
+          if (merged) mergedById.set(eid, merged);
         }
+        evidenceByEventId = mergedById;
       } catch (e) {
         console.warn('[incident-events] bulk evidence lookup failed, continuing without CH evidence', e?.message || e);
       }
@@ -2492,17 +2533,21 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     perf.rows = baseItems.length;
     const items = baseItems.map((r) => {
       const ev = evidenceByEventId.get(Number(r?.id || 0));
+      const evidenceRaw = String(ev?.raw_message_sample || '').trim();
+      const snapRaw = String(r?.raw_log_snapshot || '').trim();
+      const pgSummary = String(r?.matched_syslog_event || '').trim();
+      const rawForClassify = evidenceRaw || snapRaw || (pgSummary && pgSummary !== '-' ? pgSummary : '');
       const enrichedForContext = {
         ...r,
-        parser_source: r?.parser_source || ev?.parser_source || null,
-        source_type: r?.source_type || ev?.source_type || null,
-        raw_log_snapshot: r?.raw_log_snapshot || ev?.raw_message_sample || null,
-        matched_syslog_event: r?.matched_syslog_event && r?.matched_syslog_event !== '-' ? r.matched_syslog_event : (r?.raw_log_snapshot || ev?.raw_message_sample || r?.matched_syslog_event)
+        parser_source: evidenceRaw ? (ev?.parser_source || r?.parser_source || null) : (r?.parser_source || ev?.parser_source || null),
+        source_type: evidenceRaw ? (ev?.source_type || r?.source_type || null) : (r?.source_type || ev?.source_type || null),
+        raw_log_snapshot: evidenceRaw || snapRaw || r?.raw_log_snapshot || null,
+        matched_syslog_event: rawForClassify || '-'
       };
       const v2 = classifyEventContext(enrichedForContext);
       const st = String(enrichedForContext?.source_type || '').toLowerCase();
       const inferredFamily = String(v2?.event_family || '').toLowerCase();
-      let family = st || inferredFamily;
+      let family = (inferredFamily && inferredFamily !== 'generic') ? inferredFamily : (st || inferredFamily || 'generic');
       const iocType = String(r?.ioc_type || '').toLowerCase();
       const iocVal = String(r?.matched_ioc || '').toLowerCase();
       const looksLikeUrl = iocType === 'url' || iocVal.startsWith('http://') || iocVal.startsWith('https://');

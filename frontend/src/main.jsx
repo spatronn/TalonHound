@@ -180,13 +180,24 @@ function normalizeEventContext(event) {
   if (event?.context_label) return String(event.context_label);
   if (event?.inferred_context) return String(event.inferred_context);
 
-  const v2Family = String(event?.event_family || event?.v2_context?.event_family || '').toLowerCase();
+  const labelFromFamily = (fam) => {
+    const f = String(fam || '').toLowerCase();
+    if (f === 'proxy') return 'Proxy';
+    if (f === 'dns') return 'DNS';
+    if (f === 'firewall') return 'Firewall';
+    if (f === 'waf') return 'WAF';
+    if (f === 'endpoint') return 'Endpoint';
+    return '';
+  };
+  const topFam = labelFromFamily(event?.event_family);
+  if (topFam) return topFam;
+  const v2Fam = labelFromFamily(event?.v2_context?.event_family);
+  if (v2Fam) return v2Fam;
+
   const v2Control = String(event?.control_point || event?.v2_context?.control_point || '').toLowerCase();
-  if (v2Family === 'proxy' || v2Control === 'proxy') return 'Proxy';
-  if (v2Family === 'dns' || v2Control === 'dns_resolver') return 'DNS';
-  if (v2Family === 'firewall' || v2Control === 'firewall') return 'Firewall';
-  if (v2Family === 'waf') return 'WAF';
-  if (v2Family === 'endpoint') return 'Endpoint';
+  if (v2Control === 'proxy') return 'Proxy';
+  if (v2Control === 'dns_resolver' || v2Control === 'dns') return 'DNS';
+  if (v2Control === 'firewall') return 'Firewall';
 
   const norm = event?.normalized_event_json || {};
 
