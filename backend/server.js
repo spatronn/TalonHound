@@ -2422,6 +2422,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     const eventIds = baseItems.map((r) => Number(r?.id || 0)).filter((v) => Number.isFinite(v) && v > 0);
 
     let evidenceByEventId = new Map();
+    let evidenceCandidates = [];
     if (eventIds.length) {
       try {
         const idCsv = eventIds.join(',');
@@ -2436,6 +2437,25 @@ app.get('/api/incidents/:id/events', async (req, res) => {
           GROUP BY match_event_id
         `);
         evidenceByEventId = new Map((evRows || []).map((r) => [Number(r?.match_event_id || 0), r]));
+
+        const unresolved = baseItems.filter((r) => !evidenceByEventId.has(Number(r?.id || 0)));
+        if (unresolved.length) {
+          const iocSet = Array.from(new Set(unresolved.map((r) => String(r?.matched_ioc || '').trim().toLowerCase()).filter(Boolean))).slice(0, 20);
+          const tsMs = unresolved.map((r) => new Date(r?.event_time || r?.created_at || Date.now()).getTime()).filter((v) => Number.isFinite(v));
+          if (iocSet.length && tsMs.length) {
+            const fromIso = new Date(Math.min(...tsMs) - (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+            const toIso = new Date(Math.max(...tsMs) + (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+            const iocClause = iocSet.map((ioc) => `positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapeChString(ioc)}') > 0`).join(' OR ');
+            evidenceCandidates = await clickhouseQuery(`
+              SELECT ts, parser_source, source_type, host, source, COALESCE(raw, message) AS raw_message_sample
+              FROM syslog_logs
+              WHERE ts BETWEEN toDateTime('${fromIso}') AND toDateTime('${toIso}')
+                AND (${iocClause})
+              ORDER BY ts DESC
+              LIMIT 2000
+            `);
+          }
+        }
       } catch (e) {
         console.warn('[incident-events] bulk evidence lookup failed, continuing without CH evidence', e?.message || e);
       }
@@ -2443,7 +2463,12 @@ app.get('/api/incidents/:id/events', async (req, res) => {
 
     perf.rows = baseItems.length;
     const items = baseItems.map((r) => {
-      const ev = evidenceByEventId.get(Number(r?.id || 0));
+      let ev = evidenceByEventId.get(Number(r?.id || 0));
+      if (!ev && evidenceCandidates.length) {
+        const ioc = String(r?.matched_ioc || '').toLowerCase();
+        const hit = evidenceCandidates.find((c) => String(c?.raw_message_sample || '').toLowerCase().includes(ioc));
+        if (hit) ev = hit;
+      }
       const enrichedForContext = {
         ...r,
         parser_source: r?.parser_source || ev?.parser_source || null,
