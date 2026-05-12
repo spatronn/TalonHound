@@ -942,8 +942,14 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       if (persistedReason && (String(normalized?.reason || '').trim() === '' || String(normalized?.reason || '').trim().toLowerCase() === 'cache')) {
         normalized.reason = persistedReason;
       }
+      const persistedAdjustment = Number(source?.llm_risk_adjustment ?? source?.adjustment);
+      if (Number.isFinite(persistedAdjustment)) normalized.adjustment = persistedAdjustment;
+
       let cachedConfidence = Number(normalized?.confidence);
-      if (!Number.isFinite(cachedConfidence)) cachedConfidence = Number(source?.llm_risk_confidence ?? source?.confidence ?? 0);
+      const persistedConfidence = Number(source?.llm_risk_confidence ?? source?.confidence);
+      if (Number.isFinite(persistedConfidence)) cachedConfidence = persistedConfidence;
+      if (!Number.isFinite(cachedConfidence)) cachedConfidence = 0;
+
       const cachedIocType = String(source?.ioc_type || source?.incident_payload?.ioc_type || '').toLowerCase();
       const cachedReason = String(normalized?.reason || source?.reason || '');
       if (cachedIocType === 'url' && /(limited evidence|inconclusive|uncertain|insufficient evidence|limits confidence)/i.test(cachedReason)) {
