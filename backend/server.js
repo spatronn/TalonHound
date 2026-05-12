@@ -1667,6 +1667,11 @@ function classifyEventContext(ev = {}) {
   const hasDnsFields = Boolean(merged.query || merged.query_type || merged.response_ip);
   const hasFwFields = Boolean(merged.srcip || merged.dstip || merged.dstport || merged.service);
 
+  const squidSig = /\bsquid[_\s-]?proxy\b|\bTCP_(?:TUNNEL|MISS|HIT|DENIED|REFRESH|MEM_HIT|CLIENT_REFRESH)\/[0-9-]{3}|\bCONNECT\s+[^\s]+:[0-9]+|\bHIER_DIRECT\//i.test(raw);
+  const proxyMethodMatch = raw.match(/\b(CONNECT|GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH)\b/i);
+  const proxyHostMatch = raw.match(/\bCONNECT\s+([^\s:]+):\d+/i)
+    || raw.match(/\bhttps?:\/\/([^\s\/]+)\//i);
+
   const bindDnsSig = /\bbind_dns:\b/i.test(raw)
     || /\bqueries:\s*info:\s*client\b/i.test(raw)
     || /\bquery:\s*\S+\s+IN\s+[A-Z]+\b/i.test(raw);
@@ -1676,7 +1681,7 @@ function classifyEventContext(ev = {}) {
 
   let event_family = 'generic';
   let classification_confidence = 0.4;
-  if (/(proxy|squid|web|http)/.test(parserSource) || sourceType === 'proxy' || explicitType === 'proxy') { event_family = 'proxy'; classification_confidence = 0.95; }
+  if (squidSig || /(proxy|squid|web|http)/.test(parserSource) || sourceType === 'proxy' || explicitType === 'proxy') { event_family = 'proxy'; classification_confidence = 0.97; }
   else if (bindDnsSig || /(dns|bind|resolver|microsoft_dns)/.test(parserSource) || sourceType === 'dns' || explicitType === 'dns') { event_family = 'dns'; classification_confidence = 0.9; }
   else if (/(firewall|forti|palo|pan-os|checkpoint|traffic)/.test(parserSource) || sourceType === 'firewall' || explicitType === 'firewall') { event_family = 'firewall'; classification_confidence = 0.9; }
   else if (hasProxyFields) { event_family = 'proxy'; classification_confidence = 0.85; }
@@ -1701,8 +1706,12 @@ function classifyEventContext(ev = {}) {
     if (!matched_field && event_family === 'dns' && iocType === 'domain' && String(merged.query || '').toLowerCase() === ioc) matched_field = 'query';
     else if (event_family === 'dns' && iocType === 'ip' && String(merged.response_ip || '').toLowerCase() === ioc) matched_field = 'response_ip';
     else if (event_family === 'proxy' && (iocType === 'domain' || iocType === 'url')) {
-      if (iocType === 'domain' && urlHost && (urlHost === ioc || urlHost.endsWith(`.${ioc}`))) matched_field = 'url_host';
-      else if (iocType === 'url' && rawUrl.toLowerCase().includes(ioc)) matched_field = 'url';
+      if (proxyHostMatch?.[1]) {
+        const h = String(proxyHostMatch[1] || '').toLowerCase();
+        if (iocType === 'domain' && (h === ioc || h.endsWith(`.${ioc}`))) matched_field = proxyMethodMatch?.[1]?.toUpperCase() === 'CONNECT' ? 'connect_host' : 'request_host';
+      }
+      if (!matched_field && iocType === 'domain' && urlHost && (urlHost === ioc || urlHost.endsWith(`.${ioc}`))) matched_field = 'url_host';
+      else if (!matched_field && iocType === 'url' && rawUrl.toLowerCase().includes(ioc)) matched_field = 'url';
     } else if (event_family === 'firewall' && iocType === 'ip') {
       if (String(merged.dstip || '').toLowerCase() === ioc) matched_field = 'dstip';
       else if (String(merged.srcip || '').toLowerCase() === ioc) matched_field = 'srcip';
@@ -1726,18 +1735,18 @@ function classifyEventContext(ev = {}) {
   } else if (event_family === 'dns') { outcome = 'observed'; outcome_confidence = 0.7; }
 
   let direction = String(mc.direction || mc.flow || '').toLowerCase();
-  if (!direction) direction = event_family === 'proxy' ? 'outbound_web' : event_family === 'dns' ? 'resolution' : 'unknown';
+  if (!direction) direction = event_family === 'proxy' ? 'outbound' : event_family === 'dns' ? 'resolution' : 'unknown';
 
   let scenario_type = 'unknown_ioc_match';
   if (event_family === 'dns' && matched_field === 'response_ip' && iocType === 'ip') scenario_type = 'dns_response_ip_ioc_observed';
   else if (event_family === 'dns') scenario_type = 'dns_query_to_ioc_domain';
-  else if (event_family === 'proxy' && iocType === 'domain') scenario_type = 'malicious_domain_url_access';
-  else if (event_family === 'proxy' && iocType === 'url') scenario_type = 'malicious_url_access';
+  else if (event_family === 'proxy' && iocType === 'domain') scenario_type = (proxyMethodMatch?.[1] || '').toUpperCase() === 'CONNECT' ? 'proxy_connect_to_ioc_domain' : 'proxy_request_to_ioc_domain';
+  else if (event_family === 'proxy' && iocType === 'url') scenario_type = 'proxy_request_to_ioc_url';
   else if (event_family === 'firewall' && iocType === 'ip' && direction === 'outbound') scenario_type = 'malicious_ip_outbound';
   else if (event_family === 'firewall' && iocType === 'ip' && direction === 'inbound') scenario_type = 'malicious_ip_inbound';
 
-  const context_explanation = (event_family === 'proxy' && iocType === 'domain' && matched_field === 'url_host')
-    ? 'Domain IOC matched the host portion of a proxy URL. HTTP status indicates web response and no explicit block signal was present.'
+  const context_explanation = (event_family === 'proxy' && iocType === 'domain' && (matched_field === 'url_host' || matched_field === 'request_host' || matched_field === 'connect_host'))
+    ? `Proxy ${((proxyMethodMatch?.[1] || '').toUpperCase() || 'request')} to IOC domain observed via squid/web proxy evidence.`
     : (event_family === 'dns' && bindClientMatch?.[1])
       ? `DNS query for the matched IOC domain was observed from client ${bindClientMatch[1]}.`
       : scenario_type === 'dns_response_ip_ioc_observed'
