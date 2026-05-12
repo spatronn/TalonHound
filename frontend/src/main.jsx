@@ -2325,22 +2325,33 @@ function IncidentRelatedLogsTable({ incidentId }) {
         <div style={{ color: '#94a3b8' }}>No raw evidence logs found for this incident.</div>
       ) : (
         <>
-          <div style={{ color: '#94a3b8', fontSize: 12 }}>Showing {start}-{end} of {total} raw evidence logs</div>
+          {items.some((r) => r?.fallback === true || r?.evidence_origin === 'pg_detection_event_snapshot') ? (
+            <div style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.12)', color: '#fcd34d', fontSize: 12 }}>
+              Some evidence rows are fallback snapshots derived from normalized event data (raw log was not persisted at detection time).
+            </div>
+          ) : null}
+          <div style={{ color: '#94a3b8', fontSize: 12 }}>Showing {start}-{end} of {total} evidence logs</div>
           <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 8 }}>
             <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead><tr style={{ background: '#1f2937', textAlign: 'left' }}>
-                <th>Time</th><th>Observed Host</th><th>Matched IOC</th><th>Source Type</th><th>Raw Log</th>
+                <th>Time</th><th>Observed Host</th><th>Matched IOC</th><th>Source Type</th><th>Evidence</th>
               </tr></thead>
               <tbody>
-                {items.map((r, i) => (
-                  <tr key={`${r.evidence_hash || i}`} style={{ borderTop: '1px solid #334155' }}>
-                    <td>{formatUserDateTime(r.log_ts)}</td>
-                    <td>{r.observed_host || '-'}</td>
-                    <td>{r.matched_ioc || '-'}</td>
-                    <td>{r.source_type || '-'}</td>
-                    <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{r.raw_message_sample || '-'}</td>
-                  </tr>
-                ))}
+                {items.map((r, i) => {
+                  const isFallback = r?.fallback === true || r?.evidence_origin === 'pg_detection_event_snapshot';
+                  return (
+                    <tr key={`${r.evidence_hash || i}`} style={{ borderTop: '1px solid #334155' }}>
+                      <td>{formatUserDateTime(r.log_ts)}</td>
+                      <td>{r.observed_host || '-'}</td>
+                      <td>{r.matched_ioc || '-'}</td>
+                      <td>{r.source_type || '-'}</td>
+                      <td style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {isFallback ? <div style={{ marginBottom: 4, fontSize: 11, color: '#fcd34d' }}>Derived snapshot (not raw log)</div> : null}
+                        {r.raw_message_sample || '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
