@@ -2564,50 +2564,50 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     // Important: keep list endpoint lean (no per-row raw log lookup / no N+1).
     const enrichStart = Date.now();
     const baseItems = (q.rows || []);
-    const eventIds = baseItems.map((r) => Number(r?.id || 0)).filter((v) => Number.isFinite(v) && v > 0);
 
-    let evidenceByEventId = new Map();
-    if (eventIds.length && USE_CLICKHOUSE) {
-      try {
-        perf.chUsed = true;
-        const idCsv = eventIds.join(',');
-        const evRows = await clickhouseQuery(`
-          SELECT
-            any(match_event_id) AS match_event_id,
-            any(raw_message_sample) AS raw_message_sample,
-            any(parser_source) AS parser_source,
-            any(source_type) AS source_type
-          FROM security_evidence.incident_related_logs
-          WHERE match_event_id IN (${idCsv})
-          GROUP BY match_event_id
-        `);
-        const relatedById = new Map((evRows || []).map((row) => [Number(row?.match_event_id || 0), row]));
-        const rawMap = await bulkRawSyslogEvidence(baseItems);
-        const mergedById = new Map();
-        for (const r of baseItems) {
-          const eid = Number(r?.id || 0);
-          const merged = mergeIncidentEventsPageEvidence(r, relatedById.get(eid), rawMap.get(eid));
-          if (merged) mergedById.set(eid, merged);
+    async function mapWithConcurrency(arr, limit, mapper) {
+      const out = new Array(arr.length);
+      let idx = 0;
+      async function worker() {
+        while (idx < arr.length) {
+          const i = idx++;
+          try { out[i] = await mapper(arr[i], i); } catch { out[i] = arr[i]; }
         }
-        evidenceByEventId = mergedById;
-      } catch (e) {
-        console.warn('[incident-events] bulk evidence lookup failed, continuing without CH evidence', e?.message || e);
       }
+      const workers = Array.from({ length: Math.max(1, Math.min(limit, arr.length)) }, () => worker());
+      await Promise.all(workers);
+      return out;
+    }
+      }
+      const workers = Array.from({ length: Math.max(1, Math.min(limit, arr.length)) }, () => worker());
+      await Promise.all(workers);
+      return out;
     }
 
-    perf.rows = baseItems.length;
-    const items = baseItems.map((r) => {
-      const ev = evidenceByEventId.get(Number(r?.id || 0));
-      const evidenceRaw = String(ev?.raw_message_sample || '').trim();
-      const snapRaw = String(r?.raw_log_snapshot || '').trim();
-      const pgSummary = String(r?.matched_syslog_event || '').trim();
-      const rawForClassify = evidenceRaw || snapRaw || (pgSummary && pgSummary !== '-' ? pgSummary : '');
+    const enrichedRows = await mapWithConcurrency(baseItems, 8, async (r) => {
+      try {
+        if (r?.raw_log_snapshot && String(r.raw_log_snapshot).trim()) {
+          return { ...r, matched_syslog_event: String(r.raw_log_snapshot) };
+        }
+        const enriched = await Promise.race([
+          withRawSyslogEvent(r),
+          new Promise((resolve) => setTimeout(() => resolve(r), 1500))
+        ]);
+        return enriched || r;
+      } catch {
+        return r;
+      }
+    });
+
+    perf.rows = enrichedRows.length;
+    const items = enrichedRows.map((r) => {
       const enrichedForContext = {
         ...r,
-        parser_source: evidenceRaw ? (ev?.parser_source || r?.parser_source || null) : (r?.parser_source || ev?.parser_source || null),
-        source_type: evidenceRaw ? (ev?.source_type || r?.source_type || null) : (r?.source_type || ev?.source_type || null),
-        raw_log_snapshot: evidenceRaw || snapRaw || r?.raw_log_snapshot || null,
-        matched_syslog_event: rawForClassify || '-'
+        parser_source: r?.parser_source || null,
+        source_type: r?.source_type || null,
+        raw_log_snapshot: r?.raw_log_snapshot || null,
+        matched_syslog_event: r?.matched_syslog_event || r?.raw_log_snapshot || r?.matched_syslog_event || '-'
+      };
       };
       const v2 = classifyEventContext(enrichedForContext);
       const st = String(enrichedForContext?.source_type || '').toLowerCase();
