@@ -1336,6 +1336,7 @@ app.get('/api/incidents', async (req, res) => {
            COUNT(DISTINCT NULLIF(
              COALESCE(
                NULLIF(m.match_context->>'observed_host', ''),
+               NULLIF(m.host_name, ''),
                CASE
                  WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF(m.match_context->>'client_ip', '')
                  WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN NULLIF(m.match_context->>'client_ip', '')
