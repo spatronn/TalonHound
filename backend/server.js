@@ -2419,10 +2419,40 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     // Important: keep list endpoint lean (no per-row raw log lookup / no N+1).
     const enrichStart = Date.now();
     const baseItems = (q.rows || []);
+    const eventIds = baseItems.map((r) => Number(r?.id || 0)).filter((v) => Number.isFinite(v) && v > 0);
+
+    let evidenceByEventId = new Map();
+    if (eventIds.length) {
+      try {
+        const idCsv = eventIds.join(',');
+        const evRows = await clickhouseQuery(`
+          SELECT
+            any(match_event_id) AS match_event_id,
+            any(raw_message_sample) AS raw_message_sample,
+            any(parser_source) AS parser_source,
+            any(source_type) AS source_type
+          FROM security_evidence.incident_related_logs
+          WHERE match_event_id IN (${idCsv})
+          GROUP BY match_event_id
+        `);
+        evidenceByEventId = new Map((evRows || []).map((r) => [Number(r?.match_event_id || 0), r]));
+      } catch (e) {
+        console.warn('[incident-events] bulk evidence lookup failed, continuing without CH evidence', e?.message || e);
+      }
+    }
+
     perf.rows = baseItems.length;
     const items = baseItems.map((r) => {
-      const v2 = classifyEventContext(r);
-      const st = String(r?.source_type || '').toLowerCase();
+      const ev = evidenceByEventId.get(Number(r?.id || 0));
+      const enrichedForContext = {
+        ...r,
+        parser_source: r?.parser_source || ev?.parser_source || null,
+        source_type: r?.source_type || ev?.source_type || null,
+        raw_log_snapshot: r?.raw_log_snapshot || ev?.raw_message_sample || null,
+        matched_syslog_event: r?.matched_syslog_event && r?.matched_syslog_event !== '-' ? r.matched_syslog_event : (r?.raw_log_snapshot || ev?.raw_message_sample || r?.matched_syslog_event)
+      };
+      const v2 = classifyEventContext(enrichedForContext);
+      const st = String(enrichedForContext?.source_type || '').toLowerCase();
       const inferredFamily = String(v2?.event_family || '').toLowerCase();
       let family = st || inferredFamily;
       const iocType = String(r?.ioc_type || '').toLowerCase();
@@ -2437,6 +2467,9 @@ app.get('/api/incidents/:id/events', async (req, res) => {
                 : 'Generic';
       return {
         ...r,
+        parser_source: enrichedForContext?.parser_source || r?.parser_source || null,
+        source_type: enrichedForContext?.source_type || r?.source_type || null,
+        raw_log_snapshot: enrichedForContext?.raw_log_snapshot || r?.raw_log_snapshot || null,
         context_label,
         inferred_context: family || 'generic',
         event_family: family || 'generic',
