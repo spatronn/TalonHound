@@ -164,8 +164,6 @@ async function withRawSyslogEvent(row) {
 
   try {
     const parserSource = String(row?.parser_source || '').trim().toLowerCase();
-    // Legacy DNS debug events usually have no raw in ClickHouse syslog_logs;
-    // probing ClickHouse for each row causes avoidable latency.
     if (parserSource === 'microsoft_dns_debug') return row;
 
     const matched = String(row?.matched_ioc || '').trim();
@@ -240,6 +238,45 @@ async function withRawSyslogEvent(row) {
   } catch {
     return row;
   }
+}
+
+async function bulkRawSyslogEvidence(rows = []) {
+  if (!USE_CLICKHOUSE || !Array.isArray(rows) || rows.length === 0) return new Map();
+  const items = rows.filter((r) => String(r?.matched_ioc || '').trim());
+  if (!items.length) return new Map();
+
+  const iocs = Array.from(new Set(items.map((r) => String(r.matched_ioc).trim().toLowerCase()))).slice(0, 100);
+  const times = items.map((r) => new Date(r?.event_time || r?.created_at || Date.now()).getTime()).filter((v) => Number.isFinite(v));
+  if (!iocs.length || !times.length) return new Map();
+
+  const fromIso = new Date(Math.min(...times) - (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+  const toIso = new Date(Math.max(...times) + (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
+  const iocClause = iocs.map((ioc) => `positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapeChString(ioc)}') > 0`).join(' OR ');
+
+  const candidates = await clickhouseQuery(`
+    SELECT ts, host, source, parser_source, source_type, COALESCE(raw, message) AS raw_message
+    FROM syslog_logs
+    WHERE ts BETWEEN toDateTime('${fromIso}') AND toDateTime('${toIso}')
+      AND (${iocClause})
+    ORDER BY ts DESC
+    LIMIT 5000
+  `);
+
+  const byEventId = new Map();
+  for (const r of items) {
+    const ioc = String(r?.matched_ioc || '').toLowerCase();
+    const t = new Date(r?.event_time || r?.created_at || Date.now()).getTime();
+    const hit = (candidates || []).find((c) => {
+      const raw = String(c?.raw_message || '').toLowerCase();
+      if (!raw.includes(ioc)) return false;
+      const ct = new Date(c?.ts || 0).getTime();
+      if (!Number.isFinite(ct) || Math.abs(ct - t) > 10 * 60 * 1000) return false;
+      const hostOk = !r?.host_name || String(c?.host || '') === String(r.host_name || '');
+      return hostOk;
+    });
+    if (hit) byEventId.set(Number(r.id), hit);
+  }
+  return byEventId;
 }
 
 function buildFileInformation(rows, observable, observableType) {
@@ -2422,7 +2459,6 @@ app.get('/api/incidents/:id/events', async (req, res) => {
     const eventIds = baseItems.map((r) => Number(r?.id || 0)).filter((v) => Number.isFinite(v) && v > 0);
 
     let evidenceByEventId = new Map();
-    let evidenceCandidates = [];
     if (eventIds.length) {
       try {
         const idCsv = eventIds.join(',');
@@ -2440,21 +2476,13 @@ app.get('/api/incidents/:id/events', async (req, res) => {
 
         const unresolved = baseItems.filter((r) => !evidenceByEventId.has(Number(r?.id || 0)));
         if (unresolved.length) {
-          const iocSet = Array.from(new Set(unresolved.map((r) => String(r?.matched_ioc || '').trim().toLowerCase()).filter(Boolean))).slice(0, 20);
-          const tsMs = unresolved.map((r) => new Date(r?.event_time || r?.created_at || Date.now()).getTime()).filter((v) => Number.isFinite(v));
-          if (iocSet.length && tsMs.length) {
-            const fromIso = new Date(Math.min(...tsMs) - (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
-            const toIso = new Date(Math.max(...tsMs) + (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
-            const iocClause = iocSet.map((ioc) => `positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapeChString(ioc)}') > 0`).join(' OR ');
-            evidenceCandidates = await clickhouseQuery(`
-              SELECT ts, parser_source, source_type, host, source, COALESCE(raw, message) AS raw_message_sample
-              FROM syslog_logs
-              WHERE ts BETWEEN toDateTime('${fromIso}') AND toDateTime('${toIso}')
-                AND (${iocClause})
-              ORDER BY ts DESC
-              LIMIT 2000
-            `);
-          }
+          const rawMap = await bulkRawSyslogEvidence(unresolved);
+          for (const [k, v] of rawMap.entries()) evidenceByEventId.set(k, {
+            match_event_id: k,
+            raw_message_sample: v?.raw_message || '',
+            parser_source: v?.parser_source || '',
+            source_type: v?.source_type || ''
+          });
         }
       } catch (e) {
         console.warn('[incident-events] bulk evidence lookup failed, continuing without CH evidence', e?.message || e);
@@ -2463,12 +2491,7 @@ app.get('/api/incidents/:id/events', async (req, res) => {
 
     perf.rows = baseItems.length;
     const items = baseItems.map((r) => {
-      let ev = evidenceByEventId.get(Number(r?.id || 0));
-      if (!ev && evidenceCandidates.length) {
-        const ioc = String(r?.matched_ioc || '').toLowerCase();
-        const hit = evidenceCandidates.find((c) => String(c?.raw_message_sample || '').toLowerCase().includes(ioc));
-        if (hit) ev = hit;
-      }
+      const ev = evidenceByEventId.get(Number(r?.id || 0));
       const enrichedForContext = {
         ...r,
         parser_source: r?.parser_source || ev?.parser_source || null,
