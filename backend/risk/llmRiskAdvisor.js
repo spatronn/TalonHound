@@ -849,17 +849,31 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     if (!db || typeof db.query !== 'function') return null;
     const id = String(incidentId || '').trim();
     if (!id) return null;
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) return null;
     try {
-      const q = await db.query(
+      if (version) {
+        const versioned = await db.query(
+          `SELECT *
+           FROM incident_ai_insights
+           WHERE incident_id = $1::bigint
+             AND insight_version = $2::text
+           ORDER BY llm_last_updated_at DESC, updated_at DESC
+           LIMIT 1`,
+          [numericId, String(version)]
+        );
+        if (versioned.rows?.[0]) return versioned.rows[0];
+      }
+
+      const fallback = await db.query(
         `SELECT *
          FROM incident_ai_insights
          WHERE incident_id = $1::bigint
-           AND ($2::text IS NULL OR insight_version = $2::text)
          ORDER BY llm_last_updated_at DESC, updated_at DESC
          LIMIT 1`,
-        [Number(id), version ? String(version) : null]
+        [numericId]
       );
-      return q.rows?.[0] || null;
+      return fallback.rows?.[0] || null;
     } catch (err) {
       console.warn('[llm-cache] persisted insight lookup failed', {
         incident_id: id,
