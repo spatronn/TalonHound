@@ -850,10 +850,24 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     const id = String(incidentId || '').trim();
     if (!id) return null;
     const numericId = Number(id);
-    if (!Number.isFinite(numericId)) return null;
+    const hasNumericIncidentId = Number.isFinite(numericId);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
     try {
-      if (version) {
-        const versioned = await db.query(
+      if (version && isUuid) {
+        const byActivityVersion = await db.query(
+          `SELECT *
+           FROM incident_ai_insights
+           WHERE activity_id = $1::uuid
+             AND insight_version = $2::text
+           ORDER BY llm_last_updated_at DESC, updated_at DESC
+           LIMIT 1`,
+          [id, String(version)]
+        );
+        if (byActivityVersion.rows?.[0]) return byActivityVersion.rows[0];
+      }
+
+      if (version && hasNumericIncidentId) {
+        const byIncidentVersion = await db.query(
           `SELECT *
            FROM incident_ai_insights
            WHERE incident_id = $1::bigint
@@ -862,21 +876,39 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
            LIMIT 1`,
           [numericId, String(version)]
         );
-        if (versioned.rows?.[0]) return versioned.rows[0];
+        if (byIncidentVersion.rows?.[0]) return byIncidentVersion.rows[0];
       }
 
-      const fallback = await db.query(
-        `SELECT *
-         FROM incident_ai_insights
-         WHERE incident_id = $1::bigint
-         ORDER BY llm_last_updated_at DESC, updated_at DESC
-         LIMIT 1`,
-        [numericId]
-      );
-      return fallback.rows?.[0] || null;
+      if (isUuid) {
+        const byActivityLatest = await db.query(
+          `SELECT *
+           FROM incident_ai_insights
+           WHERE activity_id = $1::uuid
+           ORDER BY llm_last_updated_at DESC, updated_at DESC
+           LIMIT 1`,
+          [id]
+        );
+        if (byActivityLatest.rows?.[0]) return byActivityLatest.rows[0];
+      }
+
+      if (hasNumericIncidentId) {
+        const byIncidentLatest = await db.query(
+          `SELECT *
+           FROM incident_ai_insights
+           WHERE incident_id = $1::bigint
+           ORDER BY llm_last_updated_at DESC, updated_at DESC
+           LIMIT 1`,
+          [numericId]
+        );
+        if (byIncidentLatest.rows?.[0]) return byIncidentLatest.rows[0];
+      }
+
+      return null;
     } catch (err) {
       console.warn('[llm-cache] persisted insight lookup failed', {
-        incident_id: id,
+        lookup_id: id,
+        lookup_is_uuid: isUuid,
+        lookup_has_numeric_incident_id: hasNumericIncidentId,
         version: version ? String(version) : null,
         error: err?.message || String(err)
       });
