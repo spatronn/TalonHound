@@ -1648,16 +1648,20 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
 
 function classifyEventContext(ev = {}) {
   const mc = ev?.match_context || {};
-  const raw = String(ev?.matched_syslog_event || '');
+  const nej = ev?.normalized_event_json || {};
+  const raw = String(ev?.matched_syslog_event || ev?.raw_log_snapshot || '');
   const kv = {};
   raw.replace(/(\w+)=([^\s]+)/g, (_, k, v) => { kv[String(k).toLowerCase()] = String(v); return ''; });
   const ioc = String(ev?.matched_ioc || '').toLowerCase();
   const iocType = String(ev?.ioc_type || '').toLowerCase();
   const explicitType = String(mc.type || mc.log_type || mc.parser_type || kv.type || '').toLowerCase();
+  const sourceType = String(ev?.source_type || nej?.source_type || '').toLowerCase();
+  const parserSource = String(ev?.parser_source || nej?.parser_source || '').toLowerCase();
 
   const merged = {
     ...kv,
-    ...Object.fromEntries(Object.entries(mc || {}).map(([k, v]) => [String(k).toLowerCase(), v]))
+    ...Object.fromEntries(Object.entries(mc || {}).map(([k, v]) => [String(k).toLowerCase(), v])),
+    ...Object.fromEntries(Object.entries(nej || {}).map(([k, v]) => [String(k).toLowerCase(), v]))
   };
   const hasProxyFields = Boolean(merged.url || merged.method || merged.status);
   const hasDnsFields = Boolean(merged.query || merged.query_type || merged.response_ip);
@@ -1672,10 +1676,9 @@ function classifyEventContext(ev = {}) {
 
   let event_family = 'generic';
   let classification_confidence = 0.4;
-  if (bindDnsSig) { event_family = 'dns'; classification_confidence = 0.9; }
-  else if (explicitType === 'proxy') { event_family = 'proxy'; classification_confidence = 0.9; }
-  else if (explicitType === 'dns') { event_family = 'dns'; classification_confidence = 0.9; }
-  else if (explicitType === 'firewall') { event_family = 'firewall'; classification_confidence = 0.9; }
+  if (/(proxy|squid|web|http)/.test(parserSource) || sourceType === 'proxy' || explicitType === 'proxy') { event_family = 'proxy'; classification_confidence = 0.95; }
+  else if (bindDnsSig || /(dns|bind|resolver|microsoft_dns)/.test(parserSource) || sourceType === 'dns' || explicitType === 'dns') { event_family = 'dns'; classification_confidence = 0.9; }
+  else if (/(firewall|forti|palo|pan-os|checkpoint|traffic)/.test(parserSource) || sourceType === 'firewall' || explicitType === 'firewall') { event_family = 'firewall'; classification_confidence = 0.9; }
   else if (hasProxyFields) { event_family = 'proxy'; classification_confidence = 0.85; }
   else if (hasDnsFields) { event_family = 'dns'; classification_confidence = 0.85; }
   else if (hasFwFields) { event_family = 'firewall'; classification_confidence = 0.75; }
@@ -2414,7 +2417,6 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       const iocVal = String(r?.matched_ioc || '').toLowerCase();
       const looksLikeUrl = iocType === 'url' || iocVal.startsWith('http://') || iocVal.startsWith('https://');
       if (looksLikeUrl) family = 'proxy';
-      else if ((!family || family === 'generic') && iocType === 'domain') family = 'dns';
       const context_label = family === 'proxy' ? 'Proxy'
         : family === 'dns' ? 'DNS'
           : family === 'firewall' ? 'Firewall'

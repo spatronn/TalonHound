@@ -206,6 +206,8 @@ function normalizeEventContext(event) {
   if (v2Family === 'waf') return 'WAF';
   if (v2Family === 'endpoint') return 'Endpoint';
 
+  if (event?.context_label) return String(event.context_label);
+
   const tokens = [
     event?.type,
     event?.log_type,
@@ -227,7 +229,6 @@ function normalizeEventContext(event) {
   if (/(endpoint|edr|xdr|process|file[_\s-]?event|sysmon)/i.test(tokens)) return 'Endpoint';
   if (/(firewall|traffic|fortigate|forti|paloalto|pan-os|checkpoint|netflow|forward)/i.test(tokens)) return 'Firewall';
 
-  if (event?.context_label) return String(event.context_label);
   if ((sourceType === 'generic' || sourceType === '') && (parserSource === 'unknown' || parserSource === '')) return 'Generic';
   return 'Generic';
 }
