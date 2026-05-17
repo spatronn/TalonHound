@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -401,7 +401,9 @@ function AppShell({ children }) {
           </div>
 
           <div style={{ marginTop: 8 }}>
-            <Link to="/administration" style={menuStyle(isActive('/administration') || isActive('/settings'))}>6. Administration</Link>
+            <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
+            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys'))}>Settings</Link>
+            <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
           </div>
         </nav>
 
@@ -3488,8 +3490,25 @@ const PUBLISHED_FEEDS_UI = {
 };
 
 function feedPullUrl(token) {
-  const tok = token || '{access-token}';
+  const tok = token || '********';
   return `${window.location.origin}/public/feeds/${encodeURIComponent(tok)}/feed.txt`;
+}
+
+function PullUrlExamplesList({ ui, token, iocType, onCopy }) {
+  const examples = feedUrlExamples(token, iocType);
+  return (
+    <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', fontSize: 12 }}>
+      {examples.map((ex) => (
+        <li key={ex.label} style={{ marginBottom: 10, padding: 10, background: '#020617', borderRadius: 8, border: '1px solid #334155' }}>
+          <div style={{ color: '#94a3b8', marginBottom: 4, fontSize: 11, fontWeight: 600 }}>{ex.label}</div>
+          <code style={{ ...ui.code, marginBottom: token ? 6 : 0 }}>{ex.url}</code>
+          {token && onCopy ? (
+            <button type="button" style={{ ...ui.btn, fontSize: 11, padding: '4px 10px', marginTop: 6 }} onClick={() => onCopy(ex.url)}>Copy URL</button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function feedUrlExamples(token, iocType = 'ip') {
@@ -3529,16 +3548,10 @@ function PublishedFeedsPage() {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
   const [feeds, setFeeds] = useState([]);
-  const [manageId, setManageId] = useState(null);
-  const [accessKeys, setAccessKeys] = useState([]);
-  const [keysLoading, setKeysLoading] = useState(false);
   const [showFormModal, setShowFormModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [regenerating, setRegenerating] = useState({});
-  const [tokenReveal, setTokenReveal] = useState(null);
   const [nextStep, setNextStep] = useState(null);
-  const [keyNameDraft, setKeyNameDraft] = useState('');
-  const [pullTokenByFeedId, setPullTokenByFeedId] = useState({});
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -3567,24 +3580,7 @@ function PublishedFeedsPage() {
     }
   }
 
-  async function loadKeys(feedId) {
-    setKeysLoading(true);
-    try {
-      const { data } = await api.get(`/published-feeds/${feedId}/access-keys`);
-      setAccessKeys(data?.access_keys || []);
-    } catch {
-      setAccessKeys([]);
-    } finally {
-      setKeysLoading(false);
-    }
-  }
-
   useEffect(() => { loadFeeds().catch(() => {}); }, []);
-
-  useEffect(() => {
-    if (manageId) loadKeys(manageId).catch(() => {});
-    else setAccessKeys([]);
-  }, [manageId]);
 
   function closeFormModal() {
     setShowFormModal(false);
@@ -3670,9 +3666,8 @@ function PublishedFeedsPage() {
         closeFormModal();
         await loadFeeds();
         if (created?.id) {
-          setManageId(created.id);
           setNextStep({
-            message: 'Feed created. Create an access key to get a pull URL.',
+            message: 'Feed created. Create a Feed Access Key from Administration > API Keys to generate a pull URL.',
             feedId: created.id
           });
         }
@@ -3686,7 +3681,6 @@ function PublishedFeedsPage() {
     if (!canWrite || !window.confirm('Delete this published feed?')) return;
     try {
       await api.delete(`/published-feeds/${id}`);
-      if (manageId === id) setManageId(null);
       setNextStep(null);
       await loadFeeds();
     } catch {
@@ -3707,62 +3701,8 @@ function PublishedFeedsPage() {
     }
   }
 
-  async function createKey(feedId) {
-    if (!canWrite) return;
-    const name = keyNameDraft.trim();
-    if (!name) {
-      alert('Enter a name for this access key (e.g. Fortigate-01).');
-      return;
-    }
-    try {
-      const { data } = await api.post(`/published-feeds/${feedId}/access-keys`, { name });
-      const feed = feeds.find((x) => x.id === feedId);
-      setPullTokenByFeedId((prev) => ({ ...prev, [feedId]: { token: data.token, feed_url: data.feed_url } }));
-      setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name, ioc_type: feed?.ioc_type });
-      setKeyNameDraft('');
-      setNextStep(null);
-      await loadKeys(feedId);
-    } catch {
-      alert('Failed to create access key');
-    }
-  }
-
-  async function rotateKey(feedId, keyId) {
-    if (!canWrite || !window.confirm('Rotate this key? The old token stops working immediately.')) return;
-    try {
-      const { data } = await api.post(`/published-feeds/${feedId}/access-keys/${keyId}/rotate`);
-      const feed = feeds.find((x) => x.id === feedId);
-      setPullTokenByFeedId((prev) => ({ ...prev, [feedId]: { token: data.token, feed_url: data.feed_url } }));
-      setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name: 'rotated', ioc_type: feed?.ioc_type });
-      await loadKeys(feedId);
-    } catch {
-      alert('Failed to rotate key');
-    }
-  }
-
-  async function revokeKey(feedId, keyId) {
-    if (!canWrite || !window.confirm('Revoke this access key?')) return;
-    try {
-      await api.post(`/published-feeds/${feedId}/access-keys/${keyId}/revoke`);
-      await loadKeys(feedId);
-    } catch {
-      alert('Failed to revoke key');
-    }
-  }
-
-  function copyText(text) {
-    navigator.clipboard?.writeText(text).then(() => alert('Copied')).catch(() => alert(text));
-  }
-
-  function toggleManage(id) {
-    setManageId((prev) => (prev === id ? null : id));
-    setKeyNameDraft('');
-  }
-
   const windowLabel = (w) => FEED_WINDOW_OPTIONS.find((o) => o.value === w)?.label || w;
   const ui = PUBLISHED_FEEDS_UI;
-  const managedFeed = feeds.find((f) => f.id === manageId);
-  const exampleToken = managedFeed ? pullTokenByFeedId[managedFeed.id]?.token : null;
 
   return (
     <AppShell>
@@ -3784,9 +3724,13 @@ function PublishedFeedsPage() {
           <div style={ui.banner}>
             {nextStep.message}
             {nextStep.feedId && canWrite ? (
-              <button type="button" style={{ ...ui.btnPrimary, marginLeft: 12, padding: '6px 12px', fontSize: 12 }} onClick={() => { setManageId(nextStep.feedId); setNextStep(null); }}>
-                Manage feed
-              </button>
+              <Link
+                to={`/administration/api-keys?feed_id=${nextStep.feedId}`}
+                style={{ ...ui.btnPrimary, marginLeft: 12, padding: '6px 12px', fontSize: 12, display: 'inline-block', textDecoration: 'none' }}
+                onClick={() => setNextStep(null)}
+              >
+                Create API Key
+              </Link>
             ) : null}
           </div>
         ) : null}
@@ -3809,12 +3753,12 @@ function PublishedFeedsPage() {
               {loading ? (
                 <tr style={ui.tr}><td colSpan={8} style={ui.td}>Loading...</td></tr>
               ) : feeds.length ? feeds.map((f) => (
-                <React.Fragment key={f.id}>
-                  <tr style={ui.tr}>
+                <tr key={f.id} style={ui.tr}>
                     <td style={ui.td}>
                       <span style={{ fontWeight: 600 }}>{f.name}</span>
                       {!f.enabled ? <span style={ui.badge(false)}>disabled</span> : null}
                       <span style={{ ...ui.badge(true), marginLeft: 6, background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', border: '1px solid #1e40af' }}>txt</span>
+                      {f.last_error ? <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 4 }}>Last error: {f.last_error}</div> : null}
                     </td>
                     <td style={ui.td}>{f.ioc_type}</td>
                     <td style={ui.td}>{windowLabel(f.time_window)}</td>
@@ -3827,9 +3771,9 @@ function PublishedFeedsPage() {
                     }}>{f.last_status || '—'}</td>
                     <td style={ui.td}>{f.last_item_count ?? '—'}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                      <button type="button" style={ui.btn} onClick={() => toggleManage(f.id)}>
-                        {manageId === f.id ? 'Close' : 'Manage'}
-                      </button>
+                      {canWrite ? (
+                        <button type="button" style={ui.btn} onClick={() => openEditForm(f)}>Edit</button>
+                      ) : null}
                       {canWrite ? (
                         <button type="button" style={{ ...ui.btn, marginLeft: 6 }} disabled={regenerating[f.id]} onClick={() => regenerateFeed(f.id)}>
                           {regenerating[f.id] ? '...' : 'Regenerate'}
@@ -3838,100 +3782,21 @@ function PublishedFeedsPage() {
                       {canWrite ? (
                         <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => deleteFeed(f.id)}>Delete</button>
                       ) : null}
+                      {canWrite ? (
+                        <Link
+                          to={`/administration/api-keys?feed_id=${f.id}`}
+                          style={{ ...ui.btn, marginLeft: 6, display: 'inline-block', textDecoration: 'none', fontSize: 12 }}
+                        >
+                          Create API Key
+                        </Link>
+                      ) : null}
                     </td>
                   </tr>
-                  {manageId === f.id ? (
-                    <tr>
-                      <td colSpan={8} style={ui.expandCell}>
-                        {f.last_error ? <div style={{ color: '#fca5a5', marginBottom: 10, fontSize: 12 }}>Last error: {f.last_error}</div> : null}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                          <div>
-                            <strong style={{ color: '#e2e8f0', fontSize: 15 }}>Manage: {f.name}</strong>
-                            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8', maxWidth: 560 }}>
-                              Access keys are low-privilege tokens used only to pull this feed. They do not grant access to admin APIs.
-                            </p>
-                          </div>
-                          {canWrite ? (
-                            <button type="button" style={ui.btn} onClick={() => openEditForm(f)}>Edit feed settings</button>
-                          ) : null}
-                        </div>
-
-                        <div style={{ marginBottom: 16 }}>
-                          <strong style={{ color: '#cbd5e1', fontSize: 13 }}>Access keys</strong>
-                          {canWrite ? (
-                            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                              <input
-                                value={keyNameDraft}
-                                onChange={(e) => setKeyNameDraft(e.target.value)}
-                                placeholder="Key name (e.g. PaloAlto-01)"
-                                style={{ ...ui.input, maxWidth: 280, flex: '1 1 200px' }}
-                              />
-                              <button type="button" style={ui.btnPrimary} onClick={() => createKey(f.id)}>Create Access Key</button>
-                            </div>
-                          ) : null}
-                          {keysLoading ? (
-                            <p style={{ ...ui.muted, marginTop: 10 }}>Loading keys...</p>
-                          ) : accessKeys.length ? (
-                            <table width="100%" cellPadding={6} style={{ marginTop: 10, fontSize: 12, borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr style={ui.thead}>
-                                  <th style={ui.th}>Name</th><th style={ui.th}>Status</th><th style={ui.th}>Last used</th><th style={ui.th}>Last IP</th><th style={ui.th}>Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {accessKeys.map((k) => (
-                                  <tr key={k.id} style={ui.tr}>
-                                    <td style={ui.td}>{k.name}</td>
-                                    <td style={ui.td}>{k.enabled && !k.revoked_at ? 'active' : 'revoked'}</td>
-                                    <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
-                                    <td style={ui.td}>{k.last_used_ip || '—'}</td>
-                                    <td style={ui.td}>
-                                      {canWrite && !k.revoked_at ? (
-                                        <>
-                                          <button type="button" style={ui.btn} onClick={() => rotateKey(f.id, k.id)}>Rotate</button>
-                                          <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => revokeKey(f.id, k.id)}>Revoke</button>
-                                        </>
-                                      ) : <span style={{ color: '#94a3b8' }}>—</span>}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          ) : (
-                            <p style={{ ...ui.muted, marginTop: 10, lineHeight: 1.5 }}>
-                              No access keys yet. Create a key to allow internal products to pull this feed.
-                            </p>
-                          )}
-                        </div>
-
-                        <div>
-                          <strong style={{ color: '#cbd5e1', fontSize: 13 }}>Pull URL examples</strong>
-                          <p style={{ ...ui.helper, marginTop: 4, marginBottom: 8 }}>
-                            {exampleToken
-                              ? 'Use these URLs in your security product. Optional query parameters override defaults.'
-                              : 'Create an access key to get your pull URL. Examples below use a placeholder token.'}
-                          </p>
-                          <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', fontSize: 12 }}>
-                            {feedUrlExamples(exampleToken, f.ioc_type).map((ex) => (
-                              <li key={ex.label} style={{ marginBottom: 10, padding: 10, background: '#020617', borderRadius: 8, border: '1px solid #334155' }}>
-                                <div style={{ color: '#94a3b8', marginBottom: 4, fontSize: 11, fontWeight: 600 }}>{ex.label}</div>
-                                <code style={{ ...ui.code, marginBottom: 6 }}>{ex.url}</code>
-                                {exampleToken ? (
-                                  <button type="button" style={{ ...ui.btn, fontSize: 11, padding: '4px 10px' }} onClick={() => copyText(ex.url)}>Copy URL</button>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                </React.Fragment>
               )) : (
                 <tr>
                   <td colSpan={8} style={{ ...ui.td, padding: '28px 12px', textAlign: 'center' }}>
                     <p style={{ margin: '0 0 12px', color: '#94a3b8', lineHeight: 1.5 }}>
-                      No published feeds yet. Create a feed to publish filtered IOCs for internal security products.
+                      No published feeds yet. Create a feed to publish filtered IOC snapshots for internal security products.
                     </p>
                     {canWrite ? (
                       <button type="button" style={ui.btnPrimary} onClick={openCreateForm}>Create Feed</button>
@@ -3956,11 +3821,11 @@ function PublishedFeedsPage() {
             <p style={ui.modalSub}>
               {editing
                 ? 'Update filters and delivery settings. Regenerate snapshots after changing filters.'
-                : 'Create a filtered IOC feed that internal security products can pull with a dedicated access token.'}
+                : 'Create a filtered IOC snapshot feed. Add a Feed Access Key under Administration > API Keys to generate a pull URL.'}
             </p>
             {!editing ? (
               <p style={{ ...ui.modalSub, marginTop: -6 }}>
-                Choose the IOC type, filters, default time window, and delivery limits. Consumers will access the generated snapshot using dedicated feed access keys.
+                Choose the IOC type, filters, default time window, and delivery limits. After creation, generate a Feed Access Key on Administration > API Keys.
               </p>
             ) : null}
 
@@ -4050,14 +3915,310 @@ function PublishedFeedsPage() {
         </div>
       ) : null}
 
+    </AppShell>
+  );
+}
+
+function ApiKeysPage() {
+  const { canWrite } = useSession();
+  const [searchParams] = useSearchParams();
+  const preselectedFeedId = searchParams.get('feed_id');
+  const ui = PUBLISHED_FEEDS_UI;
+  const [loading, setLoading] = useState(true);
+  const [keys, setKeys] = useState([]);
+  const [feeds, setFeeds] = useState([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [expandedKeyId, setExpandedKeyId] = useState(null);
+  const [tokenReveal, setTokenReveal] = useState(null);
+  const [form, setForm] = useState({
+    name: '',
+    key_type: 'feed_access',
+    feed_id: '',
+    enabled: true
+  });
+  const didAutoOpenFromQuery = useRef(false);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      const [keysRes, feedsRes] = await Promise.all([
+        api.get('/api-keys'),
+        api.get('/published-feeds')
+      ]);
+      setKeys(keysRes.data?.api_keys || []);
+      setFeeds(feedsRes.data?.feeds || []);
+    } catch {
+      setKeys([]);
+      setFeeds([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadAll().catch(() => {}); }, []);
+
+  useEffect(() => {
+    if (didAutoOpenFromQuery.current) return;
+    if (!preselectedFeedId || !feeds.some((f) => String(f.id) === String(preselectedFeedId))) return;
+    setForm((x) => ({ ...x, feed_id: String(preselectedFeedId) }));
+    if (canWrite) {
+      setShowCreateModal(true);
+      didAutoOpenFromQuery.current = true;
+    }
+  }, [preselectedFeedId, feeds, canWrite]);
+
+  function openCreateModal() {
+    const presetFeedId = preselectedFeedId && feeds.some((f) => String(f.id) === String(preselectedFeedId))
+      ? String(preselectedFeedId)
+      : '';
+    setForm({
+      name: '',
+      key_type: 'feed_access',
+      feed_id: feeds.length === 1 ? String(feeds[0].id) : presetFeedId,
+      enabled: true
+    });
+    setShowCreateModal(true);
+  }
+
+  function keyTypeLabel(t) {
+    return t === 'feed_access' ? 'Feed Access Key' : t;
+  }
+
+  function copyText(text) {
+    navigator.clipboard?.writeText(text).then(() => alert('Copied')).catch(() => alert(text));
+  }
+
+  async function createKey(e) {
+    e.preventDefault();
+    if (!canWrite) return;
+    const feedId = Number(form.feed_id);
+    if (!feedId) {
+      alert('Select a published feed.');
+      return;
+    }
+    try {
+      const { data } = await api.post('/api-keys', {
+        name: form.name.trim(),
+        key_type: 'feed_access',
+        feed_id: feedId,
+        enabled: Boolean(form.enabled)
+      });
+      const feed = feeds.find((f) => f.id === feedId);
+      setShowCreateModal(false);
+      setTokenReveal({
+        title: 'API key created',
+        feed_url: data.feed_url,
+        token: data.token,
+        ioc_type: feed?.ioc_type || data.api_key?.feed_ioc_type
+      });
+      await loadAll();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to create API key');
+    }
+  }
+
+  async function rotateKey(keyId) {
+    if (!canWrite || !window.confirm('Rotate this key? The old token stops working immediately.')) return;
+    try {
+      const { data } = await api.post(`/api-keys/${keyId}/rotate`);
+      const key = keys.find((k) => k.id === keyId);
+      setTokenReveal({
+        title: 'API key rotated',
+        feed_url: data.feed_url,
+        token: data.token,
+        ioc_type: key?.feed_ioc_type
+      });
+      await loadAll();
+    } catch {
+      alert('Failed to rotate API key');
+    }
+  }
+
+  async function revokeKey(keyId) {
+    if (!canWrite || !window.confirm('Revoke this API key? Pull access stops immediately.')) return;
+    try {
+      await api.post(`/api-keys/${keyId}/revoke`);
+      await loadAll();
+    } catch {
+      alert('Failed to revoke API key');
+    }
+  }
+
+  async function toggleEnabled(key) {
+    if (!canWrite || key.status === 'revoked') return;
+    try {
+      await api.patch(`/api-keys/${key.id}`, { enabled: !key.enabled });
+      await loadAll();
+    } catch {
+      alert('Failed to update API key');
+    }
+  }
+
+  const hasFeeds = feeds.length > 0;
+
+  return (
+    <AppShell>
+      <section className="published-feeds-page api-keys-page" style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={ui.pageTitle}>API Keys</h2>
+            <p style={ui.pageSub}>
+              Manage low-privilege access keys used by internal tools to pull published threat feeds. These keys do not grant access to admin APIs.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button type="button" style={ui.btn} onClick={() => loadAll().catch(() => {})}>Refresh</button>
+            {canWrite && hasFeeds ? (
+              <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Create API Key</button>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table className="ioc-table published-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13, background: 'transparent' }}>
+            <thead>
+              <tr style={ui.thead}>
+                <th style={ui.th}>Name</th>
+                <th style={ui.th}>Type</th>
+                <th style={ui.th}>Published Feed</th>
+                <th style={ui.th}>IOC Type</th>
+                <th style={ui.th}>Status</th>
+                <th style={ui.th}>Last Used</th>
+                <th style={ui.th}>Last IP</th>
+                <th style={ui.th}>Created At</th>
+                <th style={ui.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr style={ui.tr}><td colSpan={9} style={ui.td}>Loading...</td></tr>
+              ) : keys.length ? keys.map((k) => (
+                <React.Fragment key={k.id}>
+                  <tr style={ui.tr}>
+                    <td style={ui.td}>{k.name}</td>
+                    <td style={ui.td}>{keyTypeLabel(k.key_type)}</td>
+                    <td style={ui.td}>{k.feed_name || '—'}</td>
+                    <td style={ui.td}>{k.feed_ioc_type || '—'}</td>
+                    <td style={ui.td}>{k.status}</td>
+                    <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
+                    <td style={ui.td}>{k.last_used_ip || '—'}</td>
+                    <td style={ui.td}>{formatUserDateTime(k.created_at)}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                      <button type="button" style={ui.btn} onClick={() => setExpandedKeyId((prev) => (prev === k.id ? null : k.id))}>
+                        {expandedKeyId === k.id ? 'Hide URLs' : 'URL examples'}
+                      </button>
+                      {canWrite && k.status !== 'revoked' ? (
+                        <>
+                          <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => rotateKey(k.id)}>Rotate</button>
+                          <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => revokeKey(k.id)}>Revoke</button>
+                          <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => toggleEnabled(k)}>
+                            {k.enabled ? 'Disable' : 'Enable'}
+                          </button>
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                  {expandedKeyId === k.id ? (
+                    <tr>
+                      <td colSpan={9} style={ui.expandCell}>
+                        <strong style={{ color: '#cbd5e1', fontSize: 13 }}>Pull URL examples</strong>
+                        <p style={{ ...ui.helper, marginTop: 4, marginBottom: 8 }}>
+                          Token is masked. Copy the full URL only right after create or rotate.
+                        </p>
+                        <PullUrlExamplesList ui={ui} token={null} iocType={k.feed_ioc_type || 'ip'} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </React.Fragment>
+              )) : (
+                <tr>
+                  <td colSpan={9} style={{ ...ui.td, padding: '28px 12px', textAlign: 'center' }}>
+                    <p style={{ margin: '0 0 12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                      No API keys yet. Create a Feed Access Key to let internal tools pull a published feed.
+                    </p>
+                    {canWrite && hasFeeds ? (
+                      <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Create API Key</button>
+                    ) : null}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {!hasFeeds && !loading ? (
+          <div style={{ ...ui.banner, marginTop: 16 }}>
+            Create a Published Feed first before generating a Feed Access Key.{' '}
+            <Link to="/threat-intelligence/published-feeds" style={{ color: '#93c5fd', fontWeight: 600 }}>Go to Published Feeds</Link>
+          </div>
+        ) : null}
+      </section>
+
+      {showCreateModal ? (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
+          onClick={() => setShowCreateModal(false)}
+        >
+          <div style={ui.formModal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Create API Key</h3>
+            {!hasFeeds ? (
+              <p style={ui.modalSub}>
+                Create a Published Feed first before generating a Feed Access Key.{' '}
+                <Link to="/threat-intelligence/published-feeds">Go to Published Feeds</Link>
+              </p>
+            ) : (
+              <form onSubmit={createKey}>
+                <FeedFormField ui={ui} label="Key name" fullWidth>
+                  <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. Fortigate-01" />
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Key type" fullWidth>
+                  <select value={form.key_type} style={ui.select} disabled>
+                    <option value="feed_access">Feed Access Key</option>
+                  </select>
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Published Feed" helper="Feed this key can pull." fullWidth>
+                  <select
+                    required
+                    value={form.feed_id}
+                    onChange={(e) => setForm((x) => ({ ...x, feed_id: e.target.value }))}
+                    style={ui.select}
+                  >
+                    <option value="">Select feed…</option>
+                    {feeds.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name} ({f.ioc_type})</option>
+                    ))}
+                  </select>
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Enabled" fullWidth>
+                  <label style={ui.checkLabel}>
+                    <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((x) => ({ ...x, enabled: e.target.checked }))} />
+                    Key is active
+                  </label>
+                </FeedFormField>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+                  <button type="button" style={ui.btn} onClick={() => setShowCreateModal(false)}>Cancel</button>
+                  <button type="submit" style={ui.btnPrimary} disabled={!canWrite}>Create API Key</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {tokenReveal ? (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: 16 }}>
-          <div style={ui.modal}>
-            <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Access key created</h3>
-            <p style={ui.modalSub}>Copy and store this pull URL now. It will not be shown again.</p>
+          <div style={{ ...ui.modal, maxWidth: 560, width: '100%' }}>
+            <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>{tokenReveal.title}</h3>
+            <p style={ui.modalSub}>Copy this URL now. The token will not be shown again.</p>
             <code style={ui.code}>{tokenReveal.feed_url}</code>
             <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copyText(tokenReveal.feed_url)}>Copy URL</button>
-            <button type="button" style={{ ...ui.btn, marginTop: 12, width: '100%' }} onClick={() => setTokenReveal(null)}>Done</button>
+            <div style={{ marginTop: 20 }}>
+              <strong style={{ color: '#cbd5e1', fontSize: 13 }}>Pull URL examples</strong>
+              <div style={{ marginTop: 10 }}>
+                <PullUrlExamplesList ui={ui} token={tokenReveal.token} iocType={tokenReveal.ioc_type} onCopy={copyText} />
+              </div>
+            </div>
+            <button type="button" style={{ ...ui.btn, marginTop: 16, width: '100%' }} onClick={() => setTokenReveal(null)}>Done</button>
           </div>
         </div>
       ) : null}
@@ -6129,6 +6290,7 @@ function App() {
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
+          <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />

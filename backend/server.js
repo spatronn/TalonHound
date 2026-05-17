@@ -20,6 +20,7 @@ import {
 import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
+import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
@@ -3366,6 +3367,7 @@ app.put('/api/users/me/preferences', async (req, res) => {
 registerUserManagementRoutes(app, pool);
 registerPublicFeedRoutes(app, pool);
 registerPublishedFeedRoutes(app, pool);
+registerApiKeyRoutes(app, pool);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
