@@ -319,7 +319,7 @@ docker compose up -d --build
 - `LLM_RISK_ADVISOR_MODEL` (default `qwen2.5:7b`)
 - `LLM_RISK_ADVISOR_TIMEOUT_MS` (default `8000`)
 - `LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS` (default `25000`)
-- `LLM_RISK_ADVISOR_AI_WEIGHT` (default `3`)
+- `LLM_RISK_ADVISOR_AI_WEIGHT` (code default `1`; `docker-compose.yml` may override to `3` — see `docs/risk-engine-analytics.md`)
 - `LLM_RISK_ADVISOR_CACHE_TTL_SECONDS` (default `3600`)
 
 **Ops notes**

@@ -4,7 +4,7 @@
 
 - System diagram: `docs/system-diagram.md`
 - Container operations & tuning: `docs/container-operations-and-tuning.md`
-- Risk engine analytics: `docs/risk-engine-analytics.md`
+- IOC exposure & impact scoring: `docs/risk-engine-analytics.md` (API fields: `risk_score`, `institution_risk_score`)
 
 ## Run
 
