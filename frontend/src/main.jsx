@@ -3379,7 +3379,51 @@ const PUBLISHED_FEEDS_UI = {
     color: '#e2e8f0',
     boxShadow: '0 24px 60px rgba(2,6,23,0.55)'
   },
-  modalSub: { fontSize: 13, color: '#94a3b8', margin: '0 0 12px' },
+  pageSub: { margin: '0 0 16px', fontSize: 14, color: '#94a3b8', lineHeight: 1.55, maxWidth: 720 },
+  formModal: {
+    width: 'min(720px, 96vw)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    background: 'linear-gradient(180deg, #111827 0%, #0f172a 100%)',
+    borderRadius: 12,
+    padding: 24,
+    border: '1px solid #334155',
+    color: '#e2e8f0',
+    boxShadow: '0 24px 60px rgba(2,6,23,0.55)'
+  },
+  sectionHeading: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    margin: '0 0 12px',
+    paddingBottom: 8,
+    borderBottom: '1px solid #1e293b'
+  },
+  banner: {
+    marginBottom: 16,
+    padding: '12px 14px',
+    borderRadius: 8,
+    border: '1px solid #1d4ed8',
+    background: 'rgba(37, 99, 235, 0.12)',
+    color: '#bfdbfe',
+    fontSize: 13,
+    lineHeight: 1.5
+  },
+  badge: (on) => ({
+    display: 'inline-block',
+    marginLeft: 8,
+    padding: '2px 8px',
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    background: on ? 'rgba(34, 197, 94, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+    color: on ? '#86efac' : '#94a3b8',
+    border: `1px solid ${on ? '#166534' : '#475569'}`
+  }),
+  modalSub: { fontSize: 13, color: '#94a3b8', margin: '0 0 12px', lineHeight: 1.5 },
   code: {
     display: 'block',
     wordBreak: 'break-all',
@@ -3392,29 +3436,58 @@ const PUBLISHED_FEEDS_UI = {
   }
 };
 
+function feedPullUrl(token) {
+  const tok = token || '{access-token}';
+  return `${window.location.origin}/public/feeds/${encodeURIComponent(tok)}/feed.txt`;
+}
+
 function feedUrlExamples(token, iocType = 'ip') {
-  const base = `${window.location.origin}/public/feeds/${encodeURIComponent(token)}/feed.txt`;
+  const base = feedPullUrl(token);
   const t = encodeURIComponent(iocType);
   return [
     { label: 'Default URL', url: base },
-    { label: 'With ioc_type', url: `${base}?ioc_type=${t}` },
     { label: 'With limit', url: `${base}?limit=40000` },
     { label: 'With window', url: `${base}?window=7d` },
-    { label: 'ioc_type + window + limit', url: `${base}?ioc_type=${t}&window=7d&limit=40000` }
+    { label: 'With ioc_type + window + limit', url: `${base}?ioc_type=${t}&window=7d&limit=40000` }
   ];
+}
+
+function FeedFormField({ ui, label, helper, children, fullWidth = false }) {
+  return (
+    <div style={fullWidth ? { gridColumn: '1 / -1' } : undefined}>
+      <span style={ui.label}>{label}</span>
+      {children}
+      {helper ? <span style={ui.helper}>{helper}</span> : null}
+    </div>
+  );
+}
+
+function FeedFormSection({ title, children }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <h4 style={ui.sectionHeading}>{title}</h4>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function PublishedFeedsPage() {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
   const [feeds, setFeeds] = useState([]);
-  const [expandedId, setExpandedId] = useState(null);
+  const [manageId, setManageId] = useState(null);
   const [accessKeys, setAccessKeys] = useState([]);
   const [keysLoading, setKeysLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [showFormModal, setShowFormModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [regenerating, setRegenerating] = useState({});
   const [tokenReveal, setTokenReveal] = useState(null);
+  const [nextStep, setNextStep] = useState(null);
+  const [keyNameDraft, setKeyNameDraft] = useState('');
+  const [pullTokenByFeedId, setPullTokenByFeedId] = useState({});
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -3459,49 +3532,55 @@ function PublishedFeedsPage() {
   useEffect(() => { loadFeeds().catch(() => {}); }, []);
 
   useEffect(() => {
-    if (expandedId) loadKeys(expandedId).catch(() => {});
+    if (manageId) loadKeys(manageId).catch(() => {});
     else setAccessKeys([]);
-  }, [expandedId]);
+  }, [manageId]);
 
-  function resetForm(feed = null) {
-    if (feed) {
-      setEditing(feed);
-      setForm({
-        name: feed.name || '',
-        description: feed.description || '',
-        enabled: Boolean(feed.enabled),
-        ioc_type: feed.ioc_type || 'ip',
-        min_confidence: feed.min_confidence ?? '',
-        exclude_false_positive: feed.exclude_false_positive !== false,
-        exclude_expired: feed.exclude_expired !== false,
-        include_sources: (feed.include_sources || []).join(', '),
-        include_tags: (feed.include_tags || []).join(', '),
-        exclude_tags: (feed.exclude_tags || []).join(', '),
-        verdict_filter: (feed.verdict_filter || []).join(','),
-        time_window: feed.time_window || 'all',
-        max_items: feed.max_items ?? '',
-        refresh_interval_minutes: feed.refresh_interval_minutes || 15
-      });
-    } else {
-      setEditing(null);
-      setForm({
-        name: '',
-        description: '',
-        enabled: true,
-        ioc_type: 'ip',
-        min_confidence: 70,
-        exclude_false_positive: true,
-        exclude_expired: true,
-        include_sources: '',
-        include_tags: '',
-        exclude_tags: '',
-        verdict_filter: 'malicious,suspicious',
-        time_window: 'all',
-        max_items: '',
-        refresh_interval_minutes: 15
-      });
-    }
-    setShowForm(true);
+  function closeFormModal() {
+    setShowFormModal(false);
+    setEditing(null);
+  }
+
+  function openCreateForm() {
+    setEditing(null);
+    setForm({
+      name: '',
+      description: '',
+      enabled: true,
+      ioc_type: 'ip',
+      min_confidence: 70,
+      exclude_false_positive: true,
+      exclude_expired: true,
+      include_sources: '',
+      include_tags: '',
+      exclude_tags: '',
+      verdict_filter: 'malicious,suspicious',
+      time_window: 'all',
+      max_items: '',
+      refresh_interval_minutes: 15
+    });
+    setShowFormModal(true);
+  }
+
+  function openEditForm(feed) {
+    setEditing(feed);
+    setForm({
+      name: feed.name || '',
+      description: feed.description || '',
+      enabled: Boolean(feed.enabled),
+      ioc_type: feed.ioc_type || 'ip',
+      min_confidence: feed.min_confidence ?? '',
+      exclude_false_positive: feed.exclude_false_positive !== false,
+      exclude_expired: feed.exclude_expired !== false,
+      include_sources: (feed.include_sources || []).join(', '),
+      include_tags: (feed.include_tags || []).join(', '),
+      exclude_tags: (feed.exclude_tags || []).join(', '),
+      verdict_filter: (feed.verdict_filter || []).join(','),
+      time_window: feed.time_window || 'all',
+      max_items: feed.max_items ?? '',
+      refresh_interval_minutes: feed.refresh_interval_minutes || 15
+    });
+    setShowFormModal(true);
   }
 
   function splitCsv(s) {
@@ -3535,11 +3614,22 @@ function PublishedFeedsPage() {
     try {
       if (editing?.id) {
         await api.patch(`/published-feeds/${editing.id}`, payload);
+        closeFormModal();
+        setNextStep(null);
+        await loadFeeds();
       } else {
-        await api.post('/published-feeds', payload);
+        const { data } = await api.post('/published-feeds', payload);
+        const created = data?.feed;
+        closeFormModal();
+        await loadFeeds();
+        if (created?.id) {
+          setManageId(created.id);
+          setNextStep({
+            message: 'Feed created. Create an access key to get a pull URL.',
+            feedId: created.id
+          });
+        }
       }
-      setShowForm(false);
-      await loadFeeds();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to save feed');
     }
@@ -3549,7 +3639,8 @@ function PublishedFeedsPage() {
     if (!canWrite || !window.confirm('Delete this published feed?')) return;
     try {
       await api.delete(`/published-feeds/${id}`);
-      if (expandedId === id) setExpandedId(null);
+      if (manageId === id) setManageId(null);
+      setNextStep(null);
       await loadFeeds();
     } catch {
       alert('Failed to delete feed');
@@ -3571,12 +3662,18 @@ function PublishedFeedsPage() {
 
   async function createKey(feedId) {
     if (!canWrite) return;
-    const name = window.prompt('Access key name (e.g. Fortigate-01)');
-    if (!name?.trim()) return;
+    const name = keyNameDraft.trim();
+    if (!name) {
+      alert('Enter a name for this access key (e.g. Fortigate-01).');
+      return;
+    }
     try {
-      const { data } = await api.post(`/published-feeds/${feedId}/access-keys`, { name: name.trim() });
+      const { data } = await api.post(`/published-feeds/${feedId}/access-keys`, { name });
       const feed = feeds.find((x) => x.id === feedId);
-      setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name: name.trim(), ioc_type: feed?.ioc_type });
+      setPullTokenByFeedId((prev) => ({ ...prev, [feedId]: { token: data.token, feed_url: data.feed_url } }));
+      setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name, ioc_type: feed?.ioc_type });
+      setKeyNameDraft('');
+      setNextStep(null);
       await loadKeys(feedId);
     } catch {
       alert('Failed to create access key');
@@ -3588,6 +3685,7 @@ function PublishedFeedsPage() {
     try {
       const { data } = await api.post(`/published-feeds/${feedId}/access-keys/${keyId}/rotate`);
       const feed = feeds.find((x) => x.id === feedId);
+      setPullTokenByFeedId((prev) => ({ ...prev, [feedId]: { token: data.token, feed_url: data.feed_url } }));
       setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name: 'rotated', ioc_type: feed?.ioc_type });
       await loadKeys(feedId);
     } catch {
@@ -3609,186 +3707,304 @@ function PublishedFeedsPage() {
     navigator.clipboard?.writeText(text).then(() => alert('Copied')).catch(() => alert(text));
   }
 
+  function toggleManage(id) {
+    setManageId((prev) => (prev === id ? null : id));
+    setKeyNameDraft('');
+  }
+
   const windowLabel = (w) => FEED_WINDOW_OPTIONS.find((o) => o.value === w)?.label || w;
   const ui = PUBLISHED_FEEDS_UI;
+  const managedFeed = feeds.find((f) => f.id === manageId);
+  const exampleToken = managedFeed ? pullTokenByFeedId[managedFeed.id]?.token : null;
 
   return (
     <AppShell>
       <section className="published-feeds-page" style={ui.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <h2 style={ui.pageTitle}>Published Feeds</h2>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={ui.pageTitle}>Published Feeds</h2>
+            <p style={ui.pageSub}>
+              Publish filtered IOC snapshots as pull-based threat feeds for internal tools such as firewalls, proxies, DNS security, EDR, SIEM, or SOAR platforms.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button type="button" style={ui.btn} onClick={() => loadFeeds().catch(() => {})}>Refresh</button>
-            {canWrite ? <button type="button" style={ui.btnPrimary} onClick={() => resetForm(null)}>Create Feed</button> : null}
+            {canWrite ? <button type="button" style={ui.btnPrimary} onClick={openCreateForm}>Create Feed</button> : null}
           </div>
         </div>
 
-        {showForm ? (
-          <form onSubmit={saveFeed} style={ui.formPanel}>
-            <h3 style={ui.formTitle}>{editing ? 'Edit Feed' : 'Create Feed'}</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              <div>
-                <span style={ui.label}>Name</span>
-                <input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={ui.input} />
-              </div>
-              <div>
-                <span style={ui.label}>IOC Type</span>
-                <select required value={form.ioc_type} onChange={(e) => setForm((f) => ({ ...f, ioc_type: e.target.value }))} style={ui.select}>
-                  <option value="ip">ip</option>
-                  <option value="domain">domain</option>
-                  <option value="url">url</option>
-                  <option value="hash">hash</option>
-                </select>
-              </div>
-              <div>
-                <span style={ui.label}>Default window</span>
-                <select value={form.time_window} onChange={(e) => setForm((f) => ({ ...f, time_window: e.target.value }))} style={ui.select}>
-                  {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <span style={ui.label}>Min confidence</span>
-                <input type="number" min={0} max={100} value={form.min_confidence} onChange={(e) => setForm((f) => ({ ...f, min_confidence: e.target.value }))} style={ui.input} />
-              </div>
-              <div>
-                <span style={ui.label}>Max items</span>
-                <input type="number" min={1} placeholder="optional" value={form.max_items} onChange={(e) => setForm((f) => ({ ...f, max_items: e.target.value }))} style={ui.input} />
-                <span style={ui.helper}>Some products support only limited feed size, e.g. 40,000 items.</span>
-              </div>
-              <div>
-                <span style={ui.label}>Refresh (minutes)</span>
-                <input type="number" min={5} value={form.refresh_interval_minutes} onChange={(e) => setForm((f) => ({ ...f, refresh_interval_minutes: e.target.value }))} style={ui.input} />
-              </div>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <span style={ui.label}>Description</span>
-              <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} style={ui.textarea} rows={2} />
-            </div>
-            <div style={ui.checkRow}>
-              <label style={ui.checkLabel}><input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))} /> Enabled</label>
-              <label style={ui.checkLabel}><input type="checkbox" checked={form.exclude_false_positive} onChange={(e) => setForm((f) => ({ ...f, exclude_false_positive: e.target.checked }))} /> Exclude false positives</label>
-              <label style={ui.checkLabel}><input type="checkbox" checked={form.exclude_expired} onChange={(e) => setForm((f) => ({ ...f, exclude_expired: e.target.checked }))} /> Exclude expired</label>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-              <div>
-                <span style={ui.label}>Sources (comma)</span>
-                <input value={form.include_sources} onChange={(e) => setForm((f) => ({ ...f, include_sources: e.target.value }))} style={ui.input} />
-              </div>
-              <div>
-                <span style={ui.label}>Include tags (comma)</span>
-                <input value={form.include_tags} onChange={(e) => setForm((f) => ({ ...f, include_tags: e.target.value }))} style={ui.input} />
-              </div>
-              <div>
-                <span style={ui.label}>Exclude tags (comma)</span>
-                <input value={form.exclude_tags} onChange={(e) => setForm((f) => ({ ...f, exclude_tags: e.target.value }))} style={ui.input} />
-              </div>
-              <div>
-                <span style={ui.label}>Verdict filter (comma)</span>
-                <input value={form.verdict_filter} onChange={(e) => setForm((f) => ({ ...f, verdict_filter: e.target.value }))} style={ui.input} placeholder="malicious,suspicious" />
-              </div>
-            </div>
-            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-              <button type="submit" style={ui.btnPrimary} disabled={!canWrite}>{editing ? 'Save' : 'Create'}</button>
-              <button type="button" style={ui.btn} onClick={() => setShowForm(false)}>Cancel</button>
-            </div>
-          </form>
+        {nextStep ? (
+          <div style={ui.banner}>
+            {nextStep.message}
+            {nextStep.feedId && canWrite ? (
+              <button type="button" style={{ ...ui.btnPrimary, marginLeft: 12, padding: '6px 12px', fontSize: 12 }} onClick={() => { setManageId(nextStep.feedId); setNextStep(null); }}>
+                Manage feed
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         <div style={{ overflowX: 'auto' }}>
           <table className="ioc-table published-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13, background: 'transparent' }}>
             <thead>
               <tr style={ui.thead}>
-                <th style={ui.th}>Name</th><th style={ui.th}>IOC Type</th><th style={ui.th}>Format</th><th style={ui.th}>Enabled</th><th style={ui.th}>Window</th><th style={ui.th}>Max Items</th>
-                <th style={ui.th}>Last Generated</th><th style={ui.th}>Status</th><th style={ui.th}>Items</th><th style={ui.th}>Actions</th>
+                <th style={ui.th}>Name</th>
+                <th style={ui.th}>IOC Type</th>
+                <th style={ui.th}>Window</th>
+                <th style={ui.th}>Max Items</th>
+                <th style={ui.th}>Last Generated</th>
+                <th style={ui.th}>Status</th>
+                <th style={ui.th}>Items</th>
+                <th style={ui.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr style={ui.tr}><td colSpan={10} style={ui.td}>Loading...</td></tr> : (feeds.length ? feeds.map((f) => (
+              {loading ? (
+                <tr style={ui.tr}><td colSpan={8} style={ui.td}>Loading...</td></tr>
+              ) : feeds.length ? feeds.map((f) => (
                 <React.Fragment key={f.id}>
                   <tr style={ui.tr}>
-                    <td style={ui.td}><button type="button" style={ui.linkBtn} onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>{f.name}</button></td>
+                    <td style={ui.td}>
+                      <span style={{ fontWeight: 600 }}>{f.name}</span>
+                      {!f.enabled ? <span style={ui.badge(false)}>disabled</span> : null}
+                      <span style={{ ...ui.badge(true), marginLeft: 6, background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', border: '1px solid #1e40af' }}>txt</span>
+                    </td>
                     <td style={ui.td}>{f.ioc_type}</td>
-                    <td style={ui.td}>{f.format || 'txt'}</td>
-                    <td style={ui.td}>{f.enabled ? 'yes' : 'no'}</td>
                     <td style={ui.td}>{windowLabel(f.time_window)}</td>
-                    <td style={ui.td}>{f.max_items ?? '-'}</td>
+                    <td style={ui.td}>{f.max_items ?? '—'}</td>
                     <td style={ui.td}>{formatUserDateTime(f.last_generated_at)}</td>
                     <td style={{
                       ...ui.td,
                       color: f.last_status === 'success' ? '#86efac' : f.last_status === 'failed' ? '#fca5a5' : '#fcd34d',
                       fontWeight: 600
-                    }}>{f.last_status || '-'}</td>
-                    <td style={ui.td}>{f.last_item_count ?? '-'}</td>
+                    }}>{f.last_status || '—'}</td>
+                    <td style={ui.td}>{f.last_item_count ?? '—'}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                      {canWrite ? <button type="button" style={ui.btn} disabled={regenerating[f.id]} onClick={() => regenerateFeed(f.id)}>{regenerating[f.id] ? '...' : 'Regenerate'}</button> : null}
-                      {canWrite ? <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => resetForm(f)}>Edit</button> : null}
-                      {canWrite ? <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => deleteFeed(f.id)}>Delete</button> : null}
+                      <button type="button" style={ui.btn} onClick={() => toggleManage(f.id)}>
+                        {manageId === f.id ? 'Close' : 'Manage'}
+                      </button>
+                      {canWrite ? (
+                        <button type="button" style={{ ...ui.btn, marginLeft: 6 }} disabled={regenerating[f.id]} onClick={() => regenerateFeed(f.id)}>
+                          {regenerating[f.id] ? '...' : 'Regenerate'}
+                        </button>
+                      ) : null}
+                      {canWrite ? (
+                        <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => deleteFeed(f.id)}>Delete</button>
+                      ) : null}
                     </td>
                   </tr>
-                  {expandedId === f.id ? (
+                  {manageId === f.id ? (
                     <tr>
-                      <td colSpan={10} style={ui.expandCell}>
-                        {f.last_error ? <div style={{ color: '#fca5a5', marginBottom: 8, fontSize: 12 }}>Last error: {f.last_error}</div> : null}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <strong style={{ color: '#e2e8f0' }}>Access Keys</strong>
-                          {canWrite ? <button type="button" style={ui.btnPrimary} onClick={() => createKey(f.id)}>Create key</button> : null}
+                      <td colSpan={8} style={ui.expandCell}>
+                        {f.last_error ? <div style={{ color: '#fca5a5', marginBottom: 10, fontSize: 12 }}>Last error: {f.last_error}</div> : null}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                          <div>
+                            <strong style={{ color: '#e2e8f0', fontSize: 15 }}>Manage: {f.name}</strong>
+                            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#94a3b8', maxWidth: 560 }}>
+                              Access keys are low-privilege tokens used only to pull this feed. They do not grant access to admin APIs.
+                            </p>
+                          </div>
+                          {canWrite ? (
+                            <button type="button" style={ui.btn} onClick={() => openEditForm(f)}>Edit feed settings</button>
+                          ) : null}
                         </div>
-                        {keysLoading ? <div style={ui.muted}>Loading keys...</div> : (
-                          <table width="100%" cellPadding={6} style={{ marginTop: 8, fontSize: 12, borderCollapse: 'collapse' }}>
-                            <thead>
-                              <tr style={ui.thead}>
-                                <th style={ui.th}>Name</th><th style={ui.th}>Enabled</th><th style={ui.th}>Last used</th><th style={ui.th}>Last IP</th><th style={ui.th}>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {accessKeys.length ? accessKeys.map((k) => (
-                                <tr key={k.id} style={ui.tr}>
-                                  <td style={ui.td}>{k.name}</td>
-                                  <td style={ui.td}>{k.enabled && !k.revoked_at ? 'yes' : 'no'}</td>
-                                  <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
-                                  <td style={ui.td}>{k.last_used_ip || '-'}</td>
-                                  <td style={ui.td}>
-                                    {canWrite && !k.revoked_at ? (
-                                      <>
-                                        <button type="button" style={ui.btn} onClick={() => rotateKey(f.id, k.id)}>Rotate</button>
-                                        <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => revokeKey(f.id, k.id)}>Revoke</button>
-                                      </>
-                                    ) : <span style={{ color: '#94a3b8' }}>revoked</span>}
-                                  </td>
+
+                        <div style={{ marginBottom: 16 }}>
+                          <strong style={{ color: '#cbd5e1', fontSize: 13 }}>Access keys</strong>
+                          {canWrite ? (
+                            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <input
+                                value={keyNameDraft}
+                                onChange={(e) => setKeyNameDraft(e.target.value)}
+                                placeholder="Key name (e.g. PaloAlto-01)"
+                                style={{ ...ui.input, maxWidth: 280, flex: '1 1 200px' }}
+                              />
+                              <button type="button" style={ui.btnPrimary} onClick={() => createKey(f.id)}>Create Access Key</button>
+                            </div>
+                          ) : null}
+                          {keysLoading ? (
+                            <p style={{ ...ui.muted, marginTop: 10 }}>Loading keys...</p>
+                          ) : accessKeys.length ? (
+                            <table width="100%" cellPadding={6} style={{ marginTop: 10, fontSize: 12, borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr style={ui.thead}>
+                                  <th style={ui.th}>Name</th><th style={ui.th}>Status</th><th style={ui.th}>Last used</th><th style={ui.th}>Last IP</th><th style={ui.th}>Actions</th>
                                 </tr>
-                              )) : <tr><td colSpan={5} style={{ ...ui.td, ...ui.muted }}>No access keys</td></tr>}
-                            </tbody>
-                          </table>
-                        )}
+                              </thead>
+                              <tbody>
+                                {accessKeys.map((k) => (
+                                  <tr key={k.id} style={ui.tr}>
+                                    <td style={ui.td}>{k.name}</td>
+                                    <td style={ui.td}>{k.enabled && !k.revoked_at ? 'active' : 'revoked'}</td>
+                                    <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
+                                    <td style={ui.td}>{k.last_used_ip || '—'}</td>
+                                    <td style={ui.td}>
+                                      {canWrite && !k.revoked_at ? (
+                                        <>
+                                          <button type="button" style={ui.btn} onClick={() => rotateKey(f.id, k.id)}>Rotate</button>
+                                          <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => revokeKey(f.id, k.id)}>Revoke</button>
+                                        </>
+                                      ) : <span style={{ color: '#94a3b8' }}>—</span>}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p style={{ ...ui.muted, marginTop: 10, lineHeight: 1.5 }}>
+                              No access keys yet. Create a key to allow internal products to pull this feed.
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <strong style={{ color: '#cbd5e1', fontSize: 13 }}>Pull URL examples</strong>
+                          <p style={{ ...ui.helper, marginTop: 4, marginBottom: 8 }}>
+                            {exampleToken
+                              ? 'Use these URLs in your security product. Optional query parameters override defaults.'
+                              : 'Create an access key to get your pull URL. Examples below use a placeholder token.'}
+                          </p>
+                          <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', fontSize: 12 }}>
+                            {feedUrlExamples(exampleToken, f.ioc_type).map((ex) => (
+                              <li key={ex.label} style={{ marginBottom: 10, padding: 10, background: '#020617', borderRadius: 8, border: '1px solid #334155' }}>
+                                <div style={{ color: '#94a3b8', marginBottom: 4, fontSize: 11, fontWeight: 600 }}>{ex.label}</div>
+                                <code style={{ ...ui.code, marginBottom: 6 }}>{ex.url}</code>
+                                {exampleToken ? (
+                                  <button type="button" style={{ ...ui.btn, fontSize: 11, padding: '4px 10px' }} onClick={() => copyText(ex.url)}>Copy URL</button>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </td>
                     </tr>
                   ) : null}
                 </React.Fragment>
-              )) : <tr><td colSpan={10} style={{ ...ui.td, ...ui.muted }}>No published feeds yet</td></tr>)}
+              )) : (
+                <tr>
+                  <td colSpan={8} style={{ ...ui.td, padding: '28px 12px', textAlign: 'center' }}>
+                    <p style={{ margin: '0 0 12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                      No published feeds yet. Create a feed to publish filtered IOCs for internal security products.
+                    </p>
+                    {canWrite ? (
+                      <button type="button" style={ui.btnPrimary} onClick={openCreateForm}>Create Feed</button>
+                    ) : null}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </section>
 
+      {showFormModal ? (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
+          onClick={closeFormModal}
+        >
+          <div style={ui.formModal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>
+              {editing ? 'Edit Published Feed' : 'Create Published Feed'}
+            </h3>
+            <p style={ui.modalSub}>
+              {editing
+                ? 'Update filters and delivery settings. Regenerate snapshots after changing filters.'
+                : 'Create a filtered IOC feed that internal security products can pull with a dedicated access token.'}
+            </p>
+            {!editing ? (
+              <p style={{ ...ui.modalSub, marginTop: -6 }}>
+                Choose the IOC type, filters, default time window, and delivery limits. Consumers will access the generated snapshot using dedicated feed access keys.
+              </p>
+            ) : null}
+
+            <form onSubmit={saveFeed}>
+              <FeedFormSection title="Basic">
+                <FeedFormField ui={ui} label="Name">
+                  <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Enabled">
+                  <label style={ui.checkLabel}>
+                    <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((x) => ({ ...x, enabled: e.target.checked }))} />
+                    Feed is active
+                  </label>
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Description" fullWidth>
+                  <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} />
+                </FeedFormField>
+              </FeedFormSection>
+
+              <FeedFormSection title="Feed content">
+                <FeedFormField ui={ui} label="IOC Type" helper="The type of indicators this feed will publish. One feed publishes one IOC type.">
+                  <select required value={form.ioc_type} onChange={(e) => setForm((x) => ({ ...x, ioc_type: e.target.value }))} style={ui.select}>
+                    <option value="ip">ip</option>
+                    <option value="domain">domain</option>
+                    <option value="url">url</option>
+                    <option value="hash">hash</option>
+                  </select>
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Default Window" helper="Default time range used when the consumer does not pass ?window=.">
+                  <select value={form.time_window} onChange={(e) => setForm((x) => ({ ...x, time_window: e.target.value }))} style={ui.select}>
+                    {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Min Confidence">
+                  <input type="number" min={0} max={100} value={form.min_confidence} onChange={(e) => setForm((x) => ({ ...x, min_confidence: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Verdict Filter" helper="Comma-separated values, e.g. malicious,suspicious.">
+                  <input value={form.verdict_filter} onChange={(e) => setForm((x) => ({ ...x, verdict_filter: e.target.value }))} style={ui.input} placeholder="malicious,suspicious" />
+                </FeedFormField>
+              </FeedFormSection>
+
+              <FeedFormSection title="Safety filters">
+                <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                  <label style={ui.checkLabel}>
+                    <input type="checkbox" checked={form.exclude_false_positive} onChange={(e) => setForm((x) => ({ ...x, exclude_false_positive: e.target.checked }))} />
+                    Exclude false positives
+                  </label>
+                  <label style={ui.checkLabel}>
+                    <input type="checkbox" checked={form.exclude_expired} onChange={(e) => setForm((x) => ({ ...x, exclude_expired: e.target.checked }))} />
+                    Exclude expired
+                  </label>
+                </div>
+                <FeedFormField ui={ui} label="Sources" helper="Optional. Comma-separated source names.">
+                  <input value={form.include_sources} onChange={(e) => setForm((x) => ({ ...x, include_sources: e.target.value }))} style={ui.input} placeholder="source_a, source_b" />
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Include Tags" helper="Optional. Comma-separated tag names.">
+                  <input value={form.include_tags} onChange={(e) => setForm((x) => ({ ...x, include_tags: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Exclude Tags" helper="Optional. Comma-separated tag names.">
+                  <input value={form.exclude_tags} onChange={(e) => setForm((x) => ({ ...x, exclude_tags: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+              </FeedFormSection>
+
+              <FeedFormSection title="Delivery">
+                <FeedFormField ui={ui} label="Max Items" helper="Optional cap for products that support limited feed size, e.g. 40,000 IPs.">
+                  <input type="number" min={1} placeholder="optional" value={form.max_items} onChange={(e) => setForm((x) => ({ ...x, max_items: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+                <FeedFormField ui={ui} label="Refresh (minutes)" helper="How often snapshots should be regenerated. Minimum 5 minutes.">
+                  <input type="number" min={5} value={form.refresh_interval_minutes} onChange={(e) => setForm((x) => ({ ...x, refresh_interval_minutes: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+              </FeedFormSection>
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, paddingTop: 16, borderTop: '1px solid #334155' }}>
+                <button type="button" style={ui.btn} onClick={closeFormModal}>Cancel</button>
+                <button type="submit" style={ui.btnPrimary} disabled={!canWrite}>
+                  {editing ? 'Save changes' : 'Create Feed'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       {tokenReveal ? (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: 16 }}>
           <div style={ui.modal}>
-            <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Feed access token (shown once)</h3>
-            <p style={ui.modalSub}>Copy and store this URL now. It will not be shown again.</p>
+            <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Access key created</h3>
+            <p style={ui.modalSub}>Copy and store this pull URL now. It will not be shown again.</p>
             <code style={ui.code}>{tokenReveal.feed_url}</code>
             <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copyText(tokenReveal.feed_url)}>Copy URL</button>
-            <div style={{ marginTop: 16 }}>
-              <strong style={{ fontSize: 13, color: '#e2e8f0' }}>Example URLs</strong>
-              <ul style={{ fontSize: 12, paddingLeft: 18, color: '#cbd5e1' }}>
-                {feedUrlExamples(tokenReveal.token, tokenReveal.ioc_type || 'ip').map((ex) => (
-                  <li key={ex.label} style={{ marginBottom: 6 }}>
-                    {ex.label}: <code style={{ ...ui.code, display: 'inline', padding: '2px 6px', marginTop: 4 }}>{ex.url}</code>
-                    <button type="button" style={{ ...ui.btn, marginLeft: 8, fontSize: 11, padding: '4px 8px' }} onClick={() => copyText(ex.url)}>Copy</button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <button type="button" style={ui.btn} onClick={() => setTokenReveal(null)}>Close</button>
+            <button type="button" style={{ ...ui.btn, marginTop: 12, width: '100%' }} onClick={() => setTokenReveal(null)}>Done</button>
           </div>
         </div>
       ) : null}
