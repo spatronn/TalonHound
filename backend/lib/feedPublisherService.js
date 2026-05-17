@@ -72,8 +72,10 @@ function filtersHash(feed, window) {
 
 function buildVerdictSql(verdictFilter, params) {
   if (!verdictFilter?.length) return '';
-  const wantsMalicious = verdictFilter.some((v) => /malicious/i.test(v));
-  const wantsSuspicious = verdictFilter.some((v) => /suspicious/i.test(v));
+  const active = verdictFilter.filter((v) => String(v).trim().toLowerCase() !== 'all');
+  if (!active.length) return '';
+  const wantsMalicious = active.some((v) => /malicious/i.test(v));
+  const wantsSuspicious = active.some((v) => /suspicious/i.test(v));
   if (!wantsMalicious && !wantsSuspicious) return '';
 
   const parts = [];
