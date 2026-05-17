@@ -20,6 +20,7 @@ import {
 import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
+import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
@@ -1469,39 +1470,20 @@ app.get('/api/incidents', async (req, res) => {
         a.*,
         COALESCE(ev.asset_count, 0) AS asset_count,
         COALESCE(ev.event_count, 0) AS event_count,
+        COALESCE(ev.accepted_connections, 0) AS accepted_connections,
+        COALESCE(ev.blocked_connections, 0) AS blocked_connections,
+        ev.dominant_source_type,
+        ev.dominant_parser_source,
+        ev.detection_type,
+        ev.has_endpoint_evidence,
+        ev.has_proxy_evidence,
+        ev.has_dns_evidence,
+        ev.has_firewall_evidence,
         ev.confidence
        FROM ioc_activity a
        LEFT JOIN LATERAL (
          SELECT
-           COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT NULLIF(
-             COALESCE(
-               NULLIF(m.match_context->>'observed_host', ''),
-               NULLIF(m.host_name, ''),
-               CASE
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF(m.match_context->>'client_ip', '')
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN NULLIF(m.match_context->>'client_ip', '')
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'firewall' OR LOWER(COALESCE(m.parser_source, '')) ~ '(firewall|forti|palo|pan-os|checkpoint|traffic)') THEN NULLIF(m.match_context->>'srcip', '')
-                 ELSE NULL
-               END,
-               CASE
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'dns' OR LOWER(COALESCE(m.parser_source, '')) ~ '(dns|bind_dns|resolver)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bclient\\s+[^\\s]*\\s*([0-9]{1,3}(?:\\.[0-9]{1,3}){3})#[0-9]+'))[1], '')
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'proxy' OR LOWER(COALESCE(m.parser_source, '')) ~ '(proxy|squid|web)') THEN COALESCE(
-                   NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\s([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\\s+TCP_[A-Z_]+\\/[0-9]{3}'))[1], ''),
-                   NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\b(?:TCP_[A-Z_]+|NONE)\\/(?:[0-9]{3}|-)\\s+([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\\s'))[1], '')
-                 )
-                 WHEN (LOWER(COALESCE(m.source_type, '')) = 'firewall' OR LOWER(COALESCE(m.parser_source, '')) ~ '(firewall|forti|palo|pan-os|checkpoint|traffic)') THEN NULLIF((regexp_match(COALESCE(m.raw_log_snapshot, ''), '\\bsrcip=([0-9]{1,3}(?:\\.[0-9]{1,3}){3})\\b'))[1], '')
-                 ELSE NULL
-               END
-             ),
-             ''
-           ))::int AS asset_count,
-           CASE
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-             ELSE NULL
-           END AS confidence
+           ${IOC_MATCH_EVENT_STATS_SELECT}
          FROM ioc_match_events m
          WHERE m.activity_id = a.id
        ) ev ON true
@@ -1536,38 +1518,7 @@ app.get('/api/incidents', async (req, res) => {
 
 async function loadIncidentWithStats(activityId) {
   const q = await pool.query(
-    `WITH ev AS (
-       SELECT
-         COUNT(*)::bigint AS event_count,
-         COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
-         SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
-         SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
-         SUM(CASE
-               WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
-                 OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
-               THEN 1 ELSE 0
-             END)::bigint AS inbound_events,
-         SUM(CASE
-               WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
-                 OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
-               THEN 1 ELSE 0
-             END)::bigint AS outbound_events,
-         SUM(CASE
-               WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
-                 OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
-                 OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
-               THEN 1 ELSE 0
-             END)::bigint AS blacklist_hits,
-         CASE
-           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-           ELSE NULL
-         END AS confidence
-       FROM ioc_match_events m
-       WHERE m.activity_id = $1::uuid
-     )
-     SELECT
+    `SELECT
        a.*,
        COALESCE(ev.asset_count, 0) AS asset_count,
        COALESCE(ev.event_count, 0) AS event_count,
@@ -1576,9 +1527,21 @@ async function loadIncidentWithStats(activityId) {
        COALESCE(ev.inbound_events, 0) AS inbound_events,
        COALESCE(ev.outbound_events, 0) AS outbound_events,
        COALESCE(ev.blacklist_hits, 0) AS blacklist_hits,
+       ev.dominant_source_type,
+       ev.dominant_parser_source,
+       ev.detection_type,
+       ev.has_endpoint_evidence,
+       ev.has_proxy_evidence,
+       ev.has_dns_evidence,
+       ev.has_firewall_evidence,
        ev.confidence
      FROM ioc_activity a
-     CROSS JOIN ev
+     LEFT JOIN LATERAL (
+       SELECT
+         ${IOC_MATCH_EVENT_STATS_SELECT}
+       FROM ioc_match_events m
+       WHERE m.activity_id = a.id
+     ) ev ON true
      WHERE a.id = $1::uuid
      LIMIT 1`,
     [activityId]
@@ -1653,7 +1616,8 @@ app.get('/api/incidents/:id', async (req, res) => {
     const cachedLlmRisk = await llmRiskAdvisor.getCached({
       incidentId: context?.id,
       version: incidentVersion,
-      baseRisk: risk.risk_score
+      baseRisk: risk.risk_score,
+      incident: context
     });
 
     let llmRisk = cachedLlmRisk;
@@ -2069,36 +2033,18 @@ async function computeInstitutionRiskOverview() {
          COALESCE(ev.inbound_events, 0) AS inbound_events,
          COALESCE(ev.outbound_events, 0) AS outbound_events,
          COALESCE(ev.blacklist_hits, 0) AS blacklist_hits,
+         ev.dominant_source_type,
+         ev.dominant_parser_source,
+         ev.detection_type,
+         ev.has_endpoint_evidence,
+         ev.has_proxy_evidence,
+         ev.has_dns_evidence,
+         ev.has_firewall_evidence,
          ev.confidence
        FROM ioc_activity a
        LEFT JOIN LATERAL (
          SELECT
-           COUNT(*)::bigint AS event_count,
-           COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
-           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
-           SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
-           SUM(CASE
-                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
-                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
-                 THEN 1 ELSE 0
-               END)::bigint AS inbound_events,
-           SUM(CASE
-                 WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
-                   OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
-                 THEN 1 ELSE 0
-               END)::bigint AS outbound_events,
-           SUM(CASE
-                 WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
-                   OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
-                   OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
-                 THEN 1 ELSE 0
-               END)::bigint AS blacklist_hits,
-           CASE
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-             WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-             ELSE NULL
-           END AS confidence
+           ${IOC_MATCH_EVENT_STATS_SELECT}
          FROM ioc_match_events m
          WHERE m.activity_id = a.id
        ) ev ON true
@@ -2122,7 +2068,8 @@ async function computeInstitutionRiskOverview() {
     const cached = await llmRiskAdvisor.getCached({
       incidentId: row.id,
       version,
-      baseRisk: row.risk_score
+      baseRisk: row.risk_score,
+      incident: row
     });
 
     if (!cached) {
@@ -2160,7 +2107,8 @@ async function computeInstitutionRiskOverview() {
     const cached = await llmRiskAdvisor.getCached({
       incidentId: full.id,
       version,
-      baseRisk: it.risk_score
+      baseRisk: it.risk_score,
+      incident: full
     });
 
     topWithLlm.push({

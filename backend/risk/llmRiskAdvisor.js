@@ -1,7 +1,32 @@
 import crypto from 'crypto';
 import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
+import { inferEvidenceTier, normalizeVerdict } from '../lib/riskEngine.js';
 
 const ALLOWED_ADJUSTMENTS = new Set([-20, -10, -5, 0, 5, 10, 15, 20]);
+const LOW_EVIDENCE_TIERS = new Set(['dns_only', 'blocked_only', 'generic_only', 'unknown', 'false_positive']);
+
+export function computeEffectiveAiDelta(adjustment, confidence, evidenceTier, aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 1), 0)) {
+  const conf = clamp(Number(confidence || 0), 0, 1);
+  if (conf < 0.4) return 0;
+
+  const adj = Number(adjustment || 0);
+  if (!Number.isFinite(adj)) return 0;
+
+  let weighted = adj * conf * aiWeight;
+  if (weighted > 0 && LOW_EVIDENCE_TIERS.has(evidenceTier)) {
+    return Math.min(weighted, 5);
+  }
+  return clamp(weighted, -10, 10);
+}
+
+export function computeFinalRiskWithLlm(baseRisk, adjustment, confidence, incident = null, aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 1), 0)) {
+  if (normalizeVerdict(incident?.verdict) === 'FP') return 0;
+
+  const base = clamp(Number(baseRisk || 0), 0, 100);
+  const tier = inferEvidenceTier(incident || {});
+  const delta = computeEffectiveAiDelta(adjustment, confidence, tier, aiWeight);
+  return clamp(base + delta, 0, 100);
+}
 
 function toBool(v, defaultValue = false) {
   if (v == null) return defaultValue;
@@ -659,9 +684,9 @@ function parseTags(raw) {
   return [];
 }
 
-function normalizeVerdict(raw) {
-  const v = String(raw || '').toLowerCase();
-  if (v === 'fp') return 'fp';
+function normalizeAdvisorVerdict(raw) {
+  const v = String(raw || '').toLowerCase().replace(/_/g, ' ');
+  if (v === 'fp' || v === 'false positive') return 'fp';
   if (v === 'tp') return 'tp';
   if (v === 'suspicious') return 'suspicious';
   return 'unknown';
@@ -727,7 +752,7 @@ function buildIncidentPayload(incident = {}) {
     },
     history: {
       previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
-      previous_verdict: normalizeVerdict(incident?.previous_verdict)
+      previous_verdict: normalizeAdvisorVerdict(incident?.previous_verdict)
     }
   };
 
@@ -817,14 +842,10 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
   const llmNumCtx = Math.max(Number(process.env.LLM_RISK_NUM_CTX ?? 2048), 256);
   const llmNumPredict = Math.max(Number(process.env.LLM_RISK_NUM_PREDICT ?? 180), 1);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
-  const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 2), 0);
+  const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 1), 0);
 
-  function computeFinalRisk(baseRisk, adjustment, confidence) {
-    const base = clamp(Number(baseRisk || 0), 0, 100);
-    const adj = Number(adjustment || 0);
-    const conf = clamp(Number(confidence || 0), 0, 1);
-    const weighted = adj * conf * aiWeight;
-    return clamp(base + weighted, 0, 100);
+  function computeFinalRisk(baseRisk, adjustment, confidence, incident = null) {
+    return computeFinalRiskWithLlm(baseRisk, adjustment, confidence, incident, aiWeight);
   }
 
   function fallback(baseRisk, reason = 'fallback') {
@@ -916,7 +937,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     }
   }
 
-  async function getCached({ incidentId, version, baseRisk }) {
+  async function getCached({ incidentId, version, baseRisk, incident = null }) {
     const key = getCacheKey(incidentId, version);
     let raw = null;
     if (key && redis && typeof redis.get === 'function') {
@@ -958,7 +979,9 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       normalized.confidence = cachedConfidence;
       console.info(`[llm-confidence-trace] incident_id=${incidentId} ioc_type=${cachedIocType || 'cache'} model_raw_confidence=${Number(source?.confidence ?? source?.llm_risk_confidence ?? 0)} normalized_confidence=${Number(normalized?.confidence ?? 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'cache'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=${raw ? 'true' : 'false'} cache_write_value=na`);
       const base = clamp(Number(baseRisk || 0), 0, 100);
-      const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
+      const tier = inferEvidenceTier(incident || {});
+      const aiDeltaEffective = computeEffectiveAiDelta(normalized.adjustment, normalized.confidence, tier, aiWeight);
+      const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence, incident);
 
       return {
         risk_before_llm: Number(base.toFixed(2)),
@@ -974,6 +997,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
         detected_negative_factors: normalized.detected_negative_factors || [],
         llm_last_updated_at: source?.llm_last_updated_at || null,
         llm_version: source?.llm_version || version || null,
+        ai_delta_effective: Number(aiDeltaEffective.toFixed(2)),
         final_risk_score: Number(finalRisk.toFixed(2))
       };
     } catch {
@@ -1070,10 +1094,11 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     if (!enabled && !force) return fallback(base, 'disabled');
 
-    const verdict = String(incident?.verdict || '').trim().toLowerCase();
-    if (verdict === 'fp') {
-      const out = fallback(base, 'fp_verdict_guard');
+    if (normalizeVerdict(incident?.verdict) === 'FP') {
+      const out = fallback(0, 'fp_verdict_guard');
+      out.risk_before_llm = Number(base.toFixed(2));
       out.llm_risk_adjustment = 0;
+      out.final_risk_score = 0;
       return out;
     }
 
@@ -1152,7 +1177,9 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     });
     await persistInsight({ incident, version, normalized });
 
-    const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence);
+    const tier = inferEvidenceTier(incident || {});
+    const aiDeltaEffective = computeEffectiveAiDelta(normalized.adjustment, normalized.confidence, tier, aiWeight);
+    const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence, incident);
     return {
       risk_before_llm: Number(base.toFixed(2)),
       llm_risk_adjustment: normalized.adjustment,
@@ -1167,6 +1194,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       detected_negative_factors: normalized.detected_negative_factors || [],
       llm_last_updated_at: new Date().toISOString(),
       llm_version: version || null,
+      ai_delta_effective: Number(aiDeltaEffective.toFixed(2)),
       final_risk_score: Number(finalRisk.toFixed(2))
     };
   }
