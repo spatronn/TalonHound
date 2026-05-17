@@ -19,6 +19,9 @@ import {
 } from './lib/auth.js';
 import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
+import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
+import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
+import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
@@ -3361,6 +3364,8 @@ app.put('/api/users/me/preferences', async (req, res) => {
 });
 
 registerUserManagementRoutes(app, pool);
+registerPublicFeedRoutes(app, pool);
+registerPublishedFeedRoutes(app, pool);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -4968,7 +4973,9 @@ async function ensureSeedDemoUser() {
 }
 
 const RISK_SNAPSHOT_INTERVAL_MS = Math.max(Number(process.env.RISK_SNAPSHOT_INTERVAL_MS || 5 * 60 * 1000), 60 * 1000);
+const PUBLISHED_FEED_TICK_MS = Math.max(Number(process.env.PUBLISHED_FEED_TICK_MS || 60 * 1000), 15 * 1000);
 let riskSnapshotInProgress = false;
+let publishedFeedTickInProgress = false;
 
 async function saveRiskSnapshot() {
   if (riskSnapshotInProgress) return;
@@ -4997,4 +5004,14 @@ app.listen(port, async () => {
   setInterval(() => {
     saveRiskSnapshot().catch(() => {});
   }, RISK_SNAPSHOT_INTERVAL_MS);
+  regenerateAllEnabledFeeds(pool).catch(() => {});
+  setInterval(() => {
+    if (publishedFeedTickInProgress) return;
+    publishedFeedTickInProgress = true;
+    regenerateAllEnabledFeeds(pool)
+      .catch((err) => console.error('[published-feeds] tick failed', err?.message || err))
+      .finally(() => {
+        publishedFeedTickInProgress = false;
+      });
+  }, PUBLISHED_FEED_TICK_MS);
 });

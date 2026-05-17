@@ -397,6 +397,7 @@ function AppShell({ children }) {
             <Link to="/threat-intelligence/enrichment" style={subMenuStyle(isActive('/threat-intelligence/enrichment'))}>Enrichment</Link>
             <Link to="/threat-intelligence/queue" style={subMenuStyle(isActive('/threat-intelligence/queue'))}>Job Queue Status</Link>
             <Link to="/threat-intelligence/runs" style={subMenuStyle(isActive('/threat-intelligence/runs'))}>Recent Runs</Link>
+            <Link to="/threat-intelligence/published-feeds" style={subMenuStyle(isActive('/threat-intelligence/published-feeds'))}>Published Feeds</Link>
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -3279,6 +3280,381 @@ function IntegrationsRecentRunsPage() {
   );
 }
 
+const FEED_WINDOW_OPTIONS = [
+  { value: '1d', label: 'Last 1 day' },
+  { value: '3d', label: 'Last 3 days' },
+  { value: '7d', label: 'Last 1 week' },
+  { value: 'all', label: 'All' }
+];
+
+function feedUrlExamples(token, iocType = 'ip') {
+  const base = `${window.location.origin}/public/feeds/${encodeURIComponent(token)}/feed.txt`;
+  const t = encodeURIComponent(iocType);
+  return [
+    { label: 'Default URL', url: base },
+    { label: 'With ioc_type', url: `${base}?ioc_type=${t}` },
+    { label: 'With limit', url: `${base}?limit=40000` },
+    { label: 'With window', url: `${base}?window=7d` },
+    { label: 'ioc_type + window + limit', url: `${base}?ioc_type=${t}&window=7d&limit=40000` }
+  ];
+}
+
+function PublishedFeedsPage() {
+  const { canWrite } = useSession();
+  const [loading, setLoading] = useState(true);
+  const [feeds, setFeeds] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
+  const [accessKeys, setAccessKeys] = useState([]);
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [regenerating, setRegenerating] = useState({});
+  const [tokenReveal, setTokenReveal] = useState(null);
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    enabled: true,
+    ioc_type: 'ip',
+    min_confidence: 70,
+    exclude_false_positive: true,
+    exclude_expired: true,
+    include_sources: '',
+    include_tags: '',
+    exclude_tags: '',
+    verdict_filter: 'malicious,suspicious',
+    time_window: 'all',
+    max_items: '',
+    refresh_interval_minutes: 15
+  });
+
+  async function loadFeeds() {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/published-feeds');
+      setFeeds(data?.feeds || []);
+    } catch {
+      setFeeds([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadKeys(feedId) {
+    setKeysLoading(true);
+    try {
+      const { data } = await api.get(`/published-feeds/${feedId}/access-keys`);
+      setAccessKeys(data?.access_keys || []);
+    } catch {
+      setAccessKeys([]);
+    } finally {
+      setKeysLoading(false);
+    }
+  }
+
+  useEffect(() => { loadFeeds().catch(() => {}); }, []);
+
+  useEffect(() => {
+    if (expandedId) loadKeys(expandedId).catch(() => {});
+    else setAccessKeys([]);
+  }, [expandedId]);
+
+  function resetForm(feed = null) {
+    if (feed) {
+      setEditing(feed);
+      setForm({
+        name: feed.name || '',
+        description: feed.description || '',
+        enabled: Boolean(feed.enabled),
+        ioc_type: feed.ioc_type || 'ip',
+        min_confidence: feed.min_confidence ?? '',
+        exclude_false_positive: feed.exclude_false_positive !== false,
+        exclude_expired: feed.exclude_expired !== false,
+        include_sources: (feed.include_sources || []).join(', '),
+        include_tags: (feed.include_tags || []).join(', '),
+        exclude_tags: (feed.exclude_tags || []).join(', '),
+        verdict_filter: (feed.verdict_filter || []).join(','),
+        time_window: feed.time_window || 'all',
+        max_items: feed.max_items ?? '',
+        refresh_interval_minutes: feed.refresh_interval_minutes || 15
+      });
+    } else {
+      setEditing(null);
+      setForm({
+        name: '',
+        description: '',
+        enabled: true,
+        ioc_type: 'ip',
+        min_confidence: 70,
+        exclude_false_positive: true,
+        exclude_expired: true,
+        include_sources: '',
+        include_tags: '',
+        exclude_tags: '',
+        verdict_filter: 'malicious,suspicious',
+        time_window: 'all',
+        max_items: '',
+        refresh_interval_minutes: 15
+      });
+    }
+    setShowForm(true);
+  }
+
+  function splitCsv(s) {
+    return String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+  }
+
+  function buildPayload() {
+    return {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      enabled: Boolean(form.enabled),
+      ioc_type: form.ioc_type,
+      format: 'txt',
+      min_confidence: form.min_confidence === '' ? null : Number(form.min_confidence),
+      exclude_false_positive: Boolean(form.exclude_false_positive),
+      exclude_expired: Boolean(form.exclude_expired),
+      include_sources: splitCsv(form.include_sources),
+      include_tags: splitCsv(form.include_tags),
+      exclude_tags: splitCsv(form.exclude_tags),
+      verdict_filter: splitCsv(form.verdict_filter),
+      time_window: form.time_window,
+      max_items: form.max_items === '' ? null : Number(form.max_items),
+      refresh_interval_minutes: Number(form.refresh_interval_minutes) || 15
+    };
+  }
+
+  async function saveFeed(e) {
+    e.preventDefault();
+    if (!canWrite) return;
+    const payload = buildPayload();
+    try {
+      if (editing?.id) {
+        await api.patch(`/published-feeds/${editing.id}`, payload);
+      } else {
+        await api.post('/published-feeds', payload);
+      }
+      setShowForm(false);
+      await loadFeeds();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to save feed');
+    }
+  }
+
+  async function deleteFeed(id) {
+    if (!canWrite || !window.confirm('Delete this published feed?')) return;
+    try {
+      await api.delete(`/published-feeds/${id}`);
+      if (expandedId === id) setExpandedId(null);
+      await loadFeeds();
+    } catch {
+      alert('Failed to delete feed');
+    }
+  }
+
+  async function regenerateFeed(id) {
+    if (!canWrite || regenerating[id]) return;
+    setRegenerating((p) => ({ ...p, [id]: true }));
+    try {
+      await api.post(`/published-feeds/${id}/regenerate`);
+      await loadFeeds();
+    } catch {
+      alert('Regenerate failed');
+    } finally {
+      setRegenerating((p) => ({ ...p, [id]: false }));
+    }
+  }
+
+  async function createKey(feedId) {
+    if (!canWrite) return;
+    const name = window.prompt('Access key name (e.g. Fortigate-01)');
+    if (!name?.trim()) return;
+    try {
+      const { data } = await api.post(`/published-feeds/${feedId}/access-keys`, { name: name.trim() });
+      const feed = feeds.find((x) => x.id === feedId);
+      setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name: name.trim(), ioc_type: feed?.ioc_type });
+      await loadKeys(feedId);
+    } catch {
+      alert('Failed to create access key');
+    }
+  }
+
+  async function rotateKey(feedId, keyId) {
+    if (!canWrite || !window.confirm('Rotate this key? The old token stops working immediately.')) return;
+    try {
+      const { data } = await api.post(`/published-feeds/${feedId}/access-keys/${keyId}/rotate`);
+      const feed = feeds.find((x) => x.id === feedId);
+      setTokenReveal({ feedId, token: data.token, feed_url: data.feed_url, name: 'rotated', ioc_type: feed?.ioc_type });
+      await loadKeys(feedId);
+    } catch {
+      alert('Failed to rotate key');
+    }
+  }
+
+  async function revokeKey(feedId, keyId) {
+    if (!canWrite || !window.confirm('Revoke this access key?')) return;
+    try {
+      await api.post(`/published-feeds/${feedId}/access-keys/${keyId}/revoke`);
+      await loadKeys(feedId);
+    } catch {
+      alert('Failed to revoke key');
+    }
+  }
+
+  function copyText(text) {
+    navigator.clipboard?.writeText(text).then(() => alert('Copied')).catch(() => alert(text));
+  }
+
+  const windowLabel = (w) => FEED_WINDOW_OPTIONS.find((o) => o.value === w)?.label || w;
+
+  return (
+    <AppShell>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <h2 style={{ margin: 0 }}>Published Feeds</h2>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" onClick={() => loadFeeds().catch(() => {})}>Refresh</button>
+            {canWrite ? <button type="button" onClick={() => resetForm(null)}>Create Feed</button> : null}
+          </div>
+        </div>
+
+        {showForm ? (
+          <form onSubmit={saveFeed} style={{ marginBottom: 20, padding: 14, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+            <h3 style={{ marginTop: 0 }}>{editing ? 'Edit Feed' : 'Create Feed'}</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              <label>Name<input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={{ width: '100%' }} /></label>
+              <label>IOC Type
+                <select required value={form.ioc_type} onChange={(e) => setForm((f) => ({ ...f, ioc_type: e.target.value }))} style={{ width: '100%' }}>
+                  <option value="ip">ip</option>
+                  <option value="domain">domain</option>
+                  <option value="url">url</option>
+                  <option value="hash">hash</option>
+                </select>
+              </label>
+              <label>Default window
+                <select value={form.time_window} onChange={(e) => setForm((f) => ({ ...f, time_window: e.target.value }))} style={{ width: '100%' }}>
+                  {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+              <label>Min confidence<input type="number" min={0} max={100} value={form.min_confidence} onChange={(e) => setForm((f) => ({ ...f, min_confidence: e.target.value }))} style={{ width: '100%' }} /></label>
+              <label>Max items
+                <input type="number" min={1} placeholder="optional" value={form.max_items} onChange={(e) => setForm((f) => ({ ...f, max_items: e.target.value }))} style={{ width: '100%' }} />
+                <span style={{ fontSize: 11, color: '#64748b' }}>Some products support only limited feed size, e.g. 40,000 items.</span>
+              </label>
+              <label>Refresh (minutes)<input type="number" min={5} value={form.refresh_interval_minutes} onChange={(e) => setForm((f) => ({ ...f, refresh_interval_minutes: e.target.value }))} style={{ width: '100%' }} /></label>
+            </div>
+            <label style={{ display: 'block', marginTop: 10 }}>Description<textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} style={{ width: '100%' }} rows={2} /></label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10 }}>
+              <label><input type="checkbox" checked={form.enabled} onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))} /> Enabled</label>
+              <label><input type="checkbox" checked={form.exclude_false_positive} onChange={(e) => setForm((f) => ({ ...f, exclude_false_positive: e.target.checked }))} /> Exclude false positives</label>
+              <label><input type="checkbox" checked={form.exclude_expired} onChange={(e) => setForm((f) => ({ ...f, exclude_expired: e.target.checked }))} /> Exclude expired</label>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <label>Sources (comma)<input value={form.include_sources} onChange={(e) => setForm((f) => ({ ...f, include_sources: e.target.value }))} style={{ width: '100%' }} /></label>
+              <label>Include tags (comma)<input value={form.include_tags} onChange={(e) => setForm((f) => ({ ...f, include_tags: e.target.value }))} style={{ width: '100%' }} /></label>
+              <label>Exclude tags (comma)<input value={form.exclude_tags} onChange={(e) => setForm((f) => ({ ...f, exclude_tags: e.target.value }))} style={{ width: '100%' }} /></label>
+              <label>Verdict filter (comma)<input value={form.verdict_filter} onChange={(e) => setForm((f) => ({ ...f, verdict_filter: e.target.value }))} style={{ width: '100%' }} placeholder="malicious,suspicious" /></label>
+            </div>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+              <button type="submit" disabled={!canWrite}>{editing ? 'Save' : 'Create'}</button>
+              <button type="button" onClick={() => setShowForm(false)}>Cancel</button>
+            </div>
+          </form>
+        ) : null}
+
+        <div style={{ overflowX: 'auto' }}>
+          <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+                <th>Name</th><th>IOC Type</th><th>Format</th><th>Enabled</th><th>Window</th><th>Max Items</th>
+                <th>Last Generated</th><th>Status</th><th>Items</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan={10}>Loading...</td></tr> : (feeds.length ? feeds.map((f) => (
+                <React.Fragment key={f.id}>
+                  <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td><button type="button" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600 }} onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}>{f.name}</button></td>
+                    <td>{f.ioc_type}</td>
+                    <td>{f.format || 'txt'}</td>
+                    <td>{f.enabled ? 'yes' : 'no'}</td>
+                    <td>{windowLabel(f.time_window)}</td>
+                    <td>{f.max_items ?? '-'}</td>
+                    <td>{formatUserDateTime(f.last_generated_at)}</td>
+                    <td style={{ color: f.last_status === 'success' ? '#166534' : f.last_status === 'failed' ? '#991b1b' : '#92400e' }}>{f.last_status || '-'}</td>
+                    <td>{f.last_item_count ?? '-'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {canWrite ? <button type="button" disabled={regenerating[f.id]} onClick={() => regenerateFeed(f.id)}>{regenerating[f.id] ? '...' : 'Regenerate'}</button> : null}
+                      {canWrite ? <button type="button" onClick={() => resetForm(f)} style={{ marginLeft: 6 }}>Edit</button> : null}
+                      {canWrite ? <button type="button" onClick={() => deleteFeed(f.id)} style={{ marginLeft: 6 }}>Delete</button> : null}
+                    </td>
+                  </tr>
+                  {expandedId === f.id ? (
+                    <tr>
+                      <td colSpan={10} style={{ background: '#f8fafc', padding: 12 }}>
+                        {f.last_error ? <div style={{ color: '#991b1b', marginBottom: 8, fontSize: 12 }}>Last error: {f.last_error}</div> : null}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong>Access Keys</strong>
+                          {canWrite ? <button type="button" onClick={() => createKey(f.id)}>Create key</button> : null}
+                        </div>
+                        {keysLoading ? <div>Loading keys...</div> : (
+                          <table width="100%" cellPadding={6} style={{ marginTop: 8, fontSize: 12 }}>
+                            <thead><tr><th>Name</th><th>Enabled</th><th>Last used</th><th>Last IP</th><th>Actions</th></tr></thead>
+                            <tbody>
+                              {accessKeys.length ? accessKeys.map((k) => (
+                                <tr key={k.id}>
+                                  <td>{k.name}</td>
+                                  <td>{k.enabled && !k.revoked_at ? 'yes' : 'no'}</td>
+                                  <td>{formatUserDateTime(k.last_used_at)}</td>
+                                  <td>{k.last_used_ip || '-'}</td>
+                                  <td>
+                                    {canWrite && !k.revoked_at ? (
+                                      <>
+                                        <button type="button" onClick={() => rotateKey(f.id, k.id)}>Rotate</button>
+                                        <button type="button" style={{ marginLeft: 6 }} onClick={() => revokeKey(f.id, k.id)}>Revoke</button>
+                                      </>
+                                    ) : <span style={{ color: '#94a3b8' }}>revoked</span>}
+                                  </td>
+                                </tr>
+                              )) : <tr><td colSpan={5}>No access keys</td></tr>}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  ) : null}
+                </React.Fragment>
+              )) : <tr><td colSpan={10} style={{ color: '#64748b' }}>No published feeds yet</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {tokenReveal ? (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div style={{ width: 560, maxWidth: '96vw', background: '#fff', borderRadius: 12, padding: 20, border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginTop: 0 }}>Feed access token (shown once)</h3>
+            <p style={{ fontSize: 13, color: '#64748b' }}>Copy and store this URL now. It will not be shown again.</p>
+            <code style={{ display: 'block', wordBreak: 'break-all', padding: 10, background: '#f1f5f9', borderRadius: 6, fontSize: 12 }}>{tokenReveal.feed_url}</code>
+            <button type="button" style={{ marginTop: 10 }} onClick={() => copyText(tokenReveal.feed_url)}>Copy URL</button>
+            <div style={{ marginTop: 16 }}>
+              <strong style={{ fontSize: 13 }}>Example URLs</strong>
+              <ul style={{ fontSize: 12, paddingLeft: 18 }}>
+                {feedUrlExamples(tokenReveal.token, tokenReveal.ioc_type || 'ip').map((ex) => (
+                  <li key={ex.label} style={{ marginBottom: 6 }}>
+                    {ex.label}: <code style={{ wordBreak: 'break-all' }}>{ex.url}</code>
+                    <button type="button" style={{ marginLeft: 8, fontSize: 11 }} onClick={() => copyText(ex.url)}>Copy</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button type="button" style={{ marginTop: 8 }} onClick={() => setTokenReveal(null)}>Close</button>
+          </div>
+        </div>
+      ) : null}
+    </AppShell>
+  );
+}
+
 function AdministrationPage() {
   const { canWrite, role, userId, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
@@ -5327,6 +5703,7 @@ function App() {
           <Route path="/threat-intelligence/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
+          <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />
