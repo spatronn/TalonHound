@@ -56,6 +56,9 @@ const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue, db: po
 
 /** IOC list timing: IOC_LIST_TIMING=1 or query ?timing=1 to log searchStringParse, dbConnectionAcquired, dbQuery, countQuery, resultMapping, jsonSerialization, responseSent (ms). */
 const IOC_LIST_TIMING = process.env.IOC_LIST_TIMING === '1' || process.env.IOC_LIST_TIMING === 'true';
+/** Integrations list timing: INTEGRATIONS_TIMING=1 logs base feed, latest run, queue, and total handler durations (ms). */
+const INTEGRATIONS_TIMING = process.env.INTEGRATIONS_TIMING === '1' || process.env.INTEGRATIONS_TIMING === 'true';
+const INTEGRATIONS_META_QUERY_TIMEOUT_MS = Math.max(Number(process.env.INTEGRATIONS_META_QUERY_TIMEOUT_MS || 5000), 1000);
 /** Hash-only (sha256:/md5:/sha1: no asn/country) uses single SELECT + JS group by default. Set IOC_LIST_USE_CTE_FOR_HASH=1 to force the full CTE path. */
 const IOC_LIST_USE_CTE_FOR_HASH = process.env.IOC_LIST_USE_CTE_FOR_HASH === '1' || process.env.IOC_LIST_USE_CTE_FOR_HASH === 'true';
 
@@ -2837,7 +2840,77 @@ app.get('/api/analytics/statistics', async (req, res) => {
   }
 });
 
+const FEED_JOB_TYPE_BY_KEY = {
+  'et-blockrules': 'hourly_import',
+  'usom-trcert': 'usom_import',
+  'urlhaus-abusech': 'urlhaus_import',
+  'threatfox-abusech': 'threatfox_import',
+  'malwarebazaar-abusech': 'malwarebazaar_import',
+  'phishtank-opendnsrr': 'phishtank_import'
+};
+
+function integrationsTimingLog(enabled, label, startMs) {
+  if (!enabled) return;
+  console.log(`[integrations] ${label}: ${Date.now() - startMs}ms`);
+}
+
+function wantsIntegrationsQueue(req) {
+  const q = req.query || {};
+  return Object.prototype.hasOwnProperty.call(q, 'queue_page')
+    || Object.prototype.hasOwnProperty.call(q, 'queue_search')
+    || Object.prototype.hasOwnProperty.call(q, 'queue_window');
+}
+
+function feedJobType(key) {
+  return FEED_JOB_TYPE_BY_KEY[key] || key;
+}
+
+async function queryIntegrationsMetaWithTimeout(queryPromise, fallbackRows = []) {
+  try {
+    const res = await Promise.race([
+      queryPromise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('integrations meta query timeout')), INTEGRATIONS_META_QUERY_TIMEOUT_MS);
+      })
+    ]);
+    return res;
+  } catch {
+    return { rows: fallbackRows };
+  }
+}
+
+function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, asnLastUpdatedAt) {
+  const lr = latestRunByJobType.get(feedJobType(feed.key));
+  const lq = latestQueueByKey.get(feed.key);
+  const recordsProcessed = Number(lr?.records_processed ?? lq?.records_processed ?? 0) || 0;
+
+  if (feed.key === 'asn_enrichment') {
+    return {
+      ...feed,
+      last_status: asnLastUpdatedAt ? 'success' : 'never',
+      last_started_at: asnLastUpdatedAt || null,
+      last_finished_at: null,
+      last_records_processed: 0,
+      total_records: null,
+      last_error: null
+    };
+  }
+
+  return {
+    ...feed,
+    last_status: lr?.status || lq?.status || 'never',
+    last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,
+    last_finished_at: lr?.finished_at || lq?.finished_at || null,
+    last_records_processed: recordsProcessed,
+    total_records: recordsProcessed,
+    last_error: lr?.error_message || lq?.error_message || null
+  };
+}
+
 app.get('/api/integrations', async (req, res) => {
+  const handlerStart = Date.now();
+  const timingEnabled = INTEGRATIONS_TIMING || req.query?.timing === '1';
+
   try {
     const queuePage = Math.max(Number(req.query?.queue_page || 1) || 1, 1);
     const requestedSize = Number(req.query?.queue_page_size || 25) || 25;
@@ -2846,33 +2919,9 @@ app.get('/api/integrations', async (req, res) => {
     const queueSearch = String(req.query?.queue_search || '').trim();
     const queueWindow = String(req.query?.queue_window || '24h').trim();
     const queueWindowSql = queueWindow === '7d' ? "NOW() - INTERVAL '7 days'" : "NOW() - INTERVAL '24 hours'";
+    const loadQueue = wantsIntegrationsQueue(req);
 
-    const q = `
-      WITH latest_runs AS (
-        SELECT DISTINCT ON (job_type)
-          job_type, status, started_at, finished_at, records_processed, error_message
-        FROM integration_runs
-        ORDER BY job_type, started_at DESC
-      ),
-      asn_stats AS (
-        SELECT MAX(updated_at) AS last_updated_at, COUNT(*)::int AS total_records
-        FROM asn_lookup
-      ),
-      latest_queue AS (
-        SELECT DISTINCT ON (integration_key_norm)
-          integration_key_norm AS integration_key,
-          status, started_at, queued_at, finished_at, records_processed, error_message
-        FROM (
-          SELECT
-            CASE
-              WHEN integration_key = 'unknown' AND job_name = 'phishtank-import' THEN 'phishtank-opendnsrr'
-              ELSE integration_key
-            END AS integration_key_norm,
-            status, started_at, queued_at, finished_at, records_processed, error_message
-          FROM integration_queue_jobs
-        ) qn
-        ORDER BY integration_key_norm, COALESCE(started_at, queued_at) DESC
-      )
+    const feedsQ = `
       SELECT
         f.key,
         f.integration_id,
@@ -2881,70 +2930,14 @@ app.get('/api/integrations', async (req, res) => {
         f.schedule_cron AS schedule,
         f.trust_level,
         f.created_at,
-        COALESCE(
-          CASE
-            WHEN f.key = 'asn_enrichment' THEN CASE WHEN asn.last_updated_at IS NULL THEN 'never' ELSE 'success' END
-            ELSE NULL
-          END,
-          lr.status,
-          lq.status,
-          'never'
-        ) AS last_status,
-        COALESCE(
-          CASE WHEN f.key = 'asn_enrichment' THEN asn.last_updated_at ELSE NULL END,
-          lr.started_at,
-          lq.started_at,
-          lq.queued_at
-        ) AS last_started_at,
         CASE
           WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
           WHEN f.schedule_cron = '*/15 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 15 = 0 THEN 15 ELSE 15 - (EXTRACT(MINUTE FROM NOW())::int % 15) END) * INTERVAL '1 minute'
           WHEN f.schedule_cron = '*/30 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 30 = 0 THEN 30 ELSE 30 - (EXTRACT(MINUTE FROM NOW())::int % 30) END) * INTERVAL '1 minute'
           WHEN f.schedule_cron = '0 0 * * *' THEN date_trunc('day', NOW()) + INTERVAL '1 day'
           ELSE date_trunc('hour', NOW()) + INTERVAL '1 hour'
-        END AS next_run_at,
-        COALESCE(lr.finished_at, lq.finished_at) AS last_finished_at,
-        COALESCE(lr.records_processed, lq.records_processed, 0) AS last_records_processed,
-        CASE
-          WHEN f.key = 'et-blockrules' THEN (
-            SELECT COUNT(*)::int FROM ioc_items i WHERE i.source_name LIKE 'EmergingThreats:%'
-          )
-          WHEN f.key = 'usom-trcert' THEN (
-            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'USOM:TR-CERT'
-          )
-          WHEN f.key = 'urlhaus-abusech' THEN (
-            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'URLhaus:abuse.ch'
-          )
-          WHEN f.key = 'threatfox-abusech' THEN (
-            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'ThreatFox:abuse.ch'
-          )
-          WHEN f.key = 'malwarebazaar-abusech' THEN (
-            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'MalwareBazaar:abuse.ch'
-          )
-          WHEN f.key = 'phishtank-opendnsrr' THEN (
-            SELECT COUNT(*)::int FROM ioc_items o WHERE o.source_name = 'PhishTank:open_dnsrr'
-          )
-          WHEN f.key = 'asn_enrichment' THEN asn.total_records
-          ELSE COALESCE(lr.records_processed, lq.records_processed, 0)
-        END AS total_records,
-        CASE
-          WHEN f.key = 'asn_enrichment' THEN NULL
-          ELSE COALESCE(lr.error_message, lq.error_message)
-        END AS last_error
+        END AS next_run_at
       FROM integration_feeds f
-      LEFT JOIN latest_runs lr
-        ON lr.job_type = CASE
-          WHEN f.key = 'et-blockrules' THEN 'hourly_import'
-          WHEN f.key = 'usom-trcert' THEN 'usom_import'
-          WHEN f.key = 'urlhaus-abusech' THEN 'urlhaus_import'
-          WHEN f.key = 'threatfox-abusech' THEN 'threatfox_import'
-          WHEN f.key = 'malwarebazaar-abusech' THEN 'malwarebazaar_import'
-          WHEN f.key = 'phishtank-opendnsrr' THEN 'phishtank_import'
-          ELSE f.key
-        END
-      LEFT JOIN latest_queue lq
-        ON lq.integration_key = f.key
-      CROSS JOIN asn_stats asn
       WHERE f.active = TRUE
       ORDER BY f.created_at ASC, f.name ASC
     `;
@@ -2971,16 +2964,71 @@ app.get('/api/integrations', async (req, res) => {
       LIMIT 20
     `;
 
-    const [integrationsRes, recentRes] = await Promise.all([
-      pool.query(q),
+    const baseStart = Date.now();
+    const feedsRes = await pool.query(feedsQ);
+    integrationsTimingLog(timingEnabled, 'integration base query', baseStart);
+
+    const feedKeys = feedsRes.rows.map((r) => r.key);
+    const jobTypes = [...new Set(feedKeys.map((key) => feedJobType(key)))];
+
+    const latestRunsQ = `
+      SELECT DISTINCT ON (job_type)
+        job_type, status, started_at, finished_at, records_processed, error_message
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+      ORDER BY job_type, started_at DESC
+    `;
+
+    const latestQueueQ = `
+      SELECT DISTINCT ON (integration_key_norm)
+        integration_key_norm AS integration_key,
+        status, started_at, queued_at, finished_at, records_processed, error_message
+      FROM (
+        SELECT
+          CASE
+            WHEN integration_key = 'unknown' AND job_name = 'phishtank-import' THEN 'phishtank-opendnsrr'
+            ELSE integration_key
+          END AS integration_key_norm,
+          status, started_at, queued_at, finished_at, records_processed, error_message
+        FROM integration_queue_jobs
+        WHERE integration_key = ANY($1::text[])
+           OR (integration_key = 'unknown' AND job_name = 'phishtank-import')
+      ) qn
+      ORDER BY integration_key_norm, COALESCE(started_at, queued_at) DESC
+    `;
+
+    const asnQ = `SELECT MAX(updated_at) AS last_updated_at FROM asn_lookup`;
+
+    const latestRunStart = Date.now();
+    const [latestRunsRes, latestQueueRes, asnRes, recentRes] = await Promise.all([
+      jobTypes.length
+        ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
+        : Promise.resolve({ rows: [] }),
+      feedKeys.length
+        ? queryIntegrationsMetaWithTimeout(pool.query(latestQueueQ, [feedKeys]))
+        : Promise.resolve({ rows: [] }),
+      feedKeys.includes('asn_enrichment')
+        ? queryIntegrationsMetaWithTimeout(pool.query(asnQ))
+        : Promise.resolve({ rows: [{ last_updated_at: null }] }),
       pool.query(recentQ)
     ]);
+    integrationsTimingLog(timingEnabled, 'latest run query', latestRunStart);
+
+    const latestRunByJobType = new Map(latestRunsRes.rows.map((r) => [r.job_type, r]));
+    const latestQueueByKey = new Map(latestQueueRes.rows.map((r) => [r.integration_key, r]));
+    const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
+
+    const integrations = feedsRes.rows.map((feed) =>
+      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, asnLastUpdatedAt)
+    );
 
     let queue = {
       counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 },
       jobs: []
     };
 
+    if (loadQueue) {
+    const queueStart = Date.now();
     try {
       const searchParams = [];
       let searchWhere = '';
@@ -3071,13 +3119,18 @@ app.get('/api/integrations', async (req, res) => {
     } catch {
       // queue telemetry optional
     }
+    integrationsTimingLog(timingEnabled, 'queue query', queueStart);
+    }
+
+    integrationsTimingLog(timingEnabled, 'endpoint total', handlerStart);
 
     return res.json({
-      integrations: integrationsRes.rows,
+      integrations,
       recent_runs: recentRes.rows,
       queue
     });
   } catch (err) {
+    integrationsTimingLog(timingEnabled, 'endpoint total (error)', handlerStart);
     return res.status(500).json({ message: 'Failed to fetch integrations', detail: err.message });
   }
 });
