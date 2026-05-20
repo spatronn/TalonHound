@@ -33,6 +33,7 @@ const RETRO_BACKLOG_THRESHOLD_MEDIUM = Math.max(Number(process.env.IOC_RETRO_BAC
 const RETRO_SLOW_TICK_THRESHOLD_MS = Math.max(Number(process.env.IOC_RETRO_SLOW_TICK_THRESHOLD_MS || 4000), 1000);
 const RETRO_ALIGN_MINUTE = Math.min(Math.max(Number(process.env.IOC_RETRO_ALIGN_MINUTE || 10), 0), 59);
 const RETRO_ALIGN_ENABLED = process.env.IOC_RETRO_ALIGN_ENABLED === '0' ? false : true;
+const IOC_RETRO_POLL_INTERVAL_MS = Math.max(Number(process.env.IOC_RETRO_POLL_INTERVAL_MS || 120000), 5000);
 
 const CURSOR_TS_START = '1970-01-01 00:00:00.000';
 const CURSOR_HASH_START = '0';
@@ -69,6 +70,10 @@ function getIdleSleepMs() {
   next.setUTCMinutes(RETRO_ALIGN_MINUTE);
   if (next <= now) next.setUTCHours(next.getUTCHours() + 1);
   return Math.max(next.getTime() - now.getTime(), 1000);
+}
+
+function getIdleProbeSleepMs() {
+  return Math.max(Math.min(getIdleSleepMs(), IOC_RETRO_POLL_INTERVAL_MS), 1000);
 }
 
 function safeTs(ts) {
@@ -630,8 +635,8 @@ async function runAdaptiveLoop() {
 
   if (pending.pending <= 0 && !st.chunk_active) {
     workerStatus.mode = 'idle';
-    const idleSleepMs = getIdleSleepMs();
-    logStatus(`pending_range=none mode=idle sleep_ms=${idleSleepMs}`);
+    const idleSleepMs = getIdleProbeSleepMs();
+    logStatus(`pending_range=none mode=idle probe_ms=${idleSleepMs} align_remaining_ms=${getIdleSleepMs()}`);
     await sleep(idleSleepMs);
     return;
   }
@@ -646,8 +651,8 @@ async function runAdaptiveLoop() {
 
   if (res?.skipped === 'no_new_ioc' || !res?.workDone) {
     workerStatus.mode = 'idle';
-    const idleSleepMs = getIdleSleepMs();
-    logStatus(`skip_reason=${res?.skipped || 'none'} sleep_ms=${idleSleepMs}`);
+    const idleSleepMs = getIdleProbeSleepMs();
+    logStatus(`skip_reason=${res?.skipped || 'none'} probe_ms=${idleSleepMs} align_remaining_ms=${getIdleSleepMs()}`);
     await sleep(idleSleepMs);
     return;
   }
@@ -687,7 +692,7 @@ async function bootstrap() {
   await maybeSyncIocLookup(true);
 
   console.log(
-    `[ioc-retro] started mode=window-bulk retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} align_enabled=${RETRO_ALIGN_ENABLED ? 1 : 0} align_minute=${RETRO_ALIGN_MINUTE} ioc_chunk_size=${RETRO_IOC_CHUNK_SIZE} match_page_size=${RETRO_MATCH_PAGE_SIZE} lookback_d=${RETRO_LOOKBACK_DAYS} sync_interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS} ch_max_threads=${RETRO_CH_MAX_THREADS} ch_max_exec_s=${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}`
+    `[ioc-retro] started mode=window-bulk retro_interval_s=${RETRO_SCAN_INTERVAL_SECONDS} align_enabled=${RETRO_ALIGN_ENABLED ? 1 : 0} align_minute=${RETRO_ALIGN_MINUTE} idle_probe_ms=${IOC_RETRO_POLL_INTERVAL_MS} ioc_chunk_size=${RETRO_IOC_CHUNK_SIZE} match_page_size=${RETRO_MATCH_PAGE_SIZE} lookback_d=${RETRO_LOOKBACK_DAYS} sync_interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS} ch_max_threads=${RETRO_CH_MAX_THREADS} ch_max_exec_s=${RETRO_CH_MAX_EXECUTION_TIME_SECONDS}`
   );
 
   while (!stopping) {
