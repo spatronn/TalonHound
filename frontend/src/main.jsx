@@ -5507,6 +5507,60 @@ function LegacyIOCDetailsRedirect() {
   );
 }
 
+function VirusTotalEnrichmentCard({ iocId, iocValue, iocType }) {
+  const [state, setState] = useState({ status: 'loading', summary: null, message: '' });
+  const [open, setOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!iocId) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get(`/ioc/${iocId}/enrichments/virustotal`);
+      if (data?.status === 'api_key_missing') return setState({ status: 'api_key_missing', summary: null, message: 'VirusTotal API key is not configured' });
+      if (data?.status === 'not_found') return setState({ status: 'not_found', summary: null, message: 'VirusTotal enrichment not loaded yet' });
+      return setState({ status: 'success', summary: data?.summary || null, message: '' });
+    } catch {
+      setState({ status: 'error', summary: null, message: 'VirusTotal enrichment failed' });
+    }
+  }, [iocId]);
+
+  useEffect(() => { load().catch(() => {}); }, [load]);
+
+  async function refresh() {
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.post(`/ioc/${iocId}/enrichments/virustotal/refresh`);
+      setOpen(true);
+      setState({ status: 'success', summary: data?.summary || null, message: '' });
+    } catch (err) {
+      const msg = err?.response?.status === 429 ? 'VirusTotal rate limit reached. Try again later.' : (err?.response?.data?.message || 'VirusTotal enrichment failed');
+      setState({ status: 'error', summary: null, message: msg });
+    }
+  }
+
+  const s = state.summary;
+  return <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+      <div style={{ fontWeight:700 }}>VirusTotal <span style={{ fontSize:11, color:'#94a3b8' }}>provider</span></div>
+      <button onClick={() => setOpen((v) => !v)}>{open ? 'Collapse' : 'Expand'}</button>
+    </div>
+    {state.status === 'loading' ? <div style={{ color:'#94a3b8', marginTop:8 }}>Loading...</div> : null}
+    {state.status === 'api_key_missing' ? <div style={{ marginTop:8, color:'#fbbf24' }}>VirusTotal API key is not configured<br/><span style={{fontSize:12}}>Configure in Administration</span></div> : null}
+    {state.status === 'not_found' ? <div style={{ marginTop:8 }}><div style={{ color:'#94a3b8' }}>VirusTotal enrichment not loaded yet</div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}}>Enrich with VirusTotal</button></div> : null}
+    {state.status === 'error' ? <div style={{ marginTop:8, color:'#fca5a5' }}>{state.message}<div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}}>Retry</button></div></div> : null}
+    {state.status === 'success' && s ? <div style={{ marginTop:8 }}>
+      <div style={{ display:'flex', gap:10, alignItems:'baseline' }}><div style={{ fontSize:22, fontWeight:800 }}>{s?.detection_ratio?.detected || 0} / {s?.detection_ratio?.total || 0}</div><div style={{ color:'#94a3b8', fontSize:12 }}>Detection Ratio</div></div>
+      {open ? <>
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:8 }}>
+          {['malicious','suspicious','harmless','undetected'].map((k)=><span key={k} style={{padding:'3px 8px', border:'1px solid #475569', borderRadius:999, fontSize:12}}>{k}: {s?.stats?.[k] ?? 0}</span>)}
+        </div>
+        {s.permalink ? <div style={{ marginTop:8 }}><a href={s.permalink} target="_blank" rel="noreferrer">Open in VirusTotal</a></div> : null}
+      </> : null}
+      <button onClick={() => refresh().catch(()=>{})} style={{ marginTop:8 }}>Refresh</button>
+    </div> : null}
+  </div>;
+}
+
 function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
@@ -5694,6 +5748,8 @@ function IOCDetailsPage() {
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Evidence Logs</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(data.summary?.evidence_logs_count || 0)}</div></div>
             </div>
+
+            <VirusTotalEnrichmentCard iocId={summary.id} iocValue={summary.observable} iocType={summary.observable_type} />
 
             {!isHashObservable ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>

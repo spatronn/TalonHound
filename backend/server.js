@@ -4996,6 +4996,113 @@ async function saveRiskSnapshot() {
   }
 }
 
+const VT_PROVIDER = 'virustotal';
+const VT_TTL_HOURS = Math.max(1, Number(process.env.VIRUSTOTAL_ENRICHMENT_TTL_HOURS || 24));
+const VT_TIMEOUT_MS = Math.max(3000, Number(process.env.VIRUSTOTAL_TIMEOUT_MS || 12000));
+
+function getThreatIntelProviderConfig() {
+  return {
+    virustotal: {
+      apiKey: String(process.env.VIRUSTOTAL_API_KEY || '').trim()
+    }
+  };
+}
+
+function toVtUrlId(raw) {
+  const b64 = Buffer.from(String(raw || ''), 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return b64;
+}
+
+function normalizeVtSummary(iocValue, iocType, payload) {
+  const attr = payload?.data?.attributes || {};
+  const stats = attr.last_analysis_stats || {};
+  const detected = Number(stats.malicious || 0) + Number(stats.suspicious || 0);
+  const total = Object.values(stats).reduce((n, v) => n + Number(v || 0), 0);
+  const engines = Object.entries(attr.last_analysis_results || {})
+    .filter(([, v]) => v && (v.category === 'malicious' || v.category === 'suspicious'))
+    .slice(0, 5)
+    .map(([engine, v]) => ({ engine, category: v.category || null, result: v.result || null }));
+
+  return {
+    provider: VT_PROVIDER,
+    ioc_value: iocValue,
+    ioc_type: iocType,
+    permalink: payload?.data?.links?.self || null,
+    last_analysis_date: attr.last_analysis_date ? new Date(Number(attr.last_analysis_date) * 1000).toISOString() : null,
+    stats: {
+      malicious: Number(stats.malicious || 0), suspicious: Number(stats.suspicious || 0), harmless: Number(stats.harmless || 0), undetected: Number(stats.undetected || 0), timeout: Number(stats.timeout || 0)
+    },
+    detection_ratio: { detected, total },
+    reputation: Number.isFinite(Number(attr.reputation)) ? Number(attr.reputation) : null,
+    top_engines: engines,
+    domain: { registrar: attr.registrar || null, categories: Object.values(attr.categories || {}) },
+    ip: { asn: attr.asn || null, country: attr.country || null, network: attr.network || null, owner: attr.as_owner || null },
+    url: { final_url: attr.last_final_url || null, title: attr.title || null, last_final_url: attr.last_final_url || null },
+    file: { sha256: attr.sha256 || null, names: Array.isArray(attr.names) ? attr.names.slice(0, 10) : [], type_description: attr.type_description || null }
+  };
+}
+
+app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
+  try {
+    const iocId = Number(req.params.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
+    const keyConfigured = Boolean(getThreatIntelProviderConfig().virustotal.apiKey);
+    if (!keyConfigured) return res.json({ status: 'api_key_missing' });
+    const q = `SELECT status, normalized_summary, error_message, fetched_at, expires_at FROM ioc_enrichments WHERE provider=$1 AND ioc_id=$2 LIMIT 1`;
+    const r = await pool.query(q, [VT_PROVIDER, iocId]);
+    if (!r.rowCount) return res.json({ status: 'not_found' });
+    const row = r.rows[0];
+    return res.json({ status: row.status, summary: row.normalized_summary, error_message: row.error_message, fetched_at: row.fetched_at, expires_at: row.expires_at });
+  } catch {
+    return res.status(500).json({ message: 'Failed to fetch VirusTotal enrichment' });
+  }
+});
+
+app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
+  try {
+    const iocId = Number(req.params.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
+    const vtKey = getThreatIntelProviderConfig().virustotal.apiKey;
+    if (!vtKey) return res.status(400).json({ status: 'api_key_missing', message: 'VirusTotal API key is not configured' });
+
+    const itemRes = await pool.query(`SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type FROM ioc_items WHERE id=$1 LIMIT 1`, [iocId]);
+    if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const item = itemRes.rows[0];
+    const iocType = item.ioc_type === 'file_hash' ? 'hash' : item.ioc_type;
+
+    let endpoint = '';
+    if (iocType === 'ip' || iocType === 'ip6') endpoint = `/ip_addresses/${encodeURIComponent(item.ioc_value)}`;
+    else if (iocType === 'domain') endpoint = `/domains/${encodeURIComponent(item.ioc_value)}`;
+    else if (iocType === 'url') endpoint = `/urls/${toVtUrlId(item.ioc_value)}`;
+    else if (iocType === 'hash' || iocType === 'sha256' || iocType === 'sha1' || iocType === 'md5') endpoint = `/files/${encodeURIComponent(item.ioc_value)}`;
+    else return res.status(400).json({ message: 'IOC type not supported for VirusTotal enrichment' });
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), VT_TIMEOUT_MS);
+    let vtRes;
+    try {
+      vtRes = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, { headers: { 'x-apikey': vtKey }, signal: ctrl.signal });
+    } finally { clearTimeout(t); }
+
+    if (vtRes.status === 429) return res.status(429).json({ message: 'VirusTotal rate limit reached. Try again later.' });
+    if (!vtRes.ok) return res.status(502).json({ message: 'VirusTotal enrichment failed' });
+
+    const raw = await vtRes.json();
+    const summary = normalizeVtSummary(item.ioc_value, iocType, raw);
+    const fetchedAt = new Date();
+    const expiresAt = new Date(fetchedAt.getTime() + VT_TTL_HOURS * 3600 * 1000);
+    await pool.query(`INSERT INTO ioc_enrichments (ioc_id,ioc_value,ioc_type,provider,status,normalized_summary,raw_response,error_message,fetched_at,expires_at,updated_at)
+      VALUES ($1,$2,$3,$4,'success',$5,$6,NULL,$7,$8,NOW())
+      ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET ioc_id=EXCLUDED.ioc_id,status='success',normalized_summary=EXCLUDED.normalized_summary,raw_response=EXCLUDED.raw_response,error_message=NULL,fetched_at=EXCLUDED.fetched_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()`,
+      [iocId, item.ioc_value, iocType, VT_PROVIDER, summary, raw, fetchedAt.toISOString(), expiresAt.toISOString()]);
+
+    return res.json({ status: 'success', summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
+  } catch (err) {
+    if (String(err?.name) === 'AbortError') return res.status(504).json({ message: 'VirusTotal enrichment timed out' });
+    return res.status(500).json({ message: 'VirusTotal enrichment failed' });
+  }
+});
+
 app.listen(port, async () => {
   console.log(`Backend listening on :${port}`);
   if (IOC_LIST_TIMING) {
