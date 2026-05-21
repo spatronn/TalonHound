@@ -5635,57 +5635,94 @@ function LegacyIOCDetailsRedirect() {
   );
 }
 
-function VirusTotalEnrichmentCard({ iocId, iocValue, iocType }) {
-  const [state, setState] = useState({ status: 'loading', summary: null, message: '' });
-  const [open, setOpen] = useState(false);
+function VirusTotalEnrichmentCard({ iocId }) {
+  const [state, setState] = useState({ status: 'loading', summary: null, message: '', fetchedAt: null, expiresAt: null });
+  const [open, setOpen] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     if (!iocId) return;
     setState((s) => ({ ...s, status: 'loading' }));
     try {
       const { data } = await api.get(`/ioc/${iocId}/enrichments/virustotal`);
-      if (data?.status === 'api_key_missing') return setState({ status: 'api_key_missing', summary: null, message: 'VirusTotal API key is not configured' });
-      if (data?.status === 'not_found') return setState({ status: 'not_found', summary: null, message: 'VirusTotal enrichment not loaded yet' });
-      return setState({ status: 'success', summary: data?.summary || null, message: '' });
+      if (data?.status === 'api_key_missing') return setState({ status: 'api_key_missing', summary: null, message: 'VirusTotal API key is not configured.', fetchedAt: null, expiresAt: null });
+      if (data?.status === 'not_found') return setState({ status: 'not_found', summary: null, message: 'No VirusTotal enrichment yet.', fetchedAt: null, expiresAt: null });
+      return setState({ status: 'success', summary: data?.summary || null, message: '', fetchedAt: data?.fetched_at || null, expiresAt: data?.expires_at || null });
     } catch {
-      setState({ status: 'error', summary: null, message: 'VirusTotal enrichment failed' });
+      setState({ status: 'error', summary: null, message: 'VirusTotal enrichment failed', fetchedAt: null, expiresAt: null });
     }
   }, [iocId]);
 
   useEffect(() => { load().catch(() => {}); }, [load]);
 
   async function refresh() {
-    setState((s) => ({ ...s, status: 'loading' }));
+    setRefreshing(true);
     try {
       const { data } = await api.post(`/ioc/${iocId}/enrichments/virustotal/refresh`);
       setOpen(true);
-      setState({ status: 'success', summary: data?.summary || null, message: '' });
+      setState({ status: 'success', summary: data?.summary || null, message: '', fetchedAt: data?.fetched_at || null, expiresAt: data?.expires_at || null });
     } catch (err) {
       const msg = err?.response?.status === 429 ? 'VirusTotal rate limit reached. Try again later.' : (err?.response?.data?.message || 'VirusTotal enrichment failed');
-      setState({ status: 'error', summary: null, message: msg });
-    }
+      setState({ status: 'error', summary: null, message: msg, fetchedAt: null, expiresAt: null });
+    } finally { setRefreshing(false); }
   }
 
-  const s = state.summary;
-  return <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
-    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-      <div style={{ fontWeight:700 }}>VirusTotal <span style={{ fontSize:11, color:'#94a3b8' }}>provider</span></div>
-      <button onClick={() => setOpen((v) => !v)}>{open ? 'Collapse' : 'Expand'}</button>
+  const s = state.summary || {};
+  const stats = s.stats || {};
+  const detected = Number(s?.detection_ratio?.detected || 0);
+  const total = Number(s?.detection_ratio?.total || 0);
+  const severityDetected = detected > 0;
+  const vendorResults = Array.isArray(s.vendor_results) ? s.vendor_results : [];
+  const topDetections = (vendorResults.length ? vendorResults.filter((v) => v.category === 'malicious' || v.category === 'suspicious').slice(0, 5) : (Array.isArray(s.top_engines) ? s.top_engines : []));
+
+  const chip = (label, value, c) => <span key={label} style={{ padding:'6px 10px', borderRadius:999, border:`1px solid ${c.b}`, background:c.bg, color:c.t, fontSize:12 }}>{label}: <b>{value}</b></span>;
+
+  return <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
+      <div>
+        <div style={{ fontWeight:700, color:'#e2e8f0' }}>VirusTotal Intelligence <span style={{ marginLeft:8, border:'1px solid #1d4ed8', color:'#93c5fd', borderRadius:999, padding:'2px 8px', fontSize:11 }}>VirusTotal</span></div>
+        <div style={{ color:'#94a3b8', fontSize:12, marginTop:4 }}>External reputation and analysis summary</div>
+      </div>
+      <button onClick={() => setOpen((v) => !v)} style={{ padding:'6px 10px' }}>{open ? 'Collapse' : 'Expand'}</button>
     </div>
-    {state.status === 'loading' ? <div style={{ color:'#94a3b8', marginTop:8 }}>Loading...</div> : null}
-    {state.status === 'api_key_missing' ? <div style={{ marginTop:8, color:'#fbbf24' }}>VirusTotal API key is not configured<br/><Link to="/administration/enrichment-providers" style={{fontSize:12,color:'#93c5fd'}}>Configure in Administration</Link></div> : null}
-    {state.status === 'not_found' ? <div style={{ marginTop:8 }}><div style={{ color:'#94a3b8' }}>VirusTotal enrichment not loaded yet</div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}}>Enrich with VirusTotal</button></div> : null}
-    {state.status === 'error' ? <div style={{ marginTop:8, color:'#fca5a5' }}>{state.message}<div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}}>Retry</button></div></div> : null}
-    {state.status === 'success' && s ? <div style={{ marginTop:8 }}>
-      <div style={{ display:'flex', gap:10, alignItems:'baseline' }}><div style={{ fontSize:22, fontWeight:800 }}>{s?.detection_ratio?.detected || 0} / {s?.detection_ratio?.total || 0}</div><div style={{ color:'#94a3b8', fontSize:12 }}>Detection Ratio</div></div>
-      {open ? <>
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:8 }}>
-          {['malicious','suspicious','harmless','undetected'].map((k)=><span key={k} style={{padding:'3px 8px', border:'1px solid #475569', borderRadius:999, fontSize:12}}>{k}: {s?.stats?.[k] ?? 0}</span>)}
+
+    {state.status === 'loading' ? <div style={{ color:'#94a3b8', marginTop:10 }}>Loading...</div> : null}
+    {state.status === 'api_key_missing' ? <div style={{ marginTop:10, color:'#fbbf24' }}>VirusTotal API key is not configured.<div><Link to="/administration/enrichment-providers" style={{ color:'#93c5fd' }}>Configure in Administration</Link></div></div> : null}
+    {state.status === 'not_found' ? <div style={{ marginTop:10, color:'#94a3b8' }}>No VirusTotal enrichment yet.<div style={{ marginTop:4 }}>Run enrichment to fetch external reputation data for this IOC.</div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Enrich with VirusTotal'}</button></div> : null}
+    {state.status === 'error' ? <div style={{ marginTop:10, color:'#fca5a5' }}>{state.message}<div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Retry'}</button></div></div> : null}
+
+    {state.status === 'success' && open ? <>
+      <div style={{ display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:12, marginTop:12 }}>
+        <div style={{ border:'1px solid #334155', borderRadius:10, padding:12, background:'#0b1220' }}>
+          <div style={{ fontSize:30, fontWeight:800 }}>{detected} / {total}</div>
+          <div style={{ color:'#94a3b8', fontSize:12 }}>engines flagged this IOC</div>
+          <div style={{ marginTop:8, display:'inline-block', border:'1px solid #475569', borderRadius:999, padding:'3px 10px', fontSize:12, color: severityDetected ? '#fca5a5' : '#86efac' }}>{severityDetected ? 'Detected' : 'No detections'}</div>
         </div>
-        {s.permalink ? <div style={{ marginTop:8 }}><a href={s.permalink} target="_blank" rel="noreferrer">Open in VirusTotal</a></div> : null}
-      </> : null}
-      <button onClick={() => refresh().catch(()=>{})} style={{ marginTop:8 }}>Refresh</button>
-    </div> : null}
+        <div style={{ border:'1px solid #334155', borderRadius:10, padding:12, background:'#0b1220' }}>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+            {chip('Malicious', stats.malicious ?? 0, { bg:'rgba(220,38,38,.14)', b:'#7f1d1d', t:'#fca5a5' })}
+            {chip('Suspicious', stats.suspicious ?? 0, { bg:'rgba(217,119,6,.14)', b:'#92400e', t:'#fcd34d' })}
+            {chip('Harmless', stats.harmless ?? 0, { bg:'rgba(22,163,74,.14)', b:'#166534', t:'#86efac' })}
+            {chip('Undetected', stats.undetected ?? 0, { bg:'rgba(71,85,105,.18)', b:'#475569', t:'#cbd5e1' })}
+          </div>
+          <div style={{ marginTop:10, fontSize:12, color:'#94a3b8' }}>Last analysis: {formatUserDateTime(s.last_analysis_date)} • Fetched: {formatUserDateTime(state.fetchedAt)}</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop:12, border:'1px solid #334155', borderRadius:10, overflow:'hidden' }}>
+        <div style={{ padding:10, background:'#111827', borderBottom:'1px solid #334155', fontWeight:700 }}>Top detections</div>
+        {topDetections.length ? <table width='100%' cellPadding='8' style={{ borderCollapse:'collapse', fontSize:13 }}><thead><tr style={{ textAlign:'left', background:'#0b1220' }}><th>Engine</th><th>Category</th><th>Result</th></tr></thead><tbody>{topDetections.map((r, i)=><tr key={`${r.engine}-${i}`} style={{ borderTop:'1px solid #334155' }}><td>{r.engine}</td><td>{r.category || '-'}</td><td style={{ whiteSpace:'normal', overflowWrap:'anywhere' }}>{r.result || '-'}</td></tr>)}</tbody></table> : <div style={{ padding:10, color:'#94a3b8' }}>Top detections are not available for this IOC.</div>}
+      </div>
+
+      {vendorResults.length > 5 ? <div style={{ marginTop:8 }}><button onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide vendor results' : 'Show all vendor results'}</button></div> : null}
+      {showAll ? <div style={{ marginTop:8, border:'1px solid #334155', borderRadius:10, maxHeight:260, overflow:'auto' }}><div style={{ padding:10, background:'#111827', borderBottom:'1px solid #334155', fontWeight:700 }}>Security vendors' analysis</div><table width='100%' cellPadding='8' style={{ borderCollapse:'collapse', fontSize:12 }}><thead><tr style={{ textAlign:'left', background:'#0b1220' }}><th>Vendor</th><th>Category</th><th>Result</th><th>Method</th></tr></thead><tbody>{vendorResults.map((r, i)=><tr key={`${r.engine}-${i}`} style={{ borderTop:'1px solid #334155' }}><td>{r.engine}</td><td>{r.category || '-'}</td><td style={{ maxWidth:360, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.result || '-'}</td><td>{r.method || '-'}</td></tr>)}</tbody></table></div> : null}
+
+      <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
+        <button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</button>
+        {s.permalink ? <a href={s.permalink} target='_blank' rel='noopener noreferrer' style={{ padding:'7px 10px', border:'1px solid #334155', borderRadius:8, textDecoration:'none', color:'#93c5fd' }}>Open in VirusTotal</a> : null}
+      </div>
+    </> : null}
   </div>;
 }
 

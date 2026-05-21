@@ -5038,10 +5038,20 @@ function normalizeVtSummary(iocValue, iocType, payload) {
   const stats = attr.last_analysis_stats || {};
   const detected = Number(stats.malicious || 0) + Number(stats.suspicious || 0);
   const total = Object.values(stats).reduce((n, v) => n + Number(v || 0), 0);
-  const engines = Object.entries(attr.last_analysis_results || {})
-    .filter(([, v]) => v && (v.category === 'malicious' || v.category === 'suspicious'))
+  const categoryOrder = { malicious: 1, suspicious: 2, harmless: 3, undetected: 4, timeout: 5 };
+  const vendorResults = Object.entries(attr.last_analysis_results || {})
+    .map(([key, v]) => ({
+      engine: String(v?.engine_name || key || '').trim() || key,
+      category: v?.category || null,
+      result: v?.result || null,
+      method: v?.method || null
+    }))
+    .sort((a, b) => (categoryOrder[a.category] || 99) - (categoryOrder[b.category] || 99));
+
+  const engines = vendorResults
+    .filter((v) => v.category === 'malicious' || v.category === 'suspicious')
     .slice(0, 5)
-    .map(([engine, v]) => ({ engine, category: v.category || null, result: v.result || null }));
+    .map((v) => ({ engine: v.engine, category: v.category, result: v.result }));
 
   return {
     provider: VT_PROVIDER,
@@ -5055,6 +5065,7 @@ function normalizeVtSummary(iocValue, iocType, payload) {
     detection_ratio: { detected, total },
     reputation: Number.isFinite(Number(attr.reputation)) ? Number(attr.reputation) : null,
     top_engines: engines,
+    vendor_results: vendorResults,
     domain: { registrar: attr.registrar || null, categories: Object.values(attr.categories || {}) },
     ip: { asn: attr.asn || null, country: attr.country || null, network: attr.network || null, owner: attr.as_owner || null },
     url: { final_url: attr.last_final_url || null, title: attr.title || null, last_final_url: attr.last_final_url || null },
