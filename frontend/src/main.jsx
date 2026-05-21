@@ -4232,7 +4232,19 @@ function EnrichmentProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [p, setP] = useState(null);
   const [form, setForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
-  const [msg, setMsg] = useState('');
+  const [feedback, setFeedback] = useState({ type: '', text: '' });
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const statusMeta = (status) => {
+    const s = String(status || '').toLowerCase();
+    if (s === 'healthy') return { label: 'Healthy', bg: 'rgba(22,163,74,0.18)', color: '#86efac', border: '#166534' };
+    if (s === 'error') return { label: 'Error', bg: 'rgba(220,38,38,0.18)', color: '#fca5a5', border: '#7f1d1d' };
+    if (s === 'rate_limited') return { label: 'Rate limited', bg: 'rgba(217,119,6,0.18)', color: '#fcd34d', border: '#b45309' };
+    if (s === 'configured') return { label: 'Configured', bg: 'rgba(37,99,235,0.18)', color: '#93c5fd', border: '#1d4ed8' };
+    return { label: 'Not configured', bg: 'rgba(100,116,139,0.2)', color: '#cbd5e1', border: '#475569' };
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -4246,40 +4258,98 @@ function EnrichmentProvidersPage() {
   useEffect(() => { load().catch(()=>{}); }, [load]);
 
   async function save() {
+    setSaving(true);
+    setFeedback({ type: '', text: '' });
     try {
       await api.put('/admin/enrichment-providers/virustotal', form);
-      setMsg('Saved');
+      setFeedback({ type: 'success', text: 'Settings saved successfully.' });
       setForm((f) => ({ ...f, api_key: '' }));
       await load();
-    } catch (e) { setMsg(e?.response?.data?.message || 'Save failed'); }
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
+    } finally { setSaving(false); }
   }
-  async function testConn() {
-    try { const { data } = await api.post('/admin/enrichment-providers/virustotal/test'); setMsg(data?.message || 'Connection successful'); await load(); }
-    catch (e) { setMsg(e?.response?.data?.message || 'Test failed'); await load(); }
-  }
-  async function removeKey() { try { await api.post('/admin/enrichment-providers/virustotal/remove-key'); setMsg('Key removed'); await load(); } catch { setMsg('Remove failed'); } }
 
-  return <AppShell><section style={{ border:'1px solid #334155', borderRadius:12, background:'#111827', padding:16 }}>
-    <h2 style={{ marginTop:0 }}>Enrichment Providers</h2>
-    {loading ? <div>Loading...</div> : !p ? <div>No provider config.</div> : <div style={{ border:'1px solid #334155', borderRadius:10, padding:12, background:'#0f172a' }}>
-      <h3 style={{ marginTop:0 }}>VirusTotal</h3>
-      <div>Status: <b>{p.status}</b> {p.source === 'env' ? '(configured via env)' : ''}</div>
-      <div>Last test: {formatUserDateTime(p.last_test_at)}</div>
-      <div>Last success: {formatUserDateTime(p.last_success_at)}</div>
-      <div>Last error: {p.last_error_message || '-'}</div>
-      <div>API Key: {p.masked_key || 'Not configured'}</div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:10 }}>
-        <label>TTL hours <input type='number' value={form.ttl_hours} onChange={(e)=>setForm((x)=>({...x, ttl_hours:Number(e.target.value)}))} /></label>
-        <label>Timeout ms <input type='number' value={form.timeout_ms} onChange={(e)=>setForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} /></label>
+  async function testConn() {
+    setTesting(true);
+    setFeedback({ type: '', text: '' });
+    try {
+      const { data } = await api.post('/admin/enrichment-providers/virustotal/test');
+      setFeedback({ type: 'success', text: data?.message || 'Connection successful' });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Test failed';
+      const t = /rate limit/i.test(msg) ? 'warn' : 'error';
+      setFeedback({ type: t, text: msg });
+      await load();
+    } finally { setTesting(false); }
+  }
+
+  async function removeKey() {
+    setRemoving(true);
+    setFeedback({ type: '', text: '' });
+    try {
+      await api.post('/admin/enrichment-providers/virustotal/remove-key');
+      setFeedback({ type: 'success', text: 'API key removed.' });
+      await load();
+    } catch {
+      setFeedback({ type: 'error', text: 'Remove failed' });
+    } finally { setRemoving(false); }
+  }
+
+  const sm = statusMeta(p?.status);
+
+  return <AppShell><section style={{ border:'1px solid #334155', borderRadius:12, background:'#111827', padding:20 }}>
+    <h2 style={{ margin:'0 0 6px', color:'#f1f5f9' }}>Enrichment Providers</h2>
+    <p style={{ margin:'0 0 18px', color:'#94a3b8', fontSize:14 }}>Manage external intelligence providers used for IOC enrichment.</p>
+
+    {!canWrite ? <div style={{ marginBottom:12, padding:'10px 12px', borderRadius:8, border:'1px solid #475569', color:'#cbd5e1', background:'rgba(100,116,139,0.15)', fontSize:13 }}>Readonly users can view provider status but cannot modify settings.</div> : null}
+
+    {feedback.text ? <div style={{ marginBottom:12, padding:'10px 12px', borderRadius:8, border:`1px solid ${feedback.type==='success' ? '#166534' : feedback.type==='warn' ? '#b45309' : '#7f1d1d'}`, color: feedback.type==='success' ? '#86efac' : feedback.type==='warn' ? '#fcd34d' : '#fca5a5', background: feedback.type==='success' ? 'rgba(22,163,74,0.18)' : feedback.type==='warn' ? 'rgba(217,119,6,0.18)' : 'rgba(220,38,38,0.18)', fontSize:13 }}>{feedback.text}</div> : null}
+
+    {loading ? <div style={{ color:'#94a3b8' }}>Loading...</div> : !p ? <div style={{ color:'#94a3b8' }}>No provider config.</div> : <div style={{ border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a' }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+        <div>
+          <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>VirusTotal</h3>
+          <div style={{ color:'#94a3b8', fontSize:13 }}>IOC reputation and analysis enrichment</div>
+        </div>
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+          <span style={{ border:`1px solid ${sm.border}`, background:sm.bg, color:sm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{sm.label}</span>
+          <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:6 }}><input type='checkbox' checked={form.enabled} onChange={(e)=>setForm((x)=>({...x, enabled:e.target.checked}))} disabled={!canWrite}/> Enabled</label>
+        </div>
       </div>
-      <label style={{ display:'block', marginTop:8 }}><input type='checkbox' checked={form.enabled} onChange={(e)=>setForm((x)=>({...x, enabled:e.target.checked}))}/> Enabled</label>
-      <label style={{ display:'block', marginTop:8 }}>New API key (optional)<input type='password' value={form.api_key} onChange={(e)=>setForm((x)=>({...x, api_key:e.target.value}))} placeholder='Leave blank to keep current key' /></label>
-      <div style={{ display:'flex', gap:8, marginTop:10 }}>
-        <button onClick={()=>save().catch(()=>{})} disabled={!canWrite}>Save API Key / Settings</button>
-        <button onClick={()=>testConn().catch(()=>{})} disabled={!canWrite}>Test Connection</button>
-        <button onClick={()=>removeKey().catch(()=>{})} disabled={!canWrite}>Remove key</button>
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:10, marginTop:14 }}>
+        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>API Key</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{p.masked_key ? (p.source === 'env' ? 'Configured via env' : 'Configured via db') : 'Not configured'}</div></div>
+        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Last test</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{formatUserDateTime(p.last_test_at)}</div></div>
+        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Last success</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{formatUserDateTime(p.last_success_at)}</div></div>
+        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Cache TTL</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{form.ttl_hours} hours</div></div>
+        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Timeout</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{form.timeout_ms} ms</div></div>
       </div>
-      {msg ? <div style={{ marginTop:8, color:'#93c5fd' }}>{msg}</div> : null}
+
+      <div style={{ marginTop:14 }}>
+        <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>VirusTotal API Key</label>
+        <input type='password' value={form.api_key} onChange={(e)=>setForm((x)=>({...x, api_key:e.target.value}))} placeholder={p.masked_key ? 'Leave blank to keep current key' : 'Paste VirusTotal API key'} disabled={!canWrite} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
+        {p.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current key: {p.masked_key}</div> : null}
+        <div style={{ marginTop:4, color:'#64748b', fontSize:12 }}>API key is never returned to the frontend.</div>
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10, marginTop:14 }}>
+        <label style={{ color:'#cbd5e1', fontSize:13 }}>Cache TTL (hours)
+          <input type='number' min='1' value={form.ttl_hours} onChange={(e)=>setForm((x)=>({...x, ttl_hours:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} />
+        </label>
+        <label style={{ color:'#cbd5e1', fontSize:13 }}>Timeout (ms)
+          <input type='number' min='3000' value={form.timeout_ms} onChange={(e)=>setForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} />
+        </label>
+      </div>
+
+      <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
+        <button onClick={()=>save().catch(()=>{})} disabled={!canWrite || saving || testing || removing} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{saving ? 'Saving...' : 'Save settings'}</button>
+        <button onClick={()=>testConn().catch(()=>{})} disabled={!canWrite || saving || testing || removing} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0', fontWeight:600 }}>{testing ? 'Testing...' : 'Test Connection'}</button>
+        <button onClick={()=>removeKey().catch(()=>{})} disabled={!canWrite || saving || testing || removing} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5', fontWeight:600 }}>{removing ? 'Removing...' : 'Remove key'}</button>
+      </div>
+
+      {p.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last provider error:</b> {p.last_error_message}</div> : null}
     </div>}
   </section></AppShell>;
 }
