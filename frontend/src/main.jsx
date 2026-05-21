@@ -404,6 +404,7 @@ function AppShell({ children }) {
             <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
             <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys'))}>Settings</Link>
             <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
+            <Link to="/administration/enrichment-providers" style={subMenuStyle(isActive('/administration/enrichment-providers'))}>Enrichment Providers</Link>
           </div>
         </nav>
 
@@ -4226,6 +4227,63 @@ function ApiKeysPage() {
   );
 }
 
+function EnrichmentProvidersPage() {
+  const { canWrite } = useSession();
+  const [loading, setLoading] = useState(true);
+  const [p, setP] = useState(null);
+  const [form, setForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/admin/enrichment-providers');
+      const vt = (data?.providers || []).find((x) => x.provider === 'virustotal') || null;
+      setP(vt);
+      if (vt) setForm((f) => ({ ...f, enabled: vt.enabled, ttl_hours: vt.ttl_hours || 24, timeout_ms: vt.timeout_ms || 12000 }));
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load().catch(()=>{}); }, [load]);
+
+  async function save() {
+    try {
+      await api.put('/admin/enrichment-providers/virustotal', form);
+      setMsg('Saved');
+      setForm((f) => ({ ...f, api_key: '' }));
+      await load();
+    } catch (e) { setMsg(e?.response?.data?.message || 'Save failed'); }
+  }
+  async function testConn() {
+    try { const { data } = await api.post('/admin/enrichment-providers/virustotal/test'); setMsg(data?.message || 'Connection successful'); await load(); }
+    catch (e) { setMsg(e?.response?.data?.message || 'Test failed'); await load(); }
+  }
+  async function removeKey() { try { await api.post('/admin/enrichment-providers/virustotal/remove-key'); setMsg('Key removed'); await load(); } catch { setMsg('Remove failed'); } }
+
+  return <AppShell><section style={{ border:'1px solid #334155', borderRadius:12, background:'#111827', padding:16 }}>
+    <h2 style={{ marginTop:0 }}>Enrichment Providers</h2>
+    {loading ? <div>Loading...</div> : !p ? <div>No provider config.</div> : <div style={{ border:'1px solid #334155', borderRadius:10, padding:12, background:'#0f172a' }}>
+      <h3 style={{ marginTop:0 }}>VirusTotal</h3>
+      <div>Status: <b>{p.status}</b> {p.source === 'env' ? '(configured via env)' : ''}</div>
+      <div>Last test: {formatUserDateTime(p.last_test_at)}</div>
+      <div>Last success: {formatUserDateTime(p.last_success_at)}</div>
+      <div>Last error: {p.last_error_message || '-'}</div>
+      <div>API Key: {p.masked_key || 'Not configured'}</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:10 }}>
+        <label>TTL hours <input type='number' value={form.ttl_hours} onChange={(e)=>setForm((x)=>({...x, ttl_hours:Number(e.target.value)}))} /></label>
+        <label>Timeout ms <input type='number' value={form.timeout_ms} onChange={(e)=>setForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} /></label>
+      </div>
+      <label style={{ display:'block', marginTop:8 }}><input type='checkbox' checked={form.enabled} onChange={(e)=>setForm((x)=>({...x, enabled:e.target.checked}))}/> Enabled</label>
+      <label style={{ display:'block', marginTop:8 }}>New API key (optional)<input type='password' value={form.api_key} onChange={(e)=>setForm((x)=>({...x, api_key:e.target.value}))} placeholder='Leave blank to keep current key' /></label>
+      <div style={{ display:'flex', gap:8, marginTop:10 }}>
+        <button onClick={()=>save().catch(()=>{})} disabled={!canWrite}>Save API Key / Settings</button>
+        <button onClick={()=>testConn().catch(()=>{})} disabled={!canWrite}>Test Connection</button>
+        <button onClick={()=>removeKey().catch(()=>{})} disabled={!canWrite}>Remove key</button>
+      </div>
+      {msg ? <div style={{ marginTop:8, color:'#93c5fd' }}>{msg}</div> : null}
+    </div>}
+  </section></AppShell>;
+}
+
 function AdministrationPage() {
   const { canWrite, role, userId, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
@@ -5545,7 +5603,7 @@ function VirusTotalEnrichmentCard({ iocId, iocValue, iocType }) {
       <button onClick={() => setOpen((v) => !v)}>{open ? 'Collapse' : 'Expand'}</button>
     </div>
     {state.status === 'loading' ? <div style={{ color:'#94a3b8', marginTop:8 }}>Loading...</div> : null}
-    {state.status === 'api_key_missing' ? <div style={{ marginTop:8, color:'#fbbf24' }}>VirusTotal API key is not configured<br/><span style={{fontSize:12}}>Configure in Administration</span></div> : null}
+    {state.status === 'api_key_missing' ? <div style={{ marginTop:8, color:'#fbbf24' }}>VirusTotal API key is not configured<br/><Link to="/administration/enrichment-providers" style={{fontSize:12,color:'#93c5fd'}}>Configure in Administration</Link></div> : null}
     {state.status === 'not_found' ? <div style={{ marginTop:8 }}><div style={{ color:'#94a3b8' }}>VirusTotal enrichment not loaded yet</div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}}>Enrich with VirusTotal</button></div> : null}
     {state.status === 'error' ? <div style={{ marginTop:8, color:'#fca5a5' }}>{state.message}<div><button onClick={() => refresh().catch(()=>{})} style={{marginTop:8}}>Retry</button></div></div> : null}
     {state.status === 'success' && s ? <div style={{ marginTop:8 }}>
@@ -6347,6 +6405,7 @@ function App() {
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
+          <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />

@@ -5000,12 +5000,32 @@ const VT_PROVIDER = 'virustotal';
 const VT_TTL_HOURS = Math.max(1, Number(process.env.VIRUSTOTAL_ENRICHMENT_TTL_HOURS || 24));
 const VT_TIMEOUT_MS = Math.max(3000, Number(process.env.VIRUSTOTAL_TIMEOUT_MS || 12000));
 
-function getThreatIntelProviderConfig() {
+async function getThreatIntelProviderConfig(provider = VT_PROVIDER) {
+  const envKey = String(process.env.VIRUSTOTAL_API_KEY || '').trim();
+  const rowRes = await pool.query(`SELECT provider, enabled, api_key, ttl_hours, timeout_ms, last_test_at, last_success_at, last_error_at, last_error_message FROM threat_intel_provider_configs WHERE provider=$1 LIMIT 1`, [provider]);
+  const row = rowRes.rows[0] || null;
+  const dbKey = String(row?.api_key || '').trim();
+  const apiKey = dbKey || envKey;
   return {
-    virustotal: {
-      apiKey: String(process.env.VIRUSTOTAL_API_KEY || '').trim()
-    }
+    provider,
+    enabled: row?.enabled !== false,
+    ttl_hours: Math.max(1, Number(row?.ttl_hours || process.env.VIRUSTOTAL_ENRICHMENT_TTL_HOURS || 24)),
+    timeout_ms: Math.max(3000, Number(row?.timeout_ms || process.env.VIRUSTOTAL_TIMEOUT_MS || 12000)),
+    apiKey,
+    configured: Boolean(apiKey),
+    source: dbKey ? 'db' : (envKey ? 'env' : 'none'),
+    last_test_at: row?.last_test_at || null,
+    last_success_at: row?.last_success_at || null,
+    last_error_at: row?.last_error_at || null,
+    last_error_message: row?.last_error_message || null
   };
+}
+
+function maskApiKey(k) {
+  const s = String(k || '');
+  if (!s) return null;
+  const tail = s.slice(-4);
+  return `************${tail}`;
 }
 
 function toVtUrlId(raw) {
@@ -5046,7 +5066,8 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
   try {
     const iocId = Number(req.params.id);
     if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
-    const keyConfigured = Boolean(getThreatIntelProviderConfig().virustotal.apiKey);
+    const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
+    const keyConfigured = Boolean(providerCfg.apiKey);
     if (!keyConfigured) return res.json({ status: 'api_key_missing' });
     const q = `SELECT status, normalized_summary, error_message, fetched_at, expires_at FROM ioc_enrichments WHERE provider=$1 AND ioc_id=$2 LIMIT 1`;
     const r = await pool.query(q, [VT_PROVIDER, iocId]);
@@ -5062,7 +5083,8 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
   try {
     const iocId = Number(req.params.id);
     if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
-    const vtKey = getThreatIntelProviderConfig().virustotal.apiKey;
+    const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
+    const vtKey = providerCfg.apiKey;
     if (!vtKey) return res.status(400).json({ status: 'api_key_missing', message: 'VirusTotal API key is not configured' });
 
     const itemRes = await pool.query(`SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type FROM ioc_items WHERE id=$1 LIMIT 1`, [iocId]);
@@ -5078,7 +5100,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     else return res.status(400).json({ message: 'IOC type not supported for VirusTotal enrichment' });
 
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), VT_TIMEOUT_MS);
+    const t = setTimeout(() => ctrl.abort(), providerCfg.timeout_ms || VT_TIMEOUT_MS);
     let vtRes;
     try {
       vtRes = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, { headers: { 'x-apikey': vtKey }, signal: ctrl.signal });
@@ -5090,7 +5112,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     const raw = await vtRes.json();
     const summary = normalizeVtSummary(item.ioc_value, iocType, raw);
     const fetchedAt = new Date();
-    const expiresAt = new Date(fetchedAt.getTime() + VT_TTL_HOURS * 3600 * 1000);
+    const expiresAt = new Date(fetchedAt.getTime() + (providerCfg.ttl_hours || VT_TTL_HOURS) * 3600 * 1000);
     await pool.query(`INSERT INTO ioc_enrichments (ioc_id,ioc_value,ioc_type,provider,status,normalized_summary,raw_response,error_message,fetched_at,expires_at,updated_at)
       VALUES ($1,$2,$3,$4,'success',$5,$6,NULL,$7,$8,NOW())
       ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET ioc_id=EXCLUDED.ioc_id,status='success',normalized_summary=EXCLUDED.normalized_summary,raw_response=EXCLUDED.raw_response,error_message=NULL,fetched_at=EXCLUDED.fetched_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()`,
@@ -5100,6 +5122,82 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
   } catch (err) {
     if (String(err?.name) === 'AbortError') return res.status(504).json({ message: 'VirusTotal enrichment timed out' });
     return res.status(500).json({ message: 'VirusTotal enrichment failed' });
+  }
+});
+
+app.get('/api/admin/enrichment-providers', async (req, res) => {
+  try {
+    const cfg = await getThreatIntelProviderConfig(VT_PROVIDER);
+    let status = 'not_configured';
+    if (cfg.configured && cfg.last_error_at && (!cfg.last_success_at || new Date(cfg.last_error_at) > new Date(cfg.last_success_at))) status = 'error';
+    else if (cfg.configured && cfg.last_success_at) status = 'healthy';
+    else if (cfg.configured) status = 'configured';
+    return res.json({ providers: [{
+      provider: VT_PROVIDER,
+      name: 'VirusTotal',
+      enabled: cfg.enabled,
+      configured: cfg.configured,
+      masked_key: maskApiKey(cfg.apiKey),
+      source: cfg.source,
+      ttl_hours: cfg.ttl_hours,
+      timeout_ms: cfg.timeout_ms,
+      status,
+      last_test_at: cfg.last_test_at,
+      last_success_at: cfg.last_success_at,
+      last_error_at: cfg.last_error_at,
+      last_error_message: cfg.last_error_message
+    }]});
+  } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
+});
+
+app.put('/api/admin/enrichment-providers/virustotal', async (req, res) => {
+  try {
+    const enabled = req.body?.enabled !== false;
+    const ttl = Math.max(1, Number(req.body?.ttl_hours || 24));
+    const timeout = Math.max(3000, Number(req.body?.timeout_ms || 12000));
+    const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : undefined;
+    await pool.query(`INSERT INTO threat_intel_provider_configs(provider,enabled,ttl_hours,timeout_ms,api_key,updated_at)
+      VALUES ($1,$2,$3,$4,$5,NOW())
+      ON CONFLICT(provider) DO UPDATE SET enabled=$2, ttl_hours=$3, timeout_ms=$4, api_key=COALESCE(NULLIF($5,''), threat_intel_provider_configs.api_key), updated_at=NOW()`,
+      [VT_PROVIDER, enabled, ttl, timeout, apiKey]);
+    return res.json({ ok: true });
+  } catch { return res.status(500).json({ message: 'Failed to update provider config' }); }
+});
+
+app.post('/api/admin/enrichment-providers/virustotal/remove-key', async (req, res) => {
+  try { await pool.query(`UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER]); return res.json({ ok: true }); }
+  catch { return res.status(500).json({ message: 'Failed to remove key' }); }
+});
+
+app.post('/api/admin/enrichment-providers/virustotal/test', async (req, res) => {
+  const now = new Date().toISOString();
+  try {
+    const cfg = await getThreatIntelProviderConfig(VT_PROVIDER);
+    if (!cfg.apiKey) return res.status(400).json({ message: 'VirusTotal API key is not configured' });
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), cfg.timeout_ms || 12000);
+    let vtRes;
+    try { vtRes = await fetch('https://www.virustotal.com/api/v3/domains/example.com', { headers: { 'x-apikey': cfg.apiKey }, signal: ctrl.signal }); }
+    finally { clearTimeout(t); }
+
+    if (vtRes.status === 429) {
+      await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, 'VirusTotal rate limit reached. Try again later.']);
+      return res.status(429).json({ message: 'VirusTotal rate limit reached. Try again later.' });
+    }
+    if (vtRes.status === 401 || vtRes.status === 403) {
+      await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, 'Invalid VirusTotal API key']);
+      return res.status(400).json({ message: 'Invalid VirusTotal API key' });
+    }
+    if (!vtRes.ok) {
+      await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, 'VirusTotal test failed']);
+      return res.status(502).json({ message: 'VirusTotal test failed' });
+    }
+    await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_success_at=$2,last_error_message=NULL,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now]);
+    return res.json({ ok: true, message: 'Connection successful' });
+  } catch (err) {
+    const msg = String(err?.name) === 'AbortError' ? 'VirusTotal test timeout' : 'VirusTotal test failed';
+    await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, msg]).catch(() => {});
+    return res.status(500).json({ message: msg });
   }
 });
 
