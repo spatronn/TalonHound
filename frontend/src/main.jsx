@@ -5077,14 +5077,14 @@ function IOCHotListPage() {
   const [sinceFilter, setSinceFilter] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [suppressedFilter, setSuppressedFilter] = useState('hide');
+  const [showSuppressed, setShowSuppressed] = useState(false);
   const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0, total_pages: 1 });
 
   const loadHot = useCallback(async () => {
     setLoading(true);
     setBanner('');
     try {
-      const params = { page, limit: pageSize, suppressed: suppressedFilter };
+      const params = { page, limit: pageSize, suppressed: showSuppressed ? 'include' : 'hide' };
       if (typeFilter) params.type = typeFilter;
       if (sinceFilter) params.last_seen_since = sinceFilter;
       if (search) params.q = search;
@@ -5099,7 +5099,7 @@ function IOCHotListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, typeFilter, sinceFilter, search, suppressedFilter]);
+  }, [page, pageSize, typeFilter, sinceFilter, search, showSuppressed]);
 
   useEffect(() => {
     loadHot();
@@ -5190,6 +5190,7 @@ function IOCHotListPage() {
             onClick={() => {
               setSearchInput('');
               setSearch('');
+              setShowSuppressed(false);
               setPage(1);
             }}
           >
@@ -5228,20 +5229,17 @@ function IOCHotListPage() {
               <option value="7d">Last 7 days</option>
             </select>
           </label>
-          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
-            Suppressed{' '}
-            <select
-              value={suppressedFilter}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#cbd5e1', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showSuppressed}
               onChange={(e) => {
                 setPage(1);
-                setSuppressedFilter(e.target.value);
+                setShowSuppressed(e.target.checked);
               }}
-              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
-            >
-              <option value="hide">Hide suppressed</option>
-              <option value="include">Include suppressed</option>
-              <option value="only">Only suppressed</option>
-            </select>
+            />
+            <span>Show suppressed IOCs</span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>Suppressed IOCs are hidden by default.</span>
           </label>
           <label style={{ fontSize: 14, color: '#cbd5e1' }}>
             Page size{' '}
