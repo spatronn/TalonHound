@@ -3072,45 +3072,79 @@ function FeedActiveConfirmModal({ feed, mode, loading, error, onCancel, onConfir
   );
 }
 
-function FeedScheduleEditModal({ feed, draftCron, loading, error, onDraftChange, onCancel, onSave }) {
+function FeedSettingsModal({
+  feed,
+  draftCron,
+  onDraftChange,
+  savingSchedule,
+  error,
+  onClose,
+  onRequestActiveChange,
+  onSaveSchedule,
+  canWrite
+}) {
+  const isActive = feed?.active !== false;
+  const state = feedStatePresentation(isActive);
+  const currentCron = feed?.schedule || '0 * * * *';
+  const scheduleUnchanged = draftCron === currentCron;
+
   return (
     <FeedHealthModal
-      title="Change feed schedule"
-      onClose={loading ? undefined : onCancel}
-      actions={(
-        <>
-          <button type="button" onClick={onCancel} disabled={loading}>Cancel</button>
-          <button type="button" onClick={onSave} disabled={loading}>
-            {loading ? 'Saving...' : 'Save Schedule'}
-          </button>
-        </>
-      )}
+      title="Feed settings"
+      onClose={savingSchedule ? undefined : onClose}
+      actions={<button type="button" onClick={onClose} disabled={savingSchedule}>Close</button>}
     >
-      <p style={{ margin: '0 0 12px', color: '#94a3b8', fontSize: 13, lineHeight: 1.55 }}>
-        Changing the schedule affects how often this threat feed is imported. This is usually configured once and should not be changed frequently.
-      </p>
-      <div style={{ display: 'grid', gap: 10, fontSize: 13 }}>
+      <div style={{ display: 'grid', gap: 16, fontSize: 13 }}>
         <div>
-          <span style={{ color: '#94a3b8' }}>Feed: </span>
+          <div style={{ color: '#94a3b8', marginBottom: 4 }}>Feed</div>
           <strong style={{ color: '#e2e8f0' }}>{feed?.name || feed?.key}</strong>
         </div>
+
         <div>
-          <span style={{ color: '#94a3b8' }}>Current schedule: </span>
-          <strong style={{ color: '#e2e8f0' }}>{formatFeedScheduleLabel(feed?.schedule)}</strong>
+          <div style={{ color: '#94a3b8', marginBottom: 6 }}>Current state</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}` }}>
+              {state.label}
+            </span>
+            {canWrite ? (
+              <button
+                type="button"
+                onClick={onRequestActiveChange}
+                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: isActive ? '#fca5a5' : '#86efac', cursor: 'pointer' }}
+              >
+                {isActive ? 'Disable feed' : 'Enable feed'}
+              </button>
+            ) : null}
+          </div>
         </div>
-        <label style={{ display: 'grid', gap: 6 }}>
-          <span style={{ color: '#94a3b8' }}>New schedule</span>
-          <select
-            value={draftCron}
-            onChange={(e) => onDraftChange(e.target.value)}
-            disabled={loading}
-            style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
-          >
-            {FEED_SCHEDULE_OPTIONS.map((opt) => (
-              <option key={opt.cron} value={opt.cron}>{opt.label}</option>
-            ))}
-          </select>
-        </label>
+
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+          <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Schedule</div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div>
+              <span style={{ color: '#94a3b8' }}>Current schedule: </span>
+              <strong style={{ color: '#e2e8f0' }}>{formatFeedScheduleLabel(feed?.schedule)}</strong>
+            </div>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: '#94a3b8' }}>New schedule</span>
+              <select
+                value={draftCron}
+                onChange={(e) => onDraftChange(e.target.value)}
+                disabled={!canWrite || savingSchedule}
+                style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+              >
+                {FEED_SCHEDULE_OPTIONS.map((opt) => (
+                  <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            {canWrite ? (
+              <button type="button" onClick={onSaveSchedule} disabled={savingSchedule || scheduleUnchanged}>
+                {savingSchedule ? 'Saving...' : 'Save Schedule'}
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
       {error ? (
         <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
@@ -3229,11 +3263,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
   const [togglingKeys, setTogglingKeys] = useState({});
-  const [activeModal, setActiveModal] = useState(null);
-  const [activeModalError, setActiveModalError] = useState('');
-  const [scheduleModal, setScheduleModal] = useState(null);
-  const [scheduleDraft, setScheduleDraft] = useState('0 * * * *');
-  const [scheduleModalError, setScheduleModalError] = useState('');
+  const [settingsModal, setSettingsModal] = useState(null);
+  const [settingsDraftCron, setSettingsDraftCron] = useState('0 * * * *');
+  const [settingsError, setSettingsError] = useState('');
+  const [activeConfirm, setActiveConfirm] = useState(null);
+  const [activeConfirmError, setActiveConfirmError] = useState('');
   const [savingScheduleKey, setSavingScheduleKey] = useState('');
 
   async function load() {
@@ -3241,15 +3275,32 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setLoadError('');
     try {
       const { data } = await api.get('/integrations');
-      setIntegrations(data?.integrations || []);
+      const list = data?.integrations || [];
+      setIntegrations(list);
       setHealthSummary(data?.health_summary || null);
+      return list;
     } catch (err) {
       setIntegrations([]);
       setHealthSummary(null);
       setLoadError(apiErrorMessage(err, 'Failed to load integrations'));
+      return [];
     } finally {
       setLoading(false);
     }
+  }
+
+  function syncSettingsModal(list) {
+    setSettingsModal((prev) => {
+      if (!prev) return prev;
+      const feed = (list || []).find((i) => i.key === prev.key);
+      if (!feed) return prev;
+      return {
+        key: feed.key,
+        name: feed.name,
+        schedule: feed.schedule || '0 * * * *',
+        active: feed.active !== false
+      };
+    });
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
@@ -3286,68 +3337,74 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  function openActiveModal(feed) {
+  function openSettingsModal(feed) {
     if (!canWrite) return;
-    setActiveModalError('');
-    setActiveModal({
+    setSettingsError('');
+    setSettingsDraftCron(feed.schedule || '0 * * * *');
+    setSettingsModal({
       key: feed.key,
       name: feed.name,
-      mode: feed.active === false ? 'enable' : 'disable'
+      schedule: feed.schedule || '0 * * * *',
+      active: feed.active !== false
     });
   }
 
-  function closeActiveModal() {
-    if (togglingKeys[activeModal?.key]) return;
-    setActiveModal(null);
-    setActiveModalError('');
+  function closeSettingsModal() {
+    if (savingScheduleKey) return;
+    setSettingsModal(null);
+    setSettingsError('');
+  }
+
+  function requestActiveChange() {
+    if (!canWrite || !settingsModal) return;
+    setActiveConfirmError('');
+    setActiveConfirm({
+      key: settingsModal.key,
+      name: settingsModal.name,
+      mode: settingsModal.active ? 'disable' : 'enable'
+    });
+  }
+
+  function closeActiveConfirm() {
+    if (togglingKeys[activeConfirm?.key]) return;
+    setActiveConfirm(null);
+    setActiveConfirmError('');
   }
 
   async function confirmActiveChange() {
-    if (!canWrite || !activeModal) return;
-    const { key, mode } = activeModal;
+    if (!canWrite || !activeConfirm) return;
+    const { key, mode } = activeConfirm;
     const nextActive = mode === 'enable';
     if (togglingKeys[key]) return;
 
-    setActiveModalError('');
+    setActiveConfirmError('');
     setTogglingKeys((prev) => ({ ...prev, [key]: true }));
     try {
       await api.patch(`/integrations/${encodeURIComponent(key)}/active`, { active: nextActive });
-      setActiveModal(null);
-      await load();
+      setActiveConfirm(null);
+      const list = await load();
+      syncSettingsModal(list);
     } catch (err) {
-      setActiveModalError(apiErrorMessage(err, 'Failed to update feed active state'));
+      setActiveConfirmError(apiErrorMessage(err, 'Failed to update feed active state'));
     } finally {
       setTogglingKeys((prev) => ({ ...prev, [key]: false }));
     }
   }
 
-  function openScheduleModal(feed) {
-    if (!canWrite) return;
-    setScheduleModalError('');
-    setScheduleDraft(feed.schedule || '0 * * * *');
-    setScheduleModal({ key: feed.key, name: feed.name, schedule: feed.schedule || '0 * * * *' });
-  }
-
-  function closeScheduleModal() {
-    if (savingScheduleKey) return;
-    setScheduleModal(null);
-    setScheduleModalError('');
-  }
-
-  async function confirmScheduleChange() {
-    if (!canWrite || !scheduleModal) return;
-    const { key } = scheduleModal;
+  async function saveSettingsSchedule() {
+    if (!canWrite || !settingsModal) return;
+    const { key } = settingsModal;
     if (savingScheduleKey) return;
 
-    setScheduleModalError('');
+    setSettingsError('');
     setSavingScheduleKey(key);
     try {
-      await api.put(`/integrations/${encodeURIComponent(key)}/schedule`, { schedule_cron: scheduleDraft });
-      setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, schedule: scheduleDraft } : i)));
-      setScheduleModal(null);
-      await load();
+      await api.put(`/integrations/${encodeURIComponent(key)}/schedule`, { schedule_cron: settingsDraftCron });
+      const list = await load();
+      syncSettingsModal(list);
+      setSettingsDraftCron(settingsDraftCron);
     } catch (err) {
-      setScheduleModalError(apiErrorMessage(err, 'Failed to update schedule'));
+      setSettingsError(apiErrorMessage(err, 'Failed to update schedule'));
     } finally {
       setSavingScheduleKey('');
     }
@@ -3445,15 +3502,15 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
             <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'fixed', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", minWidth: 980, width: '100%' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
-                  <th style={{ width: 120 }}>State</th>
+                  <th style={{ width: 88 }}>State</th>
                   <th style={{ width: '16%' }}>Feed</th>
                   <th style={{ width: 88 }}>Health</th>
-                  <th style={{ width: 140 }}>Schedule</th>
+                  <th style={{ width: 110 }}>Schedule</th>
                   <th style={{ width: 130 }}>Last Success</th>
                   <th style={{ width: '34%' }}>Last Run Metrics</th>
                   <th style={{ width: 120 }}>Last Error</th>
                   <th style={{ width: 120 }}>Next Run</th>
-                  <th style={{ width: 88 }}>Action</th>
+                  <th style={{ width: 100 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -3462,25 +3519,12 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                   const lastErr = String(i.last_error || '').trim();
                   const health = feedHealthPresentation(i);
                   const state = feedStatePresentation(isActive);
-                  const toggling = Boolean(togglingKeys[i.key]);
                   return (
                     <tr key={i.key} style={{ borderBottom: '1px solid #1e293b', opacity: isActive ? 1 : 0.78 }}>
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
-                          <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}` }}>
-                            {state.label}
-                          </span>
-                          {canWrite ? (
-                            <button
-                              type="button"
-                              onClick={() => openActiveModal(i)}
-                              disabled={toggling}
-                              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: isActive ? '#fca5a5' : '#86efac', cursor: toggling ? 'not-allowed' : 'pointer' }}
-                            >
-                              {toggling ? (isActive ? 'Disabling...' : 'Enabling...') : (isActive ? 'Disable' : 'Enable')}
-                            </button>
-                          ) : null}
-                        </div>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}`, whiteSpace: 'nowrap' }}>
+                          {state.label}
+                        </span>
                       </td>
                       <td style={{ color: '#e2e8f0', fontWeight: 600, overflowWrap: 'anywhere' }}>{i.name}</td>
                       <td>
@@ -3489,30 +3533,25 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                         </span>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
-                          <span style={{ fontSize: 11, color: isActive ? '#cbd5e1' : '#64748b', fontWeight: 600 }}>
-                            {formatFeedScheduleLabel(i.schedule)}
-                          </span>
-                          {canWrite ? (
-                            <button
-                              type="button"
-                              onClick={() => openScheduleModal(i)}
-                              disabled={Boolean(savingScheduleKey === i.key)}
-                              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#93c5fd', cursor: 'pointer', opacity: isActive ? 1 : 0.75 }}
-                            >
-                              Edit
-                            </button>
-                          ) : null}
-                        </div>
+                        <span style={{ fontSize: 11, color: isActive ? '#cbd5e1' : '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          {formatFeedScheduleLabel(i.schedule)}
+                        </span>
                       </td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}</td>
                       <td><LastRunMetricsCell metrics={i.last_run_metrics} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{isActive ? formatUserDateTime(i.next_run_at) : '-'}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive} style={{ fontSize: 11, padding: '4px 8px' }} title={!isActive ? 'Enable the feed before running manually.' : undefined}>
-                          {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive} style={{ fontSize: 11, padding: '4px 8px' }} title={!isActive ? 'Enable the feed before running manually.' : undefined}>
+                            {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
+                          </button>
+                          {canWrite ? (
+                            <button type="button" onClick={() => openSettingsModal(i)} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#93c5fd', cursor: 'pointer' }}>
+                              Edit
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -3525,26 +3564,28 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         )}
       </section>
 
-      {activeModal ? (
-        <FeedActiveConfirmModal
-          feed={activeModal}
-          mode={activeModal.mode}
-          loading={Boolean(togglingKeys[activeModal.key])}
-          error={activeModalError}
-          onCancel={closeActiveModal}
-          onConfirm={() => confirmActiveChange().catch(() => {})}
+      {settingsModal ? (
+        <FeedSettingsModal
+          feed={settingsModal}
+          draftCron={settingsDraftCron}
+          onDraftChange={setSettingsDraftCron}
+          savingSchedule={Boolean(savingScheduleKey)}
+          error={settingsError}
+          onClose={closeSettingsModal}
+          onRequestActiveChange={requestActiveChange}
+          onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
+          canWrite={canWrite}
         />
       ) : null}
 
-      {scheduleModal ? (
-        <FeedScheduleEditModal
-          feed={scheduleModal}
-          draftCron={scheduleDraft}
-          loading={Boolean(savingScheduleKey)}
-          error={scheduleModalError}
-          onDraftChange={setScheduleDraft}
-          onCancel={closeScheduleModal}
-          onSave={() => confirmScheduleChange().catch(() => {})}
+      {activeConfirm ? (
+        <FeedActiveConfirmModal
+          feed={activeConfirm}
+          mode={activeConfirm.mode}
+          loading={Boolean(togglingKeys[activeConfirm.key])}
+          error={activeConfirmError}
+          onCancel={closeActiveConfirm}
+          onConfirm={() => confirmActiveChange().catch(() => {})}
         />
       ) : null}
     </AppShell>
