@@ -5077,13 +5077,14 @@ function IOCHotListPage() {
   const [sinceFilter, setSinceFilter] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [suppressedFilter, setSuppressedFilter] = useState('hide');
   const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0, total_pages: 1 });
 
   const loadHot = useCallback(async () => {
     setLoading(true);
     setBanner('');
     try {
-      const params = { page, limit: pageSize };
+      const params = { page, limit: pageSize, suppressed: suppressedFilter };
       if (typeFilter) params.type = typeFilter;
       if (sinceFilter) params.last_seen_since = sinceFilter;
       if (search) params.q = search;
@@ -5098,7 +5099,7 @@ function IOCHotListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, typeFilter, sinceFilter, search]);
+  }, [page, pageSize, typeFilter, sinceFilter, search, suppressedFilter]);
 
   useEffect(() => {
     loadHot();
@@ -5228,6 +5229,21 @@ function IOCHotListPage() {
             </select>
           </label>
           <label style={{ fontSize: 14, color: '#cbd5e1' }}>
+            Suppressed{' '}
+            <select
+              value={suppressedFilter}
+              onChange={(e) => {
+                setPage(1);
+                setSuppressedFilter(e.target.value);
+              }}
+              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
+            >
+              <option value="hide">Hide suppressed</option>
+              <option value="include">Include suppressed</option>
+              <option value="only">Only suppressed</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
             Page size{' '}
             <select
               value={pageSize}
@@ -5289,21 +5305,34 @@ function IOCHotListPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((r) => (
+              {items.map((r) => {
+                const isSuppressed = isSuppressionActiveRow(r.suppression);
+                return (
                 <tr
                   key={`${r.observable_type || ''}:${r.observable || ''}:${r.public_id || r.id}`}
-                  style={{ borderBottom: '1px solid #f1f5f9', cursor: r.public_id ? 'pointer' : 'default' }}
+                  style={{
+                    borderBottom: '1px solid #f1f5f9',
+                    cursor: r.public_id ? 'pointer' : 'default',
+                    background: isSuppressed ? '#f8fafc' : '#fff',
+                    opacity: isSuppressed ? 0.82 : 1
+                  }}
                   onClick={() => {
                     if (r.public_id) navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`);
                   }}
                 >
                   <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                    <span style={{ color: '#93c5fd', textDecoration: 'underline', fontWeight: 600 }}>{r.observable || '-'}</span>
+                    <span style={{ color: isSuppressed ? '#64748b' : '#93c5fd', textDecoration: 'underline', fontWeight: 600 }}>{r.observable || '-'}</span>
                     <span style={{ display: 'block' }}>
-                      {isNewlyActiveHotIoc(r.first_seen_log) ? (
+                      {isSuppressed ? (
+                        <>
+                          <span style={hotBadge('#334155', '#cbd5e1')}>Suppressed</span>
+                          <span style={hotBadge('#14532d', '#86efac')}>False Positive</span>
+                        </>
+                      ) : null}
+                      {!isSuppressed && isNewlyActiveHotIoc(r.first_seen_log) ? (
                         <span style={hotBadge('#312e81', '#c7d2fe')}>Newly active</span>
                       ) : null}
-                      {Number(r.evidence_logs ?? 0) > 100 ? (
+                      {!isSuppressed && Number(r.evidence_logs ?? 0) > 100 ? (
                         <span style={hotBadge('#78350f', '#fcd34d')}>High activity</span>
                       ) : null}
                     </span>
@@ -5314,7 +5343,7 @@ function IOCHotListPage() {
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.first_seen_log)}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.last_seen_log)}</td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>

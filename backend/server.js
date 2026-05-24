@@ -4292,6 +4292,59 @@ function parseLastSeenSinceParam(raw) {
   return { ok: false, error: 'Use ISO 8601 timestamp or a relative window like 24h, 7d, 1h, 30m, 60s.' };
 }
 
+function parseHotIocSuppressedParam(raw) {
+  const s = String(raw ?? 'hide').trim().toLowerCase();
+  if (s === 'hide' || s === 'exclude') return { ok: true, mode: 'hide' };
+  if (s === 'include' || s === 'only') return { ok: true, mode: s };
+  return { ok: false, error: 'Allowed values: hide, include, only.' };
+}
+
+function hotIocActiveSuppressionExistsSql(obsCol, typeCol) {
+  return `EXISTS (
+    SELECT 1
+    FROM ioc_suppressions s
+    WHERE s.active = TRUE
+      AND (s.expires_at IS NULL OR s.expires_at > NOW())
+      AND s.scope = 'global'
+      AND lower(s.ioc_value) = lower(${obsCol})
+      AND lower(s.ioc_type) = lower(${typeCol})
+  )`;
+}
+
+function buildHotIocSuppressionWhere(mode) {
+  const exists = hotIocActiveSuppressionExistsSql('observable', 'observable_type');
+  if (mode === 'include') return '';
+  if (mode === 'only') return ` AND ${exists} `;
+  return ` AND NOT ${exists} `;
+}
+
+function formatHotIocSuppression(row) {
+  if (row?.sup_ioc_value) {
+    return {
+      active: true,
+      reason: row.sup_reason || null,
+      scope: row.sup_scope || 'global',
+      expires_at: row.sup_expires_at || null,
+      created_by: row.sup_created_by || null,
+      created_at: row.sup_created_at || null
+    };
+  }
+  return { active: false };
+}
+
+function stripHotIocSuppressionFields(row) {
+  const {
+    sup_ioc_value,
+    sup_reason,
+    sup_scope,
+    sup_expires_at,
+    sup_created_by,
+    sup_created_at,
+    ...rest
+  } = row || {};
+  return rest;
+}
+
 app.get('/api/ioc/hot', async (req, res) => {
   const page = Math.max(parseInt(String(req.query.page || '1'), 10) || 1, 1);
   let limit = parseInt(String(req.query.limit ?? req.query.page_size ?? '50'), 10);
@@ -4333,6 +4386,16 @@ app.get('/api/ioc/hot', async (req, res) => {
     params.push(`%${qRaw}%`);
     extraWhere += ` AND (observable ILIKE $${params.length} OR public_id::text ILIKE $${params.length}) `;
   }
+
+  const suppressedParsed = parseHotIocSuppressedParam(req.query.suppressed);
+  if (!suppressedParsed.ok) {
+    return res.status(400).json({
+      message: 'Invalid query parameter: suppressed',
+      detail: suppressedParsed.error
+    });
+  }
+  const suppressedMode = suppressedParsed.mode;
+  extraWhere += buildHotIocSuppressionWhere(suppressedMode);
 
   const baseWhere = `match_count > 0${extraWhere}`;
 
@@ -4379,7 +4442,13 @@ app.get('/api/ioc/hot', async (req, res) => {
         ev.evidence_logs,
         g.source_count,
         g.first_seen_log,
-        g.last_seen_log
+        g.last_seen_log,
+        sup.sup_ioc_value,
+        sup.sup_reason,
+        sup.sup_scope,
+        sup.sup_expires_at,
+        sup.sup_created_by,
+        sup.sup_created_at
       FROM grouped g
       LEFT JOIN LATERAL (
         SELECT NULLIF(COUNT(DISTINCT rl.evidence_hash)::bigint, 0) AS evidence_logs
@@ -4388,12 +4457,32 @@ app.get('/api/ioc/hot', async (req, res) => {
         WHERE lower(a.ioc_value) = lower(g.observable)
           AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE(g.observable_type, a.ioc_type, ''))
       ) ev ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          s.ioc_value AS sup_ioc_value,
+          s.reason AS sup_reason,
+          s.scope AS sup_scope,
+          s.expires_at AS sup_expires_at,
+          s.created_by AS sup_created_by,
+          s.created_at AS sup_created_at
+        FROM ioc_suppressions s
+        WHERE s.active = TRUE
+          AND (s.expires_at IS NULL OR s.expires_at > NOW())
+          AND s.scope = 'global'
+          AND lower(s.ioc_value) = lower(g.observable)
+          AND lower(s.ioc_type) = lower(g.observable_type)
+        ORDER BY s.created_at DESC
+        LIMIT 1
+      ) sup ON TRUE
       ORDER BY g.last_seen_log DESC NULLS LAST, g.sort_match_count DESC, g.observable ASC
     `;
 
     const { rows: baseItems } = await pool.query(listQ, listParams);
 
-    let items = baseItems;
+    let items = (baseItems || []).map((row) => ({
+      ...stripHotIocSuppressionFields(row),
+      suppression: formatHotIocSuppression(row)
+    }));
     try {
       const pairs = (baseItems || [])
         .map((r) => ({ o: String(r?.observable || '').trim().toLowerCase(), t: String(r?.observable_type || '').trim().toLowerCase() }))
@@ -4412,14 +4501,14 @@ app.get('/api/ioc/hot', async (req, res) => {
           GROUP BY observable, observable_type
         `);
         const chMap = new Map((chRows || []).map((r) => [`${String(r.observable)}|${String(r.observable_type)}`, Number(r.c || 0)]));
-        items = (baseItems || []).map((it) => {
+        items = items.map((it) => {
           const key = `${String(it?.observable || '').toLowerCase()}|${String(it?.observable_type || '').toLowerCase()}`;
           const ev = chMap.get(key);
           return { ...it, evidence_logs: Number.isFinite(ev) && ev > 0 ? ev : null };
         });
       }
     } catch {
-      items = (baseItems || []).map((it) => ({ ...it, evidence_logs: null }));
+      items = items.map((it) => ({ ...it, evidence_logs: null }));
     }
 
     const statsQ = `
