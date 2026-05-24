@@ -2066,11 +2066,28 @@ async function computeInstitutionRiskOverview() {
   ]);
 
   const scoredIncidentsBase = (q.rows || []).map((row) => {
+    const isFp = String(row?.verdict || '').toLowerCase() === 'fp';
+    if (isFp) {
+      return { ...row, risk_score: 0, risk_contribution: 0, reason: 'false_positive', confidence: 'high' };
+    }
     const risk = calculateIncidentRisk(row);
     return { ...row, ...risk };
   });
 
   const scoredIncidents = await Promise.all(scoredIncidentsBase.map(async (row) => {
+    if (Number(row?.risk_score || 0) <= 0 || String(row?.verdict || '').toLowerCase() === 'fp') {
+      return {
+        ...row,
+        risk_before_llm: 0,
+        llm_risk_adjustment: null,
+        llm_risk_confidence: null,
+        llm_risk_reason: null,
+        llm_last_updated_at: null,
+        llm_version: null,
+        final_risk_score: 0,
+        risk_score: 0
+      };
+    }
     const version = llmRiskAdvisor.computeVersion(row);
     const cached = await llmRiskAdvisor.getCached({
       incidentId: row.id,
@@ -3374,6 +3391,23 @@ function isAdminUser(req) {
   return role === ROLES.ADMIN;
 }
 
+function isReadOnlyUser(req) {
+  const role = String(req.user?.role || '').trim().toLowerCase();
+  return role === ROLES.READ_ONLY;
+}
+
+function canReadSuppression(req) {
+  return isAdminUser(req) || isReadOnlyUser(req);
+}
+
+function isSuppressionActiveRow(row) {
+  if (!row) return false;
+  if (!row.active) return false;
+  if (!row.expires_at) return true;
+  const exp = Date.parse(row.expires_at);
+  return Number.isFinite(exp) && exp > Date.now();
+}
+
 function parsePositiveInt(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return null;
@@ -4557,6 +4591,227 @@ async function hasSignalEventsTable() {
   }
 }
 
+app.get('/api/ioc/:id/suppression', async (req, res) => {
+  if (!canReadSuppression(req)) return res.status(403).json({ message: 'Forbidden' });
+  const iocId = parsePositiveInt(req.params?.id);
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  try {
+    const iocQ = await pool.query('SELECT observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    if (!iocQ.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const iocValue = String(iocQ.rows[0].observable || '').trim();
+    const iocType = String(iocQ.rows[0].observable_type || '').trim();
+    const supQ = await pool.query(
+      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at
+       FROM ioc_suppressions
+       WHERE lower(ioc_value) = lower($1)
+         AND lower(ioc_type) = lower($2)
+         AND active = TRUE
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [iocValue, iocType]
+    );
+    if (!supQ.rowCount) return res.json({ status: 'not_suppressed', suppression: null });
+    return res.json({ status: 'suppressed', suppression: supQ.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch suppression', detail: err.message });
+  }
+});
+
+app.post('/api/ioc/:id/suppress', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const iocId = parsePositiveInt(req.params?.id);
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  const scope = String(req.body?.scope || 'global').trim().toLowerCase();
+  const sourceName = req.body?.source_name == null ? null : String(req.body.source_name).trim();
+  const reason = String(req.body?.reason || '').trim();
+  const expiresAtRaw = req.body?.expires_at;
+  if (!reason) return res.status(400).json({ message: 'reason is required' });
+  if (scope !== 'global') return res.status(400).json({ message: 'Only global scope is supported in phase-1' });
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+  if (expiresAtRaw && Number.isNaN(expiresAt.getTime())) return res.status(400).json({ message: 'Invalid expires_at' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const iocQ = await client.query('SELECT observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    if (!iocQ.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'IOC not found' });
+    }
+    const iocValue = String(iocQ.rows[0].observable || '').trim();
+    const iocType = String(iocQ.rows[0].observable_type || '').trim();
+    const createdBy = String(req.user?.email || req.user?.username || '').trim() || null;
+
+    const upsertQ = await client.query(
+      `INSERT INTO ioc_suppressions (ioc_value, ioc_type, scope, source_name, reason, created_by, expires_at, active, updated_at)
+       VALUES ($1, $2, 'global', NULL, $3, $4, $5, TRUE, NOW())
+       ON CONFLICT (lower(ioc_value), lower(ioc_type), scope, COALESCE(lower(source_name), '')) WHERE active = TRUE
+       DO UPDATE SET reason = EXCLUDED.reason,
+                     created_by = COALESCE(EXCLUDED.created_by, ioc_suppressions.created_by),
+                     expires_at = EXCLUDED.expires_at,
+                     active = TRUE,
+                     updated_at = NOW()
+       RETURNING *`,
+      [iocValue, iocType, reason, createdBy, expiresAt ? expiresAt.toISOString() : null]
+    );
+
+    await client.query(
+      `UPDATE ioc_activity
+       SET verdict = 'FP',
+           status = 'closed',
+           risk_score = 0,
+           updated_at = NOW()
+       WHERE lower(ioc_value) = lower($1)
+         AND lower(COALESCE(ioc_type, '')) = lower(COALESCE($2, ioc_type, ''))
+         AND status = 'open'`,
+      [iocValue, iocType]
+    );
+
+    await client.query('COMMIT');
+    return res.json({ status: 'suppressed', suppression: upsertQ.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ message: 'Failed to suppress IOC', detail: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/ioc/:id/suppress', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const iocId = parsePositiveInt(req.params?.id);
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  try {
+    const iocQ = await pool.query('SELECT observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    if (!iocQ.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const iocValue = String(iocQ.rows[0].observable || '').trim();
+    const iocType = String(iocQ.rows[0].observable_type || '').trim();
+
+    const q = await pool.query(
+      `UPDATE ioc_suppressions
+       SET active = FALSE, updated_at = NOW()
+       WHERE lower(ioc_value) = lower($1)
+         AND lower(ioc_type) = lower($2)
+         AND active = TRUE
+       RETURNING id`,
+      [iocValue, iocType]
+    );
+    return res.json({ ok: true, updated: q.rowCount || 0 });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
+  }
+});
+
+app.get('/api/ioc-suppressions', async (req, res) => {
+  if (!canReadSuppression(req)) return res.status(403).json({ message: 'Forbidden' });
+  const page = Math.max(1, Number(req.query?.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(req.query?.pageSize || 25)));
+  const offset = (page - 1) * pageSize;
+  const search = String(req.query?.search || '').trim();
+  const iocType = String(req.query?.ioc_type || '').trim().toLowerCase();
+  const scope = String(req.query?.scope || '').trim().toLowerCase();
+  const activeParam = String(req.query?.active || '').trim().toLowerCase();
+  const expires = String(req.query?.expires || 'all').trim().toLowerCase();
+  const createdBy = String(req.query?.created_by || '').trim();
+  const where = ['1=1'];
+  const params = [];
+  if (search) { params.push(`%${search.toLowerCase()}%`); where.push(`(lower(s.ioc_value) LIKE $${params.length} OR lower(COALESCE(s.reason,'')) LIKE $${params.length})`); }
+  if (iocType) { params.push(iocType); where.push(`lower(s.ioc_type) = $${params.length}`); }
+  if (scope && scope !== 'all') { params.push(scope); where.push(`lower(s.scope) = $${params.length}`); }
+  if (activeParam === 'true' || activeParam === 'false') { params.push(activeParam === 'true'); where.push(`s.active = $${params.length}`); }
+  if (createdBy) { params.push(`%${createdBy.toLowerCase()}%`); where.push(`lower(COALESCE(s.created_by,'')) LIKE $${params.length}`); }
+  if (expires === 'active') where.push(`s.active = TRUE AND (s.expires_at IS NULL OR s.expires_at > NOW())`);
+  if (expires === 'expired') where.push(`s.active = TRUE AND s.expires_at IS NOT NULL AND s.expires_at <= NOW()`);
+
+  const sort = String(req.query?.sort || 'created_at_desc').trim();
+  const orderBy = sort === 'created_at_asc' ? 's.created_at ASC' : sort === 'expires_at_asc' ? 's.expires_at ASC NULLS LAST' : sort === 'ioc_value_asc' ? 's.ioc_value ASC' : 's.created_at DESC';
+
+  try {
+    params.push(pageSize, offset);
+    const baseWhere = where.join(' AND ');
+    const q = await pool.query(
+      `SELECT s.*,
+              CASE
+                WHEN s.active = FALSE THEN 'inactive'
+                WHEN s.expires_at IS NOT NULL AND s.expires_at <= NOW() THEN 'expired'
+                ELSE 'active'
+              END AS status,
+              COALESCE(a.cnt, 0)::int AS affected_incidents,
+              COALESCE(a.closed_cnt, 0)::int AS closed_incidents,
+              COALESCE(a.open_cnt, 0)::int AS open_incidents,
+              0::double precision AS risk_contribution
+       FROM ioc_suppressions s
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS cnt,
+                COUNT(*) FILTER (WHERE status='closed')::int AS closed_cnt,
+                COUNT(*) FILTER (WHERE status='open')::int AS open_cnt
+         FROM ioc_activity ia
+         WHERE lower(ia.ioc_value) = lower(s.ioc_value)
+           AND lower(COALESCE(ia.ioc_type,'')) = lower(COALESCE(s.ioc_type,''))
+       ) a ON TRUE
+       WHERE ${baseWhere}
+       ORDER BY ${orderBy}
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const countParams = params.slice(0, -2);
+    const cq = await pool.query(`SELECT COUNT(*)::int AS total FROM ioc_suppressions s WHERE ${baseWhere}`, countParams);
+    return res.json({ items: q.rows || [], total: Number(cq.rows?.[0]?.total || 0), page, pageSize });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch IOC suppressions', detail: err.message });
+  }
+});
+
+app.patch('/api/ioc-suppressions/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) return res.status(400).json({ message: 'Invalid id' });
+  const reasonRaw = req.body?.reason;
+  const expiresAtRaw = req.body?.expires_at;
+  const active = req.body?.active;
+  const sets = ['updated_at = NOW()'];
+  const params = [id];
+  if (reasonRaw !== undefined) {
+    const reason = String(reasonRaw || '').trim();
+    if (!reason) return res.status(400).json({ message: 'reason is required' });
+    params.push(reason); sets.push(`reason = $${params.length}`);
+  }
+  if (expiresAtRaw !== undefined) {
+    if (expiresAtRaw === null || String(expiresAtRaw).trim() === '') {
+      sets.push('expires_at = NULL');
+    } else {
+      const d = new Date(expiresAtRaw);
+      if (Number.isNaN(d.getTime())) return res.status(400).json({ message: 'Invalid expires_at' });
+      params.push(d.toISOString()); sets.push(`expires_at = $${params.length}::timestamptz`);
+    }
+  }
+  if (active !== undefined) {
+    if (typeof active !== 'boolean') return res.status(400).json({ message: 'active must be boolean' });
+    params.push(active); sets.push(`active = $${params.length}`);
+  }
+  try {
+    const q = await pool.query(`UPDATE ioc_suppressions SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params);
+    if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+    return res.json({ item: q.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
+  }
+});
+
+app.delete('/api/ioc-suppressions/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) return res.status(400).json({ message: 'Invalid id' });
+  try {
+    const q = await pool.query('UPDATE ioc_suppressions SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
+    if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/details', async (req, res) => {
   const requestedPublicId = String(req.query?.public_id || '').trim();
 
@@ -4769,12 +5024,26 @@ app.get('/api/ioc/details', async (req, res) => {
       file_information: buildFileInformation(rows, observable, rows[0].observable_type)
     };
 
+    const suppressionQ = await pool.query(
+      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at
+       FROM ioc_suppressions
+       WHERE lower(ioc_value) = lower($1)
+         AND lower(ioc_type) = lower($2)
+         AND active = TRUE
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [observable, observableType]
+    );
+    const activeSuppression = suppressionQ.rowCount ? suppressionQ.rows[0] : null;
+
     const payload = {
       summary,
       match_count: Number(summary.match_count || 0),
       sources: rows,
       matches: [],
-      incidents
+      incidents,
+      suppression: activeSuppression ? { ...activeSuppression, active: true } : { active: false }
     };
 
     iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
