@@ -2381,6 +2381,8 @@ function IncidentDetailsPage() {
                   <div>Verdict: <b>{item.verdict}</b></div>
                 </div>
 
+                <RiskExplanationPanel explanation={item.risk_explanation} item={item} />
+
                 <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <h4 style={{ margin: 0, fontSize: 14, color: '#cbd5e1' }}>AI Insight</h4>
@@ -3011,9 +3013,28 @@ const FEED_SCHEDULE_OPTIONS = [
   { cron: '*/5 * * * *', label: 'Every 5 min' },
   { cron: '*/15 * * * *', label: 'Every 15 min' },
   { cron: '*/30 * * * *', label: 'Every 30 min' },
-  { cron: '0 * * * *', label: 'Every hour' },
-  { cron: '0 0 * * *', label: 'Every 24 hours' }
+  { cron: '0 * * * *', label: 'Every hour' }
 ];
+
+const FEED_METRIC_TOOLTIPS = {
+  processed: 'Total records/items processed during the last run.',
+  inserted: 'New IOC observables or source evidence inserted during the last run.',
+  duplicate: 'Records already known from previous imports.',
+  updated: 'Existing records updated during reconciliation. May be 0 if reconciliation is not enabled for this feed.',
+  skipped: 'Records skipped because they were unchanged, invalid, filtered, old cursor entries, or not importable.',
+  suppressed: 'Records skipped because an active suppression policy matched them.',
+  failed: 'Records that failed to parse or import.'
+};
+
+function feedMetricsHintPresentation(hint) {
+  const map = {
+    legacy_metrics: { label: 'Legacy metrics', color: '#fcd34d', title: 'Import breakdown unavailable until the feed runs again with granular metrics.' },
+    no_delta: { label: 'No delta', color: '#94a3b8', title: 'Last run processed records but did not insert or update IOCs — often normal when feed content is unchanged.' },
+    high_skipped: { label: 'High skipped', color: '#fdba74', title: 'Most records were skipped (unchanged, filtered, or already known). Review if unexpected.' },
+    high_failed: { label: 'High failed', color: '#fca5a5', title: 'A significant share of records failed to import.' }
+  };
+  return map[hint] || { label: hint, color: '#94a3b8', title: hint };
+}
 
 function feedStatePresentation(enabled) {
   if (enabled) {
@@ -3169,8 +3190,7 @@ function formatFeedScheduleLabel(cron) {
     '*/5 * * * *': 'Every 5 min',
     '*/15 * * * *': 'Every 15 min',
     '*/30 * * * *': 'Every 30 min',
-    '0 * * * *': 'Every hour',
-    '0 0 * * *': 'Every 24 hours'
+    '0 * * * *': 'Every hour'
   };
   return map[String(cron || '').trim()] || String(cron || '-');
 }
@@ -3182,9 +3202,10 @@ function truncateFeedError(text, max = 48) {
   return `${raw.slice(0, max - 1)}…`;
 }
 
-function LastRunMetricsCell({ metrics }) {
+function LastRunMetricsCell({ metrics, hints = [] }) {
   const m = metrics || { available: false, processed: 0 };
   const processed = Number(m.processed || 0);
+  const hintList = Array.isArray(hints) ? hints : [];
 
   if (processed <= 0 && m.available !== false) {
     return <span style={{ color: '#64748b', fontSize: 12 }}>No activity</span>;
@@ -3193,9 +3214,9 @@ function LastRunMetricsCell({ metrics }) {
   if (m.available === false && processed > 0) {
     return (
       <div style={{ display: 'grid', gap: 4 }}>
-        <span style={{ color: '#cbd5e1', fontSize: 12 }}>Processed {processed}</span>
+        <span style={{ color: '#cbd5e1', fontSize: 12 }} title={FEED_METRIC_TOOLTIPS.processed}>Processed {processed}</span>
         <span style={{ color: '#fcd34d', fontSize: 11, lineHeight: 1.35 }}>
-          Import breakdown unavailable (legacy run). Re-run feed for detailed metrics.
+          Metrics breakdown unavailable until next run.
         </span>
       </div>
     );
@@ -3227,6 +3248,7 @@ function LastRunMetricsCell({ metrics }) {
           return (
             <span
               key={p.key}
+              title={FEED_METRIC_TOOLTIPS[p.key] || undefined}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -3244,11 +3266,165 @@ function LastRunMetricsCell({ metrics }) {
             </span>
           );
         })}
+        {hintList.map((hint) => {
+          const h = feedMetricsHintPresentation(hint);
+          return (
+            <span
+              key={hint}
+              title={h.title}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontSize: 10,
+                fontWeight: 700,
+                color: h.color,
+                background: 'rgba(15,23,42,0.65)',
+                border: `1px solid ${h.color}`
+              }}
+            >
+              {h.label}
+            </span>
+          );
+        })}
       </div>
       {missingBreakdown ? (
         <span style={{ color: '#fcd34d', fontSize: 11, lineHeight: 1.35 }}>
           Processed records are available, but import result breakdown is missing. Check importer metrics.
         </span>
+      ) : null}
+    </div>
+  );
+}
+
+function IocEnvironmentImpactPanel({ impact }) {
+  const imp = impact || {};
+  const observed = imp.observed_in_environment === true || Number(imp.incident_count || 0) > 0;
+
+  if (!observed) {
+    return (
+      <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>Environment Impact</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
+          This IOC has not been observed in environment telemetry yet.
+        </div>
+      </div>
+    );
+  }
+
+  const cards = [
+    { label: 'Incidents', value: imp.incident_count ?? 0 },
+    { label: 'Detection Events', value: imp.detection_event_count ?? 0 },
+    { label: 'Observed Hosts', value: imp.observed_host_count ?? 0 },
+    { label: 'Evidence Logs', value: imp.evidence_log_count ?? 0 },
+    { label: 'First Seen in Environment', value: formatUserDateTime(imp.first_seen_in_env), text: true },
+    { label: 'Last Seen in Environment', value: formatUserDateTime(imp.last_seen_in_env), text: true },
+    { label: 'Allowed / Blocked / Unknown', value: `${imp.allowed_count ?? 0} / ${imp.blocked_count ?? 0} / ${imp.unknown_action_count ?? 0}`, text: true },
+    { label: 'Max Incident Risk', value: imp.max_incident_risk_score != null ? Number(imp.max_incident_risk_score).toFixed(2) : 'N/A', text: true },
+    { label: 'Avg Incident Risk', value: imp.avg_incident_risk_score != null ? Number(imp.avg_incident_risk_score).toFixed(2) : 'N/A', text: true },
+    { label: 'Open / Closed Incidents', value: `${imp.related_open_incidents ?? 0} / ${imp.related_closed_incidents ?? 0}`, text: true }
+  ];
+
+  const sources = Array.isArray(imp.source_breakdown) ? imp.source_breakdown : [];
+
+  return (
+    <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
+      <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Environment Impact</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: sources.length ? 12 : 0 }}>
+        {cards.map((c) => (
+          <div key={c.label} style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px', background: '#111827' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.label}</div>
+            <div style={{ fontSize: c.text ? 13 : 20, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+      {sources.length ? (
+        <div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>Source Breakdown</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {sources.map((s) => (
+              <span key={s.source_type} style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600, color: '#cbd5e1', background: 'rgba(15,23,42,0.65)', border: '1px solid #334155' }}>
+                {s.source_type} {s.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RiskExplanationPanel({ explanation, item }) {
+  const ex = explanation || {};
+  const components = Array.isArray(ex.components) ? ex.components : [];
+  const notes = Array.isArray(ex.notes) ? ex.notes : [];
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a', display: 'grid', gap: 12 }}>
+      <div>
+        <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>Risk Explanation</div>
+        <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
+          Risk score reflects environment impact, evidence type, action outcome, analyst verdict, and IOC type.
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+        <div style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Base Risk</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{ex.base_score != null ? Number(ex.base_score).toFixed(2) : '—'}</div>
+        </div>
+        <div style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Final Risk</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#93c5fd' }}>{ex.final_score != null ? Number(ex.final_score).toFixed(2) : Number(item?.risk_score || 0).toFixed(2)}</div>
+        </div>
+        {ex.ai_delta != null ? (
+          <div style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px' }}>
+            <div style={{ fontSize: 11, color: '#94a3b8' }}>AI Adjustment</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: Number(ex.ai_delta) > 0 ? '#fca5a5' : Number(ex.ai_delta) < 0 ? '#86efac' : '#cbd5e1' }}>
+              {Number(ex.ai_delta) > 0 ? '+' : ''}{Number(ex.ai_delta).toFixed(2)}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {ex.evidence_tier ? (
+          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#cbd5e1', border: '1px solid #475569' }}>Evidence: {ex.evidence_tier}</span>
+        ) : null}
+        {ex.action_outcome ? (
+          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#cbd5e1', border: '1px solid #475569' }}>Outcome: {ex.action_outcome}</span>
+        ) : null}
+        {ex.verdict_effect ? (
+          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#fcd34d', border: '1px solid #854d0e' }}>{ex.verdict_effect}</span>
+        ) : null}
+      </div>
+
+      {components.length ? (
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8, fontWeight: 700 }}>Score Components</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {components.map((c) => (
+              <div key={c.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 160px) 80px 1fr', gap: 10, fontSize: 12, alignItems: 'start' }}>
+                <strong style={{ color: '#e2e8f0' }}>{c.name}</strong>
+                <span style={{ color: '#93c5fd' }}>{c.contribution != null ? `+${Number(c.contribution).toFixed(2)}` : '—'}</span>
+                <span style={{ color: '#94a3b8', lineHeight: 1.45 }}>{c.explanation}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {ex.ai_reason ? (
+        <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.45 }}>
+          <span style={{ color: '#94a3b8' }}>AI reason: </span>{ex.ai_reason}
+        </div>
+      ) : null}
+
+      {notes.length ? (
+        <ul style={{ margin: 0, paddingLeft: 18, color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
+          {notes.map((n) => <li key={n}>{n}</li>)}
+        </ul>
       ) : null}
     </div>
   );
@@ -3538,7 +3714,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                         </span>
                       </td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}</td>
-                      <td><LastRunMetricsCell metrics={i.last_run_metrics} /></td>
+                      <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{isActive ? formatUserDateTime(i.next_run_at) : '-'}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
@@ -7157,6 +7333,8 @@ function IOCDetailsPage() {
                 </tbody>
               </table>
             </div>
+
+            <IocEnvironmentImpactPanel impact={data.impact} />
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
               <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Related Incidents</div>

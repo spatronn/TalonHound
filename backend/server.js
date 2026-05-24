@@ -25,6 +25,9 @@ import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
+import { buildIocEnvironmentImpact, emptyIocEnvironmentImpact } from './lib/iocEnvironmentImpact.js';
+import { buildRiskExplanation } from './lib/riskExplanation.js';
+import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
@@ -1688,7 +1691,8 @@ app.get('/api/incidents/:id', async (req, res) => {
       incident_version: incidentVersion,
       ...risk,
       ...llmRisk,
-      risk_score: llmRisk.final_risk_score
+      risk_score: llmRisk.final_risk_score,
+      risk_explanation: buildRiskExplanation(risk, llmRisk, context)
     };
 
     return res.json({ item });
@@ -2978,10 +2982,11 @@ function flatMetricsFromLastRun(lastRunMetrics) {
   };
 }
 
-function resolveFeedHealthState(feedActive, lastStatus, consecutiveFailures) {
+function resolveFeedHealthState(feedActive, lastStatus, consecutiveFailures, metricsHints = []) {
   if (feedActive === false) return 'disabled';
   const st = String(lastStatus || '').toLowerCase();
   if (st === 'failed' || st === 'fail') return 'failed';
+  if (Array.isArray(metricsHints) && metricsHints.includes('high_failed')) return 'warning';
   if (Number(consecutiveFailures || 0) > 0) return 'warning';
   if (st === 'running' || st === 'queued') return 'warning';
   if (st === 'success') return 'success';
@@ -3069,13 +3074,14 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
     ? (lr?.error_message || lq?.error_message || null)
     : null;
   const consecutive = consecutiveFailures.get(jobType) || 0;
+  const metricsHints = buildFeedMetricsHints(lastRunMetrics);
 
   return {
     ...feed,
     active: feedActive,
     status: lastStatus,
     last_status: lastStatus,
-    health_state: resolveFeedHealthState(feedActive, lastStatus, consecutive),
+    health_state: resolveFeedHealthState(feedActive, lastStatus, consecutive, metricsHints),
     last_run_at: lr?.finished_at || lr?.started_at || lq?.finished_at || lq?.started_at || lq?.queued_at || null,
     last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,
     last_finished_at: lr?.finished_at || lq?.finished_at || null,
@@ -3083,6 +3089,7 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
     last_error: lastError,
     consecutive_failures: consecutive,
     last_run_metrics: lastRunMetrics,
+    metrics_hints: metricsHints,
     ...runMetrics,
     total_records: runMetrics.last_records_processed
   };
@@ -5191,7 +5198,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const rows = itemRes.rows;
     if (!rows.length) {
-      const payload = { summary: null, sources: [], matches: [], incidents: [] };
+      const payload = { summary: null, sources: [], matches: [], incidents: [], impact: emptyIocEnvironmentImpact() };
       iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
       console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=0 matches=0`);
       return res.json(payload);
@@ -5299,7 +5306,9 @@ app.get('/api/ioc/details', async (req, res) => {
       return incidentsRes.rows || [];
     })();
 
-    const [geo, incidentsRaw] = await Promise.all([geoPromise, incidentsPromise]);
+    const impactPromise = buildIocEnvironmentImpact(pool, observable, observableType);
+
+    const [geo, incidentsRaw, impact] = await Promise.all([geoPromise, incidentsPromise, impactPromise]);
 
     let incidents = incidentsRaw;
     try {
@@ -5368,6 +5377,7 @@ app.get('/api/ioc/details', async (req, res) => {
       sources: rows,
       matches: [],
       incidents,
+      impact,
       suppression: activeSuppression ? { ...activeSuppression, active: true } : { active: false }
     };
 
