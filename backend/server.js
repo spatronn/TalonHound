@@ -1579,8 +1579,7 @@ async function buildIncidentAiInsightContext(activityId) {
     `SELECT event_time, created_at, source_type, parser_source, match_context, normalized_event_json, matched_ioc, host_name, raw_log_snapshot
      FROM ioc_match_events
      WHERE activity_id = $1::uuid
-     ORDER BY COALESCE(last_seen_at, event_time, created_at) DESC
-     LIMIT 20`,
+     ORDER BY COALESCE(last_seen_at, event_time, created_at) DESC`,
     [context.id]
   );
   const rows = evQ.rows || [];
@@ -1595,6 +1594,13 @@ async function buildIncidentAiInsightContext(activityId) {
     dns_evidence: Number(sourceTypes.dns || 0) > 0,
     proxy_evidence: Number(sourceTypes.proxy || 0) > 0
   };
+  context.explanation_events = rows.map((r) => ({
+    source_type: llmNormSourceType(r),
+    parser_source: r.parser_source,
+    match_context: r.match_context,
+    normalized_event_json: r.normalized_event_json,
+    raw_log_snapshot: r.raw_log_snapshot
+  }));
   context.sample_events = rows.slice(0, 5).map((r) => ({
     detected_at: r.event_time || r.created_at || null,
     source_type: llmNormSourceType(r),

@@ -3389,11 +3389,11 @@ function RiskExplanationPanel({ explanation, item }) {
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {ex.evidence_tier ? (
-          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#cbd5e1', border: '1px solid #475569' }}>Evidence: {ex.evidence_tier}</span>
+        {(ex.evidence_tier_label || ex.evidence_tier) ? (
+          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#cbd5e1', border: '1px solid #475569' }}>Evidence: {ex.evidence_tier_label || ex.evidence_tier}</span>
         ) : null}
-        {ex.action_outcome ? (
-          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#cbd5e1', border: '1px solid #475569' }}>Outcome: {ex.action_outcome}</span>
+        {(ex.action_outcome_label || ex.action_outcome) ? (
+          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#cbd5e1', border: '1px solid #475569' }}>Outcome: {ex.action_outcome_label || ex.action_outcome}</span>
         ) : null}
         {ex.verdict_effect ? (
           <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: '#fcd34d', border: '1px solid #854d0e' }}>{ex.verdict_effect}</span>

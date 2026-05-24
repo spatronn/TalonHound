@@ -121,12 +121,13 @@ export function inferEvidenceTier(incident = {}) {
   if (s.accepted > 0 && s.hasFirewall) return 'firewall_allowed';
   if (s.accepted > 0 && (s.hasDns || s.sourceFamilies >= 2 || s.hosts >= 2)) return 'multi_source_network';
   if (s.accepted > 0) return 'firewall_allowed';
+  if (s.sourceFamilies >= 2) return 'multi_source_network';
+  if (s.hasDns && s.hasProxy && !s.hasFirewall && !s.hasEndpoint) return 'multi_source_network';
   if (s.hasProxy && s.accepted === 0 && s.blocked === 0) return 'proxy_only';
   if (s.hasDns && !s.hasProxy && !s.hasFirewall && s.accepted === 0 && s.blocked === 0) return 'dns_only';
   if (s.blocked > 0 && s.accepted === 0) return 'blocked_only';
   if (s.unknownHeavy && conf !== 'high' && hits > 0) return 'generic_only';
   if (s.unknownHeavy) return 'unknown';
-  if (s.sourceFamilies >= 2) return 'multi_source_network';
   if (s.hasProxy) return 'proxy_only';
   if (s.hasDns) return 'dns_only';
   return 'unknown';
