@@ -46,6 +46,7 @@ const SessionContext = React.createContext({
   userId: null,
   role: 'admin',
   canWrite: true,
+  isAdmin: true,
   refreshSession: async () => {}
 });
 
@@ -81,9 +82,10 @@ function SessionProvider({ children }) {
   }, [refreshSession]);
 
   const canWrite = role !== 'readonly';
+  const isAdmin = role === 'admin';
   const value = useMemo(
-    () => ({ authState, userEmail, userId, role, canWrite, refreshSession }),
-    [authState, userEmail, userId, role, canWrite, refreshSession]
+    () => ({ authState, userEmail, userId, role, canWrite, isAdmin, refreshSession }),
+    [authState, userEmail, userId, role, canWrite, isAdmin, refreshSession]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -141,6 +143,108 @@ function formatUserDateTime(value) {
     second: '2-digit',
     hour12: false
   });
+}
+
+function suppressionKey(iocValue, iocType) {
+  return `${String(iocType || '').trim().toLowerCase()}\t${String(iocValue || '').trim().toLowerCase()}`;
+}
+
+function isSuppressionActiveRow(row) {
+  if (!row?.active) return false;
+  if (!row?.expires_at) return true;
+  const exp = Date.parse(row.expires_at);
+  return Number.isFinite(exp) && exp > Date.now();
+}
+
+function expiresAtFromPreset(preset, customDate) {
+  if (preset === 'never') return null;
+  const now = new Date();
+  if (preset === '7d') {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString();
+  }
+  if (preset === '30d') {
+    const d = new Date(now);
+    d.setUTCDate(d.getUTCDate() + 30);
+    return d.toISOString();
+  }
+  if (preset === 'custom' && customDate) {
+    const d = new Date(customDate);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+  return null;
+}
+
+function suppressionBadgeStyle(kind = 'suppressed') {
+  const base = {
+    display: 'inline-block',
+    borderRadius: 999,
+    padding: '3px 9px',
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.02em',
+    marginLeft: 8,
+    verticalAlign: 'middle',
+    whiteSpace: 'nowrap'
+  };
+  if (kind === 'fp') {
+    return { ...base, background: 'rgba(34,197,94,0.15)', color: '#86efac', border: '1px solid #166534' };
+  }
+  return { ...base, background: 'rgba(148,163,184,0.18)', color: '#cbd5e1', border: '1px solid #475569' };
+}
+
+function suppressionStatusBadgeStyle(status) {
+  const s = String(status || '').toLowerCase();
+  const base = {
+    display: 'inline-block',
+    borderRadius: 999,
+    padding: '4px 10px',
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'capitalize'
+  };
+  if (s === 'active') return { ...base, background: 'rgba(34,197,94,0.15)', color: '#86efac', border: '1px solid #166534' };
+  if (s === 'expired') return { ...base, background: 'rgba(251,191,36,0.15)', color: '#fcd34d', border: '1px solid #854d0e' };
+  return { ...base, background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid #475569' };
+}
+
+function apiErrorMessage(err, fallback = 'Request failed') {
+  return String(err?.response?.data?.message || err?.message || fallback);
+}
+
+async function fetchActiveSuppressionIndex(maxPages = 20) {
+  const index = new Map();
+  let page = 1;
+  let total = Infinity;
+  while ((page - 1) * 100 < total && page <= maxPages) {
+    const { data } = await api.get('/ioc-suppressions', {
+      params: { page, pageSize: 100, active: 'true', expires: 'active' }
+    });
+    const items = data?.items || [];
+    total = Number(data?.total || 0);
+    for (const item of items) {
+      index.set(suppressionKey(item.ioc_value, item.ioc_type), item);
+    }
+    page += 1;
+    if (!items.length) break;
+  }
+  return index;
+}
+
+function ModalOverlay({ children, onClose }) {
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    >
+      <div role="dialog" onClick={(e) => e.stopPropagation()} style={PUBLISHED_FEEDS_UI.formModal}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function sanitizeSourceNote(note) {
@@ -340,7 +444,7 @@ function AppShell({ children }) {
   }
 
   const isActive = (path) => location.pathname === path;
-  const isOpsActive = location.pathname.startsWith('/ioc');
+  const isOpsActive = location.pathname.startsWith('/ioc') || location.pathname.startsWith('/operations/ioc-suppressions');
   const isIntegrationsActive = location.pathname.startsWith('/threat-intelligence');
 
   const menuStyle = (active) => ({
@@ -389,6 +493,7 @@ function AppShell({ children }) {
             ) : (
               <span style={{ ...subMenuStyle(false), opacity: 0.45, cursor: 'not-allowed' }} title="Read-only role">Add IOC</span>
             )}
+            <Link to="/operations/ioc-suppressions" style={subMenuStyle(location.pathname.startsWith('/operations/ioc-suppressions'))}>IOC Suppressions</Link>
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -5167,6 +5272,378 @@ function IOCHotListPage() {
   );
 }
 
+function SuppressionExpirationFields({ ui, preset, setPreset, customDate, setCustomDate, disabled = false }) {
+  return (
+    <div style={{ marginTop: 12 }}>
+      <span style={ui.label}>Expiration</span>
+      <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
+        {[
+          { id: 'never', label: 'Never' },
+          { id: '7d', label: '7 days' },
+          { id: '30d', label: '30 days' },
+          { id: 'custom', label: 'Custom date' }
+        ].map((opt) => (
+          <label key={opt.id} style={ui.checkLabel}>
+            <input type="radio" name="suppression-expiration" value={opt.id} checked={preset === opt.id} onChange={() => setPreset(opt.id)} disabled={disabled} />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      {preset === 'custom' ? (
+        <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)} disabled={disabled} style={{ ...ui.input, marginTop: 8 }} />
+      ) : null}
+    </div>
+  );
+}
+
+function IOCSuppressionsPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { isAdmin } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(Math.max(1, Number(searchParams.get('page') || 1)));
+  const [pageSize] = useState(25);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [searchInput, setSearchInput] = useState(String(searchParams.get('search') || ''));
+  const [search, setSearch] = useState(String(searchParams.get('search') || ''));
+  const [iocType, setIocType] = useState(String(searchParams.get('ioc_type') || 'all'));
+  const [scope, setScope] = useState(String(searchParams.get('scope') || 'all'));
+  const [statusFilter, setStatusFilter] = useState(String(searchParams.get('status') || 'all'));
+  const [sourceName, setSourceName] = useState(String(searchParams.get('source_name') || ''));
+  const [createdBy, setCreatedBy] = useState(String(searchParams.get('created_by') || ''));
+  const [editItem, setEditItem] = useState(null);
+  const [editReason, setEditReason] = useState('');
+  const [editPreset, setEditPreset] = useState('never');
+  const [editCustomDate, setEditCustomDate] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [removeItem, setRemoveItem] = useState(null);
+  const [removeSaving, setRemoveSaving] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const [toast, setToast] = useState('');
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = { page, pageSize, sort: 'created_at_desc' };
+      if (search) params.search = search;
+      if (iocType && iocType !== 'all') params.ioc_type = iocType;
+      if (scope && scope !== 'all') params.scope = scope;
+      if (createdBy.trim()) params.created_by = createdBy.trim();
+      if (statusFilter === 'active') {
+        params.active = 'true';
+        params.expires = 'active';
+      } else if (statusFilter === 'inactive') {
+        params.active = 'false';
+      } else if (statusFilter === 'expired') {
+        params.active = 'true';
+        params.expires = 'expired';
+      }
+      const { data } = await api.get('/ioc-suppressions', { params });
+      let loaded = Array.isArray(data?.items) ? data.items : [];
+      if (sourceName.trim()) {
+        const q = sourceName.trim().toLowerCase();
+        loaded = loaded.filter((x) => String(x.source_name || '').toLowerCase().includes(q));
+      }
+      setItems(loaded);
+      setTotal(Number(data?.total || 0));
+    } catch (err) {
+      setItems([]);
+      setTotal(0);
+      setError(apiErrorMessage(err, 'Failed to load suppressions'));
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, search, iocType, scope, statusFilter, sourceName, createdBy]);
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (search) next.set('search', search);
+    if (page > 1) next.set('page', String(page));
+    if (iocType !== 'all') next.set('ioc_type', iocType);
+    if (scope !== 'all') next.set('scope', scope);
+    if (statusFilter !== 'all') next.set('status', statusFilter);
+    if (sourceName.trim()) next.set('source_name', sourceName.trim());
+    if (createdBy.trim()) next.set('created_by', createdBy.trim());
+    setSearchParams(next, { replace: true });
+  }, [search, page, iocType, scope, statusFilter, sourceName, createdBy, setSearchParams]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(''), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const pageSummary = useMemo(() => {
+    const active = items.filter((x) => String(x.status || '').toLowerCase() === 'active').length;
+    const expired = items.filter((x) => String(x.status || '').toLowerCase() === 'expired').length;
+    const global = items.filter((x) => String(x.scope || '').toLowerCase() === 'global').length;
+    const sourceScoped = items.filter((x) => String(x.scope || '').toLowerCase() === 'source').length;
+    const affected = items.reduce((acc, x) => acc + Number(x.affected_incidents || 0), 0);
+    return { active, expired, global, sourceScoped, affected };
+  }, [items]);
+
+  function applyFilters() {
+    setPage(1);
+    setSearch(searchInput.trim());
+  }
+
+  function openEdit(item) {
+    setEditItem(item);
+    setEditReason(String(item?.reason || ''));
+    setEditError('');
+    if (!item?.expires_at) {
+      setEditPreset('never');
+      setEditCustomDate('');
+    } else {
+      setEditPreset('custom');
+      const d = new Date(item.expires_at);
+      if (!Number.isNaN(d.getTime())) {
+        const pad = (n) => String(n).padStart(2, '0');
+        setEditCustomDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+      } else {
+        setEditCustomDate('');
+      }
+    }
+  }
+
+  async function saveEdit() {
+    if (!editItem?.id) return;
+    const reason = String(editReason || '').trim();
+    if (!reason) {
+      setEditError('Reason is required');
+      return;
+    }
+    setEditSaving(true);
+    setEditError('');
+    try {
+      await api.patch(`/ioc-suppressions/${editItem.id}`, {
+        reason,
+        expires_at: expiresAtFromPreset(editPreset, editCustomDate),
+        active: true
+      });
+      setEditItem(null);
+      setToast('Suppression updated');
+      await load();
+    } catch (err) {
+      const msg = apiErrorMessage(err, 'Suppression failed');
+      setEditError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function confirmRemove() {
+    if (!removeItem?.id) return;
+    setRemoveSaving(true);
+    setRemoveError('');
+    try {
+      await api.delete(`/ioc-suppressions/${removeItem.id}`);
+      setRemoveItem(null);
+      setToast('Suppression removed');
+      await load();
+    } catch (err) {
+      const msg = apiErrorMessage(err, 'Suppression failed');
+      setRemoveError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
+    } finally {
+      setRemoveSaving(false);
+    }
+  }
+
+  async function resolveIocDetailsUrl(item) {
+    try {
+      const { data } = await api.get('/ioc/details/resolve', {
+        params: { type: item.ioc_type, observable: item.ioc_value }
+      });
+      const publicId = data?.public_id;
+      if (publicId) navigate(`/ioc/details/${encodeURIComponent(publicId)}`);
+    } catch {
+      setToast('Could not resolve IOC details');
+    }
+  }
+
+  return (
+    <AppShell>
+      <section className="published-feeds-page" style={ui.section}>
+        <h2 style={ui.pageTitle}>IOC Suppressions</h2>
+        <p style={ui.pageSub}>Manage false positives and suppressed indicators to prevent recurring feed noise.</p>
+
+        {!isAdmin ? (
+          <div style={{ ...ui.banner, borderColor: '#475569', background: 'rgba(100,116,139,0.15)', color: '#cbd5e1', marginBottom: 16 }}>
+            Readonly users can view suppression status but cannot modify it.
+          </div>
+        ) : null}
+
+        {toast ? <div style={{ ...ui.banner, marginBottom: 12 }}>{toast}</div> : null}
+        {error ? <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.25)', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+          {[
+            ['Active (page)', pageSummary.active],
+            ['Expired (page)', pageSummary.expired],
+            ['Global (page)', pageSummary.global],
+            ['Source-specific (page)', pageSummary.sourceScoped],
+            ['Affected incidents (page)', pageSummary.affected]
+          ].map(([label, val]) => (
+            <div key={label} style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>{label}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ ...ui.formPanel, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <div>
+              <span style={ui.label}>Search IOC</span>
+              <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} placeholder="IOC value or reason" style={ui.input} />
+            </div>
+            <div>
+              <span style={ui.label}>IOC Type</span>
+              <select value={iocType} onChange={(e) => { setIocType(e.target.value); setPage(1); }} style={ui.select}>
+                <option value="all">All</option>
+                {['ip', 'ip6', 'domain', 'url', 'md5', 'sha1', 'sha256'].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={ui.label}>Scope</span>
+              <select value={scope} onChange={(e) => { setScope(e.target.value); setPage(1); }} style={ui.select}>
+                <option value="all">All</option>
+                <option value="global">Global</option>
+                <option value="source">Source-specific</option>
+              </select>
+            </div>
+            <div>
+              <span style={ui.label}>Status</span>
+              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={ui.select}>
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="expired">Expired</option>
+              </select>
+            </div>
+            <div>
+              <span style={ui.label}>Source</span>
+              <input value={sourceName} onChange={(e) => setSourceName(e.target.value)} placeholder="Optional" style={ui.input} />
+            </div>
+            <div>
+              <span style={ui.label}>Created by</span>
+              <input value={createdBy} onChange={(e) => setCreatedBy(e.target.value)} placeholder="Optional" style={ui.input} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button type="button" style={ui.btnPrimary} onClick={applyFilters}>Apply filters</button>
+            <button type="button" style={ui.btn} onClick={() => { setSearchInput(''); setSearch(''); setIocType('all'); setScope('all'); setStatusFilter('all'); setSourceName(''); setCreatedBy(''); setPage(1); }}>Reset</button>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>Summary cards reflect the current page only. Source filter is client-side on the loaded page (backend has no source_name query param).</div>
+        </div>
+
+        {loading ? <div style={{ color: '#94a3b8', marginBottom: 12 }}>Loading suppressions…</div> : null}
+        {!loading && !items.length ? (
+          <div style={{ padding: 16, border: '1px solid #334155', borderRadius: 10, background: '#0f172a', color: '#94a3b8' }}>
+            <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>No IOC suppressions yet.</div>
+            False positives marked from IOC Details will appear here.
+          </div>
+        ) : null}
+
+        {items.length ? (
+          <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
+            <table className="ioc-table published-feeds-table" width="100%" style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
+              <thead style={ui.thead}>
+                <tr>
+                  {['IOC', 'Type', 'Scope', 'Source', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Affected', 'Actions'].map((h) => (
+                    <th key={h} style={ui.th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} style={ui.tr}>
+                    <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
+                    <td style={ui.td}>{item.ioc_type}</td>
+                    <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
+                    <td style={ui.td}>{item.source_name || '—'}</td>
+                    <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
+                    <td style={ui.td}>{item.created_by || '—'}</td>
+                    <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
+                    <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
+                    <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{item.status || 'unknown'}</span></td>
+                    <td style={ui.td}>{Number(item.affected_incidents || 0)}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                      <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
+                      {isAdmin ? (
+                        <>
+                          {' · '}
+                          <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)}>Edit</button>
+                          {' · '}
+                          <button type="button" style={{ ...ui.linkBtn, color: '#fca5a5' }} onClick={() => { setRemoveItem(item); setRemoveError(''); }}>Remove</button>
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>Page {page} / {totalPages} · {total} total</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" style={ui.btn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+            <button type="button" style={ui.btn} disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
+          </div>
+        </div>
+      </section>
+
+      {editItem ? (
+        <ModalOverlay onClose={() => !editSaving && setEditItem(null)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit suppression</h3>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div><span style={ui.label}>IOC</span><input readOnly value={editItem.ioc_value} style={ui.input} /></div>
+            <div><span style={ui.label}>Type</span><input readOnly value={editItem.ioc_type} style={ui.input} /></div>
+            <div><span style={ui.label}>Scope</span><input readOnly value={editItem.scope || 'global'} style={ui.input} /></div>
+            <div>
+              <span style={ui.label}>Reason</span>
+              <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} style={ui.textarea} disabled={!isAdmin || editSaving} />
+            </div>
+            <SuppressionExpirationFields ui={ui} preset={editPreset} setPreset={setEditPreset} customDate={editCustomDate} setCustomDate={setEditCustomDate} disabled={!isAdmin || editSaving} />
+            {editError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{editError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" style={ui.btn} onClick={() => setEditItem(null)} disabled={editSaving}>Cancel</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => saveEdit().catch(() => {})} disabled={!isAdmin || editSaving}>{editSaving ? 'Saving…' : 'Save changes'}</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {removeItem ? (
+        <ModalOverlay onClose={() => !removeSaving && setRemoveItem(null)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Remove suppression</h3>
+          <p style={ui.modalSub}>This will allow this IOC to become active again in future imports/correlation. Existing closed incidents will not be automatically reopened.</p>
+          <div style={{ ...ui.code, marginBottom: 12 }}>{removeItem.ioc_value} ({removeItem.ioc_type})</div>
+          {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" style={ui.btn} onClick={() => setRemoveItem(null)} disabled={removeSaving}>Cancel</button>
+            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => confirmRemove().catch(() => {})} disabled={!isAdmin || removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+          </div>
+        </ModalOverlay>
+      ) : null}
+    </AppShell>
+  );
+}
+
 function IOCListPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
@@ -5196,6 +5673,9 @@ function IOCListPage() {
   const [listStatusText, setListStatusText] = useState('');
   const [searchError, setSearchError] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [suppressionIndex, setSuppressionIndex] = useState(new Map());
+  const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
+  const [suppressionFilter, setSuppressionFilter] = useState('include');
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -5235,6 +5715,16 @@ function IOCListPage() {
   useEffect(() => {
     loadSummary().catch(() => {});
   }, [loadSummary]);
+
+  useEffect(() => {
+    let active = true;
+    setSuppressionIndexLoading(true);
+    fetchActiveSuppressionIndex()
+      .then((idx) => { if (active) setSuppressionIndex(idx); })
+      .catch(() => { if (active) setSuppressionIndex(new Map()); })
+      .finally(() => { if (active) setSuppressionIndexLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     loadData(page, pageSize);
@@ -5307,6 +5797,16 @@ function IOCListPage() {
     });
     return copy;
   }, [rows, sortState]);
+
+  const filteredRows = useMemo(() => {
+    if (suppressionFilter === 'include') return sortedRows;
+    return sortedRows.filter((r) => {
+      const key = suppressionKey(r.observable || r.ip, r.observable_type || 'ip');
+      const suppressed = suppressionIndex.has(key);
+      if (suppressionFilter === 'only') return suppressed;
+      return !suppressed;
+    });
+  }, [sortedRows, suppressionFilter, suppressionIndex]);
 
   async function openSourceDetails(row) {
     const obs = row.observable || row.ip;
@@ -5480,6 +5980,19 @@ function IOCListPage() {
             ))}
           </select>
 
+          <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Suppressed:</label>
+          <select
+            value={suppressionFilter}
+            onChange={(e) => setSuppressionFilter(e.target.value)}
+            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0' }}
+            title="Client-side filter on the current page only"
+          >
+            <option value="include">Include suppressed</option>
+            <option value="exclude">Hide suppressed</option>
+            <option value="only">Only suppressed</option>
+          </select>
+          {suppressionIndexLoading ? <span style={{ fontSize: 12, color: '#64748b' }}>Loading suppression index…</span> : null}
+
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
           Listed Items <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
@@ -5499,6 +6012,12 @@ function IOCListPage() {
           No IOC records found.
         </div>
       )}
+
+      {suppressionFilter !== 'include' ? (
+        <div style={{ marginBottom: 10, padding: 10, border: '1px solid #334155', borderRadius: 8, background: '#111827', color: '#94a3b8', fontSize: 12 }}>
+          Suppression filter applies to the current page only (backend list API does not expose suppression fields). For full suppressed IOC management use Operations → IOC Suppressions.
+        </div>
+      ) : null}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
         <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
@@ -5524,16 +6043,26 @@ function IOCListPage() {
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((r, idx) => (
-              <tr key={`${r.observable_type || 'ip'}:${r.observable || r.ip}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+            {filteredRows.map((r, idx) => {
+              const obs = r.observable || r.ip;
+              const obsType = r.observable_type || 'ip';
+              const isSuppressed = suppressionIndex.has(suppressionKey(obs, obsType));
+              return (
+              <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
-                <td title={r.observable || r.ip} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                <td title={obs} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   <button
                     onClick={() => r.public_id && navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`)}
                     style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
                   >
-                    {r.observable || r.ip}
+                    {obs}
                   </button>
+                  {isSuppressed ? (
+                    <>
+                      <span style={suppressionBadgeStyle('suppressed')}>Suppressed</span>
+                      <span style={suppressionBadgeStyle('fp')}>False Positive</span>
+                    </>
+                  ) : null}
                 </td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
                 <td title={(r.source_names && r.source_names[0]) || '-'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
@@ -5548,7 +6077,7 @@ function IOCListPage() {
                 <td><span style={confidenceBadgeStyle((r.confidence_set && r.confidence_set[0]) || 'low')}>{(r.confidence_set && r.confidence_set[0]) || 'low'}</span></td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(r.last_seen_at)}</td>
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>
@@ -5734,10 +6263,12 @@ function VirusTotalEnrichmentCard({ iocId }) {
 function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useSession();
   const detailsPublicId = String(publicId || '').trim();
+  const ui = PUBLISHED_FEEDS_UI;
 
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({ summary: null, sources: [], matches: [] });
+  const [data, setData] = useState({ summary: null, sources: [], matches: [], suppression: { active: false } });
   const [iocTags, setIocTags] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [tagSearch, setTagSearch] = useState('');
@@ -5745,6 +6276,16 @@ function IOCDetailsPage() {
   const [tagsSaving, setTagsSaving] = useState(false);
   const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const tagDropdownRef = useRef(null);
+  const [showSuppressModal, setShowSuppressModal] = useState(false);
+  const [suppressReason, setSuppressReason] = useState('');
+  const [suppressPreset, setSuppressPreset] = useState('never');
+  const [suppressCustomDate, setSuppressCustomDate] = useState('');
+  const [suppressSaving, setSuppressSaving] = useState(false);
+  const [suppressError, setSuppressError] = useState('');
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [removeSaving, setRemoveSaving] = useState(false);
+  const [removeError, setRemoveError] = useState('');
+  const [actionToast, setActionToast] = useState('');
 
   async function load() {
     setLoading(true);
@@ -5755,7 +6296,7 @@ function IOCDetailsPage() {
     }
     try {
       const res = await api.get('/ioc/details', { params: { public_id: detailsPublicId } });
-      setData(res.data || { summary: null, sources: [], matches: [] });
+      setData(res.data || { summary: null, sources: [], matches: [], suppression: { active: false } });
     } catch {
       setData({ summary: null, sources: [], matches: [] });
     } finally {
@@ -5816,6 +6357,60 @@ function IOCDetailsPage() {
   }, [tagDropdownOpen]);
 
   useEffect(() => {
+    if (!actionToast) return undefined;
+    const t = setTimeout(() => setActionToast(''), 3500);
+    return () => clearTimeout(t);
+  }, [actionToast]);
+
+  async function submitSuppress() {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return;
+    const reason = String(suppressReason || '').trim();
+    if (!reason) {
+      setSuppressError('Reason is required');
+      return;
+    }
+    setSuppressSaving(true);
+    setSuppressError('');
+    try {
+      await api.post(`/ioc/${iocId}/suppress`, {
+        scope: 'global',
+        reason,
+        expires_at: expiresAtFromPreset(suppressPreset, suppressCustomDate)
+      });
+      setShowSuppressModal(false);
+      setSuppressReason('');
+      setSuppressPreset('never');
+      setSuppressCustomDate('');
+      setActionToast('IOC marked as false positive');
+      await load();
+    } catch (err) {
+      const msg = apiErrorMessage(err, 'Suppression failed');
+      setSuppressError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
+    } finally {
+      setSuppressSaving(false);
+    }
+  }
+
+  async function submitRemoveSuppression() {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return;
+    setRemoveSaving(true);
+    setRemoveError('');
+    try {
+      await api.delete(`/ioc/${iocId}/suppress`);
+      setShowRemoveConfirm(false);
+      setActionToast('Suppression removed');
+      await load();
+    } catch (err) {
+      const msg = apiErrorMessage(err, 'Suppression failed');
+      setRemoveError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
+    } finally {
+      setRemoveSaving(false);
+    }
+  }
+
+  useEffect(() => {
     if (!tagDropdownOpen) return;
     console.log('[ioc-tags] dropdown data', allTags);
   }, [tagDropdownOpen, allTags]);
@@ -5872,6 +6467,8 @@ function IOCDetailsPage() {
   }
 
   const summary = data.summary;
+  const suppression = data?.suppression || { active: false };
+  const suppressionActive = isSuppressionActiveRow(suppression);
   const displayObservable = summary?.observable || '-';
   const observableType = String(summary?.observable_type || '').toLowerCase();
   const isHashObservable = FILE_HASH_TYPES.has(observableType);
@@ -5896,11 +6493,22 @@ function IOCDetailsPage() {
             <h2 style={{ margin: 0 }}>IOC Details</h2>
             <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 13 }}>Analyst-focused detail page for faster triage</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {summary && !suppressionActive && isAdmin ? (
+              <button type="button" style={ui.btnPrimary} onClick={() => { setShowSuppressModal(true); setSuppressError(''); }}>Mark as False Positive</button>
+            ) : null}
             <button onClick={() => navigate('/ioc')}>Back to IOC List</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
           </div>
         </div>
+
+        {!isAdmin ? (
+          <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #475569', color: '#cbd5e1', background: 'rgba(100,116,139,0.15)', fontSize: 13 }}>
+            Readonly users can view suppression status but cannot modify it.
+          </div>
+        ) : null}
+
+        {actionToast ? <div style={{ ...ui.banner, marginBottom: 12 }}>{actionToast}</div> : null}
 
         <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
           <div style={{ fontSize: 12, color: '#94a3b8' }}>IOC</div>
@@ -5911,6 +6519,26 @@ function IOCDetailsPage() {
           <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10 }}>No IOC detail found.</div>
         ) : (
           <>
+            {suppressionActive ? (
+              <div style={{ marginBottom: 14, padding: 14, borderRadius: 10, border: '1px solid #166534', background: 'rgba(34,197,94,0.08)' }}>
+                <div style={{ fontWeight: 700, color: '#86efac', marginBottom: 8 }}>This IOC is marked as False Positive / Suppressed.</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1' }}>
+                  <div><span style={{ color: '#94a3b8' }}>Reason:</span> {suppression.reason || '—'}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Scope:</span> {suppression.scope || 'global'}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '—'}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Created at:</span> {formatUserDateTime(suppression.created_at)}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {suppression.expires_at ? formatUserDateTime(suppression.expires_at) : 'Never'}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Risk contribution:</span> 0</div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+                  <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>
+                  {isAdmin ? (
+                    <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Remove suppression</button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.observable_type || '-'}</div></div>
               <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.source_count || 0}</div></div>
@@ -6100,6 +6728,43 @@ function IOCDetailsPage() {
           </>
         )}
       </section>
+
+      {showSuppressModal ? (
+        <ModalOverlay onClose={() => !suppressSaving && setShowSuppressModal(false)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Mark IOC as False Positive</h3>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div><span style={ui.label}>IOC value</span><input readOnly value={summary?.observable || ''} style={ui.input} /></div>
+            <div><span style={ui.label}>IOC type</span><input readOnly value={summary?.observable_type || ''} style={ui.input} /></div>
+            <div>
+              <span style={ui.label}>Scope</span>
+              <input readOnly value="Global suppression" style={ui.input} />
+              <span style={ui.helper}>Source-specific suppression is not available in this phase.</span>
+            </div>
+            <div>
+              <span style={ui.label}>Reason</span>
+              <textarea value={suppressReason} onChange={(e) => setSuppressReason(e.target.value)} style={ui.textarea} placeholder="Why is this IOC a false positive?" disabled={suppressSaving} />
+            </div>
+            <SuppressionExpirationFields ui={ui} preset={suppressPreset} setPreset={setSuppressPreset} customDate={suppressCustomDate} setCustomDate={setSuppressCustomDate} disabled={suppressSaving} />
+            {suppressError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{suppressError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" style={ui.btn} onClick={() => setShowSuppressModal(false)} disabled={suppressSaving}>Cancel</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => submitSuppress().catch(() => {})} disabled={suppressSaving}>{suppressSaving ? 'Saving…' : 'Suppress IOC'}</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {showRemoveConfirm ? (
+        <ModalOverlay onClose={() => !removeSaving && setShowRemoveConfirm(false)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Remove suppression</h3>
+          <p style={ui.modalSub}>This will allow this IOC to become active again in future imports/correlation. Existing closed incidents will not be automatically reopened.</p>
+          {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
+            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitRemoveSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+          </div>
+        </ModalOverlay>
+      ) : null}
     </AppShell>
   );
 }
@@ -6510,6 +7175,7 @@ function App() {
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
+          <Route path="/operations/ioc-suppressions" element={<Protected><IOCSuppressionsPage /></Protected>} />
           <Route path="/threat-intelligence" element={<Navigate to="/threat-intelligence/feeds" replace />} />
           <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage hideKeys={["asn_enrichment"]} /></Protected>} />
           <Route path="/threat-intelligence/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
