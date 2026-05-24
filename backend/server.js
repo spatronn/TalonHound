@@ -2066,7 +2066,8 @@ async function computeInstitutionRiskOverview() {
   ]);
 
   const scoredIncidentsBase = (q.rows || []).map((row) => {
-    const isFp = String(row?.verdict || '').toLowerCase() === 'fp';
+    const verdictNorm = String(row?.verdict || '').toLowerCase();
+    const isFp = verdictNorm === 'fp' || verdictNorm === 'false_positive';
     if (isFp) {
       return { ...row, risk_score: 0, risk_contribution: 0, reason: 'false_positive', confidence: 'high' };
     }
@@ -2075,7 +2076,9 @@ async function computeInstitutionRiskOverview() {
   });
 
   const scoredIncidents = await Promise.all(scoredIncidentsBase.map(async (row) => {
-    if (Number(row?.risk_score || 0) <= 0 || String(row?.verdict || '').toLowerCase() === 'fp') {
+    const verdictNorm = String(row?.verdict || '').toLowerCase();
+    const isFp = verdictNorm === 'fp' || verdictNorm === 'false_positive';
+    if (Number(row?.risk_score || 0) <= 0 || isFp) {
       return {
         ...row,
         risk_before_llm: 0,
@@ -4660,7 +4663,6 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
       `UPDATE ioc_activity
        SET verdict = 'FP',
            status = 'closed',
-           risk_score = 0,
            updated_at = NOW()
        WHERE lower(ioc_value) = lower($1)
          AND lower(COALESCE(ioc_type, '')) = lower(COALESCE($2, ioc_type, ''))
