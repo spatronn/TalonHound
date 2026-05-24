@@ -105,7 +105,7 @@ function safeTs(v) {
 }
 
 function safeHash(v) {
-  const n = String(v ?? '0').replace(/[^0-9]/g, '');
+  const n = String(v == null ? '0' : v).replace(/[^0-9]/g, '');
   return n || '0';
 }
 
