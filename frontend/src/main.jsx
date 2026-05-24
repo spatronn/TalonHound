@@ -233,6 +233,70 @@ async function fetchActiveSuppressionIndex(maxPages = 20) {
   return index;
 }
 
+async function resolveIocDetailsPublicId(iocValue, iocType) {
+  const type = String(iocType || '').trim().toLowerCase();
+  const rawValue = String(iocValue || '').trim();
+  if (!rawValue) return null;
+
+  const normalizedValue = (type === 'domain' || type === 'url') ? rawValue.toLowerCase() : rawValue;
+  const candidates = [...new Set([rawValue, normalizedValue].filter(Boolean))];
+
+  for (const observable of candidates) {
+    try {
+      const { data } = await api.get('/ioc/details/resolve', {
+        params: { type: type || undefined, observable }
+      });
+      const publicId = String(data?.public_id || '').trim();
+      if (publicId) return publicId;
+    } catch (err) {
+      console.warn('[ioc-details-resolve] resolve attempt failed', { observable, type, detail: err?.response?.data || err?.message });
+    }
+  }
+
+  if (type) {
+    try {
+      const { data } = await api.get('/ioc/details/resolve', {
+        params: { observable: normalizedValue }
+      });
+      const publicId = String(data?.public_id || '').trim();
+      if (publicId) return publicId;
+    } catch (err) {
+      console.warn('[ioc-details-resolve] resolve without type failed', { observable: normalizedValue, detail: err?.response?.data || err?.message });
+    }
+  }
+
+  if (type) {
+    try {
+      const q = `${type}:${normalizedValue}`;
+      const { data } = await api.get('/ioc/list', { params: { q, page: 1, page_size: 10 } });
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const match = items.find((row) =>
+        suppressionKey(row.observable || row.ip, row.observable_type || 'ip') === suppressionKey(normalizedValue, type)
+      ) || items.find((row) => String(row.public_id || '').trim());
+      const publicId = String(match?.public_id || '').trim();
+      if (publicId) return publicId;
+    } catch (err) {
+      console.warn('[ioc-details-resolve] list fallback failed', { type, normalizedValue, detail: err?.response?.data || err?.message });
+    }
+  }
+
+  return null;
+}
+
+async function navigateToIocDetailsFromSuppression(item, navigate) {
+  const iocValue = String(item?.ioc_value || '').trim();
+  const iocType = String(item?.ioc_type || '').trim();
+  if (!iocValue) {
+    throw new Error('missing IOC value');
+  }
+  const publicId = await resolveIocDetailsPublicId(iocValue, iocType);
+  if (publicId) {
+    navigate(`/ioc/details/${encodeURIComponent(publicId)}`);
+    return;
+  }
+  throw new Error(`no public_id for ${iocValue}`);
+}
+
 function ModalOverlay({ children, onClose }) {
   return (
     <div
@@ -5462,14 +5526,12 @@ function IOCSuppressionsPage() {
   }
 
   async function resolveIocDetailsUrl(item) {
+    const iocValue = String(item?.ioc_value || '').trim();
     try {
-      const { data } = await api.get('/ioc/details/resolve', {
-        params: { type: item.ioc_type, observable: item.ioc_value }
-      });
-      const publicId = data?.public_id;
-      if (publicId) navigate(`/ioc/details/${encodeURIComponent(publicId)}`);
-    } catch {
-      setToast('Could not resolve IOC details');
+      await navigateToIocDetailsFromSuppression(item, navigate);
+    } catch (err) {
+      console.warn('[ioc-suppressions] View IOC failed', { item, detail: err?.message || err });
+      setToast(`Could not resolve IOC details for ${iocValue || 'this IOC'}`);
     }
   }
 
