@@ -268,8 +268,10 @@ function trackInsertResult(metrics, result) {
     metrics.noteInsert();
     return;
   }
-  // false or 'duplicate': row already existed (dedup no-op)
-  metrics.noteDuplicate();
+  if (result === 'duplicate' || result === false) {
+    metrics.noteDuplicate();
+    return;
+  }
 }
 
 function mergeBatchInsertMetrics(metrics, batchResult) {
@@ -383,7 +385,7 @@ async function insertObservable(client, { observable, observableType, sourceName
     [observable, observableType, sourceName, sourceUrl, confidence, category, note]
   );
 
-  if (!ins.rowCount) return false;
+  if (!ins.rowCount) return 'duplicate';
 
   const publicId = ins.rows[0].public_id;
   const observables = extractObservablesFromNote(observableType, observable, note);

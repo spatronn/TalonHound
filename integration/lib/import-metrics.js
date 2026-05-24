@@ -38,6 +38,7 @@ export function createImportMetrics() {
     recordsProcessed() {
       return (
         this.records_inserted
+        + this.records_updated
         + this.records_duplicate
         + this.records_skipped
         + this.records_suppressed

@@ -2894,27 +2894,104 @@ function metricInt(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function pickRunMetrics(row) {
+function pickMetricsSourceRow(lr, lq) {
+  if (!lr && !lq) return null;
+  if (!lr) return lq;
+  if (!lq) return lr;
+  const lrTs = Date.parse(lr.finished_at || lr.started_at || 0) || 0;
+  const lqTs = Date.parse(lq.finished_at || lq.started_at || lq.queued_at || 0) || 0;
+  return lqTs > lrTs ? lq : lr;
+}
+
+function buildLastRunMetrics(row) {
   if (!row) {
     return {
-      last_records_processed: 0,
-      last_records_inserted: 0,
-      last_records_updated: 0,
-      last_records_duplicate: 0,
-      last_records_skipped: 0,
-      last_records_suppressed: 0,
-      last_records_failed: 0
+      available: false,
+      processed: 0,
+      inserted: null,
+      updated: null,
+      duplicate: null,
+      skipped: null,
+      suppressed: null,
+      failed: null
+    };
+  }
+
+  const processed = metricInt(row.records_processed);
+  const inserted = metricInt(row.records_inserted);
+  const updated = metricInt(row.records_updated);
+  const duplicate = metricInt(row.records_duplicate);
+  const skipped = metricInt(row.records_skipped);
+  const suppressed = metricInt(row.records_suppressed);
+  const failed = metricInt(row.records_failed);
+  const breakdownSum = inserted + updated + duplicate + skipped + suppressed + failed;
+
+  // Pre-migration runs stored only records_processed (legacy inserted count).
+  const legacyMissing = processed > 0 && breakdownSum === 0;
+
+  if (legacyMissing) {
+    return {
+      available: false,
+      processed,
+      inserted: null,
+      updated: null,
+      duplicate: null,
+      skipped: null,
+      suppressed: null,
+      failed: null
+    };
+  }
+
+  return {
+    available: true,
+    processed,
+    inserted,
+    updated,
+    duplicate,
+    skipped,
+    suppressed,
+    failed
+  };
+}
+
+function flatMetricsFromLastRun(lastRunMetrics) {
+  const m = lastRunMetrics || buildLastRunMetrics(null);
+  if (!m.available) {
+    return {
+      last_records_processed: m.processed,
+      last_records_inserted: null,
+      last_records_updated: null,
+      last_records_duplicate: null,
+      last_records_skipped: null,
+      last_records_suppressed: null,
+      last_records_failed: null
     };
   }
   return {
-    last_records_processed: metricInt(row.records_processed),
-    last_records_inserted: metricInt(row.records_inserted),
-    last_records_updated: metricInt(row.records_updated),
-    last_records_duplicate: metricInt(row.records_duplicate),
-    last_records_skipped: metricInt(row.records_skipped),
-    last_records_suppressed: metricInt(row.records_suppressed),
-    last_records_failed: metricInt(row.records_failed)
+    last_records_processed: m.processed,
+    last_records_inserted: m.inserted,
+    last_records_updated: m.updated,
+    last_records_duplicate: m.duplicate,
+    last_records_skipped: m.skipped,
+    last_records_suppressed: m.suppressed,
+    last_records_failed: m.failed
   };
+}
+
+function resolveFeedHealthState(feedActive, lastStatus, consecutiveFailures) {
+  if (feedActive === false) return 'disabled';
+  const st = String(lastStatus || '').toLowerCase();
+  if (st === 'failed' || st === 'fail') return 'failed';
+  if (Number(consecutiveFailures || 0) > 0) return 'warning';
+  if (st === 'running' || st === 'queued') return 'warning';
+  if (st === 'success') return 'success';
+  if (st === 'never') return 'warning';
+  return 'warning';
+}
+
+function pickRunMetrics(row) {
+  const m = buildLastRunMetrics(row);
+  return flatMetricsFromLastRun(m);
 }
 
 function computeConsecutiveFailures(runs, jobType) {
@@ -2942,16 +3019,18 @@ function buildIntegrationHealthSummary(integrations) {
     const ts = new Date(finished).getTime();
     return Number.isFinite(ts) && ts >= Date.now() - 24 * 60 * 60 * 1000;
   });
-  const lastRunInsertedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_records_inserted), 0);
-  const lastRunProcessedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_records_processed), 0);
+  const lastRunInsertedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.inserted ?? i.last_records_inserted), 0);
+  const lastRunProcessedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.processed ?? i.last_records_processed), 0);
 
   return {
     total_feeds: feedRows.length,
     active_feeds: activeFeeds.length,
+    enabled_feeds: activeFeeds.length,
     inactive_feeds: feedRows.length - activeFeeds.length,
     failing_feeds: failingFeeds.length,
     successful_feeds_24h: successfulFeeds24h.length,
     last_run_inserted_total: lastRunInsertedTotal,
+    last_run_new_total: lastRunInsertedTotal,
     last_run_processed_total: lastRunProcessedTotal
   };
 }
@@ -2960,22 +3039,27 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const jobType = feedJobType(feed.key);
   const lr = latestRunByJobType.get(jobType);
   const lq = latestQueueByKey.get(feed.key);
-  const runMetrics = pickRunMetrics(lr?.records_processed != null ? lr : lq);
+  const metricsRow = pickMetricsSourceRow(lr, lq);
+  const lastRunMetrics = buildLastRunMetrics(metricsRow);
+  const runMetrics = flatMetricsFromLastRun(lastRunMetrics);
   const lastSuccess = lastSuccessByJobType.get(jobType);
+  const feedActive = feed.active !== false;
 
   if (feed.key === 'asn_enrichment') {
     return {
       ...feed,
-      active: feed.active !== false,
+      active: feedActive,
       status: asnLastUpdatedAt ? 'success' : 'never',
       last_status: asnLastUpdatedAt ? 'success' : 'never',
+      health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'warning') : 'disabled',
       last_run_at: asnLastUpdatedAt || null,
       last_started_at: asnLastUpdatedAt || null,
       last_finished_at: null,
       last_success_at: asnLastUpdatedAt || null,
       last_error: null,
       consecutive_failures: 0,
-      ...pickRunMetrics(null),
+      last_run_metrics: lastRunMetrics,
+      ...runMetrics,
       total_records: null
     };
   }
@@ -2984,18 +3068,21 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const lastError = (lastStatus === 'failed' || lastStatus === 'fail')
     ? (lr?.error_message || lq?.error_message || null)
     : null;
+  const consecutive = consecutiveFailures.get(jobType) || 0;
 
   return {
     ...feed,
-    active: feed.active !== false,
+    active: feedActive,
     status: lastStatus,
     last_status: lastStatus,
+    health_state: resolveFeedHealthState(feedActive, lastStatus, consecutive),
     last_run_at: lr?.finished_at || lr?.started_at || lq?.finished_at || lq?.started_at || lq?.queued_at || null,
     last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,
     last_finished_at: lr?.finished_at || lq?.finished_at || null,
     last_success_at: lastSuccess?.finished_at || lastSuccess?.started_at || (lastStatus === 'success' ? (lr?.finished_at || lr?.started_at || null) : null),
     last_error: lastError,
-    consecutive_failures: consecutiveFailures.get(jobType) || 0,
+    consecutive_failures: consecutive,
+    last_run_metrics: lastRunMetrics,
     ...runMetrics,
     total_records: runMetrics.last_records_processed
   };

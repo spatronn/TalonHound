@@ -3007,6 +3007,142 @@ function SystemStatusPage() {
   );
 }
 
+function FeedEnableSwitch({ enabled, disabled, onToggle }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={enabled ? 'Feed enabled' : 'Feed disabled'}
+      disabled={disabled}
+      onClick={() => onToggle(!enabled)}
+      style={{
+        width: 42,
+        height: 22,
+        borderRadius: 999,
+        border: 'none',
+        background: enabled ? '#16a34a' : '#475569',
+        position: 'relative',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        flexShrink: 0
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: enabled ? 22 : 2,
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          background: '#f8fafc',
+          transition: 'left 0.15s ease'
+        }}
+      />
+    </button>
+  );
+}
+
+function feedHealthPresentation(feed) {
+  const state = String(feed?.health_state || '').toLowerCase();
+  if (state === 'disabled') return { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
+  if (state === 'failed') return { label: 'Failed', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#7f1d1d' };
+  if (state === 'warning') return { label: 'Warning', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' };
+  if (state === 'success') return { label: 'Success', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' };
+  return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
+}
+
+function formatFeedScheduleLabel(cron) {
+  const map = {
+    '*/5 * * * *': 'Every 5 min',
+    '*/15 * * * *': 'Every 15 min',
+    '*/30 * * * *': 'Every 30 min',
+    '0 * * * *': 'Every hour',
+    '0 0 * * *': 'Every 24 hours'
+  };
+  return map[String(cron || '').trim()] || String(cron || '-');
+}
+
+function truncateFeedError(text, max = 48) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  if (raw.length <= max) return raw;
+  return `${raw.slice(0, max - 1)}…`;
+}
+
+function LastRunMetricsCell({ metrics }) {
+  const m = metrics || { available: false, processed: 0 };
+  const processed = Number(m.processed || 0);
+
+  if (processed <= 0 && m.available !== false) {
+    return <span style={{ color: '#64748b', fontSize: 12 }}>No activity</span>;
+  }
+
+  if (m.available === false && processed > 0) {
+    return (
+      <div style={{ display: 'grid', gap: 4 }}>
+        <span style={{ color: '#cbd5e1', fontSize: 12 }}>Processed {processed}</span>
+        <span style={{ color: '#fcd34d', fontSize: 11, lineHeight: 1.35 }}>
+          Import breakdown unavailable (legacy run). Re-run feed for detailed metrics.
+        </span>
+      </div>
+    );
+  }
+
+  const parts = [
+    { key: 'processed', label: 'Processed', value: processed, always: true },
+    { key: 'inserted', label: 'New', value: m.inserted, tone: '#86efac' },
+    { key: 'duplicate', label: 'Duplicate', value: m.duplicate, tone: '#fcd34d' },
+    { key: 'updated', label: 'Updated', value: m.updated },
+    { key: 'skipped', label: 'Skipped', value: m.skipped },
+    { key: 'suppressed', label: 'Suppressed', value: m.suppressed, tone: '#fb923c', hideZero: true },
+    { key: 'failed', label: 'Failed', value: m.failed, tone: '#fca5a5', hideZero: true }
+  ];
+
+  const visible = parts.filter((p) => p.always || (Number(p.value || 0) > 0) || (p.key === 'updated' && m.available));
+  const breakdownSum = ['inserted', 'duplicate', 'updated', 'skipped', 'suppressed', 'failed']
+    .reduce((acc, key) => acc + Number(m[key] || 0), 0);
+  const missingBreakdown = m.available && processed > 0 && breakdownSum === 0;
+
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+        {visible.map((p) => {
+          const n = p.value === null || p.value === undefined ? 'N/A' : Number(p.value || 0);
+          if (p.hideZero && n === 0) return null;
+          const isAlert = p.key === 'failed' && Number(n) > 0;
+          const isSupp = p.key === 'suppressed' && Number(n) > 0;
+          return (
+            <span
+              key={p.key}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 600,
+                color: isAlert ? '#fecaca' : isSupp ? '#fdba74' : (p.tone || '#cbd5e1'),
+                background: isAlert ? 'rgba(127,29,29,0.35)' : isSupp ? 'rgba(124,45,18,0.35)' : 'rgba(15,23,42,0.65)',
+                border: `1px solid ${isAlert ? '#991b1b' : isSupp ? '#9a3412' : '#334155'}`
+              }}
+            >
+              {p.label} {n}
+            </span>
+          );
+        })}
+      </div>
+      {missingBreakdown ? (
+        <span style={{ color: '#fcd34d', fontSize: 11, lineHeight: 1.35 }}>
+          Processed records are available, but import result breakdown is missing. Check importer metrics.
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, showRunAll = true } = {}) {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
@@ -3017,11 +3153,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [runningKeys, setRunningKeys] = useState({});
   const [togglingKeys, setTogglingKeys] = useState({});
   const [toggleError, setToggleError] = useState('');
-
-  const metricCell = (value) => {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : 0;
-  };
+  const [editingScheduleKey, setEditingScheduleKey] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -3098,53 +3230,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  const statusColor = (status) => {
-    const s = String(status || '').toLowerCase();
-    if (s === 'success') return '#86efac';
-    if (s === 'failed' || s === 'fail') return '#fca5a5';
-    if (s === 'running') return '#fcd34d';
-    if (s === 'queued') return '#93c5fd';
-    return '#94a3b8';
-  };
-
-  const statusLabel = (status) => {
-    const s = String(status || '').toLowerCase();
-    if (s === 'success') return 'success';
-    if (s === 'failed' || s === 'fail') return 'fail';
-    if (s === 'running') return 'running';
-    if (s === 'queued') return 'queued';
-    return 'never';
-  };
-
-  const healthBadge = (status) => ({
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 700,
-    textTransform: 'capitalize',
-    color: statusColor(status),
-    border: `1px solid ${statusColor(status)}33`,
-    background: `${statusColor(status)}18`
-  });
-
-  const metricBadge = (value, tone = '#cbd5e1') => ({
-    display: 'inline-block',
-    minWidth: 28,
-    textAlign: 'center',
-    padding: '2px 6px',
-    borderRadius: 6,
-    fontSize: 11,
-    fontWeight: 600,
-    color: tone,
-    background: 'rgba(15,23,42,0.6)',
-    border: '1px solid #334155'
-  });
-
   const SCHEDULE_OPTIONS = [
-    { cron: '*/5 * * * *', label: 'Every 5 minutes' },
-    { cron: '*/15 * * * *', label: 'Every 15 minutes' },
-    { cron: '*/30 * * * *', label: 'Every 30 minutes' },
+    { cron: '*/5 * * * *', label: 'Every 5 min' },
+    { cron: '*/15 * * * *', label: 'Every 15 min' },
+    { cron: '*/30 * * * *', label: 'Every 30 min' },
     { cron: '0 * * * *', label: 'Every hour' },
     { cron: '0 0 * * *', label: 'Every 24 hours' }
   ];
@@ -3155,16 +3244,35 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     return true;
   });
 
+  const metricFromFeed = (feed, key) => {
+    const m = feed?.last_run_metrics;
+    if (m && m.available === false && key !== 'processed') return 0;
+    if (m && m[key] != null) return Number(m[key] || 0);
+    const flatKey = {
+      processed: 'last_records_processed',
+      inserted: 'last_records_inserted',
+      updated: 'last_records_updated',
+      duplicate: 'last_records_duplicate',
+      skipped: 'last_records_skipped',
+      suppressed: 'last_records_suppressed',
+      failed: 'last_records_failed'
+    }[key];
+    const v = feed?.[flatKey];
+    return v === null || v === undefined ? 0 : Number(v || 0);
+  };
+
   const summary = healthSummary || {
     total_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment').length,
+    enabled_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment' && i.active !== false).length,
     active_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment' && i.active !== false).length,
     failing_feeds: visibleIntegrations.filter((i) => {
-      const st = String(i.last_status || i.status || '').toLowerCase();
-      return i.key !== 'asn_enrichment' && (st === 'failed' || st === 'fail' || Number(i.consecutive_failures || 0) > 0);
+      if (i.key === 'asn_enrichment') return false;
+      return String(i.health_state || '').toLowerCase() === 'failed' || Number(i.consecutive_failures || 0) > 0;
     }).length,
-    successful_feeds_24h: 0,
-    last_run_inserted_total: visibleIntegrations.reduce((acc, i) => acc + metricCell(i.last_records_inserted), 0),
-    last_run_processed_total: visibleIntegrations.reduce((acc, i) => acc + metricCell(i.last_records_processed), 0)
+    successful_feeds_24h: visibleIntegrations.filter((i) => String(i.health_state || '').toLowerCase() === 'success').length,
+    last_run_new_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'inserted'), 0),
+    last_run_inserted_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'inserted'), 0),
+    last_run_processed_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'processed'), 0)
   };
 
   const showHealthDashboard = showRunAll && !onlyKeys;
@@ -3176,7 +3284,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 4, color: '#f1f5f9' }}>{title}</h2>
             {showHealthDashboard ? (
-              <div style={{ color: '#94a3b8', fontSize: 13 }}>Feed health, import metrics, and scheduling in one view</div>
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>Feed health and last import results at a glance</div>
             ) : null}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -3190,107 +3298,116 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         {toggleError ? <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>{toggleError}</div> : null}
 
         {showHealthDashboard ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginTop: 14, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 14, marginBottom: 14 }}>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>Total Feeds</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total_feeds}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Active Feeds</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{summary.active_feeds}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Enabled Feeds</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{summary.enabled_feeds ?? summary.active_feeds}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>Failing Feeds</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: summary.failing_feeds > 0 ? '#fca5a5' : '#e2e8f0' }}>{summary.failing_feeds}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Success (24h)</div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last 24h Success</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.successful_feeds_24h}</div>
-            </div>
-            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run Inserted</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#93c5fd' }}>{summary.last_run_inserted_total}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run Processed</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.last_run_processed_total}</div>
+            </div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run New</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#93c5fd' }}>{summary.last_run_new_total ?? summary.last_run_inserted_total}</div>
             </div>
           </div>
         ) : null}
 
         {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'auto', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", minWidth: 1400 }}>
+            <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'fixed', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", minWidth: 980, width: '100%' }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
-                  <th>Active</th>
-                  <th>Name</th>
-                  <th>Health</th>
-                  <th>Schedule</th>
-                  <th>Last Success</th>
-                  <th>Last Error</th>
-                  <th title="Total candidates processed">Proc</th>
-                  <th title="New IOC rows inserted">Ins</th>
-                  <th title="Duplicate (dedup no-op)">Dup</th>
-                  <th title="Updated rows">Upd</th>
-                  <th title="Skipped (invalid/unchanged feed)">Skip</th>
-                  <th title="Suppressed IOCs">Supp</th>
-                  <th title="Failed parse/row">Fail</th>
-                  <th>Next Run</th>
-                  <th>Action</th>
+                  <th style={{ width: 92 }}>Enabled</th>
+                  <th style={{ width: '16%' }}>Feed</th>
+                  <th style={{ width: 88 }}>Health</th>
+                  <th style={{ width: 120 }}>Schedule</th>
+                  <th style={{ width: 130 }}>Last Success</th>
+                  <th style={{ width: '34%' }}>Last Run Metrics</th>
+                  <th style={{ width: 120 }}>Last Error</th>
+                  <th style={{ width: 120 }}>Next Run</th>
+                  <th style={{ width: 88 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleIntegrations.length ? visibleIntegrations.map((i) => {
                   const isActive = i.active !== false;
                   const lastErr = String(i.last_error || '').trim();
-                  const st = i.last_status || i.status;
+                  const health = feedHealthPresentation(i);
+                  const scheduleOpen = editingScheduleKey === i.key;
                   return (
-                    <tr key={i.key} style={{ borderBottom: '1px solid #1e293b', opacity: isActive ? 1 : 0.72 }}>
+                    <tr key={i.key} style={{ borderBottom: '1px solid #1e293b', opacity: isActive ? 1 : 0.78 }}>
                       <td>
-                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: canWrite ? 'pointer' : 'not-allowed' }}>
-                          <input
-                            type="checkbox"
-                            checked={isActive}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                          <FeedEnableSwitch
+                            enabled={isActive}
                             disabled={!canWrite || Boolean(togglingKeys[i.key])}
-                            onChange={(e) => toggleActive(i.key, e.target.checked).catch(() => {})}
+                            onToggle={(next) => toggleActive(i.key, next).catch(() => {})}
                           />
-                          <span style={{ fontSize: 11, color: isActive ? '#86efac' : '#94a3b8' }}>{isActive ? 'on' : 'off'}</span>
-                        </label>
+                          <span style={{ fontSize: 10, color: isActive ? '#86efac' : '#94a3b8', fontWeight: 600 }}>{isActive ? 'Enabled' : 'Disabled'}</span>
+                        </div>
                       </td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#e2e8f0', fontWeight: 600 }}>{i.name}</td>
-                      <td><span style={healthBadge(st)}>{statusLabel(st)}</span></td>
+                      <td style={{ color: '#e2e8f0', fontWeight: 600, overflowWrap: 'anywhere' }}>{i.name}</td>
                       <td>
-                        <select
-                          value={i.schedule || '0 * * * *'}
-                          onChange={(e) => updateSchedule(i.key, e.target.value)}
-                          disabled={!canWrite || !isActive}
-                          style={{ width: '100%', minWidth: 120, padding: '4px 6px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', opacity: canWrite && isActive ? 1 : 0.55 }}
-                        >
-                          {SCHEDULE_OPTIONS.map((opt) => (
-                            <option key={opt.cron} value={opt.cron}>{opt.label}</option>
-                          ))}
-                        </select>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
+                          {health.label}
+                        </span>
                       </td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>{formatUserDateTime(i.last_success_at || (st === 'success' ? i.last_finished_at : null))}</td>
-                      <td style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b' }} title={lastErr || undefined}>{lastErr || '-'}</td>
-                      <td><span style={metricBadge(i.last_records_processed)}>{metricCell(i.last_records_processed)}</span></td>
-                      <td><span style={metricBadge(i.last_records_inserted, '#86efac')}>{metricCell(i.last_records_inserted)}</span></td>
-                      <td><span style={metricBadge(i.last_records_duplicate, '#fcd34d')}>{metricCell(i.last_records_duplicate)}</span></td>
-                      <td><span style={metricBadge(i.last_records_updated)}>{metricCell(i.last_records_updated)}</span></td>
-                      <td><span style={metricBadge(i.last_records_skipped, '#94a3b8')}>{metricCell(i.last_records_skipped)}</span></td>
-                      <td><span style={metricBadge(i.last_records_suppressed, '#f97316')}>{metricCell(i.last_records_suppressed)}</span></td>
-                      <td><span style={metricBadge(i.last_records_failed, '#fca5a5')}>{metricCell(i.last_records_failed)}</span></td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>{formatUserDateTime(i.next_run_at)}</td>
+                      <td>
+                        {scheduleOpen ? (
+                          <select
+                            value={i.schedule || '0 * * * *'}
+                            onChange={(e) => {
+                              updateSchedule(i.key, e.target.value).catch(() => {});
+                              setEditingScheduleKey(null);
+                            }}
+                            onBlur={() => setEditingScheduleKey(null)}
+                            autoFocus
+                            disabled={!canWrite || !isActive}
+                            style={{ width: '100%', padding: '2px 4px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 11 }}
+                          >
+                            {SCHEDULE_OPTIONS.map((opt) => (
+                              <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={!canWrite || !isActive}
+                            onClick={() => setEditingScheduleKey(i.key)}
+                            style={{ padding: '2px 6px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#cbd5e1', fontSize: 11, cursor: canWrite && isActive ? 'pointer' : 'not-allowed', textAlign: 'left' }}
+                            title="Click to change schedule"
+                          >
+                            {formatFeedScheduleLabel(i.schedule)}
+                          </button>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}</td>
+                      <td><LastRunMetricsCell metrics={i.last_run_metrics} /></td>
+                      <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.next_run_at)}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive}>
+                        <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive} style={{ fontSize: 11, padding: '4px 8px' }}>
                           {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
                         </button>
                       </td>
                     </tr>
                   );
                 }) : (
-                  <tr><td colSpan={15} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
+                  <tr><td colSpan={9} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
                 )}
               </tbody>
             </table>

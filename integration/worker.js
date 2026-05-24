@@ -55,8 +55,8 @@ const worker = new Worker(
     }
 
     const metrics = result?.metrics || {
-      records_processed: Number(result?.recordsProcessed || result?.records_processed || 0),
-      records_inserted: Number(result?.records_inserted || result?.recordsProcessed || 0),
+      records_processed: Number(result?.records_processed || result?.recordsProcessed || 0),
+      records_inserted: Number(result?.records_inserted ?? result?.recordsProcessed ?? 0),
       records_updated: Number(result?.records_updated || 0),
       records_duplicate: Number(result?.records_duplicate || 0),
       records_skipped: Number(result?.records_skipped || 0),
