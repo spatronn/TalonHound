@@ -8,6 +8,11 @@ import {
   filterSuppressedPairs,
   isPairSuppressed
 } from './lib/ioc-suppression.js';
+import {
+  createImportMetrics,
+  finalizeIntegrationRun,
+  failIntegrationRun
+} from './lib/import-metrics.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -237,10 +242,40 @@ function hashEntries(entries) {
 
 const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
 
-function withSuppressionStats(result, suppressionStats) {
+function withSuppressionStats(result, suppressionStats, metrics = null) {
   const stats = suppressionStats?.toJSON?.() || null;
-  if (!stats || Number(stats.suppressed_count || 0) <= 0) return result;
-  return { ...result, ...stats };
+  const payload = { ...result };
+  if (metrics) {
+    const m = metrics.toJSON();
+    payload.metrics = m;
+    payload.recordsProcessed = m.records_processed;
+    payload.records_inserted = m.records_inserted;
+    payload.records_duplicate = m.records_duplicate;
+    payload.records_skipped = m.records_skipped;
+    payload.records_suppressed = m.records_suppressed;
+    payload.records_failed = m.records_failed;
+  }
+  if (!stats || Number(stats.suppressed_count || 0) <= 0) return payload;
+  return { ...payload, ...stats };
+}
+
+function trackInsertResult(metrics, result) {
+  if (result === 'suppressed') {
+    metrics.noteSuppressed(1);
+    return;
+  }
+  if (result === true || result === 'inserted') {
+    metrics.noteInsert();
+    return;
+  }
+  // false or 'duplicate': row already existed (dedup no-op)
+  metrics.noteDuplicate();
+}
+
+function mergeBatchInsertMetrics(metrics, batchResult) {
+  metrics.records_inserted += Number(batchResult?.inserted || 0);
+  metrics.records_duplicate += Number(batchResult?.duplicate || 0);
+  metrics.records_suppressed += Number(batchResult?.suppressed || 0);
 }
 
 function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {}) {
@@ -256,8 +291,8 @@ function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {
  * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
  */
 async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null) {
-  if (!entries.length) return 0;
-  let totalInserted = 0;
+  const out = { inserted: 0, duplicate: 0, suppressed: 0 };
+  if (!entries.length) return out;
   const now = new Date();
   for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
     const chunk = entries.slice(i, i + BATCH_INSERT_CHUNK);
@@ -272,6 +307,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
       iocType: observableType,
       sourceName: e.sourceName ?? null
     }));
+    out.suppressed += chunk.length - kept.length;
     if (suppressionStats) suppressionStats.merge(stats);
     if (!kept.length) continue;
 
@@ -308,13 +344,14 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
       [...params.flat(), observableType]
     );
     const rows = ins.rows ?? [];
-    totalInserted += rows.length;
+    out.inserted += rows.length;
+    out.duplicate += kept.length - rows.length;
     for (const row of rows) {
       const observables = extractObservablesFromNote(observableType, row.observable, row.note);
       await insertObservablesIndex(client, row.public_id, observables);
     }
   }
-  return totalInserted;
+  return out;
 }
 
 async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note }, suppressionStats = null) {
@@ -359,6 +396,7 @@ export async function runHourlyImport() {
   const startedAt = new Date();
   let runId = null;
   const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
 
   try {
     await client.query('BEGIN');
@@ -381,12 +419,14 @@ export async function runHourlyImport() {
     const indexHtml = await indexRes.text();
 
     const files = parseLinks(indexHtml);
-    let inserted = 0;
 
     for (const file of files) {
       const sourceUrl = new URL(file, config.sourceIndexUrl).toString();
       const response = await fetch(sourceUrl);
-      if (!response.ok) continue;
+      if (!response.ok) {
+        metrics.noteSkipped(1);
+        continue;
+      }
 
       const body = await response.text();
       const ips = extractIPs(body);
@@ -403,7 +443,7 @@ export async function runHourlyImport() {
         category,
         note
       }));
-      inserted += await batchInsertIocs(client, entries, 'ip', suppressionStats);
+      mergeBatchInsertMetrics(metrics, await batchInsertIocs(client, entries, 'ip', suppressionStats));
     }
 
     await client.query(
@@ -414,26 +454,15 @@ export async function runHourlyImport() {
       [config.sourceName, startedAt.toISOString()]
     );
 
-    await client.query(
-      `UPDATE integration_runs
-       SET status='success', finished_at=clock_timestamp(), records_processed=$2
-       WHERE id=$1`,
-      [runId, inserted]
-    );
-
+    await finalizeIntegrationRun(client, runId, metrics);
     await client.query('COMMIT');
-    logImportSuppressionSummary('hourly_import', runId, suppressionStats, { recordsProcessed: inserted });
-    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
+    logImportSuppressionSummary('hourly_import', runId, suppressionStats, metrics.toJSON());
+    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
     await client.query('ROLLBACK');
 
     if (runId) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='failed', finished_at=clock_timestamp(), error_message=$2
-         WHERE id=$1`,
-        [runId, String(err.message).slice(0, 4000)]
-      );
+      await failIntegrationRun(client, runId, err.message, metrics);
     }
 
     throw err;
@@ -451,6 +480,7 @@ export async function runUsomImport() {
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942002) AS acquired');
@@ -465,14 +495,17 @@ export async function runUsomImport() {
     );
     runId = runInsert.rows[0].id;
 
-    let inserted = 0;
-
     const res = await fetch(config.usomApiUrl);
     if (!res.ok) throw new Error(`USOM URL list request failed: ${res.status}`);
     const txt = await res.text();
 
-    const entries = txt
-      .split(/\r?\n/)
+    const rawLines = txt.split(/\r?\n/);
+    metrics.noteSkipped(rawLines.filter((line) => {
+      const c = classifyUsomObservable(line);
+      return !c;
+    }).length);
+
+    const entries = rawLines
       .map((line) => classifyUsomObservable(line))
       .filter(Boolean)
       .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
@@ -491,12 +524,9 @@ export async function runUsomImport() {
     const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
 
     if (previousHash === currentHash) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='success', finished_at=clock_timestamp(), records_processed=0
-         WHERE id=$1`,
-        [runId]
-      );
+      // Feed unchanged since last run — count existing entries as skipped (no insert attempts).
+      metrics.noteSkipped(entries.length);
+      await finalizeIntegrationRun(client, runId, metrics);
 
       await client.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -506,10 +536,12 @@ export async function runUsomImport() {
         [config.usomSourceName, `hash:${currentHash}`]
       );
 
-      return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
+      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
     const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    // Entries still in feed but already imported in prior runs.
+    metrics.noteSkipped(entries.length - addedEntries.length);
     const batchSize = Number(process.env.USOM_BATCH_SIZE || 1000);
 
     for (let i = 0; i < addedEntries.length; i += batchSize) {
@@ -518,24 +550,16 @@ export async function runUsomImport() {
       try {
         for (const entry of batch) {
           const { observable, observableType } = entry;
-          const sourceName = config.usomSourceName;
-          const sourceUrl = config.usomApiUrl;
-          const confidence = 'medium';
-          const category = 'threat-intel';
-          const note = 'Auto-imported from USOM URL list';
-
           const okObs = await insertObservable(client, {
             observable,
             observableType,
-            sourceName,
-            sourceUrl,
-            confidence,
-            category,
-            note
+            sourceName: config.usomSourceName,
+            sourceUrl: config.usomApiUrl,
+            confidence: 'medium',
+            category: 'threat-intel',
+            note: 'Auto-imported from USOM URL list'
           }, suppressionStats);
-
-          if (okObs === true) inserted += 1;
-
+          trackInsertResult(metrics, okObs);
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -560,23 +584,12 @@ export async function runUsomImport() {
       [config.usomSourceName, `hash:${currentHash}`]
     );
 
-    await client.query(
-      `UPDATE integration_runs
-       SET status='success', finished_at=clock_timestamp(), records_processed=$2
-       WHERE id=$1`,
-      [runId, inserted]
-    );
-
-    logImportSuppressionSummary('usom_import', runId, suppressionStats, { recordsProcessed: inserted });
-    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
+    await finalizeIntegrationRun(client, runId, metrics);
+    logImportSuppressionSummary('usom_import', runId, suppressionStats, metrics.toJSON());
+    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
     if (runId) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='failed', finished_at=clock_timestamp(), error_message=$2
-         WHERE id=$1`,
-        [runId, String(err.message).slice(0, 4000)]
-      );
+      await failIntegrationRun(client, runId, err.message, metrics);
     }
 
     throw err;
@@ -595,6 +608,7 @@ export async function runUrlhausImport() {
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942003) AS acquired');
@@ -609,14 +623,14 @@ export async function runUrlhausImport() {
     );
     runId = runInsert.rows[0].id;
 
-    let inserted = 0;
-
     const res = await fetch(config.urlhausUrl);
     if (!res.ok) throw new Error(`URLhaus list request failed: ${res.status}`);
     const txt = await res.text();
 
-    const entries = txt
-      .split(/\r?\n/)
+    const rawLines = txt.split(/\r?\n/);
+    metrics.noteSkipped(rawLines.filter((line) => !classifyUsomObservable(line)).length);
+
+    const entries = rawLines
       .map((line) => classifyUsomObservable(line))
       .filter(Boolean)
       .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
@@ -635,12 +649,8 @@ export async function runUrlhausImport() {
     const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
 
     if (previousHash === currentHash) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='success', finished_at=clock_timestamp(), records_processed=0
-         WHERE id=$1`,
-        [runId]
-      );
+      metrics.noteSkipped(entries.length);
+      await finalizeIntegrationRun(client, runId, metrics);
 
       await client.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -650,10 +660,11 @@ export async function runUrlhausImport() {
         [config.urlhausSourceName, `hash:${currentHash}`]
       );
 
-      return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
+      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
     const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    metrics.noteSkipped(entries.length - addedEntries.length);
     const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
 
     for (let i = 0; i < addedEntries.length; i += batchSize) {
@@ -662,23 +673,16 @@ export async function runUrlhausImport() {
       try {
         for (const entry of batch) {
           const { observable, observableType } = entry;
-          const sourceName = config.urlhausSourceName;
-          const sourceUrl = config.urlhausUrl;
-          const confidence = 'high';
-          const category = 'malware-url';
-          const note = 'Auto-imported from URLhaus text list';
-
           const okObs = await insertObservable(client, {
             observable,
             observableType,
-            sourceName,
-            sourceUrl,
-            confidence,
-            category,
-            note
+            sourceName: config.urlhausSourceName,
+            sourceUrl: config.urlhausUrl,
+            confidence: 'high',
+            category: 'malware-url',
+            note: 'Auto-imported from URLhaus text list'
           }, suppressionStats);
-
-          if (okObs === true) inserted += 1;
+          trackInsertResult(metrics, okObs);
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -703,23 +707,12 @@ export async function runUrlhausImport() {
       [config.urlhausSourceName, `hash:${currentHash}`]
     );
 
-    await client.query(
-      `UPDATE integration_runs
-       SET status='success', finished_at=clock_timestamp(), records_processed=$2
-       WHERE id=$1`,
-      [runId, inserted]
-    );
-
-    logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, { recordsProcessed: inserted });
-    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
+    await finalizeIntegrationRun(client, runId, metrics);
+    logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, metrics.toJSON());
+    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
     if (runId) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='failed', finished_at=clock_timestamp(), error_message=$2
-         WHERE id=$1`,
-        [runId, String(err.message).slice(0, 4000)]
-      );
+      await failIntegrationRun(client, runId, err.message, metrics);
     }
 
     throw err;
@@ -737,6 +730,7 @@ export async function runThreatfoxImport() {
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942004) AS acquired');
@@ -751,17 +745,19 @@ export async function runThreatfoxImport() {
     );
     runId = runInsert.rows[0].id;
 
-    let inserted = 0;
-
     const res = await fetch(config.threatfoxCsvUrl);
     if (!res.ok) throw new Error(`ThreatFox CSV request failed: ${res.status}`);
     const txt = await readThreatFoxCsvText(res);
 
-    const entries = txt
+    const parsedRows = txt
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
-      .map((line) => splitCsvLine(line))
+      .map((line) => splitCsvLine(line));
+
+    metrics.noteSkipped(parsedRows.filter((cols) => cols.length < 15).length);
+
+    const entries = parsedRows
       .filter((cols) => cols.length >= 15)
       .map((cols) => {
         const observable = classifyThreatFoxObservable(cols[2], cols[3]);
@@ -780,6 +776,8 @@ export async function runThreatfoxImport() {
       .filter(Boolean)
       .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
 
+    metrics.noteSkipped(parsedRows.filter((cols) => cols.length >= 15 && !classifyThreatFoxObservable(cols[2], cols[3])).length);
+
     const currentHash = hashEntries(entries.map((e) => ({ o: e.observable, t: e.observableType, id: e.iocId })));
 
     const prevState = await client.query(
@@ -794,12 +792,8 @@ export async function runThreatfoxImport() {
     const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
 
     if (previousHash === currentHash) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='success', finished_at=clock_timestamp(), records_processed=0
-         WHERE id=$1`,
-        [runId]
-      );
+      metrics.noteSkipped(entries.length);
+      await finalizeIntegrationRun(client, runId, metrics);
 
       await client.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -809,10 +803,11 @@ export async function runThreatfoxImport() {
         [config.threatfoxSourceName, `hash:${currentHash}`]
       );
 
-      return { ok: true, runId, recordsProcessed: 0, skipped: true, reason: 'same_hash' };
+      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
     const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    metrics.noteSkipped(entries.length - addedEntries.length);
     const batchSize = Number(process.env.THREATFOX_BATCH_SIZE || 1000);
 
     for (let i = 0; i < addedEntries.length; i += batchSize) {
@@ -837,8 +832,7 @@ export async function runThreatfoxImport() {
             category: entry.threatType || 'threat-intel',
             note: noteParts.join(' | ')
           }, suppressionStats);
-
-          if (okObs === true) inserted += 1;
+          trackInsertResult(metrics, okObs);
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -863,23 +857,12 @@ export async function runThreatfoxImport() {
       [config.threatfoxSourceName, `hash:${currentHash}`]
     );
 
-    await client.query(
-      `UPDATE integration_runs
-       SET status='success', finished_at=clock_timestamp(), records_processed=$2
-       WHERE id=$1`,
-      [runId, inserted]
-    );
-
-    logImportSuppressionSummary('threatfox_import', runId, suppressionStats, { recordsProcessed: inserted });
-    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
+    await finalizeIntegrationRun(client, runId, metrics);
+    logImportSuppressionSummary('threatfox_import', runId, suppressionStats, metrics.toJSON());
+    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
     if (runId) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='failed', finished_at=clock_timestamp(), error_message=$2
-         WHERE id=$1`,
-        [runId, String(err.message).slice(0, 4000)]
-      );
+      await failIntegrationRun(client, runId, err.message, metrics);
     }
 
     throw err;
@@ -952,6 +935,7 @@ export async function runMalwareBazaarImport() {
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942005) AS acquired');
@@ -976,8 +960,6 @@ export async function runMalwareBazaarImport() {
     const previousCursor = cpRes.rows[0]?.last_cursor || null;
     const previousCursorDate = previousCursor ? new Date(previousCursor) : null;
 
-    let inserted = 0;
-    let processed = 0;
     let maxSeenDate = previousCursorDate;
 
     const res = await fetch(config.malwareBazaarCsvUrl);
@@ -1003,8 +985,7 @@ export async function runMalwareBazaarImport() {
             category: entry.category,
             note: entry.note
           }, suppressionStats);
-
-          if (okObs === true) inserted += 1;
+          trackInsertResult(metrics, okObs);
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -1022,13 +1003,17 @@ export async function runMalwareBazaarImport() {
       if (!line || line.startsWith('#')) continue;
 
       const cols = splitCsvLine(line);
-      if (cols.length < 14) continue;
+      if (cols.length < 14) {
+        metrics.noteSkipped(1);
+        continue;
+      }
       if (String(cols[0]).toLowerCase().includes('first_seen_utc')) continue;
 
       const entry = mapMalwareBazaarRow(cols);
-      if (!entry) continue;
-
-      processed += 1;
+      if (!entry) {
+        metrics.noteFailed(1);
+        continue;
+      }
 
       if (entry.firstSeenUtc && (!maxSeenDate || entry.firstSeenUtc > maxSeenDate)) {
         maxSeenDate = entry.firstSeenUtc;
@@ -1036,6 +1021,7 @@ export async function runMalwareBazaarImport() {
 
       if (previousCursorDate && entry.firstSeenUtc && entry.firstSeenUtc <= previousCursorDate) {
         olderStreak += 1;
+        metrics.noteSkipped(1);
         if (olderStreak >= stopAfterOlderStreak) break;
         continue;
       }
@@ -1059,23 +1045,12 @@ export async function runMalwareBazaarImport() {
       [config.malwareBazaarSourceName, nextCursor]
     );
 
-    await client.query(
-      `UPDATE integration_runs
-       SET status='success', finished_at=clock_timestamp(), records_processed=$2
-       WHERE id=$1`,
-      [runId, inserted]
-    );
-
-    logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, { recordsProcessed: inserted, parsedRecords: processed });
-    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted, parsedRecords: processed, cursor: nextCursor }, suppressionStats);
+    await finalizeIntegrationRun(client, runId, metrics);
+    logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, { ...metrics.toJSON(), cursor: nextCursor });
+    return withSuppressionStats({ ok: true, runId, cursor: nextCursor }, suppressionStats, metrics);
   } catch (err) {
     if (runId) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='failed', finished_at=clock_timestamp(), error_message=$2
-         WHERE id=$1`,
-        [runId, String(err.message).slice(0, 4000)]
-      );
+      await failIntegrationRun(client, runId, err.message, metrics);
     }
 
     throw err;
@@ -1093,6 +1068,7 @@ export async function runPhishtankImport() {
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
 
   try {
     await client.query('BEGIN');
@@ -1118,30 +1094,30 @@ export async function runPhishtankImport() {
     const text = await response.text();
     const lines = text.split(/\r?\n/).filter(Boolean);
     if (lines.length <= 1) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='success', finished_at=clock_timestamp(), records_processed=0
-         WHERE id=$1`,
-        [runId]
-      );
+      await finalizeIntegrationRun(client, runId, metrics);
       await client.query('COMMIT');
-      return { ok: true, runId, recordsProcessed: 0, parsedRecords: 0 };
+      return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
     }
 
-    let inserted = 0;
-    let parsed = 0;
     const sourceName = config.phishTankSourceName;
     const sourceUrl = config.phishTankCsvUrl;
 
     // online-valid.csv header: phish_id,url,phish_detail_url,submission_time,verified,verification_time,online,target
     for (let i = 1; i < lines.length; i += 1) {
       const cols = splitCsvLine(lines[i]);
-      if (!cols.length) continue;
+      if (!cols.length) {
+        metrics.noteSkipped(1);
+        continue;
+      }
       const url = String(cols[1] || '').trim();
-      if (!url || !/^https?:\/\//i.test(url)) continue;
-      // Guard against oversized TEXT index entries in Postgres (btree tuple limit).
-      if (url.length > 1800) continue;
-      parsed += 1;
+      if (!url || !/^https?:\/\//i.test(url)) {
+        metrics.noteSkipped(1);
+        continue;
+      }
+      if (url.length > 1800) {
+        metrics.noteSkipped(1);
+        continue;
+      }
 
       const ok = await insertObservable(client, {
         observable: url,
@@ -1152,29 +1128,18 @@ export async function runPhishtankImport() {
         category: 'phishing',
         note: 'Auto-imported from PhishTank online-valid.csv'
       }, suppressionStats);
-      if (ok === true) inserted += 1;
+      trackInsertResult(metrics, ok);
     }
 
-    await client.query(
-      `UPDATE integration_runs
-       SET status='success', finished_at=clock_timestamp(), records_processed=$2
-       WHERE id=$1`,
-      [runId, inserted]
-    );
-
+    await finalizeIntegrationRun(client, runId, metrics);
     await client.query('COMMIT');
-    logImportSuppressionSummary('phishtank_import', runId, suppressionStats, { recordsProcessed: inserted, parsedRecords: parsed });
-    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted, parsedRecords: parsed }, suppressionStats);
+    logImportSuppressionSummary('phishtank_import', runId, suppressionStats, metrics.toJSON());
+    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
     await client.query('ROLLBACK');
 
     if (runId) {
-      await client.query(
-        `UPDATE integration_runs
-         SET status='failed', finished_at=clock_timestamp(), error_message=$2
-         WHERE id=$1`,
-        [runId, String(err.message).slice(0, 4000)]
-      );
+      await failIntegrationRun(client, runId, err.message, metrics);
     }
 
     throw err;

@@ -2889,6 +2889,118 @@ function feedJobType(key) {
   return FEED_JOB_TYPE_BY_KEY[key] || key;
 }
 
+function metricInt(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pickRunMetrics(row) {
+  if (!row) {
+    return {
+      last_records_processed: 0,
+      last_records_inserted: 0,
+      last_records_updated: 0,
+      last_records_duplicate: 0,
+      last_records_skipped: 0,
+      last_records_suppressed: 0,
+      last_records_failed: 0
+    };
+  }
+  return {
+    last_records_processed: metricInt(row.records_processed),
+    last_records_inserted: metricInt(row.records_inserted),
+    last_records_updated: metricInt(row.records_updated),
+    last_records_duplicate: metricInt(row.records_duplicate),
+    last_records_skipped: metricInt(row.records_skipped),
+    last_records_suppressed: metricInt(row.records_suppressed),
+    last_records_failed: metricInt(row.records_failed)
+  };
+}
+
+function computeConsecutiveFailures(runs, jobType) {
+  const ordered = (runs || [])
+    .filter((r) => r.job_type === jobType)
+    .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+  let count = 0;
+  for (const run of ordered) {
+    if (run.status === 'failed') count += 1;
+    else break;
+  }
+  return count;
+}
+
+function buildIntegrationHealthSummary(integrations) {
+  const feedRows = (integrations || []).filter((i) => i.key !== 'asn_enrichment');
+  const activeFeeds = feedRows.filter((i) => i.active !== false);
+  const failingFeeds = feedRows.filter((i) => {
+    const st = String(i.status || i.last_status || '').toLowerCase();
+    return st === 'failed' || st === 'fail' || Number(i.consecutive_failures || 0) > 0;
+  });
+  const successfulFeeds24h = feedRows.filter((i) => {
+    const finished = i.last_success_at || i.last_finished_at;
+    if (!finished) return false;
+    const ts = new Date(finished).getTime();
+    return Number.isFinite(ts) && ts >= Date.now() - 24 * 60 * 60 * 1000;
+  });
+  const lastRunInsertedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_records_inserted), 0);
+  const lastRunProcessedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_records_processed), 0);
+
+  return {
+    total_feeds: feedRows.length,
+    active_feeds: activeFeeds.length,
+    inactive_feeds: feedRows.length - activeFeeds.length,
+    failing_feeds: failingFeeds.length,
+    successful_feeds_24h: successfulFeeds24h.length,
+    last_run_inserted_total: lastRunInsertedTotal,
+    last_run_processed_total: lastRunProcessedTotal
+  };
+}
+
+function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt) {
+  const jobType = feedJobType(feed.key);
+  const lr = latestRunByJobType.get(jobType);
+  const lq = latestQueueByKey.get(feed.key);
+  const runMetrics = pickRunMetrics(lr?.records_processed != null ? lr : lq);
+  const lastSuccess = lastSuccessByJobType.get(jobType);
+
+  if (feed.key === 'asn_enrichment') {
+    return {
+      ...feed,
+      active: feed.active !== false,
+      status: asnLastUpdatedAt ? 'success' : 'never',
+      last_status: asnLastUpdatedAt ? 'success' : 'never',
+      last_run_at: asnLastUpdatedAt || null,
+      last_started_at: asnLastUpdatedAt || null,
+      last_finished_at: null,
+      last_success_at: asnLastUpdatedAt || null,
+      last_error: null,
+      consecutive_failures: 0,
+      ...pickRunMetrics(null),
+      total_records: null
+    };
+  }
+
+  const lastStatus = lr?.status || lq?.status || 'never';
+  const lastError = (lastStatus === 'failed' || lastStatus === 'fail')
+    ? (lr?.error_message || lq?.error_message || null)
+    : null;
+
+  return {
+    ...feed,
+    active: feed.active !== false,
+    status: lastStatus,
+    last_status: lastStatus,
+    last_run_at: lr?.finished_at || lr?.started_at || lq?.finished_at || lq?.started_at || lq?.queued_at || null,
+    last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,
+    last_finished_at: lr?.finished_at || lq?.finished_at || null,
+    last_success_at: lastSuccess?.finished_at || lastSuccess?.started_at || (lastStatus === 'success' ? (lr?.finished_at || lr?.started_at || null) : null),
+    last_error: lastError,
+    consecutive_failures: consecutiveFailures.get(jobType) || 0,
+    ...runMetrics,
+    total_records: runMetrics.last_records_processed
+  };
+}
+
 async function queryIntegrationsMetaWithTimeout(queryPromise, fallbackRows = []) {
   try {
     const res = await Promise.race([
@@ -2901,34 +3013,6 @@ async function queryIntegrationsMetaWithTimeout(queryPromise, fallbackRows = [])
   } catch {
     return { rows: fallbackRows };
   }
-}
-
-function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, asnLastUpdatedAt) {
-  const lr = latestRunByJobType.get(feedJobType(feed.key));
-  const lq = latestQueueByKey.get(feed.key);
-  const recordsProcessed = Number(lr?.records_processed ?? lq?.records_processed ?? 0) || 0;
-
-  if (feed.key === 'asn_enrichment') {
-    return {
-      ...feed,
-      last_status: asnLastUpdatedAt ? 'success' : 'never',
-      last_started_at: asnLastUpdatedAt || null,
-      last_finished_at: null,
-      last_records_processed: 0,
-      total_records: null,
-      last_error: null
-    };
-  }
-
-  return {
-    ...feed,
-    last_status: lr?.status || lq?.status || 'never',
-    last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,
-    last_finished_at: lr?.finished_at || lq?.finished_at || null,
-    last_records_processed: recordsProcessed,
-    total_records: recordsProcessed,
-    last_error: lr?.error_message || lq?.error_message || null
-  };
 }
 
 app.get('/api/integrations', async (req, res) => {
@@ -2953,6 +3037,7 @@ app.get('/api/integrations', async (req, res) => {
         f.source_url,
         f.schedule_cron AS schedule,
         f.trust_level,
+        f.active,
         f.created_at,
         CASE
           WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
@@ -2962,8 +3047,7 @@ app.get('/api/integrations', async (req, res) => {
           ELSE date_trunc('hour', NOW()) + INTERVAL '1 hour'
         END AS next_run_at
       FROM integration_feeds f
-      WHERE f.active = TRUE
-      ORDER BY f.created_at ASC, f.name ASC
+      ORDER BY f.active DESC, f.created_at ASC, f.name ASC
     `;
 
     const recentQ = `
@@ -2997,23 +3081,49 @@ app.get('/api/integrations', async (req, res) => {
 
     const latestRunsQ = `
       SELECT DISTINCT ON (job_type)
-        job_type, status, started_at, finished_at, records_processed, error_message
+        job_type, status, started_at, finished_at,
+        records_processed, records_inserted, records_updated,
+        records_duplicate, records_skipped, records_suppressed, records_failed,
+        error_message
       FROM integration_runs
       WHERE job_type = ANY($1::text[])
       ORDER BY job_type, started_at DESC
     `;
 
+    const lastSuccessRunsQ = `
+      SELECT DISTINCT ON (job_type)
+        job_type, status, started_at, finished_at
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+        AND status = 'success'
+      ORDER BY job_type, started_at DESC
+    `;
+
+    const recentFailuresQ = `
+      SELECT job_type, status, started_at
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+      ORDER BY job_type, started_at DESC
+      LIMIT 300
+    `;
+
     const latestQueueQ = `
       SELECT DISTINCT ON (integration_key_norm)
         integration_key_norm AS integration_key,
-        status, started_at, queued_at, finished_at, records_processed, error_message
+        status, started_at, queued_at, finished_at,
+        records_processed, records_inserted, records_updated,
+        records_duplicate, records_skipped, records_suppressed, records_failed,
+        error_message
       FROM (
         SELECT
           CASE
             WHEN integration_key = 'unknown' AND job_name = 'phishtank-import' THEN 'phishtank-opendnsrr'
             ELSE integration_key
           END AS integration_key_norm,
-          status, started_at, queued_at, finished_at, records_processed, error_message
+          status, started_at, queued_at, finished_at,
+          records_processed, records_inserted, records_updated,
+          records_duplicate, records_skipped, records_suppressed, records_failed,
+          error_message
         FROM integration_queue_jobs
         WHERE integration_key = ANY($1::text[])
            OR (integration_key = 'unknown' AND job_name = 'phishtank-import')
@@ -3024,9 +3134,15 @@ app.get('/api/integrations', async (req, res) => {
     const asnQ = `SELECT MAX(updated_at) AS last_updated_at FROM asn_lookup`;
 
     const latestRunStart = Date.now();
-    const [latestRunsRes, latestQueueRes, asnRes, recentRes] = await Promise.all([
+    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, asnRes, recentRes] = await Promise.all([
       jobTypes.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
+        : Promise.resolve({ rows: [] }),
+      jobTypes.length
+        ? queryIntegrationsMetaWithTimeout(pool.query(lastSuccessRunsQ, [jobTypes]))
+        : Promise.resolve({ rows: [] }),
+      jobTypes.length
+        ? queryIntegrationsMetaWithTimeout(pool.query(recentFailuresQ, [jobTypes]))
         : Promise.resolve({ rows: [] }),
       feedKeys.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestQueueQ, [feedKeys]))
@@ -3039,12 +3155,17 @@ app.get('/api/integrations', async (req, res) => {
     integrationsTimingLog(timingEnabled, 'latest run query', latestRunStart);
 
     const latestRunByJobType = new Map(latestRunsRes.rows.map((r) => [r.job_type, r]));
+    const lastSuccessByJobType = new Map(lastSuccessRunsRes.rows.map((r) => [r.job_type, r]));
+    const consecutiveFailures = new Map(
+      jobTypes.map((jt) => [jt, computeConsecutiveFailures(recentFailuresRes.rows, jt)])
+    );
     const latestQueueByKey = new Map(latestQueueRes.rows.map((r) => [r.integration_key, r]));
     const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
 
     const integrations = feedsRes.rows.map((feed) =>
-      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, asnLastUpdatedAt)
+      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt)
     );
+    const healthSummary = buildIntegrationHealthSummary(integrations);
 
     let queue = {
       counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 },
@@ -3150,6 +3271,7 @@ app.get('/api/integrations', async (req, res) => {
 
     return res.json({
       integrations,
+      health_summary: healthSummary,
       recent_runs: recentRes.rows,
       queue
     });
@@ -3209,6 +3331,31 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
     return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
+  }
+});
+
+app.patch('/api/integrations/:key/active', async (req, res) => {
+  const { key } = req.params;
+  if (typeof req.body?.active !== 'boolean') {
+    return res.status(400).json({ message: 'active must be a boolean' });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET active = $2, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, name, active, schedule_cron AS schedule, trust_level, source_url, updated_at`,
+      [key, req.body.active]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update integration active state', detail: err.message });
   }
 });
 

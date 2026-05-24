@@ -54,11 +54,40 @@ const worker = new Worker(
       result = { skipped: true, reason: 'unknown_job' };
     }
 
+    const metrics = result?.metrics || {
+      records_processed: Number(result?.recordsProcessed || result?.records_processed || 0),
+      records_inserted: Number(result?.records_inserted || result?.recordsProcessed || 0),
+      records_updated: Number(result?.records_updated || 0),
+      records_duplicate: Number(result?.records_duplicate || 0),
+      records_skipped: Number(result?.records_skipped || 0),
+      records_suppressed: Number(result?.records_suppressed || result?.suppressed_count || 0),
+      records_failed: Number(result?.records_failed || 0)
+    };
+
     await pool.query(
       `UPDATE integration_queue_jobs
-       SET status='success', finished_at=NOW(), records_processed=$2, error_message=NULL, updated_at=NOW()
+       SET status='success',
+           finished_at=NOW(),
+           records_processed=$2,
+           records_inserted=$3,
+           records_updated=$4,
+           records_duplicate=$5,
+           records_skipped=$6,
+           records_suppressed=$7,
+           records_failed=$8,
+           error_message=NULL,
+           updated_at=NOW()
        WHERE job_id=$1`,
-      [String(job.id), Number(result?.recordsProcessed || 0)]
+      [
+        String(job.id),
+        Number(metrics.records_processed || 0),
+        Number(metrics.records_inserted || 0),
+        Number(metrics.records_updated || 0),
+        Number(metrics.records_duplicate || 0),
+        Number(metrics.records_skipped || 0),
+        Number(metrics.records_suppressed || 0),
+        Number(metrics.records_failed || 0)
+      ]
     );
 
     console.log(`[worker] completed job id=${job.id} result=${JSON.stringify(result)} suppressed_count=${Number(result?.suppressed_count || 0)}`);

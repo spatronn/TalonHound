@@ -3010,19 +3010,30 @@ function SystemStatusPage() {
 function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, showRunAll = true } = {}) {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [integrations, setIntegrations] = useState([]);
+  const [healthSummary, setHealthSummary] = useState(null);
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
-  const [tableWidths, setTableWidths] = useState({ name: 180, integrationId: 190, source: 280, addedAt: 170, schedule: 140, status: 120, lastRun: 170, nextRun: 180, action: 130 });
-  const [resizeState, setResizeState] = useState(null);
+  const [togglingKeys, setTogglingKeys] = useState({});
+  const [toggleError, setToggleError] = useState('');
+
+  const metricCell = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
 
   async function load() {
     setLoading(true);
+    setLoadError('');
     try {
       const { data } = await api.get('/integrations');
       setIntegrations(data?.integrations || []);
-    } catch {
+      setHealthSummary(data?.health_summary || null);
+    } catch (err) {
       setIntegrations([]);
+      setHealthSummary(null);
+      setLoadError(apiErrorMessage(err, 'Failed to load integrations'));
     } finally {
       setLoading(false);
     }
@@ -3062,13 +3073,18 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  async function updateTrustLevel(key, trustLevel) {
+  async function toggleActive(key, nextActive) {
     if (!canWrite) return;
+    setToggleError('');
+    setTogglingKeys((prev) => ({ ...prev, [key]: true }));
     try {
-      await api.put(`/integrations/${encodeURIComponent(key)}/trust-level`, { trust_level: trustLevel });
-      setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, trust_level: trustLevel } : i)));
-    } catch {
-      alert('Failed to update trust level');
+      await api.patch(`/integrations/${encodeURIComponent(key)}/active`, { active: nextActive });
+      setIntegrations((prev) => prev.map((i) => (i.key === key ? { ...i, active: nextActive } : i)));
+      await load();
+    } catch (err) {
+      setToggleError(apiErrorMessage(err, 'Failed to update feed active state'));
+    } finally {
+      setTogglingKeys((prev) => ({ ...prev, [key]: false }));
     }
   }
 
@@ -3083,18 +3099,47 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   const statusColor = (status) => {
-    if (status === 'success') return '#166534';
-    if (status === 'failed' || status === 'fail') return '#991b1b';
-    if (status === 'running') return '#92400e';
-    return '#334155';
+    const s = String(status || '').toLowerCase();
+    if (s === 'success') return '#86efac';
+    if (s === 'failed' || s === 'fail') return '#fca5a5';
+    if (s === 'running') return '#fcd34d';
+    if (s === 'queued') return '#93c5fd';
+    return '#94a3b8';
   };
 
   const statusLabel = (status) => {
-    if (status === 'success') return 'success';
-    if (status === 'failed' || status === 'fail') return 'fail';
-    if (status === 'running') return 'running';
+    const s = String(status || '').toLowerCase();
+    if (s === 'success') return 'success';
+    if (s === 'failed' || s === 'fail') return 'fail';
+    if (s === 'running') return 'running';
+    if (s === 'queued') return 'queued';
     return 'never';
   };
+
+  const healthBadge = (status) => ({
+    display: 'inline-block',
+    padding: '2px 8px',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'capitalize',
+    color: statusColor(status),
+    border: `1px solid ${statusColor(status)}33`,
+    background: `${statusColor(status)}18`
+  });
+
+  const metricBadge = (value, tone = '#cbd5e1') => ({
+    display: 'inline-block',
+    minWidth: 28,
+    textAlign: 'center',
+    padding: '2px 6px',
+    borderRadius: 6,
+    fontSize: 11,
+    fontWeight: 600,
+    color: tone,
+    background: 'rgba(15,23,42,0.6)',
+    border: '1px solid #334155'
+  });
 
   const SCHEDULE_OPTIONS = [
     { cron: '*/5 * * * *', label: 'Every 5 minutes' },
@@ -3104,104 +3149,149 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     { cron: '0 0 * * *', label: 'Every 24 hours' }
   ];
 
-  const humanSchedule = (cron) => {
-    const c = String(cron || '').trim();
-    const found = SCHEDULE_OPTIONS.find((o) => o.cron === c);
-    if (found) return found.label;
-    return c || '-';
-  };
-
-  useEffect(() => {
-    if (!resizeState) return undefined;
-    function onMove(e) {
-      const delta = e.clientX - resizeState.startX;
-      const next = Math.max(80, resizeState.startWidth + delta);
-      setTableWidths((prev) => ({ ...prev, [resizeState.col]: next }));
-    }
-    function onUp() { setResizeState(null); }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [resizeState]);
-
-  function startResize(col, e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
-  }
-
   const visibleIntegrations = integrations.filter((i) => {
     if (Array.isArray(onlyKeys) && onlyKeys.length) return onlyKeys.includes(i.key);
     if (Array.isArray(hideKeys) && hideKeys.length) return !hideKeys.includes(i.key);
     return true;
   });
 
+  const summary = healthSummary || {
+    total_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment').length,
+    active_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment' && i.active !== false).length,
+    failing_feeds: visibleIntegrations.filter((i) => {
+      const st = String(i.last_status || i.status || '').toLowerCase();
+      return i.key !== 'asn_enrichment' && (st === 'failed' || st === 'fail' || Number(i.consecutive_failures || 0) > 0);
+    }).length,
+    successful_feeds_24h: 0,
+    last_run_inserted_total: visibleIntegrations.reduce((acc, i) => acc + metricCell(i.last_records_inserted), 0),
+    last_run_processed_total: visibleIntegrations.reduce((acc, i) => acc + metricCell(i.last_records_processed), 0)
+  };
+
+  const showHealthDashboard = showRunAll && !onlyKeys;
+
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>{title}</h2>
-          <div style={{ display: 'flex', gap: 8 }}>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={{ marginTop: 0, marginBottom: 4, color: '#f1f5f9' }}>{title}</h2>
+            {showHealthDashboard ? (
+              <div style={{ color: '#94a3b8', fontSize: 13 }}>Feed health, import metrics, and scheduling in one view</div>
+            ) : null}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {showRunAll ? <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button> : null}
+            {showHealthDashboard ? <Link to="/threat-intelligence/runs" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', color: '#cbd5e1', textDecoration: 'none', fontSize: 13 }}>View recent runs</Link> : null}
             <button onClick={() => load().catch(() => {})}>Refresh</button>
           </div>
         </div>
 
-        {loading ? <div>Loading...</div> : (
+        {loadError ? <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>{loadError}</div> : null}
+        {toggleError ? <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>{toggleError}</div> : null}
+
+        {showHealthDashboard ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginTop: 14, marginBottom: 14 }}>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Total Feeds</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total_feeds}</div>
+            </div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Active Feeds</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{summary.active_feeds}</div>
+            </div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Failing Feeds</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: summary.failing_feeds > 0 ? '#fca5a5' : '#e2e8f0' }}>{summary.failing_feeds}</div>
+            </div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Success (24h)</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.successful_feeds_24h}</div>
+            </div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run Inserted</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#93c5fd' }}>{summary.last_run_inserted_total}</div>
+            </div>
+            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run Processed</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.last_run_processed_total}</div>
+            </div>
+          </div>
+        ) : null}
+
+        {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
-              <colgroup>
-                <col style={{ width: tableWidths.name }} />
-                <col style={{ width: tableWidths.integrationId }} />
-                <col style={{ width: tableWidths.source }} />
-                <col style={{ width: tableWidths.addedAt }} />
-                <col style={{ width: tableWidths.schedule }} />
-                <col style={{ width: tableWidths.status }} />
-                <col style={{ width: tableWidths.lastRun }} />
-                <col style={{ width: tableWidths.nextRun }} />
-                <col style={{ width: tableWidths.action }} />
-              </colgroup>
+            <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'auto', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", minWidth: 1400 }}>
               <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                  <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Integration ID<div onMouseDown={(e) => startResize('integrationId', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Source<div onMouseDown={(e) => startResize('source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Added At<div onMouseDown={(e) => startResize('addedAt', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Schedule<div onMouseDown={(e) => startResize('schedule', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Last status<div onMouseDown={(e) => startResize('status', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Last run start<div onMouseDown={(e) => startResize('lastRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Next run<div onMouseDown={(e) => startResize('nextRun', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th style={{ position: 'relative' }}>Action<div onMouseDown={(e) => startResize('action', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
+                  <th>Active</th>
+                  <th>Name</th>
+                  <th>Health</th>
+                  <th>Schedule</th>
+                  <th>Last Success</th>
+                  <th>Last Error</th>
+                  <th title="Total candidates processed">Proc</th>
+                  <th title="New IOC rows inserted">Ins</th>
+                  <th title="Duplicate (dedup no-op)">Dup</th>
+                  <th title="Updated rows">Upd</th>
+                  <th title="Skipped (invalid/unchanged feed)">Skip</th>
+                  <th title="Suppressed IOCs">Supp</th>
+                  <th title="Failed parse/row">Fail</th>
+                  <th>Next Run</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleIntegrations.map((i) => (
-                  <tr key={i.key} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.name}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.integration_id || '-'}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.source_url}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.created_at)}</td>
-                    <td>
-                      <select
-                        value={i.schedule || '0 * * * *'}
-                        onChange={(e) => updateSchedule(i.key, e.target.value)}
-                        disabled={!canWrite}
-                        style={{ width: '100%', minWidth: 0, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', boxSizing: 'border-box', opacity: canWrite ? 1 : 0.55 }}
-                      >
-                        {SCHEDULE_OPTIONS.map((opt) => (
-                          <option key={opt.cron} value={opt.cron}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={{ color: statusColor(i.last_status), fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusLabel(i.last_status)}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.last_started_at)}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(i.next_run_at)}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite}>{runningKeys[i.key] ? 'Queueing...' : 'Run now'}</button></td>
-                  </tr>
-                ))}
+                {visibleIntegrations.length ? visibleIntegrations.map((i) => {
+                  const isActive = i.active !== false;
+                  const lastErr = String(i.last_error || '').trim();
+                  const st = i.last_status || i.status;
+                  return (
+                    <tr key={i.key} style={{ borderBottom: '1px solid #1e293b', opacity: isActive ? 1 : 0.72 }}>
+                      <td>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: canWrite ? 'pointer' : 'not-allowed' }}>
+                          <input
+                            type="checkbox"
+                            checked={isActive}
+                            disabled={!canWrite || Boolean(togglingKeys[i.key])}
+                            onChange={(e) => toggleActive(i.key, e.target.checked).catch(() => {})}
+                          />
+                          <span style={{ fontSize: 11, color: isActive ? '#86efac' : '#94a3b8' }}>{isActive ? 'on' : 'off'}</span>
+                        </label>
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#e2e8f0', fontWeight: 600 }}>{i.name}</td>
+                      <td><span style={healthBadge(st)}>{statusLabel(st)}</span></td>
+                      <td>
+                        <select
+                          value={i.schedule || '0 * * * *'}
+                          onChange={(e) => updateSchedule(i.key, e.target.value)}
+                          disabled={!canWrite || !isActive}
+                          style={{ width: '100%', minWidth: 120, padding: '4px 6px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', opacity: canWrite && isActive ? 1 : 0.55 }}
+                        >
+                          {SCHEDULE_OPTIONS.map((opt) => (
+                            <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>{formatUserDateTime(i.last_success_at || (st === 'success' ? i.last_finished_at : null))}</td>
+                      <td style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b' }} title={lastErr || undefined}>{lastErr || '-'}</td>
+                      <td><span style={metricBadge(i.last_records_processed)}>{metricCell(i.last_records_processed)}</span></td>
+                      <td><span style={metricBadge(i.last_records_inserted, '#86efac')}>{metricCell(i.last_records_inserted)}</span></td>
+                      <td><span style={metricBadge(i.last_records_duplicate, '#fcd34d')}>{metricCell(i.last_records_duplicate)}</span></td>
+                      <td><span style={metricBadge(i.last_records_updated)}>{metricCell(i.last_records_updated)}</span></td>
+                      <td><span style={metricBadge(i.last_records_skipped, '#94a3b8')}>{metricCell(i.last_records_skipped)}</span></td>
+                      <td><span style={metricBadge(i.last_records_suppressed, '#f97316')}>{metricCell(i.last_records_suppressed)}</span></td>
+                      <td><span style={metricBadge(i.last_records_failed, '#fca5a5')}>{metricCell(i.last_records_failed)}</span></td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8' }}>{formatUserDateTime(i.next_run_at)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive}>
+                          {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr><td colSpan={15} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
