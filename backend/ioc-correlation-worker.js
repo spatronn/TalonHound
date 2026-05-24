@@ -8,6 +8,7 @@ import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickho
 import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 import { normalizeObservable } from './lib/observable-normalization.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
+import { createSuppressionStats, fetchActiveSuppressionIndex, filterSuppressedPairs } from './lib/ioc-suppression.js';
 import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
 
 const { Pool } = pg;
@@ -425,7 +426,32 @@ function buildReplayQuery(windowSeconds = REPLAY_WINDOW_SECONDS, limit = REPLAY_
 }
 
 async function insertMatchEvents(client, rows) {
-  if (!rows.length) return { inserted: 0, affectedActivityIds: [] };
+  if (!rows.length) {
+    return { inserted: 0, affectedActivityIds: [], suppressed_count: 0, suppressed_by_global_count: 0, skipped_suppressed_iocs: 0 };
+  }
+
+  const pairSeen = new Set();
+  const pairs = [];
+  for (const r of rows) {
+    const key = `${String(r.ioc_type || '').toLowerCase()}\t${String(r.matched_ioc || '').trim().toLowerCase()}`;
+    if (!key || key === '\t' || pairSeen.has(key)) continue;
+    pairSeen.add(key);
+    pairs.push({ iocValue: r.matched_ioc, iocType: r.ioc_type, sourceName: r.source_name ?? null });
+  }
+  const suppressionIndex = await fetchActiveSuppressionIndex(client, pairs, { logTag: 'ioc-correlation' });
+  const { kept: allowedRows, stats: suppressionStats } = filterSuppressedPairs(
+    suppressionIndex,
+    rows,
+    (r) => ({ iocValue: r.matched_ioc, iocType: r.ioc_type, sourceName: r.source_name ?? null })
+  );
+  if (!allowedRows.length) {
+    return {
+      inserted: 0,
+      affectedActivityIds: [],
+      ...suppressionStats.toJSON()
+    };
+  }
+  rows = allowedRows;
 
   // Deduplicate same (dedup_key, bucket_start) inside this batch to avoid
   // "ON CONFLICT DO UPDATE command cannot affect row a second time".
@@ -566,7 +592,11 @@ async function insertMatchEvents(client, rows) {
   const withRaw = normalizedRows.filter((r) => Boolean(r.raw_log_snapshot)).length;
   const withNorm = normalizedRows.filter((r) => Boolean(r.normalized_event_json)).length;
   console.info(`[ioc-event-create] inserted=${normalizedRows.length} related_logs=${normalizedRows.length} source_type_sample=${normalizedRows[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
-  return { inserted: normalizedRows.length, affectedActivityIds: Array.from(affectedActivityIds) };
+  return {
+    inserted: normalizedRows.length,
+    affectedActivityIds: Array.from(affectedActivityIds),
+    ...suppressionStats.toJSON()
+  };
 }
 
 async function runBatch() {
@@ -580,7 +610,7 @@ async function runBatch() {
 
     if (!scanned.length) {
       await client.query('COMMIT');
-      return { scanned: 0, matched: 0, inserted: 0, affectedActivityIds: [], duration_ms: Date.now() - startedAtMs };
+      return { scanned: 0, matched: 0, inserted: 0, affectedActivityIds: [], suppressed_count: 0, duration_ms: Date.now() - startedAtMs };
     }
 
     const matchedRows = await toMatchRowsFromScanned(scanned);
@@ -595,6 +625,9 @@ async function runBatch() {
       matched: matchedRows.length,
       inserted: insertResult.inserted,
       affectedActivityIds: insertResult.affectedActivityIds,
+      suppressed_count: Number(insertResult.suppressed_count || 0),
+      suppressed_by_global_count: Number(insertResult.suppressed_by_global_count || 0),
+      skipped_suppressed_iocs: Number(insertResult.skipped_suppressed_iocs || 0),
       last_ts: last.ingest_time || last.ts,
       last_row_hash: last.row_hash,
       duration_ms: Date.now() - startedAtMs
@@ -689,6 +722,7 @@ async function tick() {
   let totalMatched = 0;
   let totalInserted = 0;
   let totalDurationMs = 0;
+  const suppressionStats = createSuppressionStats();
   const affectedActivityIds = new Set();
 
   for (let i = 0; i < MAX_BATCHES_PER_TICK; i += 1) {
@@ -696,6 +730,11 @@ async function tick() {
     totalScanned += result.scanned;
     totalMatched += result.matched;
     totalInserted += result.inserted;
+    suppressionStats.merge({
+      suppressed_count: result.suppressed_count,
+      suppressed_by_global_count: result.suppressed_by_global_count,
+      skipped_suppressed_iocs: result.skipped_suppressed_iocs
+    });
     for (const id of (result.affectedActivityIds || [])) affectedActivityIds.add(String(id));
     totalDurationMs += Number(result.duration_ms || 0);
     if (result.scanned < BATCH_SIZE) break;
@@ -727,6 +766,7 @@ async function tick() {
           await client.query('BEGIN');
           const replayInsertResult = await insertMatchEvents(client, mapped);
           replayInserted = replayInsertResult.inserted;
+          suppressionStats.merge(replayInsertResult);
           for (const id of (replayInsertResult.affectedActivityIds || [])) affectedActivityIds.add(String(id));
           await client.query('COMMIT');
         } catch (err) {
@@ -746,7 +786,8 @@ async function tick() {
   }
 
   if (totalScanned > 0 || replayScanned > 0) {
-    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} llm_trigger_candidates=${affectedActivityIds.size} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`);
+    const s = suppressionStats.toJSON();
+    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} suppressed_count=${s.suppressed_count} suppressed_by_global_count=${s.suppressed_by_global_count} llm_trigger_candidates=${affectedActivityIds.size} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`);
   }
 }
 

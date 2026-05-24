@@ -61,7 +61,7 @@ const worker = new Worker(
       [String(job.id), Number(result?.recordsProcessed || 0)]
     );
 
-    console.log(`[worker] completed job id=${job.id} result=${JSON.stringify(result)}`);
+    console.log(`[worker] completed job id=${job.id} result=${JSON.stringify(result)} suppressed_count=${Number(result?.suppressed_count || 0)}`);
     return result;
   },
   {

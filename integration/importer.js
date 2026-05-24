@@ -2,6 +2,12 @@ import pg from 'pg';
 import { createHash } from 'node:crypto';
 import { strFromU8, unzipSync } from 'fflate';
 import { config } from './config.js';
+import {
+  createSuppressionStats,
+  fetchActiveSuppressionIndex,
+  filterSuppressedPairs,
+  isPairSuppressed
+} from './lib/ioc-suppression.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -231,19 +237,47 @@ function hashEntries(entries) {
 
 const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
 
+function withSuppressionStats(result, suppressionStats) {
+  const stats = suppressionStats?.toJSON?.() || null;
+  if (!stats || Number(stats.suppressed_count || 0) <= 0) return result;
+  return { ...result, ...stats };
+}
+
+function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {}) {
+  const stats = suppressionStats?.toJSON?.() || {};
+  if (Number(stats.suppressed_count || 0) <= 0) return;
+  console.log(
+    `[integration-import] job=${jobType} runId=${runId} suppressed_count=${stats.suppressed_count} suppressed_by_global_count=${stats.suppressed_by_global_count} skipped_suppressed_iocs=${stats.skipped_suppressed_iocs} ${JSON.stringify(extra)}`
+  );
+}
+
 /**
  * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
  * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
  */
-async function batchInsertIocs(client, entries, observableType = 'ip') {
+async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null) {
   if (!entries.length) return 0;
   let totalInserted = 0;
   const now = new Date();
   for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
     const chunk = entries.slice(i, i + BATCH_INSERT_CHUNK);
+    const pairs = chunk.map((e) => ({
+      iocValue: e.observable ?? e.ip,
+      iocType: observableType,
+      sourceName: e.sourceName ?? null
+    }));
+    const index = await fetchActiveSuppressionIndex(client, pairs, { logTag: 'integration-import' });
+    const { kept, stats } = filterSuppressedPairs(index, chunk, (e) => ({
+      iocValue: e.observable ?? e.ip,
+      iocType: observableType,
+      sourceName: e.sourceName ?? null
+    }));
+    if (suppressionStats) suppressionStats.merge(stats);
+    if (!kept.length) continue;
+
     const placeholders = [];
     const params = [];
-    chunk.forEach((e, idx) => {
+    kept.forEach((e, idx) => {
       const off = idx * 8;
       placeholders.push(`($${off + 1}::text, $${off + 2}::text, $${off + 3}::text, $${off + 4}::text, $${off + 5}::text, $${off + 6}::text, $${off + 7}::timestamptz, $${off + 8}::timestamptz)`);
       params.push(
@@ -257,7 +291,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip') {
         now
       );
     });
-    const typeParam = chunk.length * 8 + 1;
+    const typeParam = kept.length * 8 + 1;
     const valuesList = placeholders.join(',\n');
     const ins = await client.query(
       `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
@@ -283,7 +317,18 @@ async function batchInsertIocs(client, entries, observableType = 'ip') {
   return totalInserted;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note }) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note }, suppressionStats = null) {
+  const index = await fetchActiveSuppressionIndex(
+    client,
+    [{ iocValue: observable, iocType: observableType, sourceName }],
+    { logTag: 'integration-import' }
+  );
+  const hit = isPairSuppressed(index, { iocValue: observable, iocType: observableType, sourceName });
+  if (hit?.suppressed) {
+    if (suppressionStats) suppressionStats.noteSuppressionSkip({ byGlobal: hit.byGlobal });
+    return 'suppressed';
+  }
+
   const ins = await client.query(
     `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
      SELECT $1, $2, $3, $4, $5, $6, $7
@@ -313,6 +358,7 @@ export async function runHourlyImport() {
   const client = await pool.connect();
   const startedAt = new Date();
   let runId = null;
+  const suppressionStats = createSuppressionStats();
 
   try {
     await client.query('BEGIN');
@@ -357,7 +403,7 @@ export async function runHourlyImport() {
         category,
         note
       }));
-      inserted += await batchInsertIocs(client, entries, 'ip');
+      inserted += await batchInsertIocs(client, entries, 'ip', suppressionStats);
     }
 
     await client.query(
@@ -376,7 +422,8 @@ export async function runHourlyImport() {
     );
 
     await client.query('COMMIT');
-    return { ok: true, runId, recordsProcessed: inserted };
+    logImportSuppressionSummary('hourly_import', runId, suppressionStats, { recordsProcessed: inserted });
+    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
   } catch (err) {
     await client.query('ROLLBACK');
 
@@ -403,6 +450,7 @@ export async function runHourlyImport() {
 export async function runUsomImport() {
   const client = await pool.connect();
   let runId = null;
+  const suppressionStats = createSuppressionStats();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942002) AS acquired');
@@ -484,9 +532,9 @@ export async function runUsomImport() {
             confidence,
             category,
             note
-          });
+          }, suppressionStats);
 
-          if (okObs) inserted += 1;
+          if (okObs === true) inserted += 1;
 
         }
         await client.query('COMMIT');
@@ -519,7 +567,8 @@ export async function runUsomImport() {
       [runId, inserted]
     );
 
-    return { ok: true, runId, recordsProcessed: inserted };
+    logImportSuppressionSummary('usom_import', runId, suppressionStats, { recordsProcessed: inserted });
+    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
   } catch (err) {
     if (runId) {
       await client.query(
@@ -545,6 +594,7 @@ export async function runUsomImport() {
 export async function runUrlhausImport() {
   const client = await pool.connect();
   let runId = null;
+  const suppressionStats = createSuppressionStats();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942003) AS acquired');
@@ -626,9 +676,9 @@ export async function runUrlhausImport() {
             confidence,
             category,
             note
-          });
+          }, suppressionStats);
 
-          if (okObs) inserted += 1;
+          if (okObs === true) inserted += 1;
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -660,7 +710,8 @@ export async function runUrlhausImport() {
       [runId, inserted]
     );
 
-    return { ok: true, runId, recordsProcessed: inserted };
+    logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, { recordsProcessed: inserted });
+    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
   } catch (err) {
     if (runId) {
       await client.query(
@@ -685,6 +736,7 @@ export async function runUrlhausImport() {
 export async function runThreatfoxImport() {
   const client = await pool.connect();
   let runId = null;
+  const suppressionStats = createSuppressionStats();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942004) AS acquired');
@@ -784,9 +836,9 @@ export async function runThreatfoxImport() {
             confidence: entry.confidence,
             category: entry.threatType || 'threat-intel',
             note: noteParts.join(' | ')
-          });
+          }, suppressionStats);
 
-          if (okObs) inserted += 1;
+          if (okObs === true) inserted += 1;
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -818,7 +870,8 @@ export async function runThreatfoxImport() {
       [runId, inserted]
     );
 
-    return { ok: true, runId, recordsProcessed: inserted };
+    logImportSuppressionSummary('threatfox_import', runId, suppressionStats, { recordsProcessed: inserted });
+    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted }, suppressionStats);
   } catch (err) {
     if (runId) {
       await client.query(
@@ -898,6 +951,7 @@ function mapMalwareBazaarRow(cols) {
 export async function runMalwareBazaarImport() {
   const client = await pool.connect();
   let runId = null;
+  const suppressionStats = createSuppressionStats();
 
   try {
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942005) AS acquired');
@@ -948,9 +1002,9 @@ export async function runMalwareBazaarImport() {
             confidence: entry.confidence,
             category: entry.category,
             note: entry.note
-          });
+          }, suppressionStats);
 
-          if (okObs) inserted += 1;
+          if (okObs === true) inserted += 1;
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -1012,7 +1066,8 @@ export async function runMalwareBazaarImport() {
       [runId, inserted]
     );
 
-    return { ok: true, runId, recordsProcessed: inserted, parsedRecords: processed, cursor: nextCursor };
+    logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, { recordsProcessed: inserted, parsedRecords: processed });
+    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted, parsedRecords: processed, cursor: nextCursor }, suppressionStats);
   } catch (err) {
     if (runId) {
       await client.query(
@@ -1037,6 +1092,7 @@ export async function runMalwareBazaarImport() {
 export async function runPhishtankImport() {
   const client = await pool.connect();
   let runId = null;
+  const suppressionStats = createSuppressionStats();
 
   try {
     await client.query('BEGIN');
@@ -1095,8 +1151,8 @@ export async function runPhishtankImport() {
         confidence: 'high',
         category: 'phishing',
         note: 'Auto-imported from PhishTank online-valid.csv'
-      });
-      if (ok) inserted += 1;
+      }, suppressionStats);
+      if (ok === true) inserted += 1;
     }
 
     await client.query(
@@ -1107,7 +1163,8 @@ export async function runPhishtankImport() {
     );
 
     await client.query('COMMIT');
-    return { ok: true, runId, recordsProcessed: inserted, parsedRecords: parsed };
+    logImportSuppressionSummary('phishtank_import', runId, suppressionStats, { recordsProcessed: inserted, parsedRecords: parsed });
+    return withSuppressionStats({ ok: true, runId, recordsProcessed: inserted, parsedRecords: parsed }, suppressionStats);
   } catch (err) {
     await client.query('ROLLBACK');
 

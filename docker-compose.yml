@@ -63,7 +63,9 @@ services:
     restart: unless-stopped
 
   integration-scheduler:
-    build: ./integration
+    build:
+      context: .
+      dockerfile: integration/Dockerfile
     container_name: demo-integration-scheduler
     command: ["npm", "run", "scheduler"]
     environment:
@@ -91,7 +93,9 @@ services:
     restart: unless-stopped
 
   integration-worker:
-    build: ./integration
+    build:
+      context: .
+      dockerfile: integration/Dockerfile
     container_name: demo-integration-worker
     command: ["npm", "run", "worker"]
     environment:
