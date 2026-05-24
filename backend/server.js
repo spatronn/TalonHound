@@ -3396,7 +3396,7 @@ function isAdminUser(req) {
 
 function isReadOnlyUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
-  return role === ROLES.READ_ONLY;
+  return role === ROLES.READONLY;
 }
 
 function canReadSuppression(req) {
