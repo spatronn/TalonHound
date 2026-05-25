@@ -219,13 +219,30 @@ export async function fetchRdapDomain(rootDomain) {
   }
 }
 
-export function rowToApiPayload(row, { cached = false, enriched = true, observableValue, rootDomain, iocType } = {}) {
+export function rowToApiPayload(row, {
+  cached = false,
+  enriched = true,
+  observableValue,
+  rootDomain,
+  iocType,
+  original_value = null,
+  normalized_host = null,
+  rdap_domain = null,
+  input_type = null
+} = {}) {
+  const rdapDomain = rdap_domain || rootDomain;
+  const normHost = normalized_host || observableValue;
+
   if (!row) {
     return {
       enriched: false,
       cached: false,
       observable_value: observableValue,
-      root_domain: rootDomain,
+      root_domain: rdapDomain,
+      rdap_domain: rdapDomain,
+      normalized_host: normHost,
+      original_value: original_value || observableValue,
+      input_type,
       ioc_type: iocType
     };
   }
@@ -238,7 +255,11 @@ export function rowToApiPayload(row, { cached = false, enriched = true, observab
     enriched: enriched && row.rdap_status === 'success',
     cached,
     observable_value: row.observable_value || observableValue,
-    root_domain: row.root_domain || rootDomain,
+    root_domain: row.root_domain || rdapDomain,
+    rdap_domain: row.root_domain || rdapDomain,
+    normalized_host: normHost || row.observable_value || observableValue,
+    original_value: original_value || null,
+    input_type: input_type || row.ioc_type || iocType,
     ioc_type: row.ioc_type || iocType,
     rdap_status: row.rdap_status,
     registrar: row.registrar,
@@ -340,7 +361,9 @@ export async function upsertEnrichment(pool, {
 }
 
 export async function refreshRdapEnrichment(pool, parsed, { force = false } = {}) {
-  const { observable_value: observableValue, root_domain: rootDomain, ioc_type: iocType } = parsed;
+  const observableValue = parsed.observable_value || parsed.normalized_host;
+  const rootDomain = parsed.rdap_domain || parsed.root_domain;
+  const iocType = parsed.ioc_type;
   const existing = await getEnrichmentByRootDomain(pool, rootDomain);
 
   if (existing && isCacheFresh(existing, { force })) {

@@ -7410,20 +7410,37 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
 
 const RDAP_SUPPORTED_TYPES = new Set(['domain', 'url']);
 
+function RdapTargetNote({ data }) {
+  const host = data?.normalized_host || data?.observable_value || '-';
+  const rdapDomain = data?.rdap_domain || data?.root_domain || '-';
+  const differs = host !== '-' && rdapDomain !== '-' && String(host).toLowerCase() !== String(rdapDomain).toLowerCase();
+  return (
+    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
+      <div style={{ color: '#94a3b8' }}>Observed / IOC Host: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{host}</span></div>
+      <div style={{ color: '#94a3b8', marginTop: 4 }}>RDAP Domain: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{rdapDomain}</span></div>
+      {differs ? (
+        <div style={{ color: '#fcd34d', marginTop: 8, lineHeight: 1.45 }}>
+          RDAP lookup was performed for the registrable domain: <b>{rdapDomain}</b>. Threat content may appear on the observed host ({host}); WHOIS/RDAP reflects the parent domain registrant, not the tenant subdomain alone.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false }) {
   const type = String(iocType || '').toLowerCase();
   if (!RDAP_SUPPORTED_TYPES.has(type)) return null;
 
-  const encodedValue = encodeURIComponent(String(iocValue || '').trim());
+  const value = String(iocValue || '').trim();
   const [state, setState] = useState({ status: 'loading', data: null, message: '' });
   const [enriching, setEnriching] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    if (!iocValue || !active) return;
+    if (!value || !active) return;
     setState((s) => ({ ...s, status: 'loading' }));
     try {
-      const { data } = await api.get(`/enrichment/rdap/${encodedValue}`, { params: { ioc_type: type } });
+      const { data } = await api.get('/enrichment/rdap', { params: { value, ioc_type: type } });
       setHasLoaded(true);
       if (data?.enriched) {
         setState({ status: 'success', data, message: '' });
@@ -7431,16 +7448,17 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
         setState({
           status: 'failed',
           data,
-          message: data?.error_message || 'RDAP lookup failed'
+          message: data?.error_message || data?.error || 'RDAP lookup failed'
         });
       } else {
         setState({ status: 'not_found', data, message: '' });
       }
-    } catch {
+    } catch (err) {
       setHasLoaded(true);
-      setState({ status: 'error', data: null, message: 'Failed to load RDAP enrichment' });
+      const msg = err?.response?.data?.error || err?.response?.data?.message || 'Failed to load RDAP enrichment';
+      setState({ status: 'error', data: err?.response?.data || null, message: msg });
     }
-  }, [encodedValue, iocValue, type, active]);
+  }, [value, type, active]);
 
   useEffect(() => {
     if (!active) return;
@@ -7450,22 +7468,24 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
   async function enrich(force = false) {
     setEnriching(true);
     try {
-      const params = { ioc_type: type };
-      if (force) params.force = 'true';
-      const { data } = await api.post(`/enrichment/rdap/${encodedValue}/refresh`, null, { params });
+      const { data } = await api.post('/enrichment/rdap/refresh', {
+        value,
+        force: force || undefined,
+        ioc_type: type
+      });
       if (data?.enriched || data?.rdap_status === 'success') {
         setState({ status: 'success', data, message: '' });
       } else {
         setState({
           status: 'failed',
           data,
-          message: data?.error_message || data?.message || 'RDAP lookup failed'
+          message: data?.error_message || data?.error || data?.message || 'RDAP lookup failed'
         });
       }
     } catch (err) {
       const msg = err?.response?.status === 429
         ? 'RDAP rate limit reached. Try again later.'
-        : (err?.response?.data?.message || err?.response?.data?.error_message || 'RDAP lookup failed');
+        : (err?.response?.data?.error || err?.response?.data?.message || err?.response?.data?.error_message || 'RDAP lookup failed');
       setState({ status: 'failed', data: err?.response?.data || null, message: msg });
     } finally {
       setEnriching(false);
@@ -7502,6 +7522,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
           <div style={{ fontWeight: 700, color: '#e2e8f0' }}>RDAP / WHOIS Enrichment</div>
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Registration data from RDAP (on-demand only)</div>
         </div>
+        {state.data ? <RdapTargetNote data={state.data} /> : <RdapTargetNote data={{ normalized_host: value, rdap_domain: value }} />}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: '#cbd5e1', fontSize: 13 }}>No RDAP enrichment yet</span>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>
@@ -7516,6 +7537,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
     return (
       <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>RDAP / WHOIS Enrichment</div>
+        {state.data ? <RdapTargetNote data={state.data} /> : null}
         <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message || 'RDAP lookup failed'}</span>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Retry'}</button>
@@ -7536,8 +7558,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
             {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
           </div>
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
-            Root domain: <b style={{ color: '#cbd5e1' }}>{d.root_domain || '-'}</b>
-            {d.last_enriched_at ? ` • Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : ''}
+            {d.last_enriched_at ? `Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'Registration data from RDAP'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -7546,10 +7567,12 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
         </div>
       </div>
 
+      <RdapTargetNote data={d} />
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 12 }}>
         <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Root Domain</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.root_domain || '-'}</div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>RDAP Domain</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.rdap_domain || d.root_domain || '-'}</div>
         </div>
         <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Registrar</div>

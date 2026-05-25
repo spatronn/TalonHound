@@ -4,84 +4,131 @@ const IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d))
 const IPV6_RE = /^([0-9a-f:]+:+)+[0-9a-f]+$/i;
 const HASH_RE = /^(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64})$/i;
 
-/**
- * Normalize domain or URL input to hostname + eTLD+1 root domain.
- * @param {string} value
- * @param {string|null} [hintType] domain | url
- * @returns {{ ok: true, observable_value: string, root_domain: string, ioc_type: string } | { ok: false, code: string, message: string }}
- */
-export function parseDomainOrUrlInput(value, hintType = null) {
-  const raw = String(value || '').trim();
-  if (!raw) {
-    return { ok: false, code: 'empty', message: 'Value is required' };
-  }
+/** ICANN registrable domain — private suffixes (e.g. netlify.app) are not treated as the RDAP root. */
+const TLD_OPTS = { allowPrivateDomains: false, detectIp: false };
 
+function stripHostPort(host) {
+  let h = String(host || '').trim().toLowerCase();
+  h = h.replace(/\.$/, '').replace(/^\[/, '').replace(/\]$/, '');
+  const portIdx = h.indexOf(':');
+  if (portIdx > 0 && /^\d+$/.test(h.slice(portIdx + 1))) {
+    h = h.slice(0, portIdx);
+  }
+  return h;
+}
+
+function extractHostname(raw, hintType = null) {
   const hint = String(hintType || '').toLowerCase();
-  if (hint && hint !== 'domain' && hint !== 'url') {
-    return { ok: false, code: 'unsupported', message: 'IOC type is not supported for RDAP enrichment' };
-  }
-
-  if (HASH_RE.test(raw)) {
-    return { ok: false, code: 'unsupported', message: 'Hash IOCs are not supported for RDAP enrichment' };
-  }
-
-  let hostname = '';
-  let iocType = hint || 'domain';
-
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || raw.startsWith('//');
   const looksLikePath = raw.includes('/') && !raw.includes('@');
+  let hostname = '';
+  let inputType = hint === 'url' ? 'url' : 'domain';
 
   if (hasScheme || (looksLikePath && (hint === 'url' || raw.includes('://')))) {
     try {
       const urlStr = raw.startsWith('//') ? `https:${raw}` : (hasScheme ? raw : `https://${raw}`);
       const u = new URL(urlStr);
-      hostname = String(u.hostname || '').toLowerCase();
-      iocType = 'url';
-      if (!hostname) return { ok: false, code: 'invalid_url', message: 'Could not parse URL hostname' };
+      hostname = stripHostPort(u.hostname);
+      inputType = 'url';
+      if (!hostname) return { ok: false, code: 'invalid', message: 'Invalid domain or URL' };
     } catch {
-      return { ok: false, code: 'invalid_url', message: 'Invalid URL' };
+      return { ok: false, code: 'invalid', message: 'Invalid domain or URL' };
     }
   } else if (looksLikePath) {
     try {
       const u = new URL(`https://${raw}`);
-      hostname = String(u.hostname || '').toLowerCase();
-      iocType = hint === 'url' ? 'url' : 'domain';
+      hostname = stripHostPort(u.hostname);
+      inputType = hint === 'url' ? 'url' : 'domain';
     } catch {
-      hostname = raw.split('/')[0].split('?')[0].split('#')[0].toLowerCase();
-      const portIdx = hostname.indexOf(':');
-      if (portIdx > 0 && /^\d+$/.test(hostname.slice(portIdx + 1))) {
-        hostname = hostname.slice(0, portIdx);
-      }
+      hostname = stripHostPort(raw.split('/')[0].split('?')[0].split('#')[0]);
     }
   } else {
-    hostname = raw.split('/')[0].split('?')[0].split('#')[0].toLowerCase();
-    const portIdx = hostname.indexOf(':');
-    if (portIdx > 0 && /^\d+$/.test(hostname.slice(portIdx + 1))) {
-      hostname = hostname.slice(0, portIdx);
-    }
-    if (hint === 'url') iocType = 'url';
+    hostname = stripHostPort(raw.split('/')[0].split('?')[0].split('#')[0]);
+    if (hint === 'url') inputType = 'url';
   }
 
-  hostname = hostname.replace(/\.$/, '').replace(/^\[/, '').replace(/\]$/, '');
   if (!hostname) {
-    return { ok: false, code: 'invalid_domain', message: 'Could not parse domain' };
+    return { ok: false, code: 'invalid', message: 'Invalid domain or URL' };
   }
 
-  if (IPV4_RE.test(hostname) || IPV6_RE.test(hostname)) {
-    return { ok: false, code: 'unsupported', message: 'IP addresses are not supported for RDAP enrichment' };
+  return { ok: true, hostname, inputType };
+}
+
+/**
+ * Normalize IOC value for on-demand RDAP lookup.
+ * @param {string} value
+ * @param {string|null} [hintType] domain | url | ip | hash
+ * @returns {{ ok: true, original_value: string, normalized_host: string, rdap_domain: string, input_type: string, root_domain: string, observable_value: string, ioc_type: string } | { ok: false, code: string, message: string }}
+ */
+export function normalizeRdapTarget(value, hintType = null) {
+  const original_value = String(value || '').trim();
+  if (!original_value) {
+    return { ok: false, code: 'empty', message: 'Value is required' };
   }
 
-  const parsed = parseTld(hostname, { allowPrivateDomains: true });
-  const rootDomain = parsed.domain ? String(parsed.domain).toLowerCase() : null;
-  if (!rootDomain) {
-    return { ok: false, code: 'invalid_domain', message: 'Could not determine registrable root domain' };
+  const hint = String(hintType || '').toLowerCase();
+  if (hint && hint !== 'domain' && hint !== 'url') {
+    return {
+      ok: false,
+      code: 'unsupported',
+      message: 'RDAP enrichment supports domain and URL observables only'
+    };
   }
+
+  if (HASH_RE.test(original_value)) {
+    return {
+      ok: false,
+      code: 'unsupported',
+      message: 'RDAP enrichment supports domain and URL observables only'
+    };
+  }
+
+  const hostStep = extractHostname(original_value, hint);
+  if (!hostStep.ok) return hostStep;
+
+  const { hostname: normalized_host, inputType: input_type } = hostStep;
+
+  if (IPV4_RE.test(normalized_host) || IPV6_RE.test(normalized_host)) {
+    return {
+      ok: false,
+      code: 'unsupported',
+      message: 'RDAP enrichment supports domain and URL observables only'
+    };
+  }
+
+  const parsed = parseTld(normalized_host, TLD_OPTS);
+  const rdap_domain = parsed.domain ? String(parsed.domain).toLowerCase() : null;
+  if (!rdap_domain) {
+    return { ok: false, code: 'invalid', message: 'Invalid domain or URL' };
+  }
+
+  const ioc_type = input_type === 'url' ? 'url' : 'domain';
 
   return {
     ok: true,
-    observable_value: hostname,
-    root_domain: rootDomain,
-    ioc_type: iocType === 'url' ? 'url' : 'domain'
+    original_value,
+    normalized_host,
+    rdap_domain,
+    input_type,
+    root_domain: rdap_domain,
+    observable_value: normalized_host,
+    ioc_type
+  };
+}
+
+/** @deprecated Use normalizeRdapTarget — kept for legacy route handlers */
+export function parseDomainOrUrlInput(value, hintType = null) {
+  const r = normalizeRdapTarget(value, hintType);
+  if (!r.ok) return r;
+  return {
+    ok: true,
+    observable_value: r.observable_value,
+    root_domain: r.root_domain,
+    ioc_type: r.ioc_type,
+    normalized_host: r.normalized_host,
+    rdap_domain: r.rdap_domain,
+    original_value: r.original_value,
+    input_type: r.input_type
   };
 }
 
