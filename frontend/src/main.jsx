@@ -7400,6 +7400,10 @@ function VirusTotalEnrichmentCard({ iocId }) {
   </div>;
 }
 
+const TAG_PICKER_LIMIT = 5;
+const TAG_PICKER_ITEM_HEIGHT = 34;
+const TAG_PICKER_LIST_HEIGHT = TAG_PICKER_ITEM_HEIGHT * TAG_PICKER_LIMIT + 6 * (TAG_PICKER_LIMIT - 1);
+
 function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
@@ -7410,7 +7414,7 @@ function IOCDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [], suppression: { active: false } });
   const [iocTags, setIocTags] = useState([]);
-  const [allTags, setAllTags] = useState([]);
+  const [tagSuggestions, setTagSuggestions] = useState([]);
   const [tagSearch, setTagSearch] = useState('');
   const [tagsLoading, setTagsLoading] = useState(false);
   const [tagsSaving, setTagsSaving] = useState(false);
@@ -7459,14 +7463,22 @@ function IOCDetailsPage() {
     }
   }
 
-  async function loadEnabledTags() {
+  async function loadTagSuggestions(search = '') {
     setTagsLoading(true);
     try {
-      const res = await api.get('/tags', { params: { active: true } });
-      setAllTags(Array.isArray(res.data) ? res.data : []);
+      const excludeIds = iocTags.map((t) => Number(t.id)).filter((id) => Number.isFinite(id) && id > 0);
+      const res = await api.get('/tags', {
+        params: {
+          active: true,
+          limit: TAG_PICKER_LIMIT,
+          q: String(search || '').trim() || undefined,
+          exclude_ids: excludeIds.length ? excludeIds.join(',') : undefined
+        }
+      });
+      setTagSuggestions(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.log('[ioc-tags] list failed', err);
-      setAllTags([]);
+      setTagSuggestions([]);
     } finally {
       setTagsLoading(false);
     }
@@ -7491,9 +7503,17 @@ function IOCDetailsPage() {
   }, [data?.summary?.id]);
 
   useEffect(() => {
-    if (!tagDropdownOpen) return;
-    loadEnabledTags().catch(() => {});
-  }, [tagDropdownOpen]);
+    if (!tagDropdownOpen) {
+      setTagSearch('');
+      setTagSuggestions([]);
+      return undefined;
+    }
+    const delayMs = String(tagSearch || '').trim() ? 250 : 0;
+    const timer = setTimeout(() => {
+      loadTagSuggestions(tagSearch).catch(() => {});
+    }, delayMs);
+    return () => clearTimeout(timer);
+  }, [tagDropdownOpen, tagSearch, iocTags]);
 
   useEffect(() => {
     if (!actionToast) return undefined;
@@ -7570,7 +7590,7 @@ function IOCDetailsPage() {
     setTagsSaving(true);
     try {
       await api.post(`/ioc/${iocId}/tags`, { tag_id: Number(tagId) });
-      const selected = allTags.find((t) => Number(t.id) === Number(tagId));
+      const selected = tagSuggestions.find((t) => Number(t.id) === Number(tagId));
       if (selected) {
         setIocTags((prev) => prev.some((t) => Number(t.id) === Number(tagId)) ? prev : [...prev, {
           id: selected.id,
@@ -7775,40 +7795,45 @@ function IOCDetailsPage() {
                   </button>
 
                   {tagDropdownOpen ? (
-                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 260, maxHeight: 260, overflow: 'auto', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', zIndex: 30, padding: 8 }}>
+                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 260, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', zIndex: 30, padding: 8, overflow: 'hidden' }}>
                       <input
                         value={tagSearch}
                         onChange={(e) => setTagSearch(e.target.value)}
                         placeholder="Search tag..."
-                        style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0' }}
+                        autoFocus
+                        style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
                       />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {allTags
-                          .filter((t) => !iocTags.some((it) => Number(it.id) === Number(t.id)))
-                          .filter((t) => {
-                            const q = String(tagSearch || '').trim().toLowerCase();
-                            if (!q) return true;
-                            return String(t.name || '').toLowerCase().includes(q);
-                          })
-                          .map((t) => (
-                            <button
-                              key={`opt-tag-${t.id}`}
-                              type="button"
-                              onClick={() => addIocTag(t.id).catch(() => {})}
-                              disabled={tagsSaving}
-                              style={{ textAlign: 'left', border: '1px solid #334155', borderRadius: 8, padding: '6px 8px', background: '#111827', color: '#e5e7eb', cursor: tagsSaving ? 'wait' : 'pointer' }}
-                            >
-                              {t.name}
-                            </button>
-                          ))}
-                        {!tagsLoading && allTags.length === 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: TAG_PICKER_LIST_HEIGHT, overflow: 'hidden' }}>
+                        {tagsLoading ? (
+                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>Loading…</div>
+                        ) : tagSuggestions.map((t) => (
+                          <button
+                            key={`opt-tag-${t.id}`}
+                            type="button"
+                            onClick={() => addIocTag(t.id).catch(() => {})}
+                            disabled={tagsSaving}
+                            style={{
+                              textAlign: 'left',
+                              border: '1px solid #334155',
+                              borderRadius: 8,
+                              padding: '6px 8px',
+                              minHeight: TAG_PICKER_ITEM_HEIGHT,
+                              boxSizing: 'border-box',
+                              background: '#111827',
+                              color: '#e5e7eb',
+                              cursor: tagsSaving ? 'wait' : 'pointer',
+                              flex: '0 0 auto'
+                            }}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                        {!tagsLoading && !tagSuggestions.length && !String(tagSearch || '').trim() ? (
                           <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tags available</div>
                         ) : null}
-                        {!tagsLoading && allTags.length > 0 && allTags.filter((t) => !iocTags.some((it) => Number(it.id) === Number(t.id))).filter((t) => {
-                          const q = String(tagSearch || '').trim().toLowerCase();
-                          if (!q) return true;
-                          return String(t.name || '').toLowerCase().includes(q);
-                        }).length === 0 ? <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tag found</div> : null}
+                        {!tagsLoading && !tagSuggestions.length && String(tagSearch || '').trim() ? (
+                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tag found</div>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}

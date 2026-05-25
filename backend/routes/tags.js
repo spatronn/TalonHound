@@ -6,8 +6,11 @@ import {
   categoryToLegacyType,
   isValidCategory,
   normalizeTagName,
+  normalizeTagSearch,
   normalizeTagSlug,
+  parseExcludeTagIds,
   parsePositiveInt,
+  parseTagListLimit,
   tagAuditSnapshot,
   toPublicTag
 } from '../lib/tagHelpers.js';
@@ -31,18 +34,50 @@ function parseActiveQuery(value) {
 export function registerTagRoutes(app, pool, audit) {
   app.get('/api/tags', async (req, res) => {
     const activeOnly = parseActiveQuery(req.query.active);
+    const limit = parseTagListLimit(req.query.limit, 5, 50);
+    const search = normalizeTagSearch(req.query.q ?? req.query.search);
+    const excludeIds = parseExcludeTagIds(req.query.exclude_ids);
 
     try {
       const params = [];
-      let where = '';
+      const where = ['TRUE'];
+      let idx = 1;
+
       if (activeOnly) {
-        where = 'WHERE enabled = TRUE';
+        where.push('t.enabled = TRUE');
       }
 
+      if (search) {
+        where.push(`(t.name ILIKE $${idx} OR t.slug ILIKE $${idx})`);
+        params.push(`%${search}%`);
+        idx += 1;
+      }
+
+      if (excludeIds.length) {
+        where.push(`t.id <> ALL($${idx}::bigint[])`);
+        params.push(excludeIds);
+        idx += 1;
+      }
+
+      params.push(limit);
+      const limitParam = `$${idx}`;
+      const orderBy = search
+        ? 't.name ASC'
+        : 'COALESCE(pop.usage_count, 0) DESC, pop.last_used_at DESC NULLS LAST, t.name ASC';
+
       const q = await pool.query(
-        `${TAG_SELECT}
-         ${where}
-         ORDER BY category ASC NULLS LAST, name ASC`,
+        `SELECT t.id, t.name, t.slug, t.description, t.color, t.category, t.type, t.enabled, t.created_at, t.updated_at
+         FROM tags t
+         LEFT JOIN (
+           SELECT tag_id,
+                  COUNT(*)::int AS usage_count,
+                  MAX(created_at) AS last_used_at
+           FROM ioc_tags
+           GROUP BY tag_id
+         ) pop ON pop.tag_id = t.id
+         WHERE ${where.join(' AND ')}
+         ORDER BY ${orderBy}
+         LIMIT ${limitParam}`,
         params
       );
       return res.json(q.rows.map(toPublicTag));

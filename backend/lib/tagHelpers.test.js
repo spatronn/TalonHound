@@ -4,7 +4,10 @@ import {
   categoryToLegacyType,
   legacyTypeToCategory,
   normalizeTagName,
+  normalizeTagSearch,
   normalizeTagSlug,
+  parseExcludeTagIds,
+  parseTagListLimit,
   toPublicTag
 } from './tagHelpers.js';
 
@@ -28,6 +31,23 @@ test('legacyTypeToCategory maps enum to categories', () => {
   assert.equal(legacyTypeToCategory('threat'), 'malware');
   assert.equal(legacyTypeToCategory('actor'), 'actor');
   assert.equal(legacyTypeToCategory('technique'), 'behavior');
+});
+
+test('parseTagListLimit defaults and caps', () => {
+  assert.equal(parseTagListLimit(undefined), 5);
+  assert.equal(parseTagListLimit('5'), 5);
+  assert.equal(parseTagListLimit('100'), 50);
+  assert.equal(parseTagListLimit('0'), 5);
+});
+
+test('parseExcludeTagIds deduplicates ids', () => {
+  assert.deepEqual(parseExcludeTagIds('1,2,2,3'), [1, 2, 3]);
+  assert.deepEqual(parseExcludeTagIds(''), []);
+});
+
+test('normalizeTagSearch trims and caps length', () => {
+  assert.equal(normalizeTagSearch('  apt  '), 'apt');
+  assert.equal(normalizeTagSearch('x'.repeat(120)).length, 100);
 });
 
 test('toPublicTag exposes is_active alias', () => {

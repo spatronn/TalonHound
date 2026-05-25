@@ -47,6 +47,23 @@ export function parsePositiveInt(value) {
   return n;
 }
 
+export function parseTagListLimit(value, defaultLimit = 5, maxLimit = 50) {
+  const parsed = parsePositiveInt(value);
+  if (!parsed) return defaultLimit;
+  return Math.min(parsed, maxLimit);
+}
+
+export function normalizeTagSearch(value) {
+  return String(value || '').trim().slice(0, 100);
+}
+
+export function parseExcludeTagIds(value) {
+  if (value == null || value === '') return [];
+  const raw = Array.isArray(value) ? value : String(value).split(',');
+  const ids = raw.map((part) => parsePositiveInt(part)).filter(Boolean);
+  return [...new Set(ids)];
+}
+
 export function toPublicTag(row) {
   if (!row) return null;
   return {
