@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  categoryToLegacyType,
+  legacyTypeToCategory,
+  normalizeTagName,
+  normalizeTagSlug,
+  toPublicTag
+} from './tagHelpers.js';
+
+test('normalizeTagName trims and lowercases', () => {
+  assert.equal(normalizeTagName('  Phishing  '), 'phishing');
+});
+
+test('normalizeTagSlug slugifies values', () => {
+  assert.equal(normalizeTagSlug('APT-29'), 'apt-29');
+  assert.equal(normalizeTagSlug('  click fix '), 'click-fix');
+});
+
+test('categoryToLegacyType maps categories to enum', () => {
+  assert.equal(categoryToLegacyType('malware'), 'threat');
+  assert.equal(categoryToLegacyType('actor'), 'actor');
+  assert.equal(categoryToLegacyType('behavior'), 'technique');
+  assert.equal(categoryToLegacyType('custom'), 'context');
+});
+
+test('legacyTypeToCategory maps enum to categories', () => {
+  assert.equal(legacyTypeToCategory('threat'), 'malware');
+  assert.equal(legacyTypeToCategory('actor'), 'actor');
+  assert.equal(legacyTypeToCategory('technique'), 'behavior');
+});
+
+test('toPublicTag exposes is_active alias', () => {
+  const row = {
+    id: 7,
+    name: 'c2',
+    slug: 'c2',
+    description: null,
+    color: '#fff',
+    category: 'malware',
+    type: 'threat',
+    enabled: true,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-02T00:00:00.000Z'
+  };
+  const tag = toPublicTag(row);
+  assert.equal(tag.is_active, true);
+  assert.equal(tag.enabled, true);
+  assert.equal(tag.category, 'malware');
+});

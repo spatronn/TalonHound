@@ -23,6 +23,7 @@ import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
+import { registerTagRoutes } from './routes/tags.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { pickSafeFields } from './lib/auditRedaction.js';
@@ -3834,6 +3835,7 @@ registerPublicFeedRoutes(app, pool);
 registerPublishedFeedRoutes(app, pool, audit);
 registerApiKeyRoutes(app, pool, audit);
 registerAuditLogRoutes(app, pool);
+registerTagRoutes(app, pool, audit);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -3863,106 +3865,6 @@ function parsePositiveInt(value) {
   return n;
 }
 
-function normalizeTagName(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-const TAG_TYPES = new Set(['threat', 'actor', 'technique', 'context']);
-
-app.get('/api/tags', async (req, res) => {
-  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-
-  try {
-    const q = await pool.query(
-      `SELECT id, name, type, enabled
-       FROM tags
-       WHERE enabled = TRUE
-       ORDER BY type ASC, name ASC`
-    );
-    return res.json(q.rows);
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
-  }
-});
-
-app.post('/api/tags', async (req, res) => {
-  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-
-  const name = normalizeTagName(req.body?.name);
-  const type = String(req.body?.type || '').trim().toLowerCase();
-
-  if (!name) return res.status(400).json({ message: 'name is required' });
-  if (!TAG_TYPES.has(type)) return res.status(400).json({ message: 'Invalid type' });
-
-  try {
-    const q = await pool.query(
-      `INSERT INTO tags (name, type)
-       VALUES ($1, $2::tag_type)
-       ON CONFLICT (name) DO NOTHING
-       RETURNING id, name, type, enabled`,
-      [name, type]
-    );
-
-    if (!q.rowCount) {
-      return res.status(409).json({ message: 'Tag already exists' });
-    }
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.TAG_CREATED,
-      entityType: AUDIT_ENTITY.TAG,
-      entityId: String(q.rows[0].id),
-      entityDisplay: q.rows[0].name,
-      severity: AUDIT_SEVERITY.INFO,
-      after: pickSafeFields(q.rows[0], ['id', 'name', 'type', 'enabled'])
-    });
-
-    return res.status(201).json(q.rows[0]);
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
-  }
-});
-
-app.patch('/api/tags/:id', async (req, res) => {
-  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-
-  const tagId = parsePositiveInt(req.params?.id);
-  if (!tagId) return res.status(400).json({ message: 'Invalid id' });
-  if (typeof req.body?.enabled !== 'boolean') {
-    return res.status(400).json({ message: 'enabled must be boolean' });
-  }
-
-  try {
-    const beforeQ = await pool.query('SELECT id, name, type, enabled FROM tags WHERE id = $1', [tagId]);
-    if (!beforeQ.rowCount) return res.status(404).json({ message: 'Tag not found' });
-
-    const q = await pool.query(
-      `UPDATE tags
-       SET enabled = $2
-       WHERE id = $1
-       RETURNING id, name, type, enabled`,
-      [tagId, req.body.enabled]
-    );
-
-    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.TAG_UPDATED,
-      entityType: AUDIT_ENTITY.TAG,
-      entityId: String(q.rows[0].id),
-      entityDisplay: q.rows[0].name,
-      severity: AUDIT_SEVERITY.INFO,
-      before: pickSafeFields(beforeQ.rows[0], ['id', 'name', 'type', 'enabled']),
-      after: pickSafeFields(q.rows[0], ['id', 'name', 'type', 'enabled'])
-    });
-
-    return res.json(q.rows[0]);
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
-  }
-});
-
 app.get('/api/ioc/:id/tags', async (req, res) => {
   const iocId = parsePositiveInt(req.params?.id);
   if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
@@ -3973,7 +3875,10 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
          i.id AS ioc_id,
          t.id,
          t.name,
-         t.type
+         t.type,
+         t.category,
+         t.color,
+         t.enabled
        FROM ioc_items i
        LEFT JOIN ioc_tags it
          ON it.ioc_id = i.id
@@ -3989,7 +3894,11 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
     return res.json(q.rows.filter((row) => row.id != null).map((row) => ({
       id: row.id,
       name: row.name,
-      type: row.type
+      type: row.type,
+      category: row.category,
+      color: row.color,
+      is_active: Boolean(row.enabled),
+      enabled: Boolean(row.enabled)
     })));
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC tags', detail: err.message });

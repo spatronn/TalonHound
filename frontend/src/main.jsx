@@ -602,8 +602,9 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
-            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers'))}>Settings</Link>
+            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags'))}>Settings</Link>
             <Link to="/administration/audit-logs" style={subMenuStyle(isActive('/administration/audit-logs'))}>Audit Logs</Link>
+            <Link to="/administration/tags" style={subMenuStyle(isActive('/administration/tags'))}>Tags</Link>
             <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
             <Link to="/administration/enrichment-providers" style={subMenuStyle(isActive('/administration/enrichment-providers'))}>Enrichment Providers</Link>
           </div>
@@ -5213,6 +5214,239 @@ function ApiKeysPage() {
   );
 }
 
+const TAG_CATEGORY_OPTIONS = ['malware', 'campaign', 'actor', 'behavior', 'source', 'custom'];
+
+const EMPTY_TAG_FORM = {
+  name: '',
+  category: 'custom',
+  description: '',
+  color: '',
+  is_active: true
+};
+
+function TagManagerPage() {
+  const { isAdmin } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [tags, setTags] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showInactive, setShowInactive] = useState(true);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editingTag, setEditingTag] = useState(null);
+  const [form, setForm] = useState(EMPTY_TAG_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoading(true);
+    setError('');
+    try {
+      const params = showInactive ? { include_inactive: true } : { include_inactive: false };
+      const { data } = await api.get('/admin/tags', { params });
+      setTags(Array.isArray(data?.tags) ? data.tags : []);
+    } catch (err) {
+      setTags([]);
+      setError(apiErrorMessage(err, 'Failed to load tags'));
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin, showInactive]);
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+
+  function openCreateModal() {
+    setEditingTag(null);
+    setForm(EMPTY_TAG_FORM);
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  function openEditModal(tag) {
+    setEditingTag(tag);
+    setForm({
+      name: tag?.name || '',
+      category: tag?.category || 'custom',
+      description: tag?.description || '',
+      color: tag?.color || '',
+      is_active: tag?.is_active !== false
+    });
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  async function submitForm(e) {
+    e.preventDefault();
+    if (!isAdmin) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const payload = {
+        name: form.name,
+        category: form.category,
+        description: form.description,
+        color: form.color,
+        is_active: form.is_active
+      };
+      if (editingTag?.id) {
+        await api.put(`/admin/tags/${editingTag.id}`, payload);
+      } else {
+        await api.post('/admin/tags', payload);
+      }
+      setShowFormModal(false);
+      setEditingTag(null);
+      setForm(EMPTY_TAG_FORM);
+      await load();
+    } catch (err) {
+      setFormError(apiErrorMessage(err, editingTag ? 'Update failed' : 'Create failed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableTag(tag) {
+    if (!tag?.id || !isAdmin) return;
+    const ok = window.confirm(`Disable tag "${tag.name}"? Existing IOC assignments will remain visible, but the tag will no longer appear in pickers.`);
+    if (!ok) return;
+    setError('');
+    try {
+      await api.delete(`/admin/tags/${tag.id}`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Disable failed'));
+    }
+  }
+
+  async function enableTag(tag) {
+    if (!tag?.id || !isAdmin) return;
+    setError('');
+    try {
+      await api.put(`/admin/tags/${tag.id}`, { is_active: true });
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Enable failed'));
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <section style={ui.section}>
+          <h1 style={ui.pageTitle}>Tag Manager</h1>
+          <p style={ui.pageSub}>Admin access required.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Tag Manager</h1>
+            <p style={ui.pageSub}>Manage central IOC tags used across detail, edit, and feed filtering workflows.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={ui.checkLabel}>
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              Show inactive
+            </label>
+            <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Tag</button>
+          </div>
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div style={{ marginTop: 16, overflowX: 'auto' }}>
+          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>Name</th>
+                <th style={ui.th}>Category</th>
+                <th style={ui.th}>Description</th>
+                <th style={ui.th}>Color</th>
+                <th style={ui.th}>Active</th>
+                <th style={ui.th}>Created At</th>
+                <th style={ui.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+              ) : !tags.length ? (
+                <tr><td colSpan={7} style={ui.td}>No tags found.</td></tr>
+              ) : tags.map((tag) => (
+                <tr key={tag.id}>
+                  <td style={ui.td}>
+                    <div style={{ fontWeight: 600 }}>{tag.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{tag.slug || tag.name}</div>
+                  </td>
+                  <td style={ui.td}>{tag.category || '—'}</td>
+                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{tag.description || '—'}</td>
+                  <td style={ui.td}>
+                    {tag.color ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 14, height: 14, borderRadius: 4, background: tag.color, border: '1px solid #475569' }} />
+                        {tag.color}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td style={ui.td}>{tag.is_active ? 'Yes' : 'No'}</td>
+                  <td style={ui.td}>{formatUserDateTime(tag.created_at)}</td>
+                  <td style={ui.td}>
+                    <button type="button" style={ui.btn} onClick={() => openEditModal(tag)}>Edit</button>
+                    {tag.is_active ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableTag(tag).catch(() => {})}>Disable</button>
+                    ) : (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableTag(tag).catch(() => {})}>Enable</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {showFormModal ? (
+        <ModalOverlay onClose={() => setShowFormModal(false)}>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingTag ? 'Edit Tag' : 'Add Tag'}</h3>
+          <form onSubmit={submitForm}>
+            <FeedFormField ui={ui} label="Name" fullWidth>
+              <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. ransomware" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Category" fullWidth>
+              <select value={form.category} onChange={(e) => setForm((x) => ({ ...x, category: e.target.value }))} style={ui.select}>
+                {TAG_CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Description" fullWidth>
+              <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Color" helper="Optional hex or CSS color for UI chips." fullWidth>
+              <input value={form.color} onChange={(e) => setForm((x) => ({ ...x, color: e.target.value }))} style={ui.input} placeholder="#ef4444" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Active" fullWidth>
+              <label style={ui.checkLabel}>
+                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((x) => ({ ...x, is_active: e.target.checked }))} />
+                Tag is active
+              </label>
+            </FeedFormField>
+            {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
+              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingTag ? 'Save Changes' : 'Create Tag')}</button>
+            </div>
+          </form>
+        </ModalOverlay>
+      ) : null}
+    </AppShell>
+  );
+}
+
 function EnrichmentProvidersPage() {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
@@ -7228,8 +7462,7 @@ function IOCDetailsPage() {
   async function loadEnabledTags() {
     setTagsLoading(true);
     try {
-      const res = await api.get('/tags');
-      console.log('[ioc-tags] /tags response', res.data);
+      const res = await api.get('/tags', { params: { active: true } });
       setAllTags(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.log('[ioc-tags] list failed', err);
@@ -7317,12 +7550,7 @@ function IOCDetailsPage() {
   }
 
   useEffect(() => {
-    if (!tagDropdownOpen) return;
-    console.log('[ioc-tags] dropdown data', allTags);
-  }, [tagDropdownOpen, allTags]);
-
-  useEffect(() => {
-    if (!tagDropdownOpen) return;
+    if (!tagDropdownOpen) return undefined;
     const onDocMouseDown = (evt) => {
       if (!tagDropdownRef.current) return;
       if (!tagDropdownRef.current.contains(evt.target)) {
@@ -7347,7 +7575,9 @@ function IOCDetailsPage() {
         setIocTags((prev) => prev.some((t) => Number(t.id) === Number(tagId)) ? prev : [...prev, {
           id: selected.id,
           name: selected.name,
-          type: selected.type
+          type: selected.type,
+          category: selected.category,
+          is_active: selected.is_active !== false
         }]);
       }
     } catch (err) {
@@ -7509,7 +7739,22 @@ function IOCDetailsPage() {
               <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 {iocTags.length ? iocTags.map((tag) => (
-                  <span key={`tag-${tag.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid #475569', fontSize: 12 }}>
+                  <span
+                    key={`tag-${tag.id}`}
+                    title={tag.is_active === false ? 'Inactive tag (no longer available for new assignments)' : undefined}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '4px 8px',
+                      borderRadius: 999,
+                      border: `1px solid ${tag.is_active === false ? '#64748b' : (tag.color || '#475569')}`,
+                      fontSize: 12,
+                      color: tag.is_active === false ? '#94a3b8' : '#e2e8f0',
+                      background: tag.color && tag.is_active !== false ? `${tag.color}22` : 'transparent',
+                      opacity: tag.is_active === false ? 0.85 : 1
+                    }}
+                  >
                     {tag.name}
                     <button
                       type="button"
@@ -7535,7 +7780,7 @@ function IOCDetailsPage() {
                         value={tagSearch}
                         onChange={(e) => setTagSearch(e.target.value)}
                         placeholder="Search tag..."
-                        style={{ width: '100%', marginBottom: 8 }}
+                        style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0' }}
                       />
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {allTags
@@ -8091,6 +8336,7 @@ function App() {
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
           <Route path="/administration/audit-logs" element={<Protected><AuditLogsPage /></Protected>} />
+          <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />

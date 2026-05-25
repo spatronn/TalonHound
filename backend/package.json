@@ -16,7 +16,8 @@
     "syslog-receiver": "node migrate.js && node syslog-receiver.js",
     "backfill:ioc-activities": "node scripts/backfill-ioc-activities.js",
     "test:risk": "node --test lib/riskEngine.test.js risk/llmRiskAdvisor.test.js",
-    "test:audit": "node --test lib/auditRedaction.test.js"
+    "test:audit": "node --test lib/auditRedaction.test.js",
+    "test:tags": "node --test lib/tagHelpers.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
