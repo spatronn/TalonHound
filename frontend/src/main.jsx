@@ -7408,6 +7408,200 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
   </div>;
 }
 
+const RDAP_SUPPORTED_TYPES = new Set(['domain', 'url']);
+
+function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false }) {
+  const type = String(iocType || '').toLowerCase();
+  if (!RDAP_SUPPORTED_TYPES.has(type)) return null;
+
+  const encodedValue = encodeURIComponent(String(iocValue || '').trim());
+  const [state, setState] = useState({ status: 'loading', data: null, message: '' });
+  const [enriching, setEnriching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!iocValue || !active) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get(`/enrichment/rdap/${encodedValue}`, { params: { ioc_type: type } });
+      setHasLoaded(true);
+      if (data?.enriched) {
+        setState({ status: 'success', data, message: '' });
+      } else if (data?.last_enriched_at && data?.rdap_status && data.rdap_status !== 'success') {
+        setState({
+          status: 'failed',
+          data,
+          message: data?.error_message || 'RDAP lookup failed'
+        });
+      } else {
+        setState({ status: 'not_found', data, message: '' });
+      }
+    } catch {
+      setHasLoaded(true);
+      setState({ status: 'error', data: null, message: 'Failed to load RDAP enrichment' });
+    }
+  }, [encodedValue, iocValue, type, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
+
+  async function enrich(force = false) {
+    setEnriching(true);
+    try {
+      const params = { ioc_type: type };
+      if (force) params.force = 'true';
+      const { data } = await api.post(`/enrichment/rdap/${encodedValue}/refresh`, null, { params });
+      if (data?.enriched || data?.rdap_status === 'success') {
+        setState({ status: 'success', data, message: '' });
+      } else {
+        setState({
+          status: 'failed',
+          data,
+          message: data?.error_message || data?.message || 'RDAP lookup failed'
+        });
+      }
+    } catch (err) {
+      const msg = err?.response?.status === 429
+        ? 'RDAP rate limit reached. Try again later.'
+        : (err?.response?.data?.message || err?.response?.data?.error_message || 'RDAP lookup failed');
+      setState({ status: 'failed', data: err?.response?.data || null, message: msg });
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const d = state.data || {};
+  const signals = d.derived_signals || {};
+
+  const signalBadge = (label, on, tone = 'neutral') => {
+    const colors = tone === 'warn'
+      ? { b: '#92400e', bg: 'rgba(217,119,6,.14)', t: '#fcd34d' }
+      : tone === 'ok'
+        ? { b: '#166534', bg: 'rgba(22,163,74,.14)', t: '#86efac' }
+        : { b: '#475569', bg: 'rgba(71,85,105,.18)', t: '#cbd5e1' };
+    return (
+      <span key={label} style={{ padding: '4px 10px', borderRadius: 999, border: `1px solid ${colors.b}`, background: colors.bg, color: colors.t, fontSize: 11, fontWeight: 600 }}>
+        {label}{on === true ? '' : on === false ? ': No' : ''}
+      </span>
+    );
+  };
+
+  if (!active && !hasLoaded) return null;
+
+  if (state.status === 'loading') {
+    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading RDAP enrichment...</span></div>;
+  }
+
+  if (state.status === 'not_found') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>RDAP / WHOIS Enrichment</div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Registration data from RDAP (on-demand only)</div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ color: '#cbd5e1', fontSize: 13 }}>No RDAP enrichment yet</span>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>
+            {enriching ? 'Enriching…' : 'Enrich RDAP'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'error' || state.status === 'failed') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>RDAP / WHOIS Enrichment</div>
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message || 'RDAP lookup failed'}</span>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Retry'}</button>
+        </div>
+      </div>
+    );
+  }
+
+  const nsList = Array.isArray(d.nameservers) ? d.nameservers : [];
+  const statusList = Array.isArray(d.statuses) ? d.statuses : [];
+
+  return (
+    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+            RDAP / WHOIS Enrichment
+            {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
+          </div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+            Root domain: <b style={{ color: '#cbd5e1' }}>{d.root_domain || '-'}</b>
+            {d.last_enriched_at ? ` • Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
+          {isAdmin ? <button type="button" onClick={() => enrich(true).catch(() => {})} disabled={enriching} title="Admin force refresh (5 min cooldown)">Force</button> : null}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 12 }}>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Root Domain</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.root_domain || '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Registrar</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.registrar || '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Domain Age</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>
+            {Number.isFinite(Number(d.domain_age_days)) ? `${d.domain_age_days} days` : '-'}
+          </div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Registration Date</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{formatUserDateTime(d.registration_date)}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Changed</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{formatUserDateTime(d.last_changed_date)}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Expiration Date</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{formatUserDateTime(d.expiration_date)}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>RDAP Status</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.rdap_status || '-'}</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Nameservers</div>
+          <div style={{ fontSize: 13, color: '#e2e8f0' }}>{nsList.length ? nsList.join(', ') : '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0b1220' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Status Codes</div>
+          <div style={{ fontSize: 13, color: '#e2e8f0' }}>{statusList.length ? statusList.join(' • ') : '-'}</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {signalBadge('RDAP Available', signals.rdap_available, signals.rdap_available ? 'ok' : 'neutral')}
+        {signals.newly_registered_domain ? signalBadge('Newly Registered', true, 'warn') : null}
+        {signals.expiring_soon ? signalBadge('Expiring Soon', true, 'warn') : null}
+        {signals.redacted_or_private ? signalBadge('Privacy / Redacted', true, 'neutral') : null}
+        {signals.registrar_available ? signalBadge('Registrar Available', true, 'ok') : null}
+        {signals.nameservers_available ? signalBadge('Nameservers Available', true, 'ok') : null}
+      </div>
+    </div>
+  );
+}
+
 const TAG_PICKER_LIMIT = 5;
 const TAG_PICKER_ITEM_HEIGHT = 34;
 const TAG_PICKER_LIST_HEIGHT = TAG_PICKER_ITEM_HEIGHT * TAG_PICKER_LIMIT + 6 * (TAG_PICKER_LIMIT - 1);
@@ -8069,6 +8263,7 @@ function IOCDetailsPage() {
             {activeTab === 'intelligence' ? (
               <div style={{ display: 'grid', gap: 14 }}>
                 <VirusTotalEnrichmentCard iocId={summary.id} active={intelligenceTabActive} />
+                <RdapEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
 
             {!isHashObservable ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>

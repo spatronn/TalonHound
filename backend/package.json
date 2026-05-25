@@ -17,7 +17,8 @@
     "backfill:ioc-activities": "node scripts/backfill-ioc-activities.js",
     "test:risk": "node --test lib/riskEngine.test.js risk/llmRiskAdvisor.test.js",
     "test:audit": "node --test lib/auditRedaction.test.js",
-    "test:tags": "node --test lib/tagHelpers.test.js"
+    "test:tags": "node --test lib/tagHelpers.test.js",
+    "test:domain-root": "node --test lib/domainRoot.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -28,6 +29,7 @@
     "ioredis": "^5.4.1",
     "pg": "^8.16.3",
     "@clickhouse/client": "^1.10.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "tldts": "^6.1.86"
   }
 }

@@ -24,6 +24,7 @@ import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerTagRoutes } from './routes/tags.js';
+import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { pickSafeFields } from './lib/auditRedaction.js';
@@ -3836,6 +3837,7 @@ registerPublishedFeedRoutes(app, pool, audit);
 registerApiKeyRoutes(app, pool, audit);
 registerAuditLogRoutes(app, pool);
 registerTagRoutes(app, pool, audit);
+registerRdapEnrichmentRoutes(app, pool, audit);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();

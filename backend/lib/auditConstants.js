@@ -54,6 +54,9 @@ export const AUDIT_ACTION = Object.freeze({
   SETTINGS_UPDATED: 'settings.updated',
   ENRICHMENT_SETTINGS_UPDATED: 'enrichment.settings.updated',
   ENRICHMENT_KEY_REMOVED: 'enrichment.key.removed',
+  RDAP_ENRICHMENT_REQUESTED: 'enrichment.rdap.requested',
+  RDAP_ENRICHMENT_COMPLETED: 'enrichment.rdap.completed',
+  RDAP_ENRICHMENT_FAILED: 'enrichment.rdap.failed',
   AUTH_LOGIN_SUCCESS: 'auth.login.success',
   AUTH_LOGIN_FAILED: 'auth.login.failed',
   AUTH_LOGOUT: 'auth.logout'
@@ -117,6 +120,9 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.SETTINGS_UPDATED]: 'Settings Updated',
   [AUDIT_ACTION.ENRICHMENT_SETTINGS_UPDATED]: 'Enrichment Settings Updated',
   [AUDIT_ACTION.ENRICHMENT_KEY_REMOVED]: 'Enrichment API Key Removed',
+  [AUDIT_ACTION.RDAP_ENRICHMENT_REQUESTED]: 'RDAP Enrichment Requested',
+  [AUDIT_ACTION.RDAP_ENRICHMENT_COMPLETED]: 'RDAP Enrichment Completed',
+  [AUDIT_ACTION.RDAP_ENRICHMENT_FAILED]: 'RDAP Enrichment Failed',
   [AUDIT_ACTION.AUTH_LOGIN_SUCCESS]: 'Login Success',
   [AUDIT_ACTION.AUTH_LOGIN_FAILED]: 'Login Failed',
   [AUDIT_ACTION.AUTH_LOGOUT]: 'Logout'
