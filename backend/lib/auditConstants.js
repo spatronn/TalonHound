@@ -1,0 +1,127 @@
+/** @typedef {'info' | 'warning' | 'critical'} AuditSeverity */
+/** @typedef {'success' | 'failed'} AuditStatus */
+
+export const AUDIT_SEVERITY = Object.freeze({
+  INFO: 'info',
+  WARNING: 'warning',
+  CRITICAL: 'critical'
+});
+
+export const AUDIT_STATUS = Object.freeze({
+  SUCCESS: 'success',
+  FAILED: 'failed'
+});
+
+export const AUDIT_ACTION = Object.freeze({
+  IOC_CREATED: 'ioc.created',
+  IOC_DELETED: 'ioc.deleted',
+  IOC_TAG_ADDED: 'ioc.tag.added',
+  IOC_TAG_REMOVED: 'ioc.tag.removed',
+  IOC_SUPPRESSION_CREATED: 'ioc.suppression.created',
+  IOC_SUPPRESSION_UPDATED: 'ioc.suppression.updated',
+  IOC_SUPPRESSION_DELETED: 'ioc.suppression.deleted',
+  IOC_MATCH_EVENT_VERDICT_CHANGED: 'ioc.match_event.verdict_changed',
+  INCIDENT_UPDATED: 'incident.updated',
+  INCIDENT_CLOSED: 'incident.closed',
+  INCIDENT_REOPENED: 'incident.reopened',
+  INCIDENT_VERDICT_CHANGED: 'incident.verdict_changed',
+  INCIDENT_ASSIGNED: 'incident.assigned',
+  INCIDENT_AI_INSIGHT_UPDATED: 'incident.ai_insight.updated',
+  USER_CREATED: 'user.created',
+  USER_UPDATED: 'user.updated',
+  USER_DELETED: 'user.deleted',
+  USER_ROLE_CHANGED: 'user.role_changed',
+  USER_PASSWORD_CHANGED: 'user.password_changed',
+  USER_STATUS_CHANGED: 'user.status_changed',
+  API_KEY_CREATED: 'api_key.created',
+  API_KEY_UPDATED: 'api_key.updated',
+  API_KEY_ROTATED: 'api_key.rotated',
+  API_KEY_DELETED: 'api_key.deleted',
+  INTEGRATION_ENABLED: 'integration.enabled',
+  INTEGRATION_DISABLED: 'integration.disabled',
+  INTEGRATION_TRUST_LEVEL_CHANGED: 'integration.trust_level_changed',
+  INTEGRATION_SCHEDULE_CHANGED: 'integration.schedule_changed',
+  INTEGRATION_RUN_TRIGGERED: 'integration.run_triggered',
+  FEED_CREATED: 'feed.created',
+  FEED_UPDATED: 'feed.updated',
+  FEED_DELETED: 'feed.deleted',
+  FEED_RUN_TRIGGERED: 'feed.run_triggered',
+  FEED_ACCESS_KEY_CREATED: 'feed.access_key.created',
+  FEED_ACCESS_KEY_UPDATED: 'feed.access_key.updated',
+  FEED_ACCESS_KEY_REVOKED: 'feed.access_key.revoked',
+  TAG_CREATED: 'tag.created',
+  TAG_UPDATED: 'tag.updated',
+  SETTINGS_UPDATED: 'settings.updated',
+  ENRICHMENT_SETTINGS_UPDATED: 'enrichment.settings.updated',
+  ENRICHMENT_KEY_REMOVED: 'enrichment.key.removed',
+  AUTH_LOGIN_SUCCESS: 'auth.login.success',
+  AUTH_LOGIN_FAILED: 'auth.login.failed',
+  AUTH_LOGOUT: 'auth.logout'
+});
+
+export const AUDIT_ENTITY = Object.freeze({
+  IOC: 'ioc',
+  IOC_SUPPRESSION: 'ioc_suppression',
+  IOC_MATCH_EVENT: 'ioc_match_event',
+  INCIDENT: 'incident',
+  USER: 'user',
+  API_KEY: 'api_key',
+  INTEGRATION: 'integration',
+  FEED: 'feed',
+  TAG: 'tag',
+  SETTINGS: 'settings',
+  ENRICHMENT: 'enrichment',
+  AUTH: 'auth'
+});
+
+/** Human-readable labels for UI */
+export const AUDIT_ACTION_LABELS = Object.freeze({
+  [AUDIT_ACTION.IOC_CREATED]: 'IOC Created',
+  [AUDIT_ACTION.IOC_DELETED]: 'IOC Deleted',
+  [AUDIT_ACTION.IOC_TAG_ADDED]: 'IOC Tag Added',
+  [AUDIT_ACTION.IOC_TAG_REMOVED]: 'IOC Tag Removed',
+  [AUDIT_ACTION.IOC_SUPPRESSION_CREATED]: 'IOC Suppression Created',
+  [AUDIT_ACTION.IOC_SUPPRESSION_UPDATED]: 'IOC Suppression Updated',
+  [AUDIT_ACTION.IOC_SUPPRESSION_DELETED]: 'IOC Suppression Deleted',
+  [AUDIT_ACTION.IOC_MATCH_EVENT_VERDICT_CHANGED]: 'Match Event Verdict Changed',
+  [AUDIT_ACTION.INCIDENT_UPDATED]: 'Incident Updated',
+  [AUDIT_ACTION.INCIDENT_CLOSED]: 'Incident Closed',
+  [AUDIT_ACTION.INCIDENT_REOPENED]: 'Incident Reopened',
+  [AUDIT_ACTION.INCIDENT_VERDICT_CHANGED]: 'Incident Verdict Changed',
+  [AUDIT_ACTION.INCIDENT_ASSIGNED]: 'Incident Assigned',
+  [AUDIT_ACTION.INCIDENT_AI_INSIGHT_UPDATED]: 'AI Insight Updated',
+  [AUDIT_ACTION.USER_CREATED]: 'User Created',
+  [AUDIT_ACTION.USER_UPDATED]: 'User Updated',
+  [AUDIT_ACTION.USER_DELETED]: 'User Deleted',
+  [AUDIT_ACTION.USER_ROLE_CHANGED]: 'User Role Changed',
+  [AUDIT_ACTION.USER_PASSWORD_CHANGED]: 'Password Changed',
+  [AUDIT_ACTION.USER_STATUS_CHANGED]: 'User Status Changed',
+  [AUDIT_ACTION.API_KEY_CREATED]: 'API Key Created',
+  [AUDIT_ACTION.API_KEY_UPDATED]: 'API Key Updated',
+  [AUDIT_ACTION.API_KEY_ROTATED]: 'API Key Rotated',
+  [AUDIT_ACTION.API_KEY_DELETED]: 'API Key Revoked',
+  [AUDIT_ACTION.INTEGRATION_ENABLED]: 'Integration Enabled',
+  [AUDIT_ACTION.INTEGRATION_DISABLED]: 'Integration Disabled',
+  [AUDIT_ACTION.INTEGRATION_TRUST_LEVEL_CHANGED]: 'Integration Trust Level Changed',
+  [AUDIT_ACTION.INTEGRATION_SCHEDULE_CHANGED]: 'Integration Schedule Changed',
+  [AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED]: 'Integration Run Triggered',
+  [AUDIT_ACTION.FEED_CREATED]: 'Published Feed Created',
+  [AUDIT_ACTION.FEED_UPDATED]: 'Published Feed Updated',
+  [AUDIT_ACTION.FEED_DELETED]: 'Published Feed Deleted',
+  [AUDIT_ACTION.FEED_RUN_TRIGGERED]: 'Feed Regeneration Triggered',
+  [AUDIT_ACTION.FEED_ACCESS_KEY_CREATED]: 'Feed Access Key Created',
+  [AUDIT_ACTION.FEED_ACCESS_KEY_UPDATED]: 'Feed Access Key Updated',
+  [AUDIT_ACTION.FEED_ACCESS_KEY_REVOKED]: 'Feed Access Key Revoked',
+  [AUDIT_ACTION.TAG_CREATED]: 'Tag Created',
+  [AUDIT_ACTION.TAG_UPDATED]: 'Tag Updated',
+  [AUDIT_ACTION.SETTINGS_UPDATED]: 'Settings Updated',
+  [AUDIT_ACTION.ENRICHMENT_SETTINGS_UPDATED]: 'Enrichment Settings Updated',
+  [AUDIT_ACTION.ENRICHMENT_KEY_REMOVED]: 'Enrichment API Key Removed',
+  [AUDIT_ACTION.AUTH_LOGIN_SUCCESS]: 'Login Success',
+  [AUDIT_ACTION.AUTH_LOGIN_FAILED]: 'Login Failed',
+  [AUDIT_ACTION.AUTH_LOGOUT]: 'Logout'
+});
+
+export function auditActionLabel(action) {
+  return AUDIT_ACTION_LABELS[action] || String(action || '').replace(/\./g, ' › ');
+}

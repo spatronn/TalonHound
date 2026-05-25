@@ -1,5 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { pickSafeFields } from '../lib/auditRedaction.js';
 
 const FEED_ACCESS_TYPE = 'feed_access';
 
@@ -22,11 +24,16 @@ function toPublicApiKey(row) {
   };
 }
 
+function apiKeyAuditSnapshot(row) {
+  return pickSafeFields(toPublicApiKey(row), ['id', 'feed_id', 'name', 'enabled', 'feed_name', 'feed_ioc_type', 'status']);
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
+ * @param {{ auditSuccess: Function }} audit
  */
-export function registerApiKeyRoutes(app, pool) {
+export function registerApiKeyRoutes(app, pool, audit) {
   app.get('/api/api-keys', async (_req, res) => {
     try {
       const { rows } = await pool.query(
@@ -83,6 +90,17 @@ export function registerApiKeyRoutes(app, pool) {
         feed_ioc_type: feedQ.rows[0].ioc_type
       });
 
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.API_KEY_CREATED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(key.id),
+        entityDisplay: key.name,
+        severity: AUDIT_SEVERITY.WARNING,
+        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0].name, feed_ioc_type: feedQ.rows[0].ioc_type }),
+        metadata: { feed_id: feedId, feed_name: feedQ.rows[0].name, masked_key: `${rawToken.slice(0, 8)}…` }
+      });
+
       return res.status(201).json({
         api_key: key,
         token: rawToken,
@@ -104,6 +122,16 @@ export function registerApiKeyRoutes(app, pool) {
     }
 
     try {
+      const beforeQ = await pool.query(
+        `SELECT k.*, f.name AS feed_name, f.ioc_type AS feed_ioc_type
+         FROM published_feed_access_keys k
+         JOIN published_feeds f ON f.id = k.feed_id
+         WHERE k.id = $1 AND k.revoked_at IS NULL`,
+        [keyId]
+      );
+      if (!beforeQ.rows.length) return res.status(404).json({ message: 'API key not found' });
+      const before = apiKeyAuditSnapshot(beforeQ.rows[0]);
+
       const params = [keyId];
       const sets = [];
       if (name !== undefined) {
@@ -123,13 +151,25 @@ export function registerApiKeyRoutes(app, pool) {
       );
       if (!rows.length) return res.status(404).json({ message: 'API key not found' });
       const feedQ = await pool.query('SELECT name, ioc_type FROM published_feeds WHERE id = $1', [rows[0].feed_id]);
-      return res.json({
-        api_key: toPublicApiKey({
-          ...rows[0],
-          feed_name: feedQ.rows[0]?.name,
-          feed_ioc_type: feedQ.rows[0]?.ioc_type
-        })
+      const key = toPublicApiKey({
+        ...rows[0],
+        feed_name: feedQ.rows[0]?.name,
+        feed_ioc_type: feedQ.rows[0]?.ioc_type
       });
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.API_KEY_UPDATED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(key.id),
+        entityDisplay: key.name,
+        severity: AUDIT_SEVERITY.INFO,
+        before,
+        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0]?.name, feed_ioc_type: feedQ.rows[0]?.ioc_type }),
+        metadata: { changed_fields: { name: name !== undefined, enabled: enabled !== undefined } }
+      });
+
+      return res.json({ api_key: key });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to update API key', detail: err.message });
     }
@@ -141,7 +181,7 @@ export function registerApiKeyRoutes(app, pool) {
 
     try {
       const existing = await pool.query(
-        `SELECT k.id, k.feed_id, f.name AS feed_name, f.ioc_type AS feed_ioc_type
+        `SELECT k.id, k.feed_id, k.name, k.enabled, f.name AS feed_name, f.ioc_type AS feed_ioc_type
          FROM published_feed_access_keys k
          JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.id = $1 AND k.revoked_at IS NULL`,
@@ -163,6 +203,17 @@ export function registerApiKeyRoutes(app, pool) {
         feed_ioc_type: meta.feed_ioc_type
       });
 
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.API_KEY_ROTATED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(key.id),
+        entityDisplay: key.name,
+        severity: AUDIT_SEVERITY.WARNING,
+        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: meta.feed_name, feed_ioc_type: meta.feed_ioc_type }),
+        metadata: { feed_id: key.feed_id, masked_key: `${rawToken.slice(0, 8)}…` }
+      });
+
       return res.json({
         api_key: key,
         token: rawToken,
@@ -178,6 +229,16 @@ export function registerApiKeyRoutes(app, pool) {
     if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
 
     try {
+      const beforeQ = await pool.query(
+        `SELECT k.*, f.name AS feed_name, f.ioc_type AS feed_ioc_type
+         FROM published_feed_access_keys k
+         JOIN published_feeds f ON f.id = k.feed_id
+         WHERE k.id = $1 AND k.revoked_at IS NULL`,
+        [keyId]
+      );
+      if (!beforeQ.rows.length) return res.status(404).json({ message: 'API key not found' });
+      const before = apiKeyAuditSnapshot(beforeQ.rows[0]);
+
       const { rows } = await pool.query(
         `UPDATE published_feed_access_keys
          SET enabled = FALSE, revoked_at = NOW()
@@ -187,13 +248,25 @@ export function registerApiKeyRoutes(app, pool) {
       );
       if (!rows.length) return res.status(404).json({ message: 'API key not found' });
       const feedQ = await pool.query('SELECT name, ioc_type FROM published_feeds WHERE id = $1', [rows[0].feed_id]);
-      return res.json({
-        api_key: toPublicApiKey({
-          ...rows[0],
-          feed_name: feedQ.rows[0]?.name,
-          feed_ioc_type: feedQ.rows[0]?.ioc_type
-        })
+      const key = toPublicApiKey({
+        ...rows[0],
+        feed_name: feedQ.rows[0]?.name,
+        feed_ioc_type: feedQ.rows[0]?.ioc_type
       });
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.API_KEY_DELETED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(key.id),
+        entityDisplay: key.name,
+        severity: AUDIT_SEVERITY.CRITICAL,
+        before,
+        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0]?.name, feed_ioc_type: feedQ.rows[0]?.ioc_type }),
+        metadata: { revoked: true }
+      });
+
+      return res.json({ api_key: key });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to revoke API key', detail: err.message });
     }

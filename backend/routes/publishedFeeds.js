@@ -2,6 +2,8 @@ import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
 import { generatePublishedFeedSnapshot, normalizeFeedConfig } from '../lib/feedPublisherService.js';
 import { FEED_IOC_TYPES } from '../lib/feedFormatter.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { pickSafeFields } from '../lib/auditRedaction.js';
 
 function toPublicFeed(row, extra = {}) {
   if (!row) return null;
@@ -98,11 +100,24 @@ async function latestItemCount(pool, feedId) {
   return rows[0]?.item_count != null ? Number(rows[0].item_count) : null;
 }
 
+function feedAuditSnapshot(row) {
+  const pub = toPublicFeed(normalizeFeedConfig(row));
+  return pickSafeFields(pub, [
+    'id', 'name', 'enabled', 'ioc_type', 'min_confidence', 'time_window',
+    'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired'
+  ]);
+}
+
+function accessKeyAuditSnapshot(row) {
+  return pickSafeFields(toPublicAccessKey(row), ['id', 'feed_id', 'name', 'enabled']);
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
+ * @param {{ auditSuccess: Function }} audit
  */
-export function registerPublishedFeedRoutes(app, pool) {
+export function registerPublishedFeedRoutes(app, pool, audit) {
   app.get('/api/published-feeds', async (_req, res) => {
     try {
       const { rows } = await pool.query(
@@ -160,7 +175,17 @@ export function registerPublishedFeedRoutes(app, pool) {
           body.refresh_interval_minutes ?? 15
         ]
       );
-      return res.status(201).json({ feed: toPublicFeed(normalizeFeedConfig(rows[0])) });
+      const feed = toPublicFeed(normalizeFeedConfig(rows[0]));
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_CREATED,
+        entityType: AUDIT_ENTITY.FEED,
+        entityId: String(feed.id),
+        entityDisplay: feed.name,
+        severity: AUDIT_SEVERITY.INFO,
+        after: feedAuditSnapshot(rows[0])
+      });
+      return res.status(201).json({ feed });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to create published feed', detail: err.message });
     }
@@ -217,12 +242,28 @@ export function registerPublishedFeedRoutes(app, pool) {
     if (!fields.length) return res.status(400).json({ message: 'No fields to update' });
 
     try {
+      const beforeQ = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
+      if (!beforeQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
+      const before = feedAuditSnapshot(beforeQ.rows[0]);
+
       const { rows } = await pool.query(
         `UPDATE published_feeds SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
         params
       );
       if (!rows.length) return res.status(404).json({ message: 'Feed not found' });
-      return res.json({ feed: toPublicFeed(normalizeFeedConfig(rows[0])) });
+      const feed = toPublicFeed(normalizeFeedConfig(rows[0]));
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_UPDATED,
+        entityType: AUDIT_ENTITY.FEED,
+        entityId: String(feed.id),
+        entityDisplay: feed.name,
+        severity: AUDIT_SEVERITY.INFO,
+        before,
+        after: feedAuditSnapshot(rows[0]),
+        metadata: { changed_fields: Object.keys(body) }
+      });
+      return res.json({ feed });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to update feed', detail: err.message });
     }
@@ -232,8 +273,22 @@ export function registerPublishedFeedRoutes(app, pool) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
     try {
+      const beforeQ = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
+      if (!beforeQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
+      const before = feedAuditSnapshot(beforeQ.rows[0]);
+
       const { rowCount } = await pool.query('DELETE FROM published_feeds WHERE id = $1', [id]);
       if (!rowCount) return res.status(404).json({ message: 'Feed not found' });
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_DELETED,
+        entityType: AUDIT_ENTITY.FEED,
+        entityId: String(id),
+        entityDisplay: before?.name,
+        severity: AUDIT_SEVERITY.WARNING,
+        before
+      });
       return res.json({ ok: true });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to delete feed', detail: err.message });
@@ -247,6 +302,15 @@ export function registerPublishedFeedRoutes(app, pool) {
       const result = await generatePublishedFeedSnapshot(pool, id);
       const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
       const last_item_count = await latestItemCount(pool, id);
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_RUN_TRIGGERED,
+        entityType: AUDIT_ENTITY.FEED,
+        entityId: String(id),
+        entityDisplay: rows[0]?.name,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: { regeneration: pickSafeFields(result, ['status', 'item_count', 'generated_at']) }
+      });
       return res.json({
         feed: toPublicFeed(normalizeFeedConfig(rows[0]), { last_item_count }),
         regeneration: result
@@ -292,6 +356,17 @@ export function registerPublishedFeedRoutes(app, pool) {
         [feedId, name, tokenHash, req.body?.enabled]
       );
 
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_ACCESS_KEY_CREATED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(rows[0].id),
+        entityDisplay: rows[0].name,
+        severity: AUDIT_SEVERITY.WARNING,
+        after: accessKeyAuditSnapshot(rows[0]),
+        metadata: { feed_id: feedId, masked_key: `${rawToken.slice(0, 8)}…` }
+      });
+
       return res.status(201).json({
         access_key: toPublicAccessKey(rows[0]),
         token: rawToken,
@@ -315,6 +390,13 @@ export function registerPublishedFeedRoutes(app, pool) {
     }
 
     try {
+      const beforeQ = await pool.query(
+        'SELECT id, feed_id, name, enabled FROM published_feed_access_keys WHERE id = $1 AND feed_id = $2 AND revoked_at IS NULL',
+        [keyId, feedId]
+      );
+      if (!beforeQ.rows.length) return res.status(404).json({ message: 'Access key not found' });
+      const before = accessKeyAuditSnapshot(beforeQ.rows[0]);
+
       const params = [keyId, feedId];
       const sets = [];
       if (name !== undefined) {
@@ -332,6 +414,16 @@ export function registerPublishedFeedRoutes(app, pool) {
         params
       );
       if (!rows.length) return res.status(404).json({ message: 'Access key not found' });
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_ACCESS_KEY_UPDATED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(rows[0].id),
+        entityDisplay: rows[0].name,
+        severity: AUDIT_SEVERITY.INFO,
+        before,
+        after: accessKeyAuditSnapshot(rows[0])
+      });
       return res.json({ access_key: toPublicAccessKey(rows[0]) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to update access key', detail: err.message });
@@ -360,6 +452,16 @@ export function registerPublishedFeedRoutes(app, pool) {
         [keyId, feedId, tokenHash]
       );
 
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.API_KEY_ROTATED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(rows[0].id),
+        entityDisplay: rows[0].name,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { feed_id: feedId, masked_key: `${rawToken.slice(0, 8)}…` }
+      });
+
       return res.json({
         access_key: toPublicAccessKey(rows[0]),
         token: rawToken,
@@ -378,6 +480,12 @@ export function registerPublishedFeedRoutes(app, pool) {
     }
 
     try {
+      const beforeQ = await pool.query(
+        'SELECT id, feed_id, name, enabled FROM published_feed_access_keys WHERE id = $1 AND feed_id = $2 AND revoked_at IS NULL',
+        [keyId, feedId]
+      );
+      if (!beforeQ.rows.length) return res.status(404).json({ message: 'Access key not found' });
+
       const { rows } = await pool.query(
         `UPDATE published_feed_access_keys
          SET enabled = FALSE, revoked_at = NOW()
@@ -386,6 +494,18 @@ export function registerPublishedFeedRoutes(app, pool) {
         [keyId, feedId]
       );
       if (!rows.length) return res.status(404).json({ message: 'Access key not found' });
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.FEED_ACCESS_KEY_REVOKED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(rows[0].id),
+        entityDisplay: rows[0].name,
+        severity: AUDIT_SEVERITY.CRITICAL,
+        before: accessKeyAuditSnapshot(beforeQ.rows[0]),
+        after: accessKeyAuditSnapshot(rows[0])
+      });
+
       return res.json({ access_key: toPublicAccessKey(rows[0]) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to revoke access key', detail: err.message });

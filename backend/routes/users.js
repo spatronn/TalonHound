@@ -1,5 +1,7 @@
 import bcrypt from 'bcrypt';
 import { normalizeAppRole, requireRole, ROLES } from '../lib/rbac.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { pickSafeFields } from '../lib/auditRedaction.js';
 
 const USER_STATUSES = new Set(['active', 'passive']);
 
@@ -26,6 +28,10 @@ function toPublicUser(row) {
   };
 }
 
+function userAuditSnapshot(row) {
+  return pickSafeFields(toPublicUser(row), ['id', 'username', 'first_name', 'last_name', 'role', 'status']);
+}
+
 async function resolveInternalUserId(pool, publicId) {
   const val = String(publicId || '').trim();
   if (!isUuid(val)) return null;
@@ -37,8 +43,9 @@ async function resolveInternalUserId(pool, publicId) {
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
+ * @param {{ auditSuccess: Function, auditFailure?: Function }} audit
  */
-export function registerUserManagementRoutes(app, pool) {
+export function registerUserManagementRoutes(app, pool, audit) {
   app.post('/api/users', requireRole(ROLES.ADMIN), async (req, res) => {
     const username = String(req.body?.username || '').trim();
     const password = req.body?.password;
@@ -62,7 +69,18 @@ export function registerUserManagementRoutes(app, pool) {
          RETURNING public_id, username, first_name, last_name, role, status, created_at`,
         [username, hash, first_name, last_name, role]
       );
-      return res.status(201).json({ user: toPublicUser(rows[0]) });
+      const user = toPublicUser(rows[0]);
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.USER_CREATED,
+        entityType: AUDIT_ENTITY.USER,
+        entityId: user.id,
+        entityDisplay: user.username,
+        severity: AUDIT_SEVERITY.WARNING,
+        after: userAuditSnapshot(rows[0]),
+        metadata: { role: user.role }
+      });
+      return res.status(201).json({ user });
     } catch (err) {
       if (err.code === '23505') {
         return res.status(409).json({ message: 'Username already exists' });
@@ -166,15 +184,17 @@ export function registerUserManagementRoutes(app, pool) {
 
     try {
       const cur = await pool.query(
-        'SELECT id, username, password_hash FROM users WHERE id = $1',
+        'SELECT id, public_id, username, first_name, last_name, role, status, password_hash FROM users WHERE id = $1',
         [id]
       );
       if (!cur.rowCount) {
         return res.status(404).json({ message: 'User not found' });
       }
+      const before = userAuditSnapshot(cur.rows[0]);
 
       let password_hash = cur.rows[0].password_hash;
-      if (password != null && String(password).length > 0) {
+      const passwordChanged = password != null && String(password).length > 0;
+      if (passwordChanged) {
         if (typeof password !== 'string') {
           return res.status(400).json({ message: 'Invalid password' });
         }
@@ -200,7 +220,48 @@ export function registerUserManagementRoutes(app, pool) {
         ]
       );
 
-      return res.json({ user: toPublicUser(rows[0]) });
+      const user = toPublicUser(rows[0]);
+      const after = userAuditSnapshot(rows[0]);
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.USER_UPDATED,
+        entityType: AUDIT_ENTITY.USER,
+        entityId: user.id,
+        entityDisplay: user.username,
+        severity: AUDIT_SEVERITY.INFO,
+        before,
+        after,
+        metadata: { endpoint: 'PUT /api/users/:id' }
+      });
+
+      if (nextRole != null && nextRole !== before?.role) {
+        audit?.auditSuccess({
+          req,
+          action: AUDIT_ACTION.USER_ROLE_CHANGED,
+          entityType: AUDIT_ENTITY.USER,
+          entityId: user.id,
+          entityDisplay: user.username,
+          severity: AUDIT_SEVERITY.CRITICAL,
+          before: { role: before?.role },
+          after: { role: after?.role },
+          metadata: { previous_role: before?.role, new_role: after?.role }
+        });
+      }
+
+      if (passwordChanged) {
+        audit?.auditSuccess({
+          req,
+          action: AUDIT_ACTION.USER_PASSWORD_CHANGED,
+          entityType: AUDIT_ENTITY.USER,
+          entityId: user.id,
+          entityDisplay: user.username,
+          severity: AUDIT_SEVERITY.CRITICAL,
+          metadata: { changed_by_admin: true }
+        });
+      }
+
+      return res.json({ user });
     } catch (err) {
       if (err.code === '23505') {
         return res.status(409).json({ message: 'Username already exists' });
@@ -225,6 +286,13 @@ export function registerUserManagementRoutes(app, pool) {
     }
 
     try {
+      const cur = await pool.query(
+        'SELECT public_id, username, first_name, last_name, role, status FROM users WHERE id = $1',
+        [id]
+      );
+      if (!cur.rowCount) return res.status(404).json({ message: 'User not found' });
+      const before = userAuditSnapshot(cur.rows[0]);
+
       const { rows } = await pool.query(
         `UPDATE users SET status = $2::app_user_status WHERE id = $1
          RETURNING public_id, username, first_name, last_name, role, status, created_at`,
@@ -233,7 +301,21 @@ export function registerUserManagementRoutes(app, pool) {
       if (!rows.length) {
         return res.status(404).json({ message: 'User not found' });
       }
-      return res.json({ user: toPublicUser(rows[0]) });
+
+      const user = toPublicUser(rows[0]);
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.USER_STATUS_CHANGED,
+        entityType: AUDIT_ENTITY.USER,
+        entityId: user.id,
+        entityDisplay: user.username,
+        severity: next === 'passive' ? AUDIT_SEVERITY.CRITICAL : AUDIT_SEVERITY.WARNING,
+        before,
+        after: userAuditSnapshot(rows[0]),
+        metadata: { previous_status: before?.status, new_status: user.status }
+      });
+
+      return res.json({ user });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to update status', detail: err.message });
     }
@@ -245,10 +327,29 @@ export function registerUserManagementRoutes(app, pool) {
       return res.status(400).json({ message: 'Invalid user id' });
     }
     try {
+      const cur = await pool.query(
+        'SELECT public_id, username, first_name, last_name, role, status FROM users WHERE id = $1',
+        [id]
+      );
+      if (!cur.rowCount) return res.status(404).json({ message: 'User not found' });
+      const before = userAuditSnapshot(cur.rows[0]);
+
       const { rowCount } = await pool.query('DELETE FROM users WHERE id = $1', [id]);
       if (!rowCount) {
         return res.status(404).json({ message: 'User not found' });
       }
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.USER_DELETED,
+        entityType: AUDIT_ENTITY.USER,
+        entityId: before?.id,
+        entityDisplay: before?.username,
+        severity: AUDIT_SEVERITY.CRITICAL,
+        before,
+        metadata: { deleted_username: before?.username, deleted_email: before?.username }
+      });
+
       return res.status(204).end();
     } catch (err) {
       return res.status(500).json({ message: 'Failed to delete user', detail: err.message });

@@ -214,6 +214,37 @@ function apiErrorMessage(err, fallback = 'Request failed') {
   return String(err?.response?.data?.message || err?.message || fallback);
 }
 
+function auditSeverityBadgeStyle(severity) {
+  const s = String(severity || 'info').toLowerCase();
+  const base = { display: 'inline-block', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' };
+  if (s === 'critical') return { ...base, background: 'rgba(239,68,68,0.18)', color: '#fca5a5', border: '1px solid #991b1b' };
+  if (s === 'warning') return { ...base, background: 'rgba(251,191,36,0.15)', color: '#fcd34d', border: '1px solid #854d0e' };
+  return { ...base, background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid #475569' };
+}
+
+function auditStatusBadgeStyle(status) {
+  const s = String(status || 'success').toLowerCase();
+  const base = { display: 'inline-block', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' };
+  if (s === 'failed') return { ...base, background: 'rgba(239,68,68,0.18)', color: '#fca5a5', border: '1px solid #991b1b' };
+  return { ...base, background: 'rgba(34,197,94,0.15)', color: '#86efac', border: '1px solid #166534' };
+}
+
+function auditJsonBlock(value) {
+  if (value == null) return '—';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatAuditDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString();
+}
+
 async function fetchActiveSuppressionIndex(maxPages = 20) {
   const index = new Map();
   let page = 1;
@@ -571,7 +602,8 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
-            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys'))}>Settings</Link>
+            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers'))}>Settings</Link>
+            <Link to="/administration/audit-logs" style={subMenuStyle(isActive('/administration/audit-logs'))}>Audit Logs</Link>
             <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
             <Link to="/administration/enrichment-providers" style={subMenuStyle(isActive('/administration/enrichment-providers'))}>Enrichment Providers</Link>
           </div>
@@ -4646,6 +4678,234 @@ function PublishedFeedsPage() {
   );
 }
 
+function AuditLogsPage() {
+  const { isAdmin } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [actionFilter, setActionFilter] = useState('');
+  const [entityTypeFilter, setEntityTypeFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [detailItem, setDetailItem] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoading(true);
+    setError('');
+    try {
+      const params = { page, pageSize };
+      if (search) params.search = search;
+      if (actionFilter) params.action = actionFilter;
+      if (entityTypeFilter) params.entity_type = entityTypeFilter;
+      if (severityFilter) params.severity = severityFilter;
+      if (statusFilter) params.status = statusFilter;
+      if (dateFrom) params.date_from = new Date(dateFrom).toISOString();
+      if (dateTo) params.date_to = new Date(dateTo).toISOString();
+      const { data } = await api.get('/audit-logs', { params });
+      setItems(Array.isArray(data?.items) ? data.items : []);
+      setTotal(Number(data?.total || 0));
+    } catch (err) {
+      setItems([]);
+      setTotal(0);
+      setError(apiErrorMessage(err, 'Failed to load audit logs'));
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin, page, pageSize, search, actionFilter, entityTypeFilter, severityFilter, statusFilter, dateFrom, dateTo]);
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+
+  async function openDetail(row) {
+    if (!row?.id) return;
+    setDetailLoading(true);
+    setDetailItem(row);
+    try {
+      const { data } = await api.get(`/audit-logs/${row.id}`);
+      if (data?.item) setDetailItem(data.item);
+    } catch {
+      /* keep list row data */
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function applyFilters() {
+    setPage(1);
+    setSearch(searchInput.trim());
+  }
+
+  async function exportCsv() {
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (actionFilter) params.action = actionFilter;
+      if (entityTypeFilter) params.entity_type = entityTypeFilter;
+      if (severityFilter) params.severity = severityFilter;
+      if (statusFilter) params.status = statusFilter;
+      if (dateFrom) params.date_from = new Date(dateFrom).toISOString();
+      if (dateTo) params.date_to = new Date(dateTo).toISOString();
+      const res = await api.get('/audit-logs/export.csv', { params, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'audit-logs.csv';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Export failed'));
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <section style={ui.section}>
+          <h1 style={ui.pageTitle}>Audit Logs</h1>
+          <p style={ui.pageSub}>Admin access required.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Audit Logs</h1>
+            <p style={ui.pageSub}>Security and operational change history.</p>
+          </div>
+          <button type="button" style={ui.btn} onClick={exportCsv}>Export CSV</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 16 }}>
+          <input style={ui.input} placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
+          <input style={ui.input} placeholder="Action (e.g. ioc.created)" value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} />
+          <input style={ui.input} placeholder="Entity type" value={entityTypeFilter} onChange={(e) => { setEntityTypeFilter(e.target.value); setPage(1); }} />
+          <select style={ui.select} value={severityFilter} onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}>
+            <option value="">All severities</option>
+            <option value="info">Info</option>
+            <option value="warning">Warning</option>
+            <option value="critical">Critical</option>
+          </select>
+          <select style={ui.select} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
+            <option value="">All statuses</option>
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+          </select>
+          <input style={ui.input} type="datetime-local" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From" />
+          <input style={ui.input} type="datetime-local" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To" />
+          <select style={ui.select} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+            <option value={10}>10 / page</option>
+            <option value={25}>25 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
+          <button type="button" style={ui.btnPrimary} onClick={applyFilters}>Apply</button>
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div style={{ marginTop: 16, overflowX: 'auto' }}>
+          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>Date</th>
+                <th style={ui.th}>Actor</th>
+                <th style={ui.th}>Action</th>
+                <th style={ui.th}>Entity</th>
+                <th style={ui.th}>Severity</th>
+                <th style={ui.th}>Status</th>
+                <th style={ui.th}>IP</th>
+                <th style={ui.th}>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} style={ui.td}>Loading…</td></tr>
+              ) : !items.length ? (
+                <tr><td colSpan={8} style={ui.td}>No audit logs found.</td></tr>
+              ) : items.map((row) => (
+                <tr key={row.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(row)}>
+                  <td style={ui.td}>{formatAuditDate(row.created_at)}</td>
+                  <td style={ui.td}>{row.actor_username || row.actor_email || '—'}</td>
+                  <td style={ui.td}>
+                    <div style={{ fontWeight: 600 }}>{row.action_label || row.action}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{row.action}</div>
+                  </td>
+                  <td style={ui.td}>
+                    <div>{row.entity_display || row.entity_id || '—'}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{row.entity_type}{row.entity_id ? ` · ${row.entity_id}` : ''}</div>
+                  </td>
+                  <td style={ui.td}><span style={auditSeverityBadgeStyle(row.severity)}>{row.severity}</span></td>
+                  <td style={ui.td}><span style={auditStatusBadgeStyle(row.status)}>{row.status}</span></td>
+                  <td style={ui.td}>{row.ip_address || '—'}</td>
+                  <td style={ui.td}>{row.source || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>{total} total · page {page} / {totalPages}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" style={ui.btn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+            <button type="button" style={ui.btn} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
+          </div>
+        </div>
+      </section>
+
+      {detailItem ? (
+        <ModalOverlay onClose={() => setDetailItem(null)}>
+          <h3 style={{ margin: '0 0 12px', color: '#f8fafc' }}>Audit Log #{detailItem.id}</h3>
+          {detailLoading ? <p style={ui.helper}>Loading details…</p> : null}
+          <div style={{ display: 'grid', gap: 10, maxHeight: '70vh', overflowY: 'auto' }}>
+            <div><strong>Date:</strong> {formatAuditDate(detailItem.created_at)}</div>
+            <div><strong>Actor:</strong> {detailItem.actor_username || detailItem.actor_email || '—'} ({detailItem.actor_role || '—'})</div>
+            <div><strong>Action:</strong> {detailItem.action_label || detailItem.action} <span style={{ color: '#64748b' }}>({detailItem.action})</span></div>
+            <div><strong>Entity:</strong> {detailItem.entity_type} · {detailItem.entity_display || detailItem.entity_id || '—'}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span style={auditSeverityBadgeStyle(detailItem.severity)}>{detailItem.severity}</span>
+              <span style={auditStatusBadgeStyle(detailItem.status)}>{detailItem.status}</span>
+            </div>
+            <div><strong>Request:</strong> IP {detailItem.ip_address || '—'} · {detailItem.user_agent || '—'} · req {detailItem.request_id || '—'} · source {detailItem.source || '—'}</div>
+            <div>
+              <strong>before_data</strong>
+              <pre style={{ ...ui.code, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' }}>{auditJsonBlock(detailItem.before_data)}</pre>
+            </div>
+            <div>
+              <strong>after_data</strong>
+              <pre style={{ ...ui.code, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' }}>{auditJsonBlock(detailItem.after_data)}</pre>
+            </div>
+            <div>
+              <strong>metadata</strong>
+              <pre style={{ ...ui.code, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' }}>{auditJsonBlock(detailItem.metadata)}</pre>
+            </div>
+          </div>
+          <div style={{ marginTop: 14, textAlign: 'right' }}>
+            <button type="button" style={ui.btn} onClick={() => setDetailItem(null)}>Close</button>
+          </div>
+        </ModalOverlay>
+      ) : null}
+    </AppShell>
+  );
+}
+
 function ApiKeysPage() {
   const { canWrite } = useSession();
   const [searchParams] = useSearchParams();
@@ -7830,6 +8090,7 @@ function App() {
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
+          <Route path="/administration/audit-logs" element={<Protected><AuditLogsPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />

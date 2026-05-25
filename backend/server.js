@@ -22,6 +22,10 @@ import { registerUserManagementRoutes } from './routes/users.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
+import { registerAuditLogRoutes } from './routes/auditLogs.js';
+import { createAuditLogService } from './lib/auditLogService.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
+import { pickSafeFields } from './lib/auditRedaction.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -48,6 +52,7 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'demo'
 });
+const audit = createAuditLogService(pool);
 
 const redisUrl = getRedisUrl();
 const queueName = process.env.QUEUE_NAME || 'integration-imports';
@@ -1340,6 +1345,9 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
     const reviewedBy = String(req.user?.username || req.user?.email || '').trim() || null;
     const assignTo = String(req.body?.assigned_to || '').trim() || reviewedBy;
 
+    const beforeQ = await pool.query('SELECT id, verdict, assigned_to, note FROM ioc_match_events WHERE id = $1', [id]);
+    const before = beforeQ.rows[0] || null;
+
     const q = await pool.query(
       `UPDATE ioc_match_events
        SET verdict = $2::text,
@@ -1364,6 +1372,18 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
     if (!q.rowCount) {
       return res.status(404).json({ message: 'IOC match event not found' });
     }
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_MATCH_EVENT_VERDICT_CHANGED,
+      entityType: AUDIT_ENTITY.IOC_MATCH_EVENT,
+      entityId: String(id),
+      entityDisplay: `event #${id}`,
+      severity: AUDIT_SEVERITY.INFO,
+      before: pickSafeFields(before, ['id', 'verdict', 'assigned_to', 'note']),
+      after: pickSafeFields(q.rows[0], ['id', 'verdict', 'assigned_to', 'note']),
+      metadata: { endpoint: 'PATCH /api/ioc/match-events/:id/verdict' }
+    });
 
     return res.json({ item: q.rows[0] });
   } catch (err) {
@@ -1760,6 +1780,17 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
       ...llmRisk,
       risk_score: llmRisk.final_risk_score
     };
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INCIDENT_AI_INSIGHT_UPDATED,
+      entityType: AUDIT_ENTITY.INCIDENT,
+      entityId: String(context?.id || incident.id),
+      entityDisplay: String(context?.ioc_value || context?.matched_ioc || incident.id).slice(0, 512),
+      severity: AUDIT_SEVERITY.INFO,
+      after: pickSafeFields(llmRisk, ['final_risk_score', 'llm_risk_adjustment', 'llm_risk_reason', 'llm_risk_summary']),
+      metadata: { incident_version: incidentVersion, forced: true }
+    });
 
     return res.json({ item });
   } catch (err) {
@@ -2749,7 +2780,47 @@ app.patch('/api/incidents/:id', async (req, res) => {
     }
 
     await tx.query('COMMIT');
-    return res.json({ item: updQ.rows[0] });
+
+    const updated = updQ.rows[0];
+    const beforeSnap = pickSafeFields(current, ['id', 'verdict', 'status', 'note', 'assigned_to']);
+    const afterSnap = pickSafeFields(updated, ['id', 'verdict', 'status', 'note', 'assigned_to']);
+    const display = String(updated.ioc_value || updated.matched_ioc || incident.id || idRaw).slice(0, 512);
+
+    let action = AUDIT_ACTION.INCIDENT_UPDATED;
+    if (current.status !== 'closed' && nextStatus === 'closed') action = AUDIT_ACTION.INCIDENT_CLOSED;
+    else if (current.status === 'closed' && nextStatus === 'open') action = AUDIT_ACTION.INCIDENT_REOPENED;
+    else if (String(current.verdict || '') !== String(nextVerdict || '')) action = AUDIT_ACTION.INCIDENT_VERDICT_CHANGED;
+
+    audit.auditSuccess({
+      req,
+      action,
+      entityType: AUDIT_ENTITY.INCIDENT,
+      entityId: String(updated.id || incident.id),
+      entityDisplay: display,
+      severity: nextStatus === 'closed' ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+      before: beforeSnap,
+      after: afterSnap,
+      metadata: {
+        propagate_to_events: propagateToEvents,
+        take_ownership: takeOwnership,
+        closed_by_source: 'web'
+      }
+    });
+
+    if (takeOwnership && String(current.assigned_to || '') !== String(updated.assigned_to || '')) {
+      audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.INCIDENT_ASSIGNED,
+        entityType: AUDIT_ENTITY.INCIDENT,
+        entityId: String(updated.id || incident.id),
+        entityDisplay: display,
+        severity: AUDIT_SEVERITY.INFO,
+        before: { assigned_to: current.assigned_to },
+        after: { assigned_to: updated.assigned_to }
+      });
+    }
+
+    return res.json({ item: updated });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
     console.error('[incident-patch] failed', err);
@@ -3393,7 +3464,7 @@ const INTEGRATION_JOBS = {
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
 const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *']);
 
-app.post('/api/integrations/run-now', async (_req, res) => {
+app.post('/api/integrations/run-now', async (req, res) => {
   try {
     const keys = Object.keys(INTEGRATION_JOBS);
     const jobs = await Promise.all(keys.map((key) => importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key })));
@@ -3405,6 +3476,16 @@ app.post('/api/integrations/run-now', async (_req, res) => {
        DO UPDATE SET status='queued', updated_at=NOW()`,
       [String(j.id), keys[idx], INTEGRATION_JOBS[keys[idx]]]
     )));
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: 'all',
+      entityDisplay: 'All integrations',
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: { count: jobs.length, job_ids: jobs.map((j) => String(j.id)) }
+    });
 
     return res.status(202).json({ ok: true, queued: true, count: jobs.length, job_ids: jobs.map((j) => j.id) });
   } catch (err) {
@@ -3428,6 +3509,17 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
        DO UPDATE SET status='queued', updated_at=NOW()`,
       [String(job.id), key, jobName]
     );
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: key,
+      entityDisplay: key,
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: { job_id: String(job.id), job_name: jobName }
+    });
+
     return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
@@ -3441,6 +3533,12 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
   }
 
   try {
+    const prev = await pool.query(
+      `SELECT key, name, active, schedule_cron, trust_level FROM integration_feeds WHERE key = $1`,
+      [key]
+    );
+    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
+
     const result = await pool.query(
       `UPDATE integration_feeds
        SET active = $2, updated_at = NOW()
@@ -3449,9 +3547,16 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
       [key, req.body.active]
     );
 
-    if (!result.rowCount) {
-      return res.status(404).json({ message: 'Integration not found' });
-    }
+    audit.auditSuccess({
+      req,
+      action: req.body.active ? AUDIT_ACTION.INTEGRATION_ENABLED : AUDIT_ACTION.INTEGRATION_DISABLED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: key,
+      entityDisplay: result.rows[0]?.name || key,
+      severity: AUDIT_SEVERITY.INFO,
+      before: pickSafeFields(prev.rows[0], ['key', 'name', 'active']),
+      after: pickSafeFields(result.rows[0], ['key', 'name', 'active'])
+    });
 
     return res.json(result.rows[0]);
   } catch (err) {
@@ -3468,6 +3573,9 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
   }
 
   try {
+    const prev = await pool.query('SELECT key, trust_level FROM integration_feeds WHERE key = $1', [key]);
+    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
+
     const result = await pool.query(
       `UPDATE integration_feeds
        SET trust_level = $2, updated_at = NOW()
@@ -3476,9 +3584,16 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
       [key, trustLevel]
     );
 
-    if (!result.rowCount) {
-      return res.status(404).json({ message: 'Integration not found' });
-    }
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_TRUST_LEVEL_CHANGED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: key,
+      entityDisplay: key,
+      severity: AUDIT_SEVERITY.INFO,
+      before: pickSafeFields(prev.rows[0], ['trust_level']),
+      after: pickSafeFields(result.rows[0], ['trust_level'])
+    });
 
     return res.json(result.rows[0]);
   } catch (err) {
@@ -3495,6 +3610,9 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
   }
 
   try {
+    const prev = await pool.query('SELECT key, schedule_cron FROM integration_feeds WHERE key = $1', [key]);
+    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
+
     const result = await pool.query(
       `UPDATE integration_feeds
        SET schedule_cron = $2, updated_at = NOW()
@@ -3503,9 +3621,16 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
       [key, scheduleCron]
     );
 
-    if (!result.rowCount) {
-      return res.status(404).json({ message: 'Integration not found' });
-    }
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_SCHEDULE_CHANGED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: key,
+      entityDisplay: key,
+      severity: AUDIT_SEVERITY.INFO,
+      before: pickSafeFields(prev.rows[0], ['schedule_cron']),
+      after: pickSafeFields(result.rows[0], ['schedule_cron'])
+    });
 
     return res.json(result.rows[0]);
   } catch (err) {
@@ -3518,6 +3643,14 @@ app.post('/api/auth/login', async (req, res) => {
   const loginId = String(email || '').trim();
 
   if (!loginId || password == null || typeof password !== 'string') {
+    audit.auditFailure({
+      req,
+      action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
+      entityType: AUDIT_ENTITY.AUTH,
+      entityDisplay: loginId || 'unknown',
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: { attempted_username_or_email: loginId || null, reason: 'missing_credentials' }
+    });
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
@@ -3531,6 +3664,14 @@ app.post('/api/auth/login', async (req, res) => {
       const ok = await bcrypt.compare(password, u.password_hash);
       if (ok) {
         if (String(u.status || 'active') === 'passive') {
+          audit.auditFailure({
+            req,
+            action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
+            entityType: AUDIT_ENTITY.AUTH,
+            entityDisplay: u.username,
+            severity: AUDIT_SEVERITY.WARNING,
+            metadata: { attempted_username_or_email: loginId, reason: 'account_passive' }
+          });
           return res.status(401).json({ message: 'Invalid email or password' });
         }
         const token = signUserToken({
@@ -3541,6 +3682,19 @@ app.post('/api/auth/login', async (req, res) => {
         });
         appendAuthCookie(req, res, token);
         appendCsrfCookie(req, res);
+        audit.auditSuccess({
+          req,
+          action: AUDIT_ACTION.AUTH_LOGIN_SUCCESS,
+          entityType: AUDIT_ENTITY.AUTH,
+          entityId: String(u.public_id || ''),
+          entityDisplay: u.username,
+          severity: AUDIT_SEVERITY.INFO,
+          actorPublicId: u.public_id ? String(u.public_id) : null,
+          actorUsername: u.username,
+          actorEmail: u.username,
+          actorRole: u.role,
+          metadata: { method: 'password' }
+        });
         return res.json({
           user: {
             email: u.username,
@@ -3550,6 +3704,14 @@ app.post('/api/auth/login', async (req, res) => {
           }
         });
       }
+      audit.auditFailure({
+        req,
+        action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
+        entityType: AUDIT_ENTITY.AUTH,
+        entityDisplay: loginId,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { attempted_username_or_email: loginId, reason: 'invalid_password' }
+      });
     }
   } catch {
     /* fall through to env-based demo login if DB unavailable */
@@ -3559,15 +3721,41 @@ app.post('/api/auth/login', async (req, res) => {
     const token = signUserToken(loginId);
     appendAuthCookie(req, res, token);
     appendCsrfCookie(req, res);
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.AUTH_LOGIN_SUCCESS,
+      entityType: AUDIT_ENTITY.AUTH,
+      entityDisplay: loginId,
+      severity: AUDIT_SEVERITY.INFO,
+      actorUsername: loginId,
+      actorEmail: loginId,
+      actorRole: ROLES.ADMIN,
+      metadata: { method: 'demo_env' }
+    });
     return res.json({
       user: { email: loginId, username: loginId, id: null, role: ROLES.ADMIN }
     });
   }
 
+  audit.auditFailure({
+    req,
+    action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
+    entityType: AUDIT_ENTITY.AUTH,
+    entityDisplay: loginId,
+    severity: AUDIT_SEVERITY.WARNING,
+    metadata: { attempted_username_or_email: loginId, reason: 'invalid_credentials' }
+  });
   return res.status(401).json({ message: 'Invalid email or password' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
+  audit.auditSuccess({
+    req,
+    action: AUDIT_ACTION.AUTH_LOGOUT,
+    entityType: AUDIT_ENTITY.AUTH,
+    entityDisplay: req.user?.username || req.user?.email || 'user',
+    severity: AUDIT_SEVERITY.INFO
+  });
   clearAuthCookie(req, res);
   clearCsrfCookie(req, res);
   res.status(204).end();
@@ -3625,16 +3813,27 @@ app.put('/api/users/me/preferences', async (req, res) => {
       RETURNING email, timezone
     `;
     const { rows } = await pool.query(q, [email, timezone]);
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.SETTINGS_UPDATED,
+      entityType: AUDIT_ENTITY.SETTINGS,
+      entityId: email,
+      entityDisplay: 'User timezone preference',
+      severity: AUDIT_SEVERITY.INFO,
+      after: pickSafeFields(rows[0], ['email', 'timezone']),
+      metadata: { setting: 'timezone' }
+    });
     return res.json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to save preferences', detail: err.message });
   }
 });
 
-registerUserManagementRoutes(app, pool);
+registerUserManagementRoutes(app, pool, audit);
 registerPublicFeedRoutes(app, pool);
-registerPublishedFeedRoutes(app, pool);
-registerApiKeyRoutes(app, pool);
+registerPublishedFeedRoutes(app, pool, audit);
+registerApiKeyRoutes(app, pool, audit);
+registerAuditLogRoutes(app, pool);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -3708,6 +3907,16 @@ app.post('/api/tags', async (req, res) => {
       return res.status(409).json({ message: 'Tag already exists' });
     }
 
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.TAG_CREATED,
+      entityType: AUDIT_ENTITY.TAG,
+      entityId: String(q.rows[0].id),
+      entityDisplay: q.rows[0].name,
+      severity: AUDIT_SEVERITY.INFO,
+      after: pickSafeFields(q.rows[0], ['id', 'name', 'type', 'enabled'])
+    });
+
     return res.status(201).json(q.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
@@ -3724,6 +3933,9 @@ app.patch('/api/tags/:id', async (req, res) => {
   }
 
   try {
+    const beforeQ = await pool.query('SELECT id, name, type, enabled FROM tags WHERE id = $1', [tagId]);
+    if (!beforeQ.rowCount) return res.status(404).json({ message: 'Tag not found' });
+
     const q = await pool.query(
       `UPDATE tags
        SET enabled = $2
@@ -3733,6 +3945,18 @@ app.patch('/api/tags/:id', async (req, res) => {
     );
 
     if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.TAG_UPDATED,
+      entityType: AUDIT_ENTITY.TAG,
+      entityId: String(q.rows[0].id),
+      entityDisplay: q.rows[0].name,
+      severity: AUDIT_SEVERITY.INFO,
+      before: pickSafeFields(beforeQ.rows[0], ['id', 'name', 'type', 'enabled']),
+      after: pickSafeFields(q.rows[0], ['id', 'name', 'type', 'enabled'])
+    });
+
     return res.json(q.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
@@ -3795,6 +4019,17 @@ app.post('/api/ioc/:id/tags', async (req, res) => {
       [iocId, iocObservableType, tagId, req.user?.id ?? null]
     );
 
+    const tagMeta = await pool.query('SELECT id, name, type FROM tags WHERE id = $1', [tagId]);
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_TAG_ADDED,
+      entityType: AUDIT_ENTITY.IOC,
+      entityId: String(iocId),
+      entityDisplay: String(iocExists.rows[0]?.observable || iocId),
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: { tag: pickSafeFields(tagMeta.rows[0], ['id', 'name', 'type']) }
+    });
+
     return res.status(201).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to add IOC tag', detail: err.message });
@@ -3809,6 +4044,9 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
   if (!tagId) return res.status(400).json({ message: 'Invalid tag id' });
 
   try {
+    const iocQ = await pool.query('SELECT observable FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    const tagQ = await pool.query('SELECT id, name FROM tags WHERE id = $1 LIMIT 1', [tagId]);
+
     await pool.query(
       `DELETE FROM ioc_tags
        WHERE ioc_id = $1
@@ -3818,6 +4056,17 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
          )`,
       [iocId, tagId]
     );
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_TAG_REMOVED,
+      entityType: AUDIT_ENTITY.IOC,
+      entityId: String(iocId),
+      entityDisplay: String(iocQ.rows[0]?.observable || iocId),
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: { tag: pickSafeFields(tagQ.rows[0], ['id', 'name']) }
+    });
+
     return res.status(204).end();
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete IOC tag', detail: err.message });
@@ -3869,6 +4118,15 @@ app.post('/api/ioc/ip', async (req, res) => {
          VALUES ('add', $1, $2, $3)`,
         [rows[0].id, rows[0].observable, rows[0].observable_type]
       ).catch(() => {});
+      audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_CREATED,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: String(rows[0].public_id || rows[0].id),
+        entityDisplay: rows[0].observable,
+        severity: AUDIT_SEVERITY.INFO,
+        after: pickSafeFields(rows[0], ['id', 'public_id', 'observable', 'observable_type', 'source_name', 'confidence', 'category'])
+      });
       return res.status(201).json(rows[0]);
     }
 
@@ -3908,6 +4166,16 @@ app.post('/api/ioc/ip', async (req, res) => {
       [rows[0].id, rows[0].observable, rows[0].observable_type]
     ).catch(() => {});
 
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_CREATED,
+      entityType: AUDIT_ENTITY.IOC,
+      entityId: String(rows[0].public_id || rows[0].id),
+      entityDisplay: rows[0].observable,
+      severity: AUDIT_SEVERITY.INFO,
+      after: pickSafeFields(rows[0], ['id', 'public_id', 'observable', 'observable_type', 'source_name', 'confidence', 'category'])
+    });
+
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
@@ -3933,6 +4201,16 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
        VALUES ('delete', $1, $2, $3)`,
       [row.id, row.observable, row.observable_type]
     ).catch(() => {});
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_DELETED,
+      entityType: AUDIT_ENTITY.IOC,
+      entityId: String(row.public_id || row.id),
+      entityDisplay: row.observable,
+      severity: AUDIT_SEVERITY.WARNING,
+      before: pickSafeFields(row, ['id', 'public_id', 'observable', 'observable_type'])
+    });
 
     return res.json({ ok: true, deleted_public_id: row.public_id });
   } catch (err) {
@@ -5007,7 +5285,20 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
     );
 
     await client.query('COMMIT');
-    return res.json({ status: 'suppressed', suppression: upsertQ.rows[0] });
+
+    const sup = upsertQ.rows[0];
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_SUPPRESSION_CREATED,
+      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
+      entityId: String(sup.id),
+      entityDisplay: iocValue,
+      severity: AUDIT_SEVERITY.WARNING,
+      after: pickSafeFields(sup, ['id', 'ioc_value', 'ioc_type', 'scope', 'reason', 'expires_at', 'active']),
+      metadata: { ioc_value: iocValue, ioc_type: iocType, scope, expires_at: sup.expires_at, reason }
+    });
+
+    return res.json({ status: 'suppressed', suppression: sup });
   } catch (err) {
     await client.query('ROLLBACK');
     return res.status(500).json({ message: 'Failed to suppress IOC', detail: err.message });
@@ -5032,9 +5323,23 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
        WHERE lower(ioc_value) = lower($1)
          AND lower(ioc_type) = lower($2)
          AND active = TRUE
-       RETURNING id`,
+       RETURNING id, ioc_value, ioc_type`,
       [iocValue, iocType]
     );
+
+    if (q.rowCount) {
+      audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_SUPPRESSION_DELETED,
+        entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
+        entityId: String(q.rows[0].id),
+        entityDisplay: iocValue,
+        severity: AUDIT_SEVERITY.WARNING,
+        before: pickSafeFields(q.rows[0], ['id', 'ioc_value', 'ioc_type']),
+        metadata: { via: 'ioc_unsuppress' }
+      });
+    }
+
     return res.json({ ok: true, updated: q.rowCount || 0 });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
@@ -5129,8 +5434,30 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
     params.push(active); sets.push(`active = $${params.length}`);
   }
   try {
+    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
+    if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+
     const q = await pool.query(`UPDATE ioc_suppressions SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params);
     if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_SUPPRESSION_UPDATED,
+      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
+      entityId: String(q.rows[0].id),
+      entityDisplay: q.rows[0].ioc_value,
+      severity: AUDIT_SEVERITY.WARNING,
+      before: pickSafeFields(beforeQ.rows[0], ['id', 'ioc_value', 'ioc_type', 'reason', 'expires_at', 'active']),
+      after: pickSafeFields(q.rows[0], ['id', 'ioc_value', 'ioc_type', 'reason', 'expires_at', 'active']),
+      metadata: {
+        ioc_value: q.rows[0].ioc_value,
+        ioc_type: q.rows[0].ioc_type,
+        scope: q.rows[0].scope,
+        expires_at: q.rows[0].expires_at,
+        reason: q.rows[0].reason
+      }
+    });
+
     return res.json({ item: q.rows[0] });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
@@ -5142,8 +5469,23 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
   const id = parsePositiveInt(req.params?.id);
   if (!id) return res.status(400).json({ message: 'Invalid id' });
   try {
-    const q = await pool.query('UPDATE ioc_suppressions SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
+    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
+    if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+
+    const q = await pool.query('UPDATE ioc_suppressions SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id, ioc_value, ioc_type', [id]);
     if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IOC_SUPPRESSION_DELETED,
+      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
+      entityId: String(id),
+      entityDisplay: beforeQ.rows[0].ioc_value,
+      severity: AUDIT_SEVERITY.WARNING,
+      before: pickSafeFields(beforeQ.rows[0], ['id', 'ioc_value', 'ioc_type', 'reason', 'active']),
+      metadata: { via: 'suppression_delete_endpoint' }
+    });
+
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
@@ -5802,12 +6144,34 @@ app.put('/api/admin/enrichment-providers/virustotal', async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,NOW())
       ON CONFLICT(provider) DO UPDATE SET enabled=$2, ttl_hours=$3, timeout_ms=$4, api_key=COALESCE(NULLIF($5,''), threat_intel_provider_configs.api_key), updated_at=NOW()`,
       [VT_PROVIDER, enabled, ttl, timeout, apiKey]);
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.ENRICHMENT_SETTINGS_UPDATED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: VT_PROVIDER,
+      entityDisplay: 'VirusTotal',
+      severity: AUDIT_SEVERITY.INFO,
+      after: { enabled, ttl_hours: ttl, timeout_ms: timeout, api_key_updated: Boolean(apiKey) },
+      metadata: { provider: VT_PROVIDER }
+    });
     return res.json({ ok: true });
   } catch { return res.status(500).json({ message: 'Failed to update provider config' }); }
 });
 
 app.post('/api/admin/enrichment-providers/virustotal/remove-key', async (req, res) => {
-  try { await pool.query(`UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER]); return res.json({ ok: true }); }
+  try {
+    await pool.query(`UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER]);
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.ENRICHMENT_KEY_REMOVED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: VT_PROVIDER,
+      entityDisplay: 'VirusTotal',
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: { provider: VT_PROVIDER }
+    });
+    return res.json({ ok: true });
+  }
   catch { return res.status(500).json({ message: 'Failed to remove key' }); }
 });
 
