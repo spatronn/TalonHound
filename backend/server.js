@@ -25,7 +25,7 @@ import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
-import { buildIocEnvironmentImpact, emptyIocEnvironmentImpact } from './lib/iocEnvironmentImpact.js';
+import { buildIocEnvironmentImpact, computeIncidentRiskScore, emptyIocEnvironmentImpact } from './lib/iocEnvironmentImpact.js';
 import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
@@ -5278,24 +5278,30 @@ app.get('/api/ioc/details', async (req, res) => {
     const incidentsPromise = (async () => {
       const incidentsQ = `
         SELECT
-          a.id,
-          a.incident_id,
+          a.*,
           a.first_seen,
           a.last_seen,
-          COALESCE(stats.detection_events, 0)::int AS detection_events,
+          COALESCE(ev.event_count, 0)::int AS detection_events,
           rel.evidence_logs AS evidence_logs,
-          COALESCE(stats.observed_hosts, 0)::int AS observed_hosts,
+          COALESCE(ev.asset_count, 0)::int AS observed_hosts,
           a.verdict,
           a.status,
-          NULL::double precision AS risk_score
+          COALESCE(ev.accepted_connections, 0) AS accepted_connections,
+          COALESCE(ev.blocked_connections, 0) AS blocked_connections,
+          ev.dominant_source_type,
+          ev.dominant_parser_source,
+          ev.detection_type,
+          ev.has_endpoint_evidence,
+          ev.has_proxy_evidence,
+          ev.has_dns_evidence,
+          ev.has_firewall_evidence,
+          ev.confidence
         FROM ioc_activity a
         LEFT JOIN LATERAL (
-          SELECT
-            COUNT(*)::int AS detection_events,
-            COUNT(DISTINCT NULLIF(m.host_name, ''))::int AS observed_hosts
+          SELECT ${IOC_MATCH_EVENT_STATS_SELECT}
           FROM ioc_match_events m
           WHERE m.activity_id = a.id
-        ) stats ON TRUE
+        ) ev ON TRUE
         LEFT JOIN LATERAL (
           SELECT NULLIF(COUNT(*)::bigint, 0) AS evidence_logs
           FROM ioc_match_event_related_logs rl
@@ -5309,7 +5315,18 @@ app.get('/api/ioc/details', async (req, res) => {
       const tInc = Date.now();
       const incidentsRes = await pool.query(incidentsQ, [observable, observableType]);
       pgMs += Date.now() - tInc;
-      return incidentsRes.rows || [];
+      return (incidentsRes.rows || []).map((row) => ({
+        id: row.id,
+        incident_id: row.incident_id,
+        first_seen: row.first_seen,
+        last_seen: row.last_seen,
+        detection_events: row.detection_events,
+        evidence_logs: row.evidence_logs,
+        observed_hosts: row.observed_hosts,
+        verdict: row.verdict,
+        status: row.status,
+        risk_score: computeIncidentRiskScore(row)
+      }));
     })();
 
     const impactPromise = buildIocEnvironmentImpact(pool, observable, observableType);
@@ -5345,6 +5362,10 @@ app.get('/api/ioc/details', async (req, res) => {
       const n = Number(it?.evidence_logs);
       return acc + (Number.isFinite(n) && n > 0 ? n : 0);
     }, 0);
+
+    if (impact && Number(impact.evidence_log_count || 0) < totalEvidenceLogsCount) {
+      impact.evidence_log_count = totalEvidenceLogsCount;
+    }
 
     const summary = {
       id: rows[0].id,

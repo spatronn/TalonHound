@@ -1,14 +1,42 @@
 import { IOC_MATCH_EVENT_STATS_SELECT } from './incidentEventAggSql.js';
-import { calculateIncidentRisk } from './riskEngine.js';
+import { normEventSourceType } from './eventSourceNorm.js';
+import { computeIncidentRiskScore } from './incidentRiskScore.js';
+import { query as clickhouseQuery } from './clickhouse.js';
 
-function normSourceType(row = {}) {
-  const st = String(row?.source_type || '').toLowerCase();
-  if (st) return st;
-  const p = String(row?.parser_source || '').toLowerCase();
-  if (/(proxy|url|http|webproxy|swg|squid)/.test(p)) return 'proxy';
-  if (/(^|\s)dns(\s|$)|resolver|query|bind_dns/.test(p)) return 'dns';
-  if (/(firewall|traffic|forti|palo|pan-os|checkpoint|netflow)/.test(p)) return 'firewall';
-  return 'generic';
+function escapeChString(v) {
+  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+export { computeIncidentRiskScore } from './incidentRiskScore.js';
+
+async function resolveEvidenceLogCount(pool, observable, observableType) {
+  const evidenceQ = `
+    SELECT COUNT(*)::bigint AS c
+    FROM ioc_match_event_related_logs rl
+    INNER JOIN ioc_activity a ON a.id = rl.activity_id
+    WHERE lower(a.ioc_value) = lower($1)
+      AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, ''))
+  `;
+  const evidenceRes = await pool.query(evidenceQ, [observable, observableType]);
+  const pgCount = Number(evidenceRes.rows?.[0]?.c);
+  const pg = Number.isFinite(pgCount) ? pgCount : 0;
+
+  try {
+    const o = escapeChString(String(observable || '').trim().toLowerCase());
+    const t = escapeChString(String(observableType || '').trim().toLowerCase());
+    const chRows = await clickhouseQuery(`
+      SELECT countDistinct(evidence_hash) AS c
+      FROM security_evidence.incident_related_logs
+      WHERE lower(matched_ioc) = lower('${o}')
+        AND lower(observable_type) = lower('${t}')
+    `);
+    const ch = Number(chRows?.[0]?.c || 0);
+    if (Number.isFinite(ch) && ch > 0) return ch;
+  } catch {
+    // ClickHouse unavailable — fall back to Postgres count
+  }
+
+  return pg;
 }
 
 export function emptyIocEnvironmentImpact() {
@@ -84,23 +112,15 @@ export async function buildIocEnvironmentImpact(pool, observable, observableType
       END)::int FROM activities a) AS related_closed_incidents
   `;
 
-  const evidenceQ = `
-    SELECT COUNT(*)::bigint AS c
-    FROM ioc_match_event_related_logs rl
-    INNER JOIN ioc_activity a ON a.id = rl.activity_id
-    WHERE lower(a.ioc_value) = lower($1)
-      AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, ''))
-  `;
-
   const sourceQ = `
-    SELECT m.source_type, m.parser_source, COUNT(*)::int AS c
+    SELECT m.source_type, m.parser_source, m.raw_log_snapshot, COUNT(*)::int AS c
     FROM ioc_match_events m
     INNER JOIN ioc_activity a ON a.id = m.activity_id
     WHERE lower(a.ioc_value) = lower($1)
       AND lower(COALESCE(a.ioc_type, '')) = lower(COALESCE($2, ''))
-    GROUP BY m.source_type, m.parser_source
+    GROUP BY m.source_type, m.parser_source, m.raw_log_snapshot
     ORDER BY c DESC
-    LIMIT 20
+    LIMIT 50
   `;
 
   const riskRowsQ = `
@@ -132,11 +152,11 @@ export async function buildIocEnvironmentImpact(pool, observable, observableType
       AND COALESCE(ev.event_count, 0) > 0
   `;
 
-  const [aggRes, evidenceRes, sourceRes, riskRes] = await Promise.all([
+  const [aggRes, sourceRes, riskRes, evidence_log_count] = await Promise.all([
     pool.query(aggQ, [observable, observableType]),
-    pool.query(evidenceQ, [observable, observableType]),
     pool.query(sourceQ, [observable, observableType]),
-    pool.query(riskRowsQ, [observable, observableType])
+    pool.query(riskRowsQ, [observable, observableType]),
+    resolveEvidenceLogCount(pool, observable, observableType)
   ]);
 
   const agg = aggRes.rows[0] || {};
@@ -150,25 +170,19 @@ export async function buildIocEnvironmentImpact(pool, observable, observableType
 
   const sourceMap = new Map();
   for (const row of sourceRes.rows || []) {
-    const key = normSourceType(row);
+    const key = normEventSourceType(row);
     sourceMap.set(key, (sourceMap.get(key) || 0) + Number(row.c || 0));
   }
   const source_breakdown = [...sourceMap.entries()]
     .map(([source_type, count]) => ({ source_type, count }))
     .sort((a, b) => b.count - a.count);
 
-  const riskScores = (riskRes.rows || []).map((row) => {
-    const withHits = { ...row, total_hits: Math.max(Number(row.total_hits || 0), Number(row.event_count || 0)) };
-    return Number(calculateIncidentRisk(withHits).risk_score || 0);
-  }).filter((n) => Number.isFinite(n));
+  const riskScores = (riskRes.rows || []).map((row) => computeIncidentRiskScore(row)).filter((n) => Number.isFinite(n));
 
   const maxRisk = riskScores.length ? Math.max(...riskScores) : null;
   const avgRisk = riskScores.length
     ? Number((riskScores.reduce((a, b) => a + b, 0) / riskScores.length).toFixed(2))
     : null;
-
-  const evidenceCount = Number(evidenceRes.rows?.[0]?.c);
-  const evidence_log_count = Number.isFinite(evidenceCount) ? evidenceCount : 0;
 
   return {
     incident_count: incidentCount,
