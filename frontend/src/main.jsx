@@ -7304,26 +7304,32 @@ function LegacyIOCDetailsRedirect() {
   );
 }
 
-function VirusTotalEnrichmentCard({ iocId }) {
+function VirusTotalEnrichmentCard({ iocId, active = true }) {
   const [state, setState] = useState({ status: 'loading', summary: null, message: '', fetchedAt: null, expiresAt: null });
   const [open, setOpen] = useState(true);
   const [showAll, setShowAll] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    if (!iocId) return;
+    if (!iocId || !active) return;
     setState((s) => ({ ...s, status: 'loading' }));
     try {
       const { data } = await api.get(`/ioc/${iocId}/enrichments/virustotal`);
       if (data?.status === 'api_key_missing') return setState({ status: 'api_key_missing', summary: null, message: 'VirusTotal API key is not configured.', fetchedAt: null, expiresAt: null });
       if (data?.status === 'not_found') return setState({ status: 'not_found', summary: null, message: 'VirusTotal enrichment has not been run yet.', fetchedAt: null, expiresAt: null });
+      setHasLoaded(true);
       return setState({ status: 'success', summary: data?.summary || null, message: '', fetchedAt: data?.fetched_at || null, expiresAt: data?.expires_at || null });
     } catch {
+      setHasLoaded(true);
       setState({ status: 'error', summary: null, message: 'VirusTotal enrichment failed.', fetchedAt: null, expiresAt: null });
     }
-  }, [iocId]);
+  }, [iocId, active]);
 
-  useEffect(() => { load().catch(() => {}); }, [load]);
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
 
   async function refresh() {
     setRefreshing(true);
@@ -7349,6 +7355,8 @@ function VirusTotalEnrichmentCard({ iocId }) {
 
   const hasDetails = state.status === 'success';
   const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+
+  if (!active && !hasLoaded) return null;
 
   if (!hasDetails) {
     if (state.status === 'loading') return <div style={compactCardStyle}><span style={{ color:'#94a3b8', fontSize:13 }}>Loading VirusTotal enrichment...</span></div>;
@@ -7404,6 +7412,246 @@ const TAG_PICKER_LIMIT = 5;
 const TAG_PICKER_ITEM_HEIGHT = 34;
 const TAG_PICKER_LIST_HEIGHT = TAG_PICKER_ITEM_HEIGHT * TAG_PICKER_LIMIT + 6 * (TAG_PICKER_LIMIT - 1);
 
+const IOC_DETAIL_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'intelligence', label: 'Intelligence' },
+  { id: 'environment', label: 'Environment Impact' },
+  { id: 'evidence', label: 'Evidence & Events' },
+  { id: 'audit', label: 'Audit / History', adminOnly: true }
+];
+
+function IocDetailTabBar({ tabs, activeTab, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, borderBottom: '1px solid #334155', paddingBottom: 10 }}>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => onChange(t.id)}
+          style={{
+            padding: '8px 14px',
+            borderRadius: 8,
+            border: `1px solid ${activeTab === t.id ? '#93c5fd' : '#475569'}`,
+            background: activeTab === t.id ? 'rgba(59,130,246,0.15)' : '#0f172a',
+            color: activeTab === t.id ? '#93c5fd' : '#cbd5e1',
+            fontWeight: activeTab === t.id ? 700 : 500,
+            cursor: 'pointer'
+          }}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function IocEnvironmentMiniSummary({ impact }) {
+  const imp = impact || {};
+  const observed = imp.observed_in_environment === true || Number(imp.incident_count || 0) > 0;
+  const items = [
+    { label: 'Incidents', value: imp.incident_count ?? 0 },
+    { label: 'Detection Events', value: imp.detection_event_count ?? 0 },
+    { label: 'Observed Hosts', value: imp.observed_host_count ?? 0 },
+    { label: 'Allowed / Blocked / Unknown', value: `${imp.allowed_count ?? 0} / ${imp.blocked_count ?? 0} / ${imp.unknown_action_count ?? 0}`, text: true },
+    { label: 'Max Incident Risk', value: imp.max_incident_risk_score != null ? Number(imp.max_incident_risk_score).toFixed(2) : 'N/A', text: true },
+    { label: 'Avg Incident Risk', value: imp.avg_incident_risk_score != null ? Number(imp.avg_incident_risk_score).toFixed(2) : 'N/A', text: true },
+    { label: 'Open / Closed Incidents', value: `${imp.related_open_incidents ?? 0} / ${imp.related_closed_incidents ?? 0}`, text: true }
+  ];
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
+      <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>Environment Summary</div>
+      {!observed ? (
+        <div style={{ color: '#94a3b8', fontSize: 13 }}>Not observed in environment telemetry yet.</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+          {items.map((c) => (
+            <div key={c.label} style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px', background: '#111827' }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.label}</div>
+              <div style={{ fontSize: c.text ? 13 : 18, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IocDetectionEventsPanel({ observable, enabled }) {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!enabled || !observable) return undefined;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const { data } = await api.get('/ioc/match-events', { params: { limit: 100, q: observable } });
+        if (cancelled) return;
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const norm = String(observable || '').trim().toLowerCase();
+        setRows(items.filter((r) => String(r.matched_ioc || '').trim().toLowerCase() === norm));
+      } catch {
+        if (!cancelled) {
+          setRows([]);
+          setError('Failed to load detection events');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [enabled, observable]);
+
+  if (!enabled) return null;
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>
+        Detection Events {rows.length ? `(${rows.length})` : ''}
+      </div>
+      <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1100, fontSize: 13 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', background: '#111827' }}>
+            <th style={{ width: 80 }}>ID</th>
+            <th style={{ width: 170 }}>Detected At</th>
+            <th style={{ width: 200 }}>Context</th>
+            <th style={{ width: 130 }}>Detection</th>
+            <th style={{ width: 120 }}>Verdict</th>
+            <th style={{ width: 160 }}>Source</th>
+            <th style={{ width: 120 }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? <tr><td colSpan={7} style={{ color: '#94a3b8' }}>Loading detection events...</td></tr> : error ? <tr><td colSpan={7} style={{ color: '#fca5a5' }}>{error}</td></tr> : rows.length ? rows.map((r) => {
+            const verdict = String(r.verdict || '').toLowerCase();
+            const vm = verdict === 'fp'
+              ? { label: 'FP', color: '#ef4444' }
+              : verdict === 'tp'
+                ? { label: 'TP', color: '#22c55e' }
+                : verdict === 'in_progress'
+                  ? { label: 'In Progress', color: '#f59e0b' }
+                  : { label: 'Unreviewed', color: '#94a3b8' };
+            return (
+              <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
+                <td>{r.id}</td>
+                <td>{formatUserDateTime(r.detected_at || r.event_time || r.created_at)}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{normalizeEventContext(r)}</td>
+                <td>
+                  <span style={{
+                    display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                    border: `1px solid ${r.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e'}`,
+                    color: r.detection_mode === 'retroactive' ? '#f59e0b' : '#22c55e', background: '#020617'
+                  }}>
+                    {r.detection_mode === 'retroactive' ? 'Retroactive' : 'Real-Time'}
+                  </span>
+                </td>
+                <td>
+                  <span style={{
+                    display: 'inline-block', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+                    border: `1px solid ${vm.color}`, color: vm.color, background: '#020617'
+                  }}>{vm.label}</span>
+                </td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {(r.source_names && r.source_names[0]) || r.source_name || '-'}
+                </td>
+                <td>
+                  <button type="button" onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                </td>
+              </tr>
+            );
+          }) : <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No detection events found for this IOC.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IocRelatedLogsByIncidentsPanel({ incidents, enabled }) {
+  if (!enabled) return null;
+  const list = (incidents || []).filter((inc) => inc.incident_id || inc.id);
+  if (!list.length) {
+    return (
+      <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 13 }}>
+        No related incidents — evidence logs are shown per incident when available.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      {list.map((inc) => (
+        <div key={`ioc-ev-${inc.id}-${inc.incident_id}`}>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>Incident #{inc.incident_id ?? '-'}</div>
+          <IncidentRelatedLogsTable incidentId={inc.incident_id || inc.id} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function IocAuditHistoryPanel({ iocId, enabled }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!enabled || !iocId) return undefined;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const { data } = await api.get('/audit-logs', { params: { entity_type: 'ioc', entity_id: String(iocId), page: 1, pageSize: 50 } });
+        if (cancelled) return;
+        setItems(Array.isArray(data?.items) ? data.items : []);
+      } catch (err) {
+        if (!cancelled) {
+          setItems([]);
+          setError(apiErrorMessage(err, 'Failed to load audit history'));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [enabled, iocId]);
+
+  if (!enabled) return null;
+
+  if (loading) return <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading audit history...</div>;
+  if (error) return <div style={{ color: '#fca5a5', fontSize: 13 }}>{error}</div>;
+  if (!items.length) {
+    return <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 13 }}>No audit history available yet for this IOC.</div>;
+  }
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Audit / History</div>
+      <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', background: '#111827' }}>
+            <th>Time</th><th>Action</th><th>Actor</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((row) => (
+            <tr key={row.id} style={{ borderTop: '1px solid #334155' }}>
+              <td>{formatUserDateTime(row.created_at)}</td>
+              <td>{row.action_label || row.action}</td>
+              <td>{row.actor_username || row.actor_email || '-'}</td>
+              <td>{row.status || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
@@ -7430,6 +7678,7 @@ function IOCDetailsPage() {
   const [removeSaving, setRemoveSaving] = useState(false);
   const [removeError, setRemoveError] = useState('');
   const [actionToast, setActionToast] = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
 
   async function load() {
     setLoading(true);
@@ -7492,6 +7741,14 @@ function IOCDetailsPage() {
     })();
     return () => { active = false; };
   }, [detailsPublicId]);
+
+  useEffect(() => {
+    setActiveTab('overview');
+  }, [detailsPublicId]);
+
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'audit') setActiveTab('overview');
+  }, [isAdmin, activeTab]);
 
   useEffect(() => {
     const iocId = Number(data?.summary?.id);
@@ -7641,12 +7898,17 @@ function IOCDetailsPage() {
     return t && t !== "-";
   }));
 
+  const visibleTabs = IOC_DETAIL_TABS.filter((t) => !t.adminOnly || isAdmin);
+  const evidenceTabActive = activeTab === 'evidence';
+  const intelligenceTabActive = activeTab === 'intelligence';
+  const auditTabActive = activeTab === 'audit' && isAdmin;
+
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#0f172a', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div>
-            <h2 style={{ margin: 0 }}>IOC Details</h2>
+            <h2 style={{ margin: 0, color: '#f1f5f9' }}>IOC Details</h2>
             <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 13 }}>Analyst-focused detail page for faster triage</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -7695,15 +7957,118 @@ function IOCDetailsPage() {
               </div>
             ) : null}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.observable_type || '-'}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700 }}>{summary.source_count || 0}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700 }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
-              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Evidence Logs</div><div style={{ fontSize: 18, fontWeight: 700 }}>{Number(data.summary?.evidence_logs_count || 0)}</div></div>
-            </div>
+            <IocDetailTabBar tabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
 
-            <VirusTotalEnrichmentCard iocId={summary.id} iocValue={summary.observable} iocType={summary.observable_type} />
+            {activeTab === 'overview' ? (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.observable_type || '-'}</div></div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.source_count || 0}</div></div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Evidence Logs</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{Number(data.summary?.evidence_logs_count || 0)}</div></div>
+                </div>
+
+                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                  <div style={{ fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Confidence Set</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {(summary.confidence_set || []).length ? summary.confidence_set.map((c) => <span key={c} style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #475569', color: '#e2e8f0' }}>{c}</span>) : <span style={{ color: '#94a3b8' }}>-</span>}
+                  </div>
+                </div>
+
+                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                  <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {iocTags.length ? iocTags.map((tag) => (
+                      <span
+                        key={`tag-${tag.id}`}
+                        title={tag.is_active === false ? 'Inactive tag (no longer available for new assignments)' : undefined}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '4px 8px',
+                          borderRadius: 999,
+                          border: `1px solid ${tag.is_active === false ? '#64748b' : (tag.color || '#475569')}`,
+                          fontSize: 12,
+                          color: tag.is_active === false ? '#94a3b8' : '#e2e8f0',
+                          background: tag.color && tag.is_active !== false ? `${tag.color}22` : 'transparent',
+                          opacity: tag.is_active === false ? 0.85 : 1
+                        }}
+                      >
+                        {tag.name}
+                        <button
+                          type="button"
+                          onClick={() => removeIocTag(tag.id).catch(() => {})}
+                          title="Remove tag"
+                          aria-label={`Remove ${tag.name}`}
+                          style={{ padding: 0, border: 'none', background: 'transparent', color: '#94a3b8', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1 }}
+                          disabled={tagsSaving}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )) : <span style={{ color: '#94a3b8', fontSize: 12 }}>No tags</span>}
+
+                    <div style={{ position: 'relative' }} ref={tagDropdownRef}>
+                      <button type="button" onClick={() => setTagDropdownOpen((v) => !v)} disabled={tagsSaving}>
+                        + Add Tag {tagsLoading || tagsSaving ? '⏳' : ''}
+                      </button>
+
+                      {tagDropdownOpen ? (
+                        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 260, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', zIndex: 30, padding: 8, overflow: 'hidden' }}>
+                          <input
+                            value={tagSearch}
+                            onChange={(e) => setTagSearch(e.target.value)}
+                            placeholder="Search tag..."
+                            autoFocus
+                            style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
+                          />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: TAG_PICKER_LIST_HEIGHT, overflow: 'hidden' }}>
+                            {tagsLoading ? (
+                              <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>Loading…</div>
+                            ) : tagSuggestions.map((t) => (
+                              <button
+                                key={`opt-tag-${t.id}`}
+                                type="button"
+                                onClick={() => addIocTag(t.id).catch(() => {})}
+                                disabled={tagsSaving}
+                                style={{
+                                  textAlign: 'left',
+                                  border: '1px solid #334155',
+                                  borderRadius: 8,
+                                  padding: '6px 8px',
+                                  minHeight: TAG_PICKER_ITEM_HEIGHT,
+                                  boxSizing: 'border-box',
+                                  background: '#111827',
+                                  color: '#e5e7eb',
+                                  cursor: tagsSaving ? 'wait' : 'pointer',
+                                  flex: '0 0 auto'
+                                }}
+                              >
+                                {t.name}
+                              </button>
+                            ))}
+                            {!tagsLoading && !tagSuggestions.length && !String(tagSearch || '').trim() ? (
+                              <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tags available</div>
+                            ) : null}
+                            {!tagsLoading && !tagSuggestions.length && String(tagSearch || '').trim() ? (
+                              <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tag found</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                <IocEnvironmentMiniSummary impact={data.impact} />
+              </div>
+            ) : null}
+
+            {activeTab === 'intelligence' ? (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <VirusTotalEnrichmentCard iocId={summary.id} active={intelligenceTabActive} />
 
             {!isHashObservable ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
@@ -7748,100 +8113,7 @@ function IOCDetailsPage() {
               </div>
             ) : null}
 
-            <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
-              <div style={{ fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Confidence Set</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {(summary.confidence_set || []).length ? summary.confidence_set.map((c) => <span key={c} style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #475569' }}>{c}</span>) : <span>-</span>}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
-              <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                {iocTags.length ? iocTags.map((tag) => (
-                  <span
-                    key={`tag-${tag.id}`}
-                    title={tag.is_active === false ? 'Inactive tag (no longer available for new assignments)' : undefined}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '4px 8px',
-                      borderRadius: 999,
-                      border: `1px solid ${tag.is_active === false ? '#64748b' : (tag.color || '#475569')}`,
-                      fontSize: 12,
-                      color: tag.is_active === false ? '#94a3b8' : '#e2e8f0',
-                      background: tag.color && tag.is_active !== false ? `${tag.color}22` : 'transparent',
-                      opacity: tag.is_active === false ? 0.85 : 1
-                    }}
-                  >
-                    {tag.name}
-                    <button
-                      type="button"
-                      onClick={() => removeIocTag(tag.id).catch(() => {})}
-                      title="Remove tag"
-                      aria-label={`Remove ${tag.name}`}
-                      style={{ padding: 0, border: 'none', background: 'transparent', color: '#94a3b8', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1 }}
-                      disabled={tagsSaving}
-                    >
-                      ×
-                    </button>
-                  </span>
-                )) : <span style={{ color: '#94a3b8', fontSize: 12 }}>No tags</span>}
-
-                <div style={{ position: 'relative' }} ref={tagDropdownRef}>
-                  <button type="button" onClick={() => setTagDropdownOpen((v) => !v)} disabled={tagsSaving}>
-                    + Add Tag {tagsLoading || tagsSaving ? '⏳' : ''}
-                  </button>
-
-                  {tagDropdownOpen ? (
-                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 260, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', zIndex: 30, padding: 8, overflow: 'hidden' }}>
-                      <input
-                        value={tagSearch}
-                        onChange={(e) => setTagSearch(e.target.value)}
-                        placeholder="Search tag..."
-                        autoFocus
-                        style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
-                      />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: TAG_PICKER_LIST_HEIGHT, overflow: 'hidden' }}>
-                        {tagsLoading ? (
-                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>Loading…</div>
-                        ) : tagSuggestions.map((t) => (
-                          <button
-                            key={`opt-tag-${t.id}`}
-                            type="button"
-                            onClick={() => addIocTag(t.id).catch(() => {})}
-                            disabled={tagsSaving}
-                            style={{
-                              textAlign: 'left',
-                              border: '1px solid #334155',
-                              borderRadius: 8,
-                              padding: '6px 8px',
-                              minHeight: TAG_PICKER_ITEM_HEIGHT,
-                              boxSizing: 'border-box',
-                              background: '#111827',
-                              color: '#e5e7eb',
-                              cursor: tagsSaving ? 'wait' : 'pointer',
-                              flex: '0 0 auto'
-                            }}
-                          >
-                            {t.name}
-                          </button>
-                        ))}
-                        {!tagsLoading && !tagSuggestions.length && !String(tagSearch || '').trim() ? (
-                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tags available</div>
-                        ) : null}
-                        {!tagsLoading && !tagSuggestions.length && String(tagSearch || '').trim() ? (
-                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tag found</div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+                <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
               <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
               <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
                 <thead>
@@ -7862,47 +8134,64 @@ function IOCDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+                </div>
+              </div>
+            ) : null}
 
-            <IocEnvironmentImpactPanel impact={data.impact} />
+            {activeTab === 'environment' ? (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <IocEnvironmentImpactPanel impact={data.impact} />
 
-            <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Related Incidents</div>
-              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1380, fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th style={{ width: 100 }}>Incident ID</th>
-                    <th style={{ width: 160 }}>First Seen</th>
-                    <th style={{ width: 160 }}>Last Seen</th>
-                    <th style={{ width: 120 }}>Detection Events</th>
-                    <th style={{ width: 110 }}>Evidence Logs</th>
-                    <th style={{ width: 120 }}>Observed Hosts</th>
-                    <th style={{ width: 120 }}>Verdict</th>
-                    <th style={{ width: 100 }}>Status</th>
-                    <th style={{ width: 100 }}>Risk Score</th>
-                    <th style={{ width: 120 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.incidents || []).length ? (data.incidents || []).map((inc) => (
-                    <tr key={`inc-${inc.id}`} style={{ borderTop: '1px solid #334155' }}>
-                      <td>#{inc.incident_id ?? '-'}</td>
-                      <td>{formatUserDateTime(inc.first_seen)}</td>
-                      <td>{formatUserDateTime(inc.last_seen)}</td>
-                      <td>{Number(inc.detection_events || 0)}</td>
-                      <td>{Number.isFinite(Number(inc.evidence_logs)) ? Number(inc.evidence_logs) : '-'}</td>
-                      <td>{Number(inc.observed_hosts || 0)}</td>
-                      <td>{inc.verdict || 'Unreviewed'}</td>
-                      <td>{inc.status || '-'}</td>
-                      <td>{Number.isFinite(Number(inc.risk_score)) ? Number(inc.risk_score).toFixed(2) : '-'}</td>
-                      <td>
-                        <button type="button" onClick={() => navigate(`/incidents/${inc.incident_id || inc.id}`)} title="View incident" aria-label="View incident" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                      </td>
-                    </tr>
-                  )) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No related incidents found for this IOC.</td></tr>}
-                </tbody>
-              </table>
-            </div>
+                <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+                  <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Related Incidents</div>
+                  <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1380, fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', background: '#111827' }}>
+                        <th style={{ width: 100 }}>Incident ID</th>
+                        <th style={{ width: 160 }}>First Seen</th>
+                        <th style={{ width: 160 }}>Last Seen</th>
+                        <th style={{ width: 120 }}>Detection Events</th>
+                        <th style={{ width: 110 }}>Evidence Logs</th>
+                        <th style={{ width: 120 }}>Observed Hosts</th>
+                        <th style={{ width: 120 }}>Verdict</th>
+                        <th style={{ width: 100 }}>Status</th>
+                        <th style={{ width: 100 }}>Risk Score</th>
+                        <th style={{ width: 120 }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data.incidents || []).length ? (data.incidents || []).map((inc) => (
+                        <tr key={`inc-${inc.id}`} style={{ borderTop: '1px solid #334155' }}>
+                          <td>#{inc.incident_id ?? '-'}</td>
+                          <td>{formatUserDateTime(inc.first_seen)}</td>
+                          <td>{formatUserDateTime(inc.last_seen)}</td>
+                          <td>{Number(inc.detection_events || 0)}</td>
+                          <td>{Number.isFinite(Number(inc.evidence_logs)) ? Number(inc.evidence_logs) : '-'}</td>
+                          <td>{Number(inc.observed_hosts || 0)}</td>
+                          <td>{inc.verdict || 'Unreviewed'}</td>
+                          <td>{inc.status || '-'}</td>
+                          <td>{Number.isFinite(Number(inc.risk_score)) ? Number(inc.risk_score).toFixed(2) : '-'}</td>
+                          <td>
+                            <button type="button" onClick={() => navigate(`/incidents/${inc.incident_id || inc.id}`)} title="View incident" aria-label="View incident" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                          </td>
+                        </tr>
+                      )) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No related incidents found for this IOC.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'evidence' ? (
+              <div style={{ display: 'grid', gap: 14 }}>
+                <IocDetectionEventsPanel observable={summary.observable} enabled={evidenceTabActive} />
+                <IocRelatedLogsByIncidentsPanel incidents={data.incidents} enabled={evidenceTabActive} />
+              </div>
+            ) : null}
+
+            {activeTab === 'audit' && isAdmin ? (
+              <IocAuditHistoryPanel iocId={summary.id} enabled={auditTabActive} />
+            ) : null}
           </>
         )}
       </section>
