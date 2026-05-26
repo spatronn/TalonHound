@@ -3077,12 +3077,6 @@ function buildIntegrationHealthSummary(integrations) {
     const st = String(i.status || i.last_status || '').toLowerCase();
     return st === 'failed' || st === 'fail' || Number(i.consecutive_failures || 0) > 0;
   });
-  const successfulFeeds24h = feedRows.filter((i) => {
-    const finished = i.last_success_at || i.last_finished_at;
-    if (!finished) return false;
-    const ts = new Date(finished).getTime();
-    return Number.isFinite(ts) && ts >= Date.now() - 24 * 60 * 60 * 1000;
-  });
   const lastRunInsertedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.inserted ?? i.last_records_inserted), 0);
   const lastRunProcessedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.processed ?? i.last_records_processed), 0);
 
@@ -3092,7 +3086,6 @@ function buildIntegrationHealthSummary(integrations) {
     enabled_feeds: activeFeeds.length,
     inactive_feeds: feedRows.length - activeFeeds.length,
     failing_feeds: failingFeeds.length,
-    successful_feeds_24h: successfulFeeds24h.length,
     last_run_inserted_total: lastRunInsertedTotal,
     last_run_new_total: lastRunInsertedTotal,
     last_run_processed_total: lastRunProcessedTotal

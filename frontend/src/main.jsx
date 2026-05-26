@@ -3650,7 +3650,6 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     failing_feeds: visibleIntegrations.filter((i) => {
       return String(i.health_state || '').toLowerCase() === 'failed' || Number(i.consecutive_failures || 0) > 0;
     }).length,
-    successful_feeds_24h: visibleIntegrations.filter((i) => String(i.health_state || '').toLowerCase() === 'success').length,
     last_run_new_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'inserted'), 0),
     last_run_inserted_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'inserted'), 0),
     last_run_processed_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'processed'), 0)
@@ -3690,10 +3689,6 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>Failing Feeds</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: summary.failing_feeds > 0 ? '#fca5a5' : '#e2e8f0' }}>{summary.failing_feeds}</div>
-            </div>
-            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last 24h Success</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.successful_feeds_24h}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run Processed</div>
