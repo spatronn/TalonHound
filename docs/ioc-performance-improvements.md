@@ -8,7 +8,7 @@ Bu doküman, özellikle **yeni IOC eklendiğinde** ve **local / kısıtlı ortam
 
 **Sorun:** Her eklemede `refreshGeoCache(1000)` tetikleniyor. Bu sorgu:
 - `ioc_items` ile `ioc_ip_geo_cache` arasında LEFT JOIN
-- Eksik IP’ler için `asn_ipv4_ranges` ile LATERAL join
+- Eksik IP’ler için `ioc_ip_enrichment` (on-demand IPinfo Lite) veya `ioc_ip_geo_cache` ile join
 - Limit 1000 olsa bile local’de hissedilir gecikme yapabiliyor
 
 **Öneriler:**

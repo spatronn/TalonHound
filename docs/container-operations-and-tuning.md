@@ -200,34 +200,9 @@ docker compose up -d --build
   ```
 
 
-### 10) `demo-enrichment-sync-job`
-**Purpose**
-- Daily ASN enrichment sync worker.
-- Downloads `asn_full.json.zip` from `https://geoip.oxl.app/file/asn_full.json.zip`, extracts JSON, and refreshes ASN lookup data.
-
-**What it updates**
-- `asn_lookup` (via temp table + atomic swap)
-
-**Behavior**
-- Runs every 24 hours (`ENRICHMENT_SYNC_INTERVAL_MS=86400000`).
-- Uses streaming parse for large JSON and batch insert.
-- Safety: writes to temp table, builds indexes, then swaps atomically.
-
-**Key env vars**
-- `ENRICHMENT_SOURCE_URL` (default `https://geoip.oxl.app/file/asn_full.json.zip`)
-- `ENRICHMENT_SYNC_INTERVAL_MS` (default `86400000`)
-- `ENRICHMENT_SYNC_BATCH_SIZE` (default `5000`)
-- `ENRICHMENT_SYNC_ONCE` (default `0`, set `1` for one-shot run)
-
-**Ops notes**
-- Logs:
-  ```bash
-  docker compose logs -f --tail=100 enrichment-sync-job
-  ```
-- Quick status check:
-  ```bash
-  docker compose exec -T db psql -U demo -d demo -c "SELECT count(*) AS asn_rows FROM asn_lookup;"
-  ```
+### 10) IP enrichment (IPinfo Lite, on-demand)
+- No dedicated container. Configured in **Administration → Enrichment Providers** (or `IPINFO_LITE_TOKEN` env).
+- Results stored in `ioc_ip_enrichment` when analysts enrich an IP from IOC Details.
 
 ---
 
@@ -398,8 +373,7 @@ flowchart LR
     MW -->|batch aggregate + daily snapshot| DB
     IMC -->|aggregate observable hits| CH
     IMC -->|upsert snapshot + update ioc_items.match_count| DB
-    ESJ -->|download ASN source| EXT
-    ESJ -->|refresh asn_lookup| DB
+    BE -->|on-demand IPinfo / RDAP / VT| EXT
     BE -->|analytics/auth queries| DB
 ```
 
@@ -439,8 +413,6 @@ docker compose logs --tail=100 syslog-receiver
 docker compose logs --tail=100 clickhouse
 docker compose logs --tail=100 ioc-match-count-worker
 docker compose logs --tail=100 dashboard-map-worker
-docker compose logs --tail=100 enrichment-sync-job
-
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \
   -c "SELECT count(*) AS raw_count FROM signal_events;" \
   -c "SELECT count(*) AS ioc_match_count FROM ioc_match_events;" \

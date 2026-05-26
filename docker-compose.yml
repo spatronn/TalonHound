@@ -269,8 +269,6 @@ services:
       - redis
     restart: unless-stopped
 
-  # enrichment-sync-job removed: ASN/GeoIP now uses on-demand IPinfo Lite (see Administration → Enrichment Providers)
-
   syslog-receiver:
     build: ./backend
     container_name: demo-syslog-receiver

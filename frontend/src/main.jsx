@@ -595,7 +595,6 @@ function AppShell({ children }) {
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isIntegrationsActive)}>5. Threat Intelligence</div>
             <Link to="/threat-intelligence/feeds" style={subMenuStyle(isActive('/threat-intelligence/feeds') || isActive('/threat-intelligence'))}>Feeds</Link>
-            <Link to="/threat-intelligence/enrichment" style={subMenuStyle(isActive('/threat-intelligence/enrichment'))}>Enrichment</Link>
             <Link to="/threat-intelligence/queue" style={subMenuStyle(isActive('/threat-intelligence/queue'))}>Job Queue Status</Link>
             <Link to="/threat-intelligence/runs" style={subMenuStyle(isActive('/threat-intelligence/runs'))}>Recent Runs</Link>
             <Link to="/threat-intelligence/published-feeds" style={subMenuStyle(isActive('/threat-intelligence/published-feeds'))}>Published Feeds</Link>
@@ -3644,11 +3643,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   };
 
   const summary = healthSummary || {
-    total_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment').length,
-    enabled_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment' && i.active !== false).length,
-    active_feeds: visibleIntegrations.filter((i) => i.key !== 'asn_enrichment' && i.active !== false).length,
+    total_feeds: visibleIntegrations.length,
+    enabled_feeds: visibleIntegrations.filter((i) => i.active !== false).length,
+    active_feeds: visibleIntegrations.filter((i) => i.active !== false).length,
     failing_feeds: visibleIntegrations.filter((i) => {
-      if (i.key === 'asn_enrichment') return false;
       return String(i.health_state || '').toLowerCase() === 'failed' || Number(i.consecutive_failures || 0) > 0;
     }).length,
     successful_feeds_24h: visibleIntegrations.filter((i) => String(i.health_state || '').toLowerCase() === 'success').length,
@@ -3802,10 +3800,6 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   );
 }
 
-
-function IntegrationsEnrichmentPage() {
-  return <IntegrationsPage title="Enrichment" onlyKeys={["asn_enrichment"]} showRunAll={false} />;
-}
 
 function IntegrationsQueueStatusPage() {
   const [loading, setLoading] = useState(true);
@@ -8488,12 +8482,6 @@ function IOCDetailsPage() {
   const displayObservable = summary?.observable || '-';
   const observableType = String(summary?.observable_type || '').toLowerCase();
   const isHashObservable = FILE_HASH_TYPES.has(observableType);
-  const networkInfoTitle = observableType === 'domain'
-    ? 'Domain Information'
-    : (observableType === 'url' ? 'URL Information' : 'IP Information');
-  const resolvedFromLabel = observableType === 'url'
-    ? 'url-host'
-    : ((observableType === 'ip' || observableType === 'ip6') ? 'direct-ip' : (observableType === 'domain' ? 'domain' : '-'));
   const fileInfo = summary?.file_information || null;
   const hasMeaningfulFileInfo = Boolean(fileInfo && Object.values(fileInfo).some((v) => {
     if (v == null) return false;
@@ -8676,30 +8664,6 @@ function IOCDetailsPage() {
                 {isRdapEligibleObservable(summary.observable, summary.observable_type).eligible ? (
                   <RdapEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
                 ) : null}
-
-            {!isHashObservable ? (
-              <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-                <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>{networkInfoTitle}</div>
-                <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', background: '#111827' }}>
-                      <th>Parsed IP</th><th>Country</th><th>ASN</th><th>ASN Owner</th><th>Resolved From</th><th>First Seen</th><th>Last Seen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderTop: '1px solid #334155' }}>
-                      <td>{summary.geo?.ip || '-'}</td>
-                      <td>{summary.geo?.country_code || '-'}</td>
-                      <td>{summary.geo?.asn ?? '-'}</td>
-                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.geo?.as_name || '-'}</td>
-                      <td>{resolvedFromLabel}</td>
-                      <td>{formatUserDateTime(summary.first_seen_at)}</td>
-                      <td>{formatUserDateTime(summary.last_seen_at)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
 
             {isHashObservable && hasMeaningfulFileInfo ? (
               <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
@@ -9251,8 +9215,8 @@ function App() {
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/operations/ioc-suppressions" element={<Protected><IOCSuppressionsPage /></Protected>} />
           <Route path="/threat-intelligence" element={<Navigate to="/threat-intelligence/feeds" replace />} />
-          <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage hideKeys={["asn_enrichment"]} /></Protected>} />
-          <Route path="/threat-intelligence/enrichment" element={<Protected><IntegrationsEnrichmentPage /></Protected>} />
+          <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage /></Protected>} />
+          <Route path="/threat-intelligence/enrichment" element={<Navigate to="/administration/enrichment-providers" replace />} />
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />

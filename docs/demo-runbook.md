@@ -201,9 +201,7 @@ docker compose logs --tail=200
 - Map rendering: `react-simple-maps` + local lightweight GeoJSON (`frontend/public/world-lite.geojson`)
 
 ### Data sources / integrations
-- ASN + Country enrichment source: https://iptoasn.com/
-  - Import format: TSV/TSV.GZ
-  - Imported into PostgreSQL (`asn_networks_raw` + optimized `asn_ipv4_ranges`)
+- IP enrichment (ASN/country): **IPinfo Lite** on-demand via Administration → Enrichment Providers (`ioc_ip_enrichment` table).
 - Threat intel rules feed (blocklists): **Emerging Threats**
   - Source index: `http://rules.emergingthreats.net/blockrules/`
   - Example feed: `threatview_CS_c2.rules`
