@@ -7610,6 +7610,110 @@ function isRdapEligibleObservable(iocValue, iocType) {
   return { eligible: true, host, rdapDomain, reason: null };
 }
 
+const ENRICHMENT_INTELLIGENCE_LAYOUT_CSS = `
+.enrichment-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  align-items: stretch;
+}
+.enrichment-field-card {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #0b1220;
+  min-width: 0;
+}
+.enrichment-field-card.enrichment-field-wide {
+  grid-column: span 2;
+}
+@media (max-width: 1200px) {
+  .enrichment-field-card.enrichment-field-wide {
+    grid-column: span 1;
+  }
+}
+.enrichment-field-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.enrichment-field-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-top: 4px;
+  min-width: 0;
+}
+.enrichment-field-value.is-wrap {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.enrichment-field-value.is-compact {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.enrichment-detail-stack {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+.enrichment-detail-block {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0b1220;
+  min-width: 0;
+}
+.enrichment-detail-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+.enrichment-detail-value {
+  font-size: 13px;
+  color: #e2e8f0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.enrichment-target-note-value.is-compact {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+`;
+
+function EnrichmentIntelligenceStyles() {
+  return <style>{ENRICHMENT_INTELLIGENCE_LAYOUT_CSS}</style>;
+}
+
+function EnrichmentFieldCard({ label, value, variant = 'wrap', wide = false, title }) {
+  const display = value == null || value === '' ? '-' : String(value);
+  const valueTitle = title ?? (variant === 'compact' && display !== '-' ? display : undefined);
+  const cardClass = wide ? 'enrichment-field-card enrichment-field-wide' : 'enrichment-field-card';
+  const valueClass = variant === 'compact' ? 'enrichment-field-value is-compact' : 'enrichment-field-value is-wrap';
+  return (
+    <div className={cardClass}>
+      <div className="enrichment-field-label">{label}</div>
+      <div className={valueClass} title={valueTitle}>{display}</div>
+    </div>
+  );
+}
+
+function EnrichmentDetailBlock({ label, value }) {
+  const display = value == null || value === '' ? '-' : String(value);
+  return (
+    <div className="enrichment-detail-block">
+      <div className="enrichment-detail-label">{label}</div>
+      <div className="enrichment-detail-value">{display}</div>
+    </div>
+  );
+}
+
 function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false }) {
   const target = useMemo(() => isIpEnrichmentEligible(iocValue, iocType), [iocValue, iocType]);
   if (!target.eligible || !target.ip) return null;
@@ -7745,6 +7849,7 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false })
 
   return (
     <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+      <EnrichmentIntelligenceStyles />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
@@ -7762,21 +7867,21 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false })
         </div>
       </div>
 
-      <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
-        <div style={{ color: '#94a3b8' }}>Observed: <span style={{ color: '#e2e8f0' }}>{target.observable || '-'}</span></div>
+      <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12, minWidth: 0 }}>
+        <div style={{ color: '#94a3b8' }}>Observed: <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{target.observable || '-'}</span></div>
         <div style={{ color: '#94a3b8', marginTop: 4 }}>Parsed IP: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{d.ip || ip}</span></div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 12 }}>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>IP</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.ip || ip}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>ASN</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.asn || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>AS Name</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.as_name || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>AS Domain</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.as_domain || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Country</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.country || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Country Code</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.country_code || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Continent</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.continent || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Continent Code</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.continent_code || '-'}</div></div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Provider</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>IPinfo Lite</div></div>
+      <div className="enrichment-summary-grid">
+        <EnrichmentFieldCard label="IP" value={d.ip || ip} variant="compact" />
+        <EnrichmentFieldCard label="ASN" value={d.asn} />
+        <EnrichmentFieldCard label="AS Name" value={d.as_name} wide />
+        <EnrichmentFieldCard label="AS Domain" value={d.as_domain} variant="compact" />
+        <EnrichmentFieldCard label="Country" value={d.country} />
+        <EnrichmentFieldCard label="Country Code" value={d.country_code} />
+        <EnrichmentFieldCard label="Continent" value={d.continent} />
+        <EnrichmentFieldCard label="Continent Code" value={d.continent_code} />
+        <EnrichmentFieldCard label="Provider" value="IPinfo Lite" />
       </div>
 
       <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -7794,9 +7899,9 @@ function RdapTargetNote({ data }) {
   const rdapDomain = data?.rdap_domain || data?.root_domain || '-';
   const differs = host !== '-' && rdapDomain !== '-' && String(host).toLowerCase() !== String(rdapDomain).toLowerCase();
   return (
-    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
-      <div style={{ color: '#94a3b8' }}>Observed / IOC Host: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{host}</span></div>
-      <div style={{ color: '#94a3b8', marginTop: 4 }}>RDAP Domain: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{rdapDomain}</span></div>
+    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12, minWidth: 0 }}>
+      <div style={{ color: '#94a3b8' }}>Observed / IOC Host: <span className="enrichment-target-note-value is-compact" style={{ color: '#e2e8f0', fontWeight: 600 }} title={host !== '-' ? host : undefined}>{host}</span></div>
+      <div style={{ color: '#94a3b8', marginTop: 4 }}>RDAP Domain: <span className="enrichment-target-note-value is-compact" style={{ color: '#e2e8f0', fontWeight: 600 }} title={rdapDomain !== '-' ? rdapDomain : undefined}>{rdapDomain}</span></div>
       {differs ? (
         <div style={{ color: '#fcd34d', marginTop: 8, lineHeight: 1.45 }}>
           RDAP lookup was performed for the registrable domain: <b>{rdapDomain}</b>. Threat content may appear on the observed host ({host}); WHOIS/RDAP reflects the parent domain registrant, not the tenant subdomain alone.
@@ -7929,8 +8034,11 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
   const nsList = Array.isArray(d.nameservers) ? d.nameservers : [];
   const statusList = Array.isArray(d.statuses) ? d.statuses : [];
 
+  const rdapDomainValue = d.rdap_domain || d.root_domain || '-';
+
   return (
     <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+      <EnrichmentIntelligenceStyles />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
@@ -7949,48 +8057,22 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
 
       <RdapTargetNote data={d} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 12 }}>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>RDAP Domain</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.rdap_domain || d.root_domain || '-'}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Registrar</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.registrar || '-'}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Domain Age</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>
-            {Number.isFinite(Number(d.domain_age_days)) ? `${d.domain_age_days} days` : '-'}
-          </div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Registration Date</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{formatUserDateTime(d.registration_date)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Changed</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{formatUserDateTime(d.last_changed_date)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Expiration Date</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{formatUserDateTime(d.expiration_date)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>RDAP Status</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.rdap_status || '-'}</div>
-        </div>
+      <div className="enrichment-summary-grid">
+        <EnrichmentFieldCard label="RDAP Domain" value={rdapDomainValue} variant="compact" wide />
+        <EnrichmentFieldCard label="Registrar" value={d.registrar} variant="wrap" />
+        <EnrichmentFieldCard
+          label="Domain Age"
+          value={Number.isFinite(Number(d.domain_age_days)) ? `${d.domain_age_days} days` : '-'}
+        />
+        <EnrichmentFieldCard label="Registration Date" value={formatUserDateTime(d.registration_date)} />
+        <EnrichmentFieldCard label="Last Changed" value={formatUserDateTime(d.last_changed_date)} />
+        <EnrichmentFieldCard label="Expiration Date" value={formatUserDateTime(d.expiration_date)} />
+        <EnrichmentFieldCard label="RDAP Status" value={d.rdap_status} />
       </div>
 
-      <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Nameservers</div>
-          <div style={{ fontSize: 13, color: '#e2e8f0' }}>{nsList.length ? nsList.join(', ') : '-'}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, background: '#0b1220' }}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Status Codes</div>
-          <div style={{ fontSize: 13, color: '#e2e8f0' }}>{statusList.length ? statusList.join(' • ') : '-'}</div>
-        </div>
+      <div className="enrichment-detail-stack">
+        <EnrichmentDetailBlock label="Nameservers" value={nsList.length ? nsList.join(', ') : '-'} />
+        <EnrichmentDetailBlock label="Status Codes" value={statusList.length ? statusList.join(' • ') : '-'} />
       </div>
 
       <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
