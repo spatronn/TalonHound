@@ -8145,8 +8145,13 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
             {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
           </div>
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
-            {d.last_enriched_at ? `Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'Registration data from RDAP'}
+            {d.last_enriched_at ? `Domain cache last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'Registration data from RDAP'}
           </div>
+          {d.last_enriched_at ? (
+            <div style={{ color: '#64748b', fontSize: 11, marginTop: 4, lineHeight: 1.45, maxWidth: 420 }}>
+              RDAP data is cached by root domain and may predate this specific IOC record.
+            </div>
+          ) : null}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
