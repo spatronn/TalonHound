@@ -25,6 +25,9 @@ import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerTagRoutes } from './routes/tags.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
+import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
+import { extractIpv4ForGeo } from './lib/ipEnrichmentEligibility.js';
+import { getIpinfoLiteConfig, lookupGeoFromIpEnrichment } from './services/ipinfoLiteService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { pickSafeFields } from './lib/auditRedaction.js';
@@ -131,29 +134,7 @@ function isValidIpv4(input) {
   return parts.every((p) => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
 }
 
-function extractIpv4ForGeo(observable, observableType) {
-  const raw = String(observable || '').trim();
-  const type = String(observableType || '').toLowerCase();
-  if (!raw) return null;
-
-  if (type === 'ip') {
-    const ip = raw.split('/')[0].trim();
-    return isValidIpv4(ip) ? ip : null;
-  }
-
-  if (type === 'url') {
-    try {
-      const u = new URL(raw);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-      const host = u.hostname;
-      return isValidIpv4(host) ? host : null;
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
+// extractIpv4ForGeo imported from ./lib/ipEnrichmentEligibility.js (IPinfo on-demand enrichment)
 
 function parseNoteKeyValues(note) {
   const out = {};
@@ -495,19 +476,18 @@ async function refreshGeoCache(limit = 20000) {
       INSERT INTO ioc_ip_geo_cache (ip, country_code, asn, as_name, updated_at)
       SELECT
         w.ip,
-        NULLIF(UPPER(TRIM(a.country_code)), '') AS country_code,
-        a.asn,
-        a.as_name,
+        NULLIF(UPPER(TRIM(e.country_code)), '') AS country_code,
+        e.asn,
+        e.as_name,
         NOW()
       FROM with_num w
       LEFT JOIN LATERAL (
-        SELECT r.asn, COALESCE(o.country_code, r.country) AS country_code, r.asn_owner AS as_name
-        FROM asn_lookup r
-        LEFT JOIN asn_country_overrides o ON o.asn = r.asn
-        WHERE w.ip_num BETWEEN r.start_ip_int AND r.end_ip_int
-        ORDER BY (r.end_ip_int - r.start_ip_int) ASC
+        SELECT e.asn, e.country_code, e.as_name
+        FROM ioc_ip_enrichment e
+        WHERE e.ip = host(w.ip::inet)
+          AND e.provider_status = 'success'
         LIMIT 1
-      ) a ON TRUE
+      ) e ON TRUE
       ON CONFLICT (ip)
       DO UPDATE SET
         country_code = EXCLUDED.country_code,
@@ -3838,6 +3818,7 @@ registerApiKeyRoutes(app, pool, audit);
 registerAuditLogRoutes(app, pool);
 registerTagRoutes(app, pool, audit);
 registerRdapEnrichmentRoutes(app, pool, audit);
+registerIpEnrichmentRoutes(app, pool, audit);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -5491,41 +5472,28 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const geoPromise = (async () => {
       if (!geoIp) return { ip: null, asn: null, country_code: null, as_name: null };
-      const geoQ = `
-        WITH ip_input AS (
-          SELECT
-            $1::inet AS ip,
-            ((split_part(host($1::inet), '.', 1)::bigint << 24)
-            + (split_part(host($1::inet), '.', 2)::bigint << 16)
-            + (split_part(host($1::inet), '.', 3)::bigint << 8)
-            +  split_part(host($1::inet), '.', 4)::bigint) AS ip_num
-        )
-        SELECT
-          i.ip::text AS ip,
-          COALESCE(c.asn, r.asn) AS asn,
-          COALESCE(c.country_code, r.country_code) AS country_code,
-          COALESCE(c.as_name, r.as_name) AS as_name
-        FROM ip_input i
-        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
-        LEFT JOIN LATERAL (
-          SELECT r.asn, COALESCE(o.country_code, r.country) AS country_code, r.asn_owner AS as_name
-          FROM asn_lookup r
-          LEFT JOIN asn_country_overrides o ON o.asn = r.asn
-          WHERE i.ip_num BETWEEN r.start_ip_int AND r.end_ip_int
-          ORDER BY (r.end_ip_int - r.start_ip_int) ASC
-          LIMIT 1
-        ) r ON TRUE
-      `;
       const tGeo = Date.now();
-      const geoRes = await pool.query(geoQ, [geoIp]);
+      const fromEnrichment = await lookupGeoFromIpEnrichment(pool, geoIp);
       pgMs += Date.now() - tGeo;
-      if (!geoRes.rows[0]) return { ip: geoIp, asn: null, country_code: null, as_name: null };
-      return {
-        ip: geoRes.rows[0].ip || geoIp,
-        asn: geoRes.rows[0].asn ?? null,
-        country_code: geoRes.rows[0].country_code || null,
-        as_name: geoRes.rows[0].as_name || null
-      };
+      if (fromEnrichment.asn || fromEnrichment.country_code || fromEnrichment.as_name) {
+        return fromEnrichment;
+      }
+      const cacheQ = `
+        SELECT host(c.ip::inet) AS ip, c.asn, c.country_code, c.as_name
+        FROM ioc_ip_geo_cache c
+        WHERE c.ip = $1::inet
+        LIMIT 1
+      `;
+      const cacheRes = await pool.query(cacheQ, [geoIp]);
+      if (cacheRes.rows[0]) {
+        return {
+          ip: cacheRes.rows[0].ip || geoIp,
+          asn: cacheRes.rows[0].asn ?? null,
+          country_code: cacheRes.rows[0].country_code || null,
+          as_name: cacheRes.rows[0].as_name || null
+        };
+      }
+      return { ip: geoIp, asn: null, country_code: null, as_name: null };
     })();
 
     const incidentsPromise = (async () => {
@@ -6027,21 +5995,45 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
     if (cfg.configured && cfg.last_error_at && (!cfg.last_success_at || new Date(cfg.last_error_at) > new Date(cfg.last_success_at))) status = 'error';
     else if (cfg.configured && cfg.last_success_at) status = 'healthy';
     else if (cfg.configured) status = 'configured';
-    return res.json({ providers: [{
-      provider: VT_PROVIDER,
-      name: 'VirusTotal',
-      enabled: cfg.enabled,
-      configured: cfg.configured,
-      masked_key: maskApiKey(cfg.apiKey),
-      source: cfg.source,
-      ttl_hours: cfg.ttl_hours,
-      timeout_ms: cfg.timeout_ms,
-      status,
-      last_test_at: cfg.last_test_at,
-      last_success_at: cfg.last_success_at,
-      last_error_at: cfg.last_error_at,
-      last_error_message: cfg.last_error_message
-    }]});
+
+    const ipinfo = await getIpinfoLiteConfig(pool);
+    let ipinfoStatus = 'not_configured';
+    if (ipinfo.configured && ipinfo.last_error_at && (!ipinfo.last_success_at || new Date(ipinfo.last_error_at) > new Date(ipinfo.last_success_at))) ipinfoStatus = 'error';
+    else if (ipinfo.configured && ipinfo.last_success_at) ipinfoStatus = 'healthy';
+    else if (ipinfo.configured) ipinfoStatus = 'configured';
+
+    return res.json({ providers: [
+      {
+        provider: VT_PROVIDER,
+        name: 'VirusTotal',
+        enabled: cfg.enabled,
+        configured: cfg.configured,
+        masked_key: maskApiKey(cfg.apiKey),
+        source: cfg.source,
+        ttl_hours: cfg.ttl_hours,
+        timeout_ms: cfg.timeout_ms,
+        status,
+        last_test_at: cfg.last_test_at,
+        last_success_at: cfg.last_success_at,
+        last_error_at: cfg.last_error_at,
+        last_error_message: cfg.last_error_message
+      },
+      {
+        provider: ipinfo.provider_key,
+        name: ipinfo.display_name,
+        enabled: ipinfo.enabled,
+        configured: ipinfo.configured,
+        masked_key: ipinfo.token_masked,
+        source: ipinfo.source,
+        base_url: ipinfo.base_url,
+        timeout_seconds: ipinfo.timeout_seconds,
+        status: ipinfoStatus,
+        last_test_at: ipinfo.last_test_at,
+        last_success_at: ipinfo.last_success_at,
+        last_error_at: ipinfo.last_error_at,
+        last_error_message: ipinfo.last_error_message
+      }
+    ]});
   } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
 });
 

@@ -57,6 +57,10 @@ export const AUDIT_ACTION = Object.freeze({
   RDAP_ENRICHMENT_REQUESTED: 'enrichment.rdap.requested',
   RDAP_ENRICHMENT_COMPLETED: 'enrichment.rdap.completed',
   RDAP_ENRICHMENT_FAILED: 'enrichment.rdap.failed',
+  IP_ENRICHMENT_REQUESTED: 'enrichment.ip.requested',
+  IP_ENRICHMENT_COMPLETED: 'enrichment.ip.completed',
+  IP_ENRICHMENT_FAILED: 'enrichment.ip.failed',
+  ENRICHMENT_PROVIDER_CONFIG_UPDATED: 'enrichment.provider_config.updated',
   AUTH_LOGIN_SUCCESS: 'auth.login.success',
   AUTH_LOGIN_FAILED: 'auth.login.failed',
   AUTH_LOGOUT: 'auth.logout'
@@ -123,6 +127,10 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.RDAP_ENRICHMENT_REQUESTED]: 'RDAP Enrichment Requested',
   [AUDIT_ACTION.RDAP_ENRICHMENT_COMPLETED]: 'RDAP Enrichment Completed',
   [AUDIT_ACTION.RDAP_ENRICHMENT_FAILED]: 'RDAP Enrichment Failed',
+  [AUDIT_ACTION.IP_ENRICHMENT_REQUESTED]: 'IP Enrichment Requested',
+  [AUDIT_ACTION.IP_ENRICHMENT_COMPLETED]: 'IP Enrichment Completed',
+  [AUDIT_ACTION.IP_ENRICHMENT_FAILED]: 'IP Enrichment Failed',
+  [AUDIT_ACTION.ENRICHMENT_PROVIDER_CONFIG_UPDATED]: 'Enrichment Provider Config Updated',
   [AUDIT_ACTION.AUTH_LOGIN_SUCCESS]: 'Login Success',
   [AUDIT_ACTION.AUTH_LOGIN_FAILED]: 'Login Failed',
   [AUDIT_ACTION.AUTH_LOGOUT]: 'Logout'

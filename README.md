@@ -22,13 +22,11 @@ docker compose ps
 docker compose logs --tail=100 proxy
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
-docker compose logs --tail=100 enrichment-sync-job
 ```
 
-## Daily ASN Enrichment
+## IP Enrichment (IPinfo Lite)
 
-- Container: `demo-enrichment-sync-job`
-- Purpose: Downloads ASN source zip, extracts JSON, and refreshes ASN lookup data via batch import + atomic swap.
-- Schedule: every 24 hours (`ENRICHMENT_SYNC_INTERVAL_MS=86400000`)
-- Source URL (default): `https://geoip.oxl.app/file/asn_full.json.zip`
+- On-demand only: configure **Administration → Enrichment Providers → IPinfo Lite** (or set `IPINFO_LITE_TOKEN` in env).
+- Used for IP IOCs and URL observables whose host is a public IP address.
+- Results are cached per IP for 24 hours in `ioc_ip_enrichment`.
 

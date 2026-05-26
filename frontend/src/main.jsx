@@ -5451,12 +5451,12 @@ function TagManagerPage() {
 function EnrichmentProvidersPage() {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
-  const [p, setP] = useState(null);
-  const [form, setForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
+  const [vt, setVt] = useState(null);
+  const [ipinfo, setIpinfo] = useState(null);
+  const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
+  const [ipForm, setIpForm] = useState({ enabled: true, token: '', base_url: 'https://api.ipinfo.io/lite', timeout_seconds: 6, usage_note: '' });
   const [feedback, setFeedback] = useState({ type: '', text: '' });
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [removing, setRemoving] = useState(false);
+  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false });
 
   const statusMeta = (status) => {
     const s = String(status || '').toLowerCase();
@@ -5471,107 +5471,170 @@ function EnrichmentProvidersPage() {
     setLoading(true);
     try {
       const { data } = await api.get('/admin/enrichment-providers');
-      const vt = (data?.providers || []).find((x) => x.provider === 'virustotal') || null;
-      setP(vt);
-      if (vt) setForm((f) => ({ ...f, enabled: vt.enabled, ttl_hours: vt.ttl_hours || 24, timeout_ms: vt.timeout_ms || 12000 }));
+      const vtRow = (data?.providers || []).find((x) => x.provider === 'virustotal') || null;
+      const ipRow = (data?.providers || []).find((x) => x.provider === 'ipinfo_lite') || null;
+      setVt(vtRow);
+      setIpinfo(ipRow);
+      if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
+      if (ipRow) {
+        setIpForm((f) => ({
+          ...f,
+          enabled: ipRow.enabled,
+          base_url: ipRow.base_url || 'https://api.ipinfo.io/lite',
+          timeout_seconds: ipRow.timeout_seconds || 6
+        }));
+      }
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { load().catch(()=>{}); }, [load]);
 
-  async function save() {
-    setSaving(true);
+  async function saveVt() {
+    setBusy((b) => ({ ...b, vtSave: true }));
     setFeedback({ type: '', text: '' });
     try {
-      await api.put('/admin/enrichment-providers/virustotal', form);
-      setFeedback({ type: 'success', text: 'Settings saved successfully.' });
-      setForm((f) => ({ ...f, api_key: '' }));
+      await api.put('/admin/enrichment-providers/virustotal', vtForm);
+      setFeedback({ type: 'success', text: 'VirusTotal settings saved.' });
+      setVtForm((f) => ({ ...f, api_key: '' }));
       await load();
     } catch (e) {
       setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
-    } finally { setSaving(false); }
+    } finally { setBusy((b) => ({ ...b, vtSave: false })); }
   }
 
-  async function testConn() {
-    setTesting(true);
+  async function testVt() {
+    setBusy((b) => ({ ...b, vtTest: true }));
     setFeedback({ type: '', text: '' });
     try {
       const { data } = await api.post('/admin/enrichment-providers/virustotal/test');
-      setFeedback({ type: 'success', text: data?.message || 'Connection successful' });
+      setFeedback({ type: 'success', text: data?.message || 'VirusTotal connection successful' });
       await load();
     } catch (e) {
       const msg = e?.response?.data?.message || 'Test failed';
-      const t = /rate limit/i.test(msg) ? 'warn' : 'error';
-      setFeedback({ type: t, text: msg });
+      setFeedback({ type: /rate limit/i.test(msg) ? 'warn' : 'error', text: msg });
       await load();
-    } finally { setTesting(false); }
+    } finally { setBusy((b) => ({ ...b, vtTest: false })); }
   }
 
-  async function removeKey() {
-    setRemoving(true);
-    setFeedback({ type: '', text: '' });
+  async function removeVtKey() {
+    setBusy((b) => ({ ...b, vtRemove: true }));
     try {
       await api.post('/admin/enrichment-providers/virustotal/remove-key');
-      setFeedback({ type: 'success', text: 'API key removed.' });
+      setFeedback({ type: 'success', text: 'VirusTotal API key removed.' });
       await load();
     } catch {
       setFeedback({ type: 'error', text: 'Remove failed' });
-    } finally { setRemoving(false); }
+    } finally { setBusy((b) => ({ ...b, vtRemove: false })); }
   }
 
-  const sm = statusMeta(p?.status);
+  async function saveIpinfo() {
+    setBusy((b) => ({ ...b, ipSave: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      await api.put('/admin/enrichment-providers/ipinfo-lite', ipForm);
+      setFeedback({ type: 'success', text: 'IPinfo Lite settings saved.' });
+      setIpForm((f) => ({ ...f, token: '' }));
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
+    } finally { setBusy((b) => ({ ...b, ipSave: false })); }
+  }
+
+  async function testIpinfo() {
+    setBusy((b) => ({ ...b, ipTest: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const { data } = await api.post('/admin/enrichment-providers/ipinfo-lite/test');
+      setFeedback({ type: 'success', text: data?.message || 'IPinfo Lite connection successful' });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Test failed';
+      setFeedback({ type: /rate limit/i.test(msg) ? 'warn' : 'error', text: msg });
+      await load();
+    } finally { setBusy((b) => ({ ...b, ipTest: false })); }
+  }
+
+  async function removeIpToken() {
+    setBusy((b) => ({ ...b, ipRemove: true }));
+    try {
+      await api.post('/admin/enrichment-providers/ipinfo-lite/remove-key');
+      setFeedback({ type: 'success', text: 'IPinfo Lite token removed.' });
+      await load();
+    } catch {
+      setFeedback({ type: 'error', text: 'Remove failed' });
+    } finally { setBusy((b) => ({ ...b, ipRemove: false })); }
+  }
+
+  const cardShell = { border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a', marginBottom:16 };
+  const vtSm = statusMeta(vt?.status);
+  const ipSm = statusMeta(ipinfo?.status);
+  const anyBusy = Object.values(busy).some(Boolean);
 
   return <AppShell><section style={{ border:'1px solid #334155', borderRadius:12, background:'#111827', padding:20 }}>
     <h2 style={{ margin:'0 0 6px', color:'#f1f5f9' }}>Enrichment Providers</h2>
-    <p style={{ margin:'0 0 18px', color:'#94a3b8', fontSize:14 }}>Manage external intelligence providers used for IOC enrichment.</p>
+    <p style={{ margin:'0 0 18px', color:'#94a3b8', fontSize:14 }}>Manage external intelligence providers used for on-demand IOC enrichment.</p>
 
     {!canWrite ? <div style={{ marginBottom:12, padding:'10px 12px', borderRadius:8, border:'1px solid #475569', color:'#cbd5e1', background:'rgba(100,116,139,0.15)', fontSize:13 }}>Readonly users can view provider status but cannot modify settings.</div> : null}
 
     {feedback.text ? <div style={{ marginBottom:12, padding:'10px 12px', borderRadius:8, border:`1px solid ${feedback.type==='success' ? '#166534' : feedback.type==='warn' ? '#b45309' : '#7f1d1d'}`, color: feedback.type==='success' ? '#86efac' : feedback.type==='warn' ? '#fcd34d' : '#fca5a5', background: feedback.type==='success' ? 'rgba(22,163,74,0.18)' : feedback.type==='warn' ? 'rgba(217,119,6,0.18)' : 'rgba(220,38,38,0.18)', fontSize:13 }}>{feedback.text}</div> : null}
 
-    {loading ? <div style={{ color:'#94a3b8' }}>Loading...</div> : !p ? <div style={{ color:'#94a3b8' }}>No provider config.</div> : <div style={{ border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a' }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
-        <div>
-          <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>VirusTotal</h3>
-          <div style={{ color:'#94a3b8', fontSize:13 }}>IOC reputation and analysis enrichment</div>
+    {loading ? <div style={{ color:'#94a3b8' }}>Loading...</div> : <>
+      {vt ? <div style={cardShell}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+          <div>
+            <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>VirusTotal</h3>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>IOC reputation and analysis enrichment</div>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <span style={{ border:`1px solid ${vtSm.border}`, background:vtSm.bg, color:vtSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{vtSm.label}</span>
+            <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:6 }}><input type='checkbox' checked={vtForm.enabled} onChange={(e)=>setVtForm((x)=>({...x, enabled:e.target.checked}))} disabled={!canWrite}/> Enabled</label>
+          </div>
         </div>
-        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-          <span style={{ border:`1px solid ${sm.border}`, background:sm.bg, color:sm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{sm.label}</span>
-          <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:6 }}><input type='checkbox' checked={form.enabled} onChange={(e)=>setForm((x)=>({...x, enabled:e.target.checked}))} disabled={!canWrite}/> Enabled</label>
+        <div style={{ marginTop:14 }}>
+          <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>VirusTotal API Key</label>
+          <input type='password' value={vtForm.api_key} onChange={(e)=>setVtForm((x)=>({...x, api_key:e.target.value}))} placeholder={vt.masked_key ? 'Leave blank to keep current key' : 'Paste VirusTotal API key'} disabled={!canWrite} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
+          {vt.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current key: {vt.masked_key}</div> : null}
         </div>
-      </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10, marginTop:14 }}>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Cache TTL (hours)<input type='number' min='1' value={vtForm.ttl_hours} onChange={(e)=>setVtForm((x)=>({...x, ttl_hours:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Timeout (ms)<input type='number' min='3000' value={vtForm.timeout_ms} onChange={(e)=>setVtForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+        </div>
+        <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
+          <button onClick={()=>saveVt().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.vtSave ? 'Saving...' : 'Save'}</button>
+          <button onClick={()=>testVt().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }}>{busy.vtTest ? 'Testing...' : 'Test Connection'}</button>
+          <button onClick={()=>removeVtKey().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5' }}>{busy.vtRemove ? 'Removing...' : 'Remove key'}</button>
+        </div>
+      </div> : null}
 
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:10, marginTop:14 }}>
-        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>API Key</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{p.masked_key ? (p.source === 'env' ? 'Configured via env' : 'Configured via db') : 'Not configured'}</div></div>
-        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Last test</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{formatUserDateTime(p.last_test_at)}</div></div>
-        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Last success</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{formatUserDateTime(p.last_success_at)}</div></div>
-        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Cache TTL</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{form.ttl_hours} hours</div></div>
-        <div style={{ border:'1px solid #334155', borderRadius:8, padding:10, background:'#0b1220' }}><div style={{ color:'#94a3b8', fontSize:12 }}>Timeout</div><div style={{ color:'#e2e8f0', fontSize:13, marginTop:4 }}>{form.timeout_ms} ms</div></div>
-      </div>
-
-      <div style={{ marginTop:14 }}>
-        <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>VirusTotal API Key</label>
-        <input type='password' value={form.api_key} onChange={(e)=>setForm((x)=>({...x, api_key:e.target.value}))} placeholder={p.masked_key ? 'Leave blank to keep current key' : 'Paste VirusTotal API key'} disabled={!canWrite} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
-        {p.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current key: {p.masked_key}</div> : null}
-        <div style={{ marginTop:4, color:'#64748b', fontSize:12 }}>API key is never returned to the frontend.</div>
-      </div>
-
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10, marginTop:14 }}>
-        <label style={{ color:'#cbd5e1', fontSize:13 }}>Cache TTL (hours)
-          <input type='number' min='1' value={form.ttl_hours} onChange={(e)=>setForm((x)=>({...x, ttl_hours:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} />
-        </label>
-        <label style={{ color:'#cbd5e1', fontSize:13 }}>Timeout (ms)
-          <input type='number' min='3000' value={form.timeout_ms} onChange={(e)=>setForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} />
-        </label>
-      </div>
-
-      <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
-        <button onClick={()=>save().catch(()=>{})} disabled={!canWrite || saving || testing || removing} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{saving ? 'Saving...' : 'Save settings'}</button>
-        <button onClick={()=>testConn().catch(()=>{})} disabled={!canWrite || saving || testing || removing} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0', fontWeight:600 }}>{testing ? 'Testing...' : 'Test Connection'}</button>
-        <button onClick={()=>removeKey().catch(()=>{})} disabled={!canWrite || saving || testing || removing} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5', fontWeight:600 }}>{removing ? 'Removing...' : 'Remove key'}</button>
-      </div>
-
-      {p.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last provider error:</b> {p.last_error_message}</div> : null}
-    </div>}
+      {ipinfo ? <div style={cardShell}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+          <div>
+            <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>IPinfo Lite</h3>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>On-demand IP enrichment (ASN, country, continent). No bulk feed.</div>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <span style={{ border:`1px solid ${ipSm.border}`, background:ipSm.bg, color:ipSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{ipSm.label}</span>
+            <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:6 }}><input type='checkbox' checked={ipForm.enabled} onChange={(e)=>setIpForm((x)=>({...x, enabled:e.target.checked}))} disabled={!canWrite}/> Enabled</label>
+          </div>
+        </div>
+        <div style={{ marginTop:14 }}>
+          <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>API Token</label>
+          <input type='password' value={ipForm.token} onChange={(e)=>setIpForm((x)=>({...x, token:e.target.value}))} placeholder={ipinfo.masked_key ? 'Leave blank to keep current token' : 'Paste IPinfo Lite token'} disabled={!canWrite} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
+          {ipinfo.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current token: {ipinfo.masked_key}</div> : null}
+          <div style={{ marginTop:4, color:'#64748b', fontSize:12 }}>Token is never returned in plaintext. Env fallback: IPINFO_LITE_TOKEN</div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10, marginTop:14 }}>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Base URL<input value={ipForm.base_url} onChange={(e)=>setIpForm((x)=>({...x, base_url:e.target.value}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Timeout (seconds)<input type='number' min='3' max='30' value={ipForm.timeout_seconds} onChange={(e)=>setIpForm((x)=>({...x, timeout_seconds:Number(e.target.value)}))} disabled={!canWrite} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+        </div>
+        <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginTop:14 }}>Usage note (optional)<textarea value={ipForm.usage_note} onChange={(e)=>setIpForm((x)=>({...x, usage_note:e.target.value}))} disabled={!canWrite} rows={2} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', resize:'vertical' }} /></label>
+        <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
+          <button onClick={()=>saveIpinfo().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.ipSave ? 'Saving...' : 'Save'}</button>
+          <button onClick={()=>testIpinfo().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }}>{busy.ipTest ? 'Testing...' : 'Test Connection'}</button>
+          <button onClick={()=>removeIpToken().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5' }}>{busy.ipRemove ? 'Removing...' : 'Remove token'}</button>
+        </div>
+        {ipinfo.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last error:</b> {ipinfo.last_error_message}</div> : null}
+      </div> : null}
+    </>}
   </section></AppShell>;
 }
 
@@ -7458,6 +7521,59 @@ function rdapExtractHost(iocValue, iocType) {
   return { ok: true, host: hostname };
 }
 
+const IP_ENRICH_IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+
+function ipEnrichIsPrivateIpv4(host) {
+  const parts = String(host || '').split('.').map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return true;
+  const [a, b] = parts;
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function ipEnrichStripHostPort(host) {
+  let h = String(host || '').trim().toLowerCase();
+  h = h.replace(/\.$/, '').replace(/^\[/, '').replace(/\]$/, '');
+  const portIdx = h.indexOf(':');
+  if (portIdx > 0 && /^\d+$/.test(h.slice(portIdx + 1))) h = h.slice(0, portIdx);
+  return h;
+}
+
+/**
+ * UI eligibility for IP Enrichment card (IP IOC or URL with public IP host).
+ */
+function isIpEnrichmentEligible(iocValue, iocType) {
+  const raw = String(iocValue || '').trim();
+  const type = String(iocType || '').toLowerCase();
+  if (!raw) return { eligible: false, ip: null, observable: null };
+  if (type === 'domain' || type === 'hash' || type === 'file_hash' || type === 'email') {
+    return { eligible: false, ip: null, observable: raw };
+  }
+  if (type === 'ip') {
+    const ip = ipEnrichStripHostPort(raw.split('/')[0]);
+    if (!IP_ENRICH_IPV4_RE.test(ip) && !ip.includes(':')) return { eligible: false, ip: null, observable: raw };
+    if (IP_ENRICH_IPV4_RE.test(ip) && ipEnrichIsPrivateIpv4(ip)) return { eligible: false, ip, observable: raw };
+    return { eligible: true, ip, observable: raw };
+  }
+  if (type === 'url') {
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return { eligible: false, ip: null, observable: raw };
+      const host = ipEnrichStripHostPort(u.hostname);
+      if (!IP_ENRICH_IPV4_RE.test(host) && !host.includes(':')) return { eligible: false, ip: null, observable: raw };
+      if (IP_ENRICH_IPV4_RE.test(host) && ipEnrichIsPrivateIpv4(host)) return { eligible: false, ip: host, observable: raw };
+      return { eligible: true, ip: host, observable: raw };
+    } catch {
+      return { eligible: false, ip: null, observable: raw };
+    }
+  }
+  return { eligible: false, ip: null, observable: raw };
+}
+
 /**
  * UI-only eligibility for RDAP card (backend validation unchanged).
  * @returns {{ eligible: boolean, host: string|null, rdapDomain: string|null, reason: string|null }}
@@ -7498,6 +7614,185 @@ function isRdapEligibleObservable(iocValue, iocType) {
   }
 
   return { eligible: true, host, rdapDomain, reason: null };
+}
+
+function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false }) {
+  const target = useMemo(() => isIpEnrichmentEligible(iocValue, iocType), [iocValue, iocType]);
+  if (!target.eligible || !target.ip) return null;
+
+  const [state, setState] = useState({ status: 'loading', data: null, message: '', providerConfigured: true });
+  const [enriching, setEnriching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const ip = target.ip;
+
+  const load = useCallback(async () => {
+    if (!ip || !active) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get(`/enrichment/ip/${encodeURIComponent(ip)}`);
+      setHasLoaded(true);
+      if (data?.enriched) {
+        setState({ status: 'success', data, message: '', providerConfigured: true });
+      } else if (data?.last_enriched_at && data?.provider_status && data.provider_status !== 'success') {
+        setState({
+          status: 'failed',
+          data,
+          message: data?.error_message || 'IP enrichment failed',
+          providerConfigured: true
+        });
+      } else {
+        setState({ status: 'not_found', data, message: '', providerConfigured: true });
+      }
+    } catch (err) {
+      setHasLoaded(true);
+      const msg = err?.response?.data?.error || err?.response?.data?.message || 'Failed to load IP enrichment';
+      setState({ status: 'error', data: err?.response?.data || null, message: msg, providerConfigured: true });
+    }
+  }, [ip, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
+
+  async function enrich(force = false) {
+    setEnriching(true);
+    try {
+      const { data } = await api.post(`/enrichment/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`);
+      if (data?.enriched || data?.provider_status === 'success') {
+        setState({ status: 'success', data, message: '', providerConfigured: true });
+      } else {
+        setState({
+          status: 'failed',
+          data,
+          message: data?.error_message || data?.error || data?.message || 'IP enrichment failed',
+          providerConfigured: true
+        });
+      }
+    } catch (err) {
+      const notConfigured = err?.response?.status === 409;
+      const msg = notConfigured
+        ? 'IPinfo Lite provider is not configured'
+        : (err?.response?.status === 429
+          ? 'IPinfo Lite rate limit reached. Try again later.'
+          : (err?.response?.data?.error || err?.response?.data?.message || 'IP enrichment failed'));
+      setState({
+        status: notConfigured ? 'not_configured' : 'failed',
+        data: err?.response?.data || null,
+        message: msg,
+        providerConfigured: !notConfigured
+      });
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const d = state.data || {};
+  const signals = d.derived_signals || {};
+
+  const signalBadge = (label, on) => {
+    const colors = on
+      ? { b: '#166534', bg: 'rgba(22,163,74,.14)', t: '#86efac' }
+      : { b: '#475569', bg: 'rgba(71,85,105,.18)', t: '#94a3b8' };
+    return (
+      <span key={label} style={{ padding: '4px 10px', borderRadius: 999, border: `1px solid ${colors.b}`, background: colors.bg, color: colors.t, fontSize: 11, fontWeight: 600 }}>
+        {label}
+      </span>
+    );
+  };
+
+  if (!active && !hasLoaded) return null;
+
+  if (state.status === 'loading') {
+    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading IP enrichment...</span></div>;
+  }
+
+  if (state.status === 'not_configured') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#92400e', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>IP Enrichment</div>
+        <div style={{ color: '#fcd34d', fontSize: 13, marginTop: 6 }}>IPinfo Lite provider is not configured</div>
+        {isAdmin ? <Link to="/administration/enrichment-providers" style={{ color: '#93c5fd', fontSize: 13, marginTop: 8 }}>Configure provider</Link> : null}
+      </div>
+    );
+  }
+
+  if (state.status === 'not_found') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>IP Enrichment <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IPinfo Lite</span></div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>ASN, country, and continent from IPinfo Lite (on-demand)</div>
+        </div>
+        <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
+          <div style={{ color: '#94a3b8' }}>Observed: <span style={{ color: '#e2e8f0' }}>{target.observable || '-'}</span></div>
+          <div style={{ color: '#94a3b8', marginTop: 4 }}>Parsed IP: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{ip}</span></div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ color: '#cbd5e1', fontSize: 13 }}>No IP enrichment yet</span>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>
+            {enriching ? 'Enriching…' : 'Enrich IP'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'error' || state.status === 'failed') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>IP Enrichment</div>
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message || 'IP enrichment failed'}</span>
+        <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Retry'}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+            IP Enrichment
+            <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IPinfo Lite</span>
+            {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
+          </div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+            {d.last_enriched_at ? `Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand IP intelligence'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
+          {isAdmin ? <button type="button" onClick={() => enrich(true).catch(() => {})} disabled={enriching} title="Admin force refresh (5 min cooldown)">Force</button> : null}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
+        <div style={{ color: '#94a3b8' }}>Observed: <span style={{ color: '#e2e8f0' }}>{target.observable || '-'}</span></div>
+        <div style={{ color: '#94a3b8', marginTop: 4 }}>Parsed IP: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{d.ip || ip}</span></div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 12 }}>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>IP</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.ip || ip}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>ASN</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.asn || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>AS Name</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.as_name || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>AS Domain</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.as_domain || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Country</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.country || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Country Code</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.country_code || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Continent</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.continent || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Continent Code</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>{d.continent_code || '-'}</div></div>
+        <div style={{ border: '1px solid #334155', borderRadius: 8, padding: '8px 10px', background: '#0b1220' }}><div style={{ fontSize: 11, color: '#94a3b8' }}>Provider</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginTop: 4 }}>IPinfo Lite</div></div>
+      </div>
+
+      <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {signalBadge('IPinfo Available', signals.ipinfo_available)}
+        {signalBadge('ASN Available', signals.asn_available)}
+        {signalBadge('Country Available', signals.country_available)}
+        {d.cached ? signalBadge('Cached', true) : null}
+      </div>
+    </div>
+  );
 }
 
 function RdapTargetNote({ data }) {
@@ -8377,6 +8672,7 @@ function IOCDetailsPage() {
             {activeTab === 'intelligence' ? (
               <div style={{ display: 'grid', gap: 14 }}>
                 <VirusTotalEnrichmentCard iocId={summary.id} active={intelligenceTabActive} />
+                <IpEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
                 {isRdapEligibleObservable(summary.observable, summary.observable_type).eligible ? (
                   <RdapEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
                 ) : null}
