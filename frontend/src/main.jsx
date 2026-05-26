@@ -486,7 +486,7 @@ function LoginPage() {
 function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { userEmail, role, canWrite, refreshSession } = useSession();
+  const { userEmail, role, canWrite, isAdmin, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
   const [needsTimezoneSelection, setNeedsTimezoneSelection] = useState(false);
 
@@ -602,7 +602,8 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
-            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags'))}>Settings</Link>
+            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/users') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags'))}>Settings</Link>
+            {isAdmin ? <Link to="/administration/users" style={subMenuStyle(isActive('/administration/users'))}>Users</Link> : null}
             <Link to="/administration/audit-logs" style={subMenuStyle(isActive('/administration/audit-logs'))}>Audit Logs</Link>
             <Link to="/administration/tags" style={subMenuStyle(isActive('/administration/tags'))}>Tags</Link>
             <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
@@ -5632,143 +5633,174 @@ function EnrichmentProvidersPage() {
   </section></AppShell>;
 }
 
-function AdministrationPage() {
-  const { canWrite, role, userId, refreshSession } = useSession();
-  const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
-  const [saving, setSaving] = useState(false);
-  const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [createBusy, setCreateBusy] = useState(false);
-  const [profile, setProfile] = useState({ first_name: '', last_name: '' });
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [statusBusyId, setStatusBusyId] = useState(null);
+const EMPTY_CREATE_USER_FORM = {
+  first_name: '',
+  last_name: '',
+  username: '',
+  password: '',
+  role: 'readonly'
+};
 
-  const ui = {
-    pageTitle: { margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.02em' },
-    pageSub: { margin: '0 0 28px', fontSize: 14, color: '#94a3b8', lineHeight: 1.5, maxWidth: 560 },
-    card: {
-      border: '1px solid #334155',
-      borderRadius: 12,
-      background: '#111827',
-      padding: 24,
-      marginBottom: 24,
-      boxSizing: 'border-box'
-    },
-    cardTitle: { margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: '#e2e8f0' },
-    cardDesc: { margin: '0 0 20px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 },
-    label: {
-      display: 'block',
-      fontSize: 12,
-      fontWeight: 600,
-      color: '#94a3b8',
-      marginBottom: 8,
-      letterSpacing: '0.03em'
-    },
-    input: {
-      width: '100%',
-      padding: '10px 12px',
-      borderRadius: 8,
-      border: '1px solid #334155',
-      background: '#0f172a',
-      color: '#e2e8f0',
-      fontSize: 14,
-      boxSizing: 'border-box'
-    },
-    select: {
-      width: '100%',
-      padding: '10px 12px',
-      borderRadius: 8,
-      border: '1px solid #334155',
-      background: '#0f172a',
-      color: '#e2e8f0',
-      fontSize: 14,
-      boxSizing: 'border-box',
-      cursor: 'pointer'
-    },
-    btnPrimary: {
-      padding: '10px 22px',
-      borderRadius: 8,
-      border: 'none',
-      background: '#2563eb',
-      color: '#fff',
-      fontWeight: 600,
-      fontSize: 14,
-      cursor: 'pointer',
-      boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
-    },
-    btnDanger: {
-      padding: '6px 12px',
-      borderRadius: 8,
-      border: '1px solid #7f1d1d',
-      background: 'rgba(127,29,29,0.25)',
-      color: '#fca5a5',
-      fontSize: 12,
-      fontWeight: 600,
-      cursor: 'pointer',
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6
-    },
-    btnDeactivate: {
-      padding: '6px 10px',
-      borderRadius: 8,
-      border: '1px solid #b45309',
-      background: 'rgba(180,83,9,0.2)',
-      color: '#fcd34d',
-      fontSize: 12,
-      fontWeight: 600,
-      cursor: 'pointer'
-    },
-    btnActivate: {
-      padding: '6px 10px',
-      borderRadius: 8,
-      border: '1px solid #166534',
-      background: 'rgba(22,101,52,0.25)',
-      color: '#86efac',
-      fontSize: 12,
-      fontWeight: 600,
-      cursor: 'pointer'
-    },
-    actionsCell: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: 8,
-      justifyContent: 'flex-end',
-      alignItems: 'center'
-    },
-    table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
-    th: {
-      textAlign: 'left',
-      padding: '12px 14px',
-      borderBottom: '1px solid #334155',
-      color: '#94a3b8',
+const USERS_ACTION_BTN = {
+  deactivate: {
+    padding: '6px 10px',
+    borderRadius: 8,
+    border: '1px solid #b45309',
+    background: 'rgba(180,83,9,0.2)',
+    color: '#fcd34d',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer'
+  },
+  activate: {
+    padding: '6px 10px',
+    borderRadius: 8,
+    border: '1px solid #166534',
+    background: 'rgba(22,101,52,0.25)',
+    color: '#86efac',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer'
+  },
+  delete: {
+    padding: '6px 12px',
+    borderRadius: 8,
+    border: '1px solid #7f1d1d',
+    background: 'rgba(127,29,29,0.25)',
+    color: '#fca5a5',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6
+  }
+};
+
+function formatUserDisplayName(u) {
+  const t = `${u?.first_name || ''} ${u?.last_name || ''}`.trim();
+  return t || 'Not set';
+}
+
+function userRoleLabel(role) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'analyst') return 'Analyst';
+  return 'Read Only';
+}
+
+function userStatusLabel(status) {
+  return String(status || 'active') === 'passive' ? 'Inactive' : 'Active';
+}
+
+function userRoleBadgeStyle(role) {
+  if (role === 'admin') {
+    return {
+      display: 'inline-block',
       fontSize: 11,
       fontWeight: 700,
-      textTransform: 'uppercase',
-      letterSpacing: '0.06em'
-    },
-    td: { padding: '14px', borderBottom: '1px solid #1e293b', color: '#e2e8f0', verticalAlign: 'middle' }
-  };
-
-  async function loadUsers() {
-    if (!canWrite) return;
-    setUsersLoading(true);
-    try {
-      const { data } = await api.get('/users');
-      setUsers(data?.users || []);
-    } catch {
-      setUsers([]);
-    } finally {
-      setUsersLoading(false);
-    }
+      letterSpacing: '0.04em',
+      padding: '4px 10px',
+      borderRadius: 6,
+      background: 'rgba(185, 28, 28, 0.2)',
+      color: '#fca5a5',
+      border: '1px solid rgba(127, 29, 29, 0.8)'
+    };
   }
+  if (role === 'analyst') {
+    return {
+      display: 'inline-block',
+      fontSize: 11,
+      fontWeight: 600,
+      letterSpacing: '0.03em',
+      padding: '4px 10px',
+      borderRadius: 6,
+      background: 'rgba(37, 99, 235, 0.18)',
+      color: '#93c5fd',
+      border: '1px solid rgba(29, 78, 216, 0.65)'
+    };
+  }
+  return {
+    display: 'inline-block',
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: '0.03em',
+    padding: '4px 10px',
+    borderRadius: 6,
+    background: 'rgba(51, 65, 85, 0.5)',
+    color: '#cbd5e1',
+    border: '1px solid #475569'
+  };
+}
+
+function userStatusBadgeStyle(status) {
+  if (String(status || 'active') === 'passive') {
+    return {
+      display: 'inline-block',
+      fontSize: 11,
+      fontWeight: 600,
+      letterSpacing: '0.03em',
+      padding: '4px 10px',
+      borderRadius: 6,
+      background: 'rgba(71, 85, 105, 0.45)',
+      color: '#cbd5e1',
+      border: '1px solid #64748b'
+    };
+  }
+  return {
+    display: 'inline-block',
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    padding: '4px 10px',
+    borderRadius: 6,
+    background: 'rgba(22, 163, 74, 0.2)',
+    color: '#86efac',
+    border: '1px solid rgba(22, 101, 52, 0.85)'
+  };
+}
+
+function UserRoleBadge({ role }) {
+  return <span style={userRoleBadgeStyle(role)}>{userRoleLabel(role)}</span>;
+}
+
+function UserStatusBadge({ status }) {
+  return <span style={userStatusBadgeStyle(status)}>{userStatusLabel(status)}</span>;
+}
+
+function AdministrationSettingsPage() {
+  const { role, userId, refreshSession } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
+  const [saving, setSaving] = useState(false);
+  const [timezoneError, setTimezoneError] = useState('');
+  const [timezoneSuccess, setTimezoneSuccess] = useState('');
+  const [profile, setProfile] = useState({ first_name: '', last_name: '' });
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
 
   useEffect(() => {
-    loadUsers().catch(() => {});
-  }, [canWrite]);
+    let mounted = true;
+    async function loadPreference() {
+      try {
+        const { data } = await api.get('/users/me/preferences');
+        if (!mounted) return;
+        if (data?.timezone) {
+          localStorage.setItem('demo_timezone', data.timezone);
+          setTimezone(data.timezone);
+        }
+      } catch {
+        /* keep local fallback */
+      }
+    }
+    loadPreference().catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function loadSelfProfile() {
-    if (canWrite || userId == null) return;
+    if (role !== 'readonly' || userId == null) return;
     try {
       const { data } = await api.get('/users');
       const u = (data?.users || [])[0];
@@ -5780,57 +5812,22 @@ function AdministrationPage() {
 
   useEffect(() => {
     loadSelfProfile().catch(() => {});
-  }, [canWrite, userId]);
+  }, [role, userId]);
 
-  async function save() {
-    if (!canWrite) {
-      localStorage.setItem('demo_timezone', timezone);
-      alert('Timezone stored locally (read-only account).');
-      return;
-    }
+  async function saveTimezone() {
     setSaving(true);
+    setTimezoneError('');
+    setTimezoneSuccess('');
     try {
       const { data } = await api.put('/users/me/preferences', { timezone });
-      localStorage.setItem('demo_timezone', data?.timezone || timezone);
-      alert('Timezone updated');
-    } catch {
-      alert('Failed to update timezone');
+      const tz = data?.timezone || timezone;
+      localStorage.setItem('demo_timezone', tz);
+      setTimezone(tz);
+      setTimezoneSuccess('Timezone updated.');
+    } catch (err) {
+      setTimezoneError(apiErrorMessage(err, 'Failed to update timezone'));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function createUser(e) {
-    e.preventDefault();
-    if (!canWrite) return;
-    const form = e.currentTarget;
-    const fd = new FormData(form);
-    const username = String(fd.get('username') || '').trim();
-    const password = fd.get('password');
-    const first_name = String(fd.get('first_name') || '').trim();
-    const last_name = String(fd.get('last_name') || '').trim();
-    const r = String(fd.get('role') || 'readonly').trim();
-    if (!username || !password) {
-      alert('Username and password required');
-      return;
-    }
-    setCreateBusy(true);
-    try {
-      await api.post('/users', { username, password, first_name, last_name, role: r });
-      form.reset();
-      await loadUsers();
-      alert('User created');
-    } catch (err) {
-      const status = Number(err?.response?.status || 0);
-      const backendMsg = String(err?.response?.data?.message || '').trim();
-      if (status === 409 || /already exists/i.test(backendMsg)) {
-        alert('This username is already in use. Please choose another one.');
-      } else {
-        const msg = backendMsg || err?.message || 'Failed to create user';
-        alert(msg);
-      }
-    } finally {
-      setCreateBusy(false);
     }
   }
 
@@ -5838,122 +5835,33 @@ function AdministrationPage() {
     e.preventDefault();
     if (userId == null) return;
     setProfileBusy(true);
+    setProfileError('');
+    setProfileSuccess('');
     try {
       await api.put(`/users/${userId}`, {
         first_name: profile.first_name,
         last_name: profile.last_name
       });
       await refreshSession();
-      alert('Profile updated');
+      setProfileSuccess('Profile updated.');
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to update profile';
-      alert(msg);
+      setProfileError(apiErrorMessage(err, 'Failed to update profile'));
     } finally {
       setProfileBusy(false);
     }
   }
 
-  async function removeUser(id) {
-    if (!canWrite) return;
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
-    try {
-      await api.delete(`/users/${id}`);
-      await loadUsers();
-    } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to delete user';
-      alert(msg);
-    }
-  }
-
-  async function setUserStatus(targetId, next) {
-    if (!canWrite) return;
-    const confirmMsg =
-      next === 'passive'
-        ? 'Are you sure you want to deactivate this user?'
-        : 'Are you sure you want to activate this user?';
-    if (!window.confirm(confirmMsg)) return;
-    setStatusBusyId(targetId);
-    try {
-      await api.patch(`/users/${targetId}/status`, { status: next });
-      await loadUsers();
-    } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to update status';
-      alert(msg);
-    } finally {
-      setStatusBusyId(null);
-    }
-  }
-
-  function formatDisplayName(u) {
-    const t = `${u.first_name || ''} ${u.last_name || ''}`.trim();
-    return t || 'Not set';
-  }
-
-  function accountStatusBadgeStyle(st) {
-    if (String(st || 'active') === 'passive') {
-      return {
-        display: 'inline-block',
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: '0.03em',
-        padding: '4px 10px',
-        borderRadius: 6,
-        background: 'rgba(71, 85, 105, 0.45)',
-        color: '#cbd5e1',
-        border: '1px solid #64748b'
-      };
-    }
-    return {
-      display: 'inline-block',
-      fontSize: 11,
-      fontWeight: 700,
-      letterSpacing: '0.04em',
-      padding: '4px 10px',
-      borderRadius: 6,
-      background: 'rgba(22, 163, 74, 0.2)',
-      color: '#86efac',
-      border: '1px solid rgba(22, 101, 52, 0.85)'
-    };
-  }
-
-  function roleBadgeStyle(r) {
-    if (r === 'admin') {
-      return {
-        display: 'inline-block',
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.04em',
-        padding: '4px 10px',
-        borderRadius: 6,
-        background: 'rgba(185, 28, 28, 0.2)',
-        color: '#fca5a5',
-        border: '1px solid rgba(127, 29, 29, 0.8)'
-      };
-    }
-    return {
-      display: 'inline-block',
-      fontSize: 11,
-      fontWeight: 600,
-      letterSpacing: '0.03em',
-      padding: '4px 10px',
-      borderRadius: 6,
-      background: 'rgba(51, 65, 85, 0.5)',
-      color: '#cbd5e1',
-      border: '1px solid #475569'
-    };
-  }
-
   return (
     <AppShell>
-      <div style={{ width: '100%', maxWidth: 960, margin: 0, boxSizing: 'border-box' }}>
-        <h1 style={ui.pageTitle}>Administration</h1>
-        <p style={ui.pageSub}>
-          Manage your session timezone and, when permitted, platform users and roles.
-        </p>
+      <section style={ui.section}>
+        <h1 style={ui.pageTitle}>Settings</h1>
+        <p style={ui.pageSub}>Manage platform-wide preferences and display settings.</p>
 
-        <div style={ui.card}>
-          <h2 style={ui.cardTitle}>Timezone</h2>
-          <p style={ui.cardDesc}>Used for timestamps across the application.</p>
+        <div style={{ ...ui.formPanel, marginTop: 8 }}>
+          <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Timezone</h2>
+          <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+            Used for timestamps across the application.
+          </p>
           <label htmlFor="admin-tz" style={ui.label}>Display timezone</label>
           <select
             id="admin-tz"
@@ -5966,7 +5874,7 @@ function AdministrationPage() {
           <div style={{ marginTop: 16 }}>
             <button
               type="button"
-              onClick={save}
+              onClick={() => saveTimezone().catch(() => {})}
               disabled={saving}
               style={{
                 ...ui.btnPrimary,
@@ -5977,12 +5885,24 @@ function AdministrationPage() {
               {saving ? 'Saving…' : 'Save timezone'}
             </button>
           </div>
+          {timezoneError ? (
+            <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+              {timezoneError}
+            </div>
+          ) : null}
+          {timezoneSuccess ? (
+            <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(22,101,52,0.2)', fontSize: 13 }}>
+              {timezoneSuccess}
+            </div>
+          ) : null}
         </div>
 
         {role === 'readonly' && userId != null ? (
-          <div style={ui.card}>
-            <h2 style={ui.cardTitle}>Your profile</h2>
-            <p style={ui.cardDesc}>Update the name shown on your account.</p>
+          <div style={{ ...ui.formPanel, marginTop: 16 }}>
+            <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Your profile</h2>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+              Update the name shown on your account.
+            </p>
             <form onSubmit={saveProfile} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, maxWidth: 560 }}>
               <div>
                 <label htmlFor="profile-fn" style={ui.label}>First name</label>
@@ -6018,151 +5938,335 @@ function AdministrationPage() {
                 </button>
               </div>
             </form>
+            {profileError ? (
+              <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+                {profileError}
+              </div>
+            ) : null}
+            {profileSuccess ? (
+              <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(22,101,52,0.2)', fontSize: 13 }}>
+                {profileSuccess}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+    </AppShell>
+  );
+}
+
+function CreateUserModal({ onClose, onCreated }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  const [form, setForm] = useState(EMPTY_CREATE_USER_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(e) {
+    e.preventDefault();
+    const username = String(form.username || '').trim();
+    const password = form.password;
+    const first_name = String(form.first_name || '').trim();
+    const last_name = String(form.last_name || '').trim();
+    const role = String(form.role || 'readonly').trim();
+    if (!username || !password) {
+      setError('Username and password are required.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await api.post('/users', { username, password, first_name, last_name, role });
+      onClose?.();
+      onCreated?.();
+    } catch (err) {
+      const status = Number(err?.response?.status || 0);
+      const backendMsg = String(err?.response?.data?.message || '').trim();
+      if (status === 409 || /already exists/i.test(backendMsg)) {
+        setError('This username is already in use. Please choose another one.');
+      } else {
+        setError(backendMsg || err?.message || 'Failed to create user');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ModalOverlay onClose={saving ? undefined : onClose}>
+      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Create User</h3>
+      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+        Create a new account and assign a role.
+      </p>
+      <form onSubmit={submit}>
+        <FeedFormField ui={ui} label="First name" fullWidth>
+          <input
+            value={form.first_name}
+            onChange={(e) => setForm((x) => ({ ...x, first_name: e.target.value }))}
+            style={ui.input}
+            autoComplete="given-name"
+          />
+        </FeedFormField>
+        <FeedFormField ui={ui} label="Last name" fullWidth>
+          <input
+            value={form.last_name}
+            onChange={(e) => setForm((x) => ({ ...x, last_name: e.target.value }))}
+            style={ui.input}
+            autoComplete="family-name"
+          />
+        </FeedFormField>
+        <FeedFormField ui={ui} label="Username" fullWidth>
+          <input
+            required
+            value={form.username}
+            onChange={(e) => setForm((x) => ({ ...x, username: e.target.value }))}
+            style={ui.input}
+            autoComplete="username"
+          />
+        </FeedFormField>
+        <FeedFormField ui={ui} label="Password" fullWidth>
+          <input
+            required
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm((x) => ({ ...x, password: e.target.value }))}
+            style={ui.input}
+            autoComplete="new-password"
+          />
+        </FeedFormField>
+        <FeedFormField ui={ui} label="User Role" fullWidth>
+          <select
+            value={form.role}
+            onChange={(e) => setForm((x) => ({ ...x, role: e.target.value }))}
+            style={ui.select}
+          >
+            <option value="admin">Admin (Full Access)</option>
+            <option value="readonly">Read Only (View Only)</option>
+          </select>
+        </FeedFormField>
+        {error ? (
+          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+            {error}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+          <button type="button" style={ui.btn} onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" style={ui.btnPrimary} disabled={saving}>
+            {saving ? 'Creating…' : 'Create User'}
+          </button>
+        </div>
+      </form>
+    </ModalOverlay>
+  );
+}
+
+function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, onRemove }) {
+  const ui = PUBLISHED_FEEDS_UI;
+
+  if (usersLoading) {
+    return <div style={{ color: '#94a3b8', padding: '12px 0' }}>Loading…</div>;
+  }
+  if (!users.length) {
+    return <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No users yet.</div>;
+  }
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={ui.thead}>
+            <th style={ui.th}>Username</th>
+            <th style={ui.th}>Name</th>
+            <th style={ui.th}>Role</th>
+            <th style={ui.th}>Status</th>
+            <th style={{ ...ui.th, textAlign: 'right' }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((u) => {
+            const isPassive = String(u.status || 'active') === 'passive';
+            const isOwnRow = userId != null && String(userId) === String(u.id);
+            const busy = statusBusyId === u.id;
+            return (
+              <tr key={u.id} style={{ ...ui.tr, opacity: isPassive ? 0.62 : 1 }}>
+                <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>{u.username}</td>
+                <td style={ui.td}>{formatUserDisplayName(u)}</td>
+                <td style={ui.td}><UserRoleBadge role={u.role} /></td>
+                <td style={ui.td}><UserStatusBadge status={u.status} /></td>
+                <td style={{ ...ui.td, textAlign: 'right' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {!isPassive ? (
+                      <button
+                        type="button"
+                        onClick={() => onSetStatus(u.id, 'passive')}
+                        disabled={isOwnRow || busy}
+                        style={{
+                          ...USERS_ACTION_BTN.deactivate,
+                          opacity: isOwnRow || busy ? 0.4 : 1,
+                          cursor: isOwnRow || busy ? 'not-allowed' : 'pointer'
+                        }}
+                        title={isOwnRow ? 'You cannot deactivate your own account' : 'Deactivate user'}
+                      >
+                        {busy ? '…' : 'Deactivate'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onSetStatus(u.id, 'active')}
+                        disabled={busy}
+                        style={{
+                          ...USERS_ACTION_BTN.activate,
+                          opacity: busy ? 0.4 : 1,
+                          cursor: busy ? 'wait' : 'pointer'
+                        }}
+                        title="Activate user"
+                      >
+                        {busy ? '…' : 'Activate'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onRemove(u.id)}
+                      style={USERS_ACTION_BTN.delete}
+                      title="Delete user"
+                    >
+                      <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>×</span>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UsersPage() {
+  const { isAdmin, userId } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [statusBusyId, setStatusBusyId] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [actionError, setActionError] = useState('');
+
+  async function loadUsers() {
+    setUsersLoading(true);
+    setActionError('');
+    try {
+      const { data } = await api.get('/users');
+      setUsers(data?.users || []);
+    } catch (err) {
+      setUsers([]);
+      setActionError(apiErrorMessage(err, 'Failed to load users'));
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadUsers().catch(() => {});
+  }, [isAdmin]);
+
+  function openCreateModal() {
+    setSuccessMessage('');
+    setActionError('');
+    setShowCreateModal(true);
+  }
+
+  function closeCreateModal() {
+    setShowCreateModal(false);
+  }
+
+  async function handleUserCreated() {
+    setSuccessMessage('User created successfully.');
+    await loadUsers();
+  }
+
+  async function removeUser(id) {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    setActionError('');
+    try {
+      await api.delete(`/users/${id}`);
+      await loadUsers();
+    } catch (err) {
+      setActionError(apiErrorMessage(err, 'Failed to delete user'));
+    }
+  }
+
+  async function setUserStatus(targetId, next) {
+    const confirmMsg =
+      next === 'passive'
+        ? 'Are you sure you want to deactivate this user?'
+        : 'Are you sure you want to activate this user?';
+    if (!window.confirm(confirmMsg)) return;
+    setStatusBusyId(targetId);
+    setActionError('');
+    try {
+      await api.patch(`/users/${targetId}/status`, { status: next });
+      await loadUsers();
+    } catch (err) {
+      setActionError(apiErrorMessage(err, 'Failed to update status'));
+    } finally {
+      setStatusBusyId(null);
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <section style={ui.section}>
+          <h1 style={ui.pageTitle}>Users</h1>
+          <p style={ui.pageSub}>Admin access required.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Users</h1>
+            <p style={ui.pageSub}>Manage platform accounts, roles, and account status.</p>
+          </div>
+          <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>+ Create User</button>
+        </div>
+
+        {successMessage ? (
+          <div style={{ ...ui.banner, marginTop: 12, borderColor: '#166534', color: '#86efac', background: 'rgba(22,101,52,0.18)' }}>
+            {successMessage}
+          </div>
+        ) : null}
+        {actionError ? (
+          <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5', background: 'rgba(127,29,29,0.18)' }}>
+            {actionError}
           </div>
         ) : null}
 
-        {canWrite ? (
-          <>
-            <div style={ui.card}>
-              <h2 style={ui.cardTitle}>Create User</h2>
-              <p style={ui.cardDesc}>Create a new user and assign role.</p>
-              <form onSubmit={createUser} style={{ display: 'grid', gap: 20, maxWidth: 520 }}>
-                <div>
-                  <label htmlFor="new-first" style={ui.label}>First name</label>
-                  <input id="new-first" name="first_name" style={ui.input} autoComplete="given-name" />
-                </div>
-                <div>
-                  <label htmlFor="new-last" style={ui.label}>Last name</label>
-                  <input id="new-last" name="last_name" style={ui.input} autoComplete="family-name" />
-                </div>
-                <div>
-                  <label htmlFor="new-username" style={ui.label}>Username</label>
-                  <input id="new-username" name="username" required style={ui.input} autoComplete="username" />
-                </div>
-                <div>
-                  <label htmlFor="new-password" style={ui.label}>Password</label>
-                  <input id="new-password" name="password" type="password" required style={ui.input} autoComplete="new-password" />
-                </div>
-                <div>
-                  <label htmlFor="new-role" style={ui.label}>User Role</label>
-                  <select id="new-role" name="role" defaultValue="readonly" style={ui.select}>
-                    <option value="admin">Admin (Full Access)</option>
-                    <option value="readonly">Read Only (View Only)</option>
-                  </select>
-                </div>
-                <div>
-                  <button
-                    type="submit"
-                    disabled={createBusy}
-                    style={{
-                      ...ui.btnPrimary,
-                      opacity: createBusy ? 0.8 : 1,
-                      cursor: createBusy ? 'wait' : 'pointer'
-                    }}
-                  >
-                    {createBusy ? 'Creating…' : 'Create User'}
-                  </button>
-                </div>
-              </form>
-            </div>
+        <div style={{ ...ui.formPanel, marginTop: 16 }}>
+          <UsersTable
+            users={users}
+            usersLoading={usersLoading}
+            userId={userId}
+            statusBusyId={statusBusyId}
+            onSetStatus={setUserStatus}
+            onRemove={removeUser}
+          />
+        </div>
+      </section>
 
-            <div style={ui.card}>
-              <h2 style={ui.cardTitle}>Users</h2>
-              <p style={ui.cardDesc}>All accounts on this instance.</p>
-              {usersLoading ? (
-                <div style={{ color: '#94a3b8', padding: '8px 0' }}>Loading…</div>
-              ) : users.length === 0 ? (
-                <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No users yet.</div>
-              ) : (
-                <div style={{ overflowX: 'auto', margin: '4px -4px 0' }}>
-                  <table className="ioc-table" style={ui.table}>
-                    <thead>
-                      <tr>
-                        <th style={ui.th}>Username</th>
-                        <th style={ui.th}>Name</th>
-                        <th style={ui.th}>Role</th>
-                        <th style={ui.th}>Status</th>
-                        <th style={{ ...ui.th, textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map((u) => {
-                        const isPassive = String(u.status || 'active') === 'passive';
-                        const isOwnRow = userId != null && String(userId) === String(u.id);
-                        const busy = statusBusyId === u.id;
-                        return (
-                        <tr
-                          key={u.id}
-                          style={{
-                            background: 'transparent',
-                            opacity: isPassive ? 0.62 : 1
-                          }}
-                        >
-                          <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 13 }}>{u.username}</td>
-                          <td style={ui.td}>{formatDisplayName(u)}</td>
-                          <td style={ui.td}>
-                            <span style={roleBadgeStyle(u.role)}>
-                              {u.role === 'admin' ? 'Admin' : 'Read only'}
-                            </span>
-                          </td>
-                          <td style={ui.td}>
-                            <span style={accountStatusBadgeStyle(u.status)}>
-                              {isPassive ? 'Passive' : 'Active'}
-                            </span>
-                          </td>
-                          <td style={{ ...ui.td, textAlign: 'right' }}>
-                            <div style={ui.actionsCell}>
-                              {!isPassive ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setUserStatus(u.id, 'passive')}
-                                  disabled={isOwnRow || busy}
-                                  style={{
-                                    ...ui.btnDeactivate,
-                                    opacity: isOwnRow || busy ? 0.4 : 1,
-                                    cursor: isOwnRow || busy ? 'not-allowed' : 'pointer'
-                                  }}
-                                  title={isOwnRow ? 'You cannot deactivate your own account' : 'Deactivate user'}
-                                >
-                                  {busy ? '…' : 'Deactivate'}
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setUserStatus(u.id, 'active')}
-                                  disabled={busy}
-                                  style={{
-                                    ...ui.btnActivate,
-                                    opacity: busy ? 0.4 : 1,
-                                    cursor: busy ? 'wait' : 'pointer'
-                                  }}
-                                  title="Activate user"
-                                >
-                                  {busy ? '…' : 'Activate'}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => removeUser(u.id)}
-                                style={ui.btnDanger}
-                                title="Delete user"
-                              >
-                                <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>×</span>
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        ) : null}
-      </div>
+      {showCreateModal ? (
+        <CreateUserModal
+          onClose={closeCreateModal}
+          onCreated={handleUserCreated}
+        />
+      ) : null}
     </AppShell>
   );
 }
@@ -9306,7 +9410,8 @@ function App() {
           <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
-          <Route path="/administration" element={<Protected><AdministrationPage /></Protected>} />
+          <Route path="/administration/users" element={<Protected><UsersPage /></Protected>} />
+          <Route path="/administration" element={<Protected><AdministrationSettingsPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />
         </Routes>
