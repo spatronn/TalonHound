@@ -32,10 +32,11 @@ test('moveBullJobToFailed dry-run does not mutate', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('isBlockingBullmqEntry detects terminal db mismatch', () => {
-  assert.equal(isBlockingBullmqEntry({ status: 'failed' }, 'active'), true);
-  assert.equal(isBlockingBullmqEntry({ status: 'running', started_at: new Date(), heartbeat_at: new Date() }, 'active'), false);
-  assert.equal(isBlockingBullmqEntry(null, 'stalled'), true);
+test('isBlockingBullmqEntry detects terminal db mismatch', async () => {
+  assert.equal(await isBlockingBullmqEntry({ status: 'failed' }, 'active'), true);
+  assert.equal(await isBlockingBullmqEntry({ status: 'running', started_at: new Date(), heartbeat_at: new Date() }, 'active'), false);
+  assert.equal(await isBlockingBullmqEntry(null, 'stalled'), true);
+  assert.equal(await isBlockingBullmqEntry(null, 'active', Date.now(), { job: { isActive: async () => true } }), false);
 });
 
 test('moveBullJobToFailed skips completed jobs', async () => {

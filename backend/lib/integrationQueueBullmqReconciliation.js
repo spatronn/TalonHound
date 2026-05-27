@@ -21,9 +21,20 @@ export function getQueueKeyPrefix(queue) {
 }
 
 /** Job still listed in BullMQ active/stalled while DB says otherwise (or missing). */
-export function isBlockingBullmqEntry(dbRow, bullState, nowMs = Date.now()) {
+export async function isBlockingBullmqEntry(dbRow, bullState, nowMs = Date.now(), { job = null, isGhost = false } = {}) {
   if (!isBullmqReconcilableState(bullState)) return false;
-  if (!dbRow) return true;
+  if (!dbRow) {
+    if (isGhost) return true;
+    if (bullState === 'stalled') return true;
+    if (job && typeof job.isActive === 'function') {
+      try {
+        if (await job.isActive()) return false;
+      } catch {
+        // fall through
+      }
+    }
+    return true;
+  }
   const dbStatus = String(dbRow.status || '').toLowerCase();
   if (isDbTerminalStatus(dbStatus)) return true;
   if (dbStatus === 'queued') return true;
@@ -190,6 +201,16 @@ async function reconcileOneBullJob({
     return { kind: 'skipped', job_id: jobId, reason: 'db_running_fresh' };
   }
 
+  if (!dbRow && !isGhost && typeof bullJob.isActive === 'function') {
+    try {
+      if (await bullJob.isActive()) {
+        return { kind: 'skipped', job_id: jobId, reason: 'live_repeat_job' };
+      }
+    } catch {
+      // continue with orphan reconcile
+    }
+  }
+
   const bullResult = await moveBullJobToFailedAndPurge(bullJob, FAILURE_MESSAGES.bullmq_orphan, { dryRun, queue });
   if (!dryRun && dbRow && dbStatus === 'queued') {
     await markQueueJobFailed(pool, jobId, {
@@ -298,7 +319,7 @@ export async function reconcileBullmqWithDb({
     const dbRow = dbMap.get(jobId) || null;
     const entry = { job_id: jobId, bullmq_state: bullState, db: dbRow };
 
-    if (isBlockingBullmqEntry(dbRow, bullState, nowMs)) {
+    if (await isBlockingBullmqEntry(dbRow, bullState, nowMs, { job: bullJob, isGhost })) {
       if (bullState === 'active' || isGhost) staleActiveJobs.push(entry);
       if (bullState === 'stalled') staleStalledJobs.push(entry);
     }
@@ -321,7 +342,7 @@ export async function reconcileBullmqWithDb({
     const remainingIds = await loadRedisListedBullJobIds(queue, 500);
     for (const jobId of remainingIds) {
       const dbRow = dbMap.get(jobId) || null;
-      if (!isBlockingBullmqEntry(dbRow, 'active', nowMs)) continue;
+      if (!(await isBlockingBullmqEntry(dbRow, 'active', nowMs, { isGhost: true }))) continue;
       const purged = await purgeJobFromBullmqLists(queue, jobId);
       console.log(`${logPrefix} Purged remaining list entry job_id=${jobId} purged=${JSON.stringify(purged)}`);
       actionsTaken.push({ kind: 'purged_list_entry', job_id: jobId, purged });

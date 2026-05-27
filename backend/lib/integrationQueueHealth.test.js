@@ -24,7 +24,7 @@ test('computeQueueHealth waiting with no active shows degradation warning', () =
     workerConsuming: true
   });
   assert.equal(health.queue_health, 'Degraded');
-  assert.match(health.warnings.join(' '), /worker is not consuming/i);
+  assert.ok(health.warnings.some((w) => /waiting but no worker/i.test(w)));
 });
 
 test('buildQueuedJobHint explains source lock', () => {
