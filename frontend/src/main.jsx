@@ -168,25 +168,41 @@ function formatDurationSeconds(totalSec) {
   return formatDurationMs(totalSec * 1000);
 }
 
-function retroHealthPresentation(stateHealth) {
+function retroHealthPresentation(stateHealth, fallbackLabel) {
   const key = String(stateHealth || 'ERROR').toUpperCase();
   const map = {
     OK: { label: 'OK', color: '#22c55e' },
-    WARNING: { label: 'Sync Lag Warning', color: '#fbbf24' },
+    WARNING: { label: 'Warning', color: '#fbbf24' },
     STALE: { label: 'Stale', color: '#fb923c' },
     ERROR: { label: 'Error', color: '#f87171' }
   };
-  return map[key] || map.ERROR;
+  const base = map[key] || map.ERROR;
+  return fallbackLabel ? { ...base, label: fallbackLabel } : base;
+}
+
+function retroHealthLine(label, healthKey, labelOverride) {
+  const presentation = retroHealthPresentation(healthKey, labelOverride);
+  return (
+    <div>
+      <b>{label}:</b>{' '}
+      <span style={{ color: presentation.color, fontWeight: 700 }}>{presentation.label}</span>
+    </div>
+  );
 }
 
 const RETRO_STATUS_TOOLTIPS = {
-  lastRun: 'Time when the retro worker last wrote run/state information.',
-  processedCursor: 'Timestamp of the newest IOC lookup record successfully covered by retro scan. This is not the worker finish time.',
+  lastRun: 'Retro worker’ın son başarılı run/state yazma zamanı. 1 saatlik periyoda göre 65 dakikayı aşarsa uyarı verilir.',
+  lastRunAge: 'Son retro run’dan bu yana geçen süre. Varsayılan eşik: 60 dk interval + 5 dk grace → 65 dk uyarı, 90 dk stale.',
+  processedCursor: 'Retro scan tarafından başarıyla kapsanan en son ClickHouse IOC lookup timestamp’i. Worker bitiş zamanı değildir.',
   chMaxLookup: 'Latest updated_at in ClickHouse ioc_lookup (active IOCs only). Retro scans IOCs up to this stream position after sync.',
   retroBacklog: 'IOCs in ClickHouse waiting for retro scan after the processed cursor.',
   cursorLag: 'Seconds between processed IOC cursor and latest ClickHouse ioc_lookup updated_at.',
   pgUnsynced: 'IOCs present in PostgreSQL but not yet synced into ClickHouse ioc_lookup. Retro can only scan after sync.',
-  pgSyncLag: 'Time gap between newest PostgreSQL ioc_items.created_at and ClickHouse ioc_lookup.updated_at.'
+  pgSyncLag: 'PostgreSQL’e gelen IOC’lerin ClickHouse ioc_lookup tablosuna sync edilmesindeki gecikme. Retro scan bu sync tamamlanmadan bu IOC’leri göremez.',
+  workerHealth: 'Retro worker run periyodu (varsayılan saatlik). Son run yaşı 65 dk üstünde uyarı, 90 dk üstünde stale.',
+  cursorHealth: 'Retro cursor ve CH backlog. Backlog 0 ve cursor lag düşükse OK.',
+  syncHealth: 'PG→CH correlation sync gecikmesi. Retro worker health’ten bağımsız değerlendirilir.',
+  overallHealth: 'Retro worker, cursor ve correlation sync health birleşimi.'
 };
 
 function integrationJobReasonLabel(job) {
@@ -3151,7 +3167,8 @@ function SystemStatusPage() {
   const redisStatus = status?.redis || {};
   const clickhouseStatus = status?.clickhouse || {};
   const retroStatus = status?.retro || {};
-  const retroHealth = retroHealthPresentation(retroStatus.state_health);
+  const retroOverallKey = retroStatus.overall_health || retroStatus.state_health;
+  const retroHealth = retroHealthPresentation(retroOverallKey, retroStatus.state_health_label);
   const queues = status?.queues || {};
   const queueRows = Object.entries(queues).filter(([key]) => key !== 'error');
   const integrations = status?.integrations || {};
@@ -3242,30 +3259,39 @@ function SystemStatusPage() {
         <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
           <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Retro Scan</span>
-            <span style={{ ...statusDot(retroStatus.state_health === 'OK' || retroStatus.state_health === 'WARNING'), color: retroHealth.color }}>
-              ● {retroStatus.state_health_label || retroHealth.label}
+            <span style={{ ...statusDot(retroOverallKey === 'OK' || retroOverallKey === 'WARNING'), color: retroHealth.color }}>
+              ● Overall: {retroStatus.state_health_label || retroHealth.label}
             </span>
           </div>
           <div style={{ padding: 12, background: '#0f172a' }}>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-              Latest IOC lookup timestamp successfully covered by retro scan vs worker processing timestamps.
+              Retro worker (hourly), cursor coverage, and PG→CH sync are evaluated separately.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
               <div title={RETRO_STATUS_TOOLTIPS.lastRun}><b>Last Retro Run:</b> {retroStatus.last_run_at_iso ? formatUserDateTime(retroStatus.last_run_at_iso) : (retroStatus.last_run_at || '-')}</div>
+              <div title={RETRO_STATUS_TOOLTIPS.lastRunAge}><b>Last Run Age:</b> {formatDurationSeconds(retroStatus.last_run_age_seconds)}</div>
               <div title={RETRO_STATUS_TOOLTIPS.processedCursor}>
                 <b>Processed IOC Cursor:</b> {retroStatus.cursor_ts_iso ? formatUserDateTime(retroStatus.cursor_ts_iso) : (retroStatus.cursor_ts || '-')}
-              </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: -2, marginBottom: 4 }}>
-                Latest IOC lookup timestamp successfully covered by retro scan.
               </div>
               <div title={RETRO_STATUS_TOOLTIPS.chMaxLookup}>
                 <b>CH Lookup Max IOC TS:</b> {retroStatus.ch_max_lookup_updated_at_iso ? formatUserDateTime(retroStatus.ch_max_lookup_updated_at_iso) : (retroStatus.ch_max_lookup_updated_at || '-')}
               </div>
               <div title={RETRO_STATUS_TOOLTIPS.retroBacklog}><b>Retro Backlog:</b> {retroStatus.ch_pending_ioc_count ?? '-'} IOC</div>
               <div title={RETRO_STATUS_TOOLTIPS.cursorLag}><b>Retro Cursor Lag:</b> {retroStatus.ch_cursor_lag_seconds != null ? `${retroStatus.ch_cursor_lag_seconds} sec` : '-'}</div>
+              <div title={RETRO_STATUS_TOOLTIPS.workerHealth}>
+                {retroHealthLine('Retro Worker Health', retroStatus.retro_worker_health, retroStatus.retro_worker_health_label)}
+              </div>
+              <div title={RETRO_STATUS_TOOLTIPS.cursorHealth}>
+                {retroHealthLine('Retro Cursor Health', retroStatus.retro_cursor_health, retroStatus.retro_cursor_health_label)}
+              </div>
               <div title={RETRO_STATUS_TOOLTIPS.pgUnsynced}><b>{'PG \u2192 CH Unsynced IOC:'}</b> {retroStatus.pg_unsynced_ioc_count ?? '-'}</div>
               <div title={RETRO_STATUS_TOOLTIPS.pgSyncLag}><b>{'PG \u2192 CH Sync Lag:'}</b> {formatDurationSeconds(retroStatus.pg_to_ch_sync_lag_seconds)}</div>
-              <div><b>Health:</b> <span style={{ color: retroHealth.color, fontWeight: 700 }}>{retroStatus.state_health_label || retroHealth.label}</span></div>
+              <div title={RETRO_STATUS_TOOLTIPS.syncHealth}>
+                {retroHealthLine('Correlation Sync Health', retroStatus.correlation_sync_health, retroStatus.correlation_sync_health_label)}
+              </div>
+              <div title={RETRO_STATUS_TOOLTIPS.overallHealth}>
+                {retroHealthLine('Overall', retroOverallKey, retroStatus.state_health_label)}
+              </div>
               <div><b>Last Retro Duration:</b> {retroStatus.last_run_duration_ms !== undefined ? `${retroStatus.last_run_duration_ms} ms` : '-'}</div>
               <div><b>Last Chunk Scanned IOC:</b> {retroStatus.last_chunk_scanned_count ?? retroStatus.last_retro_scanned_ioc ?? '-'}</div>
               {Number(retroStatus.chunk_active) === 1 && (

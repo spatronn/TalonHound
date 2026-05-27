@@ -11,7 +11,7 @@ import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './l
 import {
   RETRO_CURSOR_SOURCE,
   RETRO_CURSOR_SEMANTICS,
-  computeRetroStateHealth,
+  buildRetroHealthPayload,
   healthPresentation,
   parseChDateTimeMs,
   retroPendingCountQuery,
@@ -745,7 +745,7 @@ app.get('/api/system/status', async (req, res) => {
       const pgToChSyncLagSeconds = (pgMaxIocCreatedAtMs != null && chMaxLookupUpdatedAtMs != null)
         ? secondsBetween(pgMaxIocCreatedAtMs, chMaxLookupUpdatedAtMs)
         : null;
-      const stateHealth = computeRetroStateHealth({
+      const healthBundle = buildRetroHealthPayload({
         chOk: true,
         pgOk: true,
         cursorTs,
@@ -755,14 +755,21 @@ app.get('/api/system/status', async (req, res) => {
         pgUnsyncedIocCount,
         pgToChSyncLagSeconds,
         lastRunAtMs,
-        chunkActive: Number(latestState?.chunk_active || 0),
         nowMs: Date.now()
       });
-      const retroHealth = healthPresentation(stateHealth);
+      const overallHealth = healthBundle.overall_health;
+      const retroHealth = healthPresentation(overallHealth, { variant: 'overall' });
+      const workerHealthLabel = healthPresentation(healthBundle.retro_worker_health, { variant: 'worker' });
+      const cursorHealthLabel = healthPresentation(healthBundle.retro_cursor_health, { variant: 'cursor' });
+      const syncHealthLabel = healthPresentation(healthBundle.correlation_sync_health, { variant: 'sync' });
 
       payload.retro = {
         last_run_at: latestState?.state_updated_at || null,
         last_run_at_iso: isoFromEpochMs(latestState?.state_updated_at_ms),
+        last_run_age_seconds: healthBundle.last_run_age_seconds,
+        expected_interval_seconds: healthBundle.expected_interval_seconds,
+        grace_seconds: healthBundle.grace_seconds,
+        stale_after_seconds: healthBundle.stale_after_seconds,
         cursor_ts: cursorTs,
         cursor_ts_iso: isoFromEpochMs(latestState?.cursor_ts_ms) || (cursorTsMs ? new Date(cursorTsMs).toISOString() : null),
         cursor_source: RETRO_CURSOR_SOURCE,
@@ -775,6 +782,13 @@ app.get('/api/system/status', async (req, res) => {
         pg_max_ioc_created_at_iso: pgMaxIocCreatedAtMs ? new Date(pgMaxIocCreatedAtMs).toISOString() : null,
         pg_unsynced_ioc_count: pgUnsyncedIocCount,
         pg_to_ch_sync_lag_seconds: pgToChSyncLagSeconds,
+        retro_worker_health: healthBundle.retro_worker_health,
+        retro_worker_health_label: workerHealthLabel.label,
+        retro_cursor_health: healthBundle.retro_cursor_health,
+        retro_cursor_health_label: cursorHealthLabel.label,
+        correlation_sync_health: healthBundle.correlation_sync_health,
+        correlation_sync_health_label: syncHealthLabel.label,
+        overall_health: overallHealth,
         chunk_active: Number(latestState?.chunk_active || 0),
         last_chunk_scanned_count: Number(latestState?.last_chunk_scanned_count || lastRetroScannedIoc || 0),
         last_chunk_pending_before: Number(latestState?.last_chunk_pending_before || 0),
@@ -782,7 +796,7 @@ app.get('/api/system/status', async (req, res) => {
         last_run_duration_ms: Number(latestState?.last_run_duration_ms || 0),
         last_retro_scanned_ioc: lastRetroScannedIoc,
         correlation_sync: correlationSync,
-        state_health: stateHealth,
+        state_health: overallHealth,
         state_health_label: retroHealth.label,
         retro_pending_min_ts: retroRows?.[0]?.pending_min_ts || null,
         retro_pending_max_ts: retroRows?.[0]?.pending_max_ts || null,
