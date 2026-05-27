@@ -10,6 +10,7 @@
     "ioc-correlation-worker": "node migrate.js && node ioc-correlation-worker.js",
     "ioc-retro-worker": "node migrate.js && node ioc-retro-worker.js",
     "ioc-match-count-worker": "node migrate.js && node ioc-match-count-worker.js",
+    "ioc-expiration-worker": "node migrate.js && node ioc-expiration-worker.js",
     "dashboard-map-worker": "node migrate.js && node dashboard-map-worker.js",
     "llm-risk-worker": "node migrate.js && node workers/llmRiskWorker.js",
     "syslog-receiver": "node migrate.js && node syslog-receiver.js",
@@ -17,7 +18,8 @@
     "test:risk": "node --test lib/riskEngine.test.js risk/llmRiskAdvisor.test.js",
     "test:audit": "node --test lib/auditRedaction.test.js",
     "test:tags": "node --test lib/tagHelpers.test.js",
-    "test:domain-root": "node --test lib/domainRoot.test.js"
+    "test:domain-root": "node --test lib/domainRoot.test.js",
+    "test:ioc-expiration": "node --test lib/iocExpiration.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

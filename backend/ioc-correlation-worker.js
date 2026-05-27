@@ -188,6 +188,7 @@ async function fetchIocLookupMatches(tupleList) {
     SELECT observable, observable_type, confidence, source_name, updated_at
     FROM default.ioc_lookup_by_updated
     WHERE (observable, observable_type) IN (${parts})
+      AND confidence > 0
     ORDER BY updated_at DESC
     LIMIT 1 BY observable, observable_type
     SETTINGS max_threads = ${CH_MAX_THREADS}, max_execution_time = ${CH_MAX_EXECUTION_TIME_SECONDS}

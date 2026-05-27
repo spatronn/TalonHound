@@ -25,6 +25,8 @@ import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerTagRoutes } from './routes/tags.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
+import { registerIocExpirationRoutes } from './routes/iocExpiration.js';
+import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { extractIpv4ForGeo } from './lib/ipEnrichmentEligibility.js';
 import { getIpinfoLiteConfig, lookupGeoFromIpEnrichment } from './services/ipinfoLiteService.js';
@@ -3282,9 +3284,24 @@ app.get('/api/integrations', async (req, res) => {
       jobTypes.map((jt) => [jt, computeConsecutiveFailures(recentFailuresRes.rows, jt)])
     );
     const latestQueueByKey = new Map(latestQueueRes.rows.map((r) => [r.integration_key, r]));
-    const integrations = feedsRes.rows.map((feed) =>
-      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures)
-    );
+    const policiesRes = feedKeys.length
+      ? await pool.query(
+        `SELECT feed_id, enabled, expiration_mode, ttl_days, grace_days
+         FROM threat_feed_expiration_policies
+         WHERE observable_type = 'all'`
+      )
+      : { rows: [] };
+    const policyByFeedId = new Map(policiesRes.rows.map((p) => [String(p.feed_id), p]));
+
+    const integrations = feedsRes.rows.map((feed) => {
+      const row = mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures);
+      const policy = policyByFeedId.get(String(feed.integration_id));
+      return {
+        ...row,
+        expiration_summary: formatExpirationSummary(policy || { enabled: false, expiration_mode: 'never' }),
+        expiration_policy: policy || null
+      };
+    });
     const healthSummary = buildIntegrationHealthSummary(integrations);
 
     let queue = {
@@ -3786,6 +3803,7 @@ registerAuditLogRoutes(app, pool);
 registerTagRoutes(app, pool, audit);
 registerRdapEnrichmentRoutes(app, pool, audit);
 registerIpEnrichmentRoutes(app, pool, audit);
+registerIocExpirationRoutes(app, pool, audit);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -5390,7 +5408,15 @@ app.get('/api/ioc/details', async (req, res) => {
         i.match_count,
         i.first_seen_log,
         i.last_seen_log,
-        i.created_at
+        i.created_at,
+        i.status,
+        i.expires_at,
+        i.expired_at,
+        i.expiration_reason,
+        i.manual_status_override,
+        i.manual_status,
+        i.manual_expires_at,
+        i.manual_override_reason
       FROM ioc_items i
       INNER JOIN seed s
         ON i.observable = s.observable
@@ -5555,11 +5581,28 @@ app.get('/api/ioc/details', async (req, res) => {
       impact.evidence_log_count = totalEvidenceLogsCount;
     }
 
+    const membershipsQ = await pool.query(
+      `SELECT m.*, f.key AS feed_key, f.name AS feed_name
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2
+       ORDER BY m.last_seen_in_feed DESC`,
+      [rows[0].id, observableType]
+    );
+
     const summary = {
       id: rows[0].id,
       public_id: rows[0].public_id,
       observable,
       observable_type: rows[0].observable_type,
+      status: rows[0].status || 'active',
+      expires_at: rows[0].expires_at || null,
+      expired_at: rows[0].expired_at || null,
+      expiration_reason: rows[0].expiration_reason || null,
+      manual_status_override: Boolean(rows[0].manual_status_override),
+      manual_status: rows[0].manual_status || null,
+      manual_expires_at: rows[0].manual_expires_at || null,
+      manual_override_reason: rows[0].manual_override_reason || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
       match_count: computedMatchCount,
@@ -5590,6 +5633,7 @@ app.get('/api/ioc/details', async (req, res) => {
       summary,
       match_count: Number(summary.match_count || 0),
       sources: rows,
+      feed_memberships: membershipsQ.rows || [],
       matches: [],
       incidents,
       impact,

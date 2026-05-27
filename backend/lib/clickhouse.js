@@ -292,6 +292,7 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     WHERE observable IS NOT NULL
       AND observable != ''
       AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'sha256')
+      AND COALESCE(status, 'active') = 'active'
       AND toUInt64(id) > ${lastId}
     ORDER BY id
     LIMIT ${batchSize}
@@ -343,4 +344,21 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     last_sync_ts: String(last.created_at),
     last_sync_id: Number(last.id)
   };
+}
+
+/** Mark observables inactive in CH lookup (confidence=0 tombstone, ReplacingMergeTree). */
+export async function pushIocLookupTombstones(rows) {
+  if (!rows?.length) return { written: 0 };
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  const values = rows.map((r) => ({
+    observable: String(r.observable || '').toLowerCase(),
+    observable_type: String(r.observable_type || '').toLowerCase(),
+    confidence: 0,
+    source_name: r.source_name || 'expired',
+    updated_at: now
+  })).filter((r) => r.observable && r.observable_type);
+
+  if (!values.length) return { written: 0 };
+  await clickhouse.insert({ table: 'ioc_lookup', values, format: 'JSONEachRow' });
+  return { written: values.length };
 }

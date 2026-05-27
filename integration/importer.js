@@ -13,6 +13,10 @@ import {
   finalizeIntegrationRun,
   failIntegrationRun
 } from './lib/import-metrics.js';
+import {
+  syncMembershipAfterIocImport,
+  syncSnapshotFeedFromEntries
+} from './lib/iocExpiration.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -351,6 +355,17 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     for (const row of rows) {
       const observables = extractObservablesFromNote(observableType, row.observable, row.note);
       await insertObservablesIndex(client, row.public_id, observables);
+      const src = kept.find((e) => (e.observable ?? e.ip) === row.observable);
+      if (src) {
+        await syncMembershipAfterIocImport(client, {
+          observable: row.observable,
+          observableType,
+          sourceName: src.sourceName,
+          sourceUrl: src.sourceUrl ?? null,
+          confidence: src.confidence ?? null,
+          category: src.category ?? null
+        }).catch(() => {});
+      }
     }
   }
   return out;
@@ -385,11 +400,29 @@ async function insertObservable(client, { observable, observableType, sourceName
     [observable, observableType, sourceName, sourceUrl, confidence, category, note]
   );
 
-  if (!ins.rowCount) return 'duplicate';
+  if (!ins.rowCount) {
+    await syncMembershipAfterIocImport(client, {
+      observable,
+      observableType,
+      sourceName,
+      sourceUrl,
+      confidence,
+      category
+    }).catch(() => {});
+    return 'duplicate';
+  }
 
   const publicId = ins.rows[0].public_id;
   const observables = extractObservablesFromNote(observableType, observable, note);
   await insertObservablesIndex(client, publicId, observables);
+  await syncMembershipAfterIocImport(client, {
+    observable,
+    observableType,
+    sourceName,
+    sourceUrl,
+    confidence,
+    category
+  }).catch(() => {});
   return true;
 }
 
@@ -586,6 +619,15 @@ export async function runUsomImport() {
       [config.usomSourceName, `hash:${currentHash}`]
     );
 
+    await syncSnapshotFeedFromEntries(client, 'usom-trcert', entries, (entry) => ({
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: config.usomSourceName,
+      sourceUrl: config.usomApiUrl,
+      confidence: 'medium',
+      category: 'threat-intel'
+    })).catch(() => {});
+
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('usom_import', runId, suppressionStats, metrics.toJSON());
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
@@ -708,6 +750,15 @@ export async function runUrlhausImport() {
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
       [config.urlhausSourceName, `hash:${currentHash}`]
     );
+
+    await syncSnapshotFeedFromEntries(client, 'urlhaus-abusech', entries, (entry) => ({
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: config.urlhausSourceName,
+      sourceUrl: config.urlhausUrl,
+      confidence: 'high',
+      category: 'malware-url'
+    })).catch(() => {});
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, metrics.toJSON());
@@ -858,6 +909,15 @@ export async function runThreatfoxImport() {
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
       [config.threatfoxSourceName, `hash:${currentHash}`]
     );
+
+    await syncSnapshotFeedFromEntries(client, 'threatfox-abusech', entries, (entry) => ({
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: config.threatfoxSourceName,
+      sourceUrl: config.threatfoxCsvUrl,
+      confidence: entry.confidence,
+      category: entry.threatType || 'threat-intel'
+    })).catch(() => {});
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('threatfox_import', runId, suppressionStats, metrics.toJSON());

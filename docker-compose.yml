@@ -213,6 +213,22 @@ services:
       - clickhouse
     restart: unless-stopped
 
+  ioc-expiration-worker:
+    build: ./backend
+    container_name: demo-ioc-expiration-worker
+    command: ["npm", "run", "ioc-expiration-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=demo
+      - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
+      - IOC_EXPIRATION_BATCH_SIZE=500
+    depends_on:
+      - db
+    restart: unless-stopped
+
   ioc-match-count-worker:
     build: ./backend
     container_name: demo-ioc-match-count-worker

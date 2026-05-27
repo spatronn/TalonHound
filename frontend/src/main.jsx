@@ -3077,6 +3077,39 @@ function feedStatePresentation(enabled) {
   return { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
 }
 
+const EXPIRATION_MODE_OPTIONS = [
+  { id: 'never', label: 'Never' },
+  { id: 'fixed_ttl', label: 'Fixed TTL (from first seen in feed)' },
+  { id: 'last_seen_ttl', label: 'Last seen TTL' },
+  { id: 'missing_from_feed_ttl', label: 'Missing from feed (snapshot feeds)' }
+];
+
+function iocStatusBadge(status) {
+  const s = String(status || 'active').toLowerCase();
+  const map = {
+    active: { label: 'Active', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' },
+    expired: { label: 'Expired', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' },
+    disabled: { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
+    suppressed: { label: 'Suppressed', color: '#93c5fd', bg: 'rgba(30,58,138,0.25)', border: '#1d4ed8' }
+  };
+  const hit = map[s] || map.active;
+  return (
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: hit.color, background: hit.bg, border: `1px solid ${hit.border}`, whiteSpace: 'nowrap' }}>
+      {hit.label}
+    </span>
+  );
+}
+
+function defaultExpirationDraft(policy) {
+  const p = policy || {};
+  return {
+    enabled: Boolean(p.enabled),
+    expiration_mode: p.expiration_mode || 'never',
+    ttl_days: p.ttl_days ?? '',
+    grace_days: p.grace_days ?? ''
+  };
+}
+
 function FeedHealthModal({ title, children, onClose, actions }) {
   return (
     <ModalOverlay onClose={onClose}>
@@ -3131,23 +3164,31 @@ function FeedSettingsModal({
   feed,
   draftCron,
   onDraftChange,
+  draftExpiration,
+  onExpirationChange,
   savingSchedule,
+  savingExpiration,
   error,
+  expirationError,
   onClose,
   onRequestActiveChange,
   onSaveSchedule,
+  onSaveExpiration,
   canWrite
 }) {
   const isActive = feed?.active !== false;
   const state = feedStatePresentation(isActive);
   const currentCron = feed?.schedule || '0 * * * *';
   const scheduleUnchanged = draftCron === currentCron;
+  const exp = draftExpiration || defaultExpirationDraft();
+  const showTtl = exp.enabled && ['fixed_ttl', 'last_seen_ttl'].includes(exp.expiration_mode);
+  const showGrace = exp.enabled && exp.expiration_mode === 'missing_from_feed_ttl';
 
   return (
     <FeedHealthModal
       title="Feed settings"
-      onClose={savingSchedule ? undefined : onClose}
-      actions={<button type="button" onClick={onClose} disabled={savingSchedule}>Close</button>}
+      onClose={(savingSchedule || savingExpiration) ? undefined : onClose}
+      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration}>Close</button>}
     >
       <div style={{ display: 'grid', gap: 16, fontSize: 13 }}>
         <div>
@@ -3200,10 +3241,85 @@ function FeedSettingsModal({
             ) : null}
           </div>
         </div>
+
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+          <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Expiration Policy</div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
+            Expired IOCs are kept in database but excluded from publish/export and syslog correlation.
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={exp.enabled}
+                disabled={!canWrite || savingExpiration}
+                onChange={(e) => onExpirationChange({ ...exp, enabled: e.target.checked })}
+              />
+              <span style={{ color: '#e2e8f0' }}>Enable expiration</span>
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: '#94a3b8' }}>Mode</span>
+              <select
+                value={exp.expiration_mode}
+                disabled={!canWrite || savingExpiration || !exp.enabled}
+                onChange={(e) => onExpirationChange({ ...exp, expiration_mode: e.target.value })}
+                style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+              >
+                {EXPIRATION_MODE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            {showTtl ? (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: '#94a3b8' }}>TTL days</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={exp.ttl_days}
+                  disabled={!canWrite || savingExpiration}
+                  onChange={(e) => onExpirationChange({ ...exp, ttl_days: e.target.value })}
+                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+                />
+              </label>
+            ) : null}
+            {showGrace ? (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: '#94a3b8' }}>Grace days</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={exp.grace_days}
+                  disabled={!canWrite || savingExpiration}
+                  onChange={(e) => onExpirationChange({ ...exp, grace_days: e.target.value })}
+                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+                />
+              </label>
+            ) : null}
+            <div style={{ padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
+              When IOC expires:
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                <li>It will not be published/exported</li>
+                <li>It will not be used in syslog correlation</li>
+                <li>It will remain in database with status=expired</li>
+              </ul>
+            </div>
+            {canWrite ? (
+              <button type="button" onClick={onSaveExpiration} disabled={savingExpiration}>
+                {savingExpiration ? 'Saving...' : 'Save Expiration Policy'}
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
       {error ? (
         <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
           {error}
+        </div>
+      ) : null}
+      {expirationError ? (
+        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+          {expirationError}
         </div>
       ) : null}
     </FeedHealthModal>
@@ -3475,7 +3591,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [togglingKeys, setTogglingKeys] = useState({});
   const [settingsModal, setSettingsModal] = useState(null);
   const [settingsDraftCron, setSettingsDraftCron] = useState('0 * * * *');
+  const [settingsDraftExpiration, setSettingsDraftExpiration] = useState(defaultExpirationDraft());
   const [settingsError, setSettingsError] = useState('');
+  const [settingsExpirationError, setSettingsExpirationError] = useState('');
+  const [savingExpirationKey, setSavingExpirationKey] = useState('');
   const [activeConfirm, setActiveConfirm] = useState(null);
   const [activeConfirmError, setActiveConfirmError] = useState('');
   const [savingScheduleKey, setSavingScheduleKey] = useState('');
@@ -3547,16 +3666,24 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  function openSettingsModal(feed) {
+  async function openSettingsModal(feed) {
     if (!canWrite) return;
     setSettingsError('');
+    setSettingsExpirationError('');
     setSettingsDraftCron(feed.schedule || '0 * * * *');
+    setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     setSettingsModal({
       key: feed.key,
       name: feed.name,
       schedule: feed.schedule || '0 * * * *',
       active: feed.active !== false
     });
+    try {
+      const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feed.key)}/expiration-policy`);
+      setSettingsDraftExpiration(defaultExpirationDraft(data?.policy));
+    } catch {
+      setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
+    }
   }
 
   function closeSettingsModal() {
@@ -3617,6 +3744,31 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       setSettingsError(apiErrorMessage(err, 'Failed to update schedule'));
     } finally {
       setSavingScheduleKey('');
+    }
+  }
+
+  async function saveSettingsExpiration() {
+    if (!canWrite || !settingsModal) return;
+    const { key } = settingsModal;
+    if (savingExpirationKey) return;
+    setSettingsExpirationError('');
+    setSavingExpirationKey(key);
+    try {
+      const exp = settingsDraftExpiration;
+      await api.patch(`/threat-feeds/${encodeURIComponent(key)}/expiration-policy`, {
+        observable_type: 'all',
+        enabled: Boolean(exp.enabled),
+        expiration_mode: exp.expiration_mode,
+        ttl_days: exp.ttl_days === '' ? null : Number(exp.ttl_days),
+        grace_days: exp.grace_days === '' ? null : Number(exp.grace_days)
+      });
+      const list = await load();
+      syncSettingsModal(list);
+      alert('Expiration policy saved');
+    } catch (err) {
+      setSettingsExpirationError(apiErrorMessage(err, 'Failed to update expiration policy'));
+    } finally {
+      setSavingExpirationKey('');
     }
   }
 
@@ -3710,6 +3862,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                   <th style={{ width: '16%' }}>Feed</th>
                   <th style={{ width: 88 }}>Health</th>
                   <th style={{ width: 110 }}>Schedule</th>
+                  <th style={{ width: 120 }}>Expiration</th>
                   <th style={{ width: 130 }}>Last Success</th>
                   <th style={{ width: '34%' }}>Last Run Metrics</th>
                   <th style={{ width: 120 }}>Last Error</th>
@@ -3741,6 +3894,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                           {formatFeedScheduleLabel(i.schedule)}
                         </span>
                       </td>
+                      <td style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap' }}>{i.expiration_summary || 'Never'}</td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}</td>
                       <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
@@ -3760,7 +3914,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                     </tr>
                   );
                 }) : (
-                  <tr><td colSpan={9} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
+                  <tr><td colSpan={10} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -3773,11 +3927,16 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           feed={settingsModal}
           draftCron={settingsDraftCron}
           onDraftChange={setSettingsDraftCron}
+          draftExpiration={settingsDraftExpiration}
+          onExpirationChange={setSettingsDraftExpiration}
           savingSchedule={Boolean(savingScheduleKey)}
+          savingExpiration={Boolean(savingExpirationKey)}
           error={settingsError}
+          expirationError={settingsExpirationError}
           onClose={closeSettingsModal}
           onRequestActiveChange={requestActiveChange}
           onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
+          onSaveExpiration={() => saveSettingsExpiration().catch(() => {})}
           canWrite={canWrite}
         />
       ) : null}
@@ -8683,8 +8842,31 @@ function IOCDetailsPage() {
   }
 
   const summary = data.summary;
+  const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
+
+  async function patchIocStatusOverride(body) {
+    const iocId = Number(summary?.id);
+    if (!Number.isFinite(iocId)) return;
+    await api.patch(`/ioc/${iocId}/status-override`, {
+      observable_type: summary.observable_type,
+      ...body
+    });
+    setActionToast('IOC status updated');
+    await load();
+  }
+
+  async function patchMembershipOverride(membershipId, body) {
+    const iocId = Number(summary?.id);
+    if (!Number.isFinite(iocId)) return;
+    await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
+      observable_type: summary.observable_type,
+      ...body
+    });
+    setActionToast('Feed source updated');
+    await load();
+  }
   const displayObservable = summary?.observable || '-';
   const observableType = String(summary?.observable_type || '').toLowerCase();
   const isHashObservable = FILE_HASH_TYPES.has(observableType);
@@ -8727,7 +8909,10 @@ function IOCDetailsPage() {
 
         <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
           <div style={{ fontSize: 12, color: '#94a3b8' }}>IOC</div>
-          <div style={{ fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 15, overflowWrap: 'anywhere' }}><b>{displayObservable}</b></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 15, overflowWrap: 'anywhere' }}><b>{displayObservable}</b></div>
+            {summary ? iocStatusBadge(summary.status) : null}
+          </div>
         </div>
 
         {loading ? <div>Loading...</div> : !summary ? (
@@ -8758,6 +8943,94 @@ function IOCDetailsPage() {
 
             {activeTab === 'overview' ? (
               <div style={{ display: 'grid', gap: 14 }}>
+                {summary ? (
+                  <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                    <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>IOC Status</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1' }}>
+                      <div><span style={{ color: '#94a3b8' }}>Current status:</span> {iocStatusBadge(summary.status)}</div>
+                      <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {summary.expires_at ? formatUserDateTime(summary.expires_at) : '—'}</div>
+                      <div><span style={{ color: '#94a3b8' }}>Expired at:</span> {summary.expired_at ? formatUserDateTime(summary.expired_at) : '—'}</div>
+                      <div><span style={{ color: '#94a3b8' }}>Expiration reason:</span> {summary.expiration_reason || '—'}</div>
+                      <div><span style={{ color: '#94a3b8' }}>Manual override:</span> {summary.manual_status_override ? `Yes (${summary.manual_status || '—'})` : 'No'}</div>
+                    </div>
+                    {isAdmin && !suppressionActive ? (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                        <button type="button" style={ui.btn} onClick={() => {
+                          const reason = window.prompt('Reason for reactivation', 'Manual reactivation after analyst review');
+                          if (reason == null) return;
+                          patchIocStatusOverride({ manual_status_override: true, manual_status: 'active', manual_expires_at: null, reason }).catch(() => alert('Failed'));
+                        }}>Reactivate IOC</button>
+                        <button type="button" style={ui.btn} onClick={() => {
+                          const raw = window.prompt('Custom expire date (ISO)', '');
+                          if (raw == null) return;
+                          const reason = window.prompt('Reason', 'Set custom expire date') || '';
+                          patchIocStatusOverride({ manual_status_override: true, manual_status: 'active', manual_expires_at: raw || null, reason }).catch(() => alert('Failed'));
+                        }}>Set custom expire date</button>
+                        <button type="button" style={ui.btn} onClick={() => {
+                          const reason = window.prompt('Reason', 'Expire IOC now') || '';
+                          patchIocStatusOverride({ manual_status_override: true, manual_status: 'expired', reason }).catch(() => alert('Failed'));
+                        }}>Expire IOC now</button>
+                        <button type="button" style={ui.btn} onClick={() => {
+                          const reason = window.prompt('Reason', 'Return to feed policy') || '';
+                          patchIocStatusOverride({ manual_status_override: false, reason }).catch(() => alert('Failed'));
+                        }}>Clear override</button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {feedMemberships.length ? (
+                  <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                    <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Feed Sources</div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                            <th>Feed</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Policy expires</th><th>Effective expires</th><th>Override</th><th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {feedMemberships.map((m) => (
+                            <tr key={m.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                              <td>{m.feed_name || m.feed_key}</td>
+                              <td>{iocStatusBadge(m.status)}</td>
+                              <td>{formatUserDateTime(m.first_seen_in_feed)}</td>
+                              <td>{formatUserDateTime(m.last_seen_in_feed)}</td>
+                              <td>{formatUserDateTime(m.policy_expires_at)}</td>
+                              <td>{formatUserDateTime(m.expires_at)}</td>
+                              <td>{m.override_enabled ? 'Yes' : 'No'}</td>
+                              <td>
+                                {isAdmin ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
+                                      const reason = window.prompt('Reason', 'Reactivate source') || '';
+                                      patchMembershipOverride(m.id, { override_enabled: true, override_status: 'active', override_expires_at: null, reason }).catch(() => alert('Failed'));
+                                    }}>Reactivate source</button>
+                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
+                                      const raw = window.prompt('Custom expire date (ISO)', '');
+                                      if (raw == null) return;
+                                      const reason = window.prompt('Reason', 'Extend monitoring') || '';
+                                      patchMembershipOverride(m.id, { override_enabled: true, override_expires_at: raw, override_status: null, reason }).catch(() => alert('Failed'));
+                                    }}>Custom expire</button>
+                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
+                                      const reason = window.prompt('Reason', 'Expire source') || '';
+                                      patchMembershipOverride(m.id, { override_enabled: true, override_status: 'expired', reason }).catch(() => alert('Failed'));
+                                    }}>Expire source</button>
+                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
+                                      const reason = window.prompt('Reason', 'Back to policy') || '';
+                                      patchMembershipOverride(m.id, { override_enabled: false, reason }).catch(() => alert('Failed'));
+                                    }}>Clear override</button>
+                                  </div>
+                                ) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.observable_type || '-'}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.source_count || 0}</div></div>

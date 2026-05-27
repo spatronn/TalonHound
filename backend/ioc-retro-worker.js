@@ -442,7 +442,8 @@ async function fetchIocChunk(startTs, startHash, limit) {
       updated_at,
       toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
     FROM default.ioc_lookup_by_updated
-    WHERE (
+    WHERE confidence > 0
+      AND (
       updated_at > toDateTime64('${safeTs(startTs)}', 3)
       OR (updated_at = toDateTime64('${safeTs(startTs)}', 3)
           AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(startHash)}'))
@@ -474,7 +475,8 @@ async function fetchWindowMatchPage({
         updated_at,
         toString(cityHash64(concat(observable, '|', observable_type, '|', source_name))) AS row_hash
       FROM default.ioc_lookup_by_updated
-      WHERE (
+      WHERE confidence > 0
+        AND (
         updated_at > toDateTime64('${safeTs(startTs)}', 3)
         OR (updated_at = toDateTime64('${safeTs(startTs)}', 3)
             AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(startHash)}'))

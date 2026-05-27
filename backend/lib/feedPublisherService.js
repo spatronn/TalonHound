@@ -163,14 +163,8 @@ async function fetchIocRows(pool, feed, window) {
     `;
   }
 
-  if (feed.exclude_expired) {
-    params.push(FEED_IOC_EXPIRY_DAYS);
-    const expiryIdx = params.length;
-    sql += `
-      AND COALESCE(i.category, '') NOT ILIKE '%expired%'
-      AND COALESCE(i.note, '') NOT ILIKE '%expired=%'
-      AND COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) >= NOW() - ($${expiryIdx}::int || ' days')::interval
-    `;
+  if (feed.exclude_expired !== false) {
+    sql += ` AND COALESCE(i.status, 'active') = 'active' `;
   }
 
   sql += buildVerdictSql(feed.verdict_filter, params);
