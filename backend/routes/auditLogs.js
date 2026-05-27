@@ -1,5 +1,6 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { auditActionLabel } from '../lib/auditConstants.js';
+import { buildIocAuditLogsWhere, buildIocAuditMatchContext, isUuid } from '../lib/iocAuditMatch.js';
 
 function toPublicAuditRow(row) {
   if (!row) return null;
@@ -38,6 +39,47 @@ function csvEscape(value) {
  * @param {import('pg').Pool} pool
  */
 export function registerAuditLogRoutes(app, pool) {
+  app.get('/api/ioc/:id/audit-logs', requireRole(ROLES.ADMIN), async (req, res) => {
+    const rawId = String(req.params?.id || '').trim();
+    if (!rawId) return res.status(400).json({ message: 'IOC id is required' });
+
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit || req.query?.pageSize || 50)));
+
+    try {
+      const lookupSql = isUuid(rawId)
+        ? 'SELECT id, public_id, observable, observable_type FROM ioc_items WHERE public_id = $1::uuid LIMIT 1'
+        : 'SELECT id, public_id, observable, observable_type FROM ioc_items WHERE id = $1::bigint LIMIT 1';
+      const lookupParam = isUuid(rawId) ? rawId : Number(rawId);
+      if (!isUuid(rawId) && (!Number.isFinite(lookupParam) || lookupParam <= 0)) {
+        return res.status(400).json({ message: 'Invalid IOC id' });
+      }
+
+      const itemRes = await pool.query(lookupSql, [lookupParam]);
+      if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
+
+      const ctx = buildIocAuditMatchContext(itemRes.rows[0]);
+      const { whereSql, params } = buildIocAuditLogsWhere(ctx);
+      const listParams = [...params, limit];
+
+      const listQ = await pool.query(
+        `SELECT *
+         FROM audit_logs
+         WHERE ${whereSql}
+         ORDER BY created_at DESC
+         LIMIT $${listParams.length}`,
+        listParams
+      );
+
+      return res.json({
+        items: listQ.rows.map(toPublicAuditRow),
+        total: listQ.rowCount,
+        limit
+      });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to fetch IOC audit history', detail: err.message });
+    }
+  });
+
   app.get('/api/audit-logs', requireRole(ROLES.ADMIN), async (req, res) => {
     const page = Math.max(1, Number(req.query?.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(req.query?.pageSize || 25)));

@@ -8376,6 +8376,20 @@ function IocRelatedLogsByIncidentsPanel({ incidents, enabled }) {
   );
 }
 
+function iocAuditMetadataSummary(metadata) {
+  if (!metadata || typeof metadata !== 'object') return '-';
+  const parts = [];
+  if (metadata.provider) parts.push(String(metadata.provider));
+  if (metadata.cached === true) parts.push('cached');
+  if (metadata.root_domain) parts.push(`root: ${metadata.root_domain}`);
+  if (metadata.ip) parts.push(`ip: ${metadata.ip}`);
+  if (metadata.error_message) parts.push(String(metadata.error_message));
+  if (metadata.malicious != null || metadata.suspicious != null) {
+    parts.push(`detections: ${metadata.malicious ?? 0}/${metadata.suspicious ?? 0}`);
+  }
+  return parts.length ? parts.join(' · ') : '-';
+}
+
 function IocAuditHistoryPanel({ iocId, enabled }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -8388,7 +8402,7 @@ function IocAuditHistoryPanel({ iocId, enabled }) {
       setLoading(true);
       setError('');
       try {
-        const { data } = await api.get('/audit-logs', { params: { entity_type: 'ioc', entity_id: String(iocId), page: 1, pageSize: 50 } });
+        const { data } = await api.get(`/ioc/${iocId}/audit-logs`, { params: { limit: 50 } });
         if (cancelled) return;
         setItems(Array.isArray(data?.items) ? data.items : []);
       } catch (err) {
@@ -8408,29 +8422,35 @@ function IocAuditHistoryPanel({ iocId, enabled }) {
   if (loading) return <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading audit history...</div>;
   if (error) return <div style={{ color: '#fca5a5', fontSize: 13 }}>{error}</div>;
   if (!items.length) {
-    return <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 13 }}>No audit history available yet for this IOC.</div>;
+    return <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 13 }}>No audit history for this IOC yet.</div>;
   }
 
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Audit / History</div>
-      <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', background: '#111827' }}>
-            <th>Time</th><th>Action</th><th>Actor</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((row) => (
-            <tr key={row.id} style={{ borderTop: '1px solid #334155' }}>
-              <td>{formatUserDateTime(row.created_at)}</td>
-              <td>{row.action_label || row.action}</td>
-              <td>{row.actor_username || row.actor_email || '-'}</td>
-              <td>{row.status || '-'}</td>
+      <div style={{ overflowX: 'auto' }}>
+        <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', fontSize: 13, minWidth: 980 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', background: '#111827' }}>
+              <th>Date</th><th>Actor</th><th>Action</th><th>Entity</th><th>Status</th><th>Source</th><th>IP</th><th>Details</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((row) => (
+              <tr key={row.id} style={{ borderTop: '1px solid #334155' }}>
+                <td style={{ whiteSpace: 'nowrap' }}>{formatUserDateTime(row.created_at)}</td>
+                <td>{row.actor_username || row.actor_email || '-'}</td>
+                <td>{row.action_label || row.action}</td>
+                <td style={{ overflowWrap: 'anywhere' }}>{row.entity_display || row.entity_id || '-'}</td>
+                <td>{row.status || '-'}</td>
+                <td>{row.source || '-'}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>{row.ip_address || '-'}</td>
+                <td style={{ color: '#94a3b8', overflowWrap: 'anywhere' }}>{iocAuditMetadataSummary(row.metadata)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

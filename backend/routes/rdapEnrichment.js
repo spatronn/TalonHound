@@ -86,6 +86,8 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
       normalized_host: parsed.normalized_host,
       original_value: parsed.original_value,
       observable_value: parsed.observable_value,
+      observable_type: parsed.ioc_type,
+      provider: 'rdap',
       force,
       source_page: 'ioc_detail_intelligence'
     }
@@ -114,6 +116,10 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
       metadata: {
         root_domain: parsed.rdap_domain,
         normalized_host: parsed.normalized_host,
+        original_value: parsed.original_value,
+        observable_value: parsed.observable_value,
+        observable_type: parsed.ioc_type,
+        provider: 'rdap',
         cached: result.cached,
         force,
         from_lookup: result.fromLookup
@@ -129,11 +135,15 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
     entityId: parsed.rdap_domain,
     entityDisplay: parsed.rdap_domain,
     severity: AUDIT_SEVERITY.WARNING,
-    metadata: {
-      root_domain: parsed.rdap_domain,
-      cached: result.cached,
-      error_message: row.error_message
-    }
+      metadata: {
+        root_domain: parsed.rdap_domain,
+        original_value: parsed.original_value,
+        observable_value: parsed.observable_value,
+        observable_type: parsed.ioc_type,
+        provider: 'rdap',
+        cached: result.cached,
+        error_message: row.error_message
+      }
   }).catch(() => {});
 
   return {

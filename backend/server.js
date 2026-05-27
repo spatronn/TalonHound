@@ -5910,17 +5910,37 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
 });
 
 app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
+  const iocId = Number(req.params.id);
+  if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
+
+  let item = null;
+  let iocType = null;
+
   try {
-    const iocId = Number(req.params.id);
-    if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
     const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
     const vtKey = providerCfg.apiKey;
     if (!vtKey) return res.status(400).json({ status: 'api_key_missing', message: 'VirusTotal API key is not configured' });
 
     const itemRes = await pool.query(`SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type FROM ioc_items WHERE id=$1 LIMIT 1`, [iocId]);
     if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
-    const item = itemRes.rows[0];
-    const iocType = item.ioc_type === 'file_hash' ? 'hash' : item.ioc_type;
+    item = itemRes.rows[0];
+    iocType = item.ioc_type === 'file_hash' ? 'hash' : item.ioc_type;
+
+    await audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.VT_ENRICHMENT_REQUESTED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: item.ioc_value,
+      entityDisplay: item.ioc_value,
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: {
+        provider: VT_PROVIDER,
+        observable_type: iocType,
+        observable_value: item.ioc_value,
+        ioc_id: iocId,
+        source_page: 'ioc_detail_intelligence'
+      }
+    }).catch(() => {});
 
     let endpoint = '';
     if (iocType === 'ip' || iocType === 'ip6') endpoint = `/ip_addresses/${encodeURIComponent(item.ioc_value)}`;
@@ -5936,8 +5956,32 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       vtRes = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, { headers: { 'x-apikey': vtKey }, signal: ctrl.signal });
     } finally { clearTimeout(t); }
 
-    if (vtRes.status === 429) return res.status(429).json({ message: 'VirusTotal rate limit reached. Try again later.' });
-    if (!vtRes.ok) return res.status(502).json({ message: 'VirusTotal enrichment failed' });
+    if (vtRes.status === 429) {
+      const msg = 'VirusTotal rate limit reached. Try again later.';
+      await audit.auditFailure({
+        req,
+        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: item.ioc_value,
+        entityDisplay: item.ioc_value,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg }
+      }).catch(() => {});
+      return res.status(429).json({ message: msg });
+    }
+    if (!vtRes.ok) {
+      const msg = 'VirusTotal enrichment failed';
+      await audit.auditFailure({
+        req,
+        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: item.ioc_value,
+        entityDisplay: item.ioc_value,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg, http_status: vtRes.status }
+      }).catch(() => {});
+      return res.status(502).json({ message: msg });
+    }
 
     const raw = await vtRes.json();
     const summary = normalizeVtSummary(item.ioc_value, iocType, raw);
@@ -5948,8 +5992,47 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET ioc_id=EXCLUDED.ioc_id,status='success',normalized_summary=EXCLUDED.normalized_summary,raw_response=EXCLUDED.raw_response,error_message=NULL,fetched_at=EXCLUDED.fetched_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()`,
       [iocId, item.ioc_value, iocType, VT_PROVIDER, summary, raw, fetchedAt.toISOString(), expiresAt.toISOString()]);
 
+    await audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.VT_ENRICHMENT_COMPLETED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: item.ioc_value,
+      entityDisplay: item.ioc_value,
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: {
+        provider: VT_PROVIDER,
+        observable_type: iocType,
+        observable_value: item.ioc_value,
+        ioc_id: iocId,
+        cached: false,
+        malicious: summary?.stats?.malicious ?? null,
+        suspicious: summary?.stats?.suspicious ?? null,
+        undetected: summary?.stats?.undetected ?? null,
+        harmless: summary?.stats?.harmless ?? null,
+        vt_object_type: summary?.ioc_type ?? iocType
+      }
+    }).catch(() => {});
+
     return res.json({ status: 'success', summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
   } catch (err) {
+    const msg = String(err?.name) === 'AbortError' ? 'VirusTotal enrichment timed out' : 'VirusTotal enrichment failed';
+    if (item?.ioc_value) {
+      await audit.auditFailure({
+        req,
+        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: item.ioc_value,
+        entityDisplay: item.ioc_value,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: {
+          provider: VT_PROVIDER,
+          observable_type: iocType,
+          observable_value: item.ioc_value,
+          ioc_id: iocId,
+          error_message: msg
+        }
+      }).catch(() => {});
+    }
     if (String(err?.name) === 'AbortError') return res.status(504).json({ message: 'VirusTotal enrichment timed out' });
     return res.status(500).json({ message: 'VirusTotal enrichment failed' });
   }
