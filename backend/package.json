@@ -20,6 +20,7 @@
     "test:tags": "node --test lib/tagHelpers.test.js",
     "test:domain-root": "node --test lib/domainRoot.test.js",
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js",
+    "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js"
   },
   "dependencies": {

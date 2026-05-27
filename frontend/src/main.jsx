@@ -3,6 +3,7 @@ import { parse as parseTld } from 'tldts';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { getIocStatusCardPresentation, IOC_STATUS_ACTION_BUTTONS } from './lib/iocStatusCard.js';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
 const CSRF_COOKIE_NAME = 'demo_csrf';
@@ -3314,7 +3315,9 @@ function iocStatusBadge(status) {
     active: { label: 'Active', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' },
     expired: { label: 'Expired', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' },
     disabled: { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
-    suppressed: { label: 'Suppressed', color: '#93c5fd', bg: 'rgba(30,58,138,0.25)', border: '#1d4ed8' }
+    suppressed: { label: 'Suppressed', color: '#93c5fd', bg: 'rgba(30,58,138,0.25)', border: '#1d4ed8' },
+    false_positive: { label: 'False Positive', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' },
+    fp: { label: 'False Positive', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' }
   };
   const hit = map[s] || map.active;
   return (
@@ -9271,6 +9274,7 @@ function IOCDetailsPage() {
   const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
+  const iocStatusCard = summary ? getIocStatusCardPresentation(summary, { suppressionActive }) : null;
 
   function openExpirationAction(type, membershipId = null) {
     const preset = IOC_EXPIRATION_ACTION_PRESETS[type];
@@ -9425,7 +9429,11 @@ function IOCDetailsPage() {
     setPendingAction(null);
     setActionReason('');
     setActionExpireAt('');
-    setActionToast(pendingAction.successToast || 'Updated');
+    setActionToast(
+      patchData?.noop
+        ? (patchData.message || 'No change required')
+        : (pendingAction.successToast || 'Updated')
+    );
 
     const refreshed = await load();
     if (!refreshed?.ok) {
@@ -9515,22 +9523,41 @@ function IOCDetailsPage() {
 
             {activeTab === 'overview' ? (
               <div style={{ display: 'grid', gap: 14 }}>
-                {summary ? (
+                {summary && iocStatusCard ? (
                   <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                     <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>IOC Status</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1' }}>
-                      <div><span style={{ color: '#94a3b8' }}>Current status:</span> {iocStatusBadge(summary.status)}</div>
-                      <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {summary.expires_at ? formatUserDateTime(summary.expires_at) : '—'}</div>
-                      <div><span style={{ color: '#94a3b8' }}>Expired at:</span> {summary.expired_at ? formatUserDateTime(summary.expired_at) : '—'}</div>
-                      <div><span style={{ color: '#94a3b8' }}>Expiration reason:</span> {summary.expiration_reason || '—'}</div>
-                      <div><span style={{ color: '#94a3b8' }}>Manual override:</span> {summary.manual_status_override ? `Yes (${summary.manual_status || '—'})` : 'No'}</div>
+                      {iocStatusCard.fields.map((field) => (
+                        <div key={field.key}>
+                          <span style={{ color: '#94a3b8' }}>{field.label}</span>{' '}
+                          {field.kind === 'badge'
+                            ? iocStatusBadge(field.status)
+                            : field.kind === 'datetime'
+                              ? formatUserDateTime(field.raw)
+                              : field.value}
+                        </div>
+                      ))}
                     </div>
-                    {isAdmin && !suppressionActive ? (
+                    {isAdmin && iocStatusCard.buttons.length ? (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                        <button type="button" style={ui.btn} disabled={actionLoading} onClick={() => openExpirationAction('reactivate_ioc')}>Reactivate IOC</button>
-                        <button type="button" style={ui.btn} disabled={actionLoading} onClick={() => openExpirationAction('custom_expire_ioc')}>Set custom expire date</button>
-                        <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={actionLoading} onClick={() => openExpirationAction('expire_ioc')}>Expire IOC now</button>
-                        <button type="button" style={ui.btn} disabled={actionLoading} onClick={() => openExpirationAction('clear_ioc_override')}>Clear override</button>
+                        {iocStatusCard.buttons.map((actionType) => {
+                          const def = IOC_STATUS_ACTION_BUTTONS[actionType];
+                          if (!def) return null;
+                          const btnStyle = def.danger
+                            ? { ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }
+                            : ui.btn;
+                          return (
+                            <button
+                              key={actionType}
+                              type="button"
+                              style={btnStyle}
+                              disabled={actionLoading}
+                              onClick={() => openExpirationAction(actionType)}
+                            >
+                              {def.label}
+                            </button>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>

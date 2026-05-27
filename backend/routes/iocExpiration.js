@@ -9,6 +9,7 @@ import {
   resolveMembershipStatus
 } from '../lib/iocExpiration.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { evaluateIocStatusOverrideRequest } from '../lib/iocStatusOverrideGuards.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
 const IOC_STATUS_AUDIT_FIELDS = [
@@ -216,6 +217,17 @@ export function registerIocExpirationRoutes(app, pool, audit) {
       const clear = req.body?.manual_status_override === false;
       const reason = String(req.body?.reason || '').trim() || null;
       const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId) ? req.user.publicId : null;
+
+      const noopCheck = evaluateIocStatusOverrideRequest(prev, req.body);
+      if (noopCheck.noop) {
+        const iocOut = serializeIocStatus(prev);
+        return res.status(200).json({
+          success: true,
+          noop: true,
+          message: noopCheck.message || 'No change required',
+          ioc: iocOut
+        });
+      }
 
       if (clear) {
         await pool.query(
