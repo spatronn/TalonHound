@@ -225,10 +225,35 @@ function integrationJobReasonLabel(job) {
 
 function queueHealthColor(health) {
   const key = String(health || '').toLowerCase();
-  if (key === 'healthy') return '#166534';
-  if (key === 'degraded') return '#b45309';
-  if (key === 'blocked') return '#991b1b';
-  return '#64748b';
+  if (key === 'healthy') return '#86efac';
+  if (key === 'degraded') return '#fcd34d';
+  if (key === 'blocked') return '#fca5a5';
+  return '#94a3b8';
+}
+
+function queueHealthPanelClass(health) {
+  const key = String(health || '').toLowerCase();
+  if (key === 'blocked') return 'queue-health-panel queue-health-panel--blocked';
+  if (key === 'degraded') return 'queue-health-panel queue-health-panel--degraded';
+  if (key === 'healthy') return 'queue-health-panel queue-health-panel--healthy';
+  return 'queue-health-panel';
+}
+
+const queuePageInputStyle = {
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: '1px solid #334155',
+  background: '#0f172a',
+  color: '#e2e8f0'
+};
+
+function queueJobStateColor(state) {
+  const s = String(state || '').toLowerCase();
+  if (s === 'success') return '#86efac';
+  if (s === 'failed' || s === 'fail') return '#fca5a5';
+  if (s === 'running') return '#fcd34d';
+  if (s === 'queued') return '#93c5fd';
+  return '#94a3b8';
 }
 
 function suppressionKey(iocValue, iocType) {
@@ -4559,9 +4584,9 @@ function IntegrationsQueueStatusPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <h2 style={{ marginTop: 0 }}>Job Queue Status</h2>
+          <h2 style={{ marginTop: 0, color: '#f1f5f9' }}>Job Queue Status</h2>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {isAdmin ? (
               <button type="button" onClick={() => previewRecover().catch(() => {})} disabled={recoverLoading}>
@@ -4572,8 +4597,8 @@ function IntegrationsQueueStatusPage() {
           </div>
         </div>
         {qh.queue_health ? (
-          <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 13, lineHeight: 1.7 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+          <div className={queueHealthPanelClass(qh.queue_health)} style={{ marginBottom: 12, padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, color: '#e2e8f0' }}>
               <span><b>Worker:</b> {qh.worker_status || '-'}</span>
               <span><b>Queue health:</b> <span style={{ color: queueHealthColor(qh.queue_health), fontWeight: 700 }}>{qh.queue_health}</span></span>
               <span><b>BullMQ active:</b> {qh.bullmq_active ?? '-'}</span>
@@ -4582,15 +4607,15 @@ function IntegrationsQueueStatusPage() {
               <span><b>Recovery needed:</b> {qh.recovery_needed ? 'yes' : 'no'}</span>
             </div>
             {(qh.warnings || []).length ? (
-              <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: '#b45309' }}>
+              <ul className="queue-health-warnings">
                 {qh.warnings.map((w) => <li key={w}>{w}</li>)}
               </ul>
             ) : null}
           </div>
         ) : null}
-        {recoverError ? <div style={{ color: '#991b1b', marginBottom: 8, fontSize: 13 }}>{recoverError}</div> : null}
+        {recoverError ? <div className="queue-recover-error" style={{ marginBottom: 8, fontSize: 13 }}>{recoverError}</div> : null}
         {recoverPreview ? (
-          <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, border: '1px solid #fcd34d', background: '#fffbeb', fontSize: 13 }}>
+          <div className="queue-recover-preview" style={{ marginBottom: 12, padding: 12, borderRadius: 8, fontSize: 13 }}>
             <div><b>Dry-run:</b> would reconcile <b>{recoverPreview.reconciled_count || 0}</b> item(s).</div>
             <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
               <button type="button" onClick={() => applyRecover().catch(() => {})} disabled={recoverLoading}>Confirm recover</button>
@@ -4603,27 +4628,27 @@ function IntegrationsQueueStatusPage() {
             value={search}
             onChange={(e) => { setPage(1); setSearch(e.target.value); }}
             placeholder="Search all columns..."
-            style={{ minWidth: 260, padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+            style={{ minWidth: 260, ...queuePageInputStyle }}
           />
-          <select value={windowValue} onChange={(e) => { setPage(1); setWindowValue(e.target.value); }} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+          <select value={windowValue} onChange={(e) => { setPage(1); setWindowValue(e.target.value); }} style={queuePageInputStyle}>
             <option value="24h">24 hours</option>
             <option value="1d">1 day</option>
             <option value="7d">7 days</option>
           </select>
-          <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+          <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }} style={queuePageInputStyle}>
             <option value={25}>25 rows</option>
             <option value={50}>50 rows</option>
           </select>
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, fontSize: 14 }}>
-          <span>Waiting: <b>{queue.counts?.waiting || 0}</b></span>
-          <span>Active: <b>{queue.counts?.active || 0}</b></span>
-          <span>Delayed: <b>{queue.counts?.delayed || 0}</b></span>
-          <span>Failed: <b>{queue.counts?.failed || 0}</b></span>
-          <span>Completed: <b>{queue.counts?.completed || 0}</b></span>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, fontSize: 14, color: '#cbd5e1' }}>
+          <span>Waiting: <b style={{ color: '#f1f5f9' }}>{queue.counts?.waiting || 0}</b></span>
+          <span>Active: <b style={{ color: '#f1f5f9' }}>{queue.counts?.active || 0}</b></span>
+          <span>Delayed: <b style={{ color: '#f1f5f9' }}>{queue.counts?.delayed || 0}</b></span>
+          <span>Failed: <b style={{ color: '#f1f5f9' }}>{queue.counts?.failed || 0}</b></span>
+          <span>Completed: <b style={{ color: '#f1f5f9' }}>{queue.counts?.completed || 0}</b></span>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+          <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
             <colgroup>
               <col style={{ width: tableWidths.id }} />
               <col style={{ width: tableWidths.integration }} />
@@ -4634,7 +4659,7 @@ function IntegrationsQueueStatusPage() {
               <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#e2e8f0' }}>
                 <th style={{ position: 'relative' }}>Job ID<div onMouseDown={(e) => startResize('id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Integration<div onMouseDown={(e) => startResize('integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
@@ -4646,21 +4671,21 @@ function IntegrationsQueueStatusPage() {
             </thead>
             <tbody>
               {loading ? <tr><td colSpan={7}>Loading...</td></tr> : (queue.jobs?.length ? queue.jobs.map((j) => (
-                <tr key={String(j.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.id}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.integration_name || j.integration_key || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.name}</td>
-                  <td style={{ color: (j.state === 'success' ? '#166534' : (j.state === 'failed' || j.state === 'fail' ? '#991b1b' : (j.state === 'running' ? '#92400e' : '#334155'))), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ⚠' : ''}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(j.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#b45309' : undefined }} title={integrationJobReasonLabel(j)}>{integrationJobReasonLabel(j)}</td>
+                <tr key={String(j.id)} style={{ borderBottom: '1px solid #334155' }}>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.id}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.integration_name || j.integration_key || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.name}</td>
+                  <td style={{ color: queueJobStateColor(j.state === 'fail' ? 'failed' : j.state), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ⚠' : ''}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.started_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#fcd34d' : '#cbd5e1' }} title={integrationJobReasonLabel(j)}>{integrationJobReasonLabel(j)}</td>
                 </tr>
-              )) : <tr><td colSpan={7} style={{ color: '#64748b' }}>No queued jobs</td></tr>)}
+              )) : <tr><td colSpan={7} style={{ color: '#94a3b8' }}>No queued jobs</td></tr>)}
             </tbody>
           </table>
         </div>
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ color: '#64748b', fontSize: 13 }}>
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>
             Page {queue.pagination?.page || page} / {queue.pagination?.total_pages || 1} · Total {queue.pagination?.total || 0}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -10562,6 +10587,36 @@ function App() {
         }
         .published-feeds-page .published-feeds-table thead tr {
           background: #0f172a !important;
+        }
+        .queue-health-panel {
+          background: #0f172a !important;
+          color: #e2e8f0 !important;
+          border: 1px solid #334155 !important;
+        }
+        .queue-health-panel--healthy {
+          background: rgba(22, 101, 52, 0.22) !important;
+          border-color: #166534 !important;
+        }
+        .queue-health-panel--degraded {
+          background: rgba(120, 53, 15, 0.28) !important;
+          border-color: #854d0e !important;
+        }
+        .queue-health-panel--blocked {
+          background: rgba(127, 29, 29, 0.32) !important;
+          border-color: #991b1b !important;
+        }
+        .queue-health-warnings {
+          margin: 8px 0 0;
+          padding-left: 18px;
+          color: #fcd34d !important;
+        }
+        .queue-recover-preview {
+          background: rgba(120, 53, 15, 0.28) !important;
+          color: #e2e8f0 !important;
+          border: 1px solid #854d0e !important;
+        }
+        .queue-recover-error {
+          color: #fca5a5 !important;
         }
       `}</style>
       <BrowserRouter>
