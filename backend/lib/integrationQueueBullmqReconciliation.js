@@ -144,6 +144,22 @@ async function reconcileOneBullJob({
   };
 }
 
+export async function loadStalledBullJobs(queue, limit = 500) {
+  const jobs = [];
+  try {
+    const client = await queue.client;
+    const prefix = queue.qualifiedName || `bull:${queue.name}`;
+    const stalledIds = await client.smembers(`${prefix}:stalled`);
+    for (const id of stalledIds.slice(0, limit)) {
+      const job = await queue.getJob(id);
+      if (job) jobs.push(job);
+    }
+  } catch (err) {
+    console.warn(`[integration-queue] loadStalledBullJobs failed: ${err?.message || err}`);
+  }
+  return jobs;
+}
+
 /**
  * Reconcile BullMQ active/stalled jobs with PostgreSQL integration_queue_jobs.
  */
@@ -157,8 +173,13 @@ export async function reconcileBullmqWithDb({
   const [bullCounts, activeJobs, stalledJobs] = await Promise.all([
     queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused'),
     queue.getJobs(['active'], 0, 500),
-    queue.getJobs(['stalled'], 0, 500)
+    loadStalledBullJobs(queue, 500)
   ]);
+
+  const bullCountsFull = {
+    ...bullCounts,
+    stalled: stalledJobs.length
+  };
 
   const bullById = new Map();
   for (const job of [...activeJobs, ...stalledJobs]) {
@@ -191,7 +212,7 @@ export async function reconcileBullmqWithDb({
   }
 
   return {
-    bull_counts: bullCounts,
+    bull_counts: bullCountsFull,
     stale_active_jobs: staleActiveJobs,
     stale_stalled_jobs: staleStalledJobs,
     actions_taken: actionsTaken,
