@@ -11,6 +11,73 @@ import {
 import { pickSafeFields } from '../lib/auditRedaction.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
+const IOC_STATUS_AUDIT_FIELDS = [
+  'status', 'manual_status_override', 'manual_status', 'manual_expires_at',
+  'manual_override_reason', 'expires_at', 'expired_at', 'expiration_reason'
+];
+const MEMBERSHIP_AUDIT_FIELDS = [
+  'status', 'override_enabled', 'override_status', 'override_expires_at', 'override_reason'
+];
+
+function tsField(v) {
+  if (v == null) return null;
+  return v instanceof Date ? v.toISOString() : v;
+}
+
+export function serializeIocStatus(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    observable_type: row.observable_type,
+    status: row.status || 'active',
+    manual_status_override: Boolean(row.manual_status_override),
+    manual_status: row.manual_status || null,
+    manual_expires_at: tsField(row.manual_expires_at),
+    manual_override_reason: row.manual_override_reason || null,
+    manual_override_at: tsField(row.manual_override_at),
+    expires_at: tsField(row.expires_at),
+    expired_at: tsField(row.expired_at),
+    expiration_reason: row.expiration_reason || null
+  };
+}
+
+export function serializeMembership(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    feed_id: row.feed_id ? String(row.feed_id) : null,
+    status: row.status || 'active',
+    override_enabled: Boolean(row.override_enabled),
+    override_status: row.override_status || null,
+    override_expires_at: tsField(row.override_expires_at),
+    override_reason: row.override_reason || null,
+    override_at: tsField(row.override_at),
+    expires_at: tsField(row.expires_at),
+    expired_at: tsField(row.expired_at)
+  };
+}
+
+async function fetchIocStatusRow(pool, iocId, observableType) {
+  const { rows } = await pool.query(
+    `SELECT id, observable_type, status, expires_at, expired_at, expiration_reason,
+            manual_status_override, manual_status, manual_expires_at,
+            manual_override_reason, manual_override_at
+     FROM ioc_items WHERE id = $1 AND observable_type = $2`,
+    [iocId, observableType]
+  );
+  return rows[0] || null;
+}
+
+async function fetchMembershipRow(pool, membershipId, iocId, observableType) {
+  const { rows } = await pool.query(
+    `SELECT m.*, f.key AS feed_key, f.name AS feed_name
+     FROM ioc_feed_memberships m
+     JOIN integration_feeds f ON f.integration_id = m.feed_id
+     WHERE m.id = $1 AND m.ioc_item_id = $2 AND m.ioc_observable_type = $3`,
+    [membershipId, iocId, observableType]
+  );
+  return rows[0] || null;
+}
 
 /** JSON-safe policy payload (avoids BigInt / Date serialization errors on res.json). */
 export function serializeExpirationPolicy(row, feedId) {
@@ -134,23 +201,18 @@ export function registerIocExpirationRoutes(app, pool, audit) {
   app.patch('/api/ioc/:id/status-override', async (req, res) => {
     const iocId = Number(req.params.id);
     if (!Number.isFinite(iocId) || iocId <= 0) {
-      return res.status(400).json({ message: 'Invalid IOC id' });
+      return res.status(400).json({ success: false, error: 'Invalid IOC id' });
     }
 
     const observableType = String(req.body?.observable_type || req.query?.observable_type || '').trim();
     if (!observableType) {
-      return res.status(400).json({ message: 'observable_type is required in body or query' });
+      return res.status(400).json({ success: false, error: 'observable_type is required in body or query' });
     }
 
     try {
-      const prevQ = await pool.query(
-        `SELECT id, observable_type, status, manual_status_override, manual_status, manual_expires_at, manual_override_reason
-         FROM ioc_items WHERE id = $1 AND observable_type = $2`,
-        [iocId, observableType]
-      );
-      if (!prevQ.rowCount) return res.status(404).json({ message: 'IOC not found' });
+      const prev = await fetchIocStatusRow(pool, iocId, observableType);
+      if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
-      const prev = prevQ.rows[0];
       const clear = req.body?.manual_status_override === false;
       const reason = String(req.body?.reason || '').trim() || null;
       const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId) ? req.user.publicId : null;
@@ -171,24 +233,40 @@ export function registerIocExpirationRoutes(app, pool, audit) {
           audit,
           actor: { actor_type: 'user', source: 'web' }
         });
+        const iocOut = serializeIocStatus(await fetchIocStatusRow(pool, iocId, observableType));
         await audit.auditSuccess({
           req,
           action: 'ioc.override_cleared',
           entityType: AUDIT_ENTITY.IOC,
           entityId: String(iocId),
-          before: pickSafeFields(prev, POLICY_AUDIT_FIELDS),
-          after: { manual_status_override: false },
+          before: pickSafeFields(prev, IOC_STATUS_AUDIT_FIELDS),
+          after: pickSafeFields(iocOut, IOC_STATUS_AUDIT_FIELDS),
           metadata: { reason, observable_type: observableType }
         });
-        return res.json({ ok: true, cleared: true });
+        return res.status(200).json({ success: true, ioc: iocOut });
       }
 
       const manualStatus = String(req.body?.manual_status || '').trim();
       if (!['active', 'expired'].includes(manualStatus)) {
-        return res.status(400).json({ message: 'manual_status must be active or expired' });
+        return res.status(400).json({ success: false, error: 'manual_status must be active or expired' });
       }
 
-      const manualExpiresAt = req.body?.manual_expires_at || null;
+      if (!reason) {
+        return res.status(400).json({ success: false, error: 'Reason is required' });
+      }
+
+      let manualExpiresAt = req.body?.manual_expires_at || null;
+      if (manualExpiresAt) {
+        const d = new Date(manualExpiresAt);
+        if (Number.isNaN(d.getTime())) {
+          return res.status(400).json({ success: false, error: 'manual_expires_at must be a valid ISO date/time' });
+        }
+        manualExpiresAt = d.toISOString();
+      }
+
+      if (manualStatus === 'active' && !manualExpiresAt && req.body?.manual_expires_at === undefined) {
+        manualExpiresAt = null;
+      }
 
       await pool.query(
         `UPDATE ioc_items
@@ -197,34 +275,32 @@ export function registerIocExpirationRoutes(app, pool, audit) {
              manual_expires_at = $4,
              manual_override_reason = $5,
              manual_override_by_user_id = $6::uuid,
-             manual_override_at = NOW(),
-             status = $3,
-             expires_at = $4,
-             expired_at = CASE WHEN $3 = 'expired' THEN COALESCE(expired_at, NOW()) ELSE NULL END,
-             expiration_reason = COALESCE($5, 'manual_override')
+             manual_override_at = NOW()
          WHERE id = $1 AND observable_type = $2`,
         [iocId, observableType, manualStatus, manualExpiresAt, reason, userId]
       );
 
-      const action = manualStatus === 'active' ? 'ioc.reactivated_by_user' : 'ioc.override_set';
+      await recomputeIocGlobalStatus(pool, iocId, observableType, {
+        audit,
+        actor: { actor_type: 'user', source: 'web' }
+      });
+
+      const iocOut = serializeIocStatus(await fetchIocStatusRow(pool, iocId, observableType));
+      const action = manualStatus === 'active' ? 'ioc.reactivated_by_user' : 'ioc.expired';
       await audit.auditSuccess({
         req,
         action,
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(iocId),
-        before: pickSafeFields(prev),
-        after: {
-          manual_status_override: true,
-          manual_status: manualStatus,
-          manual_expires_at: manualExpiresAt,
-          reason
-        },
-        metadata: { observable_type: observableType }
+        before: pickSafeFields(prev, IOC_STATUS_AUDIT_FIELDS),
+        after: pickSafeFields(iocOut, IOC_STATUS_AUDIT_FIELDS),
+        metadata: { reason, observable_type: observableType }
       });
 
-      return res.json({ ok: true, status: manualStatus });
+      return res.status(200).json({ success: true, ioc: iocOut });
     } catch (err) {
-      return res.status(500).json({ message: 'Failed to update IOC status override', detail: err.message });
+      console.error('[ioc-status-override] PATCH failed', err?.message || err);
+      return res.status(500).json({ success: false, error: 'Failed to update IOC status override', detail: err.message });
     }
   });
 
@@ -232,23 +308,18 @@ export function registerIocExpirationRoutes(app, pool, audit) {
     const iocId = Number(req.params.id);
     const membershipId = Number(req.params.membershipId);
     if (!Number.isFinite(iocId) || !Number.isFinite(membershipId)) {
-      return res.status(400).json({ message: 'Invalid id' });
+      return res.status(400).json({ success: false, error: 'Invalid id' });
     }
 
     const observableType = String(req.body?.observable_type || req.query?.observable_type || '').trim();
     if (!observableType) {
-      return res.status(400).json({ message: 'observable_type is required' });
+      return res.status(400).json({ success: false, error: 'observable_type is required' });
     }
 
     try {
-      const prevQ = await pool.query(
-        `SELECT * FROM ioc_feed_memberships
-         WHERE id = $1 AND ioc_item_id = $2 AND ioc_observable_type = $3`,
-        [membershipId, iocId, observableType]
-      );
-      if (!prevQ.rowCount) return res.status(404).json({ message: 'Membership not found' });
+      const prev = await fetchMembershipRow(pool, membershipId, iocId, observableType);
+      if (!prev) return res.status(404).json({ success: false, error: 'Membership not found' });
 
-      const prev = prevQ.rows[0];
       const reason = String(req.body?.reason || '').trim() || null;
       const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId) ? req.user.publicId : null;
       const clear = req.body?.override_enabled === false;
@@ -280,28 +351,42 @@ export function registerIocExpirationRoutes(app, pool, audit) {
           [membershipId, policyExpiresAt, status]
         );
         await recomputeIocGlobalStatus(pool, iocId, observableType, { audit, actor: { actor_type: 'user' } });
+        const membershipOut = serializeMembership(await fetchMembershipRow(pool, membershipId, iocId, observableType));
+        const iocOut = serializeIocStatus(await fetchIocStatusRow(pool, iocId, observableType));
         await audit.auditSuccess({
           req,
           action: 'ioc_feed_membership.override_cleared',
           entityType: 'ioc_feed_membership',
           entityId: String(membershipId),
-          before: pickSafeFields(prev),
-          after: { override_enabled: false },
+          before: pickSafeFields(prev, MEMBERSHIP_AUDIT_FIELDS),
+          after: pickSafeFields(membershipOut, MEMBERSHIP_AUDIT_FIELDS),
           metadata: { ioc_item_id: iocId, reason }
         });
-        return res.json({ ok: true, cleared: true });
+        return res.status(200).json({ success: true, membership: membershipOut, ioc: iocOut });
+      }
+
+      if (!reason) {
+        return res.status(400).json({ success: false, error: 'Reason is required' });
       }
 
       const overrideEnabled = req.body?.override_enabled !== false;
       const overrideStatus = req.body?.override_status == null ? null : String(req.body.override_status).trim();
-      const overrideExpiresAt = req.body?.override_expires_at || null;
+      let overrideExpiresAt = req.body?.override_expires_at || null;
 
       if (overrideStatus && !['active', 'expired'].includes(overrideStatus)) {
-        return res.status(400).json({ message: 'override_status must be active, expired, or null' });
+        return res.status(400).json({ success: false, error: 'override_status must be active, expired, or null' });
+      }
+
+      if (overrideExpiresAt) {
+        const d = new Date(overrideExpiresAt);
+        if (Number.isNaN(d.getTime())) {
+          return res.status(400).json({ success: false, error: 'override_expires_at must be a valid ISO date/time' });
+        }
+        overrideExpiresAt = d.toISOString();
       }
 
       let expiresAt = overrideExpiresAt;
-      if (overrideStatus === 'expired' && !expiresAt) expiresAt = new Date();
+      if (overrideStatus === 'expired' && !expiresAt) expiresAt = new Date().toISOString();
       if (overrideStatus === 'active') expiresAt = overrideExpiresAt || null;
 
       await pool.query(
@@ -322,6 +407,9 @@ export function registerIocExpirationRoutes(app, pool, audit) {
 
       await recomputeIocGlobalStatus(pool, iocId, observableType, { audit, actor: { actor_type: 'user' } });
 
+      const membershipOut = serializeMembership(await fetchMembershipRow(pool, membershipId, iocId, observableType));
+      const iocOut = serializeIocStatus(await fetchIocStatusRow(pool, iocId, observableType));
+
       const action = overrideStatus === 'expired'
         ? 'ioc_feed_membership.expired_by_user'
         : 'ioc_feed_membership.override_set';
@@ -331,19 +419,15 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         action,
         entityType: 'ioc_feed_membership',
         entityId: String(membershipId),
-        before: pickSafeFields(prev),
-        after: {
-          override_enabled: overrideEnabled,
-          override_status: overrideStatus,
-          override_expires_at: expiresAt,
-          reason
-        },
-        metadata: { ioc_item_id: iocId, feed_id: prev.feed_id }
+        before: pickSafeFields(prev, MEMBERSHIP_AUDIT_FIELDS),
+        after: pickSafeFields(membershipOut, MEMBERSHIP_AUDIT_FIELDS),
+        metadata: { ioc_item_id: iocId, feed_id: prev.feed_id, reason }
       });
 
-      return res.json({ ok: true });
+      return res.status(200).json({ success: true, membership: membershipOut, ioc: iocOut });
     } catch (err) {
-      return res.status(500).json({ message: 'Failed to update membership override', detail: err.message });
+      console.error('[ioc-membership-override] PATCH failed', err?.message || err);
+      return res.status(500).json({ success: false, error: 'Failed to update membership override', detail: err.message });
     }
   });
 

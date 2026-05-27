@@ -218,6 +218,170 @@ function apiErrorMessage(err, fallback = 'Request failed') {
   return String(d?.message || err?.message || fallback);
 }
 
+function isApiMutationSuccess(data) {
+  if (data == null) return true;
+  if (data.success === false) return false;
+  return data.success === true || data.ok === true;
+}
+
+const IOC_EXPIRATION_ACTION_PRESETS = {
+  expire_ioc: {
+    title: 'Expire IOC now',
+    description: 'This IOC will be marked as expired. It will not be published/exported and will not be used in syslog correlation. Existing incidents, detection events and audit history will remain unchanged.',
+    requiresReason: true,
+    requiresDate: false,
+    confirmLabel: 'Expire IOC',
+    danger: true,
+    successToast: 'IOC marked as expired'
+  },
+  reactivate_ioc: {
+    title: 'Reactivate IOC',
+    description: 'This will manually reactivate the IOC. It may become eligible for publish/export and syslog correlation again unless disabled or suppressed.',
+    requiresReason: true,
+    requiresDate: false,
+    confirmLabel: 'Reactivate IOC',
+    danger: false,
+    successToast: 'IOC reactivated'
+  },
+  custom_expire_ioc: {
+    title: 'Set custom expire date',
+    description: 'This will set a manual expiration date for this IOC.',
+    requiresReason: true,
+    requiresDate: true,
+    confirmLabel: 'Save expire date',
+    danger: false,
+    successToast: 'Custom expire date saved'
+  },
+  clear_ioc_override: {
+    title: 'Clear manual override',
+    description: 'This will remove the manual override and return this IOC to feed policy based expiration.',
+    requiresReason: false,
+    requiresDate: false,
+    confirmLabel: 'Clear override',
+    danger: false,
+    successToast: 'Manual override cleared'
+  },
+  expire_membership: {
+    title: 'Expire feed source now',
+    description: 'This feed membership will be marked as expired. If no other active feed source remains, the global IOC may become expired.',
+    requiresReason: true,
+    requiresDate: false,
+    confirmLabel: 'Expire source',
+    danger: true,
+    successToast: 'Feed source marked as expired'
+  },
+  reactivate_membership: {
+    title: 'Reactivate feed source',
+    description: 'This feed membership will be manually reactivated. The global IOC status will be recomputed after the change.',
+    requiresReason: true,
+    requiresDate: false,
+    confirmLabel: 'Reactivate source',
+    danger: false,
+    successToast: 'Feed source reactivated'
+  },
+  custom_expire_membership: {
+    title: 'Set custom expire date',
+    description: 'This will set a manual expiration date for this feed source.',
+    requiresReason: true,
+    requiresDate: true,
+    confirmLabel: 'Save expire date',
+    danger: false,
+    successToast: 'Custom expire date saved for source'
+  },
+  clear_membership_override: {
+    title: 'Clear source override',
+    description: 'This will remove the manual override and return this feed source to feed policy based expiration.',
+    requiresReason: false,
+    requiresDate: false,
+    confirmLabel: 'Clear override',
+    danger: false,
+    successToast: 'Source override cleared'
+  }
+};
+
+function IocExpirationActionModal({
+  pending,
+  reason,
+  onReasonChange,
+  expireAt,
+  onExpireAtChange,
+  loading,
+  error,
+  onCancel,
+  onConfirm,
+  ui
+}) {
+  useEffect(() => {
+    if (!pending || loading) return undefined;
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pending, loading, onCancel]);
+
+  if (!pending) return null;
+  const inputStyle = {
+    padding: '8px 10px',
+    borderRadius: 6,
+    border: '1px solid #475569',
+    background: '#0f172a',
+    color: '#e2e8f0',
+    fontSize: 13,
+    width: '100%',
+    boxSizing: 'border-box'
+  };
+  const confirmStyle = pending.danger
+    ? { ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.25)' }
+    : ui.btnPrimary;
+
+  return (
+    <ModalOverlay onClose={loading ? undefined : onCancel}>
+      <h3 style={{ marginTop: 0, color: '#f1f5f9', fontSize: 18 }}>{pending.title}</h3>
+      <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}>{pending.description}</p>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {pending.requiresDate ? (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={ui.label}>Expire date/time</span>
+            <input
+              type="datetime-local"
+              value={expireAt}
+              onChange={(e) => onExpireAtChange(e.target.value)}
+              disabled={loading}
+              style={inputStyle}
+            />
+          </label>
+        ) : null}
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={ui.label}>Reason{pending.requiresReason ? '' : ' (optional)'}</span>
+          <textarea
+            value={reason}
+            onChange={(e) => onReasonChange(e.target.value)}
+            disabled={loading}
+            rows={3}
+            placeholder={pending.requiresReason ? 'Enter reason…' : 'Optional reason…'}
+            style={{ ...ui.textarea, minHeight: 72 }}
+          />
+        </label>
+        {error ? (
+          <div style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+            {error}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <button type="button" style={ui.btn} onClick={onCancel} disabled={loading}>Cancel</button>
+          <button type="button" style={confirmStyle} onClick={onConfirm} disabled={loading}>
+            {loading ? 'Working…' : pending.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  );
+}
+
 function buildExpirationPatchPayload(exp) {
   const enabled = Boolean(exp?.enabled);
   const mode = enabled ? String(exp?.expiration_mode || 'never') : 'never';
@@ -8722,19 +8886,27 @@ function IOCDetailsPage() {
   const [removeError, setRemoveError] = useState('');
   const [actionToast, setActionToast] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionReason, setActionReason] = useState('');
+  const [actionExpireAt, setActionExpireAt] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [actionRefreshWarn, setActionRefreshWarn] = useState(''); // page-level warning after modal closes
 
   async function load() {
     setLoading(true);
     if (!detailsPublicId) {
       setData({ summary: null, sources: [], matches: [] });
       setLoading(false);
-      return;
+      return { ok: false };
     }
     try {
       const res = await api.get('/ioc/details', { params: { public_id: detailsPublicId } });
       setData(res.data || { summary: null, sources: [], matches: [], suppression: { active: false } });
+      return { ok: true };
     } catch {
       setData({ summary: null, sources: [], matches: [] });
+      return { ok: false };
     } finally {
       setLoading(false);
     }
@@ -8820,6 +8992,12 @@ function IOCDetailsPage() {
     const t = setTimeout(() => setActionToast(''), 3500);
     return () => clearTimeout(t);
   }, [actionToast]);
+
+  useEffect(() => {
+    if (!actionRefreshWarn) return undefined;
+    const t = setTimeout(() => setActionRefreshWarn(''), 8000);
+    return () => clearTimeout(t);
+  }, [actionRefreshWarn]);
 
   async function submitSuppress() {
     const iocId = Number(data?.summary?.id);
@@ -8927,26 +9105,167 @@ function IOCDetailsPage() {
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
 
-  async function patchIocStatusOverride(body) {
-    const iocId = Number(summary?.id);
-    if (!Number.isFinite(iocId)) return;
-    await api.patch(`/ioc/${iocId}/status-override`, {
-      observable_type: summary.observable_type,
-      ...body
-    });
-    setActionToast('IOC status updated');
-    await load();
+  function openExpirationAction(type, membershipId = null) {
+    const preset = IOC_EXPIRATION_ACTION_PRESETS[type];
+    if (!preset) return;
+    setActionError('');
+    setActionRefreshWarn('');
+    setActionReason('');
+    setActionExpireAt('');
+    setPendingAction({ type, membershipId, ...preset });
   }
 
-  async function patchMembershipOverride(membershipId, body) {
-    const iocId = Number(summary?.id);
-    if (!Number.isFinite(iocId)) return;
-    await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
-      observable_type: summary.observable_type,
-      ...body
+  function cancelExpirationAction() {
+    if (actionLoading) return;
+    setPendingAction(null);
+    setActionReason('');
+    setActionExpireAt('');
+    setActionError('');
+    setActionRefreshWarn('');
+  }
+
+  function applyMutationToLocalState(patchData) {
+    if (!patchData) return;
+    setData((prev) => {
+      const next = { ...prev };
+      if (patchData.ioc && next.summary) {
+        next.summary = { ...next.summary, ...patchData.ioc };
+      }
+      if (patchData.membership && Array.isArray(next.feed_memberships)) {
+        next.feed_memberships = next.feed_memberships.map((m) => (
+          Number(m.id) === Number(patchData.membership.id) ? { ...m, ...patchData.membership } : m
+        ));
+      }
+      return next;
     });
-    setActionToast('Feed source updated');
-    await load();
+  }
+
+  async function confirmExpirationAction() {
+    if (!pendingAction || actionLoading || !summary) return;
+
+    const iocId = Number(summary.id);
+    if (!Number.isFinite(iocId)) return;
+
+    const reason = String(actionReason || '').trim();
+    if (pendingAction.requiresReason && !reason) {
+      setActionError('Reason is required');
+      return;
+    }
+
+    let manualExpiresAt = null;
+    if (pendingAction.requiresDate) {
+      if (!actionExpireAt) {
+        setActionError('Expire date/time is required');
+        return;
+      }
+      const d = new Date(actionExpireAt);
+      if (Number.isNaN(d.getTime())) {
+        setActionError('Enter a valid date/time');
+        return;
+      }
+      manualExpiresAt = d.toISOString();
+    }
+
+    setActionLoading(true);
+    setActionError('');
+    setActionRefreshWarn('');
+
+    const observableType = summary.observable_type;
+    let patchData = null;
+
+    try {
+      const { type, membershipId } = pendingAction;
+      if (type === 'expire_ioc') {
+        const { data } = await api.patch(`/ioc/${iocId}/status-override`, {
+          observable_type: observableType,
+          manual_status_override: true,
+          manual_status: 'expired',
+          reason
+        });
+        patchData = data;
+      } else if (type === 'reactivate_ioc') {
+        const { data } = await api.patch(`/ioc/${iocId}/status-override`, {
+          observable_type: observableType,
+          manual_status_override: true,
+          manual_status: 'active',
+          manual_expires_at: null,
+          reason
+        });
+        patchData = data;
+      } else if (type === 'custom_expire_ioc') {
+        const { data } = await api.patch(`/ioc/${iocId}/status-override`, {
+          observable_type: observableType,
+          manual_status_override: true,
+          manual_status: 'active',
+          manual_expires_at: manualExpiresAt,
+          reason
+        });
+        patchData = data;
+      } else if (type === 'clear_ioc_override') {
+        const { data } = await api.patch(`/ioc/${iocId}/status-override`, {
+          observable_type: observableType,
+          manual_status_override: false,
+          reason: reason || null
+        });
+        patchData = data;
+      } else if (type === 'expire_membership' && membershipId) {
+        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: observableType,
+          override_enabled: true,
+          override_status: 'expired',
+          reason
+        });
+        patchData = data;
+      } else if (type === 'reactivate_membership' && membershipId) {
+        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: observableType,
+          override_enabled: true,
+          override_status: 'active',
+          override_expires_at: null,
+          reason
+        });
+        patchData = data;
+      } else if (type === 'custom_expire_membership' && membershipId) {
+        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: observableType,
+          override_enabled: true,
+          override_expires_at: manualExpiresAt,
+          override_status: null,
+          reason
+        });
+        patchData = data;
+      } else if (type === 'clear_membership_override' && membershipId) {
+        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: observableType,
+          override_enabled: false,
+          reason: reason || null
+        });
+        patchData = data;
+      }
+    } catch (err) {
+      setActionError(apiErrorMessage(err, 'Request failed'));
+      return;
+    } finally {
+      setActionLoading(false);
+    }
+
+    if (!isApiMutationSuccess(patchData)) {
+      setActionError(patchData?.error || 'Request failed');
+      return;
+    }
+
+    applyMutationToLocalState(patchData);
+    setPendingAction(null);
+    setActionReason('');
+    setActionExpireAt('');
+    setActionToast(pendingAction.successToast || 'Updated');
+
+    const refreshed = await load();
+    if (!refreshed?.ok) {
+      setActionRefreshWarn('Action succeeded but refreshing IOC details failed. Displayed values are from the server response.');
+    } else {
+      setActionRefreshWarn('');
+    }
   }
   const displayObservable = summary?.observable || '-';
   const observableType = String(summary?.observable_type || '').toLowerCase();
@@ -8987,6 +9306,11 @@ function IOCDetailsPage() {
         ) : null}
 
         {actionToast ? <div style={{ ...ui.banner, marginBottom: 12 }}>{actionToast}</div> : null}
+        {actionRefreshWarn ? (
+          <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #854d0e', color: '#fcd34d', background: 'rgba(120,53,15,0.2)', fontSize: 13, marginBottom: 12 }}>
+            {actionRefreshWarn}
+          </div>
+        ) : null}
 
         <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
           <div style={{ fontSize: 12, color: '#94a3b8' }}>IOC</div>
@@ -9036,25 +9360,10 @@ function IOCDetailsPage() {
                     </div>
                     {isAdmin && !suppressionActive ? (
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                        <button type="button" style={ui.btn} onClick={() => {
-                          const reason = window.prompt('Reason for reactivation', 'Manual reactivation after analyst review');
-                          if (reason == null) return;
-                          patchIocStatusOverride({ manual_status_override: true, manual_status: 'active', manual_expires_at: null, reason }).catch(() => alert('Failed'));
-                        }}>Reactivate IOC</button>
-                        <button type="button" style={ui.btn} onClick={() => {
-                          const raw = window.prompt('Custom expire date (ISO)', '');
-                          if (raw == null) return;
-                          const reason = window.prompt('Reason', 'Set custom expire date') || '';
-                          patchIocStatusOverride({ manual_status_override: true, manual_status: 'active', manual_expires_at: raw || null, reason }).catch(() => alert('Failed'));
-                        }}>Set custom expire date</button>
-                        <button type="button" style={ui.btn} onClick={() => {
-                          const reason = window.prompt('Reason', 'Expire IOC now') || '';
-                          patchIocStatusOverride({ manual_status_override: true, manual_status: 'expired', reason }).catch(() => alert('Failed'));
-                        }}>Expire IOC now</button>
-                        <button type="button" style={ui.btn} onClick={() => {
-                          const reason = window.prompt('Reason', 'Return to feed policy') || '';
-                          patchIocStatusOverride({ manual_status_override: false, reason }).catch(() => alert('Failed'));
-                        }}>Clear override</button>
+                        <button type="button" style={ui.btn} disabled={actionLoading} onClick={() => openExpirationAction('reactivate_ioc')}>Reactivate IOC</button>
+                        <button type="button" style={ui.btn} disabled={actionLoading} onClick={() => openExpirationAction('custom_expire_ioc')}>Set custom expire date</button>
+                        <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={actionLoading} onClick={() => openExpirationAction('expire_ioc')}>Expire IOC now</button>
+                        <button type="button" style={ui.btn} disabled={actionLoading} onClick={() => openExpirationAction('clear_ioc_override')}>Clear override</button>
                       </div>
                     ) : null}
                   </div>
@@ -9083,24 +9392,10 @@ function IOCDetailsPage() {
                               <td>
                                 {isAdmin ? (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
-                                      const reason = window.prompt('Reason', 'Reactivate source') || '';
-                                      patchMembershipOverride(m.id, { override_enabled: true, override_status: 'active', override_expires_at: null, reason }).catch(() => alert('Failed'));
-                                    }}>Reactivate source</button>
-                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
-                                      const raw = window.prompt('Custom expire date (ISO)', '');
-                                      if (raw == null) return;
-                                      const reason = window.prompt('Reason', 'Extend monitoring') || '';
-                                      patchMembershipOverride(m.id, { override_enabled: true, override_expires_at: raw, override_status: null, reason }).catch(() => alert('Failed'));
-                                    }}>Custom expire</button>
-                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
-                                      const reason = window.prompt('Reason', 'Expire source') || '';
-                                      patchMembershipOverride(m.id, { override_enabled: true, override_status: 'expired', reason }).catch(() => alert('Failed'));
-                                    }}>Expire source</button>
-                                    <button type="button" style={{ fontSize: 11 }} onClick={() => {
-                                      const reason = window.prompt('Reason', 'Back to policy') || '';
-                                      patchMembershipOverride(m.id, { override_enabled: false, reason }).catch(() => alert('Failed'));
-                                    }}>Clear override</button>
+                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('reactivate_membership', m.id)}>Reactivate source</button>
+                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('custom_expire_membership', m.id)}>Custom expire</button>
+                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('expire_membership', m.id)}>Expire source</button>
+                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('clear_membership_override', m.id)}>Clear override</button>
                                   </div>
                                 ) : '—'}
                               </td>
@@ -9326,6 +9621,19 @@ function IOCDetailsPage() {
           </>
         )}
       </section>
+
+      <IocExpirationActionModal
+        pending={pendingAction}
+        reason={actionReason}
+        onReasonChange={setActionReason}
+        expireAt={actionExpireAt}
+        onExpireAtChange={setActionExpireAt}
+        loading={actionLoading}
+        error={actionError}
+        onCancel={cancelExpirationAction}
+        onConfirm={() => confirmExpirationAction().catch(() => {})}
+        ui={ui}
+      />
 
       {showSuppressModal ? (
         <ModalOverlay onClose={() => !suppressSaving && setShowSuppressModal(false)}>
