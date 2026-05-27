@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "migrate": "node migrate.js",
+    "migrate:list": "node migrate.js --list",
     "start": "node server.js",
     "signal-worker": "node signal-worker.js",
     "ioc-correlation-worker": "node ioc-correlation-worker.js",
@@ -22,6 +23,7 @@
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js",
+    "test:migrate": "node --test lib/migrationFiles.test.js",
     "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js"
   },
   "dependencies": {
