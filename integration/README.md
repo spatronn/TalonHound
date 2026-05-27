@@ -10,7 +10,7 @@ MalwareBazaar policy: import file-hash intelligence from `https://bazaar.abuse.c
 ## Components
 
 - `scheduler.js`: registers repeatable feed jobs (default `0 * * * *`)
-- `worker.js`: consumes queue jobs and runs ET + USOM + URLhaus + ThreatFox + MalwareBazaar imports
+- `worker.js`: consumes queue jobs and runs ET + USOM + URLhaus (Auth-Key CSV export) + ThreatFox + MalwareBazaar imports
 - `importer.js`: import logic, DB lock, run logs, checkpoint + dedup
 
 ## Env vars

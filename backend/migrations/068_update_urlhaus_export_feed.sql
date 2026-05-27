@@ -1,0 +1,10 @@
+-- URLHaus recent CSV now requires Auth-Key file export API (masked URL in UI/DB).
+UPDATE integration_feeds
+SET source_url = 'https://urlhaus-api.abuse.ch/v2/files/exports/***/recent.csv',
+    schedule_cron = CASE
+      WHEN schedule_cron = '*/5 * * * *' THEN schedule_cron
+      WHEN schedule_cron IN ('*/15 * * * *', '*/30 * * * *', '0 * * * *') THEN '*/5 * * * *'
+      ELSE schedule_cron
+    END,
+    updated_at = NOW()
+WHERE key = 'urlhaus-abusech';

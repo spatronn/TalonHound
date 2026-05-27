@@ -6,7 +6,8 @@
   "scripts": {
     "scheduler": "node scheduler.js",
     "worker": "node worker.js",
-    "backfill-ioc-observables": "node backfill-ioc-observables.js"
+    "backfill-ioc-observables": "node backfill-ioc-observables.js",
+    "test:urlhaus": "node --test lib/urlhaus.test.js"
   },
   "dependencies": {
     "bullmq": "^5.10.3",

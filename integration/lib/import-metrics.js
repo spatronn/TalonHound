@@ -14,6 +14,9 @@ export function createImportMetrics() {
     noteInsert() {
       this.records_inserted += 1;
     },
+    noteUpdated() {
+      this.records_updated += 1;
+    },
     noteDuplicate() {
       this.records_duplicate += 1;
     },

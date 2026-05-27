@@ -39,6 +39,11 @@ import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
 import { buildIocEnvironmentImpact, computeIncidentRiskScore, emptyIocEnvironmentImpact } from './lib/iocEnvironmentImpact.js';
 import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
+import {
+  URLHAUS_FEED_KEY,
+  formatUrlhausCredentialsSummary,
+  sanitizeFeedErrorMessage
+} from './lib/urlhausIntegration.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
@@ -3105,9 +3110,10 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const feedActive = feed.active !== false;
 
   const lastStatus = lr?.status || lq?.status || 'never';
-  const lastError = (lastStatus === 'failed' || lastStatus === 'fail')
+  const lastErrorRaw = (lastStatus === 'failed' || lastStatus === 'fail')
     ? (lr?.error_message || lq?.error_message || null)
     : null;
+  const lastError = lastErrorRaw ? sanitizeFeedErrorMessage(feed.key, lastErrorRaw) : null;
   const consecutive = consecutiveFailures.get(jobType) || 0;
   const metricsHints = buildFeedMetricsHints(lastRunMetrics);
 
@@ -3166,6 +3172,7 @@ app.get('/api/integrations', async (req, res) => {
         f.source_url,
         f.schedule_cron AS schedule,
         f.trust_level,
+        f.credentials,
         f.active,
         f.created_at,
         CASE
@@ -3296,8 +3303,13 @@ app.get('/api/integrations', async (req, res) => {
     const integrations = feedsRes.rows.map((feed) => {
       const row = mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures);
       const policy = policyByFeedId.get(String(feed.integration_id));
+      const { credentials: _rawCreds, ...safeFeed } = row;
+      const credentialsSummary = feed.key === URLHAUS_FEED_KEY
+        ? formatUrlhausCredentialsSummary(feed.credentials)
+        : null;
       return {
-        ...row,
+        ...safeFeed,
+        credentials_summary: credentialsSummary,
         expiration_summary: formatExpirationSummary(policy || { enabled: false, expiration_mode: 'never' }),
         expiration_policy: policy || null
       };
@@ -3601,6 +3613,80 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update schedule', detail: err.message });
+  }
+});
+
+app.get('/api/integrations/:key/credentials', async (req, res) => {
+  const { key } = req.params;
+  if (key !== URLHAUS_FEED_KEY) {
+    return res.status(404).json({ message: 'Credentials not supported for this integration' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT key, credentials FROM integration_feeds WHERE key = $1`,
+      [key]
+    );
+    if (!result.rowCount) return res.status(404).json({ message: 'Integration not found' });
+
+    return res.json({
+      key,
+      ...formatUrlhausCredentialsSummary(result.rows[0].credentials)
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to load integration credentials', detail: err.message });
+  }
+});
+
+app.put('/api/integrations/:key/credentials', async (req, res) => {
+  const { key } = req.params;
+  if (key !== URLHAUS_FEED_KEY) {
+    return res.status(404).json({ message: 'Credentials not supported for this integration' });
+  }
+
+  const authKey = typeof req.body?.auth_key === 'string' ? req.body.auth_key.trim() : undefined;
+  if (authKey === undefined) {
+    return res.status(400).json({ message: 'auth_key is required' });
+  }
+
+  try {
+    const prev = await pool.query(
+      `SELECT key, credentials FROM integration_feeds WHERE key = $1`,
+      [key]
+    );
+    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
+
+    const nextCreds = { ...(prev.rows[0].credentials || {}) };
+    if (authKey === '') {
+      delete nextCreds.auth_key;
+    } else {
+      nextCreds.auth_key = authKey;
+    }
+
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET credentials = $2::jsonb, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, credentials`,
+      [key, JSON.stringify(nextCreds)]
+    );
+
+    audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_CREDENTIALS_CHANGED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: key,
+      entityDisplay: key,
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: { auth_key_updated: Boolean(authKey), auth_key_cleared: authKey === '' }
+    });
+
+    return res.json({
+      key: result.rows[0].key,
+      ...formatUrlhausCredentialsSummary(result.rows[0].credentials)
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update integration credentials', detail: err.message });
   }
 });
 

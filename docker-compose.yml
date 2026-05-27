@@ -84,7 +84,7 @@ services:
       - USOM_SOURCE_NAME=USOM:TR-CERT
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
       - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
-      - URLHAUS_URL=https://urlhaus.abuse.ch/downloads/text/
+      - URLHAUS_AUTH_KEY=${URLHAUS_AUTH_KEY:-}
       - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
       - THREATFOX_CSV_URL=https://threatfox.abuse.ch/export/csv/full/
     depends_on:
@@ -117,7 +117,7 @@ services:
       - USOM_SOURCE_NAME=USOM:TR-CERT
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
       - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
-      - URLHAUS_URL=https://urlhaus.abuse.ch/downloads/text/
+      - URLHAUS_AUTH_KEY=${URLHAUS_AUTH_KEY:-}
       - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
       - THREATFOX_CSV_URL=https://threatfox.abuse.ch/export/csv/full/
     depends_on:

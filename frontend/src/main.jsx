@@ -3356,14 +3356,23 @@ function FeedActiveConfirmModal({ feed, mode, loading, error, onCancel, onConfir
   );
 }
 
+const URLHAUS_FEED_KEY = 'urlhaus-abusech';
+
 function FeedSettingsModal({
   feed,
   draftCron,
   onDraftChange,
   draftExpiration,
   onExpirationChange,
+  draftAuthKey,
+  onAuthKeyChange,
+  maskedAuthKey,
+  authKeyConfigured,
   savingSchedule,
   savingExpiration,
+  savingCredentials,
+  credentialsError,
+  credentialsSuccess,
   error,
   expirationError,
   expirationSuccess,
@@ -3372,6 +3381,7 @@ function FeedSettingsModal({
   onRequestActiveChange,
   onSaveSchedule,
   onSaveExpiration,
+  onSaveCredentials,
   canWrite
 }) {
   const isActive = feed?.active !== false;
@@ -3385,8 +3395,8 @@ function FeedSettingsModal({
   return (
     <FeedHealthModal
       title="Feed settings"
-      onClose={(savingSchedule || savingExpiration) ? undefined : onClose}
-      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration}>Close</button>}
+      onClose={(savingSchedule || savingExpiration || savingCredentials) ? undefined : onClose}
+      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration || savingCredentials}>Close</button>}
     >
       <div style={{ display: 'grid', gap: 16, fontSize: 13 }}>
         <div>
@@ -3439,6 +3449,49 @@ function FeedSettingsModal({
             ) : null}
           </div>
         </div>
+
+        {feed?.key === URLHAUS_FEED_KEY ? (
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+            <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>URLHaus Auth-Key</div>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={{ color: '#94a3b8' }}>Auth Key</span>
+                <input
+                  type="password"
+                  value={draftAuthKey}
+                  onChange={(e) => onAuthKeyChange(e.target.value)}
+                  disabled={!canWrite || savingCredentials}
+                  placeholder="Enter URLHaus Auth-Key"
+                  autoComplete="off"
+                  style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+                />
+              </label>
+              <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
+                Required for URLHaus file exports. Do not include it in the URL.
+              </div>
+              {maskedAuthKey ? (
+                <div style={{ color: '#94a3b8', fontSize: 12 }}>Current key: {maskedAuthKey}</div>
+              ) : authKeyConfigured ? (
+                <div style={{ color: '#94a3b8', fontSize: 12 }}>Auth key is configured.</div>
+              ) : null}
+              {canWrite ? (
+                <button type="button" onClick={onSaveCredentials} disabled={savingCredentials || !draftAuthKey}>
+                  {savingCredentials ? 'Saving...' : 'Save Auth Key'}
+                </button>
+              ) : null}
+            </div>
+            {credentialsSuccess ? (
+              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(20,83,45,0.2)', fontSize: 13 }}>
+                {credentialsSuccess}
+              </div>
+            ) : null}
+            {credentialsError ? (
+              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+                {credentialsError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
           <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Expiration Policy</div>
@@ -3808,6 +3861,12 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [activeConfirm, setActiveConfirm] = useState(null);
   const [activeConfirmError, setActiveConfirmError] = useState('');
   const [savingScheduleKey, setSavingScheduleKey] = useState('');
+  const [settingsDraftAuthKey, setSettingsDraftAuthKey] = useState('');
+  const [settingsMaskedAuthKey, setSettingsMaskedAuthKey] = useState(null);
+  const [settingsAuthKeyConfigured, setSettingsAuthKeyConfigured] = useState(false);
+  const [savingCredentialsKey, setSavingCredentialsKey] = useState('');
+  const [settingsCredentialsError, setSettingsCredentialsError] = useState('');
+  const [settingsCredentialsSuccess, setSettingsCredentialsSuccess] = useState('');
 
   async function load() {
     setLoading(true);
@@ -3889,8 +3948,14 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsExpirationError('');
     setSettingsExpirationSuccess('');
     setSettingsExpirationRefreshWarn('');
+    setSettingsCredentialsError('');
+    setSettingsCredentialsSuccess('');
+    setSettingsDraftAuthKey('');
     setSettingsDraftCron(feed.schedule || '0 * * * *');
     setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
+    const credSummary = feed.credentials_summary || null;
+    setSettingsMaskedAuthKey(credSummary?.masked_auth_key || null);
+    setSettingsAuthKeyConfigured(Boolean(credSummary?.auth_key_configured));
     setSettingsModal({
       key: feed.key,
       name: feed.name,
@@ -3903,10 +3968,19 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     } catch {
       setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     }
+    if (feed.key === URLHAUS_FEED_KEY) {
+      try {
+        const { data } = await api.get(`/integrations/${encodeURIComponent(feed.key)}/credentials`);
+        setSettingsMaskedAuthKey(data?.masked_auth_key || null);
+        setSettingsAuthKeyConfigured(Boolean(data?.auth_key_configured));
+      } catch {
+        // keep list summary if credentials endpoint unavailable
+      }
+    }
   }
 
   function closeSettingsModal() {
-    if (savingScheduleKey) return;
+    if (savingScheduleKey || savingCredentialsKey) return;
     setSettingsModal(null);
     setSettingsError('');
   }
@@ -3944,6 +4018,30 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       setActiveConfirmError(apiErrorMessage(err, 'Failed to update feed active state'));
     } finally {
       setTogglingKeys((prev) => ({ ...prev, [key]: false }));
+    }
+  }
+
+  async function saveSettingsCredentials() {
+    if (!canWrite || !settingsModal || settingsModal.key !== URLHAUS_FEED_KEY) return;
+    const { key } = settingsModal;
+    if (savingCredentialsKey || !settingsDraftAuthKey.trim()) return;
+
+    setSettingsCredentialsError('');
+    setSettingsCredentialsSuccess('');
+    setSavingCredentialsKey(key);
+    try {
+      const { data } = await api.put(`/integrations/${encodeURIComponent(key)}/credentials`, {
+        auth_key: settingsDraftAuthKey.trim()
+      });
+      setSettingsMaskedAuthKey(data?.masked_auth_key || null);
+      setSettingsAuthKeyConfigured(Boolean(data?.auth_key_configured));
+      setSettingsDraftAuthKey('');
+      setSettingsCredentialsSuccess('URLHaus Auth-Key saved.');
+      await load();
+    } catch (err) {
+      setSettingsCredentialsError(apiErrorMessage(err, 'Failed to save URLHaus Auth-Key'));
+    } finally {
+      setSavingCredentialsKey('');
     }
   }
 
@@ -4172,8 +4270,15 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onDraftChange={setSettingsDraftCron}
           draftExpiration={settingsDraftExpiration}
           onExpirationChange={setSettingsDraftExpiration}
+          draftAuthKey={settingsDraftAuthKey}
+          onAuthKeyChange={setSettingsDraftAuthKey}
+          maskedAuthKey={settingsMaskedAuthKey}
+          authKeyConfigured={settingsAuthKeyConfigured}
           savingSchedule={Boolean(savingScheduleKey)}
           savingExpiration={Boolean(savingExpirationKey)}
+          savingCredentials={Boolean(savingCredentialsKey)}
+          credentialsError={settingsCredentialsError}
+          credentialsSuccess={settingsCredentialsSuccess}
           error={settingsError}
           expirationError={settingsExpirationError}
           expirationSuccess={settingsExpirationSuccess}
@@ -4182,6 +4287,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onRequestActiveChange={requestActiveChange}
           onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
           onSaveExpiration={() => saveSettingsExpiration().catch(() => {})}
+          onSaveCredentials={() => saveSettingsCredentials().catch(() => {})}
           canWrite={canWrite}
         />
       ) : null}

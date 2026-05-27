@@ -17,6 +17,16 @@ import {
   syncMembershipAfterIocImport,
   syncSnapshotFeedFromEntries
 } from './lib/iocExpiration.js';
+import {
+  URLHAUS_EXPORT_URL_MASKED,
+  URLHAUS_AUTH_REQUIRED_MSG,
+  assertUrlhausMinFetchInterval,
+  buildUrlhausNote,
+  buildUrlhausRecentCsvUrl,
+  parseUrlhausRecentCsv,
+  resolveUrlhausAuthKey,
+  sanitizeUrlhausErrorMessage
+} from './lib/urlhaus.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -276,6 +286,87 @@ function trackInsertResult(metrics, result) {
     metrics.noteDuplicate();
     return;
   }
+}
+
+async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
+  const lastSeen = entry.lastOnline || entry.dateAdded || null;
+  const res = await client.query(
+    `UPDATE ioc_items
+     SET note = $4,
+         category = $5,
+         last_seen_at = CASE
+           WHEN $7::timestamptz IS NULL THEN last_seen_at
+           ELSE GREATEST(COALESCE(last_seen_at, $7::timestamptz), $7::timestamptz)
+         END,
+         first_seen_at = CASE
+           WHEN $6::timestamptz IS NULL THEN first_seen_at
+           ELSE LEAST(first_seen_at, $6::timestamptz)
+         END
+     WHERE observable = $1
+       AND observable_type = $2
+       AND source_name = $3
+     RETURNING public_id`,
+    [
+      entry.observable,
+      entry.observableType,
+      sourceName,
+      note,
+      category,
+      entry.dateAdded,
+      lastSeen
+    ]
+  );
+
+  if (!res.rowCount) return false;
+
+  const publicId = res.rows[0].public_id;
+  const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
+  await insertObservablesIndex(client, publicId, observables);
+  await syncMembershipAfterIocImport(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl: URLHAUS_EXPORT_URL_MASKED,
+    confidence: 'high',
+    category
+  }).catch(() => {});
+  return true;
+}
+
+async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics) {
+  const note = buildUrlhausNote(entry);
+  const category = entry.threat || 'malware-url';
+  const sourceUrl = URLHAUS_EXPORT_URL_MASKED;
+
+  const updated = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+  if (updated) {
+    metrics.noteUpdated();
+    return;
+  }
+
+  const insertResult = await insertObservable(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl,
+    confidence: 'high',
+    category,
+    note
+  }, suppressionStats);
+
+  if (insertResult === 'suppressed') {
+    metrics.noteSuppressed(1);
+    return;
+  }
+  if (insertResult === true || insertResult === 'inserted') {
+    metrics.noteInsert();
+    if (entry.dateAdded || entry.lastOnline) {
+      await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+    }
+    return;
+  }
+
+  metrics.noteDuplicate();
 }
 
 function mergeBatchInsertMetrics(metrics, batchResult) {
@@ -667,66 +758,47 @@ export async function runUrlhausImport() {
     );
     runId = runInsert.rows[0].id;
 
-    const res = await fetch(config.urlhausUrl);
-    if (!res.ok) throw new Error(`URLhaus list request failed: ${res.status}`);
-    const txt = await res.text();
-
-    const rawLines = txt.split(/\r?\n/);
-    metrics.noteSkipped(rawLines.filter((line) => !classifyUsomObservable(line)).length);
-
-    const entries = rawLines
-      .map((line) => classifyUsomObservable(line))
-      .filter(Boolean)
-      .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
-
-    const currentHash = hashEntries(entries);
-
-    const prevState = await client.query(
-      `SELECT content_hash, items_json
-       FROM integration_source_state
-       WHERE source_name = $1`,
-      [config.urlhausSourceName]
-    );
-
-    const previousHash = prevState.rows[0]?.content_hash || null;
-    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
-    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
-
-    if (previousHash === currentHash) {
-      metrics.noteSkipped(entries.length);
-      await finalizeIntegrationRun(client, runId, metrics);
-
-      await client.query(
-        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (source_name)
-         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-        [config.urlhausSourceName, `hash:${currentHash}`]
-      );
-
-      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
+    const authKey = await resolveUrlhausAuthKey(client, config.urlhausAuthKey);
+    if (!authKey) {
+      throw new Error(URLHAUS_AUTH_REQUIRED_MSG);
     }
 
-    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
-    metrics.noteSkipped(entries.length - addedEntries.length);
+    const interval = await assertUrlhausMinFetchInterval(client, config.urlhausSourceName);
+    if (!interval.ok) {
+      metrics.noteSkipped(0);
+      await finalizeIntegrationRun(client, runId, metrics);
+      return withSuppressionStats(
+        { ok: true, runId, skipped: true, reason: interval.reason },
+        suppressionStats,
+        metrics
+      );
+    }
+
+    const exportUrl = buildUrlhausRecentCsvUrl(authKey);
+    const res = await fetch(exportUrl);
+    if (!res.ok) {
+      throw new Error(`URLhaus CSV export request failed: ${res.status}`);
+    }
+    const txt = await res.text();
+
+    const { entries, fetched, parsed, skipped } = parseUrlhausRecentCsv(txt);
+    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
+
+    const currentHash = hashEntries(entries.map((e) => ({
+      o: e.observable,
+      t: e.observableType,
+      id: e.externalId,
+      status: e.urlStatus
+    })));
+
     const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
 
-    for (let i = 0; i < addedEntries.length; i += batchSize) {
-      const batch = addedEntries.slice(i, i + batchSize);
+    for (let i = 0; i < entries.length; i += batchSize) {
+      const batch = entries.slice(i, i + batchSize);
       await client.query('BEGIN');
       try {
         for (const entry of batch) {
-          const { observable, observableType } = entry;
-          const okObs = await insertObservable(client, {
-            observable,
-            observableType,
-            sourceName: config.urlhausSourceName,
-            sourceUrl: config.urlhausUrl,
-            confidence: 'high',
-            category: 'malware-url',
-            note: 'Auto-imported from URLhaus text list'
-          }, suppressionStats);
-          trackInsertResult(metrics, okObs);
+          await upsertUrlhausObservable(client, entry, config.urlhausSourceName, suppressionStats, metrics);
         }
         await client.query('COMMIT');
       } catch (e) {
@@ -740,7 +812,11 @@ export async function runUrlhausImport() {
        VALUES ($1, $2, $3::jsonb, NOW())
        ON CONFLICT (source_name)
        DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [config.urlhausSourceName, currentHash, JSON.stringify(entries)]
+      [
+        config.urlhausSourceName,
+        currentHash,
+        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
+      ]
     );
 
     await client.query(
@@ -755,20 +831,25 @@ export async function runUrlhausImport() {
       observable: entry.observable,
       observableType: entry.observableType,
       sourceName: config.urlhausSourceName,
-      sourceUrl: config.urlhausUrl,
+      sourceUrl: URLHAUS_EXPORT_URL_MASKED,
       confidence: 'high',
-      category: 'malware-url'
+      category: entry.threat || 'malware-url'
     })).catch(() => {});
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, metrics.toJSON());
+    console.log(
+      `[integration-import] job=urlhaus_import runId=${runId} export=${URLHAUS_EXPORT_URL_MASKED} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
+    );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
+    const safeMessage = sanitizeUrlhausErrorMessage(err?.message || err);
     if (runId) {
-      await failIntegrationRun(client, runId, err.message, metrics);
+      await failIntegrationRun(client, runId, safeMessage, metrics);
     }
-
-    throw err;
+    const wrapped = new Error(safeMessage);
+    wrapped.cause = err;
+    throw wrapped;
   } finally {
     try {
       await client.query('SELECT pg_advisory_unlock(942003)');

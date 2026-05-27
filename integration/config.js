@@ -17,7 +17,7 @@ export const config = {
   usomSourceName: process.env.USOM_SOURCE_NAME || 'USOM:TR-CERT',
   usomApiUrl: process.env.USOM_API_URL || 'https://www.usom.gov.tr/url-list.txt',
   urlhausSourceName: process.env.URLHAUS_SOURCE_NAME || 'URLhaus:abuse.ch',
-  urlhausUrl: process.env.URLHAUS_URL || 'https://urlhaus.abuse.ch/downloads/text/',
+  urlhausAuthKey: process.env.URLHAUS_AUTH_KEY || '',
   threatfoxSourceName: process.env.THREATFOX_SOURCE_NAME || 'ThreatFox:abuse.ch',
   threatfoxCsvUrl: process.env.THREATFOX_CSV_URL || 'https://threatfox.abuse.ch/export/csv/full/',
   malwareBazaarSourceName: process.env.MALWARE_BAZAAR_SOURCE_NAME || 'MalwareBazaar:abuse.ch',

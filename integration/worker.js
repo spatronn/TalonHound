@@ -3,6 +3,7 @@ import pg from 'pg';
 import { config } from './config.js';
 import { redis } from './queue.js';
 import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
+import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -102,15 +103,24 @@ const worker = new Worker(
   }
 );
 
+function safeJobErrorMessage(job, err) {
+  const raw = String(err?.message || 'unknown error');
+  if (resolveIntegrationKey(job) === 'urlhaus-abusech') {
+    return sanitizeUrlhausErrorMessage(raw).slice(0, 4000);
+  }
+  return raw.slice(0, 4000);
+}
+
 worker.on('failed', async (job, err) => {
-  console.error(`[worker] failed job id=${job?.id} attemptsMade=${job?.attemptsMade}`, err);
+  const safeMsg = safeJobErrorMessage(job, err);
+  console.error(`[worker] failed job id=${job?.id} attemptsMade=${job?.attemptsMade} message=${safeMsg}`);
   try {
     if (job?.id) {
       await pool.query(
         `UPDATE integration_queue_jobs
          SET status='failed', finished_at=NOW(), error_message=$2, updated_at=NOW()
          WHERE job_id=$1`,
-        [String(job.id), String(err?.message || 'unknown error').slice(0, 4000)]
+        [String(job.id), safeMsg]
       );
     }
   } catch (e) {
