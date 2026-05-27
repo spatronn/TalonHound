@@ -1,5 +1,17 @@
+import {
+  MALWAREBAZAAR_FEED_KEY,
+  formatMalwareBazaarCredentialsSummary,
+  sanitizeMalwareBazaarErrorMessage
+} from './malwarebazaarIntegration.js';
+
 export const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 export const URLHAUS_EXPORT_URL_MASKED = 'https://urlhaus-api.abuse.ch/v2/files/exports/***/recent.csv';
+
+export {
+  MALWAREBAZAAR_FEED_KEY,
+  formatMalwareBazaarCredentialsSummary,
+  sanitizeMalwareBazaarErrorMessage
+};
 
 export function maskUrlhausAuthKey(key) {
   const s = String(key || '').trim();
@@ -27,9 +39,18 @@ export function formatUrlhausCredentialsSummary(credentials) {
   };
 }
 
+export function formatFeedCredentialsSummary(feedKey, credentials) {
+  if (feedKey === URLHAUS_FEED_KEY) return formatUrlhausCredentialsSummary(credentials);
+  if (feedKey === MALWAREBAZAAR_FEED_KEY) return formatMalwareBazaarCredentialsSummary(credentials);
+  return null;
+}
+
 export function sanitizeFeedErrorMessage(feedKey, message) {
   if (feedKey === URLHAUS_FEED_KEY) {
     return sanitizeUrlhausErrorMessage(message);
+  }
+  if (feedKey === MALWAREBAZAAR_FEED_KEY) {
+    return sanitizeMalwareBazaarErrorMessage(message);
   }
   return String(message || '');
 }

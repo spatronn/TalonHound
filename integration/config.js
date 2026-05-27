@@ -21,7 +21,7 @@ export const config = {
   threatfoxSourceName: process.env.THREATFOX_SOURCE_NAME || 'ThreatFox:abuse.ch',
   threatfoxCsvUrl: process.env.THREATFOX_CSV_URL || 'https://threatfox.abuse.ch/export/csv/full/',
   malwareBazaarSourceName: process.env.MALWARE_BAZAAR_SOURCE_NAME || 'MalwareBazaar:abuse.ch',
-  malwareBazaarCsvUrl: process.env.MALWARE_BAZAAR_CSV_URL || 'https://bazaar.abuse.ch/export/csv/full/',
+  malwareBazaarAuthKey: process.env.MALWAREBAZAAR_AUTH_KEY || '',
   phishTankSourceName: process.env.PHISHTANK_SOURCE_NAME || 'PhishTank:open_dnsrr',
   phishTankCsvUrl: process.env.PHISHTANK_CSV_URL || 'https://data.phishtank.com/data/online-valid.csv'
 };

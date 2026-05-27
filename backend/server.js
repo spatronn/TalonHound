@@ -41,7 +41,8 @@ import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import {
   URLHAUS_FEED_KEY,
-  formatUrlhausCredentialsSummary,
+  MALWAREBAZAAR_FEED_KEY,
+  formatFeedCredentialsSummary,
   sanitizeFeedErrorMessage
 } from './lib/urlhausIntegration.js';
 import { QUEUE_HARDENING } from './lib/integrationQueueConfig.js';
@@ -3319,9 +3320,7 @@ app.get('/api/integrations', async (req, res) => {
       const row = mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures);
       const policy = policyByFeedId.get(String(feed.integration_id));
       const { credentials: _rawCreds, ...safeFeed } = row;
-      const credentialsSummary = feed.key === URLHAUS_FEED_KEY
-        ? formatUrlhausCredentialsSummary(feed.credentials)
-        : null;
+      const credentialsSummary = formatFeedCredentialsSummary(feed.key, feed.credentials);
       return {
         ...safeFeed,
         credentials_summary: credentialsSummary,
@@ -3670,7 +3669,7 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
 
 app.get('/api/integrations/:key/credentials', async (req, res) => {
   const { key } = req.params;
-  if (key !== URLHAUS_FEED_KEY) {
+  if (key !== URLHAUS_FEED_KEY && key !== MALWAREBAZAAR_FEED_KEY) {
     return res.status(404).json({ message: 'Credentials not supported for this integration' });
   }
 
@@ -3683,7 +3682,7 @@ app.get('/api/integrations/:key/credentials', async (req, res) => {
 
     return res.json({
       key,
-      ...formatUrlhausCredentialsSummary(result.rows[0].credentials)
+      ...formatFeedCredentialsSummary(key, result.rows[0].credentials)
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to load integration credentials', detail: err.message });
@@ -3692,7 +3691,7 @@ app.get('/api/integrations/:key/credentials', async (req, res) => {
 
 app.put('/api/integrations/:key/credentials', async (req, res) => {
   const { key } = req.params;
-  if (key !== URLHAUS_FEED_KEY) {
+  if (key !== URLHAUS_FEED_KEY && key !== MALWAREBAZAAR_FEED_KEY) {
     return res.status(404).json({ message: 'Credentials not supported for this integration' });
   }
 
@@ -3735,7 +3734,7 @@ app.put('/api/integrations/:key/credentials', async (req, res) => {
 
     return res.json({
       key: result.rows[0].key,
-      ...formatUrlhausCredentialsSummary(result.rows[0].credentials)
+      ...formatFeedCredentialsSummary(key, result.rows[0].credentials)
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update integration credentials', detail: err.message });

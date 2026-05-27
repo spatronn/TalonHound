@@ -87,6 +87,8 @@ services:
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
       - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
       - URLHAUS_AUTH_KEY=${URLHAUS_AUTH_KEY:-}
+      - MALWARE_BAZAAR_SOURCE_NAME=MalwareBazaar:abuse.ch
+      - MALWAREBAZAAR_AUTH_KEY=${MALWAREBAZAAR_AUTH_KEY:-}
       - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
       - THREATFOX_CSV_URL=https://threatfox.abuse.ch/export/csv/full/
     depends_on:
@@ -126,6 +128,8 @@ services:
       - USOM_API_URL=https://www.usom.gov.tr/url-list.txt
       - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
       - URLHAUS_AUTH_KEY=${URLHAUS_AUTH_KEY:-}
+      - MALWARE_BAZAAR_SOURCE_NAME=MalwareBazaar:abuse.ch
+      - MALWAREBAZAAR_AUTH_KEY=${MALWAREBAZAAR_AUTH_KEY:-}
       - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
       - THREATFOX_CSV_URL=https://threatfox.abuse.ch/export/csv/full/
     depends_on:

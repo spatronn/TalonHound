@@ -8,6 +8,7 @@
     "worker": "node worker.js",
     "backfill-ioc-observables": "node backfill-ioc-observables.js",
     "test:urlhaus": "node --test lib/urlhaus.test.js",
+    "test:malwarebazaar": "node --test lib/malwarebazaar.test.js",
     "test:queue": "node --test lib/queue-recovery.test.js"
   },
   "dependencies": {

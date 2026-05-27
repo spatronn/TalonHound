@@ -3385,6 +3385,28 @@ function FeedActiveConfirmModal({ feed, mode, loading, error, onCancel, onConfir
 }
 
 const URLHAUS_FEED_KEY = 'urlhaus-abusech';
+const MALWAREBAZAAR_FEED_KEY = 'malwarebazaar-abusech';
+
+const AUTH_KEY_FEED_CONFIG = {
+  [URLHAUS_FEED_KEY]: {
+    title: 'URLHaus Auth-Key',
+    placeholder: 'Enter URLHaus Auth-Key',
+    helpText: 'Required for URLHaus file exports. Do not include it in the URL.',
+    saveSuccess: 'URLHaus Auth-Key saved.',
+    saveError: 'Failed to save URLHaus Auth-Key'
+  },
+  [MALWAREBAZAAR_FEED_KEY]: {
+    title: 'MalwareBazaar Auth-Key',
+    placeholder: 'Enter MalwareBazaar Auth-Key',
+    helpText: 'Required for MalwareBazaar file exports. Do not include it in the URL.',
+    saveSuccess: 'MalwareBazaar Auth-Key saved.',
+    saveError: 'Failed to save MalwareBazaar Auth-Key'
+  }
+};
+
+function feedSupportsAuthKey(feedKey) {
+  return Boolean(AUTH_KEY_FEED_CONFIG[feedKey]);
+}
 
 function FeedSettingsModal({
   feed,
@@ -3478,9 +3500,11 @@ function FeedSettingsModal({
           </div>
         </div>
 
-        {feed?.key === URLHAUS_FEED_KEY ? (
+        {feedSupportsAuthKey(feed?.key) ? (
           <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
-            <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>URLHaus Auth-Key</div>
+            <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {AUTH_KEY_FEED_CONFIG[feed.key]?.title || 'Auth-Key'}
+            </div>
             <div style={{ display: 'grid', gap: 10 }}>
               <label style={{ display: 'grid', gap: 6 }}>
                 <span style={{ color: '#94a3b8' }}>Auth Key</span>
@@ -3489,13 +3513,13 @@ function FeedSettingsModal({
                   value={draftAuthKey}
                   onChange={(e) => onAuthKeyChange(e.target.value)}
                   disabled={!canWrite || savingCredentials}
-                  placeholder="Enter URLHaus Auth-Key"
+                  placeholder={AUTH_KEY_FEED_CONFIG[feed.key]?.placeholder || 'Enter Auth-Key'}
                   autoComplete="off"
                   style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
                 />
               </label>
               <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
-                Required for URLHaus file exports. Do not include it in the URL.
+                {AUTH_KEY_FEED_CONFIG[feed.key]?.helpText || 'Required for file exports. Do not include it in the URL.'}
               </div>
               {maskedAuthKey ? (
                 <div style={{ color: '#94a3b8', fontSize: 12 }}>Current key: {maskedAuthKey}</div>
@@ -3999,7 +4023,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     } catch {
       setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     }
-    if (feed.key === URLHAUS_FEED_KEY) {
+    if (feedSupportsAuthKey(feed.key)) {
       try {
         const { data } = await api.get(`/integrations/${encodeURIComponent(feed.key)}/credentials`);
         setSettingsMaskedAuthKey(data?.masked_auth_key || null);
@@ -4053,7 +4077,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   async function saveSettingsCredentials() {
-    if (!canWrite || !settingsModal || settingsModal.key !== URLHAUS_FEED_KEY) return;
+    if (!canWrite || !settingsModal || !feedSupportsAuthKey(settingsModal.key)) return;
     const { key } = settingsModal;
     if (savingCredentialsKey || !settingsDraftAuthKey.trim()) return;
 
@@ -4067,10 +4091,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       setSettingsMaskedAuthKey(data?.masked_auth_key || null);
       setSettingsAuthKeyConfigured(Boolean(data?.auth_key_configured));
       setSettingsDraftAuthKey('');
-      setSettingsCredentialsSuccess('URLHaus Auth-Key saved.');
+      setSettingsCredentialsSuccess(AUTH_KEY_FEED_CONFIG[key]?.saveSuccess || 'Auth-Key saved.');
       await load();
     } catch (err) {
-      setSettingsCredentialsError(apiErrorMessage(err, 'Failed to save URLHaus Auth-Key'));
+      setSettingsCredentialsError(apiErrorMessage(err, AUTH_KEY_FEED_CONFIG[key]?.saveError || 'Failed to save Auth-Key'));
     } finally {
       setSavingCredentialsKey('');
     }

@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { redis } from './queue.js';
 import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
 import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
+import { sanitizeMalwareBazaarErrorMessage } from './lib/malwarebazaar.js';
 import { QUEUE_HARDENING, FAILURE_MESSAGES, FAILURE_TYPES } from './lib/integrationQueueConfig.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs, runQueueRecovery } from './lib/integrationQueueRecovery.js';
 import {
@@ -44,8 +45,12 @@ function resolveIntegrationKey(job) {
 
 function safeJobErrorMessage(job, err) {
   const raw = String(err?.message || 'unknown error');
-  if (resolveIntegrationKey(job) === 'urlhaus-abusech') {
+  const integrationKey = resolveIntegrationKey(job);
+  if (integrationKey === 'urlhaus-abusech') {
     return sanitizeUrlhausErrorMessage(raw).slice(0, 4000);
+  }
+  if (integrationKey === 'malwarebazaar-abusech') {
+    return sanitizeMalwareBazaarErrorMessage(raw).slice(0, 4000);
   }
   return raw.slice(0, 4000);
 }

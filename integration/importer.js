@@ -27,6 +27,16 @@ import {
   resolveUrlhausAuthKey,
   sanitizeUrlhausErrorMessage
 } from './lib/urlhaus.js';
+import {
+  MALWAREBAZAAR_EXPORT_URL_MASKED,
+  MALWAREBAZAAR_AUTH_REQUIRED_MSG,
+  assertMalwareBazaarMinFetchInterval,
+  buildMalwareBazaarNote,
+  buildMalwareBazaarRecentCsvUrl,
+  parseMalwareBazaarRecentCsv,
+  resolveMalwareBazaarAuthKey,
+  sanitizeMalwareBazaarErrorMessage
+} from './lib/malwarebazaar.js';
 
 const { Pool } = pg;
 const pool = new Pool(config.db);
@@ -362,6 +372,85 @@ async function upsertUrlhausObservable(client, entry, sourceName, suppressionSta
     metrics.noteInsert();
     if (entry.dateAdded || entry.lastOnline) {
       await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+    }
+    return;
+  }
+
+  metrics.noteDuplicate();
+}
+
+async function updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category) {
+  const res = await client.query(
+    `UPDATE ioc_items
+     SET note = $4,
+         category = $5,
+         last_seen_at = CASE
+           WHEN $6::timestamptz IS NULL THEN last_seen_at
+           ELSE GREATEST(COALESCE(last_seen_at, $6::timestamptz), $6::timestamptz)
+         END,
+         first_seen_at = CASE
+           WHEN $6::timestamptz IS NULL THEN first_seen_at
+           ELSE LEAST(first_seen_at, $6::timestamptz)
+         END
+     WHERE observable = $1
+       AND observable_type = $2
+       AND source_name = $3
+     RETURNING public_id`,
+    [
+      entry.observable,
+      entry.observableType,
+      sourceName,
+      note,
+      category,
+      entry.firstSeenUtc
+    ]
+  );
+
+  if (!res.rowCount) return false;
+
+  const publicId = res.rows[0].public_id;
+  const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
+  await insertObservablesIndex(client, publicId, observables);
+  await syncMembershipAfterIocImport(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl: MALWAREBAZAAR_EXPORT_URL_MASKED,
+    confidence: entry.confidence,
+    category
+  }).catch(() => {});
+  return true;
+}
+
+async function upsertMalwareBazaarObservable(client, entry, sourceName, suppressionStats, metrics) {
+  const note = buildMalwareBazaarNote(entry);
+  const category = entry.category || 'malware';
+  const sourceUrl = MALWAREBAZAAR_EXPORT_URL_MASKED;
+
+  const updated = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
+  if (updated) {
+    metrics.noteUpdated();
+    return;
+  }
+
+  const insertResult = await insertObservable(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl,
+    confidence: entry.confidence,
+    category,
+    note
+  }, suppressionStats);
+
+  if (insertResult === 'suppressed') {
+    metrics.noteSuppressed(1);
+    return;
+  }
+  if (insertResult === true || insertResult === 'inserted') {
+    metrics.noteInsert();
+    if (entry.firstSeenUtc) {
+      await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
     }
     return;
   }
@@ -1019,61 +1108,6 @@ export async function runThreatfoxImport() {
   }
 }
 
-function toNullable(value) {
-  const v = String(value ?? '').trim();
-  if (!v) return null;
-  if (v.toLowerCase() === 'n/a') return null;
-  return v;
-}
-
-function parseUtcTimestamp(value) {
-  const raw = toNullable(value);
-  if (!raw) return null;
-  const normalized = raw.replace(' ', 'T');
-  const dt = new Date(`${normalized}Z`);
-  if (Number.isNaN(dt.getTime())) return null;
-  return dt;
-}
-
-function mapMalwareBazaarRow(cols) {
-  if (!Array.isArray(cols) || cols.length < 14) return null;
-
-  const firstSeenUtc = parseUtcTimestamp(cols[0]);
-  const sha256 = toNullable(cols[1])?.toLowerCase();
-  if (!sha256 || !/^[a-f0-9]{64}$/.test(sha256)) return null;
-
-  const signature = toNullable(cols[8]);
-  const vtPercentRaw = toNullable(cols[10]);
-  const confidence = vtPercentRaw && /^\d{1,3}$/.test(vtPercentRaw)
-    ? (Number(vtPercentRaw) >= 70 ? 'high' : Number(vtPercentRaw) >= 30 ? 'medium' : 'low')
-    : (signature ? 'high' : 'medium');
-
-  const category = signature || 'malware-sample';
-
-  const noteParts = [
-    'Auto-imported from MalwareBazaar CSV',
-    toNullable(cols[5]) ? `file_name=${toNullable(cols[5])}` : null,
-    toNullable(cols[6]) ? `file_type=${toNullable(cols[6])}` : null,
-    toNullable(cols[7]) ? `mime=${toNullable(cols[7])}` : null,
-    toNullable(cols[4]) ? `reporter=${toNullable(cols[4])}` : null,
-    toNullable(cols[2]) ? `md5=${toNullable(cols[2])}` : null,
-    toNullable(cols[3]) ? `sha1=${toNullable(cols[3])}` : null,
-    toNullable(cols[11]) ? `imphash=${toNullable(cols[11])}` : null,
-    toNullable(cols[12]) ? `ssdeep=${toNullable(cols[12])}` : null,
-    toNullable(cols[13]) ? `tlsh=${toNullable(cols[13])}` : null,
-    vtPercentRaw ? `vtpercent=${vtPercentRaw}` : null
-  ].filter(Boolean);
-
-  return {
-    observable: sha256,
-    observableType: 'sha256',
-    firstSeenUtc,
-    confidence,
-    category,
-    note: noteParts.join(' | ')
-  };
-}
-
 export async function runMalwareBazaarImport() {
   const client = await pool.connect();
   let runId = null;
@@ -1093,110 +1127,97 @@ export async function runMalwareBazaarImport() {
     );
     runId = runInsert.rows[0].id;
 
-    const cpRes = await client.query(
-      `SELECT last_cursor
-       FROM integration_checkpoints
-       WHERE source_name = $1`,
-      [config.malwareBazaarSourceName]
-    );
+    const authKey = await resolveMalwareBazaarAuthKey(client, config.malwareBazaarAuthKey);
+    if (!authKey) {
+      throw new Error(MALWAREBAZAAR_AUTH_REQUIRED_MSG);
+    }
 
-    const previousCursor = cpRes.rows[0]?.last_cursor || null;
-    const previousCursorDate = previousCursor ? new Date(previousCursor) : null;
+    const interval = await assertMalwareBazaarMinFetchInterval(client, config.malwareBazaarSourceName);
+    if (!interval.ok) {
+      metrics.noteSkipped(0);
+      await finalizeIntegrationRun(client, runId, metrics);
+      return withSuppressionStats(
+        { ok: true, runId, skipped: true, reason: interval.reason },
+        suppressionStats,
+        metrics
+      );
+    }
 
-    let maxSeenDate = previousCursorDate;
+    const exportUrl = buildMalwareBazaarRecentCsvUrl(authKey);
+    const res = await fetch(exportUrl);
+    if (!res.ok) {
+      throw new Error(`MalwareBazaar export fetch failed: HTTP ${res.status}`);
+    }
+    const txt = await res.text();
 
-    const res = await fetch(config.malwareBazaarCsvUrl);
-    if (!res.ok) throw new Error(`MalwareBazaar CSV request failed: ${res.status}`);
-    const txt = await readThreatFoxCsvText(res);
+    const { entries, fetched, parsed, skipped } = parseMalwareBazaarRecentCsv(txt);
+    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
 
-    const lines = txt.split(/\r?\n/);
-    let olderStreak = 0;
-    const stopAfterOlderStreak = Number(process.env.MALWARE_BAZAAR_OLDER_STREAK || 5000);
+    const currentHash = hashEntries(entries.map((e) => ({
+      o: e.observable,
+      t: e.observableType,
+      sig: e.signature,
+      fs: e.firstSeenUtc?.toISOString?.() || null
+    })));
 
-    const batch = [];
-    const flushBatch = async () => {
-      if (!batch.length) return;
+    const batchSize = Number(process.env.MALWARE_BAZAAR_BATCH_SIZE || 1000);
+
+    for (let i = 0; i < entries.length; i += batchSize) {
+      const batch = entries.slice(i, i + batchSize);
       await client.query('BEGIN');
       try {
         for (const entry of batch) {
-          const okObs = await insertObservable(client, {
-            observable: entry.observable,
-            observableType: entry.observableType,
-            sourceName: config.malwareBazaarSourceName,
-            sourceUrl: config.malwareBazaarCsvUrl,
-            confidence: entry.confidence,
-            category: entry.category,
-            note: entry.note
-          }, suppressionStats);
-          trackInsertResult(metrics, okObs);
+          await upsertMalwareBazaarObservable(client, entry, config.malwareBazaarSourceName, suppressionStats, metrics);
         }
         await client.query('COMMIT');
       } catch (e) {
         await client.query('ROLLBACK');
         throw e;
-      } finally {
-        batch.length = 0;
-      }
-    };
-
-    const batchSize = Number(process.env.MALWARE_BAZAAR_BATCH_SIZE || 1000);
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-
-      const cols = splitCsvLine(line);
-      if (cols.length < 14) {
-        metrics.noteSkipped(1);
-        continue;
-      }
-      if (String(cols[0]).toLowerCase().includes('first_seen_utc')) continue;
-
-      const entry = mapMalwareBazaarRow(cols);
-      if (!entry) {
-        metrics.noteFailed(1);
-        continue;
-      }
-
-      if (entry.firstSeenUtc && (!maxSeenDate || entry.firstSeenUtc > maxSeenDate)) {
-        maxSeenDate = entry.firstSeenUtc;
-      }
-
-      if (previousCursorDate && entry.firstSeenUtc && entry.firstSeenUtc <= previousCursorDate) {
-        olderStreak += 1;
-        metrics.noteSkipped(1);
-        if (olderStreak >= stopAfterOlderStreak) break;
-        continue;
-      }
-
-      olderStreak = 0;
-      batch.push(entry);
-      if (batch.length >= batchSize) {
-        await flushBatch();
       }
     }
 
-    await flushBatch();
-
-    const nextCursor = maxSeenDate ? maxSeenDate.toISOString() : previousCursor || new Date().toISOString();
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+      [
+        config.malwareBazaarSourceName,
+        currentHash,
+        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
+      ]
+    );
 
     await client.query(
       `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (source_name)
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-      [config.malwareBazaarSourceName, nextCursor]
+      [config.malwareBazaarSourceName, `hash:${currentHash}`]
     );
 
+    await syncSnapshotFeedFromEntries(client, 'malwarebazaar-abusech', entries, (entry) => ({
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: config.malwareBazaarSourceName,
+      sourceUrl: MALWAREBAZAAR_EXPORT_URL_MASKED,
+      confidence: entry.confidence,
+      category: entry.category || 'malware'
+    })).catch(() => {});
+
     await finalizeIntegrationRun(client, runId, metrics);
-    logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, { ...metrics.toJSON(), cursor: nextCursor });
-    return withSuppressionStats({ ok: true, runId, cursor: nextCursor }, suppressionStats, metrics);
+    logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, metrics.toJSON());
+    console.log(
+      `[integration-import] job=malwarebazaar_import runId=${runId} export=${MALWAREBAZAAR_EXPORT_URL_MASKED} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
+    );
+    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
+    const safeMessage = sanitizeMalwareBazaarErrorMessage(err?.message || err);
     if (runId) {
-      await failIntegrationRun(client, runId, err.message, metrics);
+      await failIntegrationRun(client, runId, safeMessage, metrics);
     }
 
-    throw err;
+    throw Object.assign(new Error(safeMessage), { cause: err });
   } finally {
     try {
       await client.query('SELECT pg_advisory_unlock(942005)');
