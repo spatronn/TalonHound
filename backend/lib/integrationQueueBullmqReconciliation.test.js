@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   isDbTerminalStatus,
   isBullmqReconcilableState,
+  isBlockingBullmqEntry,
   moveBullJobToFailed
 } from './integrationQueueBullmqReconciliation.js';
 
@@ -29,6 +30,12 @@ test('moveBullJobToFailed dry-run does not mutate', async () => {
   const res = await moveBullJobToFailed(fakeJob, 'test', { dryRun: true });
   assert.equal(res.dryRun, true);
   assert.equal(calls.length, 0);
+});
+
+test('isBlockingBullmqEntry detects terminal db mismatch', () => {
+  assert.equal(isBlockingBullmqEntry({ status: 'failed' }, 'active'), true);
+  assert.equal(isBlockingBullmqEntry({ status: 'running', started_at: new Date(), heartbeat_at: new Date() }, 'active'), false);
+  assert.equal(isBlockingBullmqEntry(null, 'stalled'), true);
 });
 
 test('moveBullJobToFailed skips completed jobs', async () => {

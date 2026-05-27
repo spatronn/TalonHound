@@ -1,4 +1,4 @@
-import { isDbTerminalStatus } from './integrationQueueBullmqReconciliation.js';
+import { isBlockingBullmqEntry } from './integrationQueueBullmqReconciliation.js';
 
 export function computeQueueHealth({
   bullCounts = {},
@@ -19,10 +19,9 @@ export function computeQueueHealth({
   let queueHealth = 'Healthy';
   let workerStatus = workerConsuming === false ? 'Not consuming' : (workerConsuming ? 'Running' : 'Unknown');
 
-  const blockingStale = [...staleActiveJobs, ...staleStalledJobs].filter((entry) => {
-    const dbStatus = entry.db ? String(entry.db.status || '').toLowerCase() : null;
-    return !entry.db || isDbTerminalStatus(dbStatus) || dbStatus === 'running';
-  });
+  const blockingStale = [...staleActiveJobs, ...staleStalledJobs].filter((entry) =>
+    isBlockingBullmqEntry(entry.db, entry.bullmq_state)
+  );
 
   if (blockingStale.length > 0) {
     queueHealth = 'Blocked';
