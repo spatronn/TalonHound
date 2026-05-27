@@ -10,6 +10,23 @@ import {
 } from '../lib/iocExpiration.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 
+const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
+
+/** JSON-safe policy payload (avoids BigInt / Date serialization errors on res.json). */
+export function serializeExpirationPolicy(row, feedId) {
+  if (!row) return null;
+  const updatedAt = row.updated_at;
+  return {
+    feed_id: String(row.feed_id || feedId || ''),
+    observable_type: row.observable_type || 'all',
+    enabled: Boolean(row.enabled),
+    expiration_mode: row.expiration_mode || 'never',
+    ttl_days: row.ttl_days == null ? null : Number(row.ttl_days),
+    grace_days: row.grace_days == null ? null : Number(row.grace_days),
+    updated_at: updatedAt instanceof Date ? updatedAt.toISOString() : (updatedAt || null)
+  };
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
@@ -20,28 +37,35 @@ export function registerIocExpirationRoutes(app, pool, audit) {
     try {
       const feedKey = String(req.params.feedKey || '').trim();
       const feedId = await resolveFeedIdByKey(pool, feedKey);
-      if (!feedId) return res.status(404).json({ message: 'Feed not found' });
+      if (!feedId) return res.status(404).json({ success: false, error: 'Feed not found' });
 
       const feedQ = await pool.query(
         'SELECT key, integration_id, name, feed_update_mode FROM integration_feeds WHERE key = $1',
         [feedKey]
       );
       const policy = await getFeedPolicy(pool, feedId);
+      const policyOut = serializeExpirationPolicy(
+        policy,
+        feedId
+      ) || {
+        feed_id: String(feedId),
+        observable_type: 'all',
+        enabled: false,
+        expiration_mode: 'never',
+        ttl_days: null,
+        grace_days: null,
+        updated_at: null
+      };
       return res.json({
+        success: true,
         feed_key: feedKey,
-        feed_id: feedId,
+        feed_id: String(feedId),
         feed_update_mode: feedQ.rows[0]?.feed_update_mode || 'incremental',
-        policy: policy || {
-          observable_type: 'all',
-          enabled: false,
-          expiration_mode: 'never',
-          ttl_days: null,
-          grace_days: null
-        },
-        summary: formatExpirationSummary(policy || { enabled: false, expiration_mode: 'never' })
+        policy: policyOut,
+        summary: formatExpirationSummary(policyOut)
       });
     } catch (err) {
-      return res.status(500).json({ message: 'Failed to load expiration policy', detail: err.message });
+      return res.status(500).json({ success: false, error: 'Failed to load expiration policy', detail: err.message });
     }
   });
 
@@ -52,12 +76,13 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         'SELECT key, integration_id, feed_update_mode FROM integration_feeds WHERE key = $1',
         [feedKey]
       );
-      if (!feedQ.rowCount) return res.status(404).json({ message: 'Feed not found' });
+      if (!feedQ.rowCount) return res.status(404).json({ success: false, error: 'Feed not found' });
 
       const feedId = feedQ.rows[0].integration_id;
       const validation = validateExpirationPolicyInput(req.body, feedQ.rows[0].feed_update_mode);
       if (!validation.ok) {
-        return res.status(400).json({ message: 'Invalid expiration policy', errors: validation.errors });
+        const msg = validation.errors[0] || 'Invalid expiration policy';
+        return res.status(400).json({ success: false, error: msg, errors: validation.errors });
       }
 
       const prev = await getFeedPolicy(pool, feedId, validation.normalized.observable_type);
@@ -82,23 +107,27 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         ? 'threat_feed.expiration_policy.created'
         : (n.enabled ? 'threat_feed.expiration_policy.updated' : 'threat_feed.expiration_policy.disabled');
 
+      const policyOut = serializeExpirationPolicy(rows[0], feedId);
+
       await audit.auditSuccess({
         req,
         action,
         entityType: AUDIT_ENTITY.INTEGRATION,
         entityId: feedKey,
         entityDisplay: feedKey,
-        before: pickSafeFields(prev),
-        after: pickSafeFields(rows[0]),
-        metadata: { feed_id: feedId, summary: formatExpirationSummary(rows[0]) }
+        before: pickSafeFields(prev, POLICY_AUDIT_FIELDS),
+        after: pickSafeFields(rows[0], POLICY_AUDIT_FIELDS),
+        metadata: { feed_id: feedId, summary: formatExpirationSummary(policyOut) }
       });
 
-      return res.json({
-        policy: rows[0],
-        summary: formatExpirationSummary(rows[0])
+      return res.status(200).json({
+        success: true,
+        policy: policyOut,
+        summary: formatExpirationSummary(policyOut)
       });
     } catch (err) {
-      return res.status(500).json({ message: 'Failed to update expiration policy', detail: err.message });
+      console.error('[expiration-policy] PATCH failed', err?.message || err);
+      return res.status(500).json({ success: false, error: 'Failed to update expiration policy', detail: err.message });
     }
   });
 
@@ -147,7 +176,7 @@ export function registerIocExpirationRoutes(app, pool, audit) {
           action: 'ioc.override_cleared',
           entityType: AUDIT_ENTITY.IOC,
           entityId: String(iocId),
-          before: pickSafeFields(prev),
+          before: pickSafeFields(prev, POLICY_AUDIT_FIELDS),
           after: { manual_status_override: false },
           metadata: { reason, observable_type: observableType }
         });

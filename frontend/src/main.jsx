@@ -212,7 +212,39 @@ function suppressionStatusBadgeStyle(status) {
 }
 
 function apiErrorMessage(err, fallback = 'Request failed') {
-  return String(err?.response?.data?.message || err?.message || fallback);
+  const d = err?.response?.data;
+  if (d?.error) return String(d.error);
+  if (Array.isArray(d?.errors) && d.errors.length) return d.errors.join('; ');
+  return String(d?.message || err?.message || fallback);
+}
+
+function buildExpirationPatchPayload(exp) {
+  const enabled = Boolean(exp?.enabled);
+  const mode = enabled ? String(exp?.expiration_mode || 'never') : 'never';
+  const payload = {
+    observable_type: 'all',
+    enabled,
+    expiration_mode: mode,
+    ttl_days: null,
+    grace_days: null
+  };
+  if (!enabled) return payload;
+
+  if (['fixed_ttl', 'last_seen_ttl'].includes(mode)) {
+    const raw = exp?.ttl_days;
+    if (raw !== '' && raw != null) {
+      const n = parseInt(String(raw), 10);
+      if (Number.isFinite(n) && n > 0) payload.ttl_days = n;
+    }
+  }
+  if (mode === 'missing_from_feed_ttl') {
+    const raw = exp?.grace_days !== '' && exp?.grace_days != null ? exp.grace_days : exp?.ttl_days;
+    if (raw !== '' && raw != null) {
+      const n = parseInt(String(raw), 10);
+      if (Number.isFinite(n) && n > 0) payload.grace_days = n;
+    }
+  }
+  return payload;
 }
 
 function auditSeverityBadgeStyle(severity) {
@@ -3170,6 +3202,8 @@ function FeedSettingsModal({
   savingExpiration,
   error,
   expirationError,
+  expirationSuccess,
+  expirationRefreshWarn,
   onClose,
   onRequestActiveChange,
   onSaveSchedule,
@@ -3315,6 +3349,16 @@ function FeedSettingsModal({
       {error ? (
         <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
           {error}
+        </div>
+      ) : null}
+      {expirationSuccess ? (
+        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(20,83,45,0.2)', fontSize: 13 }}>
+          {expirationSuccess}
+        </div>
+      ) : null}
+      {expirationRefreshWarn ? (
+        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #854d0e', color: '#fcd34d', background: 'rgba(120,53,15,0.2)', fontSize: 13 }}>
+          {expirationRefreshWarn}
         </div>
       ) : null}
       {expirationError ? (
@@ -3594,6 +3638,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [settingsDraftExpiration, setSettingsDraftExpiration] = useState(defaultExpirationDraft());
   const [settingsError, setSettingsError] = useState('');
   const [settingsExpirationError, setSettingsExpirationError] = useState('');
+  const [settingsExpirationSuccess, setSettingsExpirationSuccess] = useState('');
+  const [settingsExpirationRefreshWarn, setSettingsExpirationRefreshWarn] = useState('');
   const [savingExpirationKey, setSavingExpirationKey] = useState('');
   const [activeConfirm, setActiveConfirm] = useState(null);
   const [activeConfirmError, setActiveConfirmError] = useState('');
@@ -3619,17 +3665,24 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function syncSettingsModal(list) {
+    const key = settingsModal?.key;
+    const feed = key ? (list || []).find((i) => i.key === key) : null;
     setSettingsModal((prev) => {
       if (!prev) return prev;
-      const feed = (list || []).find((i) => i.key === prev.key);
-      if (!feed) return prev;
+      const f = (list || []).find((i) => i.key === prev.key);
+      if (!f) return prev;
       return {
-        key: feed.key,
-        name: feed.name,
-        schedule: feed.schedule || '0 * * * *',
-        active: feed.active !== false
+        key: f.key,
+        name: f.name,
+        schedule: f.schedule || '0 * * * *',
+        active: f.active !== false,
+        expiration_policy: f.expiration_policy,
+        expiration_summary: f.expiration_summary
       };
     });
+    if (feed?.expiration_policy) {
+      setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
+    }
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
@@ -3670,6 +3723,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     if (!canWrite) return;
     setSettingsError('');
     setSettingsExpirationError('');
+    setSettingsExpirationSuccess('');
+    setSettingsExpirationRefreshWarn('');
     setSettingsDraftCron(feed.schedule || '0 * * * *');
     setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     setSettingsModal({
@@ -3752,23 +3807,47 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     const { key } = settingsModal;
     if (savingExpirationKey) return;
     setSettingsExpirationError('');
+    setSettingsExpirationSuccess('');
+    setSettingsExpirationRefreshWarn('');
     setSavingExpirationKey(key);
+
+    let patchData;
     try {
-      const exp = settingsDraftExpiration;
-      await api.patch(`/threat-feeds/${encodeURIComponent(key)}/expiration-policy`, {
-        observable_type: 'all',
-        enabled: Boolean(exp.enabled),
-        expiration_mode: exp.expiration_mode,
-        ttl_days: exp.ttl_days === '' ? null : Number(exp.ttl_days),
-        grace_days: exp.grace_days === '' ? null : Number(exp.grace_days)
-      });
-      const list = await load();
-      syncSettingsModal(list);
-      alert('Expiration policy saved');
+      const { data } = await api.patch(
+        `/threat-feeds/${encodeURIComponent(key)}/expiration-policy`,
+        buildExpirationPatchPayload(settingsDraftExpiration)
+      );
+      patchData = data;
     } catch (err) {
       setSettingsExpirationError(apiErrorMessage(err, 'Failed to update expiration policy'));
+      return;
     } finally {
       setSavingExpirationKey('');
+    }
+
+    if (patchData?.success === false) {
+      setSettingsExpirationError(patchData.error || 'Failed to update expiration policy');
+      return;
+    }
+
+    const policy = patchData?.policy;
+    const summary = patchData?.summary;
+    if (policy) {
+      setSettingsDraftExpiration(defaultExpirationDraft(policy));
+      setIntegrations((prev) => prev.map((i) => (
+        i.key === key
+          ? { ...i, expiration_policy: policy, expiration_summary: summary || i.expiration_summary }
+          : i
+      )));
+    }
+
+    setSettingsExpirationSuccess('Expiration policy updated');
+
+    try {
+      const list = await load();
+      syncSettingsModal(list);
+    } catch {
+      setSettingsExpirationRefreshWarn('Policy saved, but refreshing the feed list failed. Values in this dialog are up to date.');
     }
   }
 
@@ -3933,6 +4012,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           savingExpiration={Boolean(savingExpirationKey)}
           error={settingsError}
           expirationError={settingsExpirationError}
+          expirationSuccess={settingsExpirationSuccess}
+          expirationRefreshWarn={settingsExpirationRefreshWarn}
           onClose={closeSettingsModal}
           onRequestActiveChange={requestActiveChange}
           onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
