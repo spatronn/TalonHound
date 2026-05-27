@@ -1,7 +1,7 @@
 import { Worker, DelayedError } from 'bullmq';
 import pg from 'pg';
 import { config } from './config.js';
-import { redis } from './queue.js';
+import { importQueue, redis } from './queue.js';
 import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
 import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
 import { sanitizeMalwareBazaarErrorMessage } from './lib/malwarebazaar.js';
@@ -175,7 +175,7 @@ worker.on('error', (err) => {
 function startPeriodicCleanup() {
   cleanupTimer = setInterval(async () => {
     try {
-      const result = await recoverStaleRunningJobs(pool, { logPrefix: LOG_PREFIX });
+      const result = await recoverStaleRunningJobs(pool, { logPrefix: LOG_PREFIX, queue: importQueue });
       if (result.staleCount > 0) {
         console.log(`${LOG_PREFIX} Periodic cleanup stale_count=${result.staleCount}`);
       }
@@ -223,12 +223,12 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-await runQueueRecovery(pool, { logPrefix: LOG_PREFIX });
+await runQueueRecovery(pool, {
+  logPrefix: LOG_PREFIX,
+  queue: importQueue,
+  workerConcurrency: WORKER_CONCURRENCY
+});
 startPeriodicCleanup();
-
-console.log(
-  `${LOG_PREFIX} Ready worker_id=${workerId} hostname=${workerHostname} timeout_ms=${QUEUE_HARDENING.jobTimeoutMs} stale_after_ms=${QUEUE_HARDENING.staleAfterMs} heartbeat_ms=${QUEUE_HARDENING.heartbeatIntervalMs}`
-);
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => { shutdown(sig).catch((err) => {

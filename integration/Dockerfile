@@ -12,5 +12,7 @@ COPY backend/lib/iocConfidence.js ./lib/iocConfidence.js
 COPY backend/lib/integrationQueueConfig.js ./lib/integrationQueueConfig.js
 COPY backend/lib/integrationQueueRecovery.js ./lib/integrationQueueRecovery.js
 COPY backend/lib/integrationQueueJobState.js ./lib/integrationQueueJobState.js
+COPY backend/lib/integrationQueueBullmqReconciliation.js ./lib/integrationQueueBullmqReconciliation.js
+COPY backend/lib/integrationQueueHealth.js ./lib/integrationQueueHealth.js
 
 CMD ["npm", "run", "worker"]

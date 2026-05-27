@@ -207,6 +207,7 @@ const RETRO_STATUS_TOOLTIPS = {
 
 function integrationJobReasonLabel(job) {
   const state = String(job?.state || job?.status || '').toLowerCase();
+  if (state === 'queued' && job?.queue_hint) return job.queue_hint;
   if (state === 'success') return 'Completed successfully';
   if (state === 'running') {
     const parts = [];
@@ -220,6 +221,14 @@ function integrationJobReasonLabel(job) {
     return job.failed_reason;
   }
   return '-';
+}
+
+function queueHealthColor(health) {
+  const key = String(health || '').toLowerCase();
+  if (key === 'healthy') return '#166534';
+  if (key === 'degraded') return '#b45309';
+  if (key === 'blocked') return '#991b1b';
+  return '#64748b';
 }
 
 function suppressionKey(iocValue, iocType) {
@@ -4460,6 +4469,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
 
 function IntegrationsQueueStatusPage() {
+  const { isAdmin } = useSession();
   const [loading, setLoading] = useState(true);
   const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
   const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, started: 170, reason: 320 });
@@ -4468,6 +4478,9 @@ function IntegrationsQueueStatusPage() {
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState('');
   const [windowValue, setWindowValue] = useState('24h');
+  const [recoverPreview, setRecoverPreview] = useState(null);
+  const [recoverLoading, setRecoverLoading] = useState(false);
+  const [recoverError, setRecoverError] = useState('');
 
   async function load(targetPage = page, targetPageSize = pageSize, targetSearch = search, targetWindow = windowValue) {
     setLoading(true);
@@ -4512,13 +4525,79 @@ function IntegrationsQueueStatusPage() {
     setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
   }
 
+  async function previewRecover() {
+    if (!isAdmin) return;
+    setRecoverLoading(true);
+    setRecoverError('');
+    try {
+      const { data } = await api.post('/integrations/queue/recover?dry_run=true');
+      setRecoverPreview(data);
+    } catch (err) {
+      setRecoverError(err?.response?.data?.message || 'Failed to preview recovery');
+      setRecoverPreview(null);
+    } finally {
+      setRecoverLoading(false);
+    }
+  }
+
+  async function applyRecover() {
+    if (!isAdmin) return;
+    setRecoverLoading(true);
+    setRecoverError('');
+    try {
+      await api.post('/integrations/queue/recover');
+      setRecoverPreview(null);
+      await load(page, pageSize, search, windowValue);
+    } catch (err) {
+      setRecoverError(err?.response?.data?.message || 'Failed to recover queue');
+    } finally {
+      setRecoverLoading(false);
+    }
+  }
+
+  const qh = queue.queue_health || {};
+
   return (
     <AppShell>
       <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <h2 style={{ marginTop: 0 }}>Job Queue Status</h2>
-          <button onClick={() => load(page, pageSize, search, windowValue).catch(() => {})}>Refresh</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {isAdmin ? (
+              <button type="button" onClick={() => previewRecover().catch(() => {})} disabled={recoverLoading}>
+                {recoverLoading ? 'Checking...' : 'Recover Queue'}
+              </button>
+            ) : null}
+            <button type="button" onClick={() => load(page, pageSize, search, windowValue).catch(() => {})}>Refresh</button>
+          </div>
         </div>
+        {qh.queue_health ? (
+          <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 13, lineHeight: 1.7 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+              <span><b>Worker:</b> {qh.worker_status || '-'}</span>
+              <span><b>Queue health:</b> <span style={{ color: queueHealthColor(qh.queue_health), fontWeight: 700 }}>{qh.queue_health}</span></span>
+              <span><b>BullMQ active:</b> {qh.bullmq_active ?? '-'}</span>
+              <span><b>BullMQ stalled:</b> {qh.bullmq_stalled ?? '-'}</span>
+              <span><b>DB running:</b> {qh.db_running ?? '-'}</span>
+              <span><b>Recovery needed:</b> {qh.recovery_needed ? 'yes' : 'no'}</span>
+            </div>
+            {(qh.warnings || []).length ? (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: '#b45309' }}>
+                {qh.warnings.map((w) => <li key={w}>{w}</li>)}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+        {recoverError ? <div style={{ color: '#991b1b', marginBottom: 8, fontSize: 13 }}>{recoverError}</div> : null}
+        {recoverPreview ? (
+          <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, border: '1px solid #fcd34d', background: '#fffbeb', fontSize: 13 }}>
+            <div><b>Dry-run:</b> would reconcile <b>{recoverPreview.reconciled_count || 0}</b> item(s).</div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => applyRecover().catch(() => {})} disabled={recoverLoading}>Confirm recover</button>
+              <button type="button" onClick={() => setRecoverPreview(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : null}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
           <input
             value={search}

@@ -64,6 +64,8 @@ import {
 } from './lib/urlhausIntegration.js';
 import { QUEUE_HARDENING } from './lib/integrationQueueConfig.js';
 import { findActiveRunningJobForSource, enrichIntegrationQueueJobRow } from './lib/integrationQueueRecovery.js';
+import { loadIntegrationQueueHealthSnapshot, runIntegrationQueueRecover } from './lib/integrationQueueApi.js';
+import { buildQueuedJobHint } from './lib/integrationQueueHealth.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
@@ -3554,9 +3556,44 @@ app.get('/api/integrations', async (req, res) => {
       }
 
       const total = Number(totalRows.rows[0]?.total || 0);
+
+      let queueHealthSnapshot = null;
+      try {
+        queueHealthSnapshot = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
+      } catch (healthErr) {
+        queueHealthSnapshot = {
+          health: {
+            worker_status: 'Unknown',
+            queue_health: 'Unknown',
+            recovery_needed: false,
+            warnings: [healthErr.message]
+          }
+        };
+      }
+
+      const dbRunningBySource = new Map(
+        (queueHealthSnapshot?.source_locks || []).map((lock) => [lock.integration_key, lock])
+      );
+
       queue = {
         counts: mapped,
-        jobs: jobsRows.rows.map((row) => enrichIntegrationQueueJobRow(row)),
+        jobs: jobsRows.rows.map((row) => {
+          const enriched = enrichIntegrationQueueJobRow(row);
+          const queueHint = row.state === 'queued'
+            ? buildQueuedJobHint({
+              jobId: row.id,
+              integrationKey: row.integration_key,
+              bullCounts: queueHealthSnapshot?.bull_counts,
+              dbRunningBySource,
+              queueHealth: queueHealthSnapshot?.health,
+              blockingStaleJobs: queueHealthSnapshot?.health?.blocking_stale_jobs
+            })
+            : null;
+          return queueHint ? { ...enriched, queue_hint: queueHint } : enriched;
+        }),
+        queue_health: queueHealthSnapshot?.health || null,
+        bull_counts: queueHealthSnapshot?.bull_counts || null,
+        oldest_waiting_age_seconds: queueHealthSnapshot?.oldest_waiting_age_seconds ?? null,
         pagination: {
           page: queuePage,
           page_size: queuePageSize,
@@ -3689,9 +3726,91 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
       metadata: { job_id: String(job.id), job_name: jobName }
     });
 
-    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
+    let queueHint = null;
+    try {
+      const snap = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
+      queueHint = buildQueuedJobHint({
+        jobId: String(job.id),
+        integrationKey: key,
+        bullCounts: snap.bull_counts,
+        dbRunningBySource: new Map((snap.source_locks || []).map((l) => [l.integration_key, l])),
+        queueHealth: snap.health,
+        blockingStaleJobs: snap.health?.blocking_stale_jobs
+      });
+    } catch {
+      // optional
+    }
+
+    return res.status(202).json({
+      ok: true,
+      queued: true,
+      key,
+      job_id: job.id,
+      queue_hint: queueHint
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
+  }
+});
+
+app.get('/api/integrations/queue/health', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const snapshot = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
+    return res.json({
+      ok: true,
+      ...snapshot.health,
+      bull_counts: snapshot.bull_counts,
+      db_counts: snapshot.db_counts,
+      source_locks: snapshot.source_locks,
+      oldest_waiting_age_seconds: snapshot.oldest_waiting_age_seconds,
+      worker_count: snapshot.worker_count,
+      stale_active_jobs: snapshot.dry_run_reconcile?.stale_active_jobs || [],
+      stale_stalled_jobs: snapshot.dry_run_reconcile?.stale_stalled_jobs || [],
+      orphan_locks: snapshot.dry_run_locks?.orphan_locks || [],
+      recovery_needed: snapshot.health?.recovery_needed
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to load queue health', detail: err.message });
+  }
+});
+
+app.post('/api/integrations/queue/recover', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const dryRun = String(req.query?.dry_run || req.body?.dry_run || 'false').toLowerCase() === 'true';
+  try {
+    const result = await runIntegrationQueueRecover(pool, importQueue, {
+      dryRun,
+      logPrefix: '[backend-queue-recover]'
+    });
+
+    if (!dryRun) {
+      audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED,
+        entityType: AUDIT_ENTITY.INTEGRATION,
+        entityId: 'queue',
+        entityDisplay: 'Integration queue recovery',
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: {
+          reconciled_count: result.reconciled_count,
+          actions: result.actions_taken?.length || 0
+        }
+      });
+    }
+
+    return res.json({
+      ok: true,
+      dry_run: dryRun,
+      stale_active_jobs: result.stale_active_jobs,
+      stale_stalled_jobs: result.stale_stalled_jobs,
+      orphan_locks: result.orphan_locks,
+      actions_taken: result.actions_taken,
+      skipped: result.skipped,
+      reconciled_count: result.reconciled_count
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to recover integration queue', detail: err.message });
   }
 });
 

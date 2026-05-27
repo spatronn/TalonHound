@@ -18,7 +18,9 @@ export const FAILURE_MESSAGES = {
   stale: 'Job was running but heartbeat became stale. Marked as failed during queue recovery.',
   timeout: 'Job exceeded timeout and was marked as failed.',
   worker_shutdown: 'Worker shut down before job completed; marked for recovery.',
-  source_busy: 'Deferred because another job for this integration is already running.'
+  source_busy: 'Deferred because another job for this integration is already running.',
+  reconciled: 'Reconciled stale BullMQ state with DB terminal state.',
+  bullmq_orphan: 'BullMQ job was active/stalled without a valid DB running record; closed during queue recovery.'
 };
 
 export const FAILURE_TYPES = {
@@ -27,5 +29,7 @@ export const FAILURE_TYPES = {
   WORKER_SHUTDOWN: 'worker_shutdown',
   SOURCE_BUSY: 'source_busy',
   FETCH_ERROR: 'fetch_error',
-  PARSE_ERROR: 'parse_error'
+  PARSE_ERROR: 'parse_error',
+  RECONCILED: 'reconciled',
+  BULLMQ_ORPHAN: 'bullmq_orphan'
 };

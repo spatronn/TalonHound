@@ -75,7 +75,7 @@ export async function markQueueJobFailed(pool, jobId, { message, failureType }) 
   );
 }
 
-export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-worker]' } = {}) {
+export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-worker]', queue = null, dryRun = false } = {}) {
   const runningQ = await pool.query(
     `SELECT job_id, integration_key, status, started_at, queued_at, heartbeat_at, updated_at, worker_id
      FROM integration_queue_jobs
@@ -90,17 +90,20 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
     const classification = classifyRunningJobForRecovery(row, nowMs);
     if (!classification) continue;
 
-    await markQueueJobFailed(pool, row.job_id, {
-      message: classification.message,
-      failureType: classification.failureType
-    });
+    if (!dryRun) {
+      await markQueueJobFailed(pool, row.job_id, {
+        message: classification.message,
+        failureType: classification.failureType
+      });
+    }
 
     staleCount += 1;
     recovered.push({
       job_id: row.job_id,
       integration_key: row.integration_key,
       failure_type: classification.failureType,
-      age_ms: classification.ageMs
+      age_ms: classification.ageMs,
+      message: classification.message
     });
 
     console.log(
@@ -132,6 +135,11 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
     console.log(`${logPrefix} Reconciled stale integration_runs count=${runsFixed.rowCount}`);
   }
 
+  if (queue && recovered.length && !dryRun) {
+    const { failBullmqJobsForDbRecovered } = await import('./integrationQueueBullmqReconciliation.js');
+    await failBullmqJobsForDbRecovered(pool, queue, recovered, { dryRun, logPrefix });
+  }
+
   return {
     staleCount,
     recovered,
@@ -140,13 +148,71 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
   };
 }
 
-export async function runQueueRecovery(pool, { logPrefix = '[integration-worker]' } = {}) {
-  console.log(`${logPrefix} Queue recovery started`);
-  const result = await recoverStaleRunningJobs(pool, { logPrefix });
+export async function runQueueRecovery(pool, {
+  logPrefix = '[integration-worker]',
+  queue = null,
+  dryRun = false,
+  workerConcurrency = null
+} = {}) {
+  let bullActive = 0;
+  let bullStalled = 0;
+  let dbRunning = 0;
+
+  if (queue) {
+    try {
+      const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused');
+      bullActive = Number(counts.active || 0);
+      bullStalled = Number(counts.stalled || 0);
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    const dbRun = await pool.query(
+      `SELECT count(*)::int AS cnt FROM integration_queue_jobs WHERE status = 'running'`
+    );
+    dbRunning = Number(dbRun.rows[0]?.cnt || 0);
+  } catch {
+    // ignore
+  }
+
   console.log(
-    `${logPrefix} Queue recovery completed stale_count=${result.staleCount} fixed_finished=${result.fixedFinishedCount} fixed_runs=${result.fixedRunsCount}`
+    `${logPrefix} Queue recovery started bullmq_active=${bullActive} bullmq_stalled=${bullStalled} db_running=${dbRunning}`
   );
-  return result;
+
+  const result = await recoverStaleRunningJobs(pool, { logPrefix, queue, dryRun });
+
+  let bullReconcile = { reconciled_count: 0, actions_taken: [], skipped: [] };
+  let lockRelease = { released_count: 0, orphan_locks: [], actions_taken: [] };
+
+  if (queue) {
+    const {
+      reconcileBullmqWithDb,
+      releaseOrphanDbSourceLocks
+    } = await import('./integrationQueueBullmqReconciliation.js');
+    bullReconcile = await reconcileBullmqWithDb({ pool, queue, dryRun, logPrefix });
+    lockRelease = await releaseOrphanDbSourceLocks({ pool, queue, dryRun, logPrefix });
+  }
+
+  const totalReconciled = result.staleCount + bullReconcile.reconciled_count + lockRelease.released_count;
+
+  console.log(
+    `${logPrefix} Queue recovery completed stale_db=${result.staleCount} reconciled_bull=${bullReconcile.reconciled_count} released_locks=${lockRelease.released_count} fixed_finished=${result.fixedFinishedCount} fixed_runs=${result.fixedRunsCount}`
+  );
+
+  const concurrency = workerConcurrency != null ? workerConcurrency : '-';
+  console.log(`${logPrefix} Worker ready concurrency=${concurrency}`);
+
+  return {
+    ...result,
+    bullReconcile,
+    lockRelease,
+    totalReconciled,
+    bullActive,
+    bullStalled,
+    dbRunning
+  };
 }
 
 export function enrichIntegrationQueueJobRow(row, nowMs = Date.now()) {
