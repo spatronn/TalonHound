@@ -4,6 +4,11 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { getIocStatusCardPresentation, IOC_STATUS_ACTION_BUTTONS } from './lib/iocStatusCard.js';
+import {
+  CONFIDENCE_OPTIONS,
+  getIocConfidencePresentation,
+  formatConfidenceAuditMetadata
+} from './lib/iocConfidenceCard.js';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
 const CSRF_COOKIE_NAME = 'demo_csrf';
@@ -8952,6 +8957,8 @@ function IocRelatedLogsByIncidentsPanel({ incidents, enabled }) {
 
 function iocAuditMetadataSummary(metadata) {
   if (!metadata || typeof metadata !== 'object') return '-';
+  const confidenceText = formatConfidenceAuditMetadata(metadata);
+  if (confidenceText) return confidenceText;
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
   if (metadata.cached === true) parts.push('cached');
@@ -9032,7 +9039,7 @@ function IocAuditHistoryPanel({ iocId, enabled }) {
 function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
-  const { isAdmin } = useSession();
+  const { isAdmin, canWrite } = useSession();
   const detailsPublicId = String(publicId || '').trim();
   const ui = PUBLISHED_FEEDS_UI;
 
@@ -9062,6 +9069,11 @@ function IOCDetailsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
   const [actionRefreshWarn, setActionRefreshWarn] = useState(''); // page-level warning after modal closes
+  const [showConfidenceModal, setShowConfidenceModal] = useState(false);
+  const [confidenceDraft, setConfidenceDraft] = useState('medium');
+  const [confidenceReason, setConfidenceReason] = useState('');
+  const [confidenceSaving, setConfidenceSaving] = useState(false);
+  const [confidenceError, setConfidenceError] = useState('');
 
   async function load() {
     setLoading(true);
@@ -9275,6 +9287,46 @@ function IOCDetailsPage() {
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
   const iocStatusCard = summary ? getIocStatusCardPresentation(summary, { suppressionActive }) : null;
+  const confidenceDetail = data?.confidence || summary?.confidence_detail || null;
+  const confidenceCard = getIocConfidencePresentation(confidenceDetail);
+
+  function openConfidenceEditor() {
+    setConfidenceDraft(confidenceCard.effective || 'medium');
+    setConfidenceReason('');
+    setConfidenceError('');
+    setShowConfidenceModal(true);
+  }
+
+  async function submitConfidenceOverride(clearOverride = false) {
+    const iocId = Number(summary?.id);
+    const observableType = String(summary?.observable_type || '').trim();
+    if (!Number.isFinite(iocId) || !observableType) return;
+
+    setConfidenceSaving(true);
+    setConfidenceError('');
+    try {
+      const body = clearOverride
+        ? { observable_type: observableType, clear_override: true, reason: confidenceReason || null }
+        : { observable_type: observableType, confidence: confidenceDraft, reason: confidenceReason || null };
+      const { data: patchData } = await api.patch(`/ioc/${iocId}/confidence`, body);
+      if (!patchData?.success) {
+        setConfidenceError(patchData?.error || 'Request failed');
+        return;
+      }
+      setShowConfidenceModal(false);
+      setConfidenceReason('');
+      setActionToast(clearOverride ? 'Manual confidence override cleared' : 'IOC confidence updated');
+      await load();
+    } catch (err) {
+      setConfidenceError(apiErrorMessage(err, 'Failed to update confidence'));
+    } finally {
+      setConfidenceSaving(false);
+    }
+  }
+
+  async function clearConfidenceOverride() {
+    await submitConfidenceOverride(true);
+  }
 
   function openExpirationAction(type, membershipId = null) {
     const preset = IOC_EXPIRATION_ACTION_PRESETS[type];
@@ -9610,10 +9662,48 @@ function IOCDetailsPage() {
                 </div>
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                  <div style={{ fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Confidence Set</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {(summary.confidence_set || []).length ? summary.confidence_set.map((c) => <span key={c} style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #475569', color: '#e2e8f0' }}>{c}</span>) : <span style={{ color: '#94a3b8' }}>-</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Confidence</div>
+                    {canWrite ? (
+                      <button type="button" onClick={openConfidenceEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
+                        Edit
+                      </button>
+                    ) : null}
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '4px 10px',
+                      borderRadius: 999,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      background: confidenceCard.badgeStyle.bg,
+                      color: confidenceCard.badgeStyle.color,
+                      border: `1px solid ${confidenceCard.badgeStyle.border}`
+                    }}>
+                      {confidenceCard.effectiveLabel}
+                    </span>
+                    {confidenceCard.hasOverride ? (
+                      <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#312e81', color: '#c7d2fe', border: '1px solid #4338ca' }}>
+                        Manual override
+                      </span>
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
+                    {confidenceCard.hasOverride ? confidenceCard.overrideLine : `Source: ${confidenceCard.sourceLine.replace(/^Source: /, '')}`}
+                  </div>
+                  {confidenceCard.reasonLine ? (
+                    <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6 }}>{confidenceCard.reasonLine}</div>
+                  ) : null}
+                  {(summary.confidence_set || []).length > 1 ? (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>All sources:</span>
+                      {summary.confidence_set.map((c) => (
+                        <span key={c} style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid #475569', color: '#e2e8f0', fontSize: 11 }}>{c}</span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
@@ -9862,6 +9952,56 @@ function IOCDetailsPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
             <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitRemoveSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {showConfidenceModal ? (
+        <ModalOverlay onClose={() => !confidenceSaving && setShowConfidenceModal(false)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit IOC confidence</h3>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <span style={ui.label}>Confidence</span>
+              <select
+                value={confidenceDraft}
+                onChange={(e) => setConfidenceDraft(e.target.value)}
+                disabled={confidenceSaving}
+                style={ui.input}
+              >
+                {CONFIDENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span style={ui.label}>Reason for override</span>
+              <textarea
+                value={confidenceReason}
+                onChange={(e) => setConfidenceReason(e.target.value)}
+                style={ui.textarea}
+                placeholder="Why are you overriding this confidence?"
+                disabled={confidenceSaving}
+              />
+            </div>
+            {confidenceError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{confidenceError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              {confidenceCard.hasOverride ? (
+                <button
+                  type="button"
+                  style={{ ...ui.btn, borderColor: '#475569', color: '#cbd5e1' }}
+                  onClick={() => clearConfidenceOverride().catch(() => {})}
+                  disabled={confidenceSaving}
+                >
+                  Clear manual override
+                </button>
+              ) : <span />}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" style={ui.btn} onClick={() => setShowConfidenceModal(false)} disabled={confidenceSaving}>Cancel</button>
+                <button type="button" style={ui.btnPrimary} onClick={() => submitConfidenceOverride(false).catch(() => {})} disabled={confidenceSaving}>
+                  {confidenceSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
           </div>
         </ModalOverlay>
       ) : null}

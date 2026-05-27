@@ -18,6 +18,11 @@ import {
   syncSnapshotFeedFromEntries
 } from './lib/iocExpiration.js';
 import {
+  fetchFeedDefaultConfidence,
+  resolveImportConfidenceFields,
+  applyIocImportConfidence
+} from './lib/iocConfidence.js';
+import {
   URLHAUS_EXPORT_URL_MASKED,
   URLHAUS_AUTH_REQUIRED_MSG,
   assertUrlhausMinFetchInterval,
@@ -332,6 +337,12 @@ async function updateUrlhausObservableBySource(client, entry, sourceName, note, 
   const publicId = res.rows[0].public_id;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
+  await applyIocImportConfidence(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    parsedSourceConfidence: null
+  }).catch(() => {});
   await syncMembershipAfterIocImport(client, {
     observable: entry.observable,
     observableType: entry.observableType,
@@ -360,6 +371,7 @@ async function upsertUrlhausObservable(client, entry, sourceName, suppressionSta
     sourceName,
     sourceUrl,
     confidence: 'high',
+    sourceConfidence: null,
     category,
     note
   }, suppressionStats);
@@ -411,6 +423,12 @@ async function updateMalwareBazaarObservableBySource(client, entry, sourceName, 
   const publicId = res.rows[0].public_id;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
+  await applyIocImportConfidence(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    parsedSourceConfidence: entry.confidence
+  }).catch(() => {});
   await syncMembershipAfterIocImport(client, {
     observable: entry.observable,
     observableType: entry.observableType,
@@ -439,6 +457,7 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     sourceName,
     sourceUrl,
     confidence: entry.confidence,
+    sourceConfidence: entry.confidence,
     category,
     note
   }, suppressionStats);
@@ -480,6 +499,15 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
   const out = { inserted: 0, duplicate: 0, suppressed: 0 };
   if (!entries.length) return out;
   const now = new Date();
+  const feedDefaultCache = new Map();
+  const getFeedDefault = async (sourceName) => {
+    const key = String(sourceName || '');
+    if (!feedDefaultCache.has(key)) {
+      feedDefaultCache.set(key, await fetchFeedDefaultConfidence(client, key));
+    }
+    return feedDefaultCache.get(key);
+  };
+
   for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
     const chunk = entries.slice(i, i + BATCH_INSERT_CHUNK);
     const pairs = chunk.map((e) => ({
@@ -497,28 +525,51 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     if (suppressionStats) suppressionStats.merge(stats);
     if (!kept.length) continue;
 
+    const resolvedKept = [];
+    for (const e of kept) {
+      const feedDefault = await getFeedDefault(e.sourceName);
+      const confFields = resolveImportConfidenceFields({
+        parsedSourceConfidence: e.sourceConfidence ?? e.confidence,
+        feedDefaultConfidence: feedDefault
+      });
+      resolvedKept.push({ ...e, confFields });
+    }
+
     const placeholders = [];
     const params = [];
-    kept.forEach((e, idx) => {
-      const off = idx * 8;
-      placeholders.push(`($${off + 1}::text, $${off + 2}::text, $${off + 3}::text, $${off + 4}::text, $${off + 5}::text, $${off + 6}::text, $${off + 7}::timestamptz, $${off + 8}::timestamptz)`);
+    resolvedKept.forEach((e, idx) => {
+      const off = idx * 10;
+      placeholders.push(
+        `($${off + 1}::text, $${off + 2}::text, $${off + 3}::text, $${off + 4}::text, $${off + 5}::text, $${off + 6}::text, $${off + 7}::text, $${off + 8}::text, $${off + 9}::timestamptz, $${off + 10}::timestamptz)`
+      );
       params.push(
         e.observable ?? e.ip,
         e.sourceName,
         e.sourceUrl ?? null,
-        e.confidence,
+        e.confFields.confidence,
+        e.confFields.source_confidence,
+        e.confFields.feed_default_confidence,
         e.category ?? null,
         e.note ?? null,
         now,
         now
       );
     });
-    const typeParam = kept.length * 8 + 1;
+    const typeParam = resolvedKept.length * 10 + 1;
     const valuesList = placeholders.join(',\n');
     const ins = await client.query(
-      `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
-       SELECT v.observable, $${typeParam}::text, v.source_name, v.source_url, v.confidence, v.category, v.note, v.first_seen_at, v.last_seen_at
-       FROM (VALUES ${valuesList}) AS v(observable, source_name, source_url, confidence, category, note, first_seen_at, last_seen_at)
+      `INSERT INTO ioc_items (
+         observable, observable_type, source_name, source_url,
+         confidence, source_confidence, feed_default_confidence,
+         category, note, first_seen_at, last_seen_at
+       )
+       SELECT v.observable, $${typeParam}::text, v.source_name, v.source_url,
+              v.confidence, v.source_confidence, v.feed_default_confidence,
+              v.category, v.note, v.first_seen_at, v.last_seen_at
+       FROM (VALUES ${valuesList}) AS v(
+         observable, source_name, source_url, confidence, source_confidence,
+         feed_default_confidence, category, note, first_seen_at, last_seen_at
+       )
        WHERE NOT EXISTS (
          SELECT 1 FROM ioc_items i
          WHERE i.observable = v.observable AND i.observable_type = $${typeParam}
@@ -531,18 +582,30 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     );
     const rows = ins.rows ?? [];
     out.inserted += rows.length;
-    out.duplicate += kept.length - rows.length;
+    out.duplicate += resolvedKept.length - rows.length;
+    const insertedObs = new Set(rows.map((r) => r.observable));
+    for (const e of resolvedKept) {
+      const obs = e.observable ?? e.ip;
+      if (!insertedObs.has(obs)) {
+        await applyIocImportConfidence(client, {
+          observable: obs,
+          observableType,
+          sourceName: e.sourceName,
+          parsedSourceConfidence: e.sourceConfidence ?? e.confidence
+        }).catch(() => {});
+      }
+    }
     for (const row of rows) {
       const observables = extractObservablesFromNote(observableType, row.observable, row.note);
       await insertObservablesIndex(client, row.public_id, observables);
-      const src = kept.find((e) => (e.observable ?? e.ip) === row.observable);
+      const src = resolvedKept.find((e) => (e.observable ?? e.ip) === row.observable);
       if (src) {
         await syncMembershipAfterIocImport(client, {
           observable: row.observable,
           observableType,
           sourceName: src.sourceName,
           sourceUrl: src.sourceUrl ?? null,
-          confidence: src.confidence ?? null,
+          confidence: src.confFields.confidence,
           category: src.category ?? null
         }).catch(() => {});
       }
@@ -551,7 +614,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
   return out;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note }, suppressionStats = null) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null }, suppressionStats = null) {
   const index = await fetchActiveSuppressionIndex(
     client,
     [{ iocValue: observable, iocType: observableType, sourceName }],
@@ -563,9 +626,19 @@ async function insertObservable(client, { observable, observableType, sourceName
     return 'suppressed';
   }
 
+  const feedDefault = await fetchFeedDefaultConfidence(client, sourceName);
+  const confFields = resolveImportConfidenceFields({
+    parsedSourceConfidence: sourceConfidence ?? confidence,
+    feedDefaultConfidence: feedDefault
+  });
+
   const ins = await client.query(
-    `INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
-     SELECT $1, $2, $3, $4, $5, $6, $7
+    `INSERT INTO ioc_items (
+       observable, observable_type, source_name, source_url,
+       confidence, source_confidence, feed_default_confidence,
+       category, note
+     )
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
      WHERE NOT EXISTS (
        SELECT 1
        FROM ioc_items
@@ -573,20 +646,36 @@ async function insertObservable(client, { observable, observableType, sourceName
          AND observable_type = $2
          AND source_name = $3
          AND confidence = $5
-         AND COALESCE(category, '') = COALESCE($6, '')
+         AND COALESCE(category, '') = COALESCE($8, '')
          AND COALESCE(source_url, '') = COALESCE($4, '')
      )
      RETURNING public_id`,
-    [observable, observableType, sourceName, sourceUrl, confidence, category, note]
+    [
+      observable,
+      observableType,
+      sourceName,
+      sourceUrl,
+      confFields.confidence,
+      confFields.source_confidence,
+      confFields.feed_default_confidence,
+      category,
+      note
+    ]
   );
 
   if (!ins.rowCount) {
+    await applyIocImportConfidence(client, {
+      observable,
+      observableType,
+      sourceName,
+      parsedSourceConfidence: sourceConfidence ?? confidence
+    }).catch(() => {});
     await syncMembershipAfterIocImport(client, {
       observable,
       observableType,
       sourceName,
       sourceUrl,
-      confidence,
+      confidence: confFields.confidence,
       category
     }).catch(() => {});
     return 'duplicate';
@@ -600,7 +689,7 @@ async function insertObservable(client, { observable, observableType, sourceName
     observableType,
     sourceName,
     sourceUrl,
-    confidence,
+    confidence: confFields.confidence,
     category
   }).catch(() => {});
   return true;
@@ -770,7 +859,8 @@ export async function runUsomImport() {
             observableType,
             sourceName: config.usomSourceName,
             sourceUrl: config.usomApiUrl,
-            confidence: 'medium',
+            confidence: 'high',
+            sourceConfidence: null,
             category: 'threat-intel',
             note: 'Auto-imported from USOM URL list'
           }, suppressionStats);
@@ -804,7 +894,8 @@ export async function runUsomImport() {
       observableType: entry.observableType,
       sourceName: config.usomSourceName,
       sourceUrl: config.usomApiUrl,
-      confidence: 'medium',
+      confidence: 'high',
+      sourceConfidence: null,
       category: 'threat-intel'
     })).catch(() => {});
 
@@ -1052,6 +1143,7 @@ export async function runThreatfoxImport() {
             sourceName: config.threatfoxSourceName,
             sourceUrl: config.threatfoxCsvUrl,
             confidence: entry.confidence,
+            sourceConfidence: entry.confidence,
             category: entry.threatType || 'threat-intel',
             note: noteParts.join(' | ')
           }, suppressionStats);

@@ -26,6 +26,8 @@ import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerTagRoutes } from './routes/tags.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIocExpirationRoutes } from './routes/iocExpiration.js';
+import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
+import { buildIocConfidenceSummary, fetchFeedNamesByKey } from './lib/iocConfidence.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { extractIpv4ForGeo } from './lib/ipEnrichmentEligibility.js';
@@ -5205,6 +5207,11 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
 
 const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
 const iocDetailsCache = new Map();
+registerIocConfidenceRoutes(app, pool, audit, {
+  invalidateDetailsCache: (publicId) => {
+    if (publicId) iocDetailsCache.delete(String(publicId));
+  }
+});
 let signalEventsTableCache = { value: null, checkedAt: 0 };
 
 async function hasSignalEventsTable() {
@@ -5540,6 +5547,13 @@ app.get('/api/ioc/details', async (req, res) => {
         i.source_name,
         i.source_url,
         i.confidence,
+        i.source_confidence,
+        i.feed_default_confidence,
+        i.analyst_confidence_override,
+        i.analyst_confidence_override_reason,
+        i.analyst_confidence_overridden_by,
+        i.analyst_confidence_overridden_at,
+        u.username AS overridden_by_email,
         i.category,
         i.note,
         i.match_count,
@@ -5555,6 +5569,7 @@ app.get('/api/ioc/details', async (req, res) => {
         i.manual_expires_at,
         i.manual_override_reason
       FROM ioc_items i
+      LEFT JOIN users u ON u.public_id = i.analyst_confidence_overridden_by
       INNER JOIN seed s
         ON i.observable = s.observable
        AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)
@@ -5718,28 +5733,37 @@ app.get('/api/ioc/details', async (req, res) => {
       impact.evidence_log_count = totalEvidenceLogsCount;
     }
 
+    const seedRow = rows.find((r) => String(r.public_id) === String(requestedPublicId)) || rows[0];
+
     const membershipsQ = await pool.query(
       `SELECT m.*, f.key AS feed_key, f.name AS feed_name
        FROM ioc_feed_memberships m
        JOIN integration_feeds f ON f.integration_id = m.feed_id
        WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2
        ORDER BY m.last_seen_in_feed DESC`,
-      [rows[0].id, observableType]
+      [seedRow.id, observableType]
     );
 
+    const feedNamesByKey = await fetchFeedNamesByKey(pool);
+    const confidenceSummary = buildIocConfidenceSummary({
+      rows,
+      seedPublicId: requestedPublicId,
+      feedNamesByKey
+    });
+
     const summary = {
-      id: rows[0].id,
-      public_id: rows[0].public_id,
+      id: seedRow.id,
+      public_id: seedRow.public_id,
       observable,
-      observable_type: rows[0].observable_type,
-      status: rows[0].status || 'active',
-      expires_at: rows[0].expires_at || null,
-      expired_at: rows[0].expired_at || null,
-      expiration_reason: rows[0].expiration_reason || null,
-      manual_status_override: Boolean(rows[0].manual_status_override),
-      manual_status: rows[0].manual_status || null,
-      manual_expires_at: rows[0].manual_expires_at || null,
-      manual_override_reason: rows[0].manual_override_reason || null,
+      observable_type: seedRow.observable_type,
+      status: seedRow.status || 'active',
+      expires_at: seedRow.expires_at || null,
+      expired_at: seedRow.expired_at || null,
+      expiration_reason: seedRow.expiration_reason || null,
+      manual_status_override: Boolean(seedRow.manual_status_override),
+      manual_status: seedRow.manual_status || null,
+      manual_expires_at: seedRow.manual_expires_at || null,
+      manual_override_reason: seedRow.manual_override_reason || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
       match_count: computedMatchCount,
@@ -5747,10 +5771,13 @@ app.get('/api/ioc/details', async (req, res) => {
       first_seen_log: firstSeenLog,
       last_seen_log: lastSeenLog,
       source_count: new Set(rows.map((r) => r.source_name)).size,
-      confidence_set: [...new Set(rows.map((r) => r.confidence).filter(Boolean))],
+      confidence: confidenceSummary.effective,
+      confidence_level: confidenceSummary.effective,
+      confidence_set: confidenceSummary.confidence_set,
+      confidence_detail: confidenceSummary,
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
-      file_information: buildFileInformation(rows, observable, rows[0].observable_type)
+      file_information: buildFileInformation(rows, observable, seedRow.observable_type)
     };
 
     const suppressionQ = await pool.query(
@@ -5768,6 +5795,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const payload = {
       summary,
+      confidence: confidenceSummary,
       match_count: Number(summary.match_count || 0),
       sources: rows,
       feed_memberships: membershipsQ.rows || [],
