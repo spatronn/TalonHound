@@ -2,6 +2,7 @@
 
 ## Quick Links
 
+- **Deployment & migrations:** `docs/deployment.md`
 - System diagram: `docs/system-diagram.md`
 - Container operations & tuning: `docs/container-operations-and-tuning.md`
 - IOC exposure & impact scoring: `docs/risk-engine-analytics.md` (API fields: `risk_score`, `institution_risk_score`)
@@ -10,8 +11,12 @@
 
 ```bash
 cd /opt/demo-runbook
+docker compose up -d db redis clickhouse
+docker compose run --rm backend npm run migrate   # explicit one-shot — see docs/deployment.md
 docker compose up -d --build
 ```
+
+For production-style ordering (migrate before backend/workers), see **`docs/deployment.md`**.
 
 The **proxy** service terminates TLS on **443** and redirects **80 → HTTPS**. UI: `https://localhost` (first run uses a self-signed cert from `proxy/certs/`; browser warning is expected). See `proxy/README.md` for Let’s Encrypt / prod certs.
 
