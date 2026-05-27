@@ -185,11 +185,16 @@ export function validateConfidenceReason(reason) {
 export async function fetchFeedDefaultConfidence(client, sourceName) {
   const feedKey = feedKeyForSourceName(sourceName);
   if (!feedKey) return SYSTEM_FALLBACK_CONFIDENCE;
-  const { rows } = await client.query(
-    'SELECT default_confidence FROM integration_feeds WHERE key = $1 LIMIT 1',
-    [feedKey]
-  );
-  return normalizeConfidence(rows[0]?.default_confidence) || SYSTEM_FALLBACK_CONFIDENCE;
+  try {
+    const { rows } = await client.query(
+      'SELECT default_confidence FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [feedKey]
+    );
+    return normalizeConfidence(rows[0]?.default_confidence) || SYSTEM_FALLBACK_CONFIDENCE;
+  } catch (err) {
+    if (err?.code === '42703') return SYSTEM_FALLBACK_CONFIDENCE;
+    throw err;
+  }
 }
 
 export async function fetchFeedNamesByKey(client) {
@@ -237,42 +242,53 @@ export async function applyIocImportConfidence(client, {
   sourceName,
   parsedSourceConfidence = null
 }) {
-  const feedDefault = await fetchFeedDefaultConfidence(client, sourceName);
-  const { rows } = await client.query(
-    `SELECT analyst_confidence_override, confidence, source_confidence, feed_default_confidence
-     FROM ioc_items
-     WHERE observable = $1 AND observable_type = $2 AND source_name = $3
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [observable, observableType, sourceName]
-  );
-  const existing = rows[0];
+  let existing;
+  try {
+    const { rows } = await client.query(
+      `SELECT analyst_confidence_override, confidence, source_confidence, feed_default_confidence
+       FROM ioc_items
+       WHERE observable = $1 AND observable_type = $2 AND source_name = $3
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [observable, observableType, sourceName]
+    );
+    existing = rows[0];
+  } catch (err) {
+    if (err?.code === '42703') return null;
+    throw err;
+  }
   if (!existing) return null;
 
+  const feedDefault = await fetchFeedDefaultConfidence(client, sourceName);
   const fields = resolveImportConfidenceFields({
     parsedSourceConfidence,
     feedDefaultConfidence: feedDefault,
     existingRow: existing
   });
 
-  await client.query(
-    `UPDATE ioc_items
-     SET source_confidence = $4,
-         feed_default_confidence = $5,
-         confidence = $6
-     WHERE observable = $1 AND observable_type = $2 AND source_name = $3
-       AND analyst_confidence_override IS NULL`,
-    [observable, observableType, sourceName, fields.source_confidence, fields.feed_default_confidence, fields.confidence]
-  );
-
-  if (existing.analyst_confidence_override) {
+  try {
     await client.query(
       `UPDATE ioc_items
        SET source_confidence = $4,
-           feed_default_confidence = $5
-       WHERE observable = $1 AND observable_type = $2 AND source_name = $3`,
-      [observable, observableType, sourceName, fields.source_confidence, fields.feed_default_confidence]
+           feed_default_confidence = $5,
+           confidence = $6
+       WHERE observable = $1 AND observable_type = $2 AND source_name = $3
+         AND analyst_confidence_override IS NULL`,
+      [observable, observableType, sourceName, fields.source_confidence, fields.feed_default_confidence, fields.confidence]
     );
+
+    if (existing.analyst_confidence_override) {
+      await client.query(
+        `UPDATE ioc_items
+         SET source_confidence = $4,
+             feed_default_confidence = $5
+         WHERE observable = $1 AND observable_type = $2 AND source_name = $3`,
+        [observable, observableType, sourceName, fields.source_confidence, fields.feed_default_confidence]
+      );
+    }
+  } catch (err) {
+    if (err?.code === '42703') return null;
+    throw err;
   }
 
   return fields;

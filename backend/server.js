@@ -28,6 +28,11 @@ import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIocExpirationRoutes } from './routes/iocExpiration.js';
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { buildIocConfidenceSummary, fetchFeedNamesByKey } from './lib/iocConfidence.js';
+import {
+  hasIocConfidenceColumns,
+  iocConfidenceJoinSql,
+  iocConfidenceSelectSql
+} from './lib/schemaCapabilities.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { extractIpv4ForGeo } from './lib/ipEnrichmentEligibility.js';
@@ -527,7 +532,20 @@ function scheduleGeoCacheRefreshAfterAdd() {
   // Threat map removed: geo cache refresh disabled.
 }
 
-// schema migrations are handled by migrate.js
+// schema migrations: explicit one-shot only — see docs/deployment.md and npm run migrate
+
+app.get('/healthz', (_req, res) => {
+  res.json({ ok: true, service: 'backend' });
+});
+
+app.get('/readyz', async (_req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    return res.json({ ok: true, service: 'backend', db: 'up' });
+  } catch {
+    return res.status(503).json({ ok: false, service: 'backend', db: 'down' });
+  }
+});
 
 app.get('/health', async (_req, res) => {
   try {
@@ -5532,6 +5550,10 @@ app.get('/api/ioc/details', async (req, res) => {
   if (cached) iocDetailsCache.delete(requestedPublicId);
 
   try {
+    const confidenceColumns = await hasIocConfidenceColumns(pool);
+    const confidenceSelect = iocConfidenceSelectSql(confidenceColumns);
+    const confidenceJoin = iocConfidenceJoinSql(confidenceColumns);
+
     const itemQ = `
       WITH seed AS (
         SELECT observable, observable_type
@@ -5547,13 +5569,7 @@ app.get('/api/ioc/details', async (req, res) => {
         i.source_name,
         i.source_url,
         i.confidence,
-        i.source_confidence,
-        i.feed_default_confidence,
-        i.analyst_confidence_override,
-        i.analyst_confidence_override_reason,
-        i.analyst_confidence_overridden_by,
-        i.analyst_confidence_overridden_at,
-        u.username AS overridden_by_email,
+        ${confidenceSelect}
         i.category,
         i.note,
         i.match_count,
@@ -5569,7 +5585,7 @@ app.get('/api/ioc/details', async (req, res) => {
         i.manual_expires_at,
         i.manual_override_reason
       FROM ioc_items i
-      LEFT JOIN users u ON u.public_id = i.analyst_confidence_overridden_by
+      ${confidenceJoin}
       INNER JOIN seed s
         ON i.observable = s.observable
        AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)

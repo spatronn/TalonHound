@@ -9,6 +9,7 @@ import {
   validateConfidenceInput,
   validateConfidenceReason
 } from '../lib/iocConfidence.js';
+import { hasIocConfidenceColumns } from '../lib/schemaCapabilities.js';
 
 const CONFIDENCE_AUDIT_FIELDS = [
   'confidence',
@@ -103,6 +104,14 @@ export function registerIocConfidenceRoutes(app, pool, audit, opts = {}) {
     const clearOverride = req.body?.clear_override === true || req.body?.confidence === null;
 
     try {
+      const columnsReady = await hasIocConfidenceColumns(pool);
+      if (!columnsReady) {
+        return res.status(503).json({
+          success: false,
+          error: 'IOC confidence schema not applied. Run explicit migration: npm run migrate'
+        });
+      }
+
       const prev = await fetchIocConfidenceRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
@@ -233,6 +242,14 @@ export function registerIocConfidenceRoutes(app, pool, audit, opts = {}) {
     }
 
     try {
+      const columnsReady = await hasIocConfidenceColumns(pool);
+      if (!columnsReady) {
+        return res.status(503).json({
+          success: false,
+          error: 'IOC confidence schema not applied. Run explicit migration: npm run migrate'
+        });
+      }
+
       const prev = await fetchIocConfidenceRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
