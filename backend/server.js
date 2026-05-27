@@ -9,6 +9,16 @@ import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
 import {
+  RETRO_CURSOR_SOURCE,
+  RETRO_CURSOR_SEMANTICS,
+  computeRetroStateHealth,
+  healthPresentation,
+  parseChDateTimeMs,
+  retroPendingCountQuery,
+  retroScannedBetweenQuery,
+  secondsBetween
+} from './lib/retroStatus.js';
+import {
   signUserToken,
   apiAuthGate,
   csrfProtection,
@@ -627,7 +637,10 @@ app.get('/api/system/status', async (req, res) => {
             toString(chunk_end_ts) AS chunk_end_ts,
             toString(chunk_end_row_hash) AS chunk_end_row_hash,
             toUInt32(chunk_ioc_count) AS chunk_ioc_count,
-            toUInt64(chunk_rows_processed) AS chunk_rows_processed
+            toUInt64(chunk_rows_processed) AS chunk_rows_processed,
+            toUInt32(last_chunk_pending_before) AS last_chunk_pending_before,
+            toUInt32(last_chunk_pending_after) AS last_chunk_pending_after,
+            toUInt32(last_chunk_scanned_count) AS last_chunk_scanned_count
           FROM ioc_retro_state
           WHERE worker_name = 'ioc-retro-v1'
           ORDER BY updated_at DESC
@@ -639,42 +652,75 @@ app.get('/api/system/status', async (req, res) => {
       const prevState = retroStateRows?.[1] || null;
       let retroRows = [{ pending: 0, cursor_ts: null, cursor_hash: null }];
       let lastRetroScannedIoc = null;
+      let chMaxLookupUpdatedAt = null;
+      let chMaxLookupUpdatedAtMs = null;
+      let pgMaxIocCreatedAt = null;
+      let pgMaxIocCreatedAtMs = null;
+      let pgUnsyncedIocCount = null;
+      let correlationSync = null;
 
       if (latestState?.cursor_ts && latestState?.cursor_hash) {
-        retroRows = await clickhouseQuery(`
-          SELECT
-            count() AS pending,
-            min(updated_at) AS pending_min_ts,
-            max(updated_at) AS pending_max_ts,
-            '${String(latestState.cursor_ts)}' AS cursor_ts,
-            '${String(latestState.cursor_hash)}' AS cursor_hash
-          FROM ioc_lookup
-          WHERE (updated_at > toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3))
-             OR (updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
-                 AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(latestState.cursor_hash))}'))
-        `);
+        retroRows = await clickhouseQuery(retroPendingCountQuery(
+          String(latestState.cursor_ts),
+          String(latestState.cursor_hash)
+        ));
       }
 
       if (latestState?.cursor_ts && latestState?.cursor_hash && prevState?.cursor_ts && prevState?.cursor_hash) {
-        const lastScannedRows = await clickhouseQuery(`
-          SELECT count() AS scanned
-          FROM ioc_lookup
-          WHERE (
-            updated_at > toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
-            OR (
-              updated_at = toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
-              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(prevState.cursor_hash))}')
-            )
-          )
-          AND (
-            updated_at < toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
-            OR (
-              updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
-              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) <= toUInt64('${safeHash(String(latestState.cursor_hash))}')
-            )
-          )
-        `);
+        const lastScannedRows = await clickhouseQuery(retroScannedBetweenQuery(
+          String(prevState.cursor_ts),
+          String(prevState.cursor_hash),
+          String(latestState.cursor_ts),
+          String(latestState.cursor_hash)
+        ));
         lastRetroScannedIoc = Number(lastScannedRows?.[0]?.scanned || 0);
+      }
+
+      const [maxLookupRows, syncStateRows, pgMaxRows] = await Promise.all([
+        clickhouseQuery(`
+          SELECT
+            toString(max(updated_at)) AS max_ts,
+            toUInt64(toUnixTimestamp64Milli(max(updated_at))) AS max_ms
+          FROM default.ioc_lookup_by_updated
+          WHERE confidence > 0
+        `),
+        clickhouseQuery(`
+          SELECT
+            worker_name,
+            toString(last_sync_ts) AS last_sync_ts,
+            toUInt64(last_sync_id) AS last_sync_id,
+            toString(updated_at) AS updated_at
+          FROM default.ioc_lookup_sync_state
+          ORDER BY updated_at DESC
+          LIMIT 1
+        `),
+        pool.query('SELECT max(created_at) AS max_created_at FROM ioc_items')
+      ]);
+
+      chMaxLookupUpdatedAt = maxLookupRows?.[0]?.max_ts || null;
+      chMaxLookupUpdatedAtMs = Number(maxLookupRows?.[0]?.max_ms || 0) || parseChDateTimeMs(chMaxLookupUpdatedAt);
+      pgMaxIocCreatedAt = pgMaxRows.rows?.[0]?.max_created_at || null;
+      pgMaxIocCreatedAtMs = pgMaxIocCreatedAt ? new Date(pgMaxIocCreatedAt).getTime() : null;
+
+      if (chMaxLookupUpdatedAt) {
+        const unsyncedRes = await pool.query(
+          'SELECT count(*)::int AS cnt FROM ioc_items WHERE created_at > $1::timestamptz',
+          [chMaxLookupUpdatedAt]
+        );
+        pgUnsyncedIocCount = Number(unsyncedRes.rows?.[0]?.cnt || 0);
+      } else {
+        pgUnsyncedIocCount = 0;
+      }
+
+      if (syncStateRows?.[0]) {
+        const syncUpdatedMs = parseChDateTimeMs(syncStateRows[0].updated_at);
+        correlationSync = {
+          worker_name: syncStateRows[0].worker_name || null,
+          last_sync_ts: syncStateRows[0].last_sync_ts || null,
+          last_sync_id: Number(syncStateRows[0].last_sync_id || 0),
+          updated_at: syncStateRows[0].updated_at || null,
+          updated_at_iso: syncUpdatedMs ? new Date(syncUpdatedMs).toISOString() : null
+        };
       }
 
       const sizeBytes = Number(sizeRows?.[0]?.bytes || 0);
@@ -687,27 +733,87 @@ app.get('/api/system/status', async (req, res) => {
       const rawPendingIoc = Number(retroRows?.[0]?.pending || 0);
       const activeChunkIoc = Number(latestState?.chunk_ioc_count || 0);
       const chunkActive = Number(latestState?.chunk_active || 0) === 1;
-      // When a chunk is active, those IOC rows are already being processed by retro worker.
-      // Exclude them from pending to avoid a misleading "stuck" value on /system.
-      clickhouse.retro_pending_ioc = chunkActive
+      const cursorTs = latestState?.cursor_ts || null;
+      const cursorTsMs = parseChDateTimeMs(latestState?.cursor_ts_ms) || parseChDateTimeMs(cursorTs);
+      const lastRunAtMs = parseChDateTimeMs(latestState?.state_updated_at_ms) || parseChDateTimeMs(latestState?.state_updated_at);
+      const chPendingIocCount = chunkActive
         ? Math.max(0, rawPendingIoc - activeChunkIoc)
         : rawPendingIoc;
-      clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || latestState?.cursor_ts || null;
-      clickhouse.retro_cursor_ts_iso = isoFromEpochMs(latestState?.cursor_ts_ms);
-      clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
-      clickhouse.retro_last_run_at = latestState?.state_updated_at || null;
-      clickhouse.retro_last_run_at_iso = isoFromEpochMs(latestState?.state_updated_at_ms);
-      clickhouse.retro_last_duration_ms = Number(latestState?.last_run_duration_ms || 0);
+      const chCursorLagSeconds = (cursorTsMs != null && chMaxLookupUpdatedAtMs != null)
+        ? secondsBetween(chMaxLookupUpdatedAtMs, cursorTsMs)
+        : null;
+      const pgToChSyncLagSeconds = (pgMaxIocCreatedAtMs != null && chMaxLookupUpdatedAtMs != null)
+        ? secondsBetween(pgMaxIocCreatedAtMs, chMaxLookupUpdatedAtMs)
+        : null;
+      const stateHealth = computeRetroStateHealth({
+        chOk: true,
+        pgOk: true,
+        cursorTs,
+        chMaxLookupUpdatedAtMs,
+        chPendingIocCount,
+        chCursorLagSeconds,
+        pgUnsyncedIocCount,
+        pgToChSyncLagSeconds,
+        lastRunAtMs,
+        chunkActive: Number(latestState?.chunk_active || 0),
+        nowMs: Date.now()
+      });
+      const retroHealth = healthPresentation(stateHealth);
+
+      payload.retro = {
+        last_run_at: latestState?.state_updated_at || null,
+        last_run_at_iso: isoFromEpochMs(latestState?.state_updated_at_ms),
+        cursor_ts: cursorTs,
+        cursor_ts_iso: isoFromEpochMs(latestState?.cursor_ts_ms) || (cursorTsMs ? new Date(cursorTsMs).toISOString() : null),
+        cursor_source: RETRO_CURSOR_SOURCE,
+        cursor_semantics: RETRO_CURSOR_SEMANTICS,
+        ch_max_lookup_updated_at: chMaxLookupUpdatedAt,
+        ch_max_lookup_updated_at_iso: chMaxLookupUpdatedAtMs ? new Date(chMaxLookupUpdatedAtMs).toISOString() : null,
+        ch_cursor_lag_seconds: chCursorLagSeconds,
+        ch_pending_ioc_count: chPendingIocCount,
+        pg_max_ioc_created_at: pgMaxIocCreatedAt,
+        pg_max_ioc_created_at_iso: pgMaxIocCreatedAtMs ? new Date(pgMaxIocCreatedAtMs).toISOString() : null,
+        pg_unsynced_ioc_count: pgUnsyncedIocCount,
+        pg_to_ch_sync_lag_seconds: pgToChSyncLagSeconds,
+        chunk_active: Number(latestState?.chunk_active || 0),
+        last_chunk_scanned_count: Number(latestState?.last_chunk_scanned_count || lastRetroScannedIoc || 0),
+        last_chunk_pending_before: Number(latestState?.last_chunk_pending_before || 0),
+        last_chunk_pending_after: Number(latestState?.last_chunk_pending_after || 0),
+        last_run_duration_ms: Number(latestState?.last_run_duration_ms || 0),
+        last_retro_scanned_ioc: lastRetroScannedIoc,
+        correlation_sync: correlationSync,
+        state_health: stateHealth,
+        state_health_label: retroHealth.label,
+        retro_pending_min_ts: retroRows?.[0]?.pending_min_ts || null,
+        retro_pending_max_ts: retroRows?.[0]?.pending_max_ts || null,
+        retro_chunk_end_ts: latestState?.chunk_end_ts || null,
+        retro_chunk_ioc_count: Number(latestState?.chunk_ioc_count || 0),
+        retro_chunk_rows_processed: Number(latestState?.chunk_rows_processed || 0)
+      };
+
+      // Legacy clickhouse.* retro fields (backward compatible with older UI/clients).
+      clickhouse.retro_pending_ioc = chPendingIocCount;
+      clickhouse.retro_cursor_ts = cursorTs;
+      clickhouse.retro_cursor_ts_iso = payload.retro.cursor_ts_iso;
+      clickhouse.retro_cursor_hash = latestState?.cursor_hash || null;
+      clickhouse.retro_last_run_at = payload.retro.last_run_at;
+      clickhouse.retro_last_run_at_iso = payload.retro.last_run_at_iso;
+      clickhouse.retro_last_duration_ms = payload.retro.last_run_duration_ms;
       clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
-      clickhouse.retro_pending_min_ts = retroRows?.[0]?.pending_min_ts || null;
-      clickhouse.retro_pending_max_ts = retroRows?.[0]?.pending_max_ts || null;
-      clickhouse.retro_chunk_active = Number(latestState?.chunk_active || 0);
-      clickhouse.retro_chunk_end_ts = latestState?.chunk_end_ts || null;
+      clickhouse.retro_pending_min_ts = payload.retro.retro_pending_min_ts;
+      clickhouse.retro_pending_max_ts = payload.retro.retro_pending_max_ts;
+      clickhouse.retro_chunk_active = payload.retro.chunk_active;
+      clickhouse.retro_chunk_end_ts = payload.retro.retro_chunk_end_ts;
       clickhouse.retro_chunk_end_row_hash = latestState?.chunk_end_row_hash || null;
-      clickhouse.retro_chunk_ioc_count = Number(latestState?.chunk_ioc_count || 0);
-      clickhouse.retro_chunk_rows_processed = Number(latestState?.chunk_rows_processed || 0);
+      clickhouse.retro_chunk_ioc_count = payload.retro.retro_chunk_ioc_count;
+      clickhouse.retro_chunk_rows_processed = payload.retro.retro_chunk_rows_processed;
     } catch (err) {
       clickhouse.error = err.message;
+      payload.retro = {
+        state_health: 'ERROR',
+        state_health_label: healthPresentation('ERROR').label,
+        error: err.message
+      };
     }
   } else {
     clickhouse.note = 'LOG_STORAGE is not clickhouse';

@@ -163,6 +163,32 @@ function formatDurationMs(ms) {
   return `${s}s`;
 }
 
+function formatDurationSeconds(totalSec) {
+  if (totalSec == null || !Number.isFinite(totalSec) || totalSec < 0) return '-';
+  return formatDurationMs(totalSec * 1000);
+}
+
+function retroHealthPresentation(stateHealth) {
+  const key = String(stateHealth || 'ERROR').toUpperCase();
+  const map = {
+    OK: { label: 'OK', color: '#22c55e' },
+    WARNING: { label: 'Sync Lag Warning', color: '#fbbf24' },
+    STALE: { label: 'Stale', color: '#fb923c' },
+    ERROR: { label: 'Error', color: '#f87171' }
+  };
+  return map[key] || map.ERROR;
+}
+
+const RETRO_STATUS_TOOLTIPS = {
+  lastRun: 'Time when the retro worker last wrote run/state information.',
+  processedCursor: 'Timestamp of the newest IOC lookup record successfully covered by retro scan. This is not the worker finish time.',
+  chMaxLookup: 'Latest updated_at in ClickHouse ioc_lookup (active IOCs only). Retro scans IOCs up to this stream position after sync.',
+  retroBacklog: 'IOCs in ClickHouse waiting for retro scan after the processed cursor.',
+  cursorLag: 'Seconds between processed IOC cursor and latest ClickHouse ioc_lookup updated_at.',
+  pgUnsynced: 'IOCs present in PostgreSQL but not yet synced into ClickHouse ioc_lookup. Retro can only scan after sync.',
+  pgSyncLag: 'Time gap between newest PostgreSQL ioc_items.created_at and ClickHouse ioc_lookup.updated_at.'
+};
+
 function integrationJobReasonLabel(job) {
   const state = String(job?.state || job?.status || '').toLowerCase();
   if (state === 'success') return 'Completed successfully';
@@ -3124,6 +3150,8 @@ function SystemStatusPage() {
   const database = status?.database || {};
   const redisStatus = status?.redis || {};
   const clickhouseStatus = status?.clickhouse || {};
+  const retroStatus = status?.retro || {};
+  const retroHealth = retroHealthPresentation(retroStatus.state_health);
   const queues = status?.queues || {};
   const queueRows = Object.entries(queues).filter(([key]) => key !== 'error');
   const integrations = status?.integrations || {};
@@ -3205,14 +3233,49 @@ function SystemStatusPage() {
               <div><b>Version:</b> {clickhouseStatus.version || '-'}</div>
               <div><b>Rows:</b> {clickhouseStatus.rows ?? '-'}</div>
               <div><b>Size:</b> {clickhouseStatus.size_mb !== undefined ? `${clickhouseStatus.size_mb} MB` : '-'}</div>
-              <div><b>Retro Pending IOC:</b> {clickhouseStatus.retro_pending_ioc ?? '-'}</div>
-              <div><b>Last retro scanned IOC:</b> {clickhouseStatus.retro_last_scanned_ioc ?? '-'}</div>
-              <div><b>Last Retro Duration:</b> {clickhouseStatus.retro_last_duration_ms !== undefined ? `${clickhouseStatus.retro_last_duration_ms} ms` : '-'}</div>
-              <div><b>Last Retro Run:</b> {clickhouseStatus.retro_last_run_at_iso ? formatUserDateTime(clickhouseStatus.retro_last_run_at_iso) : (clickhouseStatus.retro_last_run_at || '-')}</div>
-              <div><b>Retro Cursor TS:</b> {clickhouseStatus.retro_cursor_ts_iso ? formatUserDateTime(clickhouseStatus.retro_cursor_ts_iso) : (clickhouseStatus.retro_cursor_ts || '-')}</div>
             </div>
             {clickhouseStatus.note && <div style={{ color: '#94a3b8', marginTop: 8 }}>{clickhouseStatus.note}</div>}
             {clickhouseStatus.error && <div style={{ color: '#f87171', marginTop: 8 }}>{clickhouseStatus.error}</div>}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Retro Scan</span>
+            <span style={{ ...statusDot(retroStatus.state_health === 'OK' || retroStatus.state_health === 'WARNING'), color: retroHealth.color }}>
+              ● {retroStatus.state_health_label || retroHealth.label}
+            </span>
+          </div>
+          <div style={{ padding: 12, background: '#0f172a' }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
+              Latest IOC lookup timestamp successfully covered by retro scan vs worker processing timestamps.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+              <div title={RETRO_STATUS_TOOLTIPS.lastRun}><b>Last Retro Run:</b> {retroStatus.last_run_at_iso ? formatUserDateTime(retroStatus.last_run_at_iso) : (retroStatus.last_run_at || '-')}</div>
+              <div title={RETRO_STATUS_TOOLTIPS.processedCursor}>
+                <b>Processed IOC Cursor:</b> {retroStatus.cursor_ts_iso ? formatUserDateTime(retroStatus.cursor_ts_iso) : (retroStatus.cursor_ts || '-')}
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: -2, marginBottom: 4 }}>
+                Latest IOC lookup timestamp successfully covered by retro scan.
+              </div>
+              <div title={RETRO_STATUS_TOOLTIPS.chMaxLookup}>
+                <b>CH Lookup Max IOC TS:</b> {retroStatus.ch_max_lookup_updated_at_iso ? formatUserDateTime(retroStatus.ch_max_lookup_updated_at_iso) : (retroStatus.ch_max_lookup_updated_at || '-')}
+              </div>
+              <div title={RETRO_STATUS_TOOLTIPS.retroBacklog}><b>Retro Backlog:</b> {retroStatus.ch_pending_ioc_count ?? '-'} IOC</div>
+              <div title={RETRO_STATUS_TOOLTIPS.cursorLag}><b>Retro Cursor Lag:</b> {retroStatus.ch_cursor_lag_seconds != null ? `${retroStatus.ch_cursor_lag_seconds} sec` : '-'}</div>
+              <div title={RETRO_STATUS_TOOLTIPS.pgUnsynced}><b>{'PG \u2192 CH Unsynced IOC:'}</b> {retroStatus.pg_unsynced_ioc_count ?? '-'}</div>
+              <div title={RETRO_STATUS_TOOLTIPS.pgSyncLag}><b>{'PG \u2192 CH Sync Lag:'}</b> {formatDurationSeconds(retroStatus.pg_to_ch_sync_lag_seconds)}</div>
+              <div><b>Health:</b> <span style={{ color: retroHealth.color, fontWeight: 700 }}>{retroStatus.state_health_label || retroHealth.label}</span></div>
+              <div><b>Last Retro Duration:</b> {retroStatus.last_run_duration_ms !== undefined ? `${retroStatus.last_run_duration_ms} ms` : '-'}</div>
+              <div><b>Last Chunk Scanned IOC:</b> {retroStatus.last_chunk_scanned_count ?? retroStatus.last_retro_scanned_ioc ?? '-'}</div>
+              {Number(retroStatus.chunk_active) === 1 && (
+                <div><b>Active Chunk:</b> {retroStatus.retro_chunk_ioc_count ?? 0} IOC ({retroStatus.retro_chunk_rows_processed ?? 0} match rows processed)</div>
+              )}
+              {retroStatus.correlation_sync && (
+                <div><b>Correlation Sync:</b> last_sync_ts {renderTimestamp(retroStatus.correlation_sync.last_sync_ts)} · id {retroStatus.correlation_sync.last_sync_id ?? '-'}</div>
+              )}
+            </div>
+            {retroStatus.error && <div style={{ color: '#f87171', marginTop: 8 }}>{retroStatus.error}</div>}
           </div>
         </div>
 

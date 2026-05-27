@@ -126,7 +126,10 @@ function idleMatchDefaults() {
     chunk_end_ts: CURSOR_TS_START,
     chunk_end_row_hash: CURSOR_HASH_START,
     chunk_ioc_count: 0,
-    chunk_rows_processed: 0
+    chunk_rows_processed: 0,
+    last_chunk_pending_before: 0,
+    last_chunk_pending_after: 0,
+    last_chunk_scanned_count: 0
   };
 }
 
@@ -145,7 +148,10 @@ async function loadRetroState() {
       match_cursor_raw_hash,
       match_cursor_observable,
       match_cursor_observable_type,
-      match_cursor_source_name
+      match_cursor_source_name,
+      last_chunk_pending_before,
+      last_chunk_pending_after,
+      last_chunk_scanned_count
     FROM default.ioc_retro_state
     WHERE worker_name = 'ioc-retro-v1'
     ORDER BY updated_at DESC
@@ -167,7 +173,10 @@ async function loadRetroState() {
     match_cursor_raw_hash: r.match_cursor_raw_hash || idle.match_cursor_raw_hash,
     match_cursor_observable: r.match_cursor_observable || idle.match_cursor_observable,
     match_cursor_observable_type: r.match_cursor_observable_type || idle.match_cursor_observable_type,
-    match_cursor_source_name: r.match_cursor_source_name || idle.match_cursor_source_name
+    match_cursor_source_name: r.match_cursor_source_name || idle.match_cursor_source_name,
+    last_chunk_pending_before: Number(r.last_chunk_pending_before || 0),
+    last_chunk_pending_after: Number(r.last_chunk_pending_after || 0),
+    last_chunk_scanned_count: Number(r.last_chunk_scanned_count || 0)
   };
 }
 
@@ -189,6 +198,9 @@ async function saveRetroState(state) {
       match_cursor_observable,
       match_cursor_observable_type,
       match_cursor_source_name,
+      last_chunk_pending_before,
+      last_chunk_pending_after,
+      last_chunk_scanned_count,
       updated_at
     ) VALUES (
       'ioc-retro-v1',
@@ -205,6 +217,9 @@ async function saveRetroState(state) {
       '${chLiteral(String(s.match_cursor_observable || ''))}',
       '${chLiteral(String(s.match_cursor_observable_type || ''))}',
       '${chLiteral(String(s.match_cursor_source_name || ''))}',
+      toUInt32(${Number(s.last_chunk_pending_before || 0)}),
+      toUInt32(${Number(s.last_chunk_pending_after || 0)}),
+      toUInt32(${Number(s.last_chunk_scanned_count || 0)}),
       now64(3)
     )
   `, { logTag: 'ioc-retro.state-save' });
@@ -516,10 +531,26 @@ async function fetchWindowMatchPage({
   `, { queryId: makeQueryId('retro-window-page'), logTag: 'ioc-retro.window-page' });
 }
 
+async function getMaxLookupUpdatedAt() {
+  const rows = await clickhouseQuery(`
+    SELECT toString(max(updated_at)) AS max_ts
+    FROM default.ioc_lookup_by_updated
+    WHERE confidence > 0
+  `, { queryId: makeQueryId('max-lookup-updated'), logTag: 'ioc-retro.max-lookup' });
+  return rows?.[0]?.max_ts || null;
+}
+
 async function runRetroWindowBatch() {
   const startedAt = Date.now();
   const st = await loadRetroState();
-  const pendingBeforeStats = await getPendingStats(st.last_processed_ts, st.last_processed_row_hash);
+  const [pendingBeforeStats, chMaxLookupUpdatedAt] = await Promise.all([
+    getPendingStats(st.last_processed_ts, st.last_processed_row_hash),
+    getMaxLookupUpdatedAt()
+  ]);
+
+  console.log(
+    `[ioc-retro][run-start] cursor_before=${st.last_processed_ts} cursor_hash=${st.last_processed_row_hash} ch_max_lookup_updated_at=${chMaxLookupUpdatedAt || 'none'} ch_pending_ioc_count=${pendingBeforeStats.pending} lookback_d=${RETRO_LOOKBACK_DAYS} batch_size=${RETRO_MATCH_PAGE_SIZE} ioc_chunk_size=${RETRO_IOC_CHUNK_SIZE} chunk_active=${st.chunk_active}`
+  );
 
   let working = { ...st };
 
@@ -627,9 +658,19 @@ async function runRetroWindowBatch() {
     last_run_duration_ms: durationMs,
     ...idleMatchDefaults()
   };
-  await saveRetroState(doneState);
-
   const pendingAfterStats = await getPendingStats(doneState.last_processed_ts, doneState.last_processed_row_hash);
+  const cursorBefore = String(st.last_processed_ts || CURSOR_TS_START);
+  const cursorAfter = String(doneState.last_processed_ts || CURSOR_TS_START);
+  await saveRetroState({
+    ...doneState,
+    last_chunk_pending_before: pendingBeforeStats.pending,
+    last_chunk_pending_after: pendingAfterStats.pending,
+    last_chunk_scanned_count: Number(working.chunk_ioc_count || 0)
+  });
+
+  console.log(
+    `[ioc-retro][chunk-complete] pending_before=${pendingBeforeStats.pending} pending_after=${pendingAfterStats.pending} chunk_ioc_count=${Number(working.chunk_ioc_count || 0)} matched_rows=${rows.length} max_scanned_lookup_updated_at=${working.chunk_end_ts} cursor_before=${cursorBefore} cursor_after=${cursorAfter} duration_ms=${durationMs} cursor_advanced=true inserted=${inserted} suppressed_count=${suppressedCount}`
+  );
 
   return {
     ran: true,
@@ -729,7 +770,7 @@ async function bootstrap() {
       await maybeSyncIocLookup(false);
       await runAdaptiveLoop();
     } catch (err) {
-      console.error('[ioc-retro] tick failed', err?.message || err);
+      console.error('[ioc-retro] tick failed cursor_advanced=false', err?.message || err);
       await sleep(RETRO_BACKLOG_MEDIUM_POLL_MS);
     }
   }

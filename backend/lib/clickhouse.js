@@ -245,6 +245,9 @@ export async function ensureIocCorrelationAssets() {
   await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_observable String DEFAULT ''`);
   await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_observable_type String DEFAULT ''`);
   await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS match_cursor_source_name String DEFAULT ''`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS last_chunk_pending_before UInt32 DEFAULT 0`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS last_chunk_pending_after UInt32 DEFAULT 0`);
+  await command(`ALTER TABLE default.ioc_retro_state ADD COLUMN IF NOT EXISTS last_chunk_scanned_count UInt32 DEFAULT 0`);
 }
 
 function confidenceToInt(v) {
