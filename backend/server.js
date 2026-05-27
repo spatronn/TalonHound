@@ -44,6 +44,8 @@ import {
   formatUrlhausCredentialsSummary,
   sanitizeFeedErrorMessage
 } from './lib/urlhausIntegration.js';
+import { QUEUE_HARDENING } from './lib/integrationQueueConfig.js';
+import { findActiveRunningJobForSource, enrichIntegrationQueueJobRow } from './lib/integrationQueueRecovery.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
@@ -71,7 +73,16 @@ const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
 const llmRiskQueueName = process.env.LLM_RISK_QUEUE_NAME || 'llm-risk-jobs';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
-const importQueue = new Queue(queueName, { connection: redis });
+const importQueue = new Queue(queueName, {
+  connection: redis,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 30_000 },
+    removeOnComplete: 50,
+    removeOnFail: 200,
+    timeout: QUEUE_HARDENING.jobTimeoutMs
+  }
+});
 const signalQueue = new Queue(signalQueueName, { connection: redis });
 const llmRiskQueue = new Queue(llmRiskQueueName, { connection: redis });
 const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue, db: pool });
@@ -3199,9 +3210,13 @@ app.get('/api/integrations', async (req, res) => {
         q.status AS state,
         COALESCE(q.started_at, q.queued_at) AS timestamp,
         q.error_message AS failed_reason,
+        q.failure_type,
         q.records_processed,
         q.started_at,
-        q.finished_at
+        q.finished_at,
+        q.heartbeat_at,
+        q.updated_at,
+        q.queued_at
       FROM integration_queue_jobs q
       LEFT JOIN integration_feeds f ON f.key = q.integration_key
       ORDER BY q.queued_at DESC
@@ -3369,9 +3384,13 @@ app.get('/api/integrations', async (req, res) => {
           q.status AS state,
           COALESCE(q.started_at, q.queued_at) AS timestamp,
           q.error_message AS failed_reason,
+          q.failure_type,
           q.records_processed,
           q.started_at,
-          q.finished_at
+          q.finished_at,
+          q.heartbeat_at,
+          q.updated_at,
+          q.queued_at
         FROM integration_queue_jobs q
         LEFT JOIN integration_feeds f ON f.key = q.integration_key
         WHERE q.queued_at >= ${queueWindowSql}
@@ -3398,7 +3417,7 @@ app.get('/api/integrations', async (req, res) => {
       const total = Number(totalRows.rows[0]?.total || 0);
       queue = {
         counts: mapped,
-        jobs: jobsRows.rows,
+        jobs: jobsRows.rows.map((row) => enrichIntegrationQueueJobRow(row)),
         pagination: {
           page: queuePage,
           page_size: queuePageSize,
@@ -3421,8 +3440,13 @@ app.get('/api/integrations', async (req, res) => {
     return res.json({
       integrations,
       health_summary: healthSummary,
-      recent_runs: recentRes.rows,
-      queue
+      recent_runs: recentRes.rows.map((row) => enrichIntegrationQueueJobRow(row)),
+      queue,
+      queue_hardening: {
+        job_timeout_ms: QUEUE_HARDENING.jobTimeoutMs,
+        stale_after_ms: QUEUE_HARDENING.staleAfterMs,
+        heartbeat_interval_ms: QUEUE_HARDENING.heartbeatIntervalMs
+      }
     });
   } catch (err) {
     integrationsTimingLog(timingEnabled, 'endpoint total (error)', handlerStart);
@@ -3445,15 +3469,27 @@ const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '
 app.post('/api/integrations/run-now', async (req, res) => {
   try {
     const keys = Object.keys(INTEGRATION_JOBS);
-    const jobs = await Promise.all(keys.map((key) => importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key })));
+    const queued = [];
+    const skipped = [];
 
-    await Promise.all(jobs.map((j, idx) => pool.query(
-      `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
-       VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
-       ON CONFLICT (job_id)
-       DO UPDATE SET status='queued', updated_at=NOW()`,
-      [String(j.id), keys[idx], INTEGRATION_JOBS[keys[idx]]]
-    )));
+    for (const key of keys) {
+      const running = await findActiveRunningJobForSource(pool, key);
+      if (running) {
+        skipped.push({ key, running_job_id: running.job_id });
+        console.log(`[backend] manual trigger skipped source=${key} running_job_id=${running.job_id}`);
+        continue;
+      }
+
+      const job = await importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key });
+      await pool.query(
+        `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+         VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
+         ON CONFLICT (job_id)
+         DO UPDATE SET status='queued', updated_at=NOW()`,
+        [String(job.id), key, INTEGRATION_JOBS[key]]
+      );
+      queued.push({ key, job_id: String(job.id) });
+    }
 
     audit.auditSuccess({
       req,
@@ -3462,10 +3498,16 @@ app.post('/api/integrations/run-now', async (req, res) => {
       entityId: 'all',
       entityDisplay: 'All integrations',
       severity: AUDIT_SEVERITY.INFO,
-      metadata: { count: jobs.length, job_ids: jobs.map((j) => String(j.id)) }
+      metadata: { queued_count: queued.length, skipped_count: skipped.length, job_ids: queued.map((j) => j.job_id) }
     });
 
-    return res.status(202).json({ ok: true, queued: true, count: jobs.length, job_ids: jobs.map((j) => j.id) });
+    return res.status(202).json({
+      ok: true,
+      queued: queued.length > 0,
+      count: queued.length,
+      job_ids: queued.map((j) => j.job_id),
+      skipped
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integrations', detail: err.message });
   }
@@ -3479,6 +3521,16 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
   }
 
   try {
+    const running = await findActiveRunningJobForSource(pool, key);
+    if (running) {
+      console.log(`[backend] manual trigger rejected source=${key} running_job_id=${running.job_id}`);
+      return res.status(409).json({
+        message: 'A job for this integration is already running.',
+        running_job_id: running.job_id,
+        key
+      });
+    }
+
     const job = await importQueue.add(jobName, { triggeredBy: 'manual-ui-one', integration_key: key });
     await pool.query(
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)

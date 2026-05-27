@@ -34,6 +34,8 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
       - QUEUE_NAME=integration-imports
+      - INTEGRATION_JOB_TIMEOUT_MS=600000
+      - INTEGRATION_JOB_STALE_AFTER_MS=900000
       - SIGNAL_QUEUE_NAME=signal-events
       - LLM_RISK_QUEUE_NAME=llm-risk-jobs
       - LLM_RISK_ADVISOR_ENABLED=${LLM_RISK_ADVISOR_ENABLED:-true}
@@ -98,6 +100,7 @@ services:
       dockerfile: integration/Dockerfile
     container_name: demo-integration-worker
     command: ["npm", "run", "worker"]
+    stop_grace_period: 45s
     environment:
       - DB_HOST=db
       - DB_PORT=5432
@@ -112,6 +115,11 @@ services:
       - WORKER_LOCK_DURATION_MS=300000
       - WORKER_STALLED_INTERVAL_MS=60000
       - WORKER_MAX_STALLED_COUNT=5
+      - INTEGRATION_JOB_TIMEOUT_MS=600000
+      - INTEGRATION_JOB_HEARTBEAT_INTERVAL_MS=30000
+      - INTEGRATION_JOB_STALE_AFTER_MS=900000
+      - INTEGRATION_WORKER_SHUTDOWN_GRACE_MS=30000
+      - INTEGRATION_QUEUE_CLEANUP_INTERVAL_MS=60000
       - SOURCE_NAME=EmergingThreats:blockrules
       - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
       - USOM_SOURCE_NAME=USOM:TR-CERT

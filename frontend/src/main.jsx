@@ -146,6 +146,34 @@ function formatUserDateTime(value) {
   });
 }
 
+function formatDurationMs(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '-';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function integrationJobReasonLabel(job) {
+  const state = String(job?.state || job?.status || '').toLowerCase();
+  if (state === 'success') return 'Completed successfully';
+  if (state === 'running') {
+    const parts = [];
+    if (job?.running_for_ms != null) parts.push(`running for ${formatDurationMs(job.running_for_ms)}`);
+    if (job?.started_at) parts.push(`started ${formatUserDateTime(job.started_at)}`);
+    if (job?.possibly_stuck) parts.push('Possibly stuck / stale');
+    return parts.length ? parts.join(' · ') : '-';
+  }
+  if (job?.failed_reason) {
+    if (job?.failure_type) return `[${job.failure_type}] ${job.failed_reason}`;
+    return job.failed_reason;
+  }
+  return '-';
+}
+
 function suppressionKey(iocValue, iocType) {
   return `${String(iocType || '').trim().toLowerCase()}\t${String(iocValue || '').trim().toLowerCase()}`;
 }
@@ -3916,11 +3944,14 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     if (!ok || runningNowAll) return;
     setRunningNowAll(true);
     try {
-      await api.post('/integrations/run-now');
+      const { data } = await api.post('/integrations/run-now');
       await load();
-      alert('All integrations queued');
-    } catch {
-      alert('Failed to queue integrations');
+      const skipped = Array.isArray(data?.skipped) ? data.skipped.length : 0;
+      alert(skipped > 0
+        ? `Queued ${data?.count || 0} integration(s); ${skipped} skipped (already running)`
+        : 'All integrations queued');
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Failed to queue integrations'));
     } finally {
       setRunningNowAll(false);
     }
@@ -3935,8 +3966,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       await api.post(`/integrations/${encodeURIComponent(key)}/run-now`);
       await load();
       alert(`${key} queued`);
-    } catch {
-      alert(`Failed to queue ${key}`);
+    } catch (err) {
+      alert(apiErrorMessage(err, `Failed to queue ${key}`));
     } finally {
       setRunningKeys((prev) => ({ ...prev, [key]: false }));
     }
@@ -4310,7 +4341,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 function IntegrationsQueueStatusPage() {
   const [loading, setLoading] = useState(true);
   const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
-  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, reason: 320 });
+  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, started: 170, reason: 320 });
   const [resizeState, setResizeState] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -4399,6 +4430,7 @@ function IntegrationsQueueStatusPage() {
               <col style={{ width: tableWidths.name }} />
               <col style={{ width: tableWidths.state }} />
               <col style={{ width: tableWidths.queued }} />
+              <col style={{ width: tableWidths.started }} />
               <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
@@ -4408,20 +4440,22 @@ function IntegrationsQueueStatusPage() {
                 <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>State<div onMouseDown={(e) => startResize('state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Queued At<div onMouseDown={(e) => startResize('queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Started At<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={6}>Loading...</td></tr> : (queue.jobs?.length ? queue.jobs.map((j) => (
+              {loading ? <tr><td colSpan={7}>Loading...</td></tr> : (queue.jobs?.length ? queue.jobs.map((j) => (
                 <tr key={String(j.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.id}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.integration_name || j.integration_key || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.name}</td>
-                  <td style={{ color: (j.state === 'success' ? '#166534' : (j.state === 'failed' || j.state === 'fail' ? '#991b1b' : '#334155')), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(j.timestamp)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.failed_reason || (j.state === 'success' ? 'Completed successfully' : '-')}</td>
+                  <td style={{ color: (j.state === 'success' ? '#166534' : (j.state === 'failed' || j.state === 'fail' ? '#991b1b' : (j.state === 'running' ? '#92400e' : '#334155'))), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ⚠' : ''}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(j.started_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#b45309' : undefined }} title={integrationJobReasonLabel(j)}>{integrationJobReasonLabel(j)}</td>
                 </tr>
-              )) : <tr><td colSpan={6} style={{ color: '#64748b' }}>No queued jobs</td></tr>)}
+              )) : <tr><td colSpan={7} style={{ color: '#64748b' }}>No queued jobs</td></tr>)}
             </tbody>
           </table>
         </div>
@@ -4442,7 +4476,7 @@ function IntegrationsQueueStatusPage() {
 function IntegrationsRecentRunsPage() {
   const [loading, setLoading] = useState(true);
   const [recentRuns, setRecentRuns] = useState([]);
-  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, reason: 320 });
+  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, started: 170, reason: 320 });
   const [resizeState, setResizeState] = useState(null);
 
   async function load() {
@@ -4512,6 +4546,7 @@ function IntegrationsRecentRunsPage() {
               <col style={{ width: tableWidths.name }} />
               <col style={{ width: tableWidths.state }} />
               <col style={{ width: tableWidths.queued }} />
+              <col style={{ width: tableWidths.started }} />
               <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
@@ -4521,20 +4556,22 @@ function IntegrationsRecentRunsPage() {
                 <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>State<div onMouseDown={(e) => startResize('state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Queued At<div onMouseDown={(e) => startResize('queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Started At<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={6}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => (
+              {loading ? <tr><td colSpan={7}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => (
                 <tr key={String(r.job_id || r.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_id || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.integration_name || r.integration_key || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || r.job_type || '-'}</td>
-                  <td style={{ color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.state || r.status)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.timestamp || r.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.failed_reason || ((r.state || r.status) === 'success' ? 'Completed successfully' : '-')}</td>
+                  <td style={{ color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ⚠' : ''}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.started_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: r.possibly_stuck ? '#b45309' : undefined }} title={integrationJobReasonLabel(r)}>{integrationJobReasonLabel(r)}</td>
                 </tr>
-              )) : <tr><td colSpan={6} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
+              )) : <tr><td colSpan={7} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
             </tbody>
           </table>
         </div>

@@ -115,7 +115,10 @@ async function syncSchedules() {
   }
 
   for (const feed of desired) {
+    const dedupKey = `${feed.key}::${feed.cron}`;
+    if (seenPerFeedAndCron.has(dedupKey)) continue;
     await ensureSchedule(feed);
+    seenPerFeedAndCron.add(dedupKey);
   }
 
   console.log(`[scheduler] schedule sync complete, active=${desired.length}`);
