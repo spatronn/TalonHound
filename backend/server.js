@@ -848,6 +848,52 @@ app.get('/api/system/status', async (req, res) => {
   }
   payload.telemetry = telemetry;
 
+  const retro = {
+    last_run_at: clickhouse.retro_last_run_at || null,
+    last_run_age_seconds: null,
+    cursor_ts: clickhouse.retro_cursor_ts || null,
+    ch_max_lookup_updated_at: clickhouse.retro_pending_max_ts || null,
+    ch_pending_ioc_count: Number.isFinite(Number(clickhouse.retro_pending_ioc)) ? Number(clickhouse.retro_pending_ioc) : null,
+    ch_cursor_lag_seconds: null,
+    pg_max_ioc_created_at: null,
+    pg_unsynced_ioc_count: null,
+    pg_to_ch_sync_lag_seconds: null,
+    retro_worker_health: 'error',
+    retro_cursor_health: 'error',
+    correlation_sync_health: 'error',
+    overall_health: 'error',
+    last_retro_duration_ms: Number.isFinite(Number(clickhouse.retro_last_duration_ms)) ? Number(clickhouse.retro_last_duration_ms) : null,
+    last_chunk_scanned_ioc: Number.isFinite(Number(clickhouse.retro_last_scanned_ioc)) ? Number(clickhouse.retro_last_scanned_ioc) : null,
+    error_reason_code: clickhouse.reason_code || clickhouse.retro_last_error_type || null,
+    error_message: clickhouse.error || clickhouse.retro_last_error_message || null,
+    suggested_action: clickhouse.suggested_action || null,
+    errors: {
+      clickhouse_state: clickhouse.error || null,
+      clickhouse_lookup: clickhouse.error || null,
+      postgres_ioc: null,
+      correlation_sync: null
+    }
+  };
+
+  if (retro.last_run_at) {
+    const age = Math.floor((Date.now() - new Date(retro.last_run_at).getTime()) / 1000);
+    retro.last_run_age_seconds = Number.isFinite(age) ? Math.max(age, 0) : null;
+  }
+  if (retro.cursor_ts && retro.ch_max_lookup_updated_at) {
+    const lag = Math.floor((new Date(retro.ch_max_lookup_updated_at).getTime() - new Date(retro.cursor_ts).getTime()) / 1000);
+    retro.ch_cursor_lag_seconds = Number.isFinite(lag) ? Math.max(lag, 0) : null;
+  }
+
+  if (clickhouse.ok) {
+    retro.retro_worker_health = retro.last_run_age_seconds != null && retro.last_run_age_seconds > 7200 ? 'stale' : 'ok';
+    retro.retro_cursor_health = retro.ch_cursor_lag_seconds != null && retro.ch_cursor_lag_seconds > 3600 ? 'stale' : 'ok';
+  }
+  retro.correlation_sync_health = retro.errors.correlation_sync ? 'error' : 'ok';
+  retro.overall_health = [retro.retro_worker_health, retro.retro_cursor_health, retro.correlation_sync_health].includes('error')
+    ? 'error'
+    : ([retro.retro_worker_health, retro.retro_cursor_health, retro.correlation_sync_health].includes('stale') ? 'stale' : 'ok');
+
+  payload.retro = retro;
   payload.services = { backend: { ok: true } };
 
   return res.json(payload);
