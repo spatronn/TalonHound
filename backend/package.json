@@ -19,7 +19,7 @@
     "test:risk": "node --test lib/riskEngine.test.js risk/llmRiskAdvisor.test.js",
     "test:audit": "node --test lib/auditRedaction.test.js",
     "test:tags": "node --test lib/tagHelpers.test.js",
-    "test:domain-root": "node --test lib/domainRoot.test.js",
+    "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js",
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/auditIocContext.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js",

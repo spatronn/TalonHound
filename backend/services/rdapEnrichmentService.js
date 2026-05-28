@@ -1,13 +1,18 @@
 /**
  * On-demand RDAP domain enrichment (no DNS lookups).
- * Uses rdap.org redirect/bootstrap; implementation is isolated for future IANA bootstrap swap.
+ * Resolves authoritative RDAP servers via IANA bootstrap (data.iana.org/rdap/dns.json).
  */
+
+import { resolveRdapDomainUrl } from '../lib/rdapBootstrap.js';
 
 const RDAP_TIMEOUT_MS = Number(process.env.RDAP_TIMEOUT_MS || 10000);
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FORCE_COOLDOWN_MS = 5 * 60 * 1000;
 const FAILED_CACHE_MS = 60 * 60 * 1000;
 const MAX_CONCURRENCY = Math.min(Math.max(Number(process.env.RDAP_MAX_CONCURRENCY || 3), 1), 5);
+const RDAP_USER_AGENT = String(
+  process.env.RDAP_USER_AGENT || 'demo-runbook-rdap/1.0 (+https://github.com/spatronn/demo-runbook)'
+).trim();
 
 const RDAP_BASE = String(process.env.RDAP_BASE_URL || 'https://rdap.org').replace(/\/$/, '');
 
@@ -176,7 +181,7 @@ export function buildDerivedSignals(record, rootDomain) {
 }
 
 /**
- * Fetch RDAP JSON for a root domain via rdap.org bootstrap.
+ * Fetch RDAP JSON for a root domain via IANA bootstrap (fallback: rdap.org).
  * @param {string} rootDomain
  */
 export async function fetchRdapDomain(rootDomain) {
@@ -184,9 +189,12 @@ export async function fetchRdapDomain(rootDomain) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), RDAP_TIMEOUT_MS);
   try {
-    const url = `${RDAP_BASE}/domain/${encodeURIComponent(rootDomain)}`;
+    const url = await resolveRdapDomainUrl(rootDomain, { fallbackBase: RDAP_BASE });
     const res = await fetch(url, {
-      headers: { Accept: 'application/rdap+json, application/json' },
+      headers: {
+        Accept: 'application/rdap+json, application/json',
+        'User-Agent': RDAP_USER_AGENT
+      },
       signal: ctrl.signal,
       redirect: 'follow'
     });
@@ -421,6 +429,7 @@ export function getRdapProviderAdminSummary() {
     auth_required: false,
     status: enabled ? 'healthy' : 'disabled',
     rdap_base_url: RDAP_BASE,
+    iana_bootstrap_url: 'https://data.iana.org/rdap/dns.json',
     cache_ttl_hours: Math.round(CACHE_TTL_MS / (60 * 60 * 1000)),
     timeout_ms: RDAP_TIMEOUT_MS,
     max_concurrency: MAX_CONCURRENCY,
