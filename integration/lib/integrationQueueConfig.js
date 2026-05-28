@@ -5,7 +5,7 @@ function readPositiveInt(name, fallback, min = 1000) {
 }
 
 export const QUEUE_HARDENING = {
-  jobTimeoutMs: readPositiveInt('INTEGRATION_JOB_TIMEOUT_MS', 600_000, 60_000),
+  jobTimeoutMs: readPositiveInt('INTEGRATION_JOB_TIMEOUT_MS', 600_000, 10_000),
   heartbeatIntervalMs: readPositiveInt('INTEGRATION_JOB_HEARTBEAT_INTERVAL_MS', 30_000, 5_000),
   staleAfterMs: readPositiveInt('INTEGRATION_JOB_STALE_AFTER_MS', 900_000, 60_000),
   shutdownGraceMs: readPositiveInt('INTEGRATION_WORKER_SHUTDOWN_GRACE_MS', 30_000, 5_000),
