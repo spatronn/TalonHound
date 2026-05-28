@@ -320,6 +320,7 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
         newStatus: nextStatus,
         oldExpiresAt: ioc.expires_at,
         expiredAt,
+        newExpiresAt: minExpires,
         reason: expirationReason || 'expires_at_reached',
         actor
       })
@@ -333,8 +334,8 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
       entityType: 'ioc',
       entityId: String(iocItemId),
       entityDisplay: auditPayload.entityDisplay,
-      before: { status: ioc.status, expires_at: ioc.expires_at },
-      after: { status: nextStatus, expires_at: minExpires, expired_at: expiredAt },
+      before: auditPayload.before || { status: ioc.status, expires_at: ioc.expires_at },
+      after: auditPayload.after || { status: nextStatus, expires_at: minExpires, expired_at: expiredAt },
       metadata: auditPayload.metadata,
       source: actor.source || 'expiration-worker'
     });
@@ -571,8 +572,8 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
         entityType: 'ioc_feed_membership',
         entityId: String(row.id),
         entityDisplay: auditPayload.entityDisplay,
-        before: { status: 'active', expires_at: row.expires_at },
-        after: { status: 'expired', expired_at: expiredAt },
+        before: auditPayload.before,
+        after: auditPayload.after,
         metadata: auditPayload.metadata,
         source: workerActor.source
       });

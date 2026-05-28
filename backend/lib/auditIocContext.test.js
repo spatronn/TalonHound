@@ -44,6 +44,8 @@ describe('buildIocExpirationAuditPayload', () => {
     assert.equal(payload.metadata.old_status, 'active');
     assert.equal(payload.metadata.new_status, 'expired');
     assert.equal(payload.metadata.source, 'expiration-worker');
+    assert.equal(payload.before.observable, 'example-malicious-domain.com');
+    assert.equal(payload.after.status, 'expired');
   });
 });
 
@@ -65,6 +67,8 @@ describe('buildMembershipExpirationAuditPayload', () => {
     assert.equal(payload.metadata.membership_id, 42);
     assert.equal(payload.metadata.feed_name, 'URLhaus');
     assert.equal(payload.metadata.reason, 'expires_at_reached');
+    assert.equal(payload.before.observable, 'bad.url');
+    assert.equal(payload.after.membership_id, 42);
   });
 });
 

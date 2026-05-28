@@ -562,16 +562,67 @@ function auditMetadataValue(metadata, ...keys) {
   return null;
 }
 
-function formatAuditEntityLabel(row) {
-  if (row?.entity_display) return row.entity_display;
+function auditSnapshotValue(row, ...keys) {
   const metadata = row?.metadata;
-  const value = auditMetadataValue(metadata, 'ioc_value', 'observable');
-  const type = auditMetadataValue(metadata, 'ioc_observable_type', 'observable_type');
-  if (value && type) {
-    const feedName = auditMetadataValue(metadata, 'feed_name');
-    return feedName ? `${type} · ${value} · ${feedName}` : `${type} · ${value}`;
+  const fromMeta = auditMetadataValue(metadata, ...keys);
+  if (fromMeta) return fromMeta;
+  const before = row?.before_data;
+  const after = row?.after_data;
+  if (before && typeof before === 'object') {
+    for (const key of keys) {
+      const value = before[key];
+      if (value != null && value !== '') return value;
+    }
   }
+  if (after && typeof after === 'object') {
+    for (const key of keys) {
+      const value = after[key];
+      if (value != null && value !== '') return value;
+    }
+  }
+  return null;
+}
+
+function truncateAuditText(value, max = 72) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function formatAuditEntityPrimary(row) {
+  if (row?.entity_display) return row.entity_display;
+  const value = auditSnapshotValue(row, 'ioc_value', 'observable');
+  if (value) return value;
+  const type = auditSnapshotValue(row, 'ioc_observable_type', 'observable_type');
+  if (type && row?.entity_id) return `${type} · #${row.entity_id}`;
   return row?.entity_id || '—';
+}
+
+function formatAuditEntitySubtitle(row) {
+  const entityType = String(row?.entity_type || 'ioc').trim();
+  const type = auditSnapshotValue(row, 'ioc_observable_type', 'observable_type');
+  const id = auditSnapshotValue(row, 'ioc_id') || row?.entity_id;
+  const parts = [entityType];
+  if (type) parts.push(type);
+  if (id) parts.push(`#${id}`);
+  return parts.join(' · ');
+}
+
+function formatAuditEntityLabel(row) {
+  return formatAuditEntityPrimary(row);
+}
+
+function AuditEntityCell({ row }) {
+  const primaryFull = formatAuditEntityPrimary(row);
+  const primary = truncateAuditText(primaryFull, 72);
+  const subtitle = formatAuditEntitySubtitle(row);
+  return (
+    <div>
+      <div title={primaryFull !== primary ? primaryFull : undefined} style={{ overflowWrap: 'anywhere' }}>{primary}</div>
+      {subtitle ? <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{subtitle}</div> : null}
+    </div>
+  );
 }
 
 function formatExpirationAuditReasonLabel(reason) {
@@ -594,16 +645,17 @@ function formatAuditStatusTransition(metadata) {
 function AuditExpirationSummary({ item }) {
   if (!item || !IOC_EXPIRATION_AUDIT_ACTIONS.has(String(item.action || ''))) return null;
   const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  const iocValue = auditSnapshotValue(item, 'ioc_value', 'observable');
   const rows = [
-    ['IOC value', auditMetadataValue(metadata, 'ioc_value')],
-    ['Type', auditMetadataValue(metadata, 'ioc_observable_type', 'observable_type')],
-    ['Status', formatAuditStatusTransition(metadata)],
-    ['Reason', formatExpirationAuditReasonLabel(auditMetadataValue(metadata, 'reason'))],
-    ['Old expires at', formatAuditDate(auditMetadataValue(metadata, 'old_expires_at'))],
-    ['Expired at', formatAuditDate(auditMetadataValue(metadata, 'expired_at') || item?.after_data?.expired_at)],
-    ['Feed', auditMetadataValue(metadata, 'feed_name')],
-    ['Membership ID', auditMetadataValue(metadata, 'membership_id')],
-    ['Source', auditMetadataValue(metadata, 'source') || item?.source]
+    ['IOC', iocValue],
+    ['Type', auditSnapshotValue(item, 'ioc_observable_type', 'observable_type')],
+    ['Status', formatAuditStatusTransition(metadata) || formatAuditStatusTransition(item?.before_data && item?.after_data ? { old_status: item.before_data?.status, new_status: item.after_data?.status } : null)],
+    ['Reason', formatExpirationAuditReasonLabel(auditSnapshotValue(item, 'reason'))],
+    ['Old expires at', formatAuditDate(auditSnapshotValue(item, 'old_expires_at') || item?.before_data?.expires_at)],
+    ['Expired at', formatAuditDate(auditSnapshotValue(item, 'expired_at') || item?.after_data?.expired_at)],
+    ['Feed', auditSnapshotValue(item, 'feed_name')],
+    ['Membership ID', auditSnapshotValue(item, 'membership_id')],
+    ['Source', auditSnapshotValue(item, 'source') || item?.source]
   ].filter(([, value]) => value && value !== '—');
 
   if (!rows.length) return null;
@@ -5783,8 +5835,7 @@ function AuditLogsPage() {
                     <div style={{ fontSize: 11, color: '#64748b' }}>{row.action}</div>
                   </td>
                   <td style={ui.td}>
-                    <div>{formatAuditEntityLabel(row)}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>{row.entity_type}{row.entity_id ? ` · ${row.entity_id}` : ''}</div>
+                    <AuditEntityCell row={row} />
                   </td>
                   <td style={ui.td}><span style={auditSeverityBadgeStyle(row.severity)}>{row.severity}</span></td>
                   <td style={ui.td}><span style={auditStatusBadgeStyle(row.status)}>{row.status}</span></td>
@@ -5813,7 +5864,8 @@ function AuditLogsPage() {
             <div><strong>Date:</strong> {formatAuditDate(detailItem.created_at)}</div>
             <div><strong>Actor:</strong> {detailItem.actor_username || detailItem.actor_email || '—'} ({detailItem.actor_role || '—'})</div>
             <div><strong>Action:</strong> {detailItem.action_label || detailItem.action} <span style={{ color: '#64748b' }}>({detailItem.action})</span></div>
-            <div><strong>Entity:</strong> {detailItem.entity_type} · {formatAuditEntityLabel(detailItem)}</div>
+            <div><strong>Entity:</strong> {detailItem.entity_type} · <span title={formatAuditEntityPrimary(detailItem)}>{truncateAuditText(formatAuditEntityPrimary(detailItem), 120)}</span></div>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>{formatAuditEntitySubtitle(detailItem)}</div>
             <AuditExpirationSummary item={detailItem} />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <span style={auditSeverityBadgeStyle(detailItem.severity)}>{detailItem.severity}</span>

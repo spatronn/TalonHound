@@ -314,6 +314,7 @@ export function registerIocExpirationRoutes(app, pool, audit) {
           newStatus: iocOut?.status || 'expired',
           oldExpiresAt: prev?.expires_at,
           expiredAt: iocOut?.expired_at,
+          newExpiresAt: iocOut?.expires_at,
           reason: reason || 'manual_override',
           actor: { actor_type: 'user', source: 'web' }
         })
@@ -325,8 +326,8 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(iocId),
         entityDisplay: expirationAudit?.entityDisplay || formatIocEntityDisplay(observableType, prev?.observable),
-        before: pickSafeFields(prev, IOC_STATUS_AUDIT_FIELDS),
-        after: pickSafeFields(iocOut, IOC_STATUS_AUDIT_FIELDS),
+        before: expirationAudit?.before || pickSafeFields(prev, IOC_STATUS_AUDIT_FIELDS),
+        after: expirationAudit?.after || pickSafeFields(iocOut, IOC_STATUS_AUDIT_FIELDS),
         metadata: expirationAudit?.metadata || { reason, observable_type: observableType, ioc_value: prev?.observable }
       });
 
@@ -470,8 +471,8 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         entityType: 'ioc_feed_membership',
         entityId: String(membershipId),
         entityDisplay: expirationAudit?.entityDisplay,
-        before: pickSafeFields(prev, MEMBERSHIP_AUDIT_FIELDS),
-        after: pickSafeFields(membershipOut, MEMBERSHIP_AUDIT_FIELDS),
+        before: expirationAudit?.before || pickSafeFields(prev, MEMBERSHIP_AUDIT_FIELDS),
+        after: expirationAudit?.after || pickSafeFields(membershipOut, MEMBERSHIP_AUDIT_FIELDS),
         metadata: expirationAudit?.metadata || {
           ioc_item_id: iocId,
           ioc_id: iocId,
