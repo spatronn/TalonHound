@@ -1,9 +1,8 @@
-import pg from 'pg';
 import { config } from './config.js';
+import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
 
-const { Pool } = pg;
-const pool = new Pool(config.db);
+const pool = createIntegrationPool();
 
 const INTEGRATION_JOBS = {
   'et-blockrules': 'hourly-import',

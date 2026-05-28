@@ -1,6 +1,6 @@
 import { Worker, DelayedError } from 'bullmq';
-import pg from 'pg';
 import { config } from './config.js';
+import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
 import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
 import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
@@ -17,8 +17,7 @@ import {
   inferFailureTypeFromError
 } from './lib/integrationQueueJobState.js';
 
-const { Pool } = pg;
-const pool = new Pool(config.db);
+const pool = createIntegrationPool();
 
 const LOG_PREFIX = '[integration-worker]';
 const WORKER_CONCURRENCY = Math.max(Number(process.env.WORKER_CONCURRENCY || 1), 1);
