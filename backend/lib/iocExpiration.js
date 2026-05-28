@@ -545,12 +545,24 @@ export function activeIocSql(alias = 'i') {
 }
 
 /** Called after import insert/duplicate to refresh feed membership. */
-export async function syncSnapshotFeedFromEntries(client, feedKey, entries, mapEntry) {
+export async function syncSnapshotFeedFromEntries(client, feedKey, entries, mapEntry, options = {}) {
+  const { signal } = options;
+  if (signal?.aborted) {
+    const err = new Error('Integration job aborted');
+    err.name = 'IntegrationJobAbortedError';
+    throw err;
+  }
+
   const feedId = await resolveFeedIdByKey(client, feedKey);
   if (!feedId || !entries?.length) return { synced: 0, markedMissing: 0 };
 
   const seenKeys = new Set();
   for (const raw of entries) {
+    if (signal?.aborted) {
+      const err = new Error('Integration job aborted');
+      err.name = 'IntegrationJobAbortedError';
+      throw err;
+    }
     const e = mapEntry(raw);
     if (!e?.observable || !e?.observableType) continue;
     const membershipId = await syncMembershipAfterIocImport(client, {

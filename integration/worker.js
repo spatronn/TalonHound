@@ -16,6 +16,7 @@ import {
   markJobDeferredSourceBusy,
   inferFailureTypeFromError
 } from './lib/integrationQueueJobState.js';
+import { resolveJobFailureType } from './lib/job-cancellation.js';
 
 const pool = createIntegrationPool();
 
@@ -29,6 +30,7 @@ const { workerId, hostname: workerHostname } = createWorkerIdentity();
 
 let shuttingDown = false;
 let activeJobId = null;
+let activeJobAbortController = null;
 let cleanupTimer = null;
 
 function resolveIntegrationKey(job) {
@@ -54,30 +56,40 @@ function safeJobErrorMessage(job, err) {
   return raw.slice(0, 4000);
 }
 
-async function runImportForJob(job) {
-  if (job.name === 'hourly-import') return runHourlyImport();
-  if (job.name === 'usom-import') return runUsomImport();
-  if (job.name === 'urlhaus-import') return runUrlhausImport();
-  if (job.name === 'threatfox-import') return runThreatfoxImport();
-  if (job.name === 'malwarebazaar-import') return runMalwareBazaarImport();
-  if (job.name === 'phishtank-import') return runPhishtankImport();
+async function runImportForJob(job, { signal } = {}) {
+  if (job.name === 'hourly-import') return runHourlyImport({ signal });
+  if (job.name === 'usom-import') return runUsomImport({ signal });
+  if (job.name === 'urlhaus-import') return runUrlhausImport({ signal });
+  if (job.name === 'threatfox-import') return runThreatfoxImport({ signal });
+  if (job.name === 'malwarebazaar-import') return runMalwareBazaarImport({ signal });
+  if (job.name === 'phishtank-import') return runPhishtankImport({ signal });
   return { skipped: true, reason: 'unknown_job' };
 }
 
-async function executeJobWithTimeout(job, integrationKey) {
+async function executeJobWithTimeout(job) {
   const timeoutMs = QUEUE_HARDENING.jobTimeoutMs;
+  const controller = new AbortController();
+  activeJobAbortController = controller;
+  const { signal } = controller;
   let timer;
+
+  const importPromise = runImportForJob(job, { signal });
+
   try {
     return await Promise.race([
-      runImportForJob(job),
+      importPromise,
       new Promise((_, reject) => {
         timer = setTimeout(() => {
+          console.log(`${LOG_PREFIX} Job cooperative cancel reason=timeout job_id=${job.id}`);
+          controller.abort(FAILURE_TYPES.TIMEOUT);
           reject(Object.assign(new Error(FAILURE_MESSAGES.timeout), { failureType: FAILURE_TYPES.TIMEOUT }));
         }, timeoutMs);
       })
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    activeJobAbortController = null;
+    await importPromise.catch(() => {});
   }
 }
 
@@ -118,7 +130,7 @@ const worker = new Worker(
     const stopHeartbeat = startJobHeartbeat(pool, String(job.id), QUEUE_HARDENING.heartbeatIntervalMs);
 
     try {
-      const result = await executeJobWithTimeout(job, integrationKey);
+      const result = await executeJobWithTimeout(job);
 
       const metrics = result?.metrics || {
         records_processed: Number(result?.records_processed || result?.recordsProcessed || 0),
@@ -154,7 +166,7 @@ const worker = new Worker(
 worker.on('failed', async (job, err) => {
   if (err?.name === 'DelayedError') return;
   const safeMsg = safeJobErrorMessage(job, err);
-  const failureType = err?.failureType || inferFailureTypeFromError(err);
+  const failureType = resolveJobFailureType(err) || err?.failureType || inferFailureTypeFromError(err);
   console.error(
     `${LOG_PREFIX} Job failed job_id=${job?.id} source=${job ? resolveIntegrationKey(job) : 'unknown'} attemptsMade=${job?.attemptsMade} failure_type=${failureType || '-'} message=${safeMsg}`
   );
@@ -188,6 +200,10 @@ function startPeriodicCleanup() {
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (activeJobAbortController) {
+    console.log(`${LOG_PREFIX} Job cooperative cancel reason=worker_shutdown job_id=${activeJobId || '-'}`);
+    activeJobAbortController.abort(FAILURE_TYPES.WORKER_SHUTDOWN);
+  }
   console.log(`${LOG_PREFIX} Graceful shutdown started signal=${signal} grace_ms=${QUEUE_HARDENING.shutdownGraceMs}`);
 
   if (cleanupTimer) clearInterval(cleanupTimer);

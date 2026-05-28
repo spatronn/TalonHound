@@ -123,6 +123,8 @@ export async function markJobDeferredSourceBusy(pool, jobId) {
 }
 
 export function inferFailureTypeFromError(err) {
+  if (err?.failureType) return err.failureType;
+  if (err?.name === 'IntegrationJobAbortedError') return err.failureType || FAILURE_TYPES.ABORTED;
   const msg = String(err?.message || '').toLowerCase();
   if (msg.includes('parse') || msg.includes('csv') || msg.includes('json')) {
     return FAILURE_TYPES.PARSE_ERROR;

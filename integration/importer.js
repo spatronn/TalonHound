@@ -43,6 +43,7 @@ import {
 } from './lib/malwarebazaar.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { withPgTransaction } from './lib/pg-transaction.js';
+import { throwIfAborted, fetchWithSignal, isJobAbortedError } from './lib/job-cancellation.js';
 
 const pool = createIntegrationPool();
 
@@ -495,12 +496,13 @@ function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {
  * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
  * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
  */
-async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null) {
+async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null) {
   const out = { inserted: 0, duplicate: 0, suppressed: 0 };
   if (!entries.length) return out;
   const now = new Date();
   const feedDefaultCache = new Map();
   const getFeedDefault = async (sourceName) => {
+    throwIfAborted(signal);
     const key = String(sourceName || '');
     if (!feedDefaultCache.has(key)) {
       feedDefaultCache.set(key, await fetchFeedDefaultConfidence(client, key));
@@ -509,6 +511,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
   };
 
   for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
+    throwIfAborted(signal);
     const chunk = entries.slice(i, i + BATCH_INSERT_CHUNK);
     const pairs = chunk.map((e) => ({
       iocValue: e.observable ?? e.ip,
@@ -585,6 +588,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     out.duplicate += resolvedKept.length - rows.length;
     const insertedObs = new Set(rows.map((r) => r.observable));
     for (const e of resolvedKept) {
+      throwIfAborted(signal);
       const obs = e.observable ?? e.ip;
       if (!insertedObs.has(obs)) {
         await applyIocImportConfidence(client, {
@@ -596,6 +600,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
       }
     }
     for (const row of rows) {
+      throwIfAborted(signal);
       const observables = extractObservablesFromNote(observableType, row.observable, row.note);
       await insertObservablesIndex(client, row.public_id, observables);
       const src = resolvedKept.find((e) => (e.observable ?? e.ip) === row.observable);
@@ -614,7 +619,8 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
   return out;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null }, suppressionStats = null) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null }, suppressionStats = null, signal = null) {
+  throwIfAborted(signal);
   const index = await fetchActiveSuppressionIndex(
     client,
     [{ iocValue: observable, iocType: observableType, sourceName }],
@@ -695,15 +701,17 @@ async function insertObservable(client, { observable, observableType, sourceName
   return true;
 }
 
-export async function runHourlyImport() {
+export async function runHourlyImport(options = {}) {
+  const { signal } = options;
   const client = await pool.connect();
   const startedAt = new Date();
   let runId = null;
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
-  const txMeta = { source_key: 'et-blockrules' };
+  const txMeta = { source_key: 'et-blockrules', signal };
 
   try {
+    throwIfAborted(signal);
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942001) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
@@ -717,15 +725,16 @@ export async function runHourlyImport() {
     runId = runInsert.rows[0].id;
     txMeta.job_id = runId;
 
-    const indexRes = await fetch(config.sourceIndexUrl);
+    const indexRes = await fetchWithSignal(config.sourceIndexUrl, {}, signal);
     if (!indexRes.ok) throw new Error(`Failed to fetch source index: ${indexRes.status}`);
     const indexHtml = await indexRes.text();
 
     const files = parseLinks(indexHtml);
 
     for (const file of files) {
+      throwIfAborted(signal);
       const sourceUrl = new URL(file, config.sourceIndexUrl).toString();
-      const response = await fetch(sourceUrl);
+      const response = await fetchWithSignal(sourceUrl, {}, signal);
       if (!response.ok) {
         metrics.noteSkipped(1);
         continue;
@@ -748,7 +757,7 @@ export async function runHourlyImport() {
       }));
 
       await withPgTransaction(client, 'hourly_import_batch', async (tx) => {
-        mergeBatchInsertMetrics(metrics, await batchInsertIocs(tx, entries, 'ip', suppressionStats));
+        mergeBatchInsertMetrics(metrics, await batchInsertIocs(tx, entries, 'ip', suppressionStats, signal));
       }, { ...txMeta, file });
     }
 
@@ -781,13 +790,16 @@ export async function runHourlyImport() {
   }
 }
 
-export async function runUsomImport() {
+export async function runUsomImport(options = {}) {
+  const { signal } = options;
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
+  const txMeta = { source_key: 'usom-trcert', signal };
 
   try {
+    throwIfAborted(signal);
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942002) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
@@ -800,7 +812,7 @@ export async function runUsomImport() {
     );
     runId = runInsert.rows[0].id;
 
-    const res = await fetch(config.usomApiUrl);
+    const res = await fetchWithSignal(config.usomApiUrl, {}, signal);
     if (!res.ok) throw new Error(`USOM URL list request failed: ${res.status}`);
     const txt = await res.text();
 
@@ -850,9 +862,11 @@ export async function runUsomImport() {
     const batchSize = Number(process.env.USOM_BATCH_SIZE || 1000);
 
     for (let i = 0; i < addedEntries.length; i += batchSize) {
+      throwIfAborted(signal);
       const batch = addedEntries.slice(i, i + batchSize);
       await withPgTransaction(client, 'usom_import_batch', async (tx) => {
         for (const entry of batch) {
+          throwIfAborted(signal);
           const { observable, observableType } = entry;
           const okObs = await insertObservable(tx, {
             observable,
@@ -863,12 +877,13 @@ export async function runUsomImport() {
             sourceConfidence: null,
             category: 'threat-intel',
             note: 'Auto-imported from USOM URL list'
-          }, suppressionStats);
+          }, suppressionStats, signal);
           trackInsertResult(metrics, okObs);
         }
-      }, { source_key: 'usom-trcert', job_id: runId, batch: Math.floor(i / batchSize) + 1 });
+      }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
     }
 
+    throwIfAborted(signal);
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
@@ -893,7 +908,9 @@ export async function runUsomImport() {
       confidence: 'high',
       sourceConfidence: null,
       category: 'threat-intel'
-    })).catch(() => {});
+    }), { signal }).catch((err) => {
+      if (isJobAbortedError(err)) throw err;
+    });
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('usom_import', runId, suppressionStats, metrics.toJSON());
@@ -915,13 +932,16 @@ export async function runUsomImport() {
 }
 
 
-export async function runUrlhausImport() {
+export async function runUrlhausImport(options = {}) {
+  const { signal } = options;
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
+  const txMeta = { source_key: 'urlhaus-abusech', signal };
 
   try {
+    throwIfAborted(signal);
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942003) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
@@ -951,7 +971,7 @@ export async function runUrlhausImport() {
     }
 
     const exportUrl = buildUrlhausRecentCsvUrl(authKey);
-    const res = await fetch(exportUrl);
+    const res = await fetchWithSignal(exportUrl, {}, signal);
     if (!res.ok) {
       throw new Error(`URLhaus CSV export request failed: ${res.status}`);
     }
@@ -970,14 +990,17 @@ export async function runUrlhausImport() {
     const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
 
     for (let i = 0; i < entries.length; i += batchSize) {
+      throwIfAborted(signal);
       const batch = entries.slice(i, i + batchSize);
       await withPgTransaction(client, 'urlhaus_import_batch', async (tx) => {
         for (const entry of batch) {
+          throwIfAborted(signal);
           await upsertUrlhausObservable(tx, entry, config.urlhausSourceName, suppressionStats, metrics);
         }
-      }, { source_key: 'urlhaus-abusech', job_id: runId, batch: Math.floor(i / batchSize) + 1 });
+      }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
     }
 
+    throwIfAborted(signal);
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
@@ -1005,7 +1028,9 @@ export async function runUrlhausImport() {
       sourceUrl: URLHAUS_EXPORT_URL_MASKED,
       confidence: 'high',
       category: entry.threat || 'malware-url'
-    })).catch(() => {});
+    }), { signal }).catch((err) => {
+      if (isJobAbortedError(err)) throw err;
+    });
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, metrics.toJSON());
@@ -1031,13 +1056,16 @@ export async function runUrlhausImport() {
   }
 }
 
-export async function runThreatfoxImport() {
+export async function runThreatfoxImport(options = {}) {
+  const { signal } = options;
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
+  const txMeta = { source_key: 'threatfox-abusech', signal };
 
   try {
+    throwIfAborted(signal);
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942004) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
@@ -1050,7 +1078,7 @@ export async function runThreatfoxImport() {
     );
     runId = runInsert.rows[0].id;
 
-    const res = await fetch(config.threatfoxCsvUrl);
+    const res = await fetchWithSignal(config.threatfoxCsvUrl, {}, signal);
     if (!res.ok) throw new Error(`ThreatFox CSV request failed: ${res.status}`);
     const txt = await readThreatFoxCsvText(res);
 
@@ -1116,9 +1144,11 @@ export async function runThreatfoxImport() {
     const batchSize = Number(process.env.THREATFOX_BATCH_SIZE || 1000);
 
     for (let i = 0; i < addedEntries.length; i += batchSize) {
+      throwIfAborted(signal);
       const batch = addedEntries.slice(i, i + batchSize);
       await withPgTransaction(client, 'threatfox_import_batch', async (tx) => {
         for (const entry of batch) {
+          throwIfAborted(signal);
           const noteParts = [
             'Auto-imported from ThreatFox CSV',
             entry.iocId ? `ioc_id=${entry.iocId}` : null,
@@ -1136,12 +1166,13 @@ export async function runThreatfoxImport() {
             sourceConfidence: entry.confidence,
             category: entry.threatType || 'threat-intel',
             note: noteParts.join(' | ')
-          }, suppressionStats);
+          }, suppressionStats, signal);
           trackInsertResult(metrics, okObs);
         }
-      }, { source_key: 'threatfox-abusech', job_id: runId, batch: Math.floor(i / batchSize) + 1 });
+      }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
     }
 
+    throwIfAborted(signal);
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
@@ -1165,7 +1196,9 @@ export async function runThreatfoxImport() {
       sourceUrl: config.threatfoxCsvUrl,
       confidence: entry.confidence,
       category: entry.threatType || 'threat-intel'
-    })).catch(() => {});
+    }), { signal }).catch((err) => {
+      if (isJobAbortedError(err)) throw err;
+    });
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('threatfox_import', runId, suppressionStats, metrics.toJSON());
@@ -1186,13 +1219,16 @@ export async function runThreatfoxImport() {
   }
 }
 
-export async function runMalwareBazaarImport() {
+export async function runMalwareBazaarImport(options = {}) {
+  const { signal } = options;
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
+  const txMeta = { source_key: 'malwarebazaar-abusech', signal };
 
   try {
+    throwIfAborted(signal);
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942005) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
@@ -1222,7 +1258,7 @@ export async function runMalwareBazaarImport() {
     }
 
     const exportUrl = buildMalwareBazaarRecentCsvUrl(authKey);
-    const res = await fetch(exportUrl);
+    const res = await fetchWithSignal(exportUrl, {}, signal);
     if (!res.ok) {
       throw new Error(`MalwareBazaar export fetch failed: HTTP ${res.status}`);
     }
@@ -1241,14 +1277,17 @@ export async function runMalwareBazaarImport() {
     const batchSize = Number(process.env.MALWARE_BAZAAR_BATCH_SIZE || 1000);
 
     for (let i = 0; i < entries.length; i += batchSize) {
+      throwIfAborted(signal);
       const batch = entries.slice(i, i + batchSize);
       await withPgTransaction(client, 'malwarebazaar_import_batch', async (tx) => {
         for (const entry of batch) {
+          throwIfAborted(signal);
           await upsertMalwareBazaarObservable(tx, entry, config.malwareBazaarSourceName, suppressionStats, metrics);
         }
-      }, { source_key: 'malwarebazaar-abusech', job_id: runId, batch: Math.floor(i / batchSize) + 1 });
+      }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
     }
 
+    throwIfAborted(signal);
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
@@ -1276,7 +1315,9 @@ export async function runMalwareBazaarImport() {
       sourceUrl: MALWAREBAZAAR_EXPORT_URL_MASKED,
       confidence: entry.confidence,
       category: entry.category || 'malware'
-    })).catch(() => {});
+    }), { signal }).catch((err) => {
+      if (isJobAbortedError(err)) throw err;
+    });
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, metrics.toJSON());
@@ -1301,14 +1342,16 @@ export async function runMalwareBazaarImport() {
   }
 }
 
-export async function runPhishtankImport() {
+export async function runPhishtankImport(options = {}) {
+  const { signal } = options;
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
-  const txMeta = { source_key: 'phishtank-opendnsrr' };
+  const txMeta = { source_key: 'phishtank-opendnsrr', signal };
 
   try {
+    throwIfAborted(signal);
     const lockResult = await client.query('SELECT pg_try_advisory_lock(942006) AS acquired');
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
@@ -1322,9 +1365,9 @@ export async function runPhishtankImport() {
     runId = runInsert.rows[0].id;
     txMeta.job_id = runId;
 
-    const response = await fetch(config.phishTankCsvUrl, {
+    const response = await fetchWithSignal(config.phishTankCsvUrl, {
       headers: { 'User-Agent': 'demo-runbook-integration/1.0' }
-    });
+    }, signal);
     if (!response.ok) throw new Error(`Failed to fetch PhishTank CSV: ${response.status}`);
 
     const text = await response.text();
@@ -1342,6 +1385,7 @@ export async function runPhishtankImport() {
 
     // online-valid.csv header: phish_id,url,phish_detail_url,submission_time,verified,verification_time,online,target
     for (let i = 1; i < lines.length; i += 1) {
+      if (i % 500 === 1) throwIfAborted(signal);
       const cols = splitCsvLine(lines[i]);
       if (!cols.length) {
         metrics.noteSkipped(1);
@@ -1370,10 +1414,12 @@ export async function runPhishtankImport() {
 
     const batchSize = Number(process.env.PHISHTANK_BATCH_SIZE || 1000);
     for (let i = 0; i < parsedEntries.length; i += batchSize) {
+      throwIfAborted(signal);
       const batch = parsedEntries.slice(i, i + batchSize);
       await withPgTransaction(client, 'phishtank_import_batch', async (tx) => {
         for (const entry of batch) {
-          const ok = await insertObservable(tx, entry, suppressionStats);
+          throwIfAborted(signal);
+          const ok = await insertObservable(tx, entry, suppressionStats, signal);
           trackInsertResult(metrics, ok);
         }
       }, { ...txMeta, batch: Math.floor(i / batchSize) + 1 });

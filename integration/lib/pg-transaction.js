@@ -1,6 +1,7 @@
+import { throwIfAborted } from './job-cancellation.js';
+
 const LOG_PREFIX = '[integration-worker]';
 const SLOW_TX_WARN_MS = 30000;
-
 function formatMeta(meta = {}) {
   const parts = [];
   if (meta.label) parts.push(`label=${meta.label}`);
@@ -53,11 +54,15 @@ export async function withPgTransaction(poolOrClient, labelOrFn, maybeFn, meta =
   const txMeta = { label, ...clientMeta };
   const startedAt = Date.now();
 
+  throwIfAborted(txMeta.signal);
+
   console.log(`${LOG_PREFIX} transaction start${formatMeta(txMeta)}`);
 
   try {
     await client.query('BEGIN');
+    throwIfAborted(txMeta.signal);
     const result = await fn(client);
+    throwIfAborted(txMeta.signal);
     await client.query('COMMIT');
     const durationMs = Date.now() - startedAt;
     const level = durationMs > SLOW_TX_WARN_MS ? 'warn' : 'log';
@@ -67,9 +72,13 @@ export async function withPgTransaction(poolOrClient, labelOrFn, maybeFn, meta =
     return result;
   } catch (err) {
     await rollbackQuietly(client, txMeta, startedAt);
-    console.error(
-      `${LOG_PREFIX} transaction error type=${err?.name || 'Error'} message=${err?.message || err}${formatMeta(txMeta)}`
-    );
+    if (err?.name === 'IntegrationJobAbortedError') {
+      console.log(`${LOG_PREFIX} transaction aborted label=${txMeta.label}${formatMeta(txMeta)}`);
+    } else {
+      console.error(
+        `${LOG_PREFIX} transaction error type=${err?.name || 'Error'} message=${err?.message || err}${formatMeta(txMeta)}`
+      );
+    }
     throw err;
   } finally {
     if (ownsClient) client.release();

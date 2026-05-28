@@ -17,6 +17,7 @@ export const QUEUE_HARDENING = {
 export const FAILURE_MESSAGES = {
   stale: 'Job was running but heartbeat became stale. Marked as failed during queue recovery.',
   timeout: 'Job exceeded timeout and was marked as failed.',
+  aborted: 'Integration job was aborted before completion.',
   worker_shutdown: 'Worker shut down before job completed; marked for recovery.',
   source_busy: 'Deferred because another job for this integration is already running.',
   reconciled: 'Reconciled stale BullMQ state with DB terminal state.',
@@ -26,6 +27,7 @@ export const FAILURE_MESSAGES = {
 export const FAILURE_TYPES = {
   STALE: 'stale',
   TIMEOUT: 'timeout',
+  ABORTED: 'aborted',
   WORKER_SHUTDOWN: 'worker_shutdown',
   SOURCE_BUSY: 'source_busy',
   FETCH_ERROR: 'fetch_error',
