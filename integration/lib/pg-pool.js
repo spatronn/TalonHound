@@ -1,8 +1,6 @@
 import pg from 'pg';
 import { config } from '../config.js';
 
-const LOG_PREFIX = '[integration-worker]';
-
 function formatPgTimeoutMs(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n) || n <= 0) return '0';
@@ -20,32 +18,29 @@ export function buildPgSessionSettings(dbConfig = config.db) {
   };
 }
 
-export async function applyPgSessionSettings(client, dbConfig = config.db) {
-  const settings = buildPgSessionSettings(dbConfig);
-  await client.query(
-    `SELECT
-       set_config('application_name', $1, false),
-       set_config('statement_timeout', $2, false),
-       set_config('lock_timeout', $3, false),
-       set_config('idle_in_transaction_session_timeout', $4, false)`,
-    [
-      settings.application_name,
-      settings.statement_timeout,
-      settings.lock_timeout,
-      settings.idle_in_transaction_session_timeout
-    ]
-  );
-  return settings;
-}
-
+/**
+ * Create a PG pool with session guard rails applied at connection startup.
+ * Avoids pool.on('connect') async SET — that races with pg checkout and breaks clients.
+ */
 export function createIntegrationPool(dbConfig = config.db) {
-  const pool = new pg.Pool(dbConfig);
-  pool.on('connect', (client) => {
-    applyPgSessionSettings(client, dbConfig).catch((err) => {
-      console.error(
-        `${LOG_PREFIX} Failed to apply PG session settings message=${err?.message || err}`
-      );
-    });
+  const settings = buildPgSessionSettings(dbConfig);
+  const {
+    idle_in_transaction_session_timeout: _idle,
+    application_name: _app,
+    statement_timeout: stmtMs,
+    lock_timeout: lockMs,
+    ...rest
+  } = dbConfig;
+
+  return new pg.Pool({
+    ...rest,
+    application_name: settings.application_name,
+    statement_timeout: Number(stmtMs ?? 120000),
+    lock_timeout: Number(lockMs ?? 5000),
+    options: [
+      `-c idle_in_transaction_session_timeout=${settings.idle_in_transaction_session_timeout}`,
+      `-c statement_timeout=${settings.statement_timeout}`,
+      `-c lock_timeout=${settings.lock_timeout}`
+    ].join(' ')
   });
-  return pool;
 }
