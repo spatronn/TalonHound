@@ -7,7 +7,9 @@ import { getIocStatusCardPresentation, IOC_STATUS_ACTION_BUTTONS } from './lib/i
 import {
   CONFIDENCE_OPTIONS,
   getIocConfidencePresentation,
-  formatConfidenceAuditMetadata
+  formatConfidenceAuditMetadata,
+  confidenceBadgeStyle,
+  confidenceLabel
 } from './lib/iocConfidenceCard.js';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -3621,12 +3623,19 @@ function FeedSettingsModal({
   onDraftChange,
   draftExpiration,
   onExpirationChange,
+  draftConfidence,
+  onConfidenceChange,
+  savingConfidence,
+  confidenceError,
+  confidenceSuccess,
+  onSaveConfidence,
   draftAuthKey,
   onAuthKeyChange,
   maskedAuthKey,
   authKeyConfigured,
   savingSchedule,
   savingExpiration,
+  savingConfidence,
   savingCredentials,
   credentialsError,
   credentialsSuccess,
@@ -3652,8 +3661,8 @@ function FeedSettingsModal({
   return (
     <FeedHealthModal
       title="Feed settings"
-      onClose={(savingSchedule || savingExpiration || savingCredentials) ? undefined : onClose}
-      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration || savingCredentials}>Close</button>}
+      onClose={(savingSchedule || savingExpiration || savingConfidence || savingCredentials) ? undefined : onClose}
+      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration || savingConfidence || savingCredentials}>Close</button>}
     >
       <div style={{ display: 'grid', gap: 16, fontSize: 13 }}>
         <div>
@@ -3674,6 +3683,36 @@ function FeedSettingsModal({
                 style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: isActive ? '#fca5a5' : '#86efac', cursor: 'pointer' }}
               >
                 {isActive ? 'Disable feed' : 'Enable feed'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+          <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Default confidence</div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.55 }}>
+              Changing feed confidence updates the default confidence for this feed. IOC records that inherit confidence from this feed will use the new value automatically. Explicit feed-entry confidence and manual analyst overrides are not changed. No bulk rewrite will be performed.
+            </div>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={{ color: '#94a3b8' }}>Default confidence</span>
+              <select
+                value={draftConfidence || ''}
+                onChange={(e) => onConfidenceChange(e.target.value)}
+                disabled={!canWrite || savingConfidence}
+                style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+              >
+                <option value="">Unknown / —</option>
+                {CONFIDENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            {confidenceError ? <div style={{ color: '#fca5a5', fontSize: 12 }}>{confidenceError}</div> : null}
+            {confidenceSuccess ? <div style={{ color: '#86efac', fontSize: 12 }}>{confidenceSuccess}</div> : null}
+            {canWrite ? (
+              <button type="button" onClick={onSaveConfidence} disabled={savingConfidence || !draftConfidence}>
+                {savingConfidence ? 'Saving...' : 'Save Default Confidence'}
               </button>
             ) : null}
           </div>
@@ -3853,6 +3892,20 @@ function feedHealthPresentation(feed) {
   if (state === 'warning') return { label: 'Warning', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' };
   if (state === 'success') return { label: 'Success', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' };
   return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
+}
+
+function feedConfidencePresentation(defaultConfidence) {
+  const value = String(defaultConfidence || '').trim().toLowerCase();
+  if (!value || !['low', 'medium', 'high'].includes(value)) {
+    return { label: '—', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
+  }
+  const badge = confidenceBadgeStyle(value);
+  return {
+    label: confidenceLabel(value),
+    color: badge.color,
+    bg: badge.bg,
+    border: badge.border
+  };
 }
 
 function formatFeedScheduleLabel(cron) {
@@ -4126,6 +4179,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [savingCredentialsKey, setSavingCredentialsKey] = useState('');
   const [settingsCredentialsError, setSettingsCredentialsError] = useState('');
   const [settingsCredentialsSuccess, setSettingsCredentialsSuccess] = useState('');
+  const [settingsDraftConfidence, setSettingsDraftConfidence] = useState('');
+  const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
+  const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
+  const [savingConfidenceKey, setSavingConfidenceKey] = useState('');
 
   async function load() {
     setLoading(true);
@@ -4159,7 +4216,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         schedule: f.schedule || '0 * * * *',
         active: f.active !== false,
         expiration_policy: f.expiration_policy,
-        expiration_summary: f.expiration_summary
+        expiration_summary: f.expiration_summary,
+        default_confidence: f.default_confidence
       };
     });
     if (feed?.expiration_policy) {
@@ -4212,8 +4270,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsExpirationRefreshWarn('');
     setSettingsCredentialsError('');
     setSettingsCredentialsSuccess('');
+    setSettingsConfidenceError('');
+    setSettingsConfidenceSuccess('');
     setSettingsDraftAuthKey('');
     setSettingsDraftCron(feed.schedule || '0 * * * *');
+    setSettingsDraftConfidence(String(feed.default_confidence || '').trim().toLowerCase());
     setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     const credSummary = feed.credentials_summary || null;
     setSettingsMaskedAuthKey(credSummary?.masked_auth_key || null);
@@ -4242,9 +4303,31 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function closeSettingsModal() {
-    if (savingScheduleKey || savingCredentialsKey) return;
+    if (savingScheduleKey || savingCredentialsKey || savingConfidenceKey) return;
     setSettingsModal(null);
     setSettingsError('');
+  }
+
+  async function saveSettingsConfidence() {
+    if (!canWrite || !settingsModal || !settingsDraftConfidence) return;
+    const { key } = settingsModal;
+    if (savingConfidenceKey) return;
+
+    setSettingsConfidenceError('');
+    setSettingsConfidenceSuccess('');
+    setSavingConfidenceKey(key);
+    try {
+      await api.patch(`/integrations/${encodeURIComponent(key)}/default-confidence`, {
+        default_confidence: settingsDraftConfidence
+      });
+      setSettingsConfidenceSuccess('Default confidence updated. Inherited IOC confidence will reflect this at read time.');
+      const list = await load();
+      syncSettingsModal(list);
+    } catch (err) {
+      setSettingsConfidenceError(apiErrorMessage(err, 'Failed to update default confidence'));
+    } finally {
+      setSavingConfidenceKey('');
+    }
   }
 
   function requestActiveChange() {
@@ -4465,6 +4548,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                   <th style={{ width: '16%' }}>Feed</th>
                   <th style={{ width: 88 }}>Health</th>
                   <th style={{ width: 110 }}>Schedule</th>
+                  <th style={{ width: 96 }}>Confidence</th>
                   <th style={{ width: 120 }}>Expiration</th>
                   <th style={{ width: 130 }}>Last Success</th>
                   <th style={{ width: '34%' }}>Last Run Metrics</th>
@@ -4478,6 +4562,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                   const isActive = i.active !== false;
                   const lastErr = String(i.last_error || '').trim();
                   const health = feedHealthPresentation(i);
+                  const confidence = feedConfidencePresentation(i.default_confidence);
                   const state = feedStatePresentation(isActive);
                   return (
                     <tr key={i.key} style={{ borderBottom: '1px solid #1e293b', opacity: isActive ? 1 : 0.78 }}>
@@ -4495,6 +4580,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       <td>
                         <span style={{ fontSize: 11, color: isActive ? '#cbd5e1' : '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
                           {formatFeedScheduleLabel(i.schedule)}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: confidence.color, background: confidence.bg, border: `1px solid ${confidence.border}`, whiteSpace: 'nowrap' }}>
+                          {confidence.label}
                         </span>
                       </td>
                       <td style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap' }}>{i.expiration_summary || 'Never'}</td>
@@ -4517,7 +4607,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                     </tr>
                   );
                 }) : (
-                  <tr><td colSpan={10} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
+                  <tr><td colSpan={11} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -4532,6 +4622,12 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onDraftChange={setSettingsDraftCron}
           draftExpiration={settingsDraftExpiration}
           onExpirationChange={setSettingsDraftExpiration}
+          draftConfidence={settingsDraftConfidence}
+          onConfidenceChange={setSettingsDraftConfidence}
+          savingConfidence={Boolean(savingConfidenceKey)}
+          confidenceError={settingsConfidenceError}
+          confidenceSuccess={settingsConfidenceSuccess}
+          onSaveConfidence={() => saveSettingsConfidence().catch(() => {})}
           draftAuthKey={settingsDraftAuthKey}
           onAuthKeyChange={setSettingsDraftAuthKey}
           maskedAuthKey={settingsMaskedAuthKey}

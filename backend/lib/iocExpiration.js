@@ -383,6 +383,7 @@ export async function upsertMembershipOnImport(client, {
   observableType,
   feedId,
   seenAt = new Date(),
+  explicitConfidence = null,
   audit = null,
   actor = { actor_type: 'feed_import', source: 'integration' }
 }) {
@@ -442,6 +443,20 @@ export async function upsertMembershipOnImport(client, {
   }
 
   await applyMembershipComputedFields(client, membershipId, policy, now);
+
+  const explicit = explicitConfidence != null ? String(explicitConfidence).trim().toLowerCase() : '';
+  if (['low', 'medium', 'high'].includes(explicit)) {
+    try {
+      await client.query(
+        `UPDATE ioc_feed_memberships
+         SET explicit_confidence = $2, updated_at = NOW()
+         WHERE id = $1`,
+        [membershipId, explicit]
+      );
+    } catch (err) {
+      if (err?.code !== '42703') throw err;
+    }
+  }
 
   if (reactivated && audit?.auditLog) {
     await audit.auditLog({
@@ -634,7 +649,7 @@ export async function syncMembershipAfterIocImport(client, {
   observableType,
   sourceName,
   sourceUrl = null,
-  confidence = null,
+  explicitConfidence = null,
   category = null,
   seenAt = new Date()
 }) {
@@ -648,19 +663,20 @@ export async function syncMembershipAfterIocImport(client, {
        AND observable_type = $2
        AND source_name = $3
        AND COALESCE(source_url, '') = COALESCE($4, '')
-       AND confidence = COALESCE($5, confidence)
-       AND COALESCE(category, '') = COALESCE($6, '')
+       AND COALESCE(category, '') = COALESCE($5, '')
      ORDER BY created_at DESC
      LIMIT 1`,
-    [observable, observableType, sourceName, sourceUrl, confidence, category]
+    [observable, observableType, sourceName, sourceUrl, category]
   );
   const row = rows[0];
   if (!row) return null;
 
-  return upsertMembershipOnImport(client, {
+  const membershipId = await upsertMembershipOnImport(client, {
     iocItemId: row.id,
     observableType: row.observable_type,
     feedId,
-    seenAt
+    seenAt,
+    explicitConfidence
   });
+  return membershipId;
 }

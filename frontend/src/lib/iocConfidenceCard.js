@@ -38,7 +38,7 @@ export function getIocConfidencePresentation(detail) {
   }
 
   const effective = detail.effective || detail.confidence || null;
-  const hasOverride = Boolean(detail.analyst_override);
+  const hasOverride = Boolean(detail.analyst_override) || detail.source === 'manual' || detail.source === 'analyst_override';
   const badgeStyle = confidenceBadgeStyle(effective);
 
   let sourceLine = 'Source: —';
@@ -48,13 +48,15 @@ export function getIocConfidencePresentation(detail) {
     const who = detail.overridden_by || 'analyst';
     const when = detail.overridden_at ? new Date(detail.overridden_at).toLocaleString() : '—';
     sourceLine = `Originally ${baselineLabel}. Changed by ${who} on ${when}.`;
-  } else if (detail.source === 'feed_provided') {
-    sourceLine = 'Source: Feed-provided confidence';
+  } else if (detail.source === 'feed_provided' || detail.source === 'feed_entry') {
+    sourceLine = 'Source: Feed entry confidence';
   } else if (detail.source === 'feed_default') {
     const feed = detail.feed_name || 'feed';
     sourceLine = `Source: Feed default from ${feed}`;
   } else if (detail.source === 'system_fallback') {
     sourceLine = 'Source: System fallback';
+  } else if (detail.source === 'unknown') {
+    sourceLine = 'Source: Unknown';
   } else if (detail.source_description) {
     sourceLine = `Source: ${detail.source_description}`;
   }

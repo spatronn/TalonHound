@@ -17,7 +17,6 @@ import {
   syncSnapshotFeedFromEntries
 } from './lib/iocExpiration.js';
 import {
-  fetchFeedDefaultConfidence,
   resolveImportConfidenceFields,
   applyIocImportConfidence,
   resolveParsedSourceConfidence
@@ -499,15 +498,6 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
   const out = { inserted: 0, duplicate: 0, suppressed: 0 };
   if (!entries.length) return out;
   const now = new Date();
-  const feedDefaultCache = new Map();
-  const getFeedDefault = async (sourceName) => {
-    throwIfAborted(signal);
-    const key = String(sourceName || '');
-    if (!feedDefaultCache.has(key)) {
-      feedDefaultCache.set(key, await fetchFeedDefaultConfidence(client, key));
-    }
-    return feedDefaultCache.get(key);
-  };
 
   for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
     throwIfAborted(signal);
@@ -527,15 +517,12 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     if (suppressionStats) suppressionStats.merge(stats);
     if (!kept.length) continue;
 
-    const resolvedKept = [];
-    for (const e of kept) {
-      const feedDefault = await getFeedDefault(e.sourceName);
-      const confFields = resolveImportConfidenceFields({
-        parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence),
-        feedDefaultConfidence: feedDefault
-      });
-      resolvedKept.push({ ...e, confFields });
-    }
+    const resolvedKept = kept.map((e) => ({
+      ...e,
+      confFields: resolveImportConfidenceFields({
+        parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence)
+      })
+    }));
 
     const placeholders = [];
     const params = [];
@@ -575,7 +562,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
        WHERE NOT EXISTS (
          SELECT 1 FROM ioc_items i
          WHERE i.observable = v.observable AND i.observable_type = $${typeParam}
-           AND i.source_name = v.source_name AND i.confidence = v.confidence
+           AND i.source_name = v.source_name
            AND COALESCE(i.category, '') = COALESCE(v.category, '')
            AND COALESCE(i.source_url, '') = COALESCE(v.source_url, '')
        )
@@ -609,7 +596,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
           observableType,
           sourceName: src.sourceName,
           sourceUrl: src.sourceUrl ?? null,
-          confidence: src.confFields.confidence,
+          explicitConfidence: src.confFields.source_confidence,
           category: src.category ?? null
         }).catch(() => {});
       }
@@ -631,10 +618,8 @@ async function insertObservable(client, { observable, observableType, sourceName
     return 'suppressed';
   }
 
-  const feedDefault = await fetchFeedDefaultConfidence(client, sourceName);
   const confFields = resolveImportConfidenceFields({
-    parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence),
-    feedDefaultConfidence: feedDefault
+    parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
   });
 
   const ins = await client.query(
@@ -650,7 +635,6 @@ async function insertObservable(client, { observable, observableType, sourceName
        WHERE observable = $1
          AND observable_type = $2
          AND source_name = $3
-         AND confidence = $5
          AND COALESCE(category, '') = COALESCE($8, '')
          AND COALESCE(source_url, '') = COALESCE($4, '')
      )
@@ -680,7 +664,7 @@ async function insertObservable(client, { observable, observableType, sourceName
       observableType,
       sourceName,
       sourceUrl,
-      confidence: confFields.confidence,
+      explicitConfidence: confFields.source_confidence,
       category
     }).catch(() => {});
     return 'duplicate';
@@ -694,7 +678,7 @@ async function insertObservable(client, { observable, observableType, sourceName
     observableType,
     sourceName,
     sourceUrl,
-    confidence: confFields.confidence,
+    explicitConfidence: confFields.source_confidence,
     category
   }).catch(() => {});
   return true;

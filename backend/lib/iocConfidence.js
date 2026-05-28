@@ -1,16 +1,22 @@
 /**
- * IOC confidence resolution: source → feed default → system fallback, with analyst override.
+ * IOC confidence resolution — inheritance model (no bulk feed-default copy).
+ *
+ * effective = manual_override ?? max(membership.explicit) ?? max(feed.default) ?? legacy explicit ?? null
  */
 
 import { feedKeyForSourceName } from './iocExpiration.js';
 
 export const CONFIDENCE_LEVELS = Object.freeze(['low', 'medium', 'high']);
-export const SYSTEM_FALLBACK_CONFIDENCE = 'medium';
+export const CONFIDENCE_SOURCES = Object.freeze({
+  MANUAL: 'manual',
+  FEED_ENTRY: 'feed_entry',
+  FEED_DEFAULT: 'feed_default',
+  UNKNOWN: 'unknown'
+});
+
 export const MAX_CONFIDENCE_OVERRIDE_REASON_LEN = 2000;
 
 const CONFIDENCE_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
-
-/** @typedef {'analyst_override' | 'feed_provided' | 'feed_default' | 'system_fallback'} ConfidenceSourceKind */
 
 export function normalizeConfidence(value) {
   const c = String(value ?? '').trim().toLowerCase();
@@ -27,40 +33,141 @@ export function confidenceLabel(value) {
   return c.charAt(0).toUpperCase() + c.slice(1);
 }
 
-export function computeEffectiveConfidence({
-  sourceConfidence = null,
-  feedDefaultConfidence = null,
-  analystOverride = null,
-  fallback = SYSTEM_FALLBACK_CONFIDENCE
-} = {}) {
-  const analyst = normalizeConfidence(analystOverride);
-  if (analyst) return analyst;
-  const source = normalizeConfidence(sourceConfidence);
-  if (source) return source;
-  const feedDefault = normalizeConfidence(feedDefaultConfidence);
-  if (feedDefault) return feedDefault;
-  return normalizeConfidence(fallback) || SYSTEM_FALLBACK_CONFIDENCE;
+export function confidenceRank(value) {
+  return CONFIDENCE_RANK[normalizeConfidence(value)] || 0;
 }
 
-export function resolveConfidenceSourceKind({
-  analystOverride = null,
-  sourceConfidence = null,
-  feedDefaultConfidence = null
-} = {}) {
-  if (normalizeConfidence(analystOverride)) return 'analyst_override';
-  if (normalizeConfidence(sourceConfidence)) return 'feed_provided';
-  if (normalizeConfidence(feedDefaultConfidence)) return 'feed_default';
-  return 'system_fallback';
+export function pickHighestConfidenceValue(values) {
+  let best = null;
+  let bestRank = 0;
+  for (const raw of values) {
+    const normalized = normalizeConfidence(raw);
+    const rank = confidenceRank(normalized);
+    if (normalized && rank >= bestRank) {
+      best = normalized;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+/**
+ * @param {{
+ *   manualOverride?: string|null,
+ *   memberships?: Array<{ status?: string, explicit_confidence?: string|null, feed_default_confidence?: string|null, feed_name?: string|null, feed_key?: string|null }>,
+ *   legacyExplicitByFeedKey?: Map<string, string>|Record<string, string>,
+ * }} input
+ */
+export function computeInheritedEffectiveConfidence(input = {}) {
+  const manual = normalizeConfidence(input.manualOverride);
+  if (manual) {
+    return {
+      effective: manual,
+      confidence_source: CONFIDENCE_SOURCES.MANUAL,
+      confidence_inherited_from_feed: false,
+      confidence_feed_name: null,
+      confidence_feed_key: null
+    };
+  }
+
+  const activeMemberships = (input.memberships || []).filter((m) => String(m?.status || 'active') === 'active');
+  const legacyMap = input.legacyExplicitByFeedKey instanceof Map
+    ? input.legacyExplicitByFeedKey
+    : new Map(Object.entries(input.legacyExplicitByFeedKey || {}));
+
+  const explicitCandidates = [];
+  const explicitContexts = [];
+
+  for (const membership of activeMemberships) {
+    const explicit = normalizeConfidence(membership.explicit_confidence);
+    if (explicit) {
+      explicitCandidates.push(explicit);
+      explicitContexts.push({
+        value: explicit,
+        feed_name: membership.feed_name || null,
+        feed_key: membership.feed_key || null
+      });
+    }
+  }
+
+  for (const [feedKey, value] of legacyMap.entries()) {
+    const explicit = normalizeConfidence(value);
+    if (explicit) {
+      explicitCandidates.push(explicit);
+      explicitContexts.push({ value: explicit, feed_key: feedKey, feed_name: null });
+    }
+  }
+
+  const bestExplicit = pickHighestConfidenceValue(explicitCandidates);
+  if (bestExplicit) {
+    const ctx = explicitContexts.find((c) => c.value === bestExplicit) || explicitContexts[0];
+    return {
+      effective: bestExplicit,
+      confidence_source: CONFIDENCE_SOURCES.FEED_ENTRY,
+      confidence_inherited_from_feed: false,
+      confidence_feed_name: ctx?.feed_name || null,
+      confidence_feed_key: ctx?.feed_key || null
+    };
+  }
+
+  const defaultCandidates = [];
+  const defaultContexts = [];
+  for (const membership of activeMemberships) {
+    const feedDefault = normalizeConfidence(membership.feed_default_confidence);
+    if (feedDefault) {
+      defaultCandidates.push(feedDefault);
+      defaultContexts.push({
+        value: feedDefault,
+        feed_name: membership.feed_name || null,
+        feed_key: membership.feed_key || null
+      });
+    }
+  }
+
+  const bestDefault = pickHighestConfidenceValue(defaultCandidates);
+  if (bestDefault) {
+    const ctx = defaultContexts.find((c) => c.value === bestDefault) || defaultContexts[0];
+    return {
+      effective: bestDefault,
+      confidence_source: CONFIDENCE_SOURCES.FEED_DEFAULT,
+      confidence_inherited_from_feed: true,
+      confidence_feed_name: ctx?.feed_name || null,
+      confidence_feed_key: ctx?.feed_key || null
+    };
+  }
+
+  return {
+    effective: null,
+    confidence_source: CONFIDENCE_SOURCES.UNKNOWN,
+    confidence_inherited_from_feed: false,
+    confidence_feed_name: null,
+    confidence_feed_key: null
+  };
+}
+
+export function buildLegacyExplicitMapFromIocRows(rows = []) {
+  const map = new Map();
+  for (const row of rows) {
+    const explicit = normalizeConfidence(row.source_confidence);
+    if (!explicit) continue;
+    const feedKey = feedKeyForSourceName(row.source_name);
+    if (!feedKey) continue;
+    const existing = map.get(feedKey);
+    if (!existing || confidenceRank(explicit) >= confidenceRank(existing)) {
+      map.set(feedKey, explicit);
+    }
+  }
+  return map;
 }
 
 export function buildConfidenceSourceDescription(sourceKind, feedName) {
   const name = String(feedName || '').trim();
-  if (sourceKind === 'analyst_override') return 'Manual override';
-  if (sourceKind === 'feed_provided') return 'Feed-provided confidence';
-  if (sourceKind === 'feed_default') {
+  if (sourceKind === CONFIDENCE_SOURCES.MANUAL || sourceKind === 'analyst_override') return 'Manual override';
+  if (sourceKind === CONFIDENCE_SOURCES.FEED_ENTRY || sourceKind === 'feed_provided') return 'Feed entry confidence';
+  if (sourceKind === CONFIDENCE_SOURCES.FEED_DEFAULT || sourceKind === 'feed_default') {
     return name ? `Feed default from ${name}` : 'Feed default confidence';
   }
-  return 'System fallback';
+  return 'Unknown';
 }
 
 export function pickPrimaryIocRow(rows, seedPublicId) {
@@ -71,98 +178,128 @@ export function pickPrimaryIocRow(rows, seedPublicId) {
   return seed || rows[0];
 }
 
-export function pickHighestConfidenceRow(rows) {
-  if (!Array.isArray(rows) || !rows.length) return null;
-  return rows.reduce((best, row) => {
-    if (!best) return row;
-    const bestEff = computeEffectiveConfidence({
-      sourceConfidence: best.source_confidence ?? best.confidence,
-      feedDefaultConfidence: best.feed_default_confidence,
-      analystOverride: best.analyst_confidence_override
-    });
-    const rowEff = computeEffectiveConfidence({
-      sourceConfidence: row.source_confidence ?? row.confidence,
-      feedDefaultConfidence: row.feed_default_confidence,
-      analystOverride: row.analyst_confidence_override
-    });
-    return (CONFIDENCE_RANK[rowEff] || 0) > (CONFIDENCE_RANK[bestEff] || 0) ? row : best;
-  }, null);
+export function buildIocInheritedConfidenceSummary({
+  seedRow = null,
+  membershipRows = [],
+  iocRows = [],
+  seedPublicId = null
+} = {}) {
+  const primaryRow = seedRow || pickPrimaryIocRow(iocRows, seedPublicId);
+  const inherited = computeInheritedEffectiveConfidence({
+    manualOverride: primaryRow?.analyst_confidence_override,
+    memberships: membershipRows,
+    legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows)
+  });
+
+  const membershipBreakdown = (membershipRows || [])
+    .filter((m) => String(m?.status || 'active') === 'active')
+    .map((m) => ({
+      feed_key: m.feed_key || null,
+      feed_name: m.feed_name || null,
+      explicit_confidence: normalizeConfidence(m.explicit_confidence),
+      feed_default_confidence: normalizeConfidence(m.feed_default_confidence),
+      effective: computeInheritedEffectiveConfidence({
+        memberships: [m],
+        legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(
+          iocRows.filter((r) => feedKeyForSourceName(r.source_name) === m.feed_key)
+        )
+      }).effective
+    }));
+
+  const analystOverride = normalizeConfidence(primaryRow?.analyst_confidence_override);
+  const baselineEffective = analystOverride
+    ? computeInheritedEffectiveConfidence({
+      memberships: membershipRows,
+      legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows)
+    }).effective
+    : null;
+
+  return {
+    effective: inherited.effective,
+    confidence: inherited.effective,
+    confidence_level: inherited.effective,
+    confidence_source: inherited.confidence_source,
+    confidence_inherited_from_feed: inherited.confidence_inherited_from_feed,
+    confidence_feed_name: inherited.confidence_feed_name,
+    confidence_feed_key: inherited.confidence_feed_key,
+    source: inherited.confidence_source,
+    source_description: buildConfidenceSourceDescription(inherited.confidence_source, inherited.confidence_feed_name),
+    analyst_override: analystOverride,
+    overridden_by: primaryRow?.overridden_by_email || primaryRow?.analyst_confidence_overridden_by || null,
+    overridden_at: primaryRow?.analyst_confidence_overridden_at || null,
+    override_reason: primaryRow?.analyst_confidence_override_reason || null,
+    baseline_effective: baselineEffective,
+    baseline_source: analystOverride ? inherited.confidence_source : null,
+    membership_breakdown: membershipBreakdown,
+    confidence_set: [...new Set(membershipBreakdown.map((m) => m.effective).filter(Boolean))].sort()
+  };
 }
 
-/**
- * Build structured confidence payload for IOC Details summary.
- * @param {object} opts
- * @param {object[]} opts.rows All ioc_items rows for the observable
- * @param {string|null} opts.seedPublicId Requested public_id
- * @param {Map<string, string>|Record<string, string>} [opts.feedNamesByKey]
- */
+export function computeEffectiveConfidence({
+  sourceConfidence = null,
+  feedDefaultConfidence = null,
+  analystOverride = null,
+  fallback = null
+} = {}) {
+  const inherited = computeInheritedEffectiveConfidence({
+    manualOverride: analystOverride,
+    memberships: [{
+      explicit_confidence: sourceConfidence,
+      feed_default_confidence: feedDefaultConfidence,
+      status: 'active'
+    }]
+  });
+  if (inherited.effective) return inherited.effective;
+  return normalizeConfidence(fallback);
+}
+
+export function resolveConfidenceSourceKind({
+  analystOverride = null,
+  sourceConfidence = null,
+  feedDefaultConfidence = null
+} = {}) {
+  return computeInheritedEffectiveConfidence({
+    manualOverride: analystOverride,
+    memberships: [{
+      explicit_confidence: sourceConfidence,
+      feed_default_confidence: feedDefaultConfidence,
+      status: 'active'
+    }]
+  }).confidence_source;
+}
+
 export function buildIocConfidenceSummary({
   rows,
   seedPublicId = null,
   feedNamesByKey = {}
 }) {
-  const seedRow = pickPrimaryIocRow(rows, seedPublicId);
-  const baselineRow = seedRow || pickHighestConfidenceRow(rows) || rows?.[0] || null;
+  const membershipRows = rows.map((row) => {
+    const feedKey = feedKeyForSourceName(row.source_name);
+    const feedMeta = feedKey && feedNamesByKey instanceof Map
+      ? feedNamesByKey.get(feedKey)
+      : feedNamesByKey[feedKey];
+    const feedName = typeof feedMeta === 'object' && feedMeta?.name
+      ? feedMeta.name
+      : (typeof feedMeta === 'string' ? feedMeta : row.source_name);
+    const feedDefault = typeof feedMeta === 'object' && feedMeta?.default_confidence != null
+      ? feedMeta.default_confidence
+      : row.feed_default_confidence;
 
-  const analystOverride = normalizeConfidence(seedRow?.analyst_confidence_override);
-  const sourceConfidence = normalizeConfidence(baselineRow?.source_confidence);
-  const feedDefaultConfidence = normalizeConfidence(baselineRow?.feed_default_confidence);
-
-  const effective = computeEffectiveConfidence({
-    sourceConfidence,
-    feedDefaultConfidence,
-    analystOverride: seedRow?.analyst_confidence_override,
-    fallback: baselineRow?.confidence
+    return {
+      status: 'active',
+      explicit_confidence: row.source_confidence,
+      feed_default_confidence: feedDefault,
+      feed_key: feedKey,
+      feed_name: feedName
+    };
   });
 
-  const sourceKind = resolveConfidenceSourceKind({
-    analystOverride: seedRow?.analyst_confidence_override,
-    sourceConfidence: analystOverride ? null : sourceConfidence,
-    feedDefaultConfidence: analystOverride ? null : feedDefaultConfidence
+  return buildIocInheritedConfidenceSummary({
+    seedRow: pickPrimaryIocRow(rows, seedPublicId),
+    membershipRows,
+    iocRows: rows,
+    seedPublicId
   });
-
-  const feedKey = feedKeyForSourceName(baselineRow?.source_name);
-  const feedName = feedKey
-    ? (feedNamesByKey instanceof Map ? feedNamesByKey.get(feedKey) : feedNamesByKey[feedKey]) || baselineRow?.source_name
-    : baselineRow?.source_name || null;
-
-  const baselineEffective = analystOverride
-    ? computeEffectiveConfidence({
-      sourceConfidence,
-      feedDefaultConfidence,
-      analystOverride: null,
-      fallback: baselineRow?.confidence
-    })
-    : null;
-
-  const baselineSourceKind = analystOverride
-    ? resolveConfidenceSourceKind({ sourceConfidence, feedDefaultConfidence })
-    : null;
-
-  return {
-    effective,
-    source_confidence: sourceConfidence,
-    feed_default_confidence: feedDefaultConfidence,
-    analyst_override: analystOverride,
-    source: sourceKind,
-    feed_name: feedName,
-    feed_key: feedKey,
-    source_description: buildConfidenceSourceDescription(sourceKind, feedName),
-    overridden_by: seedRow?.overridden_by_email || seedRow?.analyst_confidence_overridden_by || null,
-    overridden_at: seedRow?.analyst_confidence_overridden_at || null,
-    override_reason: seedRow?.analyst_confidence_override_reason || null,
-    baseline_effective: baselineEffective,
-    baseline_source: baselineSourceKind,
-    // Backward-compatible flat fields
-    confidence: effective,
-    confidence_level: effective,
-    confidence_set: [...new Set(rows.map((r) => computeEffectiveConfidence({
-      sourceConfidence: r.source_confidence,
-      feedDefaultConfidence: r.feed_default_confidence,
-      analystOverride: null,
-      fallback: r.confidence
-    })).filter(Boolean))].sort()
-  };
 }
 
 export function validateConfidenceInput(value) {
@@ -182,34 +319,33 @@ export function validateConfidenceReason(reason) {
   return { ok: true, value: trimmed || null };
 }
 
-export async function fetchFeedDefaultConfidence(client, sourceName) {
-  const feedKey = feedKeyForSourceName(sourceName);
-  if (!feedKey) return SYSTEM_FALLBACK_CONFIDENCE;
+export async function fetchFeedDefaultConfidence(client, feedKeyOrSourceName) {
+  const feedKey = feedKeyForSourceName(feedKeyOrSourceName) || String(feedKeyOrSourceName || '').trim();
+  if (!feedKey) return null;
   try {
     const { rows } = await client.query(
       'SELECT default_confidence FROM integration_feeds WHERE key = $1 LIMIT 1',
       [feedKey]
     );
-    return normalizeConfidence(rows[0]?.default_confidence) || SYSTEM_FALLBACK_CONFIDENCE;
+    return normalizeConfidence(rows[0]?.default_confidence);
   } catch (err) {
-    if (err?.code === '42703') return SYSTEM_FALLBACK_CONFIDENCE;
+    if (err?.code === '42703') return null;
     throw err;
   }
 }
 
 export async function fetchFeedNamesByKey(client) {
-  const { rows } = await client.query('SELECT key, name FROM integration_feeds');
+  const { rows } = await client.query('SELECT key, name, default_confidence FROM integration_feeds');
   const map = new Map();
   for (const row of rows) {
-    map.set(String(row.key), String(row.name));
+    map.set(String(row.key), {
+      name: String(row.name),
+      default_confidence: normalizeConfidence(row.default_confidence)
+    });
   }
   return map;
 }
 
-/**
- * @param {object|null|undefined} sourceConfidence Explicit entry confidence (null = none).
- * @param {object|null|undefined} legacyConfidence Deprecated alias used by older import callers.
- */
 export function resolveParsedSourceConfidence(sourceConfidence, legacyConfidence) {
   if (sourceConfidence !== undefined) {
     return normalizeConfidence(sourceConfidence);
@@ -217,72 +353,101 @@ export function resolveParsedSourceConfidence(sourceConfidence, legacyConfidence
   return normalizeConfidence(legacyConfidence);
 }
 
-export async function enrichIocConfidenceRows(pool, rows) {
-  if (!Array.isArray(rows) || !rows.length) return rows;
-  const feedDefaultBySource = new Map();
-  return Promise.all(rows.map(async (row) => {
-    if (normalizeConfidence(row.feed_default_confidence)) return row;
-    const sourceKey = String(row.source_name || '');
-    if (!feedDefaultBySource.has(sourceKey)) {
-      feedDefaultBySource.set(sourceKey, await fetchFeedDefaultConfidence(pool, sourceKey));
-    }
-    return {
-      ...row,
-      feed_default_confidence: feedDefaultBySource.get(sourceKey)
-    };
-  }));
-}
-
-export async function buildIocConfidenceSummaryForDetails(pool, { rows, seedPublicId }) {
-  const feedNamesByKey = await fetchFeedNamesByKey(pool);
-  const enrichedRows = await enrichIocConfidenceRows(pool, rows);
-  return buildIocConfidenceSummary({
-    rows: enrichedRows,
-    seedPublicId,
-    feedNamesByKey
-  });
-}
-
-/**
- * Resolve import-time confidence fields. Preserves analyst override on existing rows.
- * @param {object|null} existingRow
- */
 export function resolveImportConfidenceFields({
   parsedSourceConfidence = null,
-  feedDefaultConfidence = SYSTEM_FALLBACK_CONFIDENCE,
   existingRow = null
 } = {}) {
   const sourceConfidence = normalizeConfidence(parsedSourceConfidence);
-  const feedDefault = normalizeConfidence(feedDefaultConfidence) || SYSTEM_FALLBACK_CONFIDENCE;
   const analystOverride = normalizeConfidence(existingRow?.analyst_confidence_override);
-  const effective = computeEffectiveConfidence({
-    sourceConfidence,
-    feedDefaultConfidence: feedDefault,
-    analystOverride
-  });
 
   return {
     source_confidence: sourceConfidence,
-    feed_default_confidence: feedDefault,
-    confidence: effective,
+    feed_default_confidence: null,
+    confidence: analystOverride || sourceConfidence || null,
     analyst_confidence_override: analystOverride
   };
 }
 
-/**
- * Update confidence columns on an existing IOC row after feed re-import.
- * Preserves analyst_confidence_override when set.
- */
+export async function fetchIocMembershipConfidenceRows(pool, iocItemId, observableType) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT m.id, m.status,
+              m.explicit_confidence,
+              f.key AS feed_key,
+              f.name AS feed_name,
+              f.default_confidence AS feed_default_confidence
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2
+       ORDER BY m.last_seen_in_feed DESC`,
+      [iocItemId, observableType]
+    );
+    return rows;
+  } catch (err) {
+    if (err?.code === '42703') {
+      const { rows } = await pool.query(
+        `SELECT m.id, m.status,
+                NULL::text AS explicit_confidence,
+                f.key AS feed_key,
+                f.name AS feed_name,
+                f.default_confidence AS feed_default_confidence
+         FROM ioc_feed_memberships m
+         JOIN integration_feeds f ON f.integration_id = m.feed_id
+         WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2
+         ORDER BY m.last_seen_in_feed DESC`,
+        [iocItemId, observableType]
+      );
+      return rows;
+    }
+    throw err;
+  }
+}
+
+export async function buildIocConfidenceSummaryForDetails(pool, { rows, seedPublicId }) {
+  const seedRow = pickPrimaryIocRow(rows, seedPublicId) || rows?.[0] || null;
+  if (!seedRow) {
+    return buildIocInheritedConfidenceSummary({ seedRow: null, membershipRows: [], iocRows: [], seedPublicId });
+  }
+
+  const membershipRows = await fetchIocMembershipConfidenceRows(pool, seedRow.id, seedRow.observable_type);
+  return buildIocInheritedConfidenceSummary({
+    seedRow,
+    membershipRows,
+    iocRows: rows,
+    seedPublicId
+  });
+}
+
+export async function applyMembershipExplicitConfidence(client, membershipId, explicitConfidence) {
+  const explicit = normalizeConfidence(explicitConfidence);
+  if (!explicit || !membershipId) return null;
+  try {
+    await client.query(
+      `UPDATE ioc_feed_memberships
+       SET explicit_confidence = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [membershipId, explicit]
+    );
+    return explicit;
+  } catch (err) {
+    if (err?.code === '42703') return null;
+    throw err;
+  }
+}
+
 export async function applyIocImportConfidence(client, {
   observable,
   observableType,
   sourceName,
   parsedSourceConfidence = null
 }) {
+  const explicit = normalizeConfidence(parsedSourceConfidence);
+  if (!explicit) return null;
+
   let existing;
   try {
     const { rows } = await client.query(
-      `SELECT analyst_confidence_override, confidence, source_confidence, feed_default_confidence
+      `SELECT analyst_confidence_override
        FROM ioc_items
        WHERE observable = $1 AND observable_type = $2 AND source_name = $3
        ORDER BY created_at DESC
@@ -296,31 +461,21 @@ export async function applyIocImportConfidence(client, {
   }
   if (!existing) return null;
 
-  const feedDefault = await fetchFeedDefaultConfidence(client, sourceName);
-  const fields = resolveImportConfidenceFields({
-    parsedSourceConfidence,
-    feedDefaultConfidence: feedDefault,
-    existingRow: existing
-  });
-
   try {
-    await client.query(
-      `UPDATE ioc_items
-       SET source_confidence = $4,
-           feed_default_confidence = $5,
-           confidence = $6
-       WHERE observable = $1 AND observable_type = $2 AND source_name = $3
-         AND analyst_confidence_override IS NULL`,
-      [observable, observableType, sourceName, fields.source_confidence, fields.feed_default_confidence, fields.confidence]
-    );
-
     if (existing.analyst_confidence_override) {
       await client.query(
         `UPDATE ioc_items
-         SET source_confidence = $4,
-             feed_default_confidence = $5
+         SET source_confidence = $4
          WHERE observable = $1 AND observable_type = $2 AND source_name = $3`,
-        [observable, observableType, sourceName, fields.source_confidence, fields.feed_default_confidence]
+        [observable, observableType, sourceName, explicit]
+      );
+    } else {
+      await client.query(
+        `UPDATE ioc_items
+         SET source_confidence = $4,
+             confidence = $4
+         WHERE observable = $1 AND observable_type = $2 AND source_name = $3`,
+        [observable, observableType, sourceName, explicit]
       );
     }
   } catch (err) {
@@ -328,5 +483,9 @@ export async function applyIocImportConfidence(client, {
     throw err;
   }
 
-  return fields;
+  return { source_confidence: explicit };
+}
+
+export async function enrichIocConfidenceRows(pool, rows) {
+  return rows;
 }

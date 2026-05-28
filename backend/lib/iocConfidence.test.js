@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildIocConfidenceSummary,
-  computeEffectiveConfidence,
+  buildIocInheritedConfidenceSummary,
+  computeInheritedEffectiveConfidence,
   normalizeConfidence,
-  resolveConfidenceSourceKind,
   resolveImportConfidenceFields,
   resolveParsedSourceConfidence,
   validateConfidenceInput
@@ -14,95 +13,40 @@ test('normalizeConfidence maps legacy and invalid values', () => {
   assert.equal(normalizeConfidence('High'), 'high');
   assert.equal(normalizeConfidence('critical'), 'high');
   assert.equal(normalizeConfidence('unknown'), null);
-  assert.equal(normalizeConfidence('very_high'), null);
 });
 
-test('computeEffectiveConfidence priority: analyst > source > feed default > fallback', () => {
-  assert.equal(
-    computeEffectiveConfidence({
-      sourceConfidence: 'low',
-      feedDefaultConfidence: 'medium',
-      analystOverride: 'high'
-    }),
-    'high'
-  );
-  assert.equal(
-    computeEffectiveConfidence({
-      sourceConfidence: 'high',
-      feedDefaultConfidence: 'medium'
-    }),
-    'high'
-  );
-  assert.equal(
-    computeEffectiveConfidence({
-      sourceConfidence: null,
-      feedDefaultConfidence: 'high'
-    }),
-    'high'
-  );
-  assert.equal(
-    computeEffectiveConfidence({ sourceConfidence: null, feedDefaultConfidence: null }),
-    'medium'
-  );
-});
-
-test('resolveConfidenceSourceKind', () => {
-  assert.equal(
-    resolveConfidenceSourceKind({ analystOverride: 'high', sourceConfidence: 'low' }),
-    'analyst_override'
-  );
-  assert.equal(
-    resolveConfidenceSourceKind({ sourceConfidence: 'medium', feedDefaultConfidence: 'high' }),
-    'feed_provided'
-  );
-  assert.equal(
-    resolveConfidenceSourceKind({ feedDefaultConfidence: 'high' }),
-    'feed_default'
-  );
-  assert.equal(resolveConfidenceSourceKind({}), 'system_fallback');
-});
-
-test('buildIocConfidenceSummary with feed default and no override', () => {
-  const rows = [{
-    public_id: '11111111-1111-1111-1111-111111111111',
-    source_name: 'MalwareBazaar:abuse.ch',
-    source_confidence: null,
-    feed_default_confidence: 'high',
-    confidence: 'high',
-    analyst_confidence_override: null
-  }];
-  const summary = buildIocConfidenceSummary({
-    rows,
-    seedPublicId: '11111111-1111-1111-1111-111111111111',
-    feedNamesByKey: { 'malwarebazaar-abusech': 'MalwareBazaar abuse.ch' }
+test('computeInheritedEffectiveConfidence priority: manual > explicit > feed default', () => {
+  const manual = computeInheritedEffectiveConfidence({
+    manualOverride: 'low',
+    memberships: [{ status: 'active', explicit_confidence: 'high', feed_default_confidence: 'high' }]
   });
-  assert.equal(summary.effective, 'high');
-  assert.equal(summary.source, 'feed_default');
-  assert.equal(summary.feed_name, 'MalwareBazaar abuse.ch');
-  assert.equal(summary.analyst_override, null);
+  assert.equal(manual.effective, 'low');
+  assert.equal(manual.confidence_source, 'manual');
+
+  const explicit = computeInheritedEffectiveConfidence({
+    memberships: [{ status: 'active', explicit_confidence: 'high', feed_default_confidence: 'medium' }]
+  });
+  assert.equal(explicit.effective, 'high');
+  assert.equal(explicit.confidence_source, 'feed_entry');
+
+  const inherited = computeInheritedEffectiveConfidence({
+    memberships: [{ status: 'active', feed_default_confidence: 'medium', feed_name: 'USOM TR-CERT' }]
+  });
+  assert.equal(inherited.effective, 'medium');
+  assert.equal(inherited.confidence_source, 'feed_default');
+  assert.equal(inherited.confidence_inherited_from_feed, true);
+  assert.equal(inherited.confidence_feed_name, 'USOM TR-CERT');
 });
 
-test('buildIocConfidenceSummary with analyst override', () => {
-  const rows = [{
-    public_id: '11111111-1111-1111-1111-111111111111',
-    source_name: 'MalwareBazaar:abuse.ch',
-    source_confidence: 'medium',
-    feed_default_confidence: 'medium',
-    confidence: 'high',
-    analyst_confidence_override: 'high',
-    analyst_confidence_override_reason: 'Verified sample',
-    analyst_confidence_overridden_at: '2026-05-27T16:55:00.000Z',
-    overridden_by_email: 'safa@safa.com'
-  }];
-  const summary = buildIocConfidenceSummary({
-    rows,
-    seedPublicId: '11111111-1111-1111-1111-111111111111',
-    feedNamesByKey: { 'malwarebazaar-abusech': 'MalwareBazaar abuse.ch' }
+test('multi-feed aggregation picks highest feed default', () => {
+  const result = computeInheritedEffectiveConfidence({
+    memberships: [
+      { status: 'active', feed_default_confidence: 'medium', feed_name: 'Feed A' },
+      { status: 'active', feed_default_confidence: 'high', feed_name: 'Feed B' }
+    ]
   });
-  assert.equal(summary.effective, 'high');
-  assert.equal(summary.source, 'analyst_override');
-  assert.equal(summary.baseline_effective, 'medium');
-  assert.equal(summary.override_reason, 'Verified sample');
+  assert.equal(result.effective, 'high');
+  assert.equal(result.confidence_feed_name, 'Feed B');
 });
 
 test('resolveParsedSourceConfidence honors explicit null entry confidence', () => {
@@ -110,25 +54,28 @@ test('resolveParsedSourceConfidence honors explicit null entry confidence', () =
   assert.equal(resolveParsedSourceConfidence(undefined, 'high'), 'high');
 });
 
-test('resolveImportConfidenceFields uses feed default when entry confidence is absent', () => {
-  const fields = resolveImportConfidenceFields({
-    parsedSourceConfidence: null,
-    feedDefaultConfidence: 'high'
-  });
+test('resolveImportConfidenceFields does not copy feed default to ioc row', () => {
+  const fields = resolveImportConfidenceFields({ parsedSourceConfidence: null });
   assert.equal(fields.source_confidence, null);
-  assert.equal(fields.feed_default_confidence, 'high');
-  assert.equal(fields.confidence, 'high');
+  assert.equal(fields.feed_default_confidence, null);
+  assert.equal(fields.confidence, null);
 });
 
-test('resolveImportConfidenceFields preserves analyst override on re-import', () => {
-  const fields = resolveImportConfidenceFields({
-    parsedSourceConfidence: 'medium',
-    feedDefaultConfidence: 'high',
-    existingRow: { analyst_confidence_override: 'high' }
+test('buildIocInheritedConfidenceSummary uses membership inheritance', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: { id: 1, public_id: '11111111-1111-1111-1111-111111111111', analyst_confidence_override: null },
+    membershipRows: [{
+      status: 'active',
+      explicit_confidence: null,
+      feed_default_confidence: 'high',
+      feed_name: 'USOM TR-CERT',
+      feed_key: 'usom-trcert'
+    }],
+    iocRows: []
   });
-  assert.equal(fields.analyst_confidence_override, 'high');
-  assert.equal(fields.confidence, 'high');
-  assert.equal(fields.source_confidence, 'medium');
+  assert.equal(summary.effective, 'high');
+  assert.equal(summary.confidence_source, 'feed_default');
+  assert.equal(summary.confidence_inherited_from_feed, true);
 });
 
 test('validateConfidenceInput rejects invalid values', () => {

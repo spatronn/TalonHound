@@ -32,7 +32,7 @@ import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 import { createAuditLogService } from './lib/auditLogService.js';
-import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails } from './lib/iocConfidence.js';
+import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
 import {
   hasIocConfidenceColumns,
   iocConfidenceJoinSql,
@@ -3245,6 +3245,7 @@ app.get('/api/integrations', async (req, res) => {
         f.schedule_cron AS schedule,
         f.trust_level,
         f.active,
+        f.default_confidence,
         f.created_at,
         CASE
           WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
@@ -3617,6 +3618,70 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update schedule', detail: err.message });
+  }
+});
+
+app.patch('/api/integrations/:key/default-confidence', async (req, res) => {
+  const { key } = req.params;
+  const { AUDIT_ACTION, AUDIT_ENTITY } = await import('./lib/auditConstants.js');
+
+  const confCheck = validateConfidenceInput(req.body?.default_confidence);
+  if (!confCheck.ok) {
+    return res.status(400).json({ message: confCheck.error });
+  }
+
+  try {
+    const prevQ = await pool.query(
+      'SELECT key, integration_id, name, default_confidence FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
+    if (!prevQ.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+    const prev = prevQ.rows[0];
+    if (normalizeIocConfidence(prev.default_confidence) === confCheck.value) {
+      return res.json({
+        key: prev.key,
+        name: prev.name,
+        default_confidence: confCheck.value
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET default_confidence = $2, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, integration_id, name, default_confidence`,
+      [key, confCheck.value]
+    );
+
+    iocDetailsCache.clear();
+
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_FEED_CONFIDENCE_UPDATED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(result.rows[0].integration_id || key),
+      entityDisplay: result.rows[0].name,
+      before: { default_confidence: prev.default_confidence },
+      after: { default_confidence: confCheck.value },
+      metadata: {
+        feed_key: key,
+        feed_name: result.rows[0].name,
+        confidence_model: 'inherited',
+        bulk_rewrite: false,
+        note: 'Only feed default confidence was changed. Inherited effective confidence changes at read time.'
+      }
+    });
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    if (err?.code === '42703') {
+      return res.status(503).json({
+        message: 'Feed default confidence schema not applied. Run explicit migration: npm run migrate'
+      });
+    }
+    return res.status(500).json({ message: 'Failed to update feed default confidence', detail: err.message });
   }
 });
 

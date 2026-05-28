@@ -2,6 +2,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import {
   buildIocConfidenceSummary,
+  buildIocConfidenceSummaryForDetails,
   computeEffectiveConfidence,
   fetchFeedNamesByKey,
   normalizeConfidence,
@@ -81,11 +82,9 @@ export function registerIocConfidenceRoutes(app, pool, audit, opts = {}) {
 
   async function buildResponseForIoc(row) {
     const siblings = await fetchSiblingRows(pool, row.observable, row.observable_type);
-    const feedNamesByKey = await fetchFeedNamesByKey(pool);
-    const confidence = buildIocConfidenceSummary({
+    const confidence = await buildIocConfidenceSummaryForDetails(pool, {
       rows: siblings.map((s) => (s.public_id === row.public_id ? row : s)),
-      seedPublicId: row.public_id,
-      feedNamesByKey
+      seedPublicId: row.public_id
     });
     return { confidence, public_id: row.public_id };
   }
@@ -138,19 +137,13 @@ export function registerIocConfidenceRoutes(app, pool, audit, opts = {}) {
                analyst_confidence_override_reason = $3,
                analyst_confidence_overridden_by = $4::uuid,
                analyst_confidence_overridden_at = NOW(),
-               confidence = $5
+               confidence = NULL
            WHERE id = $1 AND observable_type = $2`,
           [
             iocId,
             observableType,
             reasonCheck.value,
-            userId,
-            computeEffectiveConfidence({
-              sourceConfidence: prev.source_confidence ?? prev.confidence,
-              feedDefaultConfidence: prev.feed_default_confidence,
-              analystOverride: null,
-              fallback: prev.confidence
-            })
+            userId
           ]
         );
 
@@ -275,19 +268,13 @@ export function registerIocConfidenceRoutes(app, pool, audit, opts = {}) {
              analyst_confidence_override_reason = $3,
              analyst_confidence_overridden_by = $4::uuid,
              analyst_confidence_overridden_at = NOW(),
-             confidence = $5
+             confidence = NULL
          WHERE id = $1 AND observable_type = $2`,
         [
           iocId,
           observableType,
           reasonCheck.value,
-          userId,
-          computeEffectiveConfidence({
-            sourceConfidence: prev.source_confidence ?? prev.confidence,
-            feedDefaultConfidence: prev.feed_default_confidence,
-            analystOverride: null,
-            fallback: prev.confidence
-          })
+          userId
         ]
       );
 
