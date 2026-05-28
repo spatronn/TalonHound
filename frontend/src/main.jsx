@@ -6387,6 +6387,7 @@ function EnrichmentProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [vt, setVt] = useState(null);
   const [ipinfo, setIpinfo] = useState(null);
+  const [rdap, setRdap] = useState(null);
   const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
   const [ipForm, setIpForm] = useState({ enabled: true, token: '', base_url: 'https://api.ipinfo.io/lite', timeout_seconds: 6, usage_note: '' });
   const [feedback, setFeedback] = useState({ type: '', text: '' });
@@ -6407,8 +6408,10 @@ function EnrichmentProvidersPage() {
       const { data } = await api.get('/admin/enrichment-providers');
       const vtRow = (data?.providers || []).find((x) => x.provider === 'virustotal') || null;
       const ipRow = (data?.providers || []).find((x) => x.provider === 'ipinfo_lite') || null;
+      const rdapRow = (data?.providers || []).find((x) => x.provider === 'rdap') || null;
       setVt(vtRow);
       setIpinfo(ipRow);
+      setRdap(rdapRow);
       if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
       if (ipRow) {
         setIpForm((f) => ({
@@ -6501,6 +6504,7 @@ function EnrichmentProvidersPage() {
   const cardShell = { border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a', marginBottom:16 };
   const vtSm = statusMeta(vt?.status);
   const ipSm = statusMeta(ipinfo?.status);
+  const rdapSm = statusMeta(rdap?.status === 'disabled' ? 'not_configured' : (rdap?.status || 'healthy'));
   const anyBusy = Object.values(busy).some(Boolean);
 
   return <AppShell><section style={{ border:'1px solid #334155', borderRadius:12, background:'#111827', padding:20 }}>
@@ -6567,6 +6571,36 @@ function EnrichmentProvidersPage() {
           <button onClick={()=>removeIpToken().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5' }}>{busy.ipRemove ? 'Removing...' : 'Remove token'}</button>
         </div>
         {ipinfo.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last error:</b> {ipinfo.last_error_message}</div> : null}
+      </div> : null}
+
+      {rdap ? <div style={cardShell}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+          <div>
+            <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>RDAP / WHOIS</h3>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>{rdap.description || 'Domain registration data via public RDAP. No API key required.'}</div>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <span style={{ border:`1px solid ${rdapSm.border}`, background:rdapSm.bg, color:rdapSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{rdap.enabled ? (rdapSm.label === 'Healthy' ? 'Built-in' : rdapSm.label) : 'Disabled'}</span>
+            <span style={{ border:'1px solid #475569', background:'rgba(100,116,139,0.2)', color:'#cbd5e1', borderRadius:999, padding:'4px 10px', fontSize:12 }}>No API key</span>
+          </div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10, marginTop:14 }}>
+          <div style={{ color:'#cbd5e1', fontSize:13 }}>
+            <div style={{ color:'#94a3b8', marginBottom:4 }}>RDAP base URL</div>
+            <div style={{ color:'#e2e8f0', wordBreak:'break-all' }}>{rdap.rdap_base_url || 'https://rdap.org'}</div>
+          </div>
+          <div style={{ color:'#cbd5e1', fontSize:13 }}>
+            <div style={{ color:'#94a3b8', marginBottom:4 }}>Domain cache TTL</div>
+            <div style={{ color:'#e2e8f0' }}>{rdap.cache_ttl_hours || 24} hours</div>
+          </div>
+          <div style={{ color:'#cbd5e1', fontSize:13 }}>
+            <div style={{ color:'#94a3b8', marginBottom:4 }}>Timeout</div>
+            <div style={{ color:'#e2e8f0' }}>{rdap.timeout_ms || 10000} ms</div>
+          </div>
+        </div>
+        <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#0b1220', color:'#94a3b8', fontSize:13, lineHeight:1.5 }}>
+          Used on-demand from <b style={{ color:'#e2e8f0' }}>IOC Details → Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain (e.g. tenant.wixstudio.com → wixstudio.com).
+        </div>
       </div> : null}
     </>}
   </section></AppShell>;

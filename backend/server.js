@@ -35,6 +35,8 @@ import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
+import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
+import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
 import {
@@ -5991,21 +5993,46 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
     if (cfg.configured && cfg.last_error_at && (!cfg.last_success_at || new Date(cfg.last_error_at) > new Date(cfg.last_success_at))) status = 'error';
     else if (cfg.configured && cfg.last_success_at) status = 'healthy';
     else if (cfg.configured) status = 'configured';
-    return res.json({ providers: [{
-      provider: VT_PROVIDER,
-      name: 'VirusTotal',
-      enabled: cfg.enabled,
-      configured: cfg.configured,
-      masked_key: maskApiKey(cfg.apiKey),
-      source: cfg.source,
-      ttl_hours: cfg.ttl_hours,
-      timeout_ms: cfg.timeout_ms,
-      status,
-      last_test_at: cfg.last_test_at,
-      last_success_at: cfg.last_success_at,
-      last_error_at: cfg.last_error_at,
-      last_error_message: cfg.last_error_message
-    }]});
+
+    const ipinfo = await getIpinfoLiteConfig(pool);
+    let ipinfoStatus = 'not_configured';
+    if (ipinfo.configured && ipinfo.last_error_at && (!ipinfo.last_success_at || new Date(ipinfo.last_error_at) > new Date(ipinfo.last_success_at))) ipinfoStatus = 'error';
+    else if (ipinfo.configured && ipinfo.last_success_at) ipinfoStatus = 'healthy';
+    else if (ipinfo.configured) ipinfoStatus = 'configured';
+
+    return res.json({ providers: [
+      {
+        provider: VT_PROVIDER,
+        name: 'VirusTotal',
+        enabled: cfg.enabled,
+        configured: cfg.configured,
+        masked_key: maskApiKey(cfg.apiKey),
+        source: cfg.source,
+        ttl_hours: cfg.ttl_hours,
+        timeout_ms: cfg.timeout_ms,
+        status,
+        last_test_at: cfg.last_test_at,
+        last_success_at: cfg.last_success_at,
+        last_error_at: cfg.last_error_at,
+        last_error_message: cfg.last_error_message
+      },
+      {
+        provider: ipinfo.provider_key,
+        name: ipinfo.display_name,
+        enabled: ipinfo.enabled,
+        configured: ipinfo.configured,
+        masked_key: ipinfo.token_masked,
+        source: ipinfo.source,
+        base_url: ipinfo.base_url,
+        timeout_seconds: ipinfo.timeout_seconds,
+        status: ipinfoStatus,
+        last_test_at: ipinfo.last_test_at,
+        last_success_at: ipinfo.last_success_at,
+        last_error_at: ipinfo.last_error_at,
+        last_error_message: ipinfo.last_error_message
+      },
+      getRdapProviderAdminSummary()
+    ]});
   } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
 });
 

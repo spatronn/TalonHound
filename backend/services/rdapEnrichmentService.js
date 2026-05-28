@@ -409,3 +409,21 @@ export async function refreshRdapEnrichment(pool, parsed, { force = false } = {}
     return { row, cached: false, fromLookup: true, error: err };
   }
 }
+
+/** Admin Enrichment Providers page — RDAP is built-in (no API key). */
+export function getRdapProviderAdminSummary() {
+  const enabled = process.env.RDAP_ENABLED !== '0';
+  return {
+    provider: 'rdap',
+    name: 'RDAP / WHOIS',
+    enabled,
+    configured: true,
+    auth_required: false,
+    status: enabled ? 'healthy' : 'disabled',
+    rdap_base_url: RDAP_BASE,
+    cache_ttl_hours: Math.round(CACHE_TTL_MS / (60 * 60 * 1000)),
+    timeout_ms: RDAP_TIMEOUT_MS,
+    max_concurrency: MAX_CONCURRENCY,
+    description: 'Public RDAP domain registration lookups for domain and URL IOCs. On-demand from IOC Details > Intelligence.'
+  };
+}

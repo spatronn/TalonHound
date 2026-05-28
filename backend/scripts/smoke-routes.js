@@ -53,6 +53,19 @@ const CHECKS = [
         throw new Error(`expected application 404 IOC not found, got ${JSON.stringify(body)}`);
       }
     }
+  },
+  {
+    name: 'admin_enrichment_providers_rdap',
+    path: '/api/admin/enrichment-providers',
+    assert: (_res, body) => {
+      const data = /** @type {{ providers?: Array<{ provider?: string }> }} */ (body);
+      const providers = (data?.providers || []).map((p) => p.provider);
+      for (const key of ['virustotal', 'ipinfo_lite', 'rdap']) {
+        if (!providers.includes(key)) {
+          throw new Error(`admin enrichment providers missing ${key}; got ${providers.join(', ')}`);
+        }
+      }
+    }
   }
 ];
 
