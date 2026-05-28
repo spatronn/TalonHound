@@ -207,6 +207,43 @@ export async function fetchFeedNamesByKey(client) {
 }
 
 /**
+ * @param {object|null|undefined} sourceConfidence Explicit entry confidence (null = none).
+ * @param {object|null|undefined} legacyConfidence Deprecated alias used by older import callers.
+ */
+export function resolveParsedSourceConfidence(sourceConfidence, legacyConfidence) {
+  if (sourceConfidence !== undefined) {
+    return normalizeConfidence(sourceConfidence);
+  }
+  return normalizeConfidence(legacyConfidence);
+}
+
+export async function enrichIocConfidenceRows(pool, rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const feedDefaultBySource = new Map();
+  return Promise.all(rows.map(async (row) => {
+    if (normalizeConfidence(row.feed_default_confidence)) return row;
+    const sourceKey = String(row.source_name || '');
+    if (!feedDefaultBySource.has(sourceKey)) {
+      feedDefaultBySource.set(sourceKey, await fetchFeedDefaultConfidence(pool, sourceKey));
+    }
+    return {
+      ...row,
+      feed_default_confidence: feedDefaultBySource.get(sourceKey)
+    };
+  }));
+}
+
+export async function buildIocConfidenceSummaryForDetails(pool, { rows, seedPublicId }) {
+  const feedNamesByKey = await fetchFeedNamesByKey(pool);
+  const enrichedRows = await enrichIocConfidenceRows(pool, rows);
+  return buildIocConfidenceSummary({
+    rows: enrichedRows,
+    seedPublicId,
+    feedNamesByKey
+  });
+}
+
+/**
  * Resolve import-time confidence fields. Preserves analyst override on existing rows.
  * @param {object|null} existingRow
  */

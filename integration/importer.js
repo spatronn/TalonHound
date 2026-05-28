@@ -19,7 +19,8 @@ import {
 import {
   fetchFeedDefaultConfidence,
   resolveImportConfidenceFields,
-  applyIocImportConfidence
+  applyIocImportConfidence,
+  resolveParsedSourceConfidence
 } from './lib/iocConfidence.js';
 import {
   URLHAUS_EXPORT_URL_MASKED,
@@ -349,7 +350,6 @@ async function updateUrlhausObservableBySource(client, entry, sourceName, note, 
     observableType: entry.observableType,
     sourceName,
     sourceUrl: URLHAUS_EXPORT_URL_MASKED,
-    confidence: 'high',
     category
   }).catch(() => {});
   return true;
@@ -371,7 +371,6 @@ async function upsertUrlhausObservable(client, entry, sourceName, suppressionSta
     observableType: entry.observableType,
     sourceName,
     sourceUrl,
-    confidence: 'high',
     sourceConfidence: null,
     category,
     note
@@ -532,7 +531,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     for (const e of kept) {
       const feedDefault = await getFeedDefault(e.sourceName);
       const confFields = resolveImportConfidenceFields({
-        parsedSourceConfidence: e.sourceConfidence ?? e.confidence,
+        parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence),
         feedDefaultConfidence: feedDefault
       });
       resolvedKept.push({ ...e, confFields });
@@ -595,7 +594,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
           observable: obs,
           observableType,
           sourceName: e.sourceName,
-          parsedSourceConfidence: e.sourceConfidence ?? e.confidence
+          parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence)
         }).catch(() => {});
       }
     }
@@ -634,7 +633,7 @@ async function insertObservable(client, { observable, observableType, sourceName
 
   const feedDefault = await fetchFeedDefaultConfidence(client, sourceName);
   const confFields = resolveImportConfidenceFields({
-    parsedSourceConfidence: sourceConfidence ?? confidence,
+    parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence),
     feedDefaultConfidence: feedDefault
   });
 
@@ -674,7 +673,7 @@ async function insertObservable(client, { observable, observableType, sourceName
       observable,
       observableType,
       sourceName,
-      parsedSourceConfidence: sourceConfidence ?? confidence
+      parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
     }).catch(() => {});
     await syncMembershipAfterIocImport(client, {
       observable,
@@ -873,7 +872,6 @@ export async function runUsomImport(options = {}) {
             observableType,
             sourceName: config.usomSourceName,
             sourceUrl: config.usomApiUrl,
-            confidence: 'high',
             sourceConfidence: null,
             category: 'threat-intel',
             note: 'Auto-imported from USOM URL list'
@@ -905,8 +903,6 @@ export async function runUsomImport(options = {}) {
       observableType: entry.observableType,
       sourceName: config.usomSourceName,
       sourceUrl: config.usomApiUrl,
-      confidence: 'high',
-      sourceConfidence: null,
       category: 'threat-intel'
     }), { signal }).catch((err) => {
       if (isJobAbortedError(err)) throw err;
@@ -1026,7 +1022,6 @@ export async function runUrlhausImport(options = {}) {
       observableType: entry.observableType,
       sourceName: config.urlhausSourceName,
       sourceUrl: URLHAUS_EXPORT_URL_MASKED,
-      confidence: 'high',
       category: entry.threat || 'malware-url'
     }), { signal }).catch((err) => {
       if (isJobAbortedError(err)) throw err;
@@ -1406,7 +1401,6 @@ export async function runPhishtankImport(options = {}) {
         observableType: 'url',
         sourceName,
         sourceUrl,
-        confidence: 'high',
         category: 'phishing',
         note: 'Auto-imported from PhishTank online-valid.csv'
       });

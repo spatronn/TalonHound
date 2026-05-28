@@ -6,6 +6,7 @@ import {
   normalizeConfidence,
   resolveConfidenceSourceKind,
   resolveImportConfidenceFields,
+  resolveParsedSourceConfidence,
   validateConfidenceInput
 } from './iocConfidence.js';
 
@@ -102,6 +103,21 @@ test('buildIocConfidenceSummary with analyst override', () => {
   assert.equal(summary.source, 'analyst_override');
   assert.equal(summary.baseline_effective, 'medium');
   assert.equal(summary.override_reason, 'Verified sample');
+});
+
+test('resolveParsedSourceConfidence honors explicit null entry confidence', () => {
+  assert.equal(resolveParsedSourceConfidence(null, 'high'), null);
+  assert.equal(resolveParsedSourceConfidence(undefined, 'high'), 'high');
+});
+
+test('resolveImportConfidenceFields uses feed default when entry confidence is absent', () => {
+  const fields = resolveImportConfidenceFields({
+    parsedSourceConfidence: null,
+    feedDefaultConfidence: 'high'
+  });
+  assert.equal(fields.source_confidence, null);
+  assert.equal(fields.feed_default_confidence, 'high');
+  assert.equal(fields.confidence, 'high');
 });
 
 test('resolveImportConfidenceFields preserves analyst override on re-import', () => {

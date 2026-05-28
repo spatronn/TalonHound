@@ -31,6 +31,14 @@ import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
+import { createAuditLogService } from './lib/auditLogService.js';
+import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails } from './lib/iocConfidence.js';
+import {
+  hasIocConfidenceColumns,
+  iocConfidenceJoinSql,
+  iocConfidenceSelectSql
+} from './lib/schemaCapabilities.js';
+import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 
 const { Pool } = pg;
 
@@ -78,6 +86,13 @@ let iocStatsCache = {
   createdAt: 0,
   lastUpdate: null
 };
+
+const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
+const iocDetailsCache = new Map();
+
+function invalidateIocDetailsCache(publicId) {
+  if (publicId) iocDetailsCache.delete(String(publicId));
+}
 
 app.use(cors());
 app.use(cookieParser());
@@ -3729,6 +3744,11 @@ registerPublishedFeedRoutes(app, pool);
 registerApiKeyRoutes(app, pool);
 registerAuditLogRoutes(app, pool);
 
+const auditLogService = createAuditLogService(pool);
+registerIocConfidenceRoutes(app, pool, auditLogService, {
+  invalidateDetailsCache: invalidateIocDetailsCache
+});
+
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
   return role === ROLES.ADMIN;
@@ -5004,8 +5024,6 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
 });
 
 
-const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
-const iocDetailsCache = new Map();
 let signalEventsTableCache = { value: null, checkedAt: 0 };
 
 async function hasSignalEventsTable() {
@@ -5262,6 +5280,10 @@ app.get('/api/ioc/details', async (req, res) => {
   if (cached) iocDetailsCache.delete(requestedPublicId);
 
   try {
+    const confidenceColumnsReady = await hasIocConfidenceColumns(pool);
+    const confidenceSelect = iocConfidenceSelectSql(confidenceColumnsReady);
+    const confidenceJoin = iocConfidenceJoinSql(confidenceColumnsReady);
+
     const itemQ = `
       WITH seed AS (
         SELECT observable, observable_type
@@ -5277,6 +5299,7 @@ app.get('/api/ioc/details', async (req, res) => {
         i.source_name,
         i.source_url,
         i.confidence,
+        ${confidenceSelect}
         i.category,
         i.note,
         i.match_count,
@@ -5287,6 +5310,7 @@ app.get('/api/ioc/details', async (req, res) => {
       INNER JOIN seed s
         ON i.observable = s.observable
        AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)
+      ${confidenceJoin}
       ORDER BY i.created_at DESC
       LIMIT 500
     `;
@@ -5472,11 +5496,28 @@ app.get('/api/ioc/details', async (req, res) => {
       first_seen_log: firstSeenLog,
       last_seen_log: lastSeenLog,
       source_count: new Set(rows.map((r) => r.source_name)).size,
-      confidence_set: [...new Set(rows.map((r) => r.confidence).filter(Boolean))],
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
       file_information: buildFileInformation(rows, observable, rows[0].observable_type)
     };
+
+    let confidenceDetail = null;
+    if (confidenceColumnsReady) {
+      confidenceDetail = await buildIocConfidenceSummaryForDetails(pool, {
+        rows,
+        seedPublicId: requestedPublicId
+      });
+    } else {
+      confidenceDetail = buildIocConfidenceSummary({
+        rows,
+        seedPublicId: requestedPublicId,
+        feedNamesByKey: new Map()
+      });
+    }
+    summary.confidence = confidenceDetail?.effective || null;
+    summary.confidence_detail = confidenceDetail;
+    summary.confidence_set = confidenceDetail?.confidence_set
+      || [...new Set(rows.map((r) => r.confidence).filter(Boolean))];
 
     const suppressionQ = await pool.query(
       `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at
@@ -5493,6 +5534,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const payload = {
       summary,
+      confidence: confidenceDetail,
       match_count: Number(summary.match_count || 0),
       sources: rows,
       matches: [],
