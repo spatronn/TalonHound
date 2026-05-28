@@ -10,7 +10,11 @@ export const config = {
     port: Number(process.env.DB_PORT || 5432),
     user: process.env.DB_USER || 'demo',
     password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME || 'demo'
+    database: process.env.DB_NAME || 'demo',
+    application_name: process.env.PG_APPLICATION_NAME || 'integration-worker',
+    statement_timeout: Number(process.env.PG_STATEMENT_TIMEOUT_MS || 120000),
+    lock_timeout: Number(process.env.PG_LOCK_TIMEOUT_MS || 5000),
+    idle_in_transaction_session_timeout: Number(process.env.PG_IDLE_IN_TX_TIMEOUT_MS || 120000)
   },
   sourceName: process.env.SOURCE_NAME || 'EmergingThreats:blockrules',
   sourceIndexUrl: process.env.SOURCE_INDEX_URL || 'http://rules.emergingthreats.net/blockrules/',
