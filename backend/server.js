@@ -9,16 +9,6 @@ import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
 import {
-  RETRO_CURSOR_SOURCE,
-  RETRO_CURSOR_SEMANTICS,
-  buildRetroHealthPayload,
-  healthPresentation,
-  parseChDateTimeMs,
-  retroPendingCountQuery,
-  retroScannedBetweenQuery,
-  secondsBetween
-} from './lib/retroStatus.js';
-import {
   signUserToken,
   apiAuthGate,
   csrfProtection,
@@ -32,40 +22,12 @@ import { registerUserManagementRoutes } from './routes/users.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
-import { registerAuditLogRoutes } from './routes/auditLogs.js';
-import { registerTagRoutes } from './routes/tags.js';
-import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
-import { registerIocExpirationRoutes } from './routes/iocExpiration.js';
-import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
-import { buildIocConfidenceSummary, fetchFeedNamesByKey } from './lib/iocConfidence.js';
-import {
-  hasIocConfidenceColumns,
-  iocConfidenceJoinSql,
-  iocConfidenceSelectSql
-} from './lib/schemaCapabilities.js';
-import { formatExpirationSummary } from './lib/iocExpiration.js';
-import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
-import { extractIpv4ForGeo } from './lib/ipEnrichmentEligibility.js';
-import { getIpinfoLiteConfig, lookupGeoFromIpEnrichment } from './services/ipinfoLiteService.js';
-import { createAuditLogService } from './lib/auditLogService.js';
-import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
-import { pickSafeFields } from './lib/auditRedaction.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
 import { buildIocEnvironmentImpact, computeIncidentRiskScore, emptyIocEnvironmentImpact } from './lib/iocEnvironmentImpact.js';
 import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
-import {
-  URLHAUS_FEED_KEY,
-  MALWAREBAZAAR_FEED_KEY,
-  formatFeedCredentialsSummary,
-  sanitizeFeedErrorMessage
-} from './lib/urlhausIntegration.js';
-import { QUEUE_HARDENING } from './lib/integrationQueueConfig.js';
-import { findActiveRunningJobForSource, enrichIntegrationQueueJobRow } from './lib/integrationQueueRecovery.js';
-import { loadIntegrationQueueHealthSnapshot, runIntegrationQueueRecover } from './lib/integrationQueueApi.js';
-import { buildQueuedJobHint } from './lib/integrationQueueHealth.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 
@@ -86,23 +48,13 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'demo'
 });
-const audit = createAuditLogService(pool);
 
 const redisUrl = getRedisUrl();
 const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const signalQueueName = process.env.SIGNAL_QUEUE_NAME || 'signal-events';
 const llmRiskQueueName = process.env.LLM_RISK_QUEUE_NAME || 'llm-risk-jobs';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
-const importQueue = new Queue(queueName, {
-  connection: redis,
-  defaultJobOptions: {
-    attempts: 5,
-    backoff: { type: 'exponential', delay: 30_000 },
-    removeOnComplete: 50,
-    removeOnFail: 200,
-    timeout: QUEUE_HARDENING.jobTimeoutMs
-  }
-});
+const importQueue = new Queue(queueName, { connection: redis });
 const signalQueue = new Queue(signalQueueName, { connection: redis });
 const llmRiskQueue = new Queue(llmRiskQueueName, { connection: redis });
 const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue, db: pool });
@@ -172,7 +124,29 @@ function isValidIpv4(input) {
   return parts.every((p) => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
 }
 
-// extractIpv4ForGeo imported from ./lib/ipEnrichmentEligibility.js (IPinfo on-demand enrichment)
+function extractIpv4ForGeo(observable, observableType) {
+  const raw = String(observable || '').trim();
+  const type = String(observableType || '').toLowerCase();
+  if (!raw) return null;
+
+  if (type === 'ip') {
+    const ip = raw.split('/')[0].trim();
+    return isValidIpv4(ip) ? ip : null;
+  }
+
+  if (type === 'url') {
+    try {
+      const u = new URL(raw);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      const host = u.hostname;
+      return isValidIpv4(host) ? host : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
 
 function parseNoteKeyValues(note) {
   const out = {};
@@ -514,18 +488,19 @@ async function refreshGeoCache(limit = 20000) {
       INSERT INTO ioc_ip_geo_cache (ip, country_code, asn, as_name, updated_at)
       SELECT
         w.ip,
-        NULLIF(UPPER(TRIM(e.country_code)), '') AS country_code,
-        e.asn,
-        e.as_name,
+        NULLIF(UPPER(TRIM(a.country_code)), '') AS country_code,
+        a.asn,
+        a.as_name,
         NOW()
       FROM with_num w
       LEFT JOIN LATERAL (
-        SELECT e.asn, e.country_code, e.as_name
-        FROM ioc_ip_enrichment e
-        WHERE e.ip = host(w.ip::inet)
-          AND e.provider_status = 'success'
+        SELECT r.asn, COALESCE(o.country_code, r.country) AS country_code, r.asn_owner AS as_name
+        FROM asn_lookup r
+        LEFT JOIN asn_country_overrides o ON o.asn = r.asn
+        WHERE w.ip_num BETWEEN r.start_ip_int AND r.end_ip_int
+        ORDER BY (r.end_ip_int - r.start_ip_int) ASC
         LIMIT 1
-      ) e ON TRUE
+      ) a ON TRUE
       ON CONFLICT (ip)
       DO UPDATE SET
         country_code = EXCLUDED.country_code,
@@ -544,20 +519,7 @@ function scheduleGeoCacheRefreshAfterAdd() {
   // Threat map removed: geo cache refresh disabled.
 }
 
-// schema migrations: explicit one-shot only — see docs/deployment.md and npm run migrate
-
-app.get('/healthz', (_req, res) => {
-  res.json({ ok: true, service: 'backend' });
-});
-
-app.get('/readyz', async (_req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    return res.json({ ok: true, service: 'backend', db: 'up' });
-  } catch {
-    return res.status(503).json({ ok: false, service: 'backend', db: 'down' });
-  }
-});
+// schema migrations are handled by migrate.js
 
 app.get('/health', async (_req, res) => {
   try {
@@ -640,9 +602,12 @@ app.get('/api/system/status', async (req, res) => {
             toString(chunk_end_row_hash) AS chunk_end_row_hash,
             toUInt32(chunk_ioc_count) AS chunk_ioc_count,
             toUInt64(chunk_rows_processed) AS chunk_rows_processed,
-            toUInt32(last_chunk_pending_before) AS last_chunk_pending_before,
-            toUInt32(last_chunk_pending_after) AS last_chunk_pending_after,
-            toUInt32(last_chunk_scanned_count) AS last_chunk_scanned_count
+            last_error_type,
+            last_error_message,
+            toString(last_error_at) AS last_error_at,
+            toString(last_success_at) AS last_success_at,
+            toUInt32(last_chunk_size) AS last_chunk_size,
+            toUInt8(last_chunk_retry_count) AS last_chunk_retry_count
           FROM ioc_retro_state
           WHERE worker_name = 'ioc-retro-v1'
           ORDER BY updated_at DESC
@@ -654,75 +619,42 @@ app.get('/api/system/status', async (req, res) => {
       const prevState = retroStateRows?.[1] || null;
       let retroRows = [{ pending: 0, cursor_ts: null, cursor_hash: null }];
       let lastRetroScannedIoc = null;
-      let chMaxLookupUpdatedAt = null;
-      let chMaxLookupUpdatedAtMs = null;
-      let pgMaxIocCreatedAt = null;
-      let pgMaxIocCreatedAtMs = null;
-      let pgUnsyncedIocCount = null;
-      let correlationSync = null;
 
       if (latestState?.cursor_ts && latestState?.cursor_hash) {
-        retroRows = await clickhouseQuery(retroPendingCountQuery(
-          String(latestState.cursor_ts),
-          String(latestState.cursor_hash)
-        ));
+        retroRows = await clickhouseQuery(`
+          SELECT
+            count() AS pending,
+            min(updated_at) AS pending_min_ts,
+            max(updated_at) AS pending_max_ts,
+            '${String(latestState.cursor_ts)}' AS cursor_ts,
+            '${String(latestState.cursor_hash)}' AS cursor_hash
+          FROM ioc_lookup
+          WHERE (updated_at > toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3))
+             OR (updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
+                 AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(latestState.cursor_hash))}'))
+        `);
       }
 
       if (latestState?.cursor_ts && latestState?.cursor_hash && prevState?.cursor_ts && prevState?.cursor_hash) {
-        const lastScannedRows = await clickhouseQuery(retroScannedBetweenQuery(
-          String(prevState.cursor_ts),
-          String(prevState.cursor_hash),
-          String(latestState.cursor_ts),
-          String(latestState.cursor_hash)
-        ));
+        const lastScannedRows = await clickhouseQuery(`
+          SELECT count() AS scanned
+          FROM ioc_lookup
+          WHERE (
+            updated_at > toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
+            OR (
+              updated_at = toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
+              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(prevState.cursor_hash))}')
+            )
+          )
+          AND (
+            updated_at < toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
+            OR (
+              updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
+              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) <= toUInt64('${safeHash(String(latestState.cursor_hash))}')
+            )
+          )
+        `);
         lastRetroScannedIoc = Number(lastScannedRows?.[0]?.scanned || 0);
-      }
-
-      const [maxLookupRows, syncStateRows, pgMaxRows] = await Promise.all([
-        clickhouseQuery(`
-          SELECT
-            toString(max(updated_at)) AS max_ts,
-            toUInt64(toUnixTimestamp64Milli(max(updated_at))) AS max_ms
-          FROM default.ioc_lookup_by_updated
-          WHERE confidence > 0
-        `),
-        clickhouseQuery(`
-          SELECT
-            worker_name,
-            toString(last_sync_ts) AS last_sync_ts,
-            toUInt64(last_sync_id) AS last_sync_id,
-            toString(updated_at) AS updated_at
-          FROM default.ioc_lookup_sync_state
-          ORDER BY updated_at DESC
-          LIMIT 1
-        `),
-        pool.query('SELECT max(created_at) AS max_created_at FROM ioc_items')
-      ]);
-
-      chMaxLookupUpdatedAt = maxLookupRows?.[0]?.max_ts || null;
-      chMaxLookupUpdatedAtMs = Number(maxLookupRows?.[0]?.max_ms || 0) || parseChDateTimeMs(chMaxLookupUpdatedAt);
-      pgMaxIocCreatedAt = pgMaxRows.rows?.[0]?.max_created_at || null;
-      pgMaxIocCreatedAtMs = pgMaxIocCreatedAt ? new Date(pgMaxIocCreatedAt).getTime() : null;
-
-      if (chMaxLookupUpdatedAt) {
-        const unsyncedRes = await pool.query(
-          'SELECT count(*)::int AS cnt FROM ioc_items WHERE created_at > $1::timestamptz',
-          [chMaxLookupUpdatedAt]
-        );
-        pgUnsyncedIocCount = Number(unsyncedRes.rows?.[0]?.cnt || 0);
-      } else {
-        pgUnsyncedIocCount = 0;
-      }
-
-      if (syncStateRows?.[0]) {
-        const syncUpdatedMs = parseChDateTimeMs(syncStateRows[0].updated_at);
-        correlationSync = {
-          worker_name: syncStateRows[0].worker_name || null,
-          last_sync_ts: syncStateRows[0].last_sync_ts || null,
-          last_sync_id: Number(syncStateRows[0].last_sync_id || 0),
-          updated_at: syncStateRows[0].updated_at || null,
-          updated_at_iso: syncUpdatedMs ? new Date(syncUpdatedMs).toISOString() : null
-        };
       }
 
       const sizeBytes = Number(sizeRows?.[0]?.bytes || 0);
@@ -735,101 +667,34 @@ app.get('/api/system/status', async (req, res) => {
       const rawPendingIoc = Number(retroRows?.[0]?.pending || 0);
       const activeChunkIoc = Number(latestState?.chunk_ioc_count || 0);
       const chunkActive = Number(latestState?.chunk_active || 0) === 1;
-      const cursorTs = latestState?.cursor_ts || null;
-      const cursorTsMs = parseChDateTimeMs(latestState?.cursor_ts_ms) || parseChDateTimeMs(cursorTs);
-      const lastRunAtMs = parseChDateTimeMs(latestState?.state_updated_at_ms) || parseChDateTimeMs(latestState?.state_updated_at);
-      const chPendingIocCount = chunkActive
+      // When a chunk is active, those IOC rows are already being processed by retro worker.
+      // Exclude them from pending to avoid a misleading "stuck" value on /system.
+      clickhouse.retro_pending_ioc = chunkActive
         ? Math.max(0, rawPendingIoc - activeChunkIoc)
         : rawPendingIoc;
-      const chCursorLagSeconds = (cursorTsMs != null && chMaxLookupUpdatedAtMs != null)
-        ? secondsBetween(chMaxLookupUpdatedAtMs, cursorTsMs)
-        : null;
-      const pgToChSyncLagSeconds = (pgMaxIocCreatedAtMs != null && chMaxLookupUpdatedAtMs != null)
-        ? secondsBetween(pgMaxIocCreatedAtMs, chMaxLookupUpdatedAtMs)
-        : null;
-      const healthBundle = buildRetroHealthPayload({
-        chOk: true,
-        pgOk: true,
-        cursorTs,
-        chMaxLookupUpdatedAtMs,
-        chPendingIocCount,
-        chCursorLagSeconds,
-        pgUnsyncedIocCount,
-        pgToChSyncLagSeconds,
-        lastRunAtMs,
-        nowMs: Date.now()
-      });
-      const overallHealth = healthBundle.overall_health;
-      const retroHealth = healthPresentation(overallHealth, { variant: 'overall' });
-      const workerHealthLabel = healthPresentation(healthBundle.retro_worker_health, { variant: 'worker' });
-      const cursorHealthLabel = healthPresentation(healthBundle.retro_cursor_health, { variant: 'cursor' });
-      const syncHealthLabel = healthPresentation(healthBundle.correlation_sync_health, { variant: 'sync' });
-
-      payload.retro = {
-        last_run_at: latestState?.state_updated_at || null,
-        last_run_at_iso: isoFromEpochMs(latestState?.state_updated_at_ms),
-        last_run_age_seconds: healthBundle.last_run_age_seconds,
-        expected_interval_seconds: healthBundle.expected_interval_seconds,
-        grace_seconds: healthBundle.grace_seconds,
-        stale_after_seconds: healthBundle.stale_after_seconds,
-        cursor_ts: cursorTs,
-        cursor_ts_iso: isoFromEpochMs(latestState?.cursor_ts_ms) || (cursorTsMs ? new Date(cursorTsMs).toISOString() : null),
-        cursor_source: RETRO_CURSOR_SOURCE,
-        cursor_semantics: RETRO_CURSOR_SEMANTICS,
-        ch_max_lookup_updated_at: chMaxLookupUpdatedAt,
-        ch_max_lookup_updated_at_iso: chMaxLookupUpdatedAtMs ? new Date(chMaxLookupUpdatedAtMs).toISOString() : null,
-        ch_cursor_lag_seconds: chCursorLagSeconds,
-        ch_pending_ioc_count: chPendingIocCount,
-        pg_max_ioc_created_at: pgMaxIocCreatedAt,
-        pg_max_ioc_created_at_iso: pgMaxIocCreatedAtMs ? new Date(pgMaxIocCreatedAtMs).toISOString() : null,
-        pg_unsynced_ioc_count: pgUnsyncedIocCount,
-        pg_to_ch_sync_lag_seconds: pgToChSyncLagSeconds,
-        retro_worker_health: healthBundle.retro_worker_health,
-        retro_worker_health_label: workerHealthLabel.label,
-        retro_cursor_health: healthBundle.retro_cursor_health,
-        retro_cursor_health_label: cursorHealthLabel.label,
-        correlation_sync_health: healthBundle.correlation_sync_health,
-        correlation_sync_health_label: syncHealthLabel.label,
-        overall_health: overallHealth,
-        chunk_active: Number(latestState?.chunk_active || 0),
-        last_chunk_scanned_count: Number(latestState?.last_chunk_scanned_count || lastRetroScannedIoc || 0),
-        last_chunk_pending_before: Number(latestState?.last_chunk_pending_before || 0),
-        last_chunk_pending_after: Number(latestState?.last_chunk_pending_after || 0),
-        last_run_duration_ms: Number(latestState?.last_run_duration_ms || 0),
-        last_retro_scanned_ioc: lastRetroScannedIoc,
-        correlation_sync: correlationSync,
-        state_health: overallHealth,
-        state_health_label: retroHealth.label,
-        retro_pending_min_ts: retroRows?.[0]?.pending_min_ts || null,
-        retro_pending_max_ts: retroRows?.[0]?.pending_max_ts || null,
-        retro_chunk_end_ts: latestState?.chunk_end_ts || null,
-        retro_chunk_ioc_count: Number(latestState?.chunk_ioc_count || 0),
-        retro_chunk_rows_processed: Number(latestState?.chunk_rows_processed || 0)
-      };
-
-      // Legacy clickhouse.* retro fields (backward compatible with older UI/clients).
-      clickhouse.retro_pending_ioc = chPendingIocCount;
-      clickhouse.retro_cursor_ts = cursorTs;
-      clickhouse.retro_cursor_ts_iso = payload.retro.cursor_ts_iso;
-      clickhouse.retro_cursor_hash = latestState?.cursor_hash || null;
-      clickhouse.retro_last_run_at = payload.retro.last_run_at;
-      clickhouse.retro_last_run_at_iso = payload.retro.last_run_at_iso;
-      clickhouse.retro_last_duration_ms = payload.retro.last_run_duration_ms;
+      clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || latestState?.cursor_ts || null;
+      clickhouse.retro_cursor_ts_iso = isoFromEpochMs(latestState?.cursor_ts_ms);
+      clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
+      clickhouse.retro_last_run_at = latestState?.state_updated_at || null;
+      clickhouse.retro_last_run_at_iso = isoFromEpochMs(latestState?.state_updated_at_ms);
+      clickhouse.retro_last_duration_ms = Number(latestState?.last_run_duration_ms || 0);
       clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
-      clickhouse.retro_pending_min_ts = payload.retro.retro_pending_min_ts;
-      clickhouse.retro_pending_max_ts = payload.retro.retro_pending_max_ts;
-      clickhouse.retro_chunk_active = payload.retro.chunk_active;
-      clickhouse.retro_chunk_end_ts = payload.retro.retro_chunk_end_ts;
+      clickhouse.retro_pending_min_ts = retroRows?.[0]?.pending_min_ts || null;
+      clickhouse.retro_pending_max_ts = retroRows?.[0]?.pending_max_ts || null;
+      clickhouse.retro_chunk_active = Number(latestState?.chunk_active || 0);
+      clickhouse.retro_chunk_end_ts = latestState?.chunk_end_ts || null;
       clickhouse.retro_chunk_end_row_hash = latestState?.chunk_end_row_hash || null;
-      clickhouse.retro_chunk_ioc_count = payload.retro.retro_chunk_ioc_count;
-      clickhouse.retro_chunk_rows_processed = payload.retro.retro_chunk_rows_processed;
+      clickhouse.retro_chunk_ioc_count = Number(latestState?.chunk_ioc_count || 0);
+      clickhouse.retro_chunk_rows_processed = Number(latestState?.chunk_rows_processed || 0);
+      clickhouse.retro_last_error_type = latestState?.last_error_type || '';
+      clickhouse.retro_last_error_message = latestState?.last_error_message || '';
+      clickhouse.retro_last_error_at = latestState?.last_error_at || null;
+      clickhouse.retro_last_success_at = latestState?.last_success_at || null;
+      clickhouse.retro_last_chunk_size = Number(latestState?.last_chunk_size || 0);
+      clickhouse.retro_last_chunk_retry_count = Number(latestState?.last_chunk_retry_count || 0);
+      clickhouse.retro_health_reason = clickhouse.retro_last_error_type || (clickhouse.retro_pending_ioc > 0 ? 'backlog' : 'ok');
     } catch (err) {
       clickhouse.error = err.message;
-      payload.retro = {
-        state_health: 'ERROR',
-        state_health_label: healthPresentation('ERROR').label,
-        error: err.message
-      };
     }
   } else {
     clickhouse.note = 'LOG_STORAGE is not clickhouse';
@@ -1488,9 +1353,6 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
     const reviewedBy = String(req.user?.username || req.user?.email || '').trim() || null;
     const assignTo = String(req.body?.assigned_to || '').trim() || reviewedBy;
 
-    const beforeQ = await pool.query('SELECT id, verdict, assigned_to, note FROM ioc_match_events WHERE id = $1', [id]);
-    const before = beforeQ.rows[0] || null;
-
     const q = await pool.query(
       `UPDATE ioc_match_events
        SET verdict = $2::text,
@@ -1515,18 +1377,6 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
     if (!q.rowCount) {
       return res.status(404).json({ message: 'IOC match event not found' });
     }
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_MATCH_EVENT_VERDICT_CHANGED,
-      entityType: AUDIT_ENTITY.IOC_MATCH_EVENT,
-      entityId: String(id),
-      entityDisplay: `event #${id}`,
-      severity: AUDIT_SEVERITY.INFO,
-      before: pickSafeFields(before, ['id', 'verdict', 'assigned_to', 'note']),
-      after: pickSafeFields(q.rows[0], ['id', 'verdict', 'assigned_to', 'note']),
-      metadata: { endpoint: 'PATCH /api/ioc/match-events/:id/verdict' }
-    });
 
     return res.json({ item: q.rows[0] });
   } catch (err) {
@@ -1923,17 +1773,6 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
       ...llmRisk,
       risk_score: llmRisk.final_risk_score
     };
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.INCIDENT_AI_INSIGHT_UPDATED,
-      entityType: AUDIT_ENTITY.INCIDENT,
-      entityId: String(context?.id || incident.id),
-      entityDisplay: String(context?.ioc_value || context?.matched_ioc || incident.id).slice(0, 512),
-      severity: AUDIT_SEVERITY.INFO,
-      after: pickSafeFields(llmRisk, ['final_risk_score', 'llm_risk_adjustment', 'llm_risk_reason', 'llm_risk_summary']),
-      metadata: { incident_version: incidentVersion, forced: true }
-    });
 
     return res.json({ item });
   } catch (err) {
@@ -2923,47 +2762,7 @@ app.patch('/api/incidents/:id', async (req, res) => {
     }
 
     await tx.query('COMMIT');
-
-    const updated = updQ.rows[0];
-    const beforeSnap = pickSafeFields(current, ['id', 'verdict', 'status', 'note', 'assigned_to']);
-    const afterSnap = pickSafeFields(updated, ['id', 'verdict', 'status', 'note', 'assigned_to']);
-    const display = String(updated.ioc_value || updated.matched_ioc || incident.id || idRaw).slice(0, 512);
-
-    let action = AUDIT_ACTION.INCIDENT_UPDATED;
-    if (current.status !== 'closed' && nextStatus === 'closed') action = AUDIT_ACTION.INCIDENT_CLOSED;
-    else if (current.status === 'closed' && nextStatus === 'open') action = AUDIT_ACTION.INCIDENT_REOPENED;
-    else if (String(current.verdict || '') !== String(nextVerdict || '')) action = AUDIT_ACTION.INCIDENT_VERDICT_CHANGED;
-
-    audit.auditSuccess({
-      req,
-      action,
-      entityType: AUDIT_ENTITY.INCIDENT,
-      entityId: String(updated.id || incident.id),
-      entityDisplay: display,
-      severity: nextStatus === 'closed' ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
-      before: beforeSnap,
-      after: afterSnap,
-      metadata: {
-        propagate_to_events: propagateToEvents,
-        take_ownership: takeOwnership,
-        closed_by_source: 'web'
-      }
-    });
-
-    if (takeOwnership && String(current.assigned_to || '') !== String(updated.assigned_to || '')) {
-      audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.INCIDENT_ASSIGNED,
-        entityType: AUDIT_ENTITY.INCIDENT,
-        entityId: String(updated.id || incident.id),
-        entityDisplay: display,
-        severity: AUDIT_SEVERITY.INFO,
-        before: { assigned_to: current.assigned_to },
-        after: { assigned_to: updated.assigned_to }
-      });
-    }
-
-    return res.json({ item: updated });
+    return res.json({ item: updQ.rows[0] });
   } catch (err) {
     await tx.query('ROLLBACK').catch(() => {});
     console.error('[incident-patch] failed', err);
@@ -3232,11 +3031,17 @@ function computeConsecutiveFailures(runs, jobType) {
 }
 
 function buildIntegrationHealthSummary(integrations) {
-  const feedRows = integrations || [];
+  const feedRows = (integrations || []).filter((i) => i.key !== 'asn_enrichment');
   const activeFeeds = feedRows.filter((i) => i.active !== false);
   const failingFeeds = feedRows.filter((i) => {
     const st = String(i.status || i.last_status || '').toLowerCase();
     return st === 'failed' || st === 'fail' || Number(i.consecutive_failures || 0) > 0;
+  });
+  const successfulFeeds24h = feedRows.filter((i) => {
+    const finished = i.last_success_at || i.last_finished_at;
+    if (!finished) return false;
+    const ts = new Date(finished).getTime();
+    return Number.isFinite(ts) && ts >= Date.now() - 24 * 60 * 60 * 1000;
   });
   const lastRunInsertedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.inserted ?? i.last_records_inserted), 0);
   const lastRunProcessedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.processed ?? i.last_records_processed), 0);
@@ -3247,13 +3052,14 @@ function buildIntegrationHealthSummary(integrations) {
     enabled_feeds: activeFeeds.length,
     inactive_feeds: feedRows.length - activeFeeds.length,
     failing_feeds: failingFeeds.length,
+    successful_feeds_24h: successfulFeeds24h.length,
     last_run_inserted_total: lastRunInsertedTotal,
     last_run_new_total: lastRunInsertedTotal,
     last_run_processed_total: lastRunProcessedTotal
   };
 }
 
-function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures) {
+function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt) {
   const jobType = feedJobType(feed.key);
   const lr = latestRunByJobType.get(jobType);
   const lq = latestQueueByKey.get(feed.key);
@@ -3263,11 +3069,29 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const lastSuccess = lastSuccessByJobType.get(jobType);
   const feedActive = feed.active !== false;
 
+  if (feed.key === 'asn_enrichment') {
+    return {
+      ...feed,
+      active: feedActive,
+      status: asnLastUpdatedAt ? 'success' : 'never',
+      last_status: asnLastUpdatedAt ? 'success' : 'never',
+      health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'warning') : 'disabled',
+      last_run_at: asnLastUpdatedAt || null,
+      last_started_at: asnLastUpdatedAt || null,
+      last_finished_at: null,
+      last_success_at: asnLastUpdatedAt || null,
+      last_error: null,
+      consecutive_failures: 0,
+      last_run_metrics: lastRunMetrics,
+      ...runMetrics,
+      total_records: null
+    };
+  }
+
   const lastStatus = lr?.status || lq?.status || 'never';
-  const lastErrorRaw = (lastStatus === 'failed' || lastStatus === 'fail')
+  const lastError = (lastStatus === 'failed' || lastStatus === 'fail')
     ? (lr?.error_message || lq?.error_message || null)
     : null;
-  const lastError = lastErrorRaw ? sanitizeFeedErrorMessage(feed.key, lastErrorRaw) : null;
   const consecutive = consecutiveFailures.get(jobType) || 0;
   const metricsHints = buildFeedMetricsHints(lastRunMetrics);
 
@@ -3326,7 +3150,6 @@ app.get('/api/integrations', async (req, res) => {
         f.source_url,
         f.schedule_cron AS schedule,
         f.trust_level,
-        f.credentials,
         f.active,
         f.created_at,
         CASE
@@ -3353,13 +3176,9 @@ app.get('/api/integrations', async (req, res) => {
         q.status AS state,
         COALESCE(q.started_at, q.queued_at) AS timestamp,
         q.error_message AS failed_reason,
-        q.failure_type,
         q.records_processed,
         q.started_at,
-        q.finished_at,
-        q.heartbeat_at,
-        q.updated_at,
-        q.queued_at
+        q.finished_at
       FROM integration_queue_jobs q
       LEFT JOIN integration_feeds f ON f.key = q.integration_key
       ORDER BY q.queued_at DESC
@@ -3425,8 +3244,10 @@ app.get('/api/integrations', async (req, res) => {
       ORDER BY integration_key_norm, COALESCE(started_at, queued_at) DESC
     `;
 
+    const asnQ = `SELECT MAX(updated_at) AS last_updated_at FROM asn_lookup`;
+
     const latestRunStart = Date.now();
-    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, recentRes] = await Promise.all([
+    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, asnRes, recentRes] = await Promise.all([
       jobTypes.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
         : Promise.resolve({ rows: [] }),
@@ -3439,6 +3260,9 @@ app.get('/api/integrations', async (req, res) => {
       feedKeys.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestQueueQ, [feedKeys]))
         : Promise.resolve({ rows: [] }),
+      feedKeys.includes('asn_enrichment')
+        ? queryIntegrationsMetaWithTimeout(pool.query(asnQ))
+        : Promise.resolve({ rows: [{ last_updated_at: null }] }),
       pool.query(recentQ)
     ]);
     integrationsTimingLog(timingEnabled, 'latest run query', latestRunStart);
@@ -3449,27 +3273,11 @@ app.get('/api/integrations', async (req, res) => {
       jobTypes.map((jt) => [jt, computeConsecutiveFailures(recentFailuresRes.rows, jt)])
     );
     const latestQueueByKey = new Map(latestQueueRes.rows.map((r) => [r.integration_key, r]));
-    const policiesRes = feedKeys.length
-      ? await pool.query(
-        `SELECT feed_id, enabled, expiration_mode, ttl_days, grace_days
-         FROM threat_feed_expiration_policies
-         WHERE observable_type = 'all'`
-      )
-      : { rows: [] };
-    const policyByFeedId = new Map(policiesRes.rows.map((p) => [String(p.feed_id), p]));
+    const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
 
-    const integrations = feedsRes.rows.map((feed) => {
-      const row = mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures);
-      const policy = policyByFeedId.get(String(feed.integration_id));
-      const { credentials: _rawCreds, ...safeFeed } = row;
-      const credentialsSummary = formatFeedCredentialsSummary(feed.key, feed.credentials);
-      return {
-        ...safeFeed,
-        credentials_summary: credentialsSummary,
-        expiration_summary: formatExpirationSummary(policy || { enabled: false, expiration_mode: 'never' }),
-        expiration_policy: policy || null
-      };
-    });
+    const integrations = feedsRes.rows.map((feed) =>
+      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt)
+    );
     const healthSummary = buildIntegrationHealthSummary(integrations);
 
     let queue = {
@@ -3525,13 +3333,9 @@ app.get('/api/integrations', async (req, res) => {
           q.status AS state,
           COALESCE(q.started_at, q.queued_at) AS timestamp,
           q.error_message AS failed_reason,
-          q.failure_type,
           q.records_processed,
           q.started_at,
-          q.finished_at,
-          q.heartbeat_at,
-          q.updated_at,
-          q.queued_at
+          q.finished_at
         FROM integration_queue_jobs q
         LEFT JOIN integration_feeds f ON f.key = q.integration_key
         WHERE q.queued_at >= ${queueWindowSql}
@@ -3556,44 +3360,9 @@ app.get('/api/integrations', async (req, res) => {
       }
 
       const total = Number(totalRows.rows[0]?.total || 0);
-
-      let queueHealthSnapshot = null;
-      try {
-        queueHealthSnapshot = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
-      } catch (healthErr) {
-        queueHealthSnapshot = {
-          health: {
-            worker_status: 'Unknown',
-            queue_health: 'Unknown',
-            recovery_needed: false,
-            warnings: [healthErr.message]
-          }
-        };
-      }
-
-      const dbRunningBySource = new Map(
-        (queueHealthSnapshot?.source_locks || []).map((lock) => [lock.integration_key, lock])
-      );
-
       queue = {
         counts: mapped,
-        jobs: jobsRows.rows.map((row) => {
-          const enriched = enrichIntegrationQueueJobRow(row);
-          const queueHint = row.state === 'queued'
-            ? buildQueuedJobHint({
-              jobId: row.id,
-              integrationKey: row.integration_key,
-              bullCounts: queueHealthSnapshot?.bull_counts,
-              dbRunningBySource,
-              queueHealth: queueHealthSnapshot?.health,
-              blockingStaleJobs: queueHealthSnapshot?.health?.blocking_stale_jobs
-            })
-            : null;
-          return queueHint ? { ...enriched, queue_hint: queueHint } : enriched;
-        }),
-        queue_health: queueHealthSnapshot?.health || null,
-        bull_counts: queueHealthSnapshot?.bull_counts || null,
-        oldest_waiting_age_seconds: queueHealthSnapshot?.oldest_waiting_age_seconds ?? null,
+        jobs: jobsRows.rows,
         pagination: {
           page: queuePage,
           page_size: queuePageSize,
@@ -3616,13 +3385,8 @@ app.get('/api/integrations', async (req, res) => {
     return res.json({
       integrations,
       health_summary: healthSummary,
-      recent_runs: recentRes.rows.map((row) => enrichIntegrationQueueJobRow(row)),
-      queue,
-      queue_hardening: {
-        job_timeout_ms: QUEUE_HARDENING.jobTimeoutMs,
-        stale_after_ms: QUEUE_HARDENING.staleAfterMs,
-        heartbeat_interval_ms: QUEUE_HARDENING.heartbeatIntervalMs
-      }
+      recent_runs: recentRes.rows,
+      queue
     });
   } catch (err) {
     integrationsTimingLog(timingEnabled, 'endpoint total (error)', handlerStart);
@@ -3642,48 +3406,20 @@ const INTEGRATION_JOBS = {
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
 const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *']);
 
-app.post('/api/integrations/run-now', async (req, res) => {
+app.post('/api/integrations/run-now', async (_req, res) => {
   try {
     const keys = Object.keys(INTEGRATION_JOBS);
-    const queued = [];
-    const skipped = [];
+    const jobs = await Promise.all(keys.map((key) => importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key })));
 
-    for (const key of keys) {
-      const running = await findActiveRunningJobForSource(pool, key);
-      if (running) {
-        skipped.push({ key, running_job_id: running.job_id });
-        console.log(`[backend] manual trigger skipped source=${key} running_job_id=${running.job_id}`);
-        continue;
-      }
+    await Promise.all(jobs.map((j, idx) => pool.query(
+      `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+       VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
+       ON CONFLICT (job_id)
+       DO UPDATE SET status='queued', updated_at=NOW()`,
+      [String(j.id), keys[idx], INTEGRATION_JOBS[keys[idx]]]
+    )));
 
-      const job = await importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key });
-      await pool.query(
-        `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
-         VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
-         ON CONFLICT (job_id)
-         DO UPDATE SET status='queued', updated_at=NOW()`,
-        [String(job.id), key, INTEGRATION_JOBS[key]]
-      );
-      queued.push({ key, job_id: String(job.id) });
-    }
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED,
-      entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: 'all',
-      entityDisplay: 'All integrations',
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: { queued_count: queued.length, skipped_count: skipped.length, job_ids: queued.map((j) => j.job_id) }
-    });
-
-    return res.status(202).json({
-      ok: true,
-      queued: queued.length > 0,
-      count: queued.length,
-      job_ids: queued.map((j) => j.job_id),
-      skipped
-    });
+    return res.status(202).json({ ok: true, queued: true, count: jobs.length, job_ids: jobs.map((j) => j.id) });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integrations', detail: err.message });
   }
@@ -3697,16 +3433,6 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
   }
 
   try {
-    const running = await findActiveRunningJobForSource(pool, key);
-    if (running) {
-      console.log(`[backend] manual trigger rejected source=${key} running_job_id=${running.job_id}`);
-      return res.status(409).json({
-        message: 'A job for this integration is already running.',
-        running_job_id: running.job_id,
-        key
-      });
-    }
-
     const job = await importQueue.add(jobName, { triggeredBy: 'manual-ui-one', integration_key: key });
     await pool.query(
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
@@ -3715,102 +3441,9 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
        DO UPDATE SET status='queued', updated_at=NOW()`,
       [String(job.id), key, jobName]
     );
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED,
-      entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: key,
-      entityDisplay: key,
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: { job_id: String(job.id), job_name: jobName }
-    });
-
-    let queueHint = null;
-    try {
-      const snap = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
-      queueHint = buildQueuedJobHint({
-        jobId: String(job.id),
-        integrationKey: key,
-        bullCounts: snap.bull_counts,
-        dbRunningBySource: new Map((snap.source_locks || []).map((l) => [l.integration_key, l])),
-        queueHealth: snap.health,
-        blockingStaleJobs: snap.health?.blocking_stale_jobs
-      });
-    } catch {
-      // optional
-    }
-
-    return res.status(202).json({
-      ok: true,
-      queued: true,
-      key,
-      job_id: job.id,
-      queue_hint: queueHint
-    });
+    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
-  }
-});
-
-app.get('/api/integrations/queue/health', async (req, res) => {
-  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-  try {
-    const snapshot = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
-    return res.json({
-      ok: true,
-      ...snapshot.health,
-      bull_counts: snapshot.bull_counts,
-      db_counts: snapshot.db_counts,
-      source_locks: snapshot.source_locks,
-      oldest_waiting_age_seconds: snapshot.oldest_waiting_age_seconds,
-      worker_count: snapshot.worker_count,
-      stale_active_jobs: snapshot.dry_run_reconcile?.stale_active_jobs || [],
-      stale_stalled_jobs: snapshot.dry_run_reconcile?.stale_stalled_jobs || [],
-      orphan_locks: snapshot.dry_run_locks?.orphan_locks || [],
-      recovery_needed: snapshot.health?.recovery_needed
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to load queue health', detail: err.message });
-  }
-});
-
-app.post('/api/integrations/queue/recover', async (req, res) => {
-  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-  const dryRun = String(req.query?.dry_run || req.body?.dry_run || 'false').toLowerCase() === 'true';
-  try {
-    const result = await runIntegrationQueueRecover(pool, importQueue, {
-      dryRun,
-      logPrefix: '[backend-queue-recover]'
-    });
-
-    if (!dryRun) {
-      audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.INTEGRATION_RUN_TRIGGERED,
-        entityType: AUDIT_ENTITY.INTEGRATION,
-        entityId: 'queue',
-        entityDisplay: 'Integration queue recovery',
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: {
-          reconciled_count: result.reconciled_count,
-          actions: result.actions_taken?.length || 0
-        }
-      });
-    }
-
-    return res.json({
-      ok: true,
-      dry_run: dryRun,
-      stale_active_jobs: result.stale_active_jobs,
-      stale_stalled_jobs: result.stale_stalled_jobs,
-      orphan_locks: result.orphan_locks,
-      actions_taken: result.actions_taken,
-      skipped: result.skipped,
-      reconciled_count: result.reconciled_count
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to recover integration queue', detail: err.message });
   }
 });
 
@@ -3821,12 +3454,6 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
   }
 
   try {
-    const prev = await pool.query(
-      `SELECT key, name, active, schedule_cron, trust_level FROM integration_feeds WHERE key = $1`,
-      [key]
-    );
-    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
-
     const result = await pool.query(
       `UPDATE integration_feeds
        SET active = $2, updated_at = NOW()
@@ -3835,16 +3462,9 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
       [key, req.body.active]
     );
 
-    audit.auditSuccess({
-      req,
-      action: req.body.active ? AUDIT_ACTION.INTEGRATION_ENABLED : AUDIT_ACTION.INTEGRATION_DISABLED,
-      entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: key,
-      entityDisplay: result.rows[0]?.name || key,
-      severity: AUDIT_SEVERITY.INFO,
-      before: pickSafeFields(prev.rows[0], ['key', 'name', 'active']),
-      after: pickSafeFields(result.rows[0], ['key', 'name', 'active'])
-    });
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
 
     return res.json(result.rows[0]);
   } catch (err) {
@@ -3861,9 +3481,6 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
   }
 
   try {
-    const prev = await pool.query('SELECT key, trust_level FROM integration_feeds WHERE key = $1', [key]);
-    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
-
     const result = await pool.query(
       `UPDATE integration_feeds
        SET trust_level = $2, updated_at = NOW()
@@ -3872,16 +3489,9 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
       [key, trustLevel]
     );
 
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.INTEGRATION_TRUST_LEVEL_CHANGED,
-      entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: key,
-      entityDisplay: key,
-      severity: AUDIT_SEVERITY.INFO,
-      before: pickSafeFields(prev.rows[0], ['trust_level']),
-      after: pickSafeFields(result.rows[0], ['trust_level'])
-    });
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
 
     return res.json(result.rows[0]);
   } catch (err) {
@@ -3898,9 +3508,6 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
   }
 
   try {
-    const prev = await pool.query('SELECT key, schedule_cron FROM integration_feeds WHERE key = $1', [key]);
-    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
-
     const result = await pool.query(
       `UPDATE integration_feeds
        SET schedule_cron = $2, updated_at = NOW()
@@ -3909,94 +3516,13 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
       [key, scheduleCron]
     );
 
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.INTEGRATION_SCHEDULE_CHANGED,
-      entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: key,
-      entityDisplay: key,
-      severity: AUDIT_SEVERITY.INFO,
-      before: pickSafeFields(prev.rows[0], ['schedule_cron']),
-      after: pickSafeFields(result.rows[0], ['schedule_cron'])
-    });
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
 
     return res.json(result.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update schedule', detail: err.message });
-  }
-});
-
-app.get('/api/integrations/:key/credentials', async (req, res) => {
-  const { key } = req.params;
-  if (key !== URLHAUS_FEED_KEY && key !== MALWAREBAZAAR_FEED_KEY) {
-    return res.status(404).json({ message: 'Credentials not supported for this integration' });
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT key, credentials FROM integration_feeds WHERE key = $1`,
-      [key]
-    );
-    if (!result.rowCount) return res.status(404).json({ message: 'Integration not found' });
-
-    return res.json({
-      key,
-      ...formatFeedCredentialsSummary(key, result.rows[0].credentials)
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to load integration credentials', detail: err.message });
-  }
-});
-
-app.put('/api/integrations/:key/credentials', async (req, res) => {
-  const { key } = req.params;
-  if (key !== URLHAUS_FEED_KEY && key !== MALWAREBAZAAR_FEED_KEY) {
-    return res.status(404).json({ message: 'Credentials not supported for this integration' });
-  }
-
-  const authKey = typeof req.body?.auth_key === 'string' ? req.body.auth_key.trim() : undefined;
-  if (authKey === undefined) {
-    return res.status(400).json({ message: 'auth_key is required' });
-  }
-
-  try {
-    const prev = await pool.query(
-      `SELECT key, credentials FROM integration_feeds WHERE key = $1`,
-      [key]
-    );
-    if (!prev.rowCount) return res.status(404).json({ message: 'Integration not found' });
-
-    const nextCreds = { ...(prev.rows[0].credentials || {}) };
-    if (authKey === '') {
-      delete nextCreds.auth_key;
-    } else {
-      nextCreds.auth_key = authKey;
-    }
-
-    const result = await pool.query(
-      `UPDATE integration_feeds
-       SET credentials = $2::jsonb, updated_at = NOW()
-       WHERE key = $1
-       RETURNING key, credentials`,
-      [key, JSON.stringify(nextCreds)]
-    );
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.INTEGRATION_CREDENTIALS_CHANGED,
-      entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: key,
-      entityDisplay: key,
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: { auth_key_updated: Boolean(authKey), auth_key_cleared: authKey === '' }
-    });
-
-    return res.json({
-      key: result.rows[0].key,
-      ...formatFeedCredentialsSummary(key, result.rows[0].credentials)
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to update integration credentials', detail: err.message });
   }
 });
 
@@ -4005,14 +3531,6 @@ app.post('/api/auth/login', async (req, res) => {
   const loginId = String(email || '').trim();
 
   if (!loginId || password == null || typeof password !== 'string') {
-    audit.auditFailure({
-      req,
-      action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
-      entityType: AUDIT_ENTITY.AUTH,
-      entityDisplay: loginId || 'unknown',
-      severity: AUDIT_SEVERITY.WARNING,
-      metadata: { attempted_username_or_email: loginId || null, reason: 'missing_credentials' }
-    });
     return res.status(401).json({ message: 'Invalid email or password' });
   }
 
@@ -4026,14 +3544,6 @@ app.post('/api/auth/login', async (req, res) => {
       const ok = await bcrypt.compare(password, u.password_hash);
       if (ok) {
         if (String(u.status || 'active') === 'passive') {
-          audit.auditFailure({
-            req,
-            action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
-            entityType: AUDIT_ENTITY.AUTH,
-            entityDisplay: u.username,
-            severity: AUDIT_SEVERITY.WARNING,
-            metadata: { attempted_username_or_email: loginId, reason: 'account_passive' }
-          });
           return res.status(401).json({ message: 'Invalid email or password' });
         }
         const token = signUserToken({
@@ -4044,19 +3554,6 @@ app.post('/api/auth/login', async (req, res) => {
         });
         appendAuthCookie(req, res, token);
         appendCsrfCookie(req, res);
-        audit.auditSuccess({
-          req,
-          action: AUDIT_ACTION.AUTH_LOGIN_SUCCESS,
-          entityType: AUDIT_ENTITY.AUTH,
-          entityId: String(u.public_id || ''),
-          entityDisplay: u.username,
-          severity: AUDIT_SEVERITY.INFO,
-          actorPublicId: u.public_id ? String(u.public_id) : null,
-          actorUsername: u.username,
-          actorEmail: u.username,
-          actorRole: u.role,
-          metadata: { method: 'password' }
-        });
         return res.json({
           user: {
             email: u.username,
@@ -4066,14 +3563,6 @@ app.post('/api/auth/login', async (req, res) => {
           }
         });
       }
-      audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
-        entityType: AUDIT_ENTITY.AUTH,
-        entityDisplay: loginId,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: { attempted_username_or_email: loginId, reason: 'invalid_password' }
-      });
     }
   } catch {
     /* fall through to env-based demo login if DB unavailable */
@@ -4083,41 +3572,15 @@ app.post('/api/auth/login', async (req, res) => {
     const token = signUserToken(loginId);
     appendAuthCookie(req, res, token);
     appendCsrfCookie(req, res);
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.AUTH_LOGIN_SUCCESS,
-      entityType: AUDIT_ENTITY.AUTH,
-      entityDisplay: loginId,
-      severity: AUDIT_SEVERITY.INFO,
-      actorUsername: loginId,
-      actorEmail: loginId,
-      actorRole: ROLES.ADMIN,
-      metadata: { method: 'demo_env' }
-    });
     return res.json({
       user: { email: loginId, username: loginId, id: null, role: ROLES.ADMIN }
     });
   }
 
-  audit.auditFailure({
-    req,
-    action: AUDIT_ACTION.AUTH_LOGIN_FAILED,
-    entityType: AUDIT_ENTITY.AUTH,
-    entityDisplay: loginId,
-    severity: AUDIT_SEVERITY.WARNING,
-    metadata: { attempted_username_or_email: loginId, reason: 'invalid_credentials' }
-  });
   return res.status(401).json({ message: 'Invalid email or password' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  audit.auditSuccess({
-    req,
-    action: AUDIT_ACTION.AUTH_LOGOUT,
-    entityType: AUDIT_ENTITY.AUTH,
-    entityDisplay: req.user?.username || req.user?.email || 'user',
-    severity: AUDIT_SEVERITY.INFO
-  });
   clearAuthCookie(req, res);
   clearCsrfCookie(req, res);
   res.status(204).end();
@@ -4175,31 +3638,16 @@ app.put('/api/users/me/preferences', async (req, res) => {
       RETURNING email, timezone
     `;
     const { rows } = await pool.query(q, [email, timezone]);
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.SETTINGS_UPDATED,
-      entityType: AUDIT_ENTITY.SETTINGS,
-      entityId: email,
-      entityDisplay: 'User timezone preference',
-      severity: AUDIT_SEVERITY.INFO,
-      after: pickSafeFields(rows[0], ['email', 'timezone']),
-      metadata: { setting: 'timezone' }
-    });
     return res.json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to save preferences', detail: err.message });
   }
 });
 
-registerUserManagementRoutes(app, pool, audit);
+registerUserManagementRoutes(app, pool);
 registerPublicFeedRoutes(app, pool);
-registerPublishedFeedRoutes(app, pool, audit);
-registerApiKeyRoutes(app, pool, audit);
-registerAuditLogRoutes(app, pool);
-registerTagRoutes(app, pool, audit);
-registerRdapEnrichmentRoutes(app, pool, audit);
-registerIpEnrichmentRoutes(app, pool, audit);
-registerIocExpirationRoutes(app, pool, audit);
+registerPublishedFeedRoutes(app, pool);
+registerApiKeyRoutes(app, pool);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -4229,6 +3677,81 @@ function parsePositiveInt(value) {
   return n;
 }
 
+function normalizeTagName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+const TAG_TYPES = new Set(['threat', 'actor', 'technique', 'context']);
+
+app.get('/api/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+
+  try {
+    const q = await pool.query(
+      `SELECT id, name, type, enabled
+       FROM tags
+       WHERE enabled = TRUE
+       ORDER BY type ASC, name ASC`
+    );
+    return res.json(q.rows);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
+  }
+});
+
+app.post('/api/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+
+  const name = normalizeTagName(req.body?.name);
+  const type = String(req.body?.type || '').trim().toLowerCase();
+
+  if (!name) return res.status(400).json({ message: 'name is required' });
+  if (!TAG_TYPES.has(type)) return res.status(400).json({ message: 'Invalid type' });
+
+  try {
+    const q = await pool.query(
+      `INSERT INTO tags (name, type)
+       VALUES ($1, $2::tag_type)
+       ON CONFLICT (name) DO NOTHING
+       RETURNING id, name, type, enabled`,
+      [name, type]
+    );
+
+    if (!q.rowCount) {
+      return res.status(409).json({ message: 'Tag already exists' });
+    }
+
+    return res.status(201).json(q.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
+  }
+});
+
+app.patch('/api/tags/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+
+  const tagId = parsePositiveInt(req.params?.id);
+  if (!tagId) return res.status(400).json({ message: 'Invalid id' });
+  if (typeof req.body?.enabled !== 'boolean') {
+    return res.status(400).json({ message: 'enabled must be boolean' });
+  }
+
+  try {
+    const q = await pool.query(
+      `UPDATE tags
+       SET enabled = $2
+       WHERE id = $1
+       RETURNING id, name, type, enabled`,
+      [tagId, req.body.enabled]
+    );
+
+    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    return res.json(q.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
+  }
+});
+
 app.get('/api/ioc/:id/tags', async (req, res) => {
   const iocId = parsePositiveInt(req.params?.id);
   if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
@@ -4239,10 +3762,7 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
          i.id AS ioc_id,
          t.id,
          t.name,
-         t.type,
-         t.category,
-         t.color,
-         t.enabled
+         t.type
        FROM ioc_items i
        LEFT JOIN ioc_tags it
          ON it.ioc_id = i.id
@@ -4258,11 +3778,7 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
     return res.json(q.rows.filter((row) => row.id != null).map((row) => ({
       id: row.id,
       name: row.name,
-      type: row.type,
-      category: row.category,
-      color: row.color,
-      is_active: Boolean(row.enabled),
-      enabled: Boolean(row.enabled)
+      type: row.type
     })));
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC tags', detail: err.message });
@@ -4292,17 +3808,6 @@ app.post('/api/ioc/:id/tags', async (req, res) => {
       [iocId, iocObservableType, tagId, req.user?.id ?? null]
     );
 
-    const tagMeta = await pool.query('SELECT id, name, type FROM tags WHERE id = $1', [tagId]);
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_TAG_ADDED,
-      entityType: AUDIT_ENTITY.IOC,
-      entityId: String(iocId),
-      entityDisplay: String(iocExists.rows[0]?.observable || iocId),
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: { tag: pickSafeFields(tagMeta.rows[0], ['id', 'name', 'type']) }
-    });
-
     return res.status(201).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to add IOC tag', detail: err.message });
@@ -4317,9 +3822,6 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
   if (!tagId) return res.status(400).json({ message: 'Invalid tag id' });
 
   try {
-    const iocQ = await pool.query('SELECT observable FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
-    const tagQ = await pool.query('SELECT id, name FROM tags WHERE id = $1 LIMIT 1', [tagId]);
-
     await pool.query(
       `DELETE FROM ioc_tags
        WHERE ioc_id = $1
@@ -4329,17 +3831,6 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
          )`,
       [iocId, tagId]
     );
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_TAG_REMOVED,
-      entityType: AUDIT_ENTITY.IOC,
-      entityId: String(iocId),
-      entityDisplay: String(iocQ.rows[0]?.observable || iocId),
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: { tag: pickSafeFields(tagQ.rows[0], ['id', 'name']) }
-    });
-
     return res.status(204).end();
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete IOC tag', detail: err.message });
@@ -4391,15 +3882,6 @@ app.post('/api/ioc/ip', async (req, res) => {
          VALUES ('add', $1, $2, $3)`,
         [rows[0].id, rows[0].observable, rows[0].observable_type]
       ).catch(() => {});
-      audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.IOC_CREATED,
-        entityType: AUDIT_ENTITY.IOC,
-        entityId: String(rows[0].public_id || rows[0].id),
-        entityDisplay: rows[0].observable,
-        severity: AUDIT_SEVERITY.INFO,
-        after: pickSafeFields(rows[0], ['id', 'public_id', 'observable', 'observable_type', 'source_name', 'confidence', 'category'])
-      });
       return res.status(201).json(rows[0]);
     }
 
@@ -4439,16 +3921,6 @@ app.post('/api/ioc/ip', async (req, res) => {
       [rows[0].id, rows[0].observable, rows[0].observable_type]
     ).catch(() => {});
 
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_CREATED,
-      entityType: AUDIT_ENTITY.IOC,
-      entityId: String(rows[0].public_id || rows[0].id),
-      entityDisplay: rows[0].observable,
-      severity: AUDIT_SEVERITY.INFO,
-      after: pickSafeFields(rows[0], ['id', 'public_id', 'observable', 'observable_type', 'source_name', 'confidence', 'category'])
-    });
-
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
@@ -4474,16 +3946,6 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
        VALUES ('delete', $1, $2, $3)`,
       [row.id, row.observable, row.observable_type]
     ).catch(() => {});
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_DELETED,
-      entityType: AUDIT_ENTITY.IOC,
-      entityId: String(row.public_id || row.id),
-      entityDisplay: row.observable,
-      severity: AUDIT_SEVERITY.WARNING,
-      before: pickSafeFields(row, ['id', 'public_id', 'observable', 'observable_type'])
-    });
 
     return res.json({ ok: true, deleted_public_id: row.public_id });
   } catch (err) {
@@ -5464,11 +4926,6 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
 
 const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
 const iocDetailsCache = new Map();
-registerIocConfidenceRoutes(app, pool, audit, {
-  invalidateDetailsCache: (publicId) => {
-    if (publicId) iocDetailsCache.delete(String(publicId));
-  }
-});
 let signalEventsTableCache = { value: null, checkedAt: 0 };
 
 async function hasSignalEventsTable() {
@@ -5563,20 +5020,7 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
     );
 
     await client.query('COMMIT');
-
-    const sup = upsertQ.rows[0];
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_SUPPRESSION_CREATED,
-      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
-      entityId: String(sup.id),
-      entityDisplay: iocValue,
-      severity: AUDIT_SEVERITY.WARNING,
-      after: pickSafeFields(sup, ['id', 'ioc_value', 'ioc_type', 'scope', 'reason', 'expires_at', 'active']),
-      metadata: { ioc_value: iocValue, ioc_type: iocType, scope, expires_at: sup.expires_at, reason }
-    });
-
-    return res.json({ status: 'suppressed', suppression: sup });
+    return res.json({ status: 'suppressed', suppression: upsertQ.rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
     return res.status(500).json({ message: 'Failed to suppress IOC', detail: err.message });
@@ -5601,23 +5045,9 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
        WHERE lower(ioc_value) = lower($1)
          AND lower(ioc_type) = lower($2)
          AND active = TRUE
-       RETURNING id, ioc_value, ioc_type`,
+       RETURNING id`,
       [iocValue, iocType]
     );
-
-    if (q.rowCount) {
-      audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.IOC_SUPPRESSION_DELETED,
-        entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
-        entityId: String(q.rows[0].id),
-        entityDisplay: iocValue,
-        severity: AUDIT_SEVERITY.WARNING,
-        before: pickSafeFields(q.rows[0], ['id', 'ioc_value', 'ioc_type']),
-        metadata: { via: 'ioc_unsuppress' }
-      });
-    }
-
     return res.json({ ok: true, updated: q.rowCount || 0 });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
@@ -5712,30 +5142,8 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
     params.push(active); sets.push(`active = $${params.length}`);
   }
   try {
-    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
-    if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
-
     const q = await pool.query(`UPDATE ioc_suppressions SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params);
     if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_SUPPRESSION_UPDATED,
-      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
-      entityId: String(q.rows[0].id),
-      entityDisplay: q.rows[0].ioc_value,
-      severity: AUDIT_SEVERITY.WARNING,
-      before: pickSafeFields(beforeQ.rows[0], ['id', 'ioc_value', 'ioc_type', 'reason', 'expires_at', 'active']),
-      after: pickSafeFields(q.rows[0], ['id', 'ioc_value', 'ioc_type', 'reason', 'expires_at', 'active']),
-      metadata: {
-        ioc_value: q.rows[0].ioc_value,
-        ioc_type: q.rows[0].ioc_type,
-        scope: q.rows[0].scope,
-        expires_at: q.rows[0].expires_at,
-        reason: q.rows[0].reason
-      }
-    });
-
     return res.json({ item: q.rows[0] });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
@@ -5747,23 +5155,8 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
   const id = parsePositiveInt(req.params?.id);
   if (!id) return res.status(400).json({ message: 'Invalid id' });
   try {
-    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
-    if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
-
-    const q = await pool.query('UPDATE ioc_suppressions SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id, ioc_value, ioc_type', [id]);
+    const q = await pool.query('UPDATE ioc_suppressions SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
     if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
-
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_SUPPRESSION_DELETED,
-      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
-      entityId: String(id),
-      entityDisplay: beforeQ.rows[0].ioc_value,
-      severity: AUDIT_SEVERITY.WARNING,
-      before: pickSafeFields(beforeQ.rows[0], ['id', 'ioc_value', 'ioc_type', 'reason', 'active']),
-      metadata: { via: 'suppression_delete_endpoint' }
-    });
-
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
@@ -5789,10 +5182,6 @@ app.get('/api/ioc/details', async (req, res) => {
   if (cached) iocDetailsCache.delete(requestedPublicId);
 
   try {
-    const confidenceColumns = await hasIocConfidenceColumns(pool);
-    const confidenceSelect = iocConfidenceSelectSql(confidenceColumns);
-    const confidenceJoin = iocConfidenceJoinSql(confidenceColumns);
-
     const itemQ = `
       WITH seed AS (
         SELECT observable, observable_type
@@ -5808,23 +5197,13 @@ app.get('/api/ioc/details', async (req, res) => {
         i.source_name,
         i.source_url,
         i.confidence,
-        ${confidenceSelect}
         i.category,
         i.note,
         i.match_count,
         i.first_seen_log,
         i.last_seen_log,
-        i.created_at,
-        i.status,
-        i.expires_at,
-        i.expired_at,
-        i.expiration_reason,
-        i.manual_status_override,
-        i.manual_status,
-        i.manual_expires_at,
-        i.manual_override_reason
+        i.created_at
       FROM ioc_items i
-      ${confidenceJoin}
       INNER JOIN seed s
         ON i.observable = s.observable
        AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)
@@ -5872,28 +5251,41 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const geoPromise = (async () => {
       if (!geoIp) return { ip: null, asn: null, country_code: null, as_name: null };
-      const tGeo = Date.now();
-      const fromEnrichment = await lookupGeoFromIpEnrichment(pool, geoIp);
-      pgMs += Date.now() - tGeo;
-      if (fromEnrichment.asn || fromEnrichment.country_code || fromEnrichment.as_name) {
-        return fromEnrichment;
-      }
-      const cacheQ = `
-        SELECT host(c.ip::inet) AS ip, c.asn, c.country_code, c.as_name
-        FROM ioc_ip_geo_cache c
-        WHERE c.ip = $1::inet
-        LIMIT 1
+      const geoQ = `
+        WITH ip_input AS (
+          SELECT
+            $1::inet AS ip,
+            ((split_part(host($1::inet), '.', 1)::bigint << 24)
+            + (split_part(host($1::inet), '.', 2)::bigint << 16)
+            + (split_part(host($1::inet), '.', 3)::bigint << 8)
+            +  split_part(host($1::inet), '.', 4)::bigint) AS ip_num
+        )
+        SELECT
+          i.ip::text AS ip,
+          COALESCE(c.asn, r.asn) AS asn,
+          COALESCE(c.country_code, r.country_code) AS country_code,
+          COALESCE(c.as_name, r.as_name) AS as_name
+        FROM ip_input i
+        LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
+        LEFT JOIN LATERAL (
+          SELECT r.asn, COALESCE(o.country_code, r.country) AS country_code, r.asn_owner AS as_name
+          FROM asn_lookup r
+          LEFT JOIN asn_country_overrides o ON o.asn = r.asn
+          WHERE i.ip_num BETWEEN r.start_ip_int AND r.end_ip_int
+          ORDER BY (r.end_ip_int - r.start_ip_int) ASC
+          LIMIT 1
+        ) r ON TRUE
       `;
-      const cacheRes = await pool.query(cacheQ, [geoIp]);
-      if (cacheRes.rows[0]) {
-        return {
-          ip: cacheRes.rows[0].ip || geoIp,
-          asn: cacheRes.rows[0].asn ?? null,
-          country_code: cacheRes.rows[0].country_code || null,
-          as_name: cacheRes.rows[0].as_name || null
-        };
-      }
-      return { ip: geoIp, asn: null, country_code: null, as_name: null };
+      const tGeo = Date.now();
+      const geoRes = await pool.query(geoQ, [geoIp]);
+      pgMs += Date.now() - tGeo;
+      if (!geoRes.rows[0]) return { ip: geoIp, asn: null, country_code: null, as_name: null };
+      return {
+        ip: geoRes.rows[0].ip || geoIp,
+        asn: geoRes.rows[0].asn ?? null,
+        country_code: geoRes.rows[0].country_code || null,
+        as_name: geoRes.rows[0].as_name || null
+      };
     })();
 
     const incidentsPromise = (async () => {
@@ -5988,37 +5380,11 @@ app.get('/api/ioc/details', async (req, res) => {
       impact.evidence_log_count = totalEvidenceLogsCount;
     }
 
-    const seedRow = rows.find((r) => String(r.public_id) === String(requestedPublicId)) || rows[0];
-
-    const membershipsQ = await pool.query(
-      `SELECT m.*, f.key AS feed_key, f.name AS feed_name
-       FROM ioc_feed_memberships m
-       JOIN integration_feeds f ON f.integration_id = m.feed_id
-       WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2
-       ORDER BY m.last_seen_in_feed DESC`,
-      [seedRow.id, observableType]
-    );
-
-    const feedNamesByKey = await fetchFeedNamesByKey(pool);
-    const confidenceSummary = buildIocConfidenceSummary({
-      rows,
-      seedPublicId: requestedPublicId,
-      feedNamesByKey
-    });
-
     const summary = {
-      id: seedRow.id,
-      public_id: seedRow.public_id,
+      id: rows[0].id,
+      public_id: rows[0].public_id,
       observable,
-      observable_type: seedRow.observable_type,
-      status: seedRow.status || 'active',
-      expires_at: seedRow.expires_at || null,
-      expired_at: seedRow.expired_at || null,
-      expiration_reason: seedRow.expiration_reason || null,
-      manual_status_override: Boolean(seedRow.manual_status_override),
-      manual_status: seedRow.manual_status || null,
-      manual_expires_at: seedRow.manual_expires_at || null,
-      manual_override_reason: seedRow.manual_override_reason || null,
+      observable_type: rows[0].observable_type,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
       match_count: computedMatchCount,
@@ -6026,13 +5392,10 @@ app.get('/api/ioc/details', async (req, res) => {
       first_seen_log: firstSeenLog,
       last_seen_log: lastSeenLog,
       source_count: new Set(rows.map((r) => r.source_name)).size,
-      confidence: confidenceSummary.effective,
-      confidence_level: confidenceSummary.effective,
-      confidence_set: confidenceSummary.confidence_set,
-      confidence_detail: confidenceSummary,
+      confidence_set: [...new Set(rows.map((r) => r.confidence).filter(Boolean))],
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
-      file_information: buildFileInformation(rows, observable, seedRow.observable_type)
+      file_information: buildFileInformation(rows, observable, rows[0].observable_type)
     };
 
     const suppressionQ = await pool.query(
@@ -6050,10 +5413,8 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const payload = {
       summary,
-      confidence: confidenceSummary,
       match_count: Number(summary.match_count || 0),
       sources: rows,
-      feed_memberships: membershipsQ.rows || [],
       matches: [],
       incidents,
       impact,
@@ -6374,37 +5735,17 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
 });
 
 app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
-  const iocId = Number(req.params.id);
-  if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
-
-  let item = null;
-  let iocType = null;
-
   try {
+    const iocId = Number(req.params.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
     const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
     const vtKey = providerCfg.apiKey;
     if (!vtKey) return res.status(400).json({ status: 'api_key_missing', message: 'VirusTotal API key is not configured' });
 
     const itemRes = await pool.query(`SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type FROM ioc_items WHERE id=$1 LIMIT 1`, [iocId]);
     if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
-    item = itemRes.rows[0];
-    iocType = item.ioc_type === 'file_hash' ? 'hash' : item.ioc_type;
-
-    await audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.VT_ENRICHMENT_REQUESTED,
-      entityType: AUDIT_ENTITY.ENRICHMENT,
-      entityId: item.ioc_value,
-      entityDisplay: item.ioc_value,
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: {
-        provider: VT_PROVIDER,
-        observable_type: iocType,
-        observable_value: item.ioc_value,
-        ioc_id: iocId,
-        source_page: 'ioc_detail_intelligence'
-      }
-    }).catch(() => {});
+    const item = itemRes.rows[0];
+    const iocType = item.ioc_type === 'file_hash' ? 'hash' : item.ioc_type;
 
     let endpoint = '';
     if (iocType === 'ip' || iocType === 'ip6') endpoint = `/ip_addresses/${encodeURIComponent(item.ioc_value)}`;
@@ -6420,32 +5761,8 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       vtRes = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, { headers: { 'x-apikey': vtKey }, signal: ctrl.signal });
     } finally { clearTimeout(t); }
 
-    if (vtRes.status === 429) {
-      const msg = 'VirusTotal rate limit reached. Try again later.';
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: item.ioc_value,
-        entityDisplay: item.ioc_value,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg }
-      }).catch(() => {});
-      return res.status(429).json({ message: msg });
-    }
-    if (!vtRes.ok) {
-      const msg = 'VirusTotal enrichment failed';
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: item.ioc_value,
-        entityDisplay: item.ioc_value,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg, http_status: vtRes.status }
-      }).catch(() => {});
-      return res.status(502).json({ message: msg });
-    }
+    if (vtRes.status === 429) return res.status(429).json({ message: 'VirusTotal rate limit reached. Try again later.' });
+    if (!vtRes.ok) return res.status(502).json({ message: 'VirusTotal enrichment failed' });
 
     const raw = await vtRes.json();
     const summary = normalizeVtSummary(item.ioc_value, iocType, raw);
@@ -6456,47 +5773,8 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET ioc_id=EXCLUDED.ioc_id,status='success',normalized_summary=EXCLUDED.normalized_summary,raw_response=EXCLUDED.raw_response,error_message=NULL,fetched_at=EXCLUDED.fetched_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()`,
       [iocId, item.ioc_value, iocType, VT_PROVIDER, summary, raw, fetchedAt.toISOString(), expiresAt.toISOString()]);
 
-    await audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.VT_ENRICHMENT_COMPLETED,
-      entityType: AUDIT_ENTITY.ENRICHMENT,
-      entityId: item.ioc_value,
-      entityDisplay: item.ioc_value,
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: {
-        provider: VT_PROVIDER,
-        observable_type: iocType,
-        observable_value: item.ioc_value,
-        ioc_id: iocId,
-        cached: false,
-        malicious: summary?.stats?.malicious ?? null,
-        suspicious: summary?.stats?.suspicious ?? null,
-        undetected: summary?.stats?.undetected ?? null,
-        harmless: summary?.stats?.harmless ?? null,
-        vt_object_type: summary?.ioc_type ?? iocType
-      }
-    }).catch(() => {});
-
     return res.json({ status: 'success', summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
   } catch (err) {
-    const msg = String(err?.name) === 'AbortError' ? 'VirusTotal enrichment timed out' : 'VirusTotal enrichment failed';
-    if (item?.ioc_value) {
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: item.ioc_value,
-        entityDisplay: item.ioc_value,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: {
-          provider: VT_PROVIDER,
-          observable_type: iocType,
-          observable_value: item.ioc_value,
-          ioc_id: iocId,
-          error_message: msg
-        }
-      }).catch(() => {});
-    }
     if (String(err?.name) === 'AbortError') return res.status(504).json({ message: 'VirusTotal enrichment timed out' });
     return res.status(500).json({ message: 'VirusTotal enrichment failed' });
   }
@@ -6509,45 +5787,21 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
     if (cfg.configured && cfg.last_error_at && (!cfg.last_success_at || new Date(cfg.last_error_at) > new Date(cfg.last_success_at))) status = 'error';
     else if (cfg.configured && cfg.last_success_at) status = 'healthy';
     else if (cfg.configured) status = 'configured';
-
-    const ipinfo = await getIpinfoLiteConfig(pool);
-    let ipinfoStatus = 'not_configured';
-    if (ipinfo.configured && ipinfo.last_error_at && (!ipinfo.last_success_at || new Date(ipinfo.last_error_at) > new Date(ipinfo.last_success_at))) ipinfoStatus = 'error';
-    else if (ipinfo.configured && ipinfo.last_success_at) ipinfoStatus = 'healthy';
-    else if (ipinfo.configured) ipinfoStatus = 'configured';
-
-    return res.json({ providers: [
-      {
-        provider: VT_PROVIDER,
-        name: 'VirusTotal',
-        enabled: cfg.enabled,
-        configured: cfg.configured,
-        masked_key: maskApiKey(cfg.apiKey),
-        source: cfg.source,
-        ttl_hours: cfg.ttl_hours,
-        timeout_ms: cfg.timeout_ms,
-        status,
-        last_test_at: cfg.last_test_at,
-        last_success_at: cfg.last_success_at,
-        last_error_at: cfg.last_error_at,
-        last_error_message: cfg.last_error_message
-      },
-      {
-        provider: ipinfo.provider_key,
-        name: ipinfo.display_name,
-        enabled: ipinfo.enabled,
-        configured: ipinfo.configured,
-        masked_key: ipinfo.token_masked,
-        source: ipinfo.source,
-        base_url: ipinfo.base_url,
-        timeout_seconds: ipinfo.timeout_seconds,
-        status: ipinfoStatus,
-        last_test_at: ipinfo.last_test_at,
-        last_success_at: ipinfo.last_success_at,
-        last_error_at: ipinfo.last_error_at,
-        last_error_message: ipinfo.last_error_message
-      }
-    ]});
+    return res.json({ providers: [{
+      provider: VT_PROVIDER,
+      name: 'VirusTotal',
+      enabled: cfg.enabled,
+      configured: cfg.configured,
+      masked_key: maskApiKey(cfg.apiKey),
+      source: cfg.source,
+      ttl_hours: cfg.ttl_hours,
+      timeout_ms: cfg.timeout_ms,
+      status,
+      last_test_at: cfg.last_test_at,
+      last_success_at: cfg.last_success_at,
+      last_error_at: cfg.last_error_at,
+      last_error_message: cfg.last_error_message
+    }]});
   } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
 });
 
@@ -6561,34 +5815,12 @@ app.put('/api/admin/enrichment-providers/virustotal', async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,NOW())
       ON CONFLICT(provider) DO UPDATE SET enabled=$2, ttl_hours=$3, timeout_ms=$4, api_key=COALESCE(NULLIF($5,''), threat_intel_provider_configs.api_key), updated_at=NOW()`,
       [VT_PROVIDER, enabled, ttl, timeout, apiKey]);
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.ENRICHMENT_SETTINGS_UPDATED,
-      entityType: AUDIT_ENTITY.ENRICHMENT,
-      entityId: VT_PROVIDER,
-      entityDisplay: 'VirusTotal',
-      severity: AUDIT_SEVERITY.INFO,
-      after: { enabled, ttl_hours: ttl, timeout_ms: timeout, api_key_updated: Boolean(apiKey) },
-      metadata: { provider: VT_PROVIDER }
-    });
     return res.json({ ok: true });
   } catch { return res.status(500).json({ message: 'Failed to update provider config' }); }
 });
 
 app.post('/api/admin/enrichment-providers/virustotal/remove-key', async (req, res) => {
-  try {
-    await pool.query(`UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER]);
-    audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.ENRICHMENT_KEY_REMOVED,
-      entityType: AUDIT_ENTITY.ENRICHMENT,
-      entityId: VT_PROVIDER,
-      entityDisplay: 'VirusTotal',
-      severity: AUDIT_SEVERITY.WARNING,
-      metadata: { provider: VT_PROVIDER }
-    });
-    return res.json({ ok: true });
-  }
+  try { await pool.query(`UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER]); return res.json({ ok: true }); }
   catch { return res.status(500).json({ message: 'Failed to remove key' }); }
 });
 
