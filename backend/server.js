@@ -118,6 +118,31 @@ function isoFromEpochMs(v) {
   return new Date(n).toISOString();
 }
 
+function classifyClickhouseError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  if (msg.includes('econnrefused') || msg.includes('connect') || msg.includes('network')) return 'clickhouse_unreachable';
+  if (msg.includes('authentication failed') || msg.includes('code: 516')) return 'clickhouse_auth_failed';
+  if (msg.includes('timeout') || msg.includes('timeoutexceeded') || msg.includes('timeout exceeded')) return 'clickhouse_timeout';
+  if (msg.includes('unknown table') || msg.includes('doesn\'t exist')) return 'table_missing';
+  if (msg.includes('unknown column') || msg.includes('no such column')) return 'column_missing';
+  if (msg.includes('query')) return 'clickhouse_query_failed';
+  return 'unknown_error';
+}
+
+function reasonSuggestedAction(reason) {
+  const map = {
+    clickhouse_unreachable: 'Wait for ClickHouse readiness or restart backend after ClickHouse is healthy.',
+    clickhouse_auth_failed: 'Check CLICKHOUSE_PASSWORD and ClickHouse user password.',
+    clickhouse_timeout: 'Reduce retro query load/chunk size or check ClickHouse load.',
+    table_missing: 'Verify required ClickHouse tables (ioc_lookup, ioc_retro_state) exist.',
+    column_missing: 'Verify schema/migrations for ioc_retro_state columns are applied.',
+    clickhouse_query_failed: 'Check backend logs and failing ClickHouse query.',
+    no_state: 'Retro state not found yet; wait for first successful retro run.',
+    unknown_error: 'Check backend and ClickHouse logs for details.'
+  };
+  return map[reason] || map.unknown_error;
+}
+
 function isValidIpv4(input) {
   const parts = String(input || '').split('.');
   if (parts.length !== 4) return false;
@@ -582,7 +607,7 @@ app.get('/api/system/status', async (req, res) => {
   }
   payload.database = database;
 
-  const clickhouse = { ok: false };
+  const clickhouse = { ok: false, reason_code: null, suggested_action: null };
   if (USE_CLICKHOUSE) {
     try {
       const [verRows, rowRows, sizeRows, retroStateRows] = await Promise.all([
@@ -616,6 +641,10 @@ app.get('/api/system/status', async (req, res) => {
       ]);
 
       const latestState = retroStateRows?.[0] || null;
+      if (!latestState) {
+        clickhouse.reason_code = 'no_state';
+        clickhouse.suggested_action = reasonSuggestedAction('no_state');
+      }
       const prevState = retroStateRows?.[1] || null;
       let retroRows = [{ pending: 0, cursor_ts: null, cursor_hash: null }];
       let lastRetroScannedIoc = null;
@@ -695,6 +724,9 @@ app.get('/api/system/status', async (req, res) => {
       clickhouse.retro_health_reason = clickhouse.retro_last_error_type || (clickhouse.retro_pending_ioc > 0 ? 'backlog' : 'ok');
     } catch (err) {
       clickhouse.error = err.message;
+      clickhouse.reason_code = classifyClickhouseError(err);
+      clickhouse.suggested_action = reasonSuggestedAction(clickhouse.reason_code);
+      clickhouse.retro_health_reason = clickhouse.reason_code;
     }
   } else {
     clickhouse.note = 'LOG_STORAGE is not clickhouse';
