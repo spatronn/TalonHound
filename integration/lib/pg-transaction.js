@@ -23,6 +23,10 @@ async function rollbackQuietly(client, meta, startedAt) {
   }
 }
 
+function isPgPool(poolOrClient) {
+  return typeof poolOrClient?.connect === 'function' && typeof poolOrClient?.release !== 'function';
+}
+
 /**
  * Runs fn inside BEGIN/COMMIT with guaranteed ROLLBACK + release on error.
  * Pass an existing pool client to reuse a session (e.g. advisory lock holder).
@@ -44,7 +48,7 @@ export async function withPgTransaction(poolOrClient, labelOrFn, maybeFn, meta =
     throw new TypeError('withPgTransaction requires an async callback');
   }
 
-  const ownsClient = typeof poolOrClient?.connect === 'function';
+  const ownsClient = isPgPool(poolOrClient);
   const client = ownsClient ? await poolOrClient.connect() : poolOrClient;
   const txMeta = { label, ...clientMeta };
   const startedAt = Date.now();
