@@ -3635,7 +3635,6 @@ function FeedSettingsModal({
   authKeyConfigured,
   savingSchedule,
   savingExpiration,
-  savingConfidence,
   savingCredentials,
   credentialsError,
   credentialsSuccess,
