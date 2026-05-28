@@ -5440,29 +5440,15 @@ app.get('/api/ioc/details', async (req, res) => {
     const geoPromise = (async () => {
       if (!geoIp) return { ip: null, asn: null, country_code: null, as_name: null };
       const geoQ = `
-        WITH ip_input AS (
-          SELECT
-            $1::inet AS ip,
-            ((split_part(host($1::inet), '.', 1)::bigint << 24)
-            + (split_part(host($1::inet), '.', 2)::bigint << 16)
-            + (split_part(host($1::inet), '.', 3)::bigint << 8)
-            +  split_part(host($1::inet), '.', 4)::bigint) AS ip_num
-        )
         SELECT
-          i.ip::text AS ip,
-          COALESCE(c.asn, r.asn) AS asn,
-          COALESCE(c.country_code, r.country_code) AS country_code,
-          COALESCE(c.as_name, r.as_name) AS as_name
-        FROM ip_input i
+          host(i.ip) AS ip,
+          COALESCE(c.asn::text, e.asn) AS asn,
+          COALESCE(NULLIF(c.country_code, 'UN'), e.country_code) AS country_code,
+          COALESCE(c.as_name, e.as_name) AS as_name
+        FROM (SELECT $1::inet AS ip) i
         LEFT JOIN ioc_ip_geo_cache c ON c.ip = i.ip
-        LEFT JOIN LATERAL (
-          SELECT r.asn, COALESCE(o.country_code, r.country) AS country_code, r.asn_owner AS as_name
-          FROM asn_lookup r
-          LEFT JOIN asn_country_overrides o ON o.asn = r.asn
-          WHERE i.ip_num BETWEEN r.start_ip_int AND r.end_ip_int
-          ORDER BY (r.end_ip_int - r.start_ip_int) ASC
-          LIMIT 1
-        ) r ON TRUE
+        LEFT JOIN ioc_ip_enrichment e ON e.ip = host(i.ip)
+        LIMIT 1
       `;
       const tGeo = Date.now();
       const geoRes = await pool.query(geoQ, [geoIp]);
