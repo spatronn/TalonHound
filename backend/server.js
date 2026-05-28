@@ -23,6 +23,10 @@ import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
+import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
+import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
+import { registerIocExpirationRoutes } from './routes/iocExpiration.js';
+import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -3804,15 +3808,28 @@ app.put('/api/users/me/preferences', async (req, res) => {
 });
 
 registerUserManagementRoutes(app, pool);
+registerRouteModule('users');
 registerPublicFeedRoutes(app, pool);
+registerRouteModule('public_feeds');
 registerPublishedFeedRoutes(app, pool);
+registerRouteModule('published_feeds');
 registerApiKeyRoutes(app, pool);
+registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
+registerRouteModule('audit');
 
 const auditLogService = createAuditLogService(pool);
+registerRdapEnrichmentRoutes(app, pool, auditLogService);
+registerRouteModule('rdap_enrichment');
+registerIpEnrichmentRoutes(app, pool, auditLogService);
+registerRouteModule('ip_enrichment');
+registerIocExpirationRoutes(app, pool, auditLogService);
+registerRouteModule('ioc_expiration');
 registerIocConfidenceRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache
 });
+registerRouteModule('ioc_confidence');
+registerRouteModule('tags_inline');
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
@@ -6045,6 +6062,7 @@ app.post('/api/admin/enrichment-providers/virustotal/test', async (req, res) => 
 
 app.listen(port, async () => {
   console.log(`Backend listening on :${port}`);
+  logRegisteredRouteModules();
   if (IOC_LIST_TIMING) {
     console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
   }
