@@ -22,6 +22,7 @@ import { registerUserManagementRoutes } from './routes/users.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
+import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -3726,6 +3727,7 @@ registerUserManagementRoutes(app, pool);
 registerPublicFeedRoutes(app, pool);
 registerPublishedFeedRoutes(app, pool);
 registerApiKeyRoutes(app, pool);
+registerAuditLogRoutes(app, pool);
 
 function isAdminUser(req) {
   const role = String(req.user?.role || '').trim().toLowerCase();
