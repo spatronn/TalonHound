@@ -9,6 +9,11 @@ import {
   resolveMembershipStatus
 } from '../lib/iocExpiration.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import {
+  buildIocExpirationAuditPayload,
+  buildMembershipExpirationAuditPayload,
+  formatIocEntityDisplay
+} from '../lib/auditIocContext.js';
 import { evaluateIocStatusOverrideRequest } from '../lib/iocStatusOverrideGuards.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
@@ -60,7 +65,7 @@ export function serializeMembership(row) {
 
 async function fetchIocStatusRow(pool, iocId, observableType) {
   const { rows } = await pool.query(
-    `SELECT id, observable_type, status, expires_at, expired_at, expiration_reason,
+    `SELECT id, observable, observable_type, status, expires_at, expired_at, expiration_reason,
             manual_status_override, manual_status, manual_expires_at,
             manual_override_reason, manual_override_at
      FROM ioc_items WHERE id = $1 AND observable_type = $2`,
@@ -71,9 +76,10 @@ async function fetchIocStatusRow(pool, iocId, observableType) {
 
 async function fetchMembershipRow(pool, membershipId, iocId, observableType) {
   const { rows } = await pool.query(
-    `SELECT m.*, f.key AS feed_key, f.name AS feed_name
+    `SELECT m.*, f.key AS feed_key, f.name AS feed_name, i.observable
      FROM ioc_feed_memberships m
      JOIN integration_feeds f ON f.integration_id = m.feed_id
+     JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
      WHERE m.id = $1 AND m.ioc_item_id = $2 AND m.ioc_observable_type = $3`,
     [membershipId, iocId, observableType]
   );
@@ -299,14 +305,29 @@ export function registerIocExpirationRoutes(app, pool, audit) {
 
       const iocOut = serializeIocStatus(await fetchIocStatusRow(pool, iocId, observableType));
       const action = manualStatus === 'active' ? 'ioc.reactivated_by_user' : 'ioc.expired';
+      const expirationAudit = manualStatus === 'expired'
+        ? buildIocExpirationAuditPayload({
+          iocId,
+          observable: prev?.observable,
+          observableType,
+          oldStatus: prev?.status || 'active',
+          newStatus: iocOut?.status || 'expired',
+          oldExpiresAt: prev?.expires_at,
+          expiredAt: iocOut?.expired_at,
+          reason: reason || 'manual_override',
+          actor: { actor_type: 'user', source: 'web' }
+        })
+        : null;
+
       await audit.auditSuccess({
         req,
         action,
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(iocId),
+        entityDisplay: expirationAudit?.entityDisplay || formatIocEntityDisplay(observableType, prev?.observable),
         before: pickSafeFields(prev, IOC_STATUS_AUDIT_FIELDS),
         after: pickSafeFields(iocOut, IOC_STATUS_AUDIT_FIELDS),
-        metadata: { reason, observable_type: observableType }
+        metadata: expirationAudit?.metadata || { reason, observable_type: observableType, ioc_value: prev?.observable }
       });
 
       return res.status(200).json({ success: true, ioc: iocOut });
@@ -426,14 +447,41 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         ? 'ioc_feed_membership.expired_by_user'
         : 'ioc_feed_membership.override_set';
 
+      const expirationAudit = overrideStatus === 'expired'
+        ? buildMembershipExpirationAuditPayload({
+          membershipId,
+          iocId,
+          observable: prev?.observable,
+          observableType,
+          feedId: prev?.feed_id,
+          feedName: prev?.feed_name,
+          oldStatus: prev?.status || 'active',
+          newStatus: membershipOut?.status || 'expired',
+          oldExpiresAt: prev?.expires_at,
+          expiredAt: membershipOut?.expired_at,
+          reason: reason || 'manual_override',
+          actor: { actor_type: 'user', source: 'web' }
+        })
+        : null;
+
       await audit.auditSuccess({
         req,
         action,
         entityType: 'ioc_feed_membership',
         entityId: String(membershipId),
+        entityDisplay: expirationAudit?.entityDisplay,
         before: pickSafeFields(prev, MEMBERSHIP_AUDIT_FIELDS),
         after: pickSafeFields(membershipOut, MEMBERSHIP_AUDIT_FIELDS),
-        metadata: { ioc_item_id: iocId, feed_id: prev.feed_id, reason }
+        metadata: expirationAudit?.metadata || {
+          ioc_item_id: iocId,
+          ioc_id: iocId,
+          ioc_value: prev?.observable,
+          ioc_observable_type: observableType,
+          feed_id: prev?.feed_id,
+          feed_name: prev?.feed_name,
+          membership_id: membershipId,
+          reason
+        }
       });
 
       return res.status(200).json({ success: true, membership: membershipOut, ioc: iocOut });

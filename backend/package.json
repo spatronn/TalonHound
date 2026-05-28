@@ -20,7 +20,7 @@
     "test:audit": "node --test lib/auditRedaction.test.js",
     "test:tags": "node --test lib/tagHelpers.test.js",
     "test:domain-root": "node --test lib/domainRoot.test.js",
-    "test:ioc-expiration": "node --test lib/iocExpiration.test.js",
+    "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/auditIocContext.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",

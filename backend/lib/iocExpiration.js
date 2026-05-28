@@ -2,6 +2,11 @@
  * Feed-based IOC expiration: memberships, policies, global status recompute.
  */
 
+import {
+  buildIocExpirationAuditPayload,
+  buildMembershipExpirationAuditPayload
+} from './auditIocContext.js';
+
 export const EXPIRATION_MODES = Object.freeze([
   'never',
   'fixed_ttl',
@@ -306,14 +311,32 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
 
   if (audit?.auditLog) {
     const action = nextStatus === 'expired' ? 'ioc.expired' : 'ioc.status.changed';
+    const auditPayload = nextStatus === 'expired'
+      ? buildIocExpirationAuditPayload({
+        iocId: iocItemId,
+        observable: ioc.observable,
+        observableType,
+        oldStatus: ioc.status,
+        newStatus: nextStatus,
+        oldExpiresAt: ioc.expires_at,
+        expiredAt,
+        reason: expirationReason || 'expires_at_reached',
+        actor
+      })
+      : {
+        entityDisplay: null,
+        metadata: { actor_type: actor.actor_type, ioc_observable_type: observableType }
+      };
+
     await audit.auditLog({
       action,
       entityType: 'ioc',
       entityId: String(iocItemId),
+      entityDisplay: auditPayload.entityDisplay,
       before: { status: ioc.status, expires_at: ioc.expires_at },
       after: { status: nextStatus, expires_at: minExpires, expired_at: expiredAt },
-      metadata: { actor_type: actor.actor_type, ioc_observable_type: observableType },
-      source: actor.source || 'system'
+      metadata: auditPayload.metadata,
+      source: actor.source || 'expiration-worker'
     });
   }
 
@@ -481,14 +504,19 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
   const batchSize = Math.max(Number(opts.batchSize || 500), 1);
   const audit = opts.audit || null;
   const now = new Date();
+  const workerActor = { actor_type: 'system', source: 'expiration-worker' };
 
   const { rows } = await client.query(
-    `SELECT id, ioc_item_id, ioc_observable_type, status, expires_at, expiration_reason
-     FROM ioc_feed_memberships
-     WHERE status = 'active'
-       AND expires_at IS NOT NULL
-       AND expires_at <= NOW()
-     ORDER BY expires_at ASC
+    `SELECT m.id, m.ioc_item_id, m.ioc_observable_type, m.feed_id, m.status, m.expires_at, m.expiration_reason,
+            i.observable,
+            f.name AS feed_name
+     FROM ioc_feed_memberships m
+     JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+     LEFT JOIN integration_feeds f ON f.integration_id = m.feed_id
+     WHERE m.status = 'active'
+       AND m.expires_at IS NOT NULL
+       AND m.expires_at <= NOW()
+     ORDER BY m.expires_at ASC
      LIMIT $1
      FOR UPDATE SKIP LOCKED`,
     [batchSize]
@@ -498,6 +526,7 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
   const iocTouches = new Set();
 
   for (const row of rows) {
+    const expiredAt = now.toISOString();
     await client.query(
       `UPDATE ioc_feed_memberships
        SET status = 'expired', expired_at = COALESCE(expired_at, NOW()),
@@ -509,19 +538,28 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
     iocTouches.add(`${row.ioc_observable_type}|${row.ioc_item_id}`);
 
     if (audit?.auditLog) {
+      const auditPayload = buildMembershipExpirationAuditPayload({
+        membershipId: row.id,
+        iocId: row.ioc_item_id,
+        observable: row.observable,
+        observableType: row.ioc_observable_type,
+        feedId: row.feed_id,
+        feedName: row.feed_name,
+        oldExpiresAt: row.expires_at,
+        expiredAt,
+        reason: row.expiration_reason || 'policy_ttl',
+        actor: workerActor
+      });
+
       await audit.auditLog({
         action: 'ioc_feed_membership.expired',
         entityType: 'ioc_feed_membership',
         entityId: String(row.id),
-        before: { status: 'active' },
-        after: { status: 'expired', expired_at: now.toISOString() },
-        metadata: {
-          actor_type: 'worker',
-          ioc_item_id: row.ioc_item_id,
-          feed_id: null,
-          reason: row.expiration_reason || 'policy_ttl'
-        },
-        source: 'worker'
+        entityDisplay: auditPayload.entityDisplay,
+        before: { status: 'active', expires_at: row.expires_at },
+        after: { status: 'expired', expired_at: expiredAt },
+        metadata: auditPayload.metadata,
+        source: workerActor.source
       });
     }
   }
@@ -530,7 +568,10 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
   let iocGlobalExpired = 0;
   for (const key of iocTouches) {
     const [observableType, iocItemId] = key.split('|');
-    const res = await recomputeIocGlobalStatus(client, Number(iocItemId), observableType, { audit });
+    const res = await recomputeIocGlobalStatus(client, Number(iocItemId), observableType, {
+      audit,
+      actor: workerActor
+    });
     if (res.changed) {
       iocRecomputed += 1;
       if (res.status === 'expired') iocGlobalExpired += 1;

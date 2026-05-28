@@ -545,6 +545,82 @@ function auditJsonBlock(value) {
   }
 }
 
+const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
+  'ioc.expired',
+  'ioc_feed_membership.expired',
+  'ioc_feed_membership.expired_by_user'
+]);
+
+function auditMetadataValue(metadata, ...keys) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  for (const key of keys) {
+    const value = metadata[key];
+    if (value != null && value !== '') return value;
+  }
+  return null;
+}
+
+function formatAuditEntityLabel(row) {
+  if (row?.entity_display) return row.entity_display;
+  const metadata = row?.metadata;
+  const value = auditMetadataValue(metadata, 'ioc_value', 'observable');
+  const type = auditMetadataValue(metadata, 'ioc_observable_type', 'observable_type');
+  if (value && type) {
+    const feedName = auditMetadataValue(metadata, 'feed_name');
+    return feedName ? `${type} · ${value} · ${feedName}` : `${type} · ${value}`;
+  }
+  return row?.entity_id || '—';
+}
+
+function formatExpirationAuditReasonLabel(reason) {
+  const value = String(reason || '').trim();
+  if (!value) return '—';
+  if (value === 'expires_at_reached') return 'Expires at reached';
+  if (value === 'all_feed_memberships_expired') return 'All feed memberships expired';
+  if (value === 'manual_override') return 'Manual override';
+  return value.replace(/_/g, ' ');
+}
+
+function formatAuditStatusTransition(metadata) {
+  const oldStatus = auditMetadataValue(metadata, 'old_status');
+  const newStatus = auditMetadataValue(metadata, 'new_status');
+  if (!oldStatus && !newStatus) return '—';
+  if (oldStatus && newStatus) return `${oldStatus} → ${newStatus}`;
+  return oldStatus || newStatus;
+}
+
+function AuditExpirationSummary({ item }) {
+  if (!item || !IOC_EXPIRATION_AUDIT_ACTIONS.has(String(item.action || ''))) return null;
+  const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  const rows = [
+    ['IOC value', auditMetadataValue(metadata, 'ioc_value')],
+    ['Type', auditMetadataValue(metadata, 'ioc_observable_type', 'observable_type')],
+    ['Status', formatAuditStatusTransition(metadata)],
+    ['Reason', formatExpirationAuditReasonLabel(auditMetadataValue(metadata, 'reason'))],
+    ['Old expires at', formatAuditDate(auditMetadataValue(metadata, 'old_expires_at'))],
+    ['Expired at', formatAuditDate(auditMetadataValue(metadata, 'expired_at') || item?.after_data?.expired_at)],
+    ['Feed', auditMetadataValue(metadata, 'feed_name')],
+    ['Membership ID', auditMetadataValue(metadata, 'membership_id')],
+    ['Source', auditMetadataValue(metadata, 'source') || item?.source]
+  ].filter(([, value]) => value && value !== '—');
+
+  if (!rows.length) return null;
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#111827' }}>
+      <div style={{ fontWeight: 700, marginBottom: 10, color: '#f8fafc' }}>IOC expiration context</div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 10, fontSize: 13 }}>
+            <span style={{ color: '#94a3b8' }}>{label}</span>
+            <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function formatAuditDate(value) {
   if (!value) return '—';
   const d = new Date(value);
@@ -5612,7 +5688,7 @@ function AuditLogsPage() {
                     <div style={{ fontSize: 11, color: '#64748b' }}>{row.action}</div>
                   </td>
                   <td style={ui.td}>
-                    <div>{row.entity_display || row.entity_id || '—'}</div>
+                    <div>{formatAuditEntityLabel(row)}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{row.entity_type}{row.entity_id ? ` · ${row.entity_id}` : ''}</div>
                   </td>
                   <td style={ui.td}><span style={auditSeverityBadgeStyle(row.severity)}>{row.severity}</span></td>
@@ -5642,7 +5718,8 @@ function AuditLogsPage() {
             <div><strong>Date:</strong> {formatAuditDate(detailItem.created_at)}</div>
             <div><strong>Actor:</strong> {detailItem.actor_username || detailItem.actor_email || '—'} ({detailItem.actor_role || '—'})</div>
             <div><strong>Action:</strong> {detailItem.action_label || detailItem.action} <span style={{ color: '#64748b' }}>({detailItem.action})</span></div>
-            <div><strong>Entity:</strong> {detailItem.entity_type} · {detailItem.entity_display || detailItem.entity_id || '—'}</div>
+            <div><strong>Entity:</strong> {detailItem.entity_type} · {formatAuditEntityLabel(detailItem)}</div>
+            <AuditExpirationSummary item={detailItem} />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <span style={auditSeverityBadgeStyle(detailItem.severity)}>{detailItem.severity}</span>
               <span style={auditStatusBadgeStyle(detailItem.status)}>{detailItem.status}</span>
@@ -9152,6 +9229,18 @@ function iocAuditMetadataSummary(metadata) {
   if (!metadata || typeof metadata !== 'object') return '-';
   const confidenceText = formatConfidenceAuditMetadata(metadata);
   if (confidenceText) return confidenceText;
+  const expirationParts = [];
+  const iocValue = auditMetadataValue(metadata, 'ioc_value');
+  const iocType = auditMetadataValue(metadata, 'ioc_observable_type', 'observable_type');
+  if (iocValue) expirationParts.push(String(iocValue));
+  if (iocType) expirationParts.push(String(iocType));
+  const statusTransition = formatAuditStatusTransition(metadata);
+  if (statusTransition && statusTransition !== '—') expirationParts.push(statusTransition);
+  const reason = auditMetadataValue(metadata, 'reason');
+  if (reason) expirationParts.push(formatExpirationAuditReasonLabel(reason));
+  const feedName = auditMetadataValue(metadata, 'feed_name');
+  if (feedName) expirationParts.push(String(feedName));
+  if (expirationParts.length) return expirationParts.join(' · ');
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
   if (metadata.cached === true) parts.push('cached');
@@ -9215,7 +9304,7 @@ function IocAuditHistoryPanel({ iocId, enabled }) {
                 <td style={{ whiteSpace: 'nowrap' }}>{formatUserDateTime(row.created_at)}</td>
                 <td>{row.actor_username || row.actor_email || '-'}</td>
                 <td>{row.action_label || row.action}</td>
-                <td style={{ overflowWrap: 'anywhere' }}>{row.entity_display || row.entity_id || '-'}</td>
+                <td style={{ overflowWrap: 'anywhere' }}>{formatAuditEntityLabel(row)}</td>
                 <td>{row.status || '-'}</td>
                 <td>{row.source || '-'}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>{row.ip_address || '-'}</td>
