@@ -534,7 +534,7 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
        AND m.expires_at <= NOW()
      ORDER BY m.expires_at ASC
      LIMIT $1
-     FOR UPDATE SKIP LOCKED`,
+     FOR UPDATE OF m SKIP LOCKED`,
     [batchSize]
   );
 
