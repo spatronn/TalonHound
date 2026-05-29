@@ -1328,6 +1328,20 @@ export async function runPhishtankImport(options = {}) {
   const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
   const txMeta = { source_key: 'phishtank-opendnsrr', signal };
+  const t0 = Date.now();
+  const phase = {
+    fetch_ms: 0,
+    parse_ms: 0,
+    build_entries_ms: 0,
+    db_write_total_ms: 0,
+    finalize_ms: 0,
+    total_ms: 0
+  };
+  const batchStats = { count: 0, max_ms: 0, total_ms: 0, slowest: [] };
+  let currentPhase = 'init';
+  let currentBatchNo = 0;
+  let rowCount = 0;
+  let validCount = 0;
 
   try {
     throwIfAborted(signal);
@@ -1344,13 +1358,21 @@ export async function runPhishtankImport(options = {}) {
     runId = runInsert.rows[0].id;
     txMeta.job_id = runId;
 
+    currentPhase = 'fetch';
+    const tfetch = Date.now();
     const response = await fetchWithSignal(config.phishTankCsvUrl, {
       headers: { 'User-Agent': 'demo-runbook-integration/1.0' }
     }, signal);
     if (!response.ok) throw new Error(`Failed to fetch PhishTank CSV: ${response.status}`);
 
     const text = await response.text();
+    phase.fetch_ms = Date.now() - tfetch;
+
+    currentPhase = 'parse';
+    const tparse = Date.now();
     const lines = text.split(/\r?\n/).filter(Boolean);
+    phase.parse_ms = Date.now() - tparse;
+    rowCount = Math.max(0, lines.length - 1);
     if (lines.length <= 1) {
       await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
         await finalizeIntegrationRun(tx, runId, metrics);
@@ -1362,6 +1384,8 @@ export async function runPhishtankImport(options = {}) {
     const sourceUrl = config.phishTankCsvUrl;
     const parsedEntries = [];
 
+    currentPhase = 'build_entries';
+    const tbuild = Date.now();
     for (let i = 1; i < lines.length; i += 1) {
       if (i % 500 === 1) throwIfAborted(signal);
       const cols = splitCsvLine(lines[i]);
@@ -1377,27 +1401,60 @@ export async function runPhishtankImport(options = {}) {
         note: 'Auto-imported from PhishTank online-valid.csv'
       });
     }
+    phase.build_entries_ms = Date.now() - tbuild;
+    validCount = parsedEntries.length;
 
     const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 1000), 100);
+    currentPhase = 'db_write';
     for (let i = 0; i < parsedEntries.length; i += batchSize) {
       throwIfAborted(signal);
       const batch = parsedEntries.slice(i, i + batchSize);
+      const batchNo = Math.floor(i / batchSize) + 1;
+      currentBatchNo = batchNo;
+      const tb = Date.now();
       await withPgTransaction(client, 'phishtank_import_batch', async (tx) => {
         for (const entry of batch) {
           throwIfAborted(signal);
           const ok = await insertObservable(tx, entry, suppressionStats, signal);
           trackInsertResult(metrics, ok);
         }
-      }, { ...txMeta, batch: Math.floor(i / batchSize) + 1 });
+      }, { ...txMeta, batch: batchNo });
+      const bms = Date.now() - tb;
+      phase.db_write_total_ms += bms;
+      batchStats.count += 1;
+      batchStats.total_ms += bms;
+      batchStats.max_ms = Math.max(batchStats.max_ms, bms);
+      batchStats.slowest.push({ batch_no: batchNo, batch_ms: bms, batch_size: batch.length });
+      batchStats.slowest.sort((a, b) => b.batch_ms - a.batch_ms);
+      if (batchStats.slowest.length > 5) batchStats.slowest.length = 5;
+
+      const timeoutMs = Math.max(Number(process.env.PHISHTANK_JOB_TIMEOUT_MS || process.env.INTEGRATION_JOB_TIMEOUT_MS || 600000), 10000);
+      const remaining = Math.max(0, timeoutMs - (Date.now() - t0));
+      if (bms >= 10000) {
+        console.warn(`[integration-import][phishtank][slow-batch] run_id=${runId || '-'} batch_no=${batchNo} batch_size=${batch.length} batch_ms=${bms} remaining_timeout_ms=${remaining}`);
+      } else if (batchNo % 5 === 0) {
+        console.log(`[integration-import][phishtank][progress] run_id=${runId || '-'} batch_no=${batchNo} batch_ms=${bms} remaining_timeout_ms=${remaining}`);
+      }
     }
 
+    currentPhase = 'finalize';
+    const tfinal = Date.now();
     await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
       await finalizeIntegrationRun(tx, runId, metrics);
     }, txMeta);
 
+    phase.finalize_ms = Date.now() - tfinal;
+    phase.total_ms = Date.now() - t0;
+    const m = metrics.toJSON();
+    const avgBatch = batchStats.count ? Math.round(batchStats.total_ms / batchStats.count) : 0;
+    console.log(`[integration-import][phishtank][summary] run_id=${runId} source=phishtank-opendnsrr timeout_ms=${process.env.PHISHTANK_JOB_TIMEOUT_MS || process.env.INTEGRATION_JOB_TIMEOUT_MS || 600000} fetch_ms=${phase.fetch_ms} parse_ms=${phase.parse_ms} build_entries_ms=${phase.build_entries_ms} db_write_total_ms=${phase.db_write_total_ms} finalize_ms=${phase.finalize_ms} total_ms=${phase.total_ms} row_count=${rowCount} valid_count=${validCount} skipped_count=${m.records_skipped} inserted_count=${m.records_inserted} updated_count=${m.records_updated} batch_count=${batchStats.count} avg_batch_ms=${avgBatch} max_batch_ms=${batchStats.max_ms} slowest_batches='${JSON.stringify(batchStats.slowest)}' failure_phase=none`);
     logImportSuppressionSummary('phishtank_import', runId, suppressionStats, metrics.toJSON());
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
+    phase.total_ms = Date.now() - t0;
+    const m = metrics.toJSON();
+    const avgBatch = batchStats.count ? Math.round(batchStats.total_ms / batchStats.count) : 0;
+    console.warn(`[integration-import][phishtank][summary] run_id=${runId || '-'} source=phishtank-opendnsrr timeout_ms=${process.env.PHISHTANK_JOB_TIMEOUT_MS || process.env.INTEGRATION_JOB_TIMEOUT_MS || 600000} fetch_ms=${phase.fetch_ms} parse_ms=${phase.parse_ms} build_entries_ms=${phase.build_entries_ms} db_write_total_ms=${phase.db_write_total_ms} finalize_ms=${phase.finalize_ms} total_ms=${phase.total_ms} row_count=${rowCount} valid_count=${validCount} skipped_count=${m.records_skipped} inserted_count=${m.records_inserted} updated_count=${m.records_updated} batch_count=${batchStats.count} avg_batch_ms=${avgBatch} max_batch_ms=${batchStats.max_ms} slowest_batches='${JSON.stringify(batchStats.slowest)}' failure_phase=${currentPhase} current_batch_no=${currentBatchNo} error=${String(err?.message || err).replace(/\s+/g,' ').slice(0,260)}`);
     if (runId) {
       await failIntegrationRun(client, runId, err.message, metrics);
     }
