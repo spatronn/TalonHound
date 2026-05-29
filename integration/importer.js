@@ -563,7 +563,6 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
          SELECT 1 FROM ioc_items i
          WHERE i.observable = v.observable AND i.observable_type = $${typeParam}
            AND i.source_name = v.source_name
-           AND COALESCE(i.category, '') = COALESCE(v.category, '')
            AND COALESCE(i.source_url, '') = COALESCE(v.source_url, '')
        )
        RETURNING public_id, observable, note`,
@@ -577,11 +576,27 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
       throwIfAborted(signal);
       const obs = e.observable ?? e.ip;
       if (!insertedObs.has(obs)) {
+        await updateObservableBySourceOnImport(client, {
+          observable: obs,
+          observableType,
+          sourceName: e.sourceName,
+          sourceUrl: e.sourceUrl ?? null,
+          category: e.category ?? null,
+          note: e.note ?? null
+        }).catch(() => {});
         await applyIocImportConfidence(client, {
           observable: obs,
           observableType,
           sourceName: e.sourceName,
           parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence)
+        }).catch(() => {});
+        await syncMembershipAfterIocImport(client, {
+          observable: obs,
+          observableType,
+          sourceName: e.sourceName,
+          sourceUrl: e.sourceUrl ?? null,
+          explicitConfidence: e.confFields?.source_confidence ?? null,
+          category: e.category ?? null
         }).catch(() => {});
       }
     }
@@ -603,6 +618,39 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     }
   }
   return out;
+}
+
+async function updateObservableBySourceOnImport(client, {
+  observable,
+  observableType,
+  sourceName,
+  sourceUrl,
+  category,
+  note
+}) {
+  const res = await client.query(
+    `UPDATE ioc_items i
+     SET category = $5,
+         note = $6,
+         last_seen_at = GREATEST(COALESCE(i.last_seen_at, NOW()), NOW())
+     WHERE i.id = (
+       SELECT id FROM ioc_items
+       WHERE observable = $1
+         AND observable_type = $2
+         AND source_name = $3
+         AND COALESCE(source_url, '') = COALESCE($4, '')
+       ORDER BY id ASC
+       LIMIT 1
+     )
+     RETURNING public_id`,
+    [observable, observableType, sourceName, sourceUrl, category, note]
+  );
+  if (!res.rowCount) return null;
+
+  const publicId = res.rows[0].public_id;
+  const observables = extractObservablesFromNote(observableType, observable, note);
+  await insertObservablesIndex(client, publicId, observables);
+  return publicId;
 }
 
 async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null }, suppressionStats = null, signal = null) {
@@ -635,7 +683,6 @@ async function insertObservable(client, { observable, observableType, sourceName
        WHERE observable = $1
          AND observable_type = $2
          AND source_name = $3
-         AND COALESCE(category, '') = COALESCE($8, '')
          AND COALESCE(source_url, '') = COALESCE($4, '')
      )
      RETURNING public_id`,
@@ -653,6 +700,14 @@ async function insertObservable(client, { observable, observableType, sourceName
   );
 
   if (!ins.rowCount) {
+    await updateObservableBySourceOnImport(client, {
+      observable,
+      observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      note
+    }).catch(() => {});
     await applyIocImportConfidence(client, {
       observable,
       observableType,

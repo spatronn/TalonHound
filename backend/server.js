@@ -101,6 +101,20 @@ function invalidateIocDetailsCache(publicId) {
   if (publicId) iocDetailsCache.delete(String(publicId));
 }
 
+/** Same observable+source may have duplicate ioc_items rows (e.g. category change on re-import). Prefer MIN(id) for lifecycle display — matches IOC list public_id. */
+function pickIocLifecycleRow(rows, seedRow) {
+  if (!seedRow || !rows?.length) return seedRow;
+  const sourceUrl = String(seedRow.source_url ?? '');
+  const sameSource = rows.filter(
+    (r) => r.source_name === seedRow.source_name && String(r.source_url ?? '') === sourceUrl
+  );
+  if (sameSource.length <= 1) return seedRow;
+  return sameSource.reduce(
+    (min, r) => (Number(r.id) < Number(min.id) ? r : min),
+    sameSource[0]
+  );
+}
+
 app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
@@ -5562,6 +5576,7 @@ app.get('/api/ioc/details', async (req, res) => {
     }
 
     const seedRow = rows.find((r) => String(r.public_id || '') === requestedPublicId) || rows[0];
+    const lifecycleRow = pickIocLifecycleRow(rows, seedRow);
     const observable = seedRow.observable;
     const observableType = seedRow.observable_type;
 
@@ -5710,12 +5725,12 @@ app.get('/api/ioc/details', async (req, res) => {
       public_id: seedRow.public_id,
       observable,
       observable_type: seedRow.observable_type,
-      status: seedRow.status || null,
-      expires_at: seedRow.expires_at || null,
-      expired_at: seedRow.expired_at || null,
-      expiration_reason: seedRow.expiration_reason || null,
-      manual_status_override: Boolean(seedRow.manual_status_override),
-      manual_status: seedRow.manual_status || null,
+      status: lifecycleRow.status || null,
+      expires_at: lifecycleRow.expires_at || null,
+      expired_at: lifecycleRow.expired_at || null,
+      expiration_reason: lifecycleRow.expiration_reason || null,
+      manual_status_override: Boolean(lifecycleRow.manual_status_override),
+      manual_status: lifecycleRow.manual_status || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
       match_count: computedMatchCount,
