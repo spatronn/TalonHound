@@ -247,10 +247,15 @@ services:
       - DB_USER=demo
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
+      - LOG_STORAGE=clickhouse
+      - CLICKHOUSE_URL=http://demo-clickhouse:8123
+      - CLICKHOUSE_USER=demo
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
       - IOC_EXPIRATION_BATCH_SIZE=500
     depends_on:
       - db
+      - clickhouse
     restart: unless-stopped
 
   ioc-match-count-worker:
