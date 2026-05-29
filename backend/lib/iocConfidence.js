@@ -364,10 +364,11 @@ export function resolveImportConfidenceFields({
   const sourceConfidence = normalizeConfidence(parsedSourceConfidence);
   const analystOverride = normalizeConfidence(existingRow?.analyst_confidence_override);
 
+  const fallbackConfidence = 'medium';
   return {
     source_confidence: sourceConfidence,
     feed_default_confidence: null,
-    confidence: analystOverride || sourceConfidence || null,
+    confidence: analystOverride || sourceConfidence || fallbackConfidence,
     analyst_confidence_override: analystOverride
   };
 }
