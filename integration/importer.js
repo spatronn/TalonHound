@@ -1576,7 +1576,7 @@ export async function runPhishtankImport(options = {}) {
     const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
     metrics.noteSkipped(entries.length - addedEntries.length);
 
-    const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 1000), 100);
+    const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 2000), 100);
     currentPhase = 'db_write';
     for (let i = 0; i < addedEntries.length; i += batchSize) {
       throwIfAborted(signal);
@@ -1585,11 +1585,10 @@ export async function runPhishtankImport(options = {}) {
       currentBatchNo = batchNo;
       const tb = Date.now();
       await withPgTransaction(client, 'phishtank_import_batch', async (tx) => {
-        for (const entry of batch) {
-          throwIfAborted(signal);
-          const ok = await insertObservable(tx, entry, suppressionStats, signal);
-          trackInsertResult(metrics, ok);
-        }
+        mergeBatchInsertMetrics(
+          metrics,
+          await batchInsertIocs(tx, batch, 'url', suppressionStats, signal, { duplicateHandling: 'count_only' })
+        );
       }, { ...txMeta, batch: batchNo });
       const bms = Date.now() - tb;
       phase.db_write_total_ms += bms;
