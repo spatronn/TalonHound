@@ -5598,7 +5598,19 @@ app.get('/api/ioc/details', async (req, res) => {
         feedNamesByKey: new Map()
       });
     }
-    summary.confidence = confidenceDetail?.effective || null;
+    if (!confidenceDetail?.effective && seedRow?.confidence) {
+      confidenceDetail = {
+        ...(confidenceDetail || {}),
+        effective: String(seedRow.confidence).toLowerCase(),
+        confidence: String(seedRow.confidence).toLowerCase(),
+        confidence_level: String(seedRow.confidence).toLowerCase(),
+        confidence_source: confidenceDetail?.confidence_source || 'historical_item',
+        source_description: confidenceDetail?.source_description || `Historical from ${seedRow.source_name || 'item source'}`
+      };
+    }
+
+    summary.confidence = confidenceDetail?.effective || seedRow?.confidence || null;
+    summary.source_name = seedRow?.source_name || null;
     summary.confidence_detail = confidenceDetail;
     summary.confidence_set = confidenceDetail?.confidence_set
       || [...new Set(rows.map((r) => r.confidence).filter(Boolean))];
