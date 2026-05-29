@@ -8126,7 +8126,7 @@ function IOCListPage() {
     const val = (r) => {
       if (sortState.key === 'ip') return String(r.ip || '');
       if (sortState.key === 'source') return String((r.source_names && r.source_names[0]) || '');
-      if (sortState.key === 'confidence') return String((r.confidence_set && r.confidence_set[0]) || '');
+      if (sortState.key === 'confidence') return String(r.confidence_effective || (r.confidence_set && r.confidence_set[0]) || '');
       if (sortState.key === 'category') return String(r.observable_type || 'ip');
       if (sortState.key === 'timestamp') return new Date(r.last_seen_at || 0).getTime();
       return '';
@@ -8420,7 +8420,7 @@ function IOCListPage() {
                     <span>{(r.source_names && r.source_names[0]) || '-'}</span>
                   )}
                 </td>
-                <td><span style={confidenceBadgeStyle((r.confidence_set && r.confidence_set[0]) || 'low')}>{(r.confidence_set && r.confidence_set[0]) || 'low'}</span></td>
+                <td><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(r.last_seen_at)}</td>
               </tr>
             );})}

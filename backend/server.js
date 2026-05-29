@@ -39,7 +39,7 @@ import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
-import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
+import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
 import {
   hasIocConfidenceColumns,
   iocConfidenceJoinSql,
@@ -4352,7 +4352,12 @@ async function handleIocList(req, res) {
           country_code: null,
           as_name: null
         }));
-        const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: pageItems.length, total_pages: 1 } };
+        const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+        const finalItems = pageItems.map((it) => {
+          const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+          return { ...it, ...c };
+        });
+        const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: 1 } };
         if (t) {
           t.beforeJsonStringify = Date.now();
           const payloadStr = JSON.stringify(payload);
@@ -4440,7 +4445,12 @@ async function handleIocList(req, res) {
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
-      const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
+      const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+      const finalItems = pageItems.map((it) => {
+        const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+        return { ...it, ...c };
+      });
+      const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
         const payloadStr = JSON.stringify(payload);
@@ -4530,7 +4540,12 @@ async function handleIocList(req, res) {
           as_name: null
         }));
       })();
-      const payload = { items: pageItems, pagination: { page: 1, page_size: limit, total: pageItems.length, total_pages: pageItems.length ? 1 : 0 } };
+      const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+      const finalItems = pageItems.map((it) => {
+        const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+        return { ...it, ...c };
+      });
+      const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: finalItems.length ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
         const payloadStr = JSON.stringify(payload);
@@ -4663,7 +4678,12 @@ async function handleIocList(req, res) {
       total = listRes.rows.length;
     }
     if (t) t.beforeResultMapping = Date.now();
-    const items = listRes.rows.map(({ total: _drop, ...row }) => row);
+    const itemsRaw = listRes.rows.map(({ total: _drop, ...row }) => row);
+    const confMap = await buildDisplayConfidenceForItems(pool, itemsRaw, { includeInactiveMemberships: true });
+    const items = itemsRaw.map((it) => {
+      const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+      return { ...it, ...c };
+    });
     if (t) t.afterResultMapping = Date.now();
     if (t) t.beforeJsonSerialize = Date.now();
 
@@ -4955,6 +4975,12 @@ app.get('/api/ioc/hot', async (req, res) => {
     } catch {
       items = items.map((it) => ({ ...it, evidence_logs: null }));
     }
+
+    const confMapHot = await buildDisplayConfidenceForItems(pool, items, { includeInactiveMemberships: true });
+    items = items.map((it) => {
+      const c = confMapHot.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+      return { ...it, ...c };
+    });
 
     const statsQ = `
       WITH grouped AS (

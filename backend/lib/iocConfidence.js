@@ -422,6 +422,53 @@ export async function buildIocConfidenceSummaryForDetails(pool, { rows, seedPubl
   });
 }
 
+export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}) {
+  const includeInactiveMemberships = Boolean(opts.includeInactiveMemberships);
+  const keyed = (items || []).filter((x) => Number.isFinite(Number(x?.id)) && String(x?.observable_type || '').trim());
+  if (!keyed.length) return new Map();
+
+  const ids = keyed.map((x) => Number(x.id));
+  const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
+
+  const { rows: mRows } = await pool.query(
+    `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
+            f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
+     FROM ioc_feed_memberships m
+     JOIN integration_feeds f ON f.integration_id = m.feed_id
+     WHERE m.ioc_item_id = ANY($1::bigint[])
+       AND m.ioc_observable_type = ANY($2::text[])`,
+    [ids, types]
+  );
+
+  const byKey = new Map();
+  for (const m of mRows) {
+    const k = `${m.ioc_item_id}|${m.ioc_observable_type}`;
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(m);
+  }
+
+  const out = new Map();
+  for (const it of keyed) {
+    const k = `${Number(it.id)}|${String(it.observable_type)}`;
+    const memberships = byKey.get(k) || [];
+    const inherited = computeInheritedEffectiveConfidence({
+      manualOverride: it.analyst_confidence_override,
+      memberships,
+      legacyExplicitByFeedKey: new Map(),
+      includeInactiveMemberships
+    });
+    const effective = inherited.effective || normalizeConfidence(it.confidence) || null;
+    out.set(k, {
+      confidence_effective: effective,
+      confidence_source: inherited.effective ? inherited.confidence_source : (effective ? 'legacy_item' : 'unknown'),
+      confidence_source_description: inherited.effective
+        ? buildConfidenceSourceDescription(inherited.confidence_source, inherited.confidence_feed_name)
+        : (it.source_name ? `Historical from ${it.source_name}` : 'Unknown')
+    });
+  }
+  return out;
+}
+
 export async function applyMembershipExplicitConfidence(client, membershipId, explicitConfidence) {
   const explicit = normalizeConfidence(explicitConfidence);
   if (!explicit || !membershipId) return null;
