@@ -265,6 +265,31 @@ function pgLiteralForPostgresqlEngine(value) {
   return String(value ?? '').replace(/'/g, "''");
 }
 
+export async function pushIocLookupTombstones(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return { deleted: 0 };
+
+  const normalized = rows
+    .map((r) => ({
+      observable: String(r?.observable || '').trim().toLowerCase(),
+      observable_type: String(r?.observable_type || '').trim().toLowerCase(),
+      source_name: String(r?.source_name || '').trim()
+    }))
+    .filter((r) => r.observable && r.observable_type && r.source_name);
+
+  if (!normalized.length) return { deleted: 0 };
+
+  const valuesSql = normalized
+    .map((r) => `('${r.observable.replace(/'/g, "''")}', '${r.observable_type.replace(/'/g, "''")}', '${r.source_name.replace(/'/g, "''")}')`)
+    .join(',');
+
+  await command(`
+    ALTER TABLE ioc_lookup
+    DELETE WHERE (observable, observable_type, source_name) IN (${valuesSql})
+  `, { logTag: 'ioc-lookup.tombstones' });
+
+  return { deleted: normalized.length };
+}
+
 export async function syncIocLookupFromPostgres(opts = {}) {
   const workerName = opts.workerName || 'ioc-correlation-sync-v1';
   const batchSize = Math.max(Number(opts.batchSize || 20000), 1000);
