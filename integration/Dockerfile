@@ -15,5 +15,6 @@ COPY backend/lib/integrationQueueRecovery.js ./lib/integrationQueueRecovery.js
 COPY backend/lib/integrationQueueJobState.js ./lib/integrationQueueJobState.js
 COPY backend/lib/integrationQueueBullmqReconciliation.js ./lib/integrationQueueBullmqReconciliation.js
 COPY backend/lib/integrationQueueHealth.js ./lib/integrationQueueHealth.js
+COPY backend/lib/integrationSchedule.js ./lib/integrationSchedule.js
 
 CMD ["npm", "run", "worker"]

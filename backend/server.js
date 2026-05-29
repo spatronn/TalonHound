@@ -48,6 +48,7 @@ import {
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
+import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap } from './lib/integrationSchedule.js';
 
 const { Pool } = pg;
 
@@ -3269,14 +3270,7 @@ app.get('/api/integrations', async (req, res) => {
         f.trust_level,
         f.active,
         f.default_confidence,
-        f.created_at,
-        CASE
-          WHEN f.schedule_cron = '*/5 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 5 = 0 THEN 5 ELSE 5 - (EXTRACT(MINUTE FROM NOW())::int % 5) END) * INTERVAL '1 minute'
-          WHEN f.schedule_cron = '*/15 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 15 = 0 THEN 15 ELSE 15 - (EXTRACT(MINUTE FROM NOW())::int % 15) END) * INTERVAL '1 minute'
-          WHEN f.schedule_cron = '*/30 * * * *' THEN date_trunc('minute', NOW()) + (CASE WHEN EXTRACT(MINUTE FROM NOW())::int % 30 = 0 THEN 30 ELSE 30 - (EXTRACT(MINUTE FROM NOW())::int % 30) END) * INTERVAL '1 minute'
-          WHEN f.schedule_cron = '0 0 * * *' THEN date_trunc('day', NOW()) + INTERVAL '1 day'
-          ELSE date_trunc('hour', NOW()) + INTERVAL '1 hour'
-        END AS next_run_at
+        f.created_at
       FROM integration_feeds f
       ORDER BY f.active DESC, f.created_at ASC, f.name ASC
     `;
@@ -3304,7 +3298,23 @@ app.get('/api/integrations', async (req, res) => {
     `;
 
     const baseStart = Date.now();
-    const feedsRes = await pool.query(feedsQ);
+    const [feedsRes, repeatableNextByKey] = await Promise.all([
+      pool.query(feedsQ),
+      importQueue.getRepeatableJobs()
+        .then((rows) => buildRepeatableNextRunMap(rows))
+        .catch(() => new Map())
+    ]);
+    const now = new Date();
+    const activeFeeds = feedsRes.rows.filter((feed) => feed.active !== false);
+    const slotMap = buildHourlySlotMap(activeFeeds.map((feed) => ({ key: feed.key, schedule: feed.schedule })));
+    feedsRes.rows = feedsRes.rows.map((feed) => {
+      if (feed.active === false) {
+        return { ...feed, next_run_at: null };
+      }
+      const bullNext = repeatableNextByKey.get(feed.key);
+      const nextRunAt = bullNext || computeNextRunAt(feed.schedule, feed.key, now, slotMap);
+      return { ...feed, next_run_at: nextRunAt.toISOString() };
+    });
     integrationsTimingLog(timingEnabled, 'integration base query', baseStart);
 
     const feedKeys = feedsRes.rows.map((r) => r.key);
@@ -3524,16 +3534,37 @@ const INTEGRATION_JOBS = {
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
 const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *']);
 
+async function loadActiveIntegrationFeedKeys() {
+  const q = await pool.query(
+    `SELECT key FROM integration_feeds
+     WHERE active = TRUE AND key = ANY($1::text[])`,
+    [Object.keys(INTEGRATION_JOBS)]
+  );
+  return q.rows.map((row) => String(row.key));
+}
+
+async function assertIntegrationFeedActive(key) {
+  const q = await pool.query(
+    'SELECT active FROM integration_feeds WHERE key = $1 LIMIT 1',
+    [key]
+  );
+  if (!q.rowCount) return { ok: false, status: 404, message: 'Integration not found' };
+  if (!q.rows[0].active) {
+    return { ok: false, status: 409, message: 'Feed is disabled. Enable it before running.' };
+  }
+  return { ok: true };
+}
+
 app.post('/api/integrations/run-now', async (_req, res) => {
   try {
-    const keys = Object.keys(INTEGRATION_JOBS);
+    const keys = await loadActiveIntegrationFeedKeys();
     const queued = [];
     const skipped = [];
 
     for (const key of keys) {
       const blocking = await findActiveRunningJobForSource(pool, key);
       if (blocking) {
-        skipped.push({ key, blocking_job_id: blocking.job_id });
+        skipped.push({ key, blocking_job_id: blocking.job_id, reason: 'running' });
         continue;
       }
 
@@ -3572,6 +3603,11 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
   }
 
   try {
+    const activeCheck = await assertIntegrationFeedActive(key);
+    if (!activeCheck.ok) {
+      return res.status(activeCheck.status).json({ message: activeCheck.message });
+    }
+
     const blocking = await findActiveRunningJobForSource(pool, key);
     if (blocking) {
       return res.status(409).json({

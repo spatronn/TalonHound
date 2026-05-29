@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
+import { effectiveCronForFeed, sanitizeScheduleCron, buildHourlySlotMap } from './lib/integrationSchedule.js';
 
 const pool = createIntegrationPool();
 
@@ -13,11 +14,8 @@ const INTEGRATION_JOBS = {
   'phishtank-opendnsrr': 'phishtank-import'
 };
 
-const ALLOWED_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *']);
-
 function sanitizeCron(value) {
-  const v = String(value || '').trim();
-  return ALLOWED_CRONS.has(v) ? v : '0 * * * *';
+  return sanitizeScheduleCron(value);
 }
 
 async function loadActiveFeedSchedules() {
@@ -35,16 +33,17 @@ async function loadActiveFeedSchedules() {
     .filter((r) => r.key && INTEGRATION_JOBS[r.key]);
 }
 
-async function ensureSchedule(feed) {
+async function ensureSchedule(feed, slotMap) {
   const jobName = INTEGRATION_JOBS[feed.key];
   const jobId = `${feed.key}-scheduled`;
+  const pattern = effectiveCronForFeed(feed.key, feed.cron, slotMap);
 
   await importQueue.add(
     jobName,
     { triggeredBy: 'scheduler', integration_key: feed.key },
     {
       jobId,
-      repeat: { pattern: feed.cron }
+      repeat: { pattern }
     }
   );
 }
@@ -63,6 +62,7 @@ function deriveFeedKeyFromRepeatable(repeatable, desiredByKey, desiredKeysByJobN
 
 async function syncSchedules() {
   const desired = await loadActiveFeedSchedules();
+  const slotMap = buildHourlySlotMap(desired.map((d) => ({ key: d.key, schedule: d.cron })));
   const desiredByKey = new Map(desired.map((d) => [d.key, d]));
   const desiredKeysByJobName = new Map();
 
@@ -99,13 +99,14 @@ async function syncSchedules() {
       continue;
     }
 
-    if (desiredFeed.cron !== repeatCron) {
+    const desiredPattern = effectiveCronForFeed(mappedKey, desiredFeed.cron, slotMap);
+    if (desiredPattern !== repeatCron) {
       await importQueue.removeRepeatableByKey(r.key);
-      console.log(`[scheduler] removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=schedule_changed`);
+      console.log(`[scheduler] removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=schedule_changed wanted=${desiredPattern}`);
       continue;
     }
 
-    const dedupKey = `${mappedKey}::${repeatCron}`;
+    const dedupKey = `${mappedKey}::${desiredPattern}`;
     if (seenPerFeedAndCron.has(dedupKey)) {
       await importQueue.removeRepeatableByKey(r.key);
       console.log(`[scheduler] removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=duplicate`);
@@ -116,9 +117,10 @@ async function syncSchedules() {
   }
 
   for (const feed of desired) {
-    const dedupKey = `${feed.key}::${feed.cron}`;
+    const pattern = effectiveCronForFeed(feed.key, feed.cron, slotMap);
+    const dedupKey = `${feed.key}::${pattern}`;
     if (seenPerFeedAndCron.has(dedupKey)) continue;
-    await ensureSchedule(feed);
+    await ensureSchedule(feed, slotMap);
     seenPerFeedAndCron.add(dedupKey);
   }
 
