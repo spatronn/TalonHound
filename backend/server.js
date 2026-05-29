@@ -3913,6 +3913,94 @@ app.get('/api/tags', async (req, res) => {
   }
 });
 
+app.get('/api/admin/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const includeInactive = String(req.query?.include_inactive ?? 'true') !== 'false';
+  try {
+    const q = await pool.query(
+      `SELECT id, name, slug, description, color, category, type, enabled, created_at, updated_at
+       FROM tags
+       ${includeInactive ? '' : 'WHERE enabled = TRUE'}
+       ORDER BY enabled DESC, category ASC NULLS LAST, name ASC`
+    );
+    return res.json({ tags: q.rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      description: r.description,
+      color: r.color,
+      category: r.category || r.type || 'custom',
+      is_active: Boolean(r.enabled),
+      created_at: r.created_at,
+      updated_at: r.updated_at
+    })) });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
+  }
+});
+
+app.post('/api/admin/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ message: 'name is required' });
+  const slug = String(req.body?.slug || name).trim().toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
+  const category = String(req.body?.category || 'custom').trim().toLowerCase();
+  const allowed = new Set(['threat','actor','technique','context','custom']);
+  const safeCategory = allowed.has(category) ? category : 'custom';
+  const enabled = req.body?.is_active !== false;
+  try {
+    const q = await pool.query(
+      `INSERT INTO tags (name, slug, type, category, description, color, enabled, updated_at)
+       VALUES ($1, $2, $3::tag_type, $4, $5, $6, $7, NOW())
+       RETURNING id, name, slug, description, color, category, type, enabled, created_at, updated_at`,
+      [name.toLowerCase(), slug, safeCategory === 'custom' ? 'context' : safeCategory, safeCategory, req.body?.description || null, req.body?.color || null, enabled]
+    );
+    return res.status(201).json({ tag: {
+      id: q.rows[0].id, name: q.rows[0].name, slug: q.rows[0].slug, description: q.rows[0].description, color: q.rows[0].color,
+      category: q.rows[0].category || q.rows[0].type || 'custom', is_active: Boolean(q.rows[0].enabled), created_at: q.rows[0].created_at, updated_at: q.rows[0].updated_at
+    } });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ message: 'Tag already exists' });
+    return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
+  }
+});
+
+app.put('/api/admin/tags/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) return res.status(400).json({ message: 'Invalid id' });
+  const fields = [];
+  const params = [id];
+  if (req.body?.name != null) { params.push(String(req.body.name).trim().toLowerCase()); fields.push(`name = $${params.length}`); }
+  if (req.body?.category != null) { const c = String(req.body.category).trim().toLowerCase(); const t = c === 'custom' ? 'context' : c; params.push(c); fields.push(`category = $${params.length}`); params.push(t); fields.push(`type = $${params.length}::tag_type`); }
+  if (req.body?.description != null) { params.push(String(req.body.description).trim() || null); fields.push(`description = $${params.length}`); }
+  if (req.body?.color != null) { params.push(String(req.body.color).trim() || null); fields.push(`color = $${params.length}`); }
+  if (req.body?.is_active != null) { params.push(Boolean(req.body.is_active)); fields.push(`enabled = $${params.length}`); }
+  if (!fields.length) return res.status(400).json({ message: 'No fields to update' });
+  fields.push('updated_at = NOW()');
+  try {
+    const q = await pool.query(`UPDATE tags SET ${fields.join(', ')} WHERE id = $1 RETURNING id,name,slug,description,color,category,type,enabled,created_at,updated_at`, params);
+    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    const r = q.rows[0];
+    return res.json({ tag: { id:r.id,name:r.name,slug:r.slug,description:r.description,color:r.color,category:r.category||r.type||'custom',is_active:Boolean(r.enabled),created_at:r.created_at,updated_at:r.updated_at } });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
+  }
+});
+
+app.delete('/api/admin/tags/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const id = parsePositiveInt(req.params?.id);
+  if (!id) return res.status(400).json({ message: 'Invalid id' });
+  try {
+    const q = await pool.query('UPDATE tags SET enabled = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
+    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to disable tag', detail: err.message });
+  }
+});
+
 app.post('/api/tags', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
 
