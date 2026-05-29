@@ -3741,6 +3741,7 @@ function FeedSettingsModal({
   expirationError,
   expirationSuccess,
   expirationRefreshWarn,
+  scheduleReferenceTimezone,
   onClose,
   onRequestActiveChange,
   onSaveSchedule,
@@ -3821,7 +3822,7 @@ function FeedSettingsModal({
           <div style={{ display: 'grid', gap: 10 }}>
             <div>
               <span style={{ color: '#94a3b8' }}>Current schedule: </span>
-              <strong style={{ color: '#e2e8f0' }}>{formatFeedScheduleLabel(feed?.schedule)}</strong>
+              <strong style={{ color: '#e2e8f0' }}>{formatFeedScheduleLabel(feed?.schedule, scheduleReferenceTimezone)}</strong>
             </div>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: '#94a3b8' }}>New schedule</span>
@@ -3836,6 +3837,11 @@ function FeedSettingsModal({
                 ))}
               </select>
             </label>
+            {draftCron === '0 0 * * *' ? (
+              <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
+                Daily imports run at 00:00 {scheduleReferenceTimezone || 'UTC'} (server schedule). Next run and timestamps below use your display timezone preference.
+              </div>
+            ) : null}
             {canWrite ? (
               <button type="button" onClick={onSaveSchedule} disabled={savingSchedule || scheduleUnchanged}>
                 {savingSchedule ? 'Saving...' : 'Save Schedule'}
@@ -4045,7 +4051,7 @@ function feedConfidencePresentation(defaultConfidence) {
   };
 }
 
-function formatFeedScheduleLabel(cron) {
+function formatFeedScheduleLabel(cron, scheduleReferenceTimezone = 'UTC') {
   const map = {
     '*/5 * * * *': 'Every 5 min',
     '*/15 * * * *': 'Every 15 min',
@@ -4053,7 +4059,12 @@ function formatFeedScheduleLabel(cron) {
     '0 * * * *': 'Every hour',
     '0 0 * * *': 'Every day'
   };
-  return map[String(cron || '').trim()] || String(cron || '-');
+  const normalized = String(cron || '').trim();
+  const base = map[normalized] || normalized || '-';
+  if (normalized === '0 0 * * *') {
+    return `${base} · 00:00 ${scheduleReferenceTimezone || 'UTC'}`;
+  }
+  return base;
 }
 
 function truncateFeedError(text, max = 48) {
@@ -4325,6 +4336,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
   const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
   const [savingConfidenceKey, setSavingConfidenceKey] = useState('');
+  const [scheduleReferenceTimezone, setScheduleReferenceTimezone] = useState('UTC');
 
   async function load() {
     setLoading(true);
@@ -4334,6 +4346,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       const list = data?.integrations || [];
       setIntegrations(list);
       setHealthSummary(data?.health_summary || null);
+      setScheduleReferenceTimezone(data?.schedule_reference_timezone || 'UTC');
       return list;
     } catch (err) {
       setIntegrations([]);
@@ -4760,7 +4773,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       </td>
                       <td>
                         <span style={{ fontSize: 11, color: isActive ? '#cbd5e1' : '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {formatFeedScheduleLabel(i.schedule)}
+                          {formatFeedScheduleLabel(i.schedule, scheduleReferenceTimezone)}
                         </span>
                       </td>
                       <td>
@@ -4828,6 +4841,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           expirationError={settingsExpirationError}
           expirationSuccess={settingsExpirationSuccess}
           expirationRefreshWarn={settingsExpirationRefreshWarn}
+          scheduleReferenceTimezone={scheduleReferenceTimezone}
           onClose={closeSettingsModal}
           onRequestActiveChange={requestActiveChange}
           onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}

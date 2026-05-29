@@ -48,7 +48,8 @@ import {
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
-import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap } from './lib/integrationSchedule.js';
+import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone } from './lib/integrationSchedule.js';
+import { syncSingleFeedSchedule } from './lib/integrationFeedScheduleSync.js';
 import {
   AUTH_KEY_FEED_KEYS,
   formatFeedCredentialsSummary,
@@ -3536,6 +3537,7 @@ app.get('/api/integrations', async (req, res) => {
     return res.json({
       integrations,
       health_summary: healthSummary,
+      schedule_reference_timezone: getSystemScheduleTimezone(),
       recent_runs: recentRes.rows.map(withIntegrationJobDisplayName),
       queue
     });
@@ -3760,7 +3762,23 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
       return res.status(404).json({ message: 'Integration not found' });
     }
 
-    return res.json(result.rows[0]);
+    try {
+      await syncSingleFeedSchedule(pool, importQueue, key, { logPrefix: '[integrations]' });
+    } catch (syncErr) {
+      console.warn('[integrations] schedule saved but BullMQ sync failed', syncErr?.message || syncErr);
+    }
+
+    const slotMap = buildHourlySlotMap(
+      (await pool.query(`SELECT key, schedule_cron AS schedule FROM integration_feeds WHERE active = TRUE`)).rows
+    );
+    const row = result.rows[0];
+    const nextRunAt = computeNextRunAt(row.schedule_cron, key, new Date(), slotMap);
+
+    return res.json({
+      ...row,
+      schedule_reference_timezone: getSystemScheduleTimezone(),
+      next_run_at: nextRunAt.toISOString()
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update schedule', detail: err.message });
   }

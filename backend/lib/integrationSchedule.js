@@ -6,7 +6,81 @@ export const BASE_SCHEDULE_CRONS = Object.freeze([
   '0 0 * * *'
 ]);
 
+const DEFAULT_SYSTEM_SCHEDULE_TIMEZONE = 'UTC';
 const HOURLY_AT_MINUTE = /^([0-5]?\d) \* \* \* \*$/;
+
+/** Validate IANA timezone; fall back to UTC when missing or invalid. */
+export function normalizeScheduleTimezone(value) {
+  const tz = String(value || '').trim();
+  if (!tz) return 'UTC';
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return tz;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** Server reference timezone for cron execution (default UTC). Display uses each user's preference. */
+export function getSystemScheduleTimezone() {
+  const tz = String(process.env.INTEGRATION_SCHEDULE_TIMEZONE || DEFAULT_SYSTEM_SCHEDULE_TIMEZONE).trim();
+  return normalizeScheduleTimezone(tz);
+}
+
+function zonedTimeParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+  const pick = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
+  return {
+    year: pick('year'),
+    month: pick('month'),
+    day: pick('day'),
+    hour: pick('hour'),
+    minute: pick('minute'),
+    second: pick('second')
+  };
+}
+
+function zonedTimeToUtc({ year, month, day, hour, minute, second }, timeZone) {
+  let guess = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let i = 0; i < 6; i += 1) {
+    const p = zonedTimeParts(new Date(guess), timeZone);
+    const targetMs = Date.UTC(year, month - 1, day, hour, minute, second);
+    const actualMs = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    guess += targetMs - actualMs;
+  }
+  return new Date(guess);
+}
+
+export function computeNextDailyRunAt(now = new Date()) {
+  const timeZone = getSystemScheduleTimezone();
+  const p = zonedTimeParts(now, timeZone);
+  let target = { year: p.year, month: p.month, day: p.day, hour: 0, minute: 0, second: 0 };
+  let next = zonedTimeToUtc(target, timeZone);
+  if (next.getTime() <= now.getTime()) {
+    const tomorrow = new Date(Date.UTC(p.year, p.month - 1, p.day + 1));
+    const np = zonedTimeParts(tomorrow, timeZone);
+    target = { year: np.year, month: np.month, day: np.day, hour: 0, minute: 0, second: 0 };
+    next = zonedTimeToUtc(target, timeZone);
+  }
+  return next;
+}
+
+export function buildRepeatJobConfig(feedKey, scheduleCron, slotMap = null) {
+  const pattern = effectiveCronForFeed(feedKey, scheduleCron, slotMap);
+  if (isDailyScheduleCron(scheduleCron)) {
+    return { pattern, tz: getSystemScheduleTimezone() };
+  }
+  return { pattern };
+}
 
 export function isHourlyAtMinuteCron(value) {
   return HOURLY_AT_MINUTE.test(String(value || '').trim());
@@ -87,10 +161,7 @@ export function computeNextRunAt(scheduleCron, feedKey, now = new Date(), slotMa
   if (cron === '*/30 * * * *') return alignToIntervalMinutes(now, 30);
 
   if (cron === '0 0 * * *') {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    if (d.getTime() <= ts) d.setDate(d.getDate() + 1);
-    return d;
+    return computeNextDailyRunAt(now);
   }
 
   const hourlyMatch = HOURLY_AT_MINUTE.exec(cron);
