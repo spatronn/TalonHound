@@ -59,6 +59,7 @@ export function pickHighestConfidenceValue(values) {
  * }} input
  */
 export function computeInheritedEffectiveConfidence(input = {}) {
+  const includeInactiveMemberships = Boolean(input.includeInactiveMemberships);
   const manual = normalizeConfidence(input.manualOverride);
   if (manual) {
     return {
@@ -70,7 +71,9 @@ export function computeInheritedEffectiveConfidence(input = {}) {
     };
   }
 
-  const activeMemberships = (input.memberships || []).filter((m) => String(m?.status || 'active') === 'active');
+  const eligibleMemberships = includeInactiveMemberships
+    ? (input.memberships || [])
+    : (input.memberships || []).filter((m) => String(m?.status || 'active') === 'active');
   const legacyMap = input.legacyExplicitByFeedKey instanceof Map
     ? input.legacyExplicitByFeedKey
     : new Map(Object.entries(input.legacyExplicitByFeedKey || {}));
@@ -78,7 +81,7 @@ export function computeInheritedEffectiveConfidence(input = {}) {
   const explicitCandidates = [];
   const explicitContexts = [];
 
-  for (const membership of activeMemberships) {
+  for (const membership of eligibleMemberships) {
     const explicit = normalizeConfidence(membership.explicit_confidence);
     if (explicit) {
       explicitCandidates.push(explicit);
@@ -112,7 +115,7 @@ export function computeInheritedEffectiveConfidence(input = {}) {
 
   const defaultCandidates = [];
   const defaultContexts = [];
-  for (const membership of activeMemberships) {
+  for (const membership of eligibleMemberships) {
     const feedDefault = normalizeConfidence(membership.feed_default_confidence);
     if (feedDefault) {
       defaultCandidates.push(feedDefault);
@@ -188,7 +191,8 @@ export function buildIocInheritedConfidenceSummary({
   const inherited = computeInheritedEffectiveConfidence({
     manualOverride: primaryRow?.analyst_confidence_override,
     memberships: membershipRows,
-    legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows)
+    legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows),
+    includeInactiveMemberships: true
   });
 
   const membershipBreakdown = (membershipRows || [])
