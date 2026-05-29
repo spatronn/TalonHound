@@ -49,6 +49,19 @@ import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
 import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap } from './lib/integrationSchedule.js';
+import {
+  AUTH_KEY_FEED_KEYS,
+  formatFeedCredentialsSummary,
+  sanitizeFeedErrorMessage,
+  URLHAUS_FEED_KEY,
+  testUrlhausConnection
+} from './lib/urlhausIntegration.js';
+import { MALWAREBAZAAR_FEED_KEY, testMalwareBazaarConnection } from './lib/malwarebazaarIntegration.js';
+import {
+  THREATFOX_FEED_KEY,
+  testThreatFoxConnection,
+  validateThreatFoxRecentDays
+} from './lib/threatfoxIntegration.js';
 
 const { Pool } = pg;
 
@@ -3270,6 +3283,7 @@ app.get('/api/integrations', async (req, res) => {
         f.trust_level,
         f.active,
         f.default_confidence,
+        f.credentials,
         f.created_at
       FROM integration_feeds f
       ORDER BY f.active DESC, f.created_at ASC, f.name ASC
@@ -3308,12 +3322,17 @@ app.get('/api/integrations', async (req, res) => {
     const activeFeeds = feedsRes.rows.filter((feed) => feed.active !== false);
     const slotMap = buildHourlySlotMap(activeFeeds.map((feed) => ({ key: feed.key, schedule: feed.schedule })));
     feedsRes.rows = feedsRes.rows.map((feed) => {
+      const { credentials, ...rest } = feed;
+      const credentialsSummary = AUTH_KEY_FEED_KEYS.has(feed.key)
+        ? formatFeedCredentialsSummary(feed.key, credentials)
+        : null;
+      const base = { ...rest, credentials_summary: credentialsSummary };
       if (feed.active === false) {
-        return { ...feed, next_run_at: null };
+        return { ...base, next_run_at: null };
       }
       const bullNext = repeatableNextByKey.get(feed.key);
       const nextRunAt = bullNext || computeNextRunAt(feed.schedule, feed.key, now, slotMap);
-      return { ...feed, next_run_at: nextRunAt.toISOString() };
+      return { ...base, next_run_at: nextRunAt.toISOString() };
     });
     integrationsTimingLog(timingEnabled, 'integration base query', baseStart);
 
@@ -3804,6 +3823,154 @@ app.patch('/api/integrations/:key/default-confidence', async (req, res) => {
       });
     }
     return res.status(500).json({ message: 'Failed to update feed default confidence', detail: err.message });
+  }
+});
+
+async function resolveFeedCredentialsAuthKey(feedKey, storedCredentials) {
+  const fromDb = storedCredentials && typeof storedCredentials === 'object'
+    ? String(storedCredentials.auth_key || '').trim()
+    : '';
+  if (fromDb) return fromDb;
+
+  if (feedKey === URLHAUS_FEED_KEY) return String(process.env.URLHAUS_AUTH_KEY || '').trim();
+  if (feedKey === MALWAREBAZAAR_FEED_KEY) return String(process.env.MALWAREBAZAAR_AUTH_KEY || '').trim();
+  if (feedKey === THREATFOX_FEED_KEY) return String(process.env.THREATFOX_AUTH_KEY || '').trim();
+  return '';
+}
+
+app.get('/api/integrations/:key/credentials', async (req, res) => {
+  const { key } = req.params;
+  if (!AUTH_KEY_FEED_KEYS.has(key)) {
+    return res.status(404).json({ message: 'Integration does not support credentials' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT key, credentials FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const summary = formatFeedCredentialsSummary(key, result.rows[0].credentials);
+    return res.json(summary);
+  } catch (err) {
+    if (err?.code === '42703') {
+      return res.status(503).json({
+        message: 'Feed credentials schema not applied. Run explicit migration: npm run migrate'
+      });
+    }
+    return res.status(500).json({ message: 'Failed to load credentials', detail: err.message });
+  }
+});
+
+app.put('/api/integrations/:key/credentials', async (req, res) => {
+  const { key } = req.params;
+  if (!AUTH_KEY_FEED_KEYS.has(key)) {
+    return res.status(404).json({ message: 'Integration does not support credentials' });
+  }
+
+  const authKey = String(req.body?.auth_key || '').trim();
+  if (!authKey) {
+    return res.status(400).json({ message: 'auth_key is required' });
+  }
+
+  try {
+    const prevQ = await pool.query(
+      'SELECT key, integration_id, name, credentials FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
+    if (!prevQ.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const prev = prevQ.rows[0];
+    const prevCreds = prev.credentials && typeof prev.credentials === 'object' ? prev.credentials : {};
+    const nextCreds = { ...prevCreds, auth_key: authKey };
+    if (key === THREATFOX_FEED_KEY && req.body?.recent_days != null) {
+      nextCreds.recent_days = validateThreatFoxRecentDays(req.body.recent_days);
+    }
+
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET credentials = $2::jsonb, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, credentials`,
+      [key, JSON.stringify(nextCreds)]
+    );
+
+    const summary = formatFeedCredentialsSummary(key, result.rows[0].credentials);
+    const { AUDIT_ACTION, AUDIT_ENTITY } = await import('./lib/auditConstants.js');
+
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_CREDENTIALS_CHANGED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(prev.integration_id || key),
+      entityDisplay: prev.name,
+      before: { auth_key_configured: Boolean(String(prevCreds.auth_key || '').trim()) },
+      after: { auth_key_configured: true },
+      metadata: {
+        feed_key: key,
+        feed_name: prev.name,
+        source: 'ui'
+      }
+    }).catch((e) => {
+      console.warn('[audit] integration credentials log failed', e?.message || e);
+    });
+
+    return res.json(summary);
+  } catch (err) {
+    if (err?.code === '42703') {
+      return res.status(503).json({
+        message: 'Feed credentials schema not applied. Run explicit migration: npm run migrate'
+      });
+    }
+    return res.status(500).json({ message: 'Failed to save credentials', detail: err.message });
+  }
+});
+
+app.post('/api/integrations/:key/credentials/test', async (req, res) => {
+  const { key } = req.params;
+  if (!AUTH_KEY_FEED_KEYS.has(key)) {
+    return res.status(404).json({ message: 'Integration does not support credentials' });
+  }
+
+  try {
+    const feedQ = await pool.query(
+      'SELECT key, credentials FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
+    if (!feedQ.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const draftKey = String(req.body?.auth_key || '').trim();
+    const authKey = draftKey || await resolveFeedCredentialsAuthKey(key, feedQ.rows[0].credentials);
+    let result;
+
+    if (key === URLHAUS_FEED_KEY) {
+      result = await testUrlhausConnection({ authKey });
+    } else if (key === MALWAREBAZAAR_FEED_KEY) {
+      result = await testMalwareBazaarConnection({ authKey });
+    } else if (key === THREATFOX_FEED_KEY) {
+      result = await testThreatFoxConnection({
+        authKey,
+        days: validateThreatFoxRecentDays(req.body?.recent_days, 1)
+      });
+    } else {
+      return res.status(404).json({ message: 'Integration does not support credentials test' });
+    }
+
+    const message = sanitizeFeedErrorMessage(key, result.message);
+    if (result.ok) {
+      return res.json({ ok: true, message });
+    }
+    return res.status(400).json({ ok: false, message });
+  } catch (err) {
+    const message = sanitizeFeedErrorMessage(key, err?.message || 'Connection test failed');
+    return res.status(500).json({ ok: false, message });
   }
 });
 

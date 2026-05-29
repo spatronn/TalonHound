@@ -3648,6 +3648,7 @@ function FeedActiveConfirmModal({ feed, mode, loading, error, onCancel, onConfir
 
 const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 const MALWAREBAZAAR_FEED_KEY = 'malwarebazaar-abusech';
+const THREATFOX_FEED_KEY = 'threatfox-abusech';
 
 const AUTH_KEY_FEED_CONFIG = {
   [URLHAUS_FEED_KEY]: {
@@ -3655,14 +3656,25 @@ const AUTH_KEY_FEED_CONFIG = {
     placeholder: 'Enter URLHaus Auth-Key',
     helpText: 'Required for URLHaus file exports. Do not include it in the URL.',
     saveSuccess: 'URLHaus Auth-Key saved.',
-    saveError: 'Failed to save URLHaus Auth-Key'
+    saveError: 'Failed to save URLHaus Auth-Key',
+    supportsTest: true
   },
   [MALWAREBAZAAR_FEED_KEY]: {
     title: 'MalwareBazaar Auth-Key',
     placeholder: 'Enter MalwareBazaar Auth-Key',
     helpText: 'Required for MalwareBazaar file exports. Do not include it in the URL.',
     saveSuccess: 'MalwareBazaar Auth-Key saved.',
-    saveError: 'Failed to save MalwareBazaar Auth-Key'
+    saveError: 'Failed to save MalwareBazaar Auth-Key',
+    supportsTest: true
+  },
+  [THREATFOX_FEED_KEY]: {
+    title: 'ThreatFox Auth-Key',
+    placeholder: 'Enter ThreatFox Auth-Key',
+    helpText: 'Required for ThreatFox recent IOC API (get_iocs). Default lookback is 3 days (1–7).',
+    saveSuccess: 'ThreatFox Auth-Key saved.',
+    saveError: 'Failed to save ThreatFox Auth-Key',
+    supportsTest: true,
+    supportsRecentDays: true
   }
 };
 
@@ -3686,6 +3698,12 @@ function FeedSettingsModal({
   onAuthKeyChange,
   maskedAuthKey,
   authKeyConfigured,
+  draftRecentDays,
+  onRecentDaysChange,
+  testingCredentials,
+  credentialsTestMessage,
+  credentialsTestOk,
+  onTestCredentials,
   savingSchedule,
   savingExpiration,
   savingCredentials,
@@ -3713,8 +3731,8 @@ function FeedSettingsModal({
   return (
     <FeedHealthModal
       title="Feed settings"
-      onClose={(savingSchedule || savingExpiration || savingConfidence || savingCredentials) ? undefined : onClose}
-      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration || savingConfidence || savingCredentials}>Close</button>}
+      onClose={(savingSchedule || savingExpiration || savingConfidence || savingCredentials || testingCredentials) ? undefined : onClose}
+      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration || savingConfidence || savingCredentials || testingCredentials}>Close</button>}
     >
       <div style={{ display: 'grid', gap: 16, fontSize: 13 }}>
         <div>
@@ -3824,10 +3842,49 @@ function FeedSettingsModal({
               ) : authKeyConfigured ? (
                 <div style={{ color: '#94a3b8', fontSize: 12 }}>Auth key is configured.</div>
               ) : null}
+              {AUTH_KEY_FEED_CONFIG[feed.key]?.supportsRecentDays ? (
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ color: '#94a3b8' }}>Recent days (1–7)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={7}
+                    value={draftRecentDays}
+                    onChange={(e) => onRecentDaysChange(e.target.value)}
+                    disabled={!canWrite || savingCredentials}
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13, maxWidth: 120 }}
+                  />
+                </label>
+              ) : null}
               {canWrite ? (
-                <button type="button" onClick={onSaveCredentials} disabled={savingCredentials || !draftAuthKey}>
-                  {savingCredentials ? 'Saving...' : 'Save Auth Key'}
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={onSaveCredentials} disabled={savingCredentials || !draftAuthKey}>
+                    {savingCredentials ? 'Saving...' : 'Save Auth Key'}
+                  </button>
+                  {AUTH_KEY_FEED_CONFIG[feed.key]?.supportsTest ? (
+                    <button
+                      type="button"
+                      onClick={onTestCredentials}
+                      disabled={testingCredentials || savingCredentials || (!draftAuthKey && !authKeyConfigured)}
+                      style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0' }}
+                    >
+                      {testingCredentials ? 'Testing...' : 'Test Connection'}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {credentialsTestMessage ? (
+                <div style={{
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: credentialsTestOk ? '1px solid #166534' : '1px solid #7f1d1d',
+                  color: credentialsTestOk ? '#86efac' : '#fca5a5',
+                  background: credentialsTestOk ? 'rgba(20,83,45,0.2)' : 'rgba(127,29,29,0.2)',
+                  fontSize: 13
+                }}>
+                  {credentialsTestMessage}
+                </div>
               ) : null}
             </div>
             {credentialsSuccess ? (
@@ -4232,6 +4289,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [savingCredentialsKey, setSavingCredentialsKey] = useState('');
   const [settingsCredentialsError, setSettingsCredentialsError] = useState('');
   const [settingsCredentialsSuccess, setSettingsCredentialsSuccess] = useState('');
+  const [settingsDraftRecentDays, setSettingsDraftRecentDays] = useState('3');
+  const [testingCredentialsKey, setTestingCredentialsKey] = useState('');
+  const [settingsCredentialsTestMessage, setSettingsCredentialsTestMessage] = useState('');
+  const [settingsCredentialsTestOk, setSettingsCredentialsTestOk] = useState(false);
   const [settingsDraftConfidence, setSettingsDraftConfidence] = useState('');
   const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
   const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
@@ -4323,6 +4384,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsExpirationRefreshWarn('');
     setSettingsCredentialsError('');
     setSettingsCredentialsSuccess('');
+    setSettingsCredentialsTestMessage('');
+    setSettingsCredentialsTestOk(false);
     setSettingsConfidenceError('');
     setSettingsConfidenceSuccess('');
     setSettingsDraftAuthKey('');
@@ -4332,6 +4395,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     const credSummary = feed.credentials_summary || null;
     setSettingsMaskedAuthKey(credSummary?.masked_auth_key || null);
     setSettingsAuthKeyConfigured(Boolean(credSummary?.auth_key_configured));
+    setSettingsDraftRecentDays(String(credSummary?.recent_days ?? 3));
     setSettingsModal({
       key: feed.key,
       name: feed.name,
@@ -4349,6 +4413,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         const { data } = await api.get(`/integrations/${encodeURIComponent(feed.key)}/credentials`);
         setSettingsMaskedAuthKey(data?.masked_auth_key || null);
         setSettingsAuthKeyConfigured(Boolean(data?.auth_key_configured));
+        if (data?.recent_days != null) {
+          setSettingsDraftRecentDays(String(data.recent_days));
+        }
       } catch {
         // keep list summary if credentials endpoint unavailable
       }
@@ -4356,7 +4423,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function closeSettingsModal() {
-    if (savingScheduleKey || savingCredentialsKey || savingConfidenceKey) return;
+    if (savingScheduleKey || savingCredentialsKey || savingConfidenceKey || testingCredentialsKey) return;
     setSettingsModal(null);
     setSettingsError('');
   }
@@ -4428,11 +4495,16 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsCredentialsSuccess('');
     setSavingCredentialsKey(key);
     try {
-      const { data } = await api.put(`/integrations/${encodeURIComponent(key)}/credentials`, {
-        auth_key: settingsDraftAuthKey.trim()
-      });
+      const payload = { auth_key: settingsDraftAuthKey.trim() };
+      if (AUTH_KEY_FEED_CONFIG[key]?.supportsRecentDays) {
+        payload.recent_days = Number(settingsDraftRecentDays);
+      }
+      const { data } = await api.put(`/integrations/${encodeURIComponent(key)}/credentials`, payload);
       setSettingsMaskedAuthKey(data?.masked_auth_key || null);
       setSettingsAuthKeyConfigured(Boolean(data?.auth_key_configured));
+      if (data?.recent_days != null) {
+        setSettingsDraftRecentDays(String(data.recent_days));
+      }
       setSettingsDraftAuthKey('');
       setSettingsCredentialsSuccess(AUTH_KEY_FEED_CONFIG[key]?.saveSuccess || 'Auth-Key saved.');
       await load();
@@ -4440,6 +4512,34 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       setSettingsCredentialsError(apiErrorMessage(err, AUTH_KEY_FEED_CONFIG[key]?.saveError || 'Failed to save Auth-Key'));
     } finally {
       setSavingCredentialsKey('');
+    }
+  }
+
+  async function testSettingsCredentials() {
+    if (!canWrite || !settingsModal || !feedSupportsAuthKey(settingsModal.key)) return;
+    const { key } = settingsModal;
+    if (testingCredentialsKey || savingCredentialsKey) return;
+    if (!settingsDraftAuthKey.trim() && !settingsAuthKeyConfigured) return;
+
+    setSettingsCredentialsTestMessage('');
+    setSettingsCredentialsTestOk(false);
+    setTestingCredentialsKey(key);
+    try {
+      const payload = {};
+      if (settingsDraftAuthKey.trim()) {
+        payload.auth_key = settingsDraftAuthKey.trim();
+      }
+      if (AUTH_KEY_FEED_CONFIG[key]?.supportsRecentDays) {
+        payload.recent_days = Number(settingsDraftRecentDays);
+      }
+      const { data } = await api.post(`/integrations/${encodeURIComponent(key)}/credentials/test`, payload);
+      setSettingsCredentialsTestOk(Boolean(data?.ok));
+      setSettingsCredentialsTestMessage(data?.message || (data?.ok ? 'Connection successful' : 'Connection failed'));
+    } catch (err) {
+      setSettingsCredentialsTestOk(false);
+      setSettingsCredentialsTestMessage(apiErrorMessage(err, 'Connection test failed'));
+    } finally {
+      setTestingCredentialsKey('');
     }
   }
 
@@ -4685,6 +4785,12 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onAuthKeyChange={setSettingsDraftAuthKey}
           maskedAuthKey={settingsMaskedAuthKey}
           authKeyConfigured={settingsAuthKeyConfigured}
+          draftRecentDays={settingsDraftRecentDays}
+          onRecentDaysChange={setSettingsDraftRecentDays}
+          testingCredentials={Boolean(testingCredentialsKey)}
+          credentialsTestMessage={settingsCredentialsTestMessage}
+          credentialsTestOk={settingsCredentialsTestOk}
+          onTestCredentials={() => testSettingsCredentials().catch(() => {})}
           savingSchedule={Boolean(savingScheduleKey)}
           savingExpiration={Boolean(savingExpirationKey)}
           savingCredentials={Boolean(savingCredentialsKey)}

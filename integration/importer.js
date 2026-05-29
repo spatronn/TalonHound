@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { strFromU8, unzipSync } from 'fflate';
 import { config } from './config.js';
 import {
   createSuppressionStats,
@@ -41,6 +40,15 @@ import {
   resolveMalwareBazaarAuthKey,
   sanitizeMalwareBazaarErrorMessage
 } from './lib/malwarebazaar.js';
+import {
+  THREATFOX_AUTH_REQUIRED_MSG,
+  THREATFOX_SOURCE_URL_MASKED,
+  buildThreatFoxNote,
+  fetchThreatFoxRecentIocs,
+  resolveThreatFoxAuthKey,
+  resolveThreatFoxRecentDays,
+  sanitizeThreatFoxErrorMessage
+} from './lib/threatfox.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { withPgTransaction } from './lib/pg-transaction.js';
 import { throwIfAborted, fetchWithSignal, isJobAbortedError } from './lib/job-cancellation.js';
@@ -244,68 +252,6 @@ function splitCsvLine(line) {
   }
   out.push(cur.trim());
   return out;
-}
-
-function mapThreatFoxConfidence(level) {
-  const n = Number(level);
-  if (Number.isNaN(n)) return 'medium';
-  if (n >= 80) return 'high';
-  if (n >= 50) return 'medium';
-  return 'low';
-}
-
-async function readThreatFoxCsvText(response) {
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const looksZip = bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
-
-  if (!looksZip) {
-    return new TextDecoder('utf-8').decode(bytes);
-  }
-
-  const files = unzipSync(bytes);
-  const names = Object.keys(files);
-  if (!names.length) return '';
-
-  const csvName = names.find((n) => n.toLowerCase().endsWith('.csv')) || names[0];
-  return strFromU8(files[csvName]);
-}
-
-function mapThreatFoxHashType(iocType) {
-  const t = String(iocType || '').trim().toLowerCase();
-  if (t === 'md5_hash' || t === 'md5') return 'md5';
-  if (t === 'sha1_hash' || t === 'sha1') return 'sha1';
-  if (t === 'sha256_hash' || t === 'sha256') return 'sha256';
-  if (t === 'ssdeep') return 'ssdeep';
-  if (t === 'imphash') return 'imphash';
-  return null;
-}
-
-function classifyThreatFoxObservable(iocValue, iocType) {
-  const raw = String(iocValue || '').trim();
-  const type = String(iocType || '').trim().toLowerCase();
-  if (!raw) return null;
-
-  if (type === 'ip:port') {
-    const [host] = raw.split(':');
-    if (!host) return null;
-    if (isIPv4(host)) return { observable: host, observableType: 'ip' };
-    if (isIPv6(host)) return { observable: host, observableType: 'ip6' };
-    return { observable: host.toLowerCase(), observableType: 'domain' };
-  }
-
-  if (type === 'ip') {
-    if (isIPv4(raw) || isCIDR(raw)) return { observable: raw, observableType: 'ip' };
-    if (isIPv6(raw)) return { observable: raw, observableType: 'ip6' };
-    return null;
-  }
-
-  const hashType = mapThreatFoxHashType(type);
-  if (hashType) return { observable: raw.toLowerCase(), observableType: hashType };
-
-  if (type === 'url') return { observable: raw, observableType: 'url' };
-  if (type === 'domain') return { observable: raw.toLowerCase(), observableType: 'domain' };
-
-  return null;
 }
 
 function hashEntries(entries) {
@@ -525,6 +471,102 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
 
   if (insertResult === 'duplicate') {
     if (await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category)) {
+      metrics.noteUpdated();
+    } else {
+      metrics.noteDuplicate();
+    }
+    return;
+  }
+
+  metrics.noteDuplicate();
+}
+
+async function updateThreatFoxObservableBySource(client, entry, sourceName, note, category) {
+  const res = await client.query(
+    `UPDATE ioc_items
+     SET note = $4,
+         category = $5,
+         last_seen_at = CASE
+           WHEN $7::timestamptz IS NULL THEN last_seen_at
+           ELSE GREATEST(COALESCE(last_seen_at, $7::timestamptz), $7::timestamptz)
+         END,
+         first_seen_at = CASE
+           WHEN $6::timestamptz IS NULL THEN first_seen_at
+           ELSE LEAST(first_seen_at, $6::timestamptz)
+         END
+     WHERE observable = $1
+       AND observable_type = $2
+       AND source_name = $3
+     RETURNING public_id`,
+    [
+      entry.observable,
+      entry.observableType,
+      sourceName,
+      note,
+      category,
+      entry.firstSeen,
+      entry.lastSeen || entry.firstSeen
+    ]
+  );
+
+  if (!res.rowCount) return false;
+
+  const publicId = res.rows[0].public_id;
+  const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
+  await insertObservablesIndex(client, publicId, observables);
+  await importSideEffect('threatfox_confidence', null, () => applyIocImportConfidence(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    parsedSourceConfidence: entry.confidence
+  }));
+  await importSideEffect('threatfox_membership', null, () => syncMembershipAfterIocImport(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl: THREATFOX_SOURCE_URL_MASKED,
+    explicitConfidence: entry.confidence,
+    category
+  }));
+  return true;
+}
+
+async function upsertThreatFoxObservable(client, entry, sourceName, suppressionStats, metrics) {
+  const note = buildThreatFoxNote(entry);
+  const category = entry.threatType || 'threat-intel';
+  const sourceUrl = THREATFOX_SOURCE_URL_MASKED;
+
+  const updated = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
+  if (updated) {
+    metrics.noteUpdated();
+    return;
+  }
+
+  const insertResult = await insertObservable(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl,
+    confidence: entry.confidence,
+    sourceConfidence: entry.confidence,
+    category,
+    note
+  }, suppressionStats);
+
+  if (insertResult === 'suppressed') {
+    metrics.noteSuppressed(1);
+    return;
+  }
+  if (insertResult === true || insertResult === 'inserted') {
+    metrics.noteInsert();
+    if (entry.firstSeen || entry.lastSeen) {
+      await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
+    }
+    return;
+  }
+
+  if (insertResult === 'duplicate') {
+    if (await updateThreatFoxObservableBySource(client, entry, sourceName, note, category)) {
       metrics.noteUpdated();
     } else {
       metrics.noteDuplicate();
@@ -1173,121 +1215,57 @@ export async function runThreatfoxImport(options = {}) {
     );
     runId = runInsert.rows[0].id;
 
-    const res = await fetchWithSignal(config.threatfoxCsvUrl, {}, signal);
-    if (!res.ok) throw new Error(`ThreatFox CSV request failed: ${res.status}`);
-    const txt = await readThreatFoxCsvText(res);
-
-    const parsedRows = txt
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#'))
-      .map((line) => splitCsvLine(line));
-
-    metrics.noteSkipped(parsedRows.filter((cols) => cols.length < 15).length);
-
-    const entries = parsedRows
-      .filter((cols) => cols.length >= 15)
-      .map((cols) => {
-        const observable = classifyThreatFoxObservable(cols[2], cols[3]);
-        if (!observable) return null;
-        return {
-          ...observable,
-          iocId: cols[1],
-          threatType: cols[4],
-          malwarePrintable: cols[7],
-          confidence: mapThreatFoxConfidence(cols[9]),
-          reference: cols[11],
-          tags: cols[12],
-          reporter: cols[14]
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
-
-    metrics.noteSkipped(parsedRows.filter((cols) => cols.length >= 15 && !classifyThreatFoxObservable(cols[2], cols[3])).length);
-
-    const currentHash = hashEntries(entries.map((e) => ({ o: e.observable, t: e.observableType, id: e.iocId })));
-
-    const prevState = await client.query(
-      `SELECT content_hash, items_json
-       FROM integration_source_state
-       WHERE source_name = $1`,
-      [config.threatfoxSourceName]
-    );
-
-    const previousHash = prevState.rows[0]?.content_hash || null;
-    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
-    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
-
-    const mapThreatFoxSnapshotEntry = (entry) => ({
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName: config.threatfoxSourceName,
-      sourceUrl: config.threatfoxCsvUrl,
-      explicitConfidence: entry.confidence,
-      category: entry.threatType || 'threat-intel'
-    });
-
-    if (previousHash === currentHash) {
-      metrics.noteSkipped(entries.length);
-      await runSnapshotSync(client, 'threatfox-abusech', entries, mapThreatFoxSnapshotEntry, { signal });
-      throwIfAborted(signal);
-
-      await client.query(
-        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (source_name)
-         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-        [config.threatfoxSourceName, `hash:${currentHash}`]
-      );
-
+    const authKey = await resolveThreatFoxAuthKey(client, config.threatfoxAuthKey);
+    if (!authKey) {
+      metrics.noteSkipped(0);
       await finalizeIntegrationRun(client, runId, metrics);
-      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
+      return withSuppressionStats(
+        { ok: true, runId, skipped: true, reason: THREATFOX_AUTH_REQUIRED_MSG },
+        suppressionStats,
+        metrics
+      );
     }
 
-    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
-    metrics.noteSkipped(entries.length - addedEntries.length);
+    const recentDays = await resolveThreatFoxRecentDays(client, config.threatfoxRecentDays);
+    const { entries, fetched, parsed, skipped, queryStatus } = await fetchThreatFoxRecentIocs({
+      authKey,
+      apiUrl: config.threatfoxApiUrl,
+      days: recentDays,
+      signal,
+      fetchFn: (url, init) => fetchWithSignal(url, init, signal)
+    });
+    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
+
+    const currentHash = hashEntries(entries.map((e) => ({
+      o: e.observable,
+      t: e.observableType,
+      id: e.iocId
+    })));
+
     const batchSize = Number(process.env.THREATFOX_BATCH_SIZE || 1000);
 
-    for (let i = 0; i < addedEntries.length; i += batchSize) {
+    for (let i = 0; i < entries.length; i += batchSize) {
       throwIfAborted(signal);
-      const batch = addedEntries.slice(i, i + batchSize);
+      const batch = entries.slice(i, i + batchSize);
       await withPgTransaction(client, 'threatfox_import_batch', async (tx) => {
         for (const entry of batch) {
           throwIfAborted(signal);
-          const noteParts = [
-            'Auto-imported from ThreatFox CSV',
-            entry.iocId ? `ioc_id=${entry.iocId}` : null,
-            entry.malwarePrintable ? `malware=${entry.malwarePrintable}` : null,
-            entry.reporter ? `reporter=${entry.reporter}` : null,
-            entry.tags ? `tags=${entry.tags}` : null
-          ].filter(Boolean);
-
-          const okObs = await insertObservable(tx, {
-            observable: entry.observable,
-            observableType: entry.observableType,
-            sourceName: config.threatfoxSourceName,
-            sourceUrl: config.threatfoxCsvUrl,
-            confidence: entry.confidence,
-            sourceConfidence: entry.confidence,
-            category: entry.threatType || 'threat-intel',
-            note: noteParts.join(' | ')
-          }, suppressionStats, signal);
-          trackInsertResult(metrics, okObs);
+          await upsertThreatFoxObservable(tx, entry, config.threatfoxSourceName, suppressionStats, metrics);
         }
       }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
     }
 
     throwIfAborted(signal);
-    await runSnapshotSync(client, 'threatfox-abusech', entries, mapThreatFoxSnapshotEntry, { signal });
-    throwIfAborted(signal);
-
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
        ON CONFLICT (source_name)
        DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [config.threatfoxSourceName, currentHash, JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))]
+      [
+        config.threatfoxSourceName,
+        currentHash,
+        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
+      ]
     );
 
     await client.query(
@@ -1295,18 +1273,24 @@ export async function runThreatfoxImport(options = {}) {
        VALUES ($1, $2, NOW())
        ON CONFLICT (source_name)
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-      [config.threatfoxSourceName, `hash:${currentHash}`]
+      [config.threatfoxSourceName, `recent:${recentDays}:${currentHash}`]
     );
 
+    throwIfAborted(signal);
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('threatfox_import', runId, suppressionStats, metrics.toJSON());
+    console.log(
+      `[integration-import] job=threatfox_import runId=${runId} api=${THREATFOX_SOURCE_URL_MASKED} days=${recentDays} query_status=${queryStatus || 'ok'} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
+    );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
+    const safeMessage = sanitizeThreatFoxErrorMessage(err?.message || err);
     if (runId) {
-      await failIntegrationRun(client, runId, err.message, metrics);
+      await failIntegrationRun(client, runId, safeMessage, metrics);
     }
-
-    throw err;
+    const wrapped = new Error(safeMessage);
+    wrapped.cause = err;
+    throw wrapped;
   } finally {
     try {
       await client.query('SELECT pg_advisory_unlock(942004)');

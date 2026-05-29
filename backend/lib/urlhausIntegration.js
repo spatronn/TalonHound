@@ -3,6 +3,11 @@ import {
   formatMalwareBazaarCredentialsSummary,
   sanitizeMalwareBazaarErrorMessage
 } from './malwarebazaarIntegration.js';
+import {
+  THREATFOX_FEED_KEY,
+  formatThreatFoxCredentialsSummary,
+  sanitizeThreatFoxErrorMessage
+} from './threatfoxIntegration.js';
 
 export const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 export const URLHAUS_EXPORT_URL_MASKED = 'https://urlhaus-api.abuse.ch/v2/files/exports/***/recent.csv';
@@ -10,7 +15,10 @@ export const URLHAUS_EXPORT_URL_MASKED = 'https://urlhaus-api.abuse.ch/v2/files/
 export {
   MALWAREBAZAAR_FEED_KEY,
   formatMalwareBazaarCredentialsSummary,
-  sanitizeMalwareBazaarErrorMessage
+  sanitizeMalwareBazaarErrorMessage,
+  THREATFOX_FEED_KEY,
+  formatThreatFoxCredentialsSummary,
+  sanitizeThreatFoxErrorMessage
 };
 
 export function maskUrlhausAuthKey(key) {
@@ -39,9 +47,34 @@ export function formatUrlhausCredentialsSummary(credentials) {
   };
 }
 
+export async function testUrlhausConnection({ authKey } = {}) {
+  const key = String(authKey || process.env.URLHAUS_AUTH_KEY || '').trim();
+  if (!key) {
+    return { ok: false, message: 'URLHaus Auth-Key is missing' };
+  }
+
+  const url = `https://urlhaus-api.abuse.ch/v2/files/exports/${encodeURIComponent(key)}/recent.csv`;
+  try {
+    const res = await fetch(url, { method: 'HEAD' });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, message: `URLHaus API authentication failed (HTTP ${res.status})` };
+    }
+    if (res.ok) {
+      return { ok: true, message: 'URLHaus API connection successful' };
+    }
+    return { ok: false, message: `URLHaus API request failed (HTTP ${res.status})` };
+  } catch (err) {
+    return {
+      ok: false,
+      message: sanitizeUrlhausErrorMessage(err?.message || 'URLHaus connection failed')
+    };
+  }
+}
+
 export function formatFeedCredentialsSummary(feedKey, credentials) {
   if (feedKey === URLHAUS_FEED_KEY) return formatUrlhausCredentialsSummary(credentials);
   if (feedKey === MALWAREBAZAAR_FEED_KEY) return formatMalwareBazaarCredentialsSummary(credentials);
+  if (feedKey === THREATFOX_FEED_KEY) return formatThreatFoxCredentialsSummary(credentials);
   return null;
 }
 
@@ -52,5 +85,14 @@ export function sanitizeFeedErrorMessage(feedKey, message) {
   if (feedKey === MALWAREBAZAAR_FEED_KEY) {
     return sanitizeMalwareBazaarErrorMessage(message);
   }
+  if (feedKey === THREATFOX_FEED_KEY) {
+    return sanitizeThreatFoxErrorMessage(message);
+  }
   return String(message || '');
 }
+
+export const AUTH_KEY_FEED_KEYS = new Set([
+  URLHAUS_FEED_KEY,
+  MALWAREBAZAAR_FEED_KEY,
+  THREATFOX_FEED_KEY
+]);
