@@ -4,6 +4,8 @@ function readPositiveInt(name, fallback, min = 1000) {
   return Math.floor(n);
 }
 
+export const MANUAL_JOB_PRIORITY = 10;
+
 export const QUEUE_HARDENING = {
   jobTimeoutMs: readPositiveInt('INTEGRATION_JOB_TIMEOUT_MS', 600_000, 10_000),
   heartbeatIntervalMs: readPositiveInt('INTEGRATION_JOB_HEARTBEAT_INTERVAL_MS', 30_000, 5_000),

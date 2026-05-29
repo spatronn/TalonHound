@@ -47,6 +47,7 @@ import {
 } from './lib/schemaCapabilities.js';
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
+import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
 
 const { Pool } = pg;
 
@@ -3526,17 +3527,38 @@ const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '
 app.post('/api/integrations/run-now', async (_req, res) => {
   try {
     const keys = Object.keys(INTEGRATION_JOBS);
-    const jobs = await Promise.all(keys.map((key) => importQueue.add(INTEGRATION_JOBS[key], { triggeredBy: 'manual-ui-all', integration_key: key })));
+    const queued = [];
+    const skipped = [];
 
-    await Promise.all(jobs.map((j, idx) => pool.query(
-      `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
-       VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
-       ON CONFLICT (job_id)
-       DO UPDATE SET status='queued', updated_at=NOW()`,
-      [String(j.id), keys[idx], INTEGRATION_JOBS[keys[idx]]]
-    )));
+    for (const key of keys) {
+      const blocking = await findActiveRunningJobForSource(pool, key);
+      if (blocking) {
+        skipped.push({ key, blocking_job_id: blocking.job_id });
+        continue;
+      }
 
-    return res.status(202).json({ ok: true, queued: true, count: jobs.length, job_ids: jobs.map((j) => j.id) });
+      const job = await importQueue.add(
+        INTEGRATION_JOBS[key],
+        { triggeredBy: 'manual-ui-all', integration_key: key },
+        { priority: MANUAL_JOB_PRIORITY }
+      );
+      await pool.query(
+        `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+         VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
+         ON CONFLICT (job_id)
+         DO UPDATE SET status='queued', triggered_by='manual-ui-all', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+        [String(job.id), key, INTEGRATION_JOBS[key]]
+      );
+      queued.push({ key, job_id: job.id });
+    }
+
+    return res.status(202).json({
+      ok: true,
+      queued: true,
+      count: queued.length,
+      job_ids: queued.map((entry) => entry.job_id),
+      skipped
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integrations', detail: err.message });
   }
@@ -3562,7 +3584,7 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
     const job = await importQueue.add(
       jobName,
       { triggeredBy: 'manual-ui-one', integration_key: key },
-      { priority: 10 }
+      { priority: MANUAL_JOB_PRIORITY }
     );
     await pool.query(
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
