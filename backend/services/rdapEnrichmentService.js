@@ -374,8 +374,7 @@ export async function refreshRdapEnrichment(pool, parsed, { force = false } = {}
   const iocType = parsed.ioc_type;
   const existing = await getEnrichmentByRootDomain(pool, rootDomain);
 
-  // POST refresh is user-initiated: retry after failures; only short-circuit fresh successes.
-  if (existing?.rdap_status === 'success' && isCacheFresh(existing, { force })) {
+  if (existing && isCacheFresh(existing, { force })) {
     return {
       row: existing,
       cached: true,
