@@ -75,11 +75,13 @@ async function syncSchedules() {
   const repeatables = await importQueue.getRepeatableJobs();
   const seenPerFeedAndCron = new Set();
 
+  const knownJobNames = new Set(Object.values(INTEGRATION_JOBS));
+
   for (const r of repeatables) {
     const jobName = String(r.name || '').trim();
 
     // Ignore unrelated repeatable jobs on this queue.
-    if (!Array.from(desiredKeysByJobName.keys()).includes(jobName)) continue;
+    if (!knownJobNames.has(jobName)) continue;
 
     const mappedKey = deriveFeedKeyFromRepeatable(r, desiredByKey, desiredKeysByJobName);
     const repeatCron = sanitizeCron(String(r.pattern || '').trim());
