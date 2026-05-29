@@ -58,6 +58,22 @@ test('computeNextRunAt uses dynamic slot map', () => {
   assert.equal(urlhausNext.getMinutes(), 30);
 });
 
+test('daily schedule runs at midnight and is excluded from hourly slots', () => {
+  assert.equal(effectiveCronForFeed('phishtank-opendnsrr', '0 0 * * *', new Map()), '0 0 * * *');
+  const slots = buildHourlySlotMap([
+    { key: 'et-blockrules', schedule: '0 * * * *' },
+    { key: 'phishtank-opendnsrr', schedule: '0 0 * * *' }
+  ]);
+  assert.equal(slots.size, 1);
+  assert.equal(slots.has('phishtank-opendnsrr'), false);
+
+  const now = new Date('2026-05-29T15:30:00+03:00');
+  const next = computeNextRunAt('0 0 * * *', 'phishtank-opendnsrr', now);
+  assert.equal(next.getDate(), 30);
+  assert.equal(next.getHours(), 0);
+  assert.equal(next.getMinutes(), 0);
+});
+
 test('buildRepeatableNextRunMap maps scheduler ids to feed keys', () => {
   const map = buildRepeatableNextRunMap([
     { id: 'threatfox-abusech-scheduled', next: 1780070400000 }

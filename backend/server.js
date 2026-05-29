@@ -3532,7 +3532,7 @@ const INTEGRATION_JOBS = {
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
-const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *']);
+const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *', '0 0 * * *']);
 
 async function loadActiveIntegrationFeedKeys() {
   const q = await pool.query(

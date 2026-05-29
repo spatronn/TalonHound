@@ -2,7 +2,8 @@ export const BASE_SCHEDULE_CRONS = Object.freeze([
   '*/5 * * * *',
   '*/15 * * * *',
   '*/30 * * * *',
-  '0 * * * *'
+  '0 * * * *',
+  '0 0 * * *'
 ]);
 
 const HOURLY_AT_MINUTE = /^([0-5]?\d) \* \* \* \*$/;
@@ -20,6 +21,10 @@ export function sanitizeScheduleCron(value) {
 
 export function isHourlyScheduleCron(scheduleCron) {
   return sanitizeScheduleCron(scheduleCron) === '0 * * * *';
+}
+
+export function isDailyScheduleCron(scheduleCron) {
+  return sanitizeScheduleCron(scheduleCron) === '0 0 * * *';
 }
 
 /**

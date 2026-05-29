@@ -3530,7 +3530,8 @@ const FEED_SCHEDULE_OPTIONS = [
   { cron: '*/5 * * * *', label: 'Every 5 min' },
   { cron: '*/15 * * * *', label: 'Every 15 min' },
   { cron: '*/30 * * * *', label: 'Every 30 min' },
-  { cron: '0 * * * *', label: 'Every hour' }
+  { cron: '0 * * * *', label: 'Every hour' },
+  { cron: '0 0 * * *', label: 'Every day' }
 ];
 
 const FEED_METRIC_TOOLTIPS = {
@@ -3964,7 +3965,8 @@ function formatFeedScheduleLabel(cron) {
     '*/5 * * * *': 'Every 5 min',
     '*/15 * * * *': 'Every 15 min',
     '*/30 * * * *': 'Every 30 min',
-    '0 * * * *': 'Every hour'
+    '0 * * * *': 'Every hour',
+    '0 0 * * *': 'Every day'
   };
   return map[String(cron || '').trim()] || String(cron || '-');
 }
