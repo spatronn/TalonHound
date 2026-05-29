@@ -46,6 +46,7 @@ import {
   iocConfidenceSelectSql
 } from './lib/schemaCapabilities.js';
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
+import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 
 const { Pool } = pg;
 
@@ -3549,12 +3550,25 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
   }
 
   try {
-    const job = await importQueue.add(jobName, { triggeredBy: 'manual-ui-one', integration_key: key });
+    const blocking = await findActiveRunningJobForSource(pool, key);
+    if (blocking) {
+      return res.status(409).json({
+        message: `A run is already in progress for this feed (job ${blocking.job_id}). Wait for it to finish or recover stale jobs.`,
+        blocking_job_id: blocking.job_id,
+        integration_key: key
+      });
+    }
+
+    const job = await importQueue.add(
+      jobName,
+      { triggeredBy: 'manual-ui-one', integration_key: key },
+      { priority: 10 }
+    );
     await pool.query(
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
        VALUES ($1, $2, $3, 'queued', 'manual-ui-one', NOW(), NOW())
        ON CONFLICT (job_id)
-       DO UPDATE SET status='queued', updated_at=NOW()`,
+       DO UPDATE SET status='queued', triggered_by='manual-ui-one', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
       [String(job.id), key, jobName]
     );
     return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
