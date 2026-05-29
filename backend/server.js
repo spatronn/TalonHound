@@ -25,7 +25,8 @@ import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
-import { registerIocExpirationRoutes } from './routes/iocExpiration.js';
+import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
+import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
@@ -3195,7 +3196,7 @@ function buildIntegrationHealthSummary(integrations) {
   };
 }
 
-function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt) {
+function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey) {
   const jobType = feedJobType(feed.key);
   const lr = latestRunByJobType.get(jobType);
   const lq = latestQueueByKey.get(feed.key);
@@ -3204,11 +3205,16 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const runMetrics = flatMetricsFromLastRun(lastRunMetrics);
   const lastSuccess = lastSuccessByJobType.get(jobType);
   const feedActive = feed.active !== false;
+  const policyRow = expirationByKey?.get(feed.key);
+  const expiration_policy = policyRow ? serializeExpirationPolicy(policyRow, policyRow.feed_id) : null;
+  const expiration_summary = formatExpirationSummary(expiration_policy);
 
   if (feed.key === 'asn_enrichment') {
     return {
       ...feed,
       active: feedActive,
+      expiration_policy,
+      expiration_summary,
       status: asnLastUpdatedAt ? 'success' : 'never',
       last_status: asnLastUpdatedAt ? 'success' : 'never',
       health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'warning') : 'disabled',
@@ -3234,6 +3240,8 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   return {
     ...feed,
     active: feedActive,
+    expiration_policy,
+    expiration_summary,
     status: lastStatus,
     last_status: lastStatus,
     health_state: resolveFeedHealthState(feedActive, lastStatus, consecutive, metricsHints),
@@ -3317,12 +3325,30 @@ app.get('/api/integrations', async (req, res) => {
     `;
 
     const baseStart = Date.now();
-    const [feedsRes, repeatableNextByKey] = await Promise.all([
+    const expirationPoliciesQ = `
+      SELECT
+        f.key AS feed_key,
+        f.integration_id AS feed_id,
+        p.enabled,
+        p.expiration_mode,
+        p.ttl_days,
+        p.grace_days,
+        p.observable_type,
+        p.updated_at
+      FROM integration_feeds f
+      LEFT JOIN threat_feed_expiration_policies p
+        ON p.feed_id = f.integration_id AND p.observable_type = 'all'
+    `;
+    const [feedsRes, repeatableNextByKey, expirationPoliciesRes] = await Promise.all([
       pool.query(feedsQ),
       importQueue.getRepeatableJobs()
         .then((rows) => buildRepeatableNextRunMap(rows))
-        .catch(() => new Map())
+        .catch(() => new Map()),
+      pool.query(expirationPoliciesQ)
     ]);
+    const expirationByKey = new Map(
+      (expirationPoliciesRes.rows || []).map((row) => [String(row.feed_key || '').trim(), row])
+    );
     const now = new Date();
     const activeFeeds = feedsRes.rows.filter((feed) => feed.active !== false);
     const slotMap = buildHourlySlotMap(activeFeeds.map((feed) => ({ key: feed.key, schedule: feed.schedule })));
@@ -3428,7 +3454,7 @@ app.get('/api/integrations', async (req, res) => {
     const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
 
     const integrations = feedsRes.rows.map((feed) =>
-      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt)
+      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey)
     );
     const healthSummary = buildIntegrationHealthSummary(integrations);
 

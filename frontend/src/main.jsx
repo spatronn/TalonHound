@@ -4768,7 +4768,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                           {confidence.label}
                         </span>
                       </td>
-                      <td style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap' }}>{i.expiration_summary || 'Never'}</td>
+                      <td style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap' }}>{i.expiration_summary ?? 'Disabled'}</td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}</td>
                       <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
