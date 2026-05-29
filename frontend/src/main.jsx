@@ -9101,24 +9101,31 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
   async function enrich(force = false) {
     setEnriching(true);
     try {
-      const { data } = await api.post('/enrichment/rdap/refresh', {
+      const res = await api.post('/enrichment/rdap/refresh', {
         value,
         force: force || undefined,
         ioc_type: type
+      }, {
+        validateStatus: (status) => status >= 200 && status < 600,
+        timeout: 30000
       });
+      const data = res.data;
       if (data?.enriched || data?.rdap_status === 'success') {
         setState({ status: 'success', data, message: '' });
       } else {
-        setState({
-          status: 'failed',
-          data,
-          message: data?.error_message || data?.error || data?.message || 'RDAP lookup failed'
-        });
+        const rawMsg = data?.error_message || data?.error || data?.message || 'RDAP lookup failed';
+        const msg = /aborted/i.test(String(rawMsg))
+          ? 'RDAP lookup timed out. Try Retry again.'
+          : rawMsg;
+        setState({ status: 'failed', data, message: msg });
       }
     } catch (err) {
-      const msg = err?.response?.status === 429
+      const rawMsg = err?.response?.status === 429
         ? 'RDAP rate limit reached. Try again later.'
-        : (err?.response?.data?.error || err?.response?.data?.message || err?.response?.data?.error_message || 'RDAP lookup failed');
+        : (err?.response?.data?.error || err?.response?.data?.message || err?.response?.data?.error_message || err?.message || 'RDAP lookup failed');
+      const msg = /aborted|timeout/i.test(String(rawMsg))
+        ? 'RDAP lookup timed out. Try Retry again.'
+        : rawMsg;
       setState({ status: 'failed', data: err?.response?.data || null, message: msg });
     } finally {
       setEnriching(false);

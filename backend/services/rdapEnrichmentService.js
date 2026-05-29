@@ -3,7 +3,7 @@
  * Resolves authoritative RDAP servers via IANA bootstrap (data.iana.org/rdap/dns.json).
  */
 
-import { resolveRdapDomainUrl } from '../lib/rdapBootstrap.js';
+import { resolveRdapDomainUrlCandidates } from '../lib/rdapBootstrap.js';
 
 const RDAP_TIMEOUT_MS = Number(process.env.RDAP_TIMEOUT_MS || 10000);
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -180,6 +180,55 @@ export function buildDerivedSignals(record, rootDomain) {
   };
 }
 
+function isAbortError(err) {
+  return err?.name === 'AbortError'
+    || err?.code === 'ABORT_ERR'
+    || /aborted/i.test(String(err?.message || ''));
+}
+
+function wrapRdapFetchError(err) {
+  if (isAbortError(err)) {
+    const timeoutErr = new Error(`RDAP lookup timed out after ${RDAP_TIMEOUT_MS}ms`);
+    timeoutErr.code = 'timeout';
+    return timeoutErr;
+  }
+  return err;
+}
+
+async function fetchRdapJsonFromUrl(url, signal) {
+  const res = await fetch(url, {
+    headers: {
+      Accept: 'application/rdap+json, application/json',
+      'User-Agent': RDAP_USER_AGENT
+    },
+    signal,
+    redirect: 'follow'
+  });
+
+  if (res.status === 429) {
+    const retryAfter = res.headers.get('retry-after');
+    const err = new Error('RDAP rate limit reached');
+    err.code = 'rate_limit';
+    err.retryAfter = retryAfter;
+    throw err;
+  }
+
+  if (res.status === 404) {
+    const err = new Error('RDAP data not found for domain');
+    err.code = 'not_found';
+    throw err;
+  }
+
+  if (!res.ok) {
+    const err = new Error(`RDAP lookup failed (${res.status})`);
+    err.code = 'http_error';
+    err.status = res.status;
+    throw err;
+  }
+
+  return await res.json();
+}
+
 /**
  * Fetch RDAP JSON for a root domain via IANA bootstrap (fallback: rdap.org).
  * @param {string} rootDomain
@@ -189,38 +238,21 @@ export async function fetchRdapDomain(rootDomain) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), RDAP_TIMEOUT_MS);
   try {
-    const url = await resolveRdapDomainUrl(rootDomain, { fallbackBase: RDAP_BASE });
-    const res = await fetch(url, {
-      headers: {
-        Accept: 'application/rdap+json, application/json',
-        'User-Agent': RDAP_USER_AGENT
-      },
-      signal: ctrl.signal,
-      redirect: 'follow'
-    });
-
-    if (res.status === 429) {
-      const retryAfter = res.headers.get('retry-after');
-      const err = new Error('RDAP rate limit reached');
-      err.code = 'rate_limit';
-      err.retryAfter = retryAfter;
-      throw err;
+    const urls = await resolveRdapDomainUrlCandidates(rootDomain, { fallbackBase: RDAP_BASE });
+    let lastErr = null;
+    for (const url of urls) {
+      try {
+        return await fetchRdapJsonFromUrl(url, ctrl.signal);
+      } catch (err) {
+        lastErr = wrapRdapFetchError(err);
+        if (lastErr.code === 'rate_limit' || lastErr.code === 'not_found' || lastErr.code === 'timeout') {
+          throw lastErr;
+        }
+      }
     }
-
-    if (res.status === 404) {
-      const err = new Error('RDAP data not found for domain');
-      err.code = 'not_found';
-      throw err;
-    }
-
-    if (!res.ok) {
-      const err = new Error(`RDAP lookup failed (${res.status})`);
-      err.code = 'http_error';
-      err.status = res.status;
-      throw err;
-    }
-
-    return await res.json();
+    throw lastErr || new Error('RDAP lookup failed');
+  } catch (err) {
+    throw wrapRdapFetchError(err);
   } finally {
     clearTimeout(timer);
     releaseSlot();
@@ -374,7 +406,8 @@ export async function refreshRdapEnrichment(pool, parsed, { force = false } = {}
   const iocType = parsed.ioc_type;
   const existing = await getEnrichmentByRootDomain(pool, rootDomain);
 
-  if (existing && isCacheFresh(existing, { force })) {
+  // POST refresh is user-initiated: retry after failures; only short-circuit fresh successes.
+  if (existing?.rdap_status === 'success' && isCacheFresh(existing, { force })) {
     return {
       row: existing,
       cached: true,

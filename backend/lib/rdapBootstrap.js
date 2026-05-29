@@ -58,30 +58,42 @@ async function loadIanaBootstrapMap() {
 }
 
 /**
- * Resolve authoritative RDAP domain URL via IANA bootstrap, with rdap.org fallback.
+ * Resolve ordered RDAP domain URL candidates via IANA bootstrap, with rdap.org fallback last.
  * @param {string} rootDomain
  * @param {{ fallbackBase?: string }} [opts]
  */
-export async function resolveRdapDomainUrl(rootDomain, { fallbackBase = DEFAULT_FALLBACK_BASE } = {}) {
+export async function resolveRdapDomainUrlCandidates(rootDomain, { fallbackBase = DEFAULT_FALLBACK_BASE } = {}) {
   const domain = String(rootDomain || '').trim().toLowerCase();
   if (!domain) {
     throw new Error('RDAP domain is required');
   }
 
+  const urls = [];
   const suffix = publicSuffixForDomain(domain);
   if (suffix) {
     try {
       const map = await loadIanaBootstrapMap();
       const bases = map.get(suffix);
       if (bases?.length) {
-        return joinRdapDomainUrl(bases[0], domain);
+        for (const base of bases) urls.push(joinRdapDomainUrl(base, domain));
       }
     } catch (err) {
       console.warn('[rdap] IANA bootstrap lookup failed, falling back to rdap.org:', err?.message || err);
     }
   }
 
-  return joinRdapDomainUrl(fallbackBase, domain);
+  urls.push(joinRdapDomainUrl(fallbackBase, domain));
+  return [...new Set(urls)];
+}
+
+/**
+ * Resolve authoritative RDAP domain URL via IANA bootstrap, with rdap.org fallback.
+ * @param {string} rootDomain
+ * @param {{ fallbackBase?: string }} [opts]
+ */
+export async function resolveRdapDomainUrl(rootDomain, { fallbackBase = DEFAULT_FALLBACK_BASE } = {}) {
+  const urls = await resolveRdapDomainUrlCandidates(rootDomain, { fallbackBase });
+  return urls[0];
 }
 
 /** Test helper */
