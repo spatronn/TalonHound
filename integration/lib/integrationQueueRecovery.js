@@ -107,7 +107,7 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
     });
 
     console.log(
-      `${logPrefix} Marked stale running job as failed job_id=${row.job_id} source=${row.integration_key} failure_type=${classification.failureType} age_ms=${classification.ageMs}`
+      `${logPrefix} Marked stale running job as failed job_id=${row.job_id} source=${row.integration_key} failure_type=${classification.failureType} timeout_ms=${QUEUE_HARDENING.jobTimeoutMs} last_heartbeat_at=${row.heartbeat_at || '-'} running_age_ms=${classification.ageMs} recovery_reason=${classification.failureType}`
     );
   }
 

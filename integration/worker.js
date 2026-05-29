@@ -66,8 +66,26 @@ async function runImportForJob(job, { signal } = {}) {
   return { skipped: true, reason: 'unknown_job' };
 }
 
-async function executeJobWithTimeout(job) {
-  const timeoutMs = QUEUE_HARDENING.jobTimeoutMs;
+function resolveJobTimeoutMs(integrationKey) {
+  const globalTimeout = QUEUE_HARDENING.jobTimeoutMs;
+  const map = {
+    'phishtank-opendnsrr': 'PHISHTANK_JOB_TIMEOUT_MS',
+    'threatfox-abusech': 'THREATFOX_JOB_TIMEOUT_MS',
+    'usom-trcert': 'USOM_JOB_TIMEOUT_MS',
+    'urlhaus-abusech': 'URLHAUS_JOB_TIMEOUT_MS',
+    'malwarebazaar-abusech': 'MALWAREBAZAAR_JOB_TIMEOUT_MS',
+    'et-blockrules': 'EMERGINGTHREATS_JOB_TIMEOUT_MS'
+  };
+  const envName = map[integrationKey];
+  if (!envName) return { timeoutMs: globalTimeout, source: 'global' };
+  const n = Number(process.env[envName]);
+  if (!Number.isFinite(n) || n < 60_000) return { timeoutMs: globalTimeout, source: 'global' };
+  return { timeoutMs: Math.floor(n), source: envName };
+}
+
+async function executeJobWithTimeout(job, integrationKey) {
+  const timeoutInfo = resolveJobTimeoutMs(integrationKey);
+  const timeoutMs = timeoutInfo.timeoutMs;
   const controller = new AbortController();
   activeJobAbortController = controller;
   const { signal } = controller;
@@ -80,9 +98,12 @@ async function executeJobWithTimeout(job) {
       importPromise,
       new Promise((_, reject) => {
         timer = setTimeout(() => {
-          console.log(`${LOG_PREFIX} Job cooperative cancel reason=timeout job_id=${job.id}`);
+          console.log(`${LOG_PREFIX} Job cooperative cancel reason=timeout job_id=${job.id} timeout_ms=${timeoutMs}`);
           controller.abort(FAILURE_TYPES.TIMEOUT);
-          reject(Object.assign(new Error(FAILURE_MESSAGES.timeout), { failureType: FAILURE_TYPES.TIMEOUT }));
+          reject(Object.assign(new Error(FAILURE_MESSAGES.timeout), {
+            failureType: FAILURE_TYPES.TIMEOUT,
+            timeoutMs
+          }));
         }, timeoutMs);
       })
     ]);
@@ -114,6 +135,8 @@ const worker = new Worker(
       throw new DelayedError();
     }
 
+    const timeoutInfo = resolveJobTimeoutMs(integrationKey);
+
     await markJobRunning(pool, {
       jobId: String(job.id),
       integrationKey,
@@ -124,7 +147,7 @@ const worker = new Worker(
     });
 
     console.log(
-      `${LOG_PREFIX} Job started job_id=${job.id} source=${integrationKey} name=${job.name} triggered_by=${triggeredBy} worker_id=${workerId}`
+      `${LOG_PREFIX} Job started job_id=${job.id} source=${integrationKey} name=${job.name} triggered_by=${triggeredBy} worker_id=${workerId} timeout_ms=${timeoutInfo.timeoutMs} timeout_source=${timeoutInfo.source}`
     );
 
     const stopHeartbeat = startJobHeartbeat(pool, String(job.id), QUEUE_HARDENING.heartbeatIntervalMs);

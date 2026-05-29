@@ -5005,11 +5005,20 @@ function IntegrationsRecentRunsPage() {
                 <th style={{ position: 'relative' }}>State<div onMouseDown={(e) => startResize('state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Queued At<div onMouseDown={(e) => startResize('queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Started At<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th>Finished At</th>
+                <th>Duration</th>
                 <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={7}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => (
+              {loading ? <tr><td colSpan={9}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => {
+                const reasonText = integrationJobReasonLabel(r);
+                const startedMs = r.started_at ? Date.parse(r.started_at) : null;
+                const finishedMs = r.finished_at ? Date.parse(r.finished_at) : null;
+                const durationMs = Number.isFinite(startedMs)
+                  ? ((Number.isFinite(finishedMs) ? finishedMs : Date.now()) - startedMs)
+                  : null;
+                return (
                 <tr key={String(r.job_id || r.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_id || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.integration_name || r.integration_key || '-'}</td>
@@ -5017,9 +5026,19 @@ function IntegrationsRecentRunsPage() {
                   <td style={{ color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ⚠' : ''}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: r.possibly_stuck ? '#b45309' : undefined }} title={integrationJobReasonLabel(r)}>{integrationJobReasonLabel(r)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.finished_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{durationMs != null ? formatDurationMs(Math.max(0, durationMs)) : '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: r.possibly_stuck ? '#b45309' : undefined }} title={reasonText}>
+                    {reasonText}
+                    {reasonText && reasonText !== '-' ? (
+                      <span style={{ marginLeft: 8, display: 'inline-flex', gap: 6 }}>
+                        <button style={{ fontSize: 11 }} onClick={() => window.alert(reasonText)}>View</button>
+                        <button style={{ fontSize: 11 }} onClick={() => navigator.clipboard?.writeText(reasonText).catch(() => {})}>Copy</button>
+                      </span>
+                    ) : null}
+                  </td>
                 </tr>
-              )) : <tr><td colSpan={7} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
+              );}) : <tr><td colSpan={9} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
             </tbody>
           </table>
         </div>

@@ -1362,24 +1362,12 @@ export async function runPhishtankImport(options = {}) {
     const sourceUrl = config.phishTankCsvUrl;
     const parsedEntries = [];
 
-    // online-valid.csv header: phish_id,url,phish_detail_url,submission_time,verified,verification_time,online,target
     for (let i = 1; i < lines.length; i += 1) {
       if (i % 500 === 1) throwIfAborted(signal);
       const cols = splitCsvLine(lines[i]);
-      if (!cols.length) {
-        metrics.noteSkipped(1);
-        continue;
-      }
+      if (!cols.length) { metrics.noteSkipped(1); continue; }
       const url = String(cols[1] || '').trim();
-      if (!url || !/^https?:\/\//i.test(url)) {
-        metrics.noteSkipped(1);
-        continue;
-      }
-      if (url.length > 1800) {
-        metrics.noteSkipped(1);
-        continue;
-      }
-
+      if (!url || !/^https?:\/\//i.test(url) || url.length > 1800) { metrics.noteSkipped(1); continue; }
       parsedEntries.push({
         observable: url,
         observableType: 'url',
@@ -1390,7 +1378,7 @@ export async function runPhishtankImport(options = {}) {
       });
     }
 
-    const batchSize = Number(process.env.PHISHTANK_BATCH_SIZE || 1000);
+    const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 1000), 100);
     for (let i = 0; i < parsedEntries.length; i += batchSize) {
       throwIfAborted(signal);
       const batch = parsedEntries.slice(i, i + batchSize);
@@ -1413,14 +1401,9 @@ export async function runPhishtankImport(options = {}) {
     if (runId) {
       await failIntegrationRun(client, runId, err.message, metrics);
     }
-
     throw err;
   } finally {
-    try {
-      await client.query('SELECT pg_advisory_unlock(942006)');
-    } catch {
-      // ignore
-    }
+    try { await client.query('SELECT pg_advisory_unlock(942006)'); } catch {}
     client.release();
   }
 }
