@@ -5384,6 +5384,12 @@ app.get('/api/ioc/details', async (req, res) => {
         i.source_name,
         i.source_url,
         i.confidence,
+        i.status,
+        i.expires_at,
+        i.expired_at,
+        i.expiration_reason,
+        i.manual_status_override,
+        i.manual_status,
         ${confidenceSelect}
         i.category,
         i.note,
@@ -5412,8 +5418,9 @@ app.get('/api/ioc/details', async (req, res) => {
       return res.json(payload);
     }
 
-    const observable = rows[0].observable;
-    const observableType = rows[0].observable_type;
+    const seedRow = rows.find((r) => String(r.public_id || '') === requestedPublicId) || rows[0];
+    const observable = seedRow.observable;
+    const observableType = seedRow.observable_type;
 
     const computedMatchCount = rows.reduce((max, r) => Math.max(max, Number(r.match_count || 0)), 0);
     const firstSeenLog = rows
@@ -5556,10 +5563,16 @@ app.get('/api/ioc/details', async (req, res) => {
     }
 
     const summary = {
-      id: rows[0].id,
-      public_id: rows[0].public_id,
+      id: seedRow.id,
+      public_id: seedRow.public_id,
       observable,
-      observable_type: rows[0].observable_type,
+      observable_type: seedRow.observable_type,
+      status: seedRow.status || null,
+      expires_at: seedRow.expires_at || null,
+      expired_at: seedRow.expired_at || null,
+      expiration_reason: seedRow.expiration_reason || null,
+      manual_status_override: Boolean(seedRow.manual_status_override),
+      manual_status: seedRow.manual_status || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,
       last_seen_at: rows[0]?.created_at || null,
       match_count: computedMatchCount,
