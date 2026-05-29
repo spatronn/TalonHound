@@ -258,6 +258,10 @@ function hashEntries(entries) {
   return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
 }
 
+function hashContent(text) {
+  return createHash('sha256').update(String(text || '')).digest('hex');
+}
+
 const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
 
 function withSuppressionStats(result, suppressionStats, metrics = null) {
@@ -595,7 +599,8 @@ function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {
  * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
  * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
  */
-async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null) {
+async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null, options = {}) {
+  const duplicateHandling = String(options.duplicateHandling || 'full').trim();
   const out = { inserted: 0, duplicate: 0, suppressed: 0 };
   if (!entries.length) return out;
   const now = new Date();
@@ -673,7 +678,24 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     out.inserted += rows.length;
     out.duplicate += resolvedKept.length - rows.length;
     const insertedObs = new Set(rows.map((r) => r.observable));
-    for (const e of resolvedKept) {
+
+    if (duplicateHandling === 'count_only') {
+      const duplicateEntries = resolvedKept.filter((e) => !insertedObs.has(e.observable ?? e.ip));
+      if (duplicateEntries.length) {
+        const sourceName = duplicateEntries[0]?.sourceName ?? null;
+        const obsList = duplicateEntries.map((e) => e.observable ?? e.ip);
+        if (sourceName && obsList.length) {
+          await client.query(
+            `UPDATE ioc_items
+             SET last_seen_at = GREATEST(COALESCE(last_seen_at, NOW()), NOW())
+             WHERE observable_type = $1
+               AND source_name = $2
+               AND observable = ANY($3::text[])`,
+            [observableType, sourceName, obsList]
+          );
+        }
+      }
+    } else for (const e of resolvedKept) {
       throwIfAborted(signal);
       const obs = e.observable ?? e.ip;
       if (!insertedObs.has(obs)) {
@@ -882,8 +904,23 @@ export async function runHourlyImport(options = {}) {
       }
 
       const body = await response.text();
-      const ips = extractIPs(body);
+      const contentHash = hashContent(body);
       const sourceName = `EmergingThreats:${file}`;
+
+      const prevState = await client.query(
+        `SELECT content_hash, items_json FROM integration_source_state WHERE source_name = $1`,
+        [sourceName]
+      );
+      if (prevState.rows[0]?.content_hash === contentHash) {
+        const ipCount = Number(prevState.rows[0]?.items_json?.ip_count || 0);
+        metrics.noteSkipped(ipCount > 0 ? ipCount : 1);
+        console.log(
+          `[integration-import] job=hourly_import runId=${runId} file=${file} unchanged_hash skipped_ips=${ipCount || 1}`
+        );
+        continue;
+      }
+
+      const ips = extractIPs(body);
       const confidence = inferConfidence(file);
       const category = inferCategory(file);
       const note = `Auto-imported from ET blockrules (${file})`;
@@ -898,7 +935,17 @@ export async function runHourlyImport(options = {}) {
       }));
 
       await withPgTransaction(client, 'hourly_import_batch', async (tx) => {
-        mergeBatchInsertMetrics(metrics, await batchInsertIocs(tx, entries, 'ip', suppressionStats, signal));
+        mergeBatchInsertMetrics(
+          metrics,
+          await batchInsertIocs(tx, entries, 'ip', suppressionStats, signal, { duplicateHandling: 'count_only' })
+        );
+        await tx.query(
+          `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+           VALUES ($1, $2, $3::jsonb, NOW())
+           ON CONFLICT (source_name)
+           DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+          [sourceName, contentHash, JSON.stringify({ ip_count: ips.length, file })]
+        );
       }, { ...txMeta, file });
     }
 
@@ -915,6 +962,9 @@ export async function runHourlyImport(options = {}) {
     }, txMeta);
 
     logImportSuppressionSummary('hourly_import', runId, suppressionStats, metrics.toJSON());
+    console.log(
+      `[integration-import] job=hourly_import runId=${runId} files=${files.length} processed=${metrics.recordsProcessed()} inserted=${metrics.records_inserted} duplicate=${metrics.records_duplicate} skipped=${metrics.records_skipped}`
+    );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
   } catch (err) {
     if (runId) {

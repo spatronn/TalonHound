@@ -62,6 +62,10 @@ import {
   testThreatFoxConnection,
   validateThreatFoxRecentDays
 } from './lib/threatfoxIntegration.js';
+import {
+  formatIntegrationJobDisplayName,
+  withIntegrationJobDisplayName
+} from './lib/integrationJobLabels.js';
 
 const { Pool } = pg;
 
@@ -3509,7 +3513,7 @@ app.get('/api/integrations', async (req, res) => {
       const total = Number(totalRows.rows[0]?.total || 0);
       queue = {
         counts: mapped,
-        jobs: jobsRows.rows,
+        jobs: jobsRows.rows.map(withIntegrationJobDisplayName),
         pagination: {
           page: queuePage,
           page_size: queuePageSize,
@@ -3532,7 +3536,7 @@ app.get('/api/integrations', async (req, res) => {
     return res.json({
       integrations,
       health_summary: healthSummary,
-      recent_runs: recentRes.rows,
+      recent_runs: recentRes.rows.map(withIntegrationJobDisplayName),
       queue
     });
   } catch (err) {

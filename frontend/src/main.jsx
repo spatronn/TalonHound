@@ -207,6 +207,34 @@ const RETRO_STATUS_TOOLTIPS = {
   overallHealth: 'Retro worker, cursor ve correlation sync health birleşimi.'
 };
 
+function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
+  const byKey = {
+    'et-blockrules': 'Blockrules IP import',
+    'usom-trcert': 'USOM URL list import',
+    'urlhaus-abusech': 'Recent malicious URLs import',
+    'threatfox-abusech': 'Recent IOCs import',
+    'malwarebazaar-abusech': 'Recent malware samples import',
+    'phishtank-opendnsrr': 'Online-valid phishing import'
+  };
+  const byName = {
+    'hourly-import': 'Blockrules IP import',
+    'usom-import': 'USOM URL list import',
+    'urlhaus-import': 'Recent malicious URLs import',
+    'threatfox-import': 'Recent IOCs import',
+    'malwarebazaar-import': 'Recent malware samples import',
+    'phishtank-import': 'Online-valid phishing import'
+  };
+  const key = String(integrationKey || '').trim();
+  if (key && byKey[key]) return byKey[key];
+  const name = String(jobName || '').trim();
+  if (name && byName[name]) return byName[name];
+  return name || '-';
+}
+
+function integrationJobDisplayName(job) {
+  return job?.display_name || formatIntegrationJobDisplayName(job?.name || job?.job_name, job?.integration_key);
+}
+
 function integrationJobReasonLabel(job) {
   const state = String(job?.state || job?.status || '').toLowerCase();
   if (state === 'queued' && job?.queue_hint) return job.queue_hint;
@@ -5005,7 +5033,7 @@ function IntegrationsQueueStatusPage() {
                 <tr key={String(j.id)} style={{ borderBottom: '1px solid #334155' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.id}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.integration_name || j.integration_key || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.name}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{integrationJobDisplayName(j)}</td>
                   <td style={{ color: queueJobStateColor(j.state === 'fail' ? 'failed' : j.state), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ⚠' : ''}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.started_at)}</td>
@@ -5130,7 +5158,7 @@ function IntegrationsRecentRunsPage() {
                 <tr key={String(r.job_id || r.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_id || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.integration_name || r.integration_key || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || r.job_type || '-'}</td>
+                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{integrationJobDisplayName(r) || r.job_type || '-'}</td>
                   <td style={{ color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ⚠' : ''}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.started_at)}</td>
