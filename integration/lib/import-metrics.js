@@ -1,6 +1,5 @@
 /**
  * Import run metrics for integration_runs / integration_queue_jobs.
- * records_updated stays 0 until feed reconciliation updates existing rows (not in Sprint 1).
  */
 
 export function createImportMetrics() {

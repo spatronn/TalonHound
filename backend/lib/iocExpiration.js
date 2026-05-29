@@ -627,7 +627,7 @@ export async function syncSnapshotFeedFromEntries(client, feedKey, entries, mapE
       observableType: e.observableType,
       sourceName: e.sourceName,
       sourceUrl: e.sourceUrl ?? null,
-      confidence: e.confidence ?? null,
+      explicitConfidence: e.explicitConfidence ?? e.confidence ?? null,
       category: e.category ?? null,
       seenAt: e.seenAt
     });
@@ -651,11 +651,14 @@ export async function syncMembershipAfterIocImport(client, {
   sourceName,
   sourceUrl = null,
   explicitConfidence = null,
+  confidence = null,
   category = null,
   seenAt = new Date()
 }) {
   const feedId = await resolveFeedIdBySourceName(client, sourceName);
   if (!feedId) return null;
+
+  const resolvedConfidence = explicitConfidence ?? confidence ?? null;
 
   const { rows } = await client.query(
     `SELECT id, observable_type
@@ -676,7 +679,7 @@ export async function syncMembershipAfterIocImport(client, {
     observableType: row.observable_type,
     feedId,
     seenAt,
-    explicitConfidence
+    explicitConfidence: resolvedConfidence
   });
   return membershipId;
 }

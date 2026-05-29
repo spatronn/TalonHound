@@ -12,6 +12,7 @@ import {
   markJobRunning,
   startJobHeartbeat,
   markJobSuccess,
+  markJobSkipped,
   markJobFailed,
   markJobDeferredSourceBusy,
   inferFailureTypeFromError
@@ -56,13 +57,14 @@ function safeJobErrorMessage(job, err) {
   return raw.slice(0, 4000);
 }
 
-async function runImportForJob(job, { signal } = {}) {
-  if (job.name === 'hourly-import') return runHourlyImport({ signal });
-  if (job.name === 'usom-import') return runUsomImport({ signal });
-  if (job.name === 'urlhaus-import') return runUrlhausImport({ signal });
-  if (job.name === 'threatfox-import') return runThreatfoxImport({ signal });
-  if (job.name === 'malwarebazaar-import') return runMalwareBazaarImport({ signal });
-  if (job.name === 'phishtank-import') return runPhishtankImport({ signal });
+async function runImportForJob(job, { signal, triggeredBy } = {}) {
+  const opts = { signal, triggeredBy: triggeredBy || job?.data?.triggeredBy || 'scheduler' };
+  if (job.name === 'hourly-import') return runHourlyImport(opts);
+  if (job.name === 'usom-import') return runUsomImport(opts);
+  if (job.name === 'urlhaus-import') return runUrlhausImport(opts);
+  if (job.name === 'threatfox-import') return runThreatfoxImport(opts);
+  if (job.name === 'malwarebazaar-import') return runMalwareBazaarImport(opts);
+  if (job.name === 'phishtank-import') return runPhishtankImport(opts);
   return { skipped: true, reason: 'unknown_job' };
 }
 
@@ -90,14 +92,19 @@ async function executeJobWithTimeout(job, integrationKey) {
   activeJobAbortController = controller;
   const { signal } = controller;
   let timer;
+  let timedOut = false;
 
-  const importPromise = runImportForJob(job, { signal });
+  const importPromise = runImportForJob(job, {
+    signal,
+    triggeredBy: job?.data?.triggeredBy || 'scheduler'
+  });
 
   try {
     return await Promise.race([
       importPromise,
       new Promise((_, reject) => {
         timer = setTimeout(() => {
+          timedOut = true;
           console.log(`${LOG_PREFIX} Job cooperative cancel reason=timeout job_id=${job.id} timeout_ms=${timeoutMs}`);
           controller.abort(FAILURE_TYPES.TIMEOUT);
           reject(Object.assign(new Error(FAILURE_MESSAGES.timeout), {
@@ -110,7 +117,16 @@ async function executeJobWithTimeout(job, integrationKey) {
   } finally {
     if (timer) clearTimeout(timer);
     activeJobAbortController = null;
-    await importPromise.catch(() => {});
+    if (timedOut) {
+      try {
+        await importPromise;
+        console.warn(
+          `${LOG_PREFIX} Import completed after timeout job_id=${job.id}; integration_runs may disagree with queue status`
+        );
+      } catch {
+        // expected when abort propagates
+      }
+    }
   }
 }
 
@@ -156,16 +172,20 @@ const worker = new Worker(
       const result = await executeJobWithTimeout(job);
 
       const metrics = result?.metrics || {
-        records_processed: Number(result?.records_processed || result?.recordsProcessed || 0),
-        records_inserted: Number(result?.records_inserted ?? result?.recordsProcessed ?? 0),
-        records_updated: Number(result?.records_updated || 0),
-        records_duplicate: Number(result?.records_duplicate || 0),
-        records_skipped: Number(result?.records_skipped || 0),
-        records_suppressed: Number(result?.records_suppressed || result?.suppressed_count || 0),
-        records_failed: Number(result?.records_failed || 0)
+        records_processed: Number(result?.metrics?.records_processed ?? result?.records_processed ?? 0),
+        records_inserted: Number(result?.metrics?.records_inserted ?? result?.records_inserted ?? 0),
+        records_updated: Number(result?.metrics?.records_updated ?? result?.records_updated ?? 0),
+        records_duplicate: Number(result?.metrics?.records_duplicate ?? result?.records_duplicate ?? 0),
+        records_skipped: Number(result?.metrics?.records_skipped ?? result?.records_skipped ?? 0),
+        records_suppressed: Number(result?.metrics?.records_suppressed ?? result?.records_suppressed ?? result?.suppressed_count ?? 0),
+        records_failed: Number(result?.metrics?.records_failed ?? result?.records_failed ?? 0)
       };
 
-      await markJobSuccess(pool, String(job.id), metrics);
+      if (result?.skipped) {
+        await markJobSkipped(pool, String(job.id), metrics, result.reason);
+      } else {
+        await markJobSuccess(pool, String(job.id), metrics);
+      }
 
       const skipNote = result?.skipped ? ` skipped=${result.reason || 'true'}` : '';
       console.log(

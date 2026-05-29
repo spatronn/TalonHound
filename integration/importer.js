@@ -46,6 +46,25 @@ import { withPgTransaction } from './lib/pg-transaction.js';
 import { throwIfAborted, fetchWithSignal, isJobAbortedError } from './lib/job-cancellation.js';
 
 const pool = createIntegrationPool();
+const IMPORT_LOG = '[integration-import]';
+
+function resolveTriggeredBy(options) {
+  return String(options?.triggeredBy || 'scheduler').trim() || 'scheduler';
+}
+
+async function runSnapshotSync(client, feedKey, entries, mapEntry, options = {}) {
+  return syncSnapshotFeedFromEntries(client, feedKey, entries, mapEntry, options);
+}
+
+async function importSideEffect(label, metrics, fn) {
+  try {
+    await fn();
+  } catch (err) {
+    if (isJobAbortedError(err)) throw err;
+    console.error(`${IMPORT_LOG} side_effect_failed label=${label} message=${err?.message || err}`);
+    metrics?.noteFailed(1);
+  }
+}
 
 function parseLinks(html) {
   const links = [...html.matchAll(/href="\.\/([^"]+)"/g)].map((m) => m[1]);
@@ -68,6 +87,14 @@ function isCIDR(value) {
   if (!/^\d{1,2}$/.test(mask)) return false;
   const n = Number(mask);
   return isIPv4(ip) && Number.isInteger(n) && n >= 0 && n <= 32;
+}
+
+function isIPv6(value) {
+  const v = String(value || '').trim();
+  if (!v.includes(':')) return false;
+  const core = v.split('%')[0];
+  if (!/^[0-9a-f:.]+$/i.test(core)) return false;
+  return core.includes(':');
 }
 
 function extractIPs(text) {
@@ -115,7 +142,7 @@ function classifyUsomObservable(rawObservable) {
   let observableType = 'domain';
   if (/^https?:\/\//i.test(observable) || observable.includes('/')) observableType = 'url';
   else if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
-  else if (observable.includes(':')) observableType = 'ip6';
+  else if (isIPv6(normalizedIp)) observableType = 'ip6';
 
   return {
     observable: observableType === 'ip' ? normalizedIp : observable,
@@ -243,6 +270,16 @@ async function readThreatFoxCsvText(response) {
   return strFromU8(files[csvName]);
 }
 
+function mapThreatFoxHashType(iocType) {
+  const t = String(iocType || '').trim().toLowerCase();
+  if (t === 'md5_hash' || t === 'md5') return 'md5';
+  if (t === 'sha1_hash' || t === 'sha1') return 'sha1';
+  if (t === 'sha256_hash' || t === 'sha256') return 'sha256';
+  if (t === 'ssdeep') return 'ssdeep';
+  if (t === 'imphash') return 'imphash';
+  return null;
+}
+
 function classifyThreatFoxObservable(iocValue, iocType) {
   const raw = String(iocValue || '').trim();
   const type = String(iocType || '').trim().toLowerCase();
@@ -252,16 +289,21 @@ function classifyThreatFoxObservable(iocValue, iocType) {
     const [host] = raw.split(':');
     if (!host) return null;
     if (isIPv4(host)) return { observable: host, observableType: 'ip' };
-    return null;
+    if (isIPv6(host)) return { observable: host, observableType: 'ip6' };
+    return { observable: host.toLowerCase(), observableType: 'domain' };
   }
 
   if (type === 'ip') {
     if (isIPv4(raw) || isCIDR(raw)) return { observable: raw, observableType: 'ip' };
+    if (isIPv6(raw)) return { observable: raw, observableType: 'ip6' };
     return null;
   }
 
+  const hashType = mapThreatFoxHashType(type);
+  if (hashType) return { observable: raw.toLowerCase(), observableType: hashType };
+
   if (type === 'url') return { observable: raw, observableType: 'url' };
-  if (type === 'domain') return { observable: raw, observableType: 'domain' };
+  if (type === 'domain') return { observable: raw.toLowerCase(), observableType: 'domain' };
 
   return null;
 }
@@ -300,7 +342,6 @@ function trackInsertResult(metrics, result) {
   }
   if (result === 'duplicate' || result === false) {
     metrics.noteDuplicate();
-    return;
   }
 }
 
@@ -338,19 +379,19 @@ async function updateUrlhausObservableBySource(client, entry, sourceName, note, 
   const publicId = res.rows[0].public_id;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
-  await applyIocImportConfidence(client, {
+  await importSideEffect('urlhaus_confidence', null, () => applyIocImportConfidence(client, {
     observable: entry.observable,
     observableType: entry.observableType,
     sourceName,
     parsedSourceConfidence: null
-  }).catch(() => {});
-  await syncMembershipAfterIocImport(client, {
+  }));
+  await importSideEffect('urlhaus_membership', null, () => syncMembershipAfterIocImport(client, {
     observable: entry.observable,
     observableType: entry.observableType,
     sourceName,
     sourceUrl: URLHAUS_EXPORT_URL_MASKED,
     category
-  }).catch(() => {});
+  }));
   return true;
 }
 
@@ -383,6 +424,15 @@ async function upsertUrlhausObservable(client, entry, sourceName, suppressionSta
     metrics.noteInsert();
     if (entry.dateAdded || entry.lastOnline) {
       await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+    }
+    return;
+  }
+
+  if (insertResult === 'duplicate') {
+    if (await updateUrlhausObservableBySource(client, entry, sourceName, note, category)) {
+      metrics.noteUpdated();
+    } else {
+      metrics.noteDuplicate();
     }
     return;
   }
@@ -422,20 +472,20 @@ async function updateMalwareBazaarObservableBySource(client, entry, sourceName, 
   const publicId = res.rows[0].public_id;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
-  await applyIocImportConfidence(client, {
+  await importSideEffect('malwarebazaar_confidence', null, () => applyIocImportConfidence(client, {
     observable: entry.observable,
     observableType: entry.observableType,
     sourceName,
     parsedSourceConfidence: entry.confidence
-  }).catch(() => {});
-  await syncMembershipAfterIocImport(client, {
+  }));
+  await importSideEffect('malwarebazaar_membership', null, () => syncMembershipAfterIocImport(client, {
     observable: entry.observable,
     observableType: entry.observableType,
     sourceName,
     sourceUrl: MALWAREBAZAAR_EXPORT_URL_MASKED,
-    confidence: entry.confidence,
+    explicitConfidence: entry.confidence,
     category
-  }).catch(() => {});
+  }));
   return true;
 }
 
@@ -469,6 +519,15 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     metrics.noteInsert();
     if (entry.firstSeenUtc) {
       await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
+    }
+    return;
+  }
+
+  if (insertResult === 'duplicate') {
+    if (await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category)) {
+      metrics.noteUpdated();
+    } else {
+      metrics.noteDuplicate();
     }
     return;
   }
@@ -584,20 +643,20 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
           category: e.category ?? null,
           note: e.note ?? null
         }).catch(() => {});
-        await applyIocImportConfidence(client, {
+        await importSideEffect('batch_duplicate_confidence', null, () => applyIocImportConfidence(client, {
           observable: obs,
           observableType,
           sourceName: e.sourceName,
           parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence)
-        }).catch(() => {});
-        await syncMembershipAfterIocImport(client, {
+        }));
+        await importSideEffect('batch_duplicate_membership', null, () => syncMembershipAfterIocImport(client, {
           observable: obs,
           observableType,
           sourceName: e.sourceName,
           sourceUrl: e.sourceUrl ?? null,
           explicitConfidence: e.confFields?.source_confidence ?? null,
           category: e.category ?? null
-        }).catch(() => {});
+        }));
       }
     }
     for (const row of rows) {
@@ -606,14 +665,14 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
       await insertObservablesIndex(client, row.public_id, observables);
       const src = resolvedKept.find((e) => (e.observable ?? e.ip) === row.observable);
       if (src) {
-        await syncMembershipAfterIocImport(client, {
+        await importSideEffect('batch_insert_membership', null, () => syncMembershipAfterIocImport(client, {
           observable: row.observable,
           observableType,
           sourceName: src.sourceName,
           sourceUrl: src.sourceUrl ?? null,
           explicitConfidence: src.confFields.source_confidence,
           category: src.category ?? null
-        }).catch(() => {});
+        }));
       }
     }
   }
@@ -708,39 +767,40 @@ async function insertObservable(client, { observable, observableType, sourceName
       category,
       note
     }).catch(() => {});
-    await applyIocImportConfidence(client, {
+    await importSideEffect('duplicate_confidence', null, () => applyIocImportConfidence(client, {
       observable,
       observableType,
       sourceName,
       parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
-    }).catch(() => {});
-    await syncMembershipAfterIocImport(client, {
+    }));
+    await importSideEffect('duplicate_membership', null, () => syncMembershipAfterIocImport(client, {
       observable,
       observableType,
       sourceName,
       sourceUrl,
       explicitConfidence: confFields.source_confidence,
       category
-    }).catch(() => {});
+    }));
     return 'duplicate';
   }
 
   const publicId = ins.rows[0].public_id;
   const observables = extractObservablesFromNote(observableType, observable, note);
   await insertObservablesIndex(client, publicId, observables);
-  await syncMembershipAfterIocImport(client, {
+  await importSideEffect('insert_membership', null, () => syncMembershipAfterIocImport(client, {
     observable,
     observableType,
     sourceName,
     sourceUrl,
     explicitConfidence: confFields.source_confidence,
     category
-  }).catch(() => {});
+  }));
   return true;
 }
 
 export async function runHourlyImport(options = {}) {
   const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
   const client = await pool.connect();
   const startedAt = new Date();
   let runId = null;
@@ -757,8 +817,9 @@ export async function runHourlyImport(options = {}) {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('hourly_import', 'running', clock_timestamp(), 'scheduler')
-       RETURNING id`
+       VALUES ('hourly_import', 'running', clock_timestamp(), $1)
+       RETURNING id`,
+      [triggeredBy]
     );
     runId = runInsert.rows[0].id;
     txMeta.job_id = runId;
@@ -799,6 +860,7 @@ export async function runHourlyImport(options = {}) {
       }, { ...txMeta, file });
     }
 
+    throwIfAborted(signal);
     await withPgTransaction(client, 'hourly_import_finalize', async (tx) => {
       await tx.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -830,6 +892,7 @@ export async function runHourlyImport(options = {}) {
 
 export async function runUsomImport(options = {}) {
   const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
@@ -845,8 +908,9 @@ export async function runUsomImport(options = {}) {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('usom_import', 'running', clock_timestamp(), 'scheduler')
-       RETURNING id`
+       VALUES ('usom_import', 'running', clock_timestamp(), $1)
+       RETURNING id`,
+      [triggeredBy]
     );
     runId = runInsert.rows[0].id;
 
@@ -878,10 +942,18 @@ export async function runUsomImport(options = {}) {
     const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
     const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
 
+    const mapUsomSnapshotEntry = (entry) => ({
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: config.usomSourceName,
+      sourceUrl: config.usomApiUrl,
+      category: 'threat-intel'
+    });
+
     if (previousHash === currentHash) {
-      // Feed unchanged since last run — count existing entries as skipped (no insert attempts).
       metrics.noteSkipped(entries.length);
-      await finalizeIntegrationRun(client, runId, metrics);
+      await runSnapshotSync(client, 'usom-trcert', entries, mapUsomSnapshotEntry, { signal });
+      throwIfAborted(signal);
 
       await client.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -891,6 +963,7 @@ export async function runUsomImport(options = {}) {
         [config.usomSourceName, `hash:${currentHash}`]
       );
 
+      await finalizeIntegrationRun(client, runId, metrics);
       return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
@@ -921,6 +994,9 @@ export async function runUsomImport(options = {}) {
     }
 
     throwIfAborted(signal);
+    await runSnapshotSync(client, 'usom-trcert', entries, mapUsomSnapshotEntry, { signal });
+    throwIfAborted(signal);
+
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
@@ -936,16 +1012,6 @@ export async function runUsomImport(options = {}) {
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
       [config.usomSourceName, `hash:${currentHash}`]
     );
-
-    await syncSnapshotFeedFromEntries(client, 'usom-trcert', entries, (entry) => ({
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName: config.usomSourceName,
-      sourceUrl: config.usomApiUrl,
-      category: 'threat-intel'
-    }), { signal }).catch((err) => {
-      if (isJobAbortedError(err)) throw err;
-    });
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('usom_import', runId, suppressionStats, metrics.toJSON());
@@ -969,6 +1035,7 @@ export async function runUsomImport(options = {}) {
 
 export async function runUrlhausImport(options = {}) {
   const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
@@ -984,8 +1051,9 @@ export async function runUrlhausImport(options = {}) {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('urlhaus_import', 'running', clock_timestamp(), 'scheduler')
-       RETURNING id`
+       VALUES ('urlhaus_import', 'running', clock_timestamp(), $1)
+       RETURNING id`,
+      [triggeredBy]
     );
     runId = runInsert.rows[0].id;
 
@@ -1056,16 +1124,7 @@ export async function runUrlhausImport(options = {}) {
       [config.urlhausSourceName, `hash:${currentHash}`]
     );
 
-    await syncSnapshotFeedFromEntries(client, 'urlhaus-abusech', entries, (entry) => ({
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName: config.urlhausSourceName,
-      sourceUrl: URLHAUS_EXPORT_URL_MASKED,
-      category: entry.threat || 'malware-url'
-    }), { signal }).catch((err) => {
-      if (isJobAbortedError(err)) throw err;
-    });
-
+    throwIfAborted(signal);
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('urlhaus_import', runId, suppressionStats, metrics.toJSON());
     console.log(
@@ -1092,6 +1151,7 @@ export async function runUrlhausImport(options = {}) {
 
 export async function runThreatfoxImport(options = {}) {
   const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
@@ -1107,8 +1167,9 @@ export async function runThreatfoxImport(options = {}) {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('threatfox_import', 'running', clock_timestamp(), 'scheduler')
-       RETURNING id`
+       VALUES ('threatfox_import', 'running', clock_timestamp(), $1)
+       RETURNING id`,
+      [triggeredBy]
     );
     runId = runInsert.rows[0].id;
 
@@ -1158,9 +1219,19 @@ export async function runThreatfoxImport(options = {}) {
     const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
     const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
 
+    const mapThreatFoxSnapshotEntry = (entry) => ({
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: config.threatfoxSourceName,
+      sourceUrl: config.threatfoxCsvUrl,
+      explicitConfidence: entry.confidence,
+      category: entry.threatType || 'threat-intel'
+    });
+
     if (previousHash === currentHash) {
       metrics.noteSkipped(entries.length);
-      await finalizeIntegrationRun(client, runId, metrics);
+      await runSnapshotSync(client, 'threatfox-abusech', entries, mapThreatFoxSnapshotEntry, { signal });
+      throwIfAborted(signal);
 
       await client.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -1170,6 +1241,7 @@ export async function runThreatfoxImport(options = {}) {
         [config.threatfoxSourceName, `hash:${currentHash}`]
       );
 
+      await finalizeIntegrationRun(client, runId, metrics);
       return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
@@ -1207,6 +1279,9 @@ export async function runThreatfoxImport(options = {}) {
     }
 
     throwIfAborted(signal);
+    await runSnapshotSync(client, 'threatfox-abusech', entries, mapThreatFoxSnapshotEntry, { signal });
+    throwIfAborted(signal);
+
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
@@ -1222,17 +1297,6 @@ export async function runThreatfoxImport(options = {}) {
        DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
       [config.threatfoxSourceName, `hash:${currentHash}`]
     );
-
-    await syncSnapshotFeedFromEntries(client, 'threatfox-abusech', entries, (entry) => ({
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName: config.threatfoxSourceName,
-      sourceUrl: config.threatfoxCsvUrl,
-      confidence: entry.confidence,
-      category: entry.threatType || 'threat-intel'
-    }), { signal }).catch((err) => {
-      if (isJobAbortedError(err)) throw err;
-    });
 
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('threatfox_import', runId, suppressionStats, metrics.toJSON());
@@ -1255,6 +1319,7 @@ export async function runThreatfoxImport(options = {}) {
 
 export async function runMalwareBazaarImport(options = {}) {
   const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
@@ -1270,8 +1335,9 @@ export async function runMalwareBazaarImport(options = {}) {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('malwarebazaar_import', 'running', clock_timestamp(), 'scheduler')
-       RETURNING id`
+       VALUES ('malwarebazaar_import', 'running', clock_timestamp(), $1)
+       RETURNING id`,
+      [triggeredBy]
     );
     runId = runInsert.rows[0].id;
 
@@ -1342,17 +1408,7 @@ export async function runMalwareBazaarImport(options = {}) {
       [config.malwareBazaarSourceName, `hash:${currentHash}`]
     );
 
-    await syncSnapshotFeedFromEntries(client, 'malwarebazaar-abusech', entries, (entry) => ({
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName: config.malwareBazaarSourceName,
-      sourceUrl: MALWAREBAZAAR_EXPORT_URL_MASKED,
-      confidence: entry.confidence,
-      category: entry.category || 'malware'
-    }), { signal }).catch((err) => {
-      if (isJobAbortedError(err)) throw err;
-    });
-
+    throwIfAborted(signal);
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, metrics.toJSON());
     console.log(
@@ -1378,6 +1434,7 @@ export async function runMalwareBazaarImport(options = {}) {
 
 export async function runPhishtankImport(options = {}) {
   const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
   const client = await pool.connect();
   let runId = null;
   const suppressionStats = createSuppressionStats();
@@ -1407,8 +1464,9 @@ export async function runPhishtankImport(options = {}) {
 
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('phishtank_import', 'running', clock_timestamp(), 'scheduler')
-       RETURNING id`
+       VALUES ('phishtank_import', 'running', clock_timestamp(), $1)
+       RETURNING id`,
+      [triggeredBy]
     );
     runId = runInsert.rows[0].id;
     txMeta.job_id = runId;
@@ -1459,11 +1517,36 @@ export async function runPhishtankImport(options = {}) {
     phase.build_entries_ms = Date.now() - tbuild;
     validCount = parsedEntries.length;
 
+    const entries = parsedEntries.sort(
+      (a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`)
+    );
+    const currentHash = hashEntries(entries.map((e) => ({ o: e.observable, t: e.observableType })));
+
+    const prevState = await client.query(
+      `SELECT content_hash, items_json FROM integration_source_state WHERE source_name = $1`,
+      [config.phishTankSourceName]
+    );
+    const previousHash = prevState.rows[0]?.content_hash || null;
+    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
+    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
+
+    if (previousHash === currentHash) {
+      metrics.noteSkipped(entries.length);
+      throwIfAborted(signal);
+      await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
+        await finalizeIntegrationRun(tx, runId, metrics);
+      }, txMeta);
+      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
+    }
+
+    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    metrics.noteSkipped(entries.length - addedEntries.length);
+
     const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 1000), 100);
     currentPhase = 'db_write';
-    for (let i = 0; i < parsedEntries.length; i += batchSize) {
+    for (let i = 0; i < addedEntries.length; i += batchSize) {
       throwIfAborted(signal);
-      const batch = parsedEntries.slice(i, i + batchSize);
+      const batch = addedEntries.slice(i, i + batchSize);
       const batchNo = Math.floor(i / batchSize) + 1;
       currentBatchNo = batchNo;
       const tb = Date.now();
@@ -1494,6 +1577,14 @@ export async function runPhishtankImport(options = {}) {
 
     currentPhase = 'finalize';
     const tfinal = Date.now();
+    throwIfAborted(signal);
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+      [config.phishTankSourceName, currentHash, JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))]
+    );
     await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
       await finalizeIntegrationRun(tx, runId, metrics);
     }, txMeta);

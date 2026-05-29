@@ -90,6 +90,37 @@ export async function markJobSuccess(pool, jobId, metrics) {
   );
 }
 
+export async function markJobSkipped(pool, jobId, metrics, reason = null) {
+  const note = reason ? `skipped:${String(reason).slice(0, 200)}` : 'skipped';
+  await pool.query(
+    `UPDATE integration_queue_jobs
+     SET status = 'skipped',
+         finished_at = NOW(),
+         records_processed = $2,
+         records_inserted = $3,
+         records_updated = $4,
+         records_duplicate = $5,
+         records_skipped = $6,
+         records_suppressed = $7,
+         records_failed = $8,
+         error_message = $9,
+         failure_type = NULL,
+         updated_at = NOW()
+     WHERE job_id = $1`,
+    [
+      String(jobId),
+      Number(metrics.records_processed || 0),
+      Number(metrics.records_inserted || 0),
+      Number(metrics.records_updated || 0),
+      Number(metrics.records_duplicate || 0),
+      Number(metrics.records_skipped || 0),
+      Number(metrics.records_suppressed || 0),
+      Number(metrics.records_failed || 0),
+      note
+    ]
+  );
+}
+
 export async function markJobFailed(pool, jobId, message, failureType = null) {
   await pool.query(
     `UPDATE integration_queue_jobs
