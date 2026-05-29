@@ -3556,19 +3556,48 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
   }
 
   try {
+    const prevQ = await pool.query(
+      'SELECT key, integration_id, name, active FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
+    if (!prevQ.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const prev = prevQ.rows[0];
     const result = await pool.query(
       `UPDATE integration_feeds
        SET active = $2, updated_at = NOW()
        WHERE key = $1
-       RETURNING key, name, active, schedule_cron AS schedule, trust_level, source_url, updated_at`,
+       RETURNING key, integration_id, name, active, schedule_cron AS schedule, trust_level, source_url, updated_at`,
       [key, req.body.active]
     );
 
-    if (!result.rowCount) {
-      return res.status(404).json({ message: 'Integration not found' });
-    }
+    const after = result.rows[0];
 
-    return res.json(result.rows[0]);
+    const { AUDIT_ACTION, AUDIT_ENTITY } = await import('./lib/auditConstants.js');
+    const action = after.active
+      ? (AUDIT_ACTION.INTEGRATION_FEED_ENABLED || 'integration_feed.enabled')
+      : (AUDIT_ACTION.INTEGRATION_FEED_DISABLED || 'integration_feed.disabled');
+
+    await auditLogService.auditSuccess({
+      req,
+      action,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(after.integration_id || key),
+      entityDisplay: after.name,
+      before: { active: Boolean(prev.active) },
+      after: { active: Boolean(after.active) },
+      metadata: {
+        feed_key: after.key,
+        feed_name: after.name,
+        source: 'ui'
+      }
+    }).catch((e) => {
+      console.warn('[audit] integration active toggle log failed', e?.message || e);
+    });
+
+    return res.json(after);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update integration active state', detail: err.message });
   }
@@ -3881,6 +3910,81 @@ app.get('/api/tags', async (req, res) => {
     return res.json(q.rows);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
+  }
+});
+
+app.get('/api/admin/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const includeInactive = String(req.query?.include_inactive || 'false') === 'true';
+  try {
+    const q = await pool.query(
+      `SELECT id, name, type AS category, COALESCE(type,'custom') AS type,
+              ''::text AS description, ''::text AS color,
+              enabled AS is_active, created_at, created_at AS updated_at
+       FROM tags
+       ${includeInactive ? '' : 'WHERE enabled = TRUE'}
+       ORDER BY name ASC`
+    );
+    return res.json({ tags: q.rows });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
+  }
+});
+
+app.post('/api/admin/tags', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const name = normalizeTagName(req.body?.name);
+  const category = String(req.body?.category || '').trim().toLowerCase();
+  const type = TAG_TYPES.has(category) ? category : 'context';
+  if (!name) return res.status(400).json({ message: 'name is required' });
+  try {
+    const q = await pool.query(
+      `INSERT INTO tags (name, type, enabled)
+       VALUES ($1, $2::tag_type, $3)
+       ON CONFLICT (name)
+       DO UPDATE SET type = EXCLUDED.type, enabled = EXCLUDED.enabled
+       RETURNING id, name, type AS category, ''::text AS description, ''::text AS color, enabled AS is_active`,
+      [name, type, req.body?.is_active !== false]
+    );
+    return res.status(201).json({ tag: q.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
+  }
+});
+
+app.put('/api/admin/tags/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const tagId = parsePositiveInt(req.params?.id);
+  if (!tagId) return res.status(400).json({ message: 'Invalid id' });
+  const fields = [];
+  const params = [tagId];
+  if (req.body?.name != null) { params.push(normalizeTagName(req.body.name)); fields.push(`name = $${params.length}`); }
+  if (req.body?.category != null) {
+    const c = String(req.body.category).trim().toLowerCase();
+    const t = TAG_TYPES.has(c) ? c : 'context';
+    params.push(t); fields.push(`type = $${params.length}::tag_type`);
+  }
+  if (req.body?.is_active != null) { params.push(Boolean(req.body.is_active)); fields.push(`enabled = $${params.length}`); }
+  if (!fields.length) return res.status(400).json({ message: 'No fields to update' });
+  try {
+    const q = await pool.query(`UPDATE tags SET ${fields.join(', ')} WHERE id = $1 RETURNING id,name,type AS category,''::text AS description,''::text AS color,enabled AS is_active`, params);
+    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    return res.json({ tag: q.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
+  }
+});
+
+app.delete('/api/admin/tags/:id', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const tagId = parsePositiveInt(req.params?.id);
+  if (!tagId) return res.status(400).json({ message: 'Invalid id' });
+  try {
+    const q = await pool.query('UPDATE tags SET enabled = FALSE WHERE id = $1 RETURNING id', [tagId]);
+    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to disable tag', detail: err.message });
   }
 });
 
