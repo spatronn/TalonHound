@@ -5190,54 +5190,63 @@ const FEED_WINDOW_OPTIONS = [
   { value: 'all', label: 'All' }
 ];
 
-const FEED_VERDICT_FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'malicious', label: 'Malicious' },
-  { value: 'suspicious', label: 'Suspicious' }
-];
+const NON_IOC_INTEGRATION_KEYS = new Set(['asn_enrichment']);
 
-function verdictFilterFromFeed(feed) {
-  const arr = Array.isArray(feed?.verdict_filter) ? feed.verdict_filter : [];
-  if (!arr.length) return ['all'];
-  const lower = arr.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
-  if (lower.includes('all')) return ['all'];
-  const known = lower.filter((v) => v === 'malicious' || v === 'suspicious');
-  return known.length ? known : ['all'];
-}
+function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
+  const selected = Array.isArray(value) ? value : [];
+  const linkBtn = {
+    background: 'none',
+    border: 'none',
+    color: '#60a5fa',
+    cursor: 'pointer',
+    padding: 0,
+    fontSize: 11,
+    fontWeight: 600
+  };
 
-function verdictFilterToPayload(selected) {
-  const v = Array.isArray(selected) ? selected : [];
-  if (!v.length || v.includes('all')) return null;
-  return v.filter((x) => x !== 'all');
-}
-
-function normalizeVerdictFilterSelection(selected, previous = []) {
-  if (!selected.length) return ['all'];
-  if (selected.includes('all') && selected.length > 1) {
-    if (!previous.includes('all')) return ['all'];
-    return selected.filter((x) => x !== 'all');
-  }
-  if (selected.includes('all')) return ['all'];
-  return selected;
-}
-
-function FeedVerdictMultiSelect({ ui, value, onChange }) {
-  const selected = Array.isArray(value) && value.length ? value : ['all'];
   return (
-    <select
-      multiple
-      size={FEED_VERDICT_FILTER_OPTIONS.length}
-      value={selected}
-      onChange={(e) => {
-        const next = Array.from(e.target.selectedOptions, (o) => o.value);
-        onChange(normalizeVerdictFilterSelection(next, selected));
-      }}
-      style={{ ...ui.select, minHeight: 88 }}
-    >
-      {FEED_VERDICT_FILTER_OPTIONS.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
+    <div>
+      {options.length ? (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+          <button type="button" style={linkBtn} onClick={() => onChange(options.map((o) => o.key))}>
+            Select all
+          </button>
+          <button type="button" style={linkBtn} onClick={() => onChange([])}>
+            Clear
+          </button>
+        </div>
+      ) : null}
+      <div style={{
+        ...ui.input,
+        padding: '8px 10px',
+        maxHeight: 176,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }}>
+        {options.length ? options.map((o) => (
+          <label key={o.key} style={{ ...ui.checkLabel, display: 'flex' }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(o.key)}
+              onChange={(e) => {
+                const next = e.target.checked
+                  ? [...selected, o.key]
+                  : selected.filter((k) => k !== o.key);
+                onChange(next);
+              }}
+            />
+            <span>
+              {o.name}
+              {o.active === false ? <span style={{ color: '#64748b', marginLeft: 6 }}>(inactive)</span> : null}
+            </span>
+          </label>
+        )) : (
+          <span style={{ fontSize: 13, color: '#64748b' }}>No integration feeds available</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -5449,6 +5458,7 @@ function PublishedFeedsPage() {
   const { canWrite } = useSession();
   const [loading, setLoading] = useState(true);
   const [feeds, setFeeds] = useState([]);
+  const [sourceFeeds, setSourceFeeds] = useState([]);
   const [showFormModal, setShowFormModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [regenerating, setRegenerating] = useState({});
@@ -5460,10 +5470,9 @@ function PublishedFeedsPage() {
     ioc_type: 'ip',
     exclude_false_positive: true,
     exclude_expired: true,
-    include_sources: '',
+    include_feed_keys: [],
     include_tags: '',
     exclude_tags: '',
-    verdict_filter: ['all'],
     time_window: 'all',
     max_items: '',
     refresh_interval_minutes: 15
@@ -5481,7 +5490,22 @@ function PublishedFeedsPage() {
     }
   }
 
-  useEffect(() => { loadFeeds().catch(() => {}); }, []);
+  async function loadSourceFeeds() {
+    try {
+      const { data } = await api.get('/integrations');
+      const list = (data?.integrations || [])
+        .filter((f) => !NON_IOC_INTEGRATION_KEYS.has(f.key))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      setSourceFeeds(list);
+    } catch {
+      setSourceFeeds([]);
+    }
+  }
+
+  useEffect(() => {
+    loadFeeds().catch(() => {});
+    loadSourceFeeds().catch(() => {});
+  }, []);
 
   function closeFormModal() {
     setShowFormModal(false);
@@ -5497,10 +5521,9 @@ function PublishedFeedsPage() {
       ioc_type: 'ip',
       exclude_false_positive: true,
       exclude_expired: true,
-      include_sources: '',
+      include_feed_keys: [],
       include_tags: '',
       exclude_tags: '',
-      verdict_filter: ['all'],
       time_window: 'all',
       max_items: '',
       refresh_interval_minutes: 15
@@ -5517,10 +5540,9 @@ function PublishedFeedsPage() {
       ioc_type: feed.ioc_type || 'ip',
       exclude_false_positive: feed.exclude_false_positive !== false,
       exclude_expired: feed.exclude_expired !== false,
-      include_sources: (feed.include_sources || []).join(', '),
+      include_feed_keys: Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : [],
       include_tags: (feed.include_tags || []).join(', '),
       exclude_tags: (feed.exclude_tags || []).join(', '),
-      verdict_filter: verdictFilterFromFeed(feed),
       time_window: feed.time_window || 'all',
       max_items: feed.max_items ?? '',
       refresh_interval_minutes: feed.refresh_interval_minutes || 15
@@ -5541,10 +5563,9 @@ function PublishedFeedsPage() {
       format: 'txt',
       exclude_false_positive: Boolean(form.exclude_false_positive),
       exclude_expired: Boolean(form.exclude_expired),
-      include_sources: splitCsv(form.include_sources),
+      include_feed_keys: form.include_feed_keys,
       include_tags: splitCsv(form.include_tags),
       exclude_tags: splitCsv(form.exclude_tags),
-      verdict_filter: verdictFilterToPayload(form.verdict_filter),
       time_window: form.time_window,
       max_items: form.max_items === '' ? null : Number(form.max_items),
       refresh_interval_minutes: Number(form.refresh_interval_minutes) || 15
@@ -5762,14 +5783,15 @@ function PublishedFeedsPage() {
                 </FeedFormField>
                 <FeedFormField
                   ui={ui}
-                  label="Verdict Filter"
-                  helper="Default is All (no verdict filter). Hold Ctrl or Cmd to select multiple types."
+                  label="Threat Feeds"
+                  helper="Optional. Leave empty to include all feeds, or select one or more integration feeds to limit IOC sources."
                   fullWidth
                 >
-                  <FeedVerdictMultiSelect
+                  <FeedIntegrationMultiSelect
                     ui={ui}
-                    value={form.verdict_filter}
-                    onChange={(next) => setForm((x) => ({ ...x, verdict_filter: next }))}
+                    options={sourceFeeds}
+                    value={form.include_feed_keys}
+                    onChange={(next) => setForm((x) => ({ ...x, include_feed_keys: next }))}
                   />
                 </FeedFormField>
               </FeedFormSection>
@@ -5785,9 +5807,6 @@ function PublishedFeedsPage() {
                     Exclude expired
                   </label>
                 </div>
-                <FeedFormField ui={ui} label="Sources" helper="Optional. Comma-separated source names.">
-                  <input value={form.include_sources} onChange={(e) => setForm((x) => ({ ...x, include_sources: e.target.value }))} style={ui.input} placeholder="source_a, source_b" />
-                </FeedFormField>
                 <FeedFormField ui={ui} label="Include Tags" helper="Optional. Comma-separated tag names.">
                   <input value={form.include_tags} onChange={(e) => setForm((x) => ({ ...x, include_tags: e.target.value }))} style={ui.input} />
                 </FeedFormField>

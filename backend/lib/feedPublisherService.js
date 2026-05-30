@@ -5,6 +5,7 @@ import {
   confidenceToScore,
   observableTypesForFeedIocType
 } from './feedFormatter.js';
+import { FEED_SOURCE_RULES } from './iocExpiration.js';
 
 const FEED_IOC_EXPIRY_DAYS = Math.max(Number(process.env.FEED_IOC_EXPIRY_DAYS || 90), 1);
 const FEED_EXPORT_MAX_LIMIT = Math.max(Number(process.env.FEED_EXPORT_MAX_LIMIT || 100000), 1);
@@ -47,10 +48,9 @@ export function normalizeFeedConfig(row) {
     ...row,
     id: Number(row.id),
     time_window: normalizeTimeWindow(row.time_window) || 'all',
-    include_sources: parseJsonArray(row.include_sources),
+    include_feed_keys: parseJsonArray(row.include_feed_keys),
     include_tags: parseJsonArray(row.include_tags),
-    exclude_tags: parseJsonArray(row.exclude_tags),
-    verdict_filter: parseJsonArray(row.verdict_filter)
+    exclude_tags: parseJsonArray(row.exclude_tags)
   };
 }
 
@@ -59,50 +59,39 @@ function filtersHash(feed, window) {
     ioc_type: feed.ioc_type,
     window,
     min_confidence: feed.min_confidence,
-    include_sources: feed.include_sources,
+    include_feed_keys: feed.include_feed_keys,
     include_tags: feed.include_tags,
     exclude_tags: feed.exclude_tags,
     exclude_false_positive: feed.exclude_false_positive,
     exclude_expired: feed.exclude_expired,
-    verdict_filter: feed.verdict_filter,
     max_items: feed.max_items
   };
   return crypto.createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex').slice(0, 16);
 }
 
-function buildVerdictSql(verdictFilter, params) {
-  if (!verdictFilter?.length) return '';
-  const active = verdictFilter.filter((v) => String(v).trim().toLowerCase() !== 'all');
-  if (!active.length) return '';
-  const wantsMalicious = active.some((v) => /malicious/i.test(v));
-  const wantsSuspicious = active.some((v) => /suspicious/i.test(v));
-  if (!wantsMalicious && !wantsSuspicious) return '';
+function buildFeedKeySourceSql(feedKeys, params) {
+  if (!feedKeys?.length) return '';
+  const keys = feedKeys.map((k) => String(k).trim()).filter(Boolean);
+  if (!keys.length) return '';
 
   const parts = [];
-  if (wantsMalicious) {
-    parts.push(`(
-      LOWER(COALESCE(i.confidence, '')) = 'high'
-      OR LOWER(COALESCE(i.category, '')) ~ '(malware|malicious|c2|botnet|ransomware|phish)'
-      OR EXISTS (
-        SELECT 1 FROM ioc_activity a
-        WHERE lower(a.ioc_value) = lower(i.observable)
-          AND lower(a.ioc_type) = lower(i.observable_type)
-          AND a.verdict = 'TP'
-      )
-    )`);
+  for (const key of keys) {
+    const rule = FEED_SOURCE_RULES.find((r) => r.key === key);
+    if (!rule) continue;
+    if (rule.exact) {
+      params.push(rule.exact);
+      parts.push(`i.source_name = $${params.length}`);
+    } else if (rule.prefix) {
+      params.push(`${rule.prefix}%`);
+      parts.push(`i.source_name LIKE $${params.length}`);
+    } else if (rule.includes) {
+      for (const fragment of rule.includes) {
+        params.push(`%${fragment}%`);
+        parts.push(`i.source_name ILIKE $${params.length}`);
+      }
+    }
   }
-  if (wantsSuspicious) {
-    parts.push(`(
-      LOWER(COALESCE(i.confidence, '')) IN ('medium', 'high')
-      OR LOWER(COALESCE(i.category, '')) ~ '(suspicious|suspicion)'
-      OR EXISTS (
-        SELECT 1 FROM ioc_activity a
-        WHERE lower(a.ioc_value) = lower(i.observable)
-          AND lower(a.ioc_type) = lower(i.observable_type)
-          AND a.verdict IN ('Suspicious', 'TP')
-      )
-    )`);
-  }
+  if (!parts.length) return '';
   return ` AND (${parts.join(' OR ')}) `;
 }
 
@@ -145,10 +134,7 @@ async function fetchIocRows(pool, feed, window) {
     ) >= ${Number(feed.min_confidence)} `;
   }
 
-  if (feed.include_sources?.length) {
-    params.push(feed.include_sources);
-    sql += ` AND i.source_name = ANY($${params.length}::text[]) `;
-  }
+  sql += buildFeedKeySourceSql(feed.include_feed_keys, params);
 
   if (feed.exclude_false_positive) {
     sql += `
@@ -166,8 +152,6 @@ async function fetchIocRows(pool, feed, window) {
   if (feed.exclude_expired !== false) {
     sql += ` AND COALESCE(i.status, 'active') = 'active' `;
   }
-
-  sql += buildVerdictSql(feed.verdict_filter, params);
 
   if (feed.include_tags?.length) {
     params.push(feed.include_tags.map((t) => t.toLowerCase()));

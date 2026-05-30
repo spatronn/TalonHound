@@ -2,8 +2,11 @@ import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
 import { generatePublishedFeedSnapshot, normalizeFeedConfig } from '../lib/feedPublisherService.js';
 import { FEED_IOC_TYPES } from '../lib/feedFormatter.js';
+import { FEED_SOURCE_RULES } from '../lib/iocExpiration.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+
+const VALID_PUBLISHABLE_FEED_KEYS = new Set(FEED_SOURCE_RULES.map((r) => r.key));
 
 function toPublicFeed(row, extra = {}) {
   if (!row) return null;
@@ -15,12 +18,11 @@ function toPublicFeed(row, extra = {}) {
     ioc_type: row.ioc_type,
     format: row.format,
     min_confidence: row.min_confidence,
-    include_sources: row.include_sources,
+    include_feed_keys: row.include_feed_keys,
     include_tags: row.include_tags,
     exclude_tags: row.exclude_tags,
     exclude_false_positive: Boolean(row.exclude_false_positive),
     exclude_expired: Boolean(row.exclude_expired),
-    verdict_filter: row.verdict_filter,
     time_window: row.time_window,
     max_items: row.max_items,
     refresh_interval_minutes: Number(row.refresh_interval_minutes || 15),
@@ -49,7 +51,7 @@ function toPublicAccessKey(row) {
 
 function parseBodyArrays(body) {
   const out = { ...body };
-  for (const key of ['include_sources', 'include_tags', 'exclude_tags', 'verdict_filter']) {
+  for (const key of ['include_feed_keys', 'include_tags', 'exclude_tags']) {
     if (out[key] != null && !Array.isArray(out[key])) {
       if (typeof out[key] === 'string') {
         try {
@@ -61,6 +63,17 @@ function parseBodyArrays(body) {
     }
   }
   return out;
+}
+
+function normalizeIncludeFeedKeys(raw) {
+  if (raw == null) return [];
+  const arr = Array.isArray(raw) ? raw : [];
+  const normalized = arr.map((k) => String(k).trim()).filter(Boolean);
+  const unknown = normalized.filter((k) => !VALID_PUBLISHABLE_FEED_KEYS.has(k));
+  if (unknown.length) {
+    return { error: `Unknown feed keys: ${unknown.join(', ')}` };
+  }
+  return { value: normalized };
 }
 
 function validateFeedPayload(body, partial = false) {
@@ -140,6 +153,9 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     const errors = validateFeedPayload(body, false);
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
+    const feedKeys = normalizeIncludeFeedKeys(body.include_feed_keys);
+    if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
+
     const tw = String(body.time_window || 'all').toLowerCase();
     const timeWindow = tw === 'last_1_day' ? '1d' : tw === 'last_3_days' ? '3d' : tw === 'last_7_days' ? '7d' : tw;
 
@@ -147,14 +163,14 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       const { rows } = await pool.query(
         `INSERT INTO published_feeds (
            name, description, enabled, ioc_type, format, min_confidence,
-           include_sources, include_tags, exclude_tags,
-           exclude_false_positive, exclude_expired, verdict_filter,
+           include_feed_keys, include_tags, exclude_tags,
+           exclude_false_positive, exclude_expired,
            time_window, max_items, refresh_interval_minutes
          ) VALUES (
            $1, $2, COALESCE($3, TRUE), $4, COALESCE($5, 'txt'), $6,
            $7::jsonb, $8::jsonb, $9::jsonb,
-           COALESCE($10, TRUE), COALESCE($11, TRUE), $12::jsonb,
-           $13, $14, COALESCE($15, 15)
+           COALESCE($10, TRUE), COALESCE($11, TRUE),
+           $12, $13, COALESCE($14, 15)
          )
          RETURNING *`,
         [
@@ -164,12 +180,11 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
           String(body.ioc_type).toLowerCase(),
           body.format || 'txt',
           body.min_confidence ?? null,
-          body.include_sources ? JSON.stringify(body.include_sources) : null,
+          feedKeys.value.length ? JSON.stringify(feedKeys.value) : null,
           body.include_tags ? JSON.stringify(body.include_tags) : null,
           body.exclude_tags ? JSON.stringify(body.exclude_tags) : null,
           body.exclude_false_positive,
           body.exclude_expired,
-          body.verdict_filter ? JSON.stringify(body.verdict_filter) : null,
           timeWindow,
           body.max_items ?? null,
           body.refresh_interval_minutes ?? 15
@@ -212,6 +227,12 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     const errors = validateFeedPayload(body, true);
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
+    if (body.include_feed_keys !== undefined) {
+      const feedKeys = normalizeIncludeFeedKeys(body.include_feed_keys);
+      if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
+      body.include_feed_keys = feedKeys.value;
+    }
+
     const fields = [];
     const params = [id];
     const setField = (col, val, cast = '') => {
@@ -225,12 +246,13 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     if (body.ioc_type !== undefined) setField('ioc_type', String(body.ioc_type).toLowerCase());
     if (body.format !== undefined) setField('format', body.format);
     if (body.min_confidence !== undefined) setField('min_confidence', body.min_confidence);
-    if (body.include_sources !== undefined) setField('include_sources', JSON.stringify(body.include_sources || []), '::jsonb');
+    if (body.include_feed_keys !== undefined) {
+      setField('include_feed_keys', JSON.stringify(body.include_feed_keys || []), '::jsonb');
+    }
     if (body.include_tags !== undefined) setField('include_tags', JSON.stringify(body.include_tags || []), '::jsonb');
     if (body.exclude_tags !== undefined) setField('exclude_tags', JSON.stringify(body.exclude_tags || []), '::jsonb');
     if (body.exclude_false_positive !== undefined) setField('exclude_false_positive', Boolean(body.exclude_false_positive));
     if (body.exclude_expired !== undefined) setField('exclude_expired', Boolean(body.exclude_expired));
-    if (body.verdict_filter !== undefined) setField('verdict_filter', JSON.stringify(body.verdict_filter || []), '::jsonb');
     if (body.time_window !== undefined) {
       const tw = String(body.time_window).toLowerCase();
       const mapped = tw === 'last_1_day' ? '1d' : tw === 'last_3_days' ? '3d' : tw === 'last_7_days' ? '7d' : tw;
