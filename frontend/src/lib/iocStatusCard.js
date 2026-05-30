@@ -50,7 +50,7 @@ export function getIocStatusCardPresentation(summary, { suppressionActive } = {}
       buttons.push('custom_expire_ioc', 'expire_ioc');
       if (hasOverride) buttons.push('clear_ioc_override');
     } else if (lifecycle === 'expired') {
-      buttons.push('reactivate_ioc', 'custom_expire_ioc');
+      buttons.push('reactivate_ioc');
       if (hasOverride) buttons.push('clear_ioc_override');
     } else if (lifecycle === 'unknown' || lifecycle === 'disabled') {
       if (hasOverride) buttons.push('clear_ioc_override');

@@ -45,6 +45,7 @@ describe('getIocStatusCardPresentation', () => {
     assert.ok(p.fields.some((f) => f.key === 'expired_at'));
     assert.ok(!p.fields.some((f) => f.key === 'expires_at'));
     assert.ok(p.buttons.includes('reactivate_ioc'));
+    assert.ok(!p.buttons.includes('custom_expire_ioc'));
     assert.ok(!p.buttons.includes('expire_ioc'));
   });
 

@@ -15,6 +15,8 @@ import {
   formatIocEntityDisplay
 } from '../lib/auditIocContext.js';
 import { evaluateIocStatusOverrideRequest } from '../lib/iocStatusOverrideGuards.js';
+import { parseManualExpirationInput } from '../lib/iocSourceValidation.js';
+import { AUDIT_ACTION } from '../lib/auditConstants.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
 const IOC_STATUS_AUDIT_FIELDS = [
@@ -273,16 +275,34 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         return res.status(400).json({ success: false, error: 'Reason is required' });
       }
 
-      let manualExpiresAt = req.body?.manual_expires_at || null;
-      if (manualExpiresAt) {
-        const d = new Date(manualExpiresAt);
+      const prevStatus = String(prev.status || 'active').trim().toLowerCase();
+      const isReactivate = manualStatus === 'active' && prevStatus === 'expired';
+      let manualExpiresAt = null;
+      let reactivateExpiration = null;
+
+      if (req.body?.expiration_policy) {
+        const parsed = parseManualExpirationInput(req.body);
+        if (!parsed.ok) {
+          return res.status(400).json({ success: false, error: parsed.error });
+        }
+        manualExpiresAt = parsed.manual_expires_at;
+        reactivateExpiration = {
+          expiration_policy: parsed.policy,
+          expire_days: parsed.expire_days ?? null,
+          expires_at: parsed.manual_expires_at
+        };
+      } else if (req.body?.manual_expires_at !== undefined && req.body?.manual_expires_at !== null && req.body?.manual_expires_at !== '') {
+        const d = new Date(req.body.manual_expires_at);
         if (Number.isNaN(d.getTime())) {
           return res.status(400).json({ success: false, error: 'manual_expires_at must be a valid ISO date/time' });
         }
+        if (d.getTime() <= Date.now()) {
+          return res.status(400).json({ success: false, error: 'manual_expires_at must be in the future' });
+        }
         manualExpiresAt = d.toISOString();
-      }
-
-      if (manualStatus === 'active' && !manualExpiresAt && req.body?.manual_expires_at === undefined) {
+      } else if (isReactivate) {
+        return res.status(400).json({ success: false, error: 'expiration_policy is required when reactivating an IOC' });
+      } else if (manualStatus === 'active') {
         manualExpiresAt = null;
       }
 
@@ -304,7 +324,9 @@ export function registerIocExpirationRoutes(app, pool, audit) {
       });
 
       const iocOut = serializeIocStatus(await fetchIocStatusRow(pool, iocId, observableType));
-      const action = manualStatus === 'active' ? 'ioc.reactivated_by_user' : 'ioc.expired';
+      const action = manualStatus === 'active'
+        ? AUDIT_ACTION.IOC_REACTIVATED_BY_USER
+        : 'ioc.expired';
       const expirationAudit = manualStatus === 'expired'
         ? buildIocExpirationAuditPayload({
           iocId,
@@ -320,6 +342,21 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         })
         : null;
 
+      const reactivateMetadata = isReactivate && reactivateExpiration
+        ? {
+          reason,
+          observable_type: observableType,
+          ioc_value: prev?.observable,
+          old_status: prev?.status || 'expired',
+          new_status: iocOut?.status || 'active',
+          old_expires_at: prev?.expires_at,
+          expires_at: iocOut?.expires_at,
+          expiration_policy: reactivateExpiration.expiration_policy,
+          expire_days: reactivateExpiration.expire_days,
+          policy_expires_at: reactivateExpiration.expires_at
+        }
+        : null;
+
       await audit.auditSuccess({
         req,
         action,
@@ -328,7 +365,7 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         entityDisplay: expirationAudit?.entityDisplay || formatIocEntityDisplay(observableType, prev?.observable),
         before: expirationAudit?.before || pickSafeFields(prev, IOC_STATUS_AUDIT_FIELDS),
         after: expirationAudit?.after || pickSafeFields(iocOut, IOC_STATUS_AUDIT_FIELDS),
-        metadata: expirationAudit?.metadata || { reason, observable_type: observableType, ioc_value: prev?.observable }
+        metadata: expirationAudit?.metadata || reactivateMetadata || { reason, observable_type: observableType, ioc_value: prev?.observable }
       });
 
       return res.status(200).json({ success: true, ioc: iocOut });

@@ -39,6 +39,9 @@ export function evaluateIocStatusOverrideRequest(prev, body) {
   if (manualExpiresAt != null && manualExpiresAt !== '') {
     return { noop: false };
   }
+  if (body?.expiration_policy) {
+    return { noop: false };
+  }
 
   if (normStatus(prev.status) === 'active') {
     return { noop: true, message: 'IOC is already active.' };

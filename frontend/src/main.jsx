@@ -376,9 +376,10 @@ const IOC_EXPIRATION_ACTION_PRESETS = {
   },
   reactivate_ioc: {
     title: 'Reactivate IOC',
-    description: 'This will manually reactivate the IOC. It may become eligible for publish/export and syslog correlation again unless disabled or suppressed.',
+    description: 'This will manually reactivate the IOC and set a new expiration policy. It may become eligible for publish/export and syslog correlation again unless disabled or suppressed.',
     requiresReason: true,
     requiresDate: false,
+    requiresExpirationPolicy: true,
     confirmLabel: 'Reactivate IOC',
     danger: false,
     successToast: 'IOC reactivated'
@@ -445,6 +446,10 @@ function IocExpirationActionModal({
   onReasonChange,
   expireAt,
   onExpireAtChange,
+  expirationPolicy,
+  onExpirationPolicyChange,
+  expireDays,
+  onExpireDaysChange,
   loading,
   error,
   onCancel,
@@ -477,12 +482,59 @@ function IocExpirationActionModal({
   const confirmStyle = pending.danger
     ? { ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.25)' }
     : ui.btnPrimary;
+  const minDateTimeLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
 
   return (
     <ModalOverlay onClose={loading ? undefined : onCancel}>
       <h3 style={{ marginTop: 0, color: '#f1f5f9', fontSize: 18 }}>{pending.title}</h3>
       <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}>{pending.description}</p>
       <div style={{ display: 'grid', gap: 12 }}>
+        {pending.requiresExpirationPolicy ? (
+          <>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <span style={ui.label}>Expiration policy</span>
+              <select
+                value={expirationPolicy}
+                onChange={(e) => onExpirationPolicyChange(e.target.value)}
+                disabled={loading}
+                style={inputStyle}
+              >
+                {IOC_EXPIRE_POLICY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            {expirationPolicy === 'expire_after_days' ? (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={ui.label}>Expire after days</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={3650}
+                  value={expireDays}
+                  onChange={(e) => onExpireDaysChange(e.target.value)}
+                  disabled={loading}
+                  style={inputStyle}
+                />
+              </label>
+            ) : null}
+            {expirationPolicy === 'custom_date' ? (
+              <label style={{ display: 'grid', gap: 6 }}>
+                <span style={ui.label}>Custom expire date</span>
+                <input
+                  type="datetime-local"
+                  min={minDateTimeLocal}
+                  value={expireAt}
+                  onChange={(e) => onExpireAtChange(e.target.value)}
+                  disabled={loading}
+                  style={inputStyle}
+                />
+              </label>
+            ) : null}
+          </>
+        ) : null}
         {pending.requiresDate ? (
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={ui.label}>Expire date/time</span>
@@ -577,9 +629,19 @@ function auditJsonBlock(value) {
 
 const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
   'ioc.expired',
+  'ioc.reactivated_by_user',
   'ioc_feed_membership.expired',
   'ioc_feed_membership.expired_by_user'
 ]);
+
+function formatExpirationPolicyLabel(policy) {
+  const value = String(policy || '').trim();
+  if (!value) return '—';
+  if (value === 'never') return 'Never expire';
+  if (value === 'expire_after_days') return 'Expire after days';
+  if (value === 'custom_date') return 'Custom expire date';
+  return value.replace(/_/g, ' ');
+}
 
 function auditMetadataValue(metadata, ...keys) {
   if (!metadata || typeof metadata !== 'object') return null;
@@ -679,6 +741,9 @@ function AuditExpirationSummary({ item }) {
     ['Type', auditSnapshotValue(item, 'ioc_observable_type', 'observable_type')],
     ['Status', formatAuditStatusTransition(metadata) || formatAuditStatusTransition(item?.before_data && item?.after_data ? { old_status: item.before_data?.status, new_status: item.after_data?.status } : null)],
     ['Reason', formatExpirationAuditReasonLabel(auditSnapshotValue(item, 'reason'))],
+    ['Expiration policy', formatExpirationPolicyLabel(auditSnapshotValue(item, 'expiration_policy'))],
+    ['Expire days', auditSnapshotValue(item, 'expire_days')],
+    ['Policy expires at', formatAuditDate(auditSnapshotValue(item, 'policy_expires_at', 'expires_at') || item?.after_data?.expires_at)],
     ['Old expires at', formatAuditDate(auditSnapshotValue(item, 'old_expires_at') || item?.before_data?.expires_at)],
     ['Expired at', formatAuditDate(auditSnapshotValue(item, 'expired_at') || item?.after_data?.expired_at)],
     ['Feed', auditSnapshotValue(item, 'feed_name')],
@@ -9923,6 +9988,10 @@ function iocAuditMetadataSummary(metadata) {
   if (statusTransition && statusTransition !== '—') expirationParts.push(statusTransition);
   const reason = auditMetadataValue(metadata, 'reason');
   if (reason) expirationParts.push(formatExpirationAuditReasonLabel(reason));
+  const expirationPolicy = auditMetadataValue(metadata, 'expiration_policy');
+  if (expirationPolicy) expirationParts.push(formatExpirationPolicyLabel(expirationPolicy));
+  const expireDays = auditMetadataValue(metadata, 'expire_days');
+  if (expireDays != null && expireDays !== '') expirationParts.push(`${expireDays} days`);
   const feedName = auditMetadataValue(metadata, 'feed_name');
   if (feedName) expirationParts.push(String(feedName));
   if (expirationParts.length) return expirationParts.join(' · ');
@@ -10033,6 +10102,8 @@ function IOCDetailsPage() {
   const [pendingAction, setPendingAction] = useState(null);
   const [actionReason, setActionReason] = useState('');
   const [actionExpireAt, setActionExpireAt] = useState('');
+  const [actionExpirationPolicy, setActionExpirationPolicy] = useState('expire_after_days');
+  const [actionExpireDays, setActionExpireDays] = useState('30');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
   const [actionRefreshWarn, setActionRefreshWarn] = useState(''); // page-level warning after modal closes
@@ -10302,6 +10373,10 @@ function IOCDetailsPage() {
     setActionRefreshWarn('');
     setActionReason('');
     setActionExpireAt('');
+    if (preset.requiresExpirationPolicy) {
+      setActionExpirationPolicy('expire_after_days');
+      setActionExpireDays('30');
+    }
     setPendingAction({ type, membershipId, ...preset });
   }
 
@@ -10310,6 +10385,8 @@ function IOCDetailsPage() {
     setPendingAction(null);
     setActionReason('');
     setActionExpireAt('');
+    setActionExpirationPolicy('expire_after_days');
+    setActionExpireDays('30');
     setActionError('');
     setActionRefreshWarn('');
   }
@@ -10353,7 +10430,41 @@ function IOCDetailsPage() {
         setActionError('Enter a valid date/time');
         return;
       }
+      if (d.getTime() <= Date.now()) {
+        setActionError('Expire date/time must be in the future');
+        return;
+      }
       manualExpiresAt = d.toISOString();
+    }
+
+    if (pendingAction.requiresExpirationPolicy) {
+      const policy = String(actionExpirationPolicy || '').trim();
+      if (!policy) {
+        setActionError('Expiration policy is required');
+        return;
+      }
+      if (policy === 'expire_after_days') {
+        const days = Number(actionExpireDays);
+        if (!Number.isInteger(days) || days < 1) {
+          setActionError('Expire after days must be a positive integer');
+          return;
+        }
+      }
+      if (policy === 'custom_date') {
+        if (!actionExpireAt) {
+          setActionError('Custom expire date is required');
+          return;
+        }
+        const d = new Date(actionExpireAt);
+        if (Number.isNaN(d.getTime())) {
+          setActionError('Enter a valid custom expire date');
+          return;
+        }
+        if (d.getTime() <= Date.now()) {
+          setActionError('Custom expire date must be in the future');
+          return;
+        }
+      }
     }
 
     setActionLoading(true);
@@ -10374,13 +10485,20 @@ function IOCDetailsPage() {
         });
         patchData = data;
       } else if (type === 'reactivate_ioc') {
-        const { data } = await api.patch(`/ioc/${iocId}/status-override`, {
+        const payload = {
           observable_type: observableType,
           manual_status_override: true,
           manual_status: 'active',
-          manual_expires_at: null,
-          reason
-        });
+          reason,
+          expiration_policy: actionExpirationPolicy
+        };
+        if (actionExpirationPolicy === 'expire_after_days') {
+          payload.expire_days = Number(actionExpireDays);
+        }
+        if (actionExpirationPolicy === 'custom_date') {
+          payload.expires_at = new Date(actionExpireAt).toISOString();
+        }
+        const { data } = await api.patch(`/ioc/${iocId}/status-override`, payload);
         patchData = data;
       } else if (type === 'custom_expire_ioc') {
         const { data } = await api.patch(`/ioc/${iocId}/status-override`, {
@@ -10879,6 +10997,10 @@ function IOCDetailsPage() {
         onReasonChange={setActionReason}
         expireAt={actionExpireAt}
         onExpireAtChange={setActionExpireAt}
+        expirationPolicy={actionExpirationPolicy}
+        onExpirationPolicyChange={setActionExpirationPolicy}
+        expireDays={actionExpireDays}
+        onExpireDaysChange={setActionExpireDays}
         loading={actionLoading}
         error={actionError}
         onCancel={cancelExpirationAction}
