@@ -667,9 +667,8 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
        )
        WHERE NOT EXISTS (
          SELECT 1 FROM ioc_items i
-         WHERE i.observable = v.observable AND i.observable_type = $${typeParam}
-           AND i.source_name = v.source_name
-           AND COALESCE(i.source_url, '') = COALESCE(v.source_url, '')
+         WHERE i.observable = v.observable
+           AND i.observable_type = $${typeParam}
        )
        RETURNING public_id, observable, note`,
       [...params.flat(), observableType]
@@ -805,8 +804,6 @@ async function insertObservable(client, { observable, observableType, sourceName
        FROM ioc_items
        WHERE observable = $1
          AND observable_type = $2
-         AND source_name = $3
-         AND COALESCE(source_url, '') = COALESCE($4, '')
      )
      RETURNING public_id`,
     [

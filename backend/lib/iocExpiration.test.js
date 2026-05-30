@@ -6,7 +6,8 @@ import {
   resolveMembershipStatus,
   formatExpirationSummary,
   sourceNameMatchesFeed,
-  feedKeyForSourceName
+  feedKeyForSourceName,
+  syncMembershipAfterIocImport
 } from './iocExpiration.js';
 
 describe('validateExpirationPolicyInput', () => {
@@ -96,5 +97,38 @@ describe('source mapping', () => {
   it('maps USOM source to feed key', () => {
     assert.equal(feedKeyForSourceName('USOM:TR-CERT'), 'usom-trcert');
     assert.ok(sourceNameMatchesFeed('EmergingThreats:foo.rules', 'et-blockrules'));
+  });
+});
+
+describe('syncMembershipAfterIocImport canonical IOC lookup', () => {
+  it('looks up IOC by observable+type (source-agnostic) to avoid duplicate rows across feeds', async () => {
+    const calls = [];
+    const client = {
+      async query(sql, params) {
+        calls.push({ sql: String(sql), params });
+        if (String(sql).includes('FROM integration_feeds')) {
+          return { rows: [{ key: 'usom-trcert', feed_id: '11111111-1111-1111-1111-111111111111' }] };
+        }
+        if (String(sql).includes('FROM ioc_items')) {
+          return { rows: [] };
+        }
+        return { rows: [], rowCount: 0 };
+      }
+    };
+
+    const out = await syncMembershipAfterIocImport(client, {
+      observable: 'http://104.36.229.33',
+      observableType: 'url',
+      sourceName: 'USOM:TR-CERT',
+      sourceUrl: 'https://www.usom.gov.tr/url-list.txt',
+      category: 'threat-intel'
+    });
+
+    assert.equal(out, null);
+    const lookup = calls.find((c) => c.sql.includes('FROM ioc_items'));
+    assert.ok(lookup);
+    assert.ok(!lookup.sql.includes('source_name = $3'));
+    assert.equal(Array.isArray(lookup.params), true);
+    assert.equal(lookup.params.length, 2);
   });
 });

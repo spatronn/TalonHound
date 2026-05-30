@@ -665,11 +665,9 @@ export async function syncMembershipAfterIocImport(client, {
      FROM ioc_items
      WHERE observable = $1
        AND observable_type = $2
-       AND source_name = $3
-       AND COALESCE(source_url, '') = COALESCE($4, '')
-     ORDER BY id ASC
+     ORDER BY created_at ASC
      LIMIT 1`,
-    [observable, observableType, sourceName, sourceUrl]
+    [observable, observableType]
   );
   const row = rows[0];
   if (!row) return null;
