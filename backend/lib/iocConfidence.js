@@ -9,8 +9,11 @@ import { feedKeyForSourceName } from './iocExpiration.js';
 export const CONFIDENCE_LEVELS = Object.freeze(['low', 'medium', 'high']);
 export const CONFIDENCE_SOURCES = Object.freeze({
   MANUAL: 'manual',
+  MANUAL_ENTRY: 'manual_entry',
+  IOC_SOURCE_DEFAULT: 'ioc_source_default',
   FEED_ENTRY: 'feed_entry',
   FEED_DEFAULT: 'feed_default',
+  ANALYST_OVERRIDE: 'analyst_override',
   UNKNOWN: 'unknown'
 });
 
@@ -163,14 +166,76 @@ export function buildLegacyExplicitMapFromIocRows(rows = []) {
   return map;
 }
 
-export function buildConfidenceSourceDescription(sourceKind, feedName) {
-  const name = String(feedName || '').trim();
-  if (sourceKind === CONFIDENCE_SOURCES.MANUAL || sourceKind === 'analyst_override') return 'Manual override';
-  if (sourceKind === CONFIDENCE_SOURCES.FEED_ENTRY || sourceKind === 'feed_provided') return 'Feed entry confidence';
+export function buildConfidenceSourceDescription(sourceKind, contextName) {
+  const name = String(contextName || '').trim();
+  if (sourceKind === CONFIDENCE_SOURCES.ANALYST_OVERRIDE || sourceKind === 'analyst_override') {
+    return 'Analyst override';
+  }
+  if (sourceKind === CONFIDENCE_SOURCES.MANUAL || sourceKind === 'manual') return 'Manual override';
+  if (sourceKind === CONFIDENCE_SOURCES.MANUAL_ENTRY || sourceKind === 'manual_entry') {
+    return 'Manual entry';
+  }
+  if (sourceKind === CONFIDENCE_SOURCES.IOC_SOURCE_DEFAULT || sourceKind === 'ioc_source_default') {
+    return name ? `IOC source default from ${name}` : 'IOC source default';
+  }
+  if (sourceKind === CONFIDENCE_SOURCES.FEED_ENTRY || sourceKind === 'feed_provided') {
+    return 'Feed entry confidence';
+  }
   if (sourceKind === CONFIDENCE_SOURCES.FEED_DEFAULT || sourceKind === 'feed_default') {
     return name ? `Feed default from ${name}` : 'Feed default confidence';
   }
   return 'Unknown';
+}
+
+/**
+ * Item-level confidence stored on ioc_items (manual Add IOC / legacy rows).
+ * @param {object|null|undefined} row
+ */
+export function computeItemStoredConfidence(row) {
+  if (!row) return null;
+  if (normalizeConfidence(row.analyst_confidence_override)) return null;
+
+  const effective = normalizeConfidence(row.confidence);
+  if (!effective) return null;
+
+  let source = String(row.confidence_source || '').trim().toLowerCase() || null;
+  let sourceName = row.confidence_source_name || row.ioc_source_name || null;
+
+  if (!source && row.ioc_source_id) {
+    source = CONFIDENCE_SOURCES.IOC_SOURCE_DEFAULT;
+    sourceName = sourceName || row.source_name || null;
+  }
+
+  if (!source) {
+    source = CONFIDENCE_SOURCES.MANUAL_ENTRY;
+  }
+
+  return {
+    effective,
+    confidence_source: source,
+    confidence_ioc_source_id: row.ioc_source_id != null ? Number(row.ioc_source_id) : null,
+    confidence_source_name: sourceName,
+    confidence_inherited_from_feed: false,
+    confidence_feed_name: null,
+    confidence_feed_key: null
+  };
+}
+
+export function buildConfidenceProvenance(summary = {}) {
+  const type = summary.analyst_override
+    ? CONFIDENCE_SOURCES.ANALYST_OVERRIDE
+    : (summary.confidence_source || summary.source || CONFIDENCE_SOURCES.UNKNOWN);
+  const sourceName = summary.confidence_source_name || summary.confidence_feed_name || null;
+  const label = summary.source_description
+    || buildConfidenceSourceDescription(type, sourceName);
+  return {
+    type,
+    source_id: summary.confidence_ioc_source_id ?? null,
+    source_name: sourceName,
+    label,
+    overridden_by: summary.overridden_by || null,
+    overridden_at: summary.overridden_at || null
+  };
 }
 
 export function pickPrimaryIocRow(rows, seedPublicId) {
@@ -188,12 +253,19 @@ export function buildIocInheritedConfidenceSummary({
   seedPublicId = null
 } = {}) {
   const primaryRow = seedRow || pickPrimaryIocRow(iocRows, seedPublicId);
-  const inherited = computeInheritedEffectiveConfidence({
-    manualOverride: primaryRow?.analyst_confidence_override,
+  const analystOverride = normalizeConfidence(primaryRow?.analyst_confidence_override);
+
+  let inherited = computeInheritedEffectiveConfidence({
+    manualOverride: analystOverride,
     memberships: membershipRows,
     legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows),
     includeInactiveMemberships: true
   });
+
+  if (!analystOverride && !inherited.effective) {
+    const itemStored = computeItemStoredConfidence(primaryRow);
+    if (itemStored) inherited = itemStored;
+  }
 
   const membershipBreakdown = (membershipRows || [])
     .filter((m) => String(m?.status || 'active') === 'active')
@@ -210,7 +282,6 @@ export function buildIocInheritedConfidenceSummary({
       }).effective
     }));
 
-  const analystOverride = normalizeConfidence(primaryRow?.analyst_confidence_override);
   const baselineEffective = analystOverride
     ? computeInheritedEffectiveConfidence({
       memberships: membershipRows,
@@ -218,16 +289,25 @@ export function buildIocInheritedConfidenceSummary({
     }).effective
     : null;
 
-  return {
+  const sourceKind = analystOverride
+    ? CONFIDENCE_SOURCES.ANALYST_OVERRIDE
+    : inherited.confidence_source;
+  const sourceContextName = analystOverride
+    ? null
+    : (inherited.confidence_source_name || inherited.confidence_feed_name || null);
+
+  const summary = {
     effective: inherited.effective,
     confidence: inherited.effective,
     confidence_level: inherited.effective,
-    confidence_source: inherited.confidence_source,
+    confidence_source: sourceKind,
     confidence_inherited_from_feed: inherited.confidence_inherited_from_feed,
     confidence_feed_name: inherited.confidence_feed_name,
     confidence_feed_key: inherited.confidence_feed_key,
-    source: inherited.confidence_source,
-    source_description: buildConfidenceSourceDescription(inherited.confidence_source, inherited.confidence_feed_name),
+    confidence_ioc_source_id: inherited.confidence_ioc_source_id ?? null,
+    confidence_source_name: inherited.confidence_source_name ?? null,
+    source: sourceKind,
+    source_description: buildConfidenceSourceDescription(sourceKind, sourceContextName),
     analyst_override: analystOverride,
     overridden_by: primaryRow?.overridden_by_email || primaryRow?.analyst_confidence_overridden_by || null,
     overridden_at: primaryRow?.analyst_confidence_overridden_at || null,
@@ -237,6 +317,8 @@ export function buildIocInheritedConfidenceSummary({
     membership_breakdown: membershipBreakdown,
     confidence_set: [...new Set(membershipBreakdown.map((m) => m.effective).filter(Boolean))].sort()
   };
+  summary.confidence_provenance = buildConfidenceProvenance(summary);
+  return summary;
 }
 
 export function computeEffectiveConfidence({
@@ -458,12 +540,23 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
       legacyExplicitByFeedKey: new Map(),
       includeInactiveMemberships
     });
-    const effective = inherited.effective || normalizeConfidence(it.confidence) || null;
+    let effective = inherited.effective;
+    let source = inherited.confidence_source;
+    let sourceName = inherited.confidence_feed_name;
+    if (!effective) {
+      const itemStored = computeItemStoredConfidence(it);
+      if (itemStored) {
+        effective = itemStored.effective;
+        source = itemStored.confidence_source;
+        sourceName = itemStored.confidence_source_name;
+      }
+    }
+    effective = effective || normalizeConfidence(it.confidence) || null;
     out.set(k, {
       confidence_effective: effective,
-      confidence_source: inherited.effective ? inherited.confidence_source : (effective ? 'legacy_item' : 'unknown'),
-      confidence_source_description: inherited.effective
-        ? buildConfidenceSourceDescription(inherited.confidence_source, inherited.confidence_feed_name)
+      confidence_source: source || (effective ? 'legacy_item' : 'unknown'),
+      confidence_source_description: effective
+        ? buildConfidenceSourceDescription(source || 'unknown', sourceName)
         : (it.source_name ? `Historical from ${it.source_name}` : 'Unknown')
     });
   }

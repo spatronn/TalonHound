@@ -40,9 +40,10 @@ import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
-import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
+import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
 import {
   hasIocConfidenceColumns,
+  hasConfidenceProvenanceColumns,
   iocConfidenceJoinSql,
   iocConfidenceSelectSql
 } from './lib/schemaCapabilities.js';
@@ -5749,8 +5750,9 @@ app.get('/api/ioc/details', async (req, res) => {
 
   try {
     const confidenceColumnsReady = await hasIocConfidenceColumns(pool);
-    const confidenceSelect = iocConfidenceSelectSql(confidenceColumnsReady);
-    const confidenceJoin = iocConfidenceJoinSql(confidenceColumnsReady);
+    const provenanceColumnsReady = await hasConfidenceProvenanceColumns(pool);
+    const confidenceSelect = iocConfidenceSelectSql(confidenceColumnsReady, provenanceColumnsReady);
+    const confidenceJoin = iocConfidenceJoinSql(confidenceColumnsReady, provenanceColumnsReady);
 
     const itemQ = `
       WITH seed AS (
@@ -5983,14 +5985,55 @@ app.get('/api/ioc/details', async (req, res) => {
       });
     }
     if (!confidenceDetail?.effective && seedRow?.confidence) {
-      confidenceDetail = {
-        ...(confidenceDetail || {}),
-        effective: String(seedRow.confidence).toLowerCase(),
-        confidence: String(seedRow.confidence).toLowerCase(),
-        confidence_level: String(seedRow.confidence).toLowerCase(),
-        confidence_source: confidenceDetail?.confidence_source || 'historical_item',
-        source_description: confidenceDetail?.source_description || `Historical from ${seedRow.source_name || 'item source'}`
-      };
+      const itemStored = computeItemStoredConfidence(seedRow);
+      if (itemStored) {
+        confidenceDetail = {
+          ...(confidenceDetail || {}),
+          ...itemStored,
+          confidence: itemStored.effective,
+          confidence_level: itemStored.effective,
+          source: itemStored.confidence_source,
+          source_description: buildConfidenceSourceDescription(
+            itemStored.confidence_source,
+            itemStored.confidence_source_name
+          )
+        };
+      } else {
+        confidenceDetail = {
+          ...(confidenceDetail || {}),
+          effective: String(seedRow.confidence).toLowerCase(),
+          confidence: String(seedRow.confidence).toLowerCase(),
+          confidence_level: String(seedRow.confidence).toLowerCase(),
+          confidence_source: 'manual_entry',
+          source: 'manual_entry',
+          source_description: buildConfidenceSourceDescription('manual_entry', null)
+        };
+      }
+    } else if (
+      confidenceDetail
+      && (confidenceDetail.source === 'unknown' || confidenceDetail.confidence_source === 'unknown')
+      && seedRow?.confidence
+    ) {
+      const itemStored = computeItemStoredConfidence(seedRow);
+      if (itemStored?.effective) {
+        confidenceDetail = {
+          ...confidenceDetail,
+          effective: itemStored.effective,
+          confidence: itemStored.effective,
+          confidence_level: itemStored.effective,
+          confidence_source: itemStored.confidence_source,
+          confidence_ioc_source_id: itemStored.confidence_ioc_source_id,
+          confidence_source_name: itemStored.confidence_source_name,
+          source: itemStored.confidence_source,
+          source_description: buildConfidenceSourceDescription(
+            itemStored.confidence_source,
+            itemStored.confidence_source_name
+          )
+        };
+      }
+    }
+    if (confidenceDetail && !confidenceDetail.confidence_provenance) {
+      confidenceDetail.confidence_provenance = buildConfidenceProvenance(confidenceDetail);
     }
 
     summary.confidence = confidenceDetail?.effective || seedRow?.confidence || null;

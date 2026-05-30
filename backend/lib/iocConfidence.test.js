@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildIocInheritedConfidenceSummary,
+  buildConfidenceProvenance,
   computeInheritedEffectiveConfidence,
+  computeItemStoredConfidence,
   normalizeConfidence,
   resolveImportConfidenceFields,
   resolveParsedSourceConfidence,
   validateConfidenceInput
 } from './iocConfidence.js';
+import { resolveManualIocConfidenceProvenance } from './manualIocCreate.js';
 
 test('normalizeConfidence maps legacy and invalid values', () => {
   assert.equal(normalizeConfidence('High'), 'high');
@@ -76,6 +79,49 @@ test('buildIocInheritedConfidenceSummary uses membership inheritance', () => {
   assert.equal(summary.effective, 'high');
   assert.equal(summary.confidence_source, 'feed_default');
   assert.equal(summary.confidence_inherited_from_feed, true);
+});
+
+test('buildIocInheritedConfidenceSummary manual IOC source default', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: {
+      id: 42,
+      public_id: '22222222-2222-2222-2222-222222222222',
+      confidence: 'high',
+      confidence_source: 'ioc_source_default',
+      confidence_source_name: 'Threat-Hunting',
+      ioc_source_id: 7,
+      source_name: 'Threat-Hunting'
+    },
+    membershipRows: [],
+    iocRows: []
+  });
+  assert.equal(summary.effective, 'high');
+  assert.equal(summary.confidence_source, 'ioc_source_default');
+  assert.match(summary.source_description, /Threat-Hunting/);
+  assert.equal(summary.confidence_provenance.type, 'ioc_source_default');
+  assert.match(summary.confidence_provenance.label, /Threat-Hunting/);
+});
+
+test('computeItemStoredConfidence infers IOC source when provenance column missing', () => {
+  const stored = computeItemStoredConfidence({
+    confidence: 'high',
+    ioc_source_id: 3,
+    source_name: 'Threat-Hunting'
+  });
+  assert.equal(stored.confidence_source, 'ioc_source_default');
+  assert.equal(stored.effective, 'high');
+});
+
+test('resolveManualIocConfidenceProvenance distinguishes source default vs manual entry', () => {
+  const sourceRow = { name: 'Threat-Hunting', default_confidence: 'high' };
+  assert.equal(
+    resolveManualIocConfidenceProvenance({ confidence: 'high' }, sourceRow, 'high').confidence_source,
+    'ioc_source_default'
+  );
+  assert.equal(
+    resolveManualIocConfidenceProvenance({ confidence: 'medium' }, sourceRow, 'medium').confidence_source,
+    'manual_entry'
+  );
 });
 
 test('validateConfidenceInput rejects invalid values', () => {

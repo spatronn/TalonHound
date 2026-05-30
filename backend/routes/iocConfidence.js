@@ -10,7 +10,7 @@ import {
   validateConfidenceInput,
   validateConfidenceReason
 } from '../lib/iocConfidence.js';
-import { hasIocConfidenceColumns } from '../lib/schemaCapabilities.js';
+import { hasIocConfidenceColumns, hasConfidenceProvenanceColumns } from '../lib/schemaCapabilities.js';
 
 const CONFIDENCE_AUDIT_FIELDS = [
   'confidence',
@@ -179,14 +179,27 @@ export function registerIocConfidenceRoutes(app, pool, audit, opts = {}) {
         return res.status(400).json({ success: false, error: confCheck.error });
       }
 
+      const provenanceReady = await hasConfidenceProvenanceColumns(pool);
+      const updateSql = provenanceReady
+        ? `UPDATE ioc_items
+           SET analyst_confidence_override = $3,
+               analyst_confidence_override_reason = $4,
+               analyst_confidence_overridden_by = $5::uuid,
+               analyst_confidence_overridden_at = NOW(),
+               confidence = $3,
+               confidence_source = 'analyst_override',
+               confidence_source_name = NULL
+           WHERE id = $1 AND observable_type = $2`
+        : `UPDATE ioc_items
+           SET analyst_confidence_override = $3,
+               analyst_confidence_override_reason = $4,
+               analyst_confidence_overridden_by = $5::uuid,
+               analyst_confidence_overridden_at = NOW(),
+               confidence = $3
+           WHERE id = $1 AND observable_type = $2`;
+
       await pool.query(
-        `UPDATE ioc_items
-         SET analyst_confidence_override = $3,
-             analyst_confidence_override_reason = $4,
-             analyst_confidence_overridden_by = $5::uuid,
-             analyst_confidence_overridden_at = NOW(),
-             confidence = $3
-         WHERE id = $1 AND observable_type = $2`,
+        updateSql,
         [iocId, observableType, confCheck.value, reasonCheck.value, userId]
       );
 

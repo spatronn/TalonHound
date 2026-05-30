@@ -15,6 +15,27 @@ export function inferObservableType(value) {
   return 'domain';
 }
 
+export function resolveManualIocConfidenceProvenance(body, sourceRow, confidence) {
+  const sourceDefault = sourceRow?.default_confidence
+    ? String(sourceRow.default_confidence).trim().toLowerCase()
+    : null;
+  const userSentConfidence = body?.confidence != null && String(body.confidence).trim() !== '';
+  const usedSourceDefault = sourceDefault
+    ? confidence === sourceDefault
+    : !userSentConfidence;
+
+  if (usedSourceDefault) {
+    return {
+      confidence_source: 'ioc_source_default',
+      confidence_source_name: String(sourceRow.name)
+    };
+  }
+  return {
+    confidence_source: 'manual_entry',
+    confidence_source_name: null
+  };
+}
+
 function normalizeConfidence(value) {
   const c = String(value || 'medium').trim().toLowerCase();
   if (['low', 'medium', 'high'].includes(c)) return c;
@@ -96,6 +117,7 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const confidence = normalizeConfidence(body?.confidence ?? sourceRow.default_confidence);
+  const confidenceProvenance = resolveManualIocConfidenceProvenance(body, sourceRow, confidence);
   const sourceName = String(sourceRow.name);
   const sourceUrl = body?.source_url ? String(body.source_url).trim() || null : null;
   const category = body?.category ? String(body.category).trim() || null : null;
@@ -107,10 +129,11 @@ export async function createManualIoc(pool, body, opts = {}) {
   const insertQ = `
     INSERT INTO ioc_items (
       observable, observable_type, source_name, source_url, confidence, category, note,
-      ioc_source_id, manual_status_override, manual_status, manual_expires_at,
+      ioc_source_id, confidence_source, confidence_source_name,
+      manual_status_override, manual_status, manual_expires_at,
       manual_override_reason, manual_override_by_user_id, manual_override_at
     )
-    SELECT $1, $2, $3, $4, $5, $6, $7, $8, TRUE, 'active', $9, $10, $11::uuid, NOW()
+    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, 'active', $11, $12, $13::uuid, NOW()
     WHERE NOT EXISTS (
       SELECT 1 FROM ioc_items
       WHERE observable = $1
@@ -132,6 +155,8 @@ export async function createManualIoc(pool, body, opts = {}) {
     category,
     note,
     sourceId,
+    confidenceProvenance.confidence_source,
+    confidenceProvenance.confidence_source_name,
     expiration.manual_expires_at,
     expiration.manual_override_reason,
     userId

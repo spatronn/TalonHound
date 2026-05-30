@@ -21,6 +21,16 @@ export function confidenceLabel(value) {
   return c.charAt(0).toUpperCase() + c.slice(1);
 }
 
+function formatProvenanceLabel(detail) {
+  if (detail?.confidence_provenance?.label) {
+    return `Source: ${detail.confidence_provenance.label}`;
+  }
+  if (detail?.source_description) {
+    return `Source: ${detail.source_description}`;
+  }
+  return null;
+}
+
 /**
  * @param {object|null|undefined} detail summary.confidence_detail or data.confidence
  */
@@ -38,27 +48,44 @@ export function getIocConfidencePresentation(detail) {
   }
 
   const effective = detail.effective || detail.confidence || null;
-  const hasOverride = Boolean(detail.analyst_override) || detail.source === 'manual' || detail.source === 'analyst_override';
+  const hasOverride = Boolean(detail.analyst_override)
+    || detail.source === 'analyst_override'
+    || detail.confidence_source === 'analyst_override';
   const badgeStyle = confidenceBadgeStyle(effective);
 
   let sourceLine = 'Source: —';
   if (hasOverride) {
-    const baseline = detail.baseline_effective || detail.source_confidence || detail.feed_default_confidence;
-    const baselineLabel = confidenceLabel(baseline);
-    const who = detail.overridden_by || 'analyst';
-    const when = detail.overridden_at ? new Date(detail.overridden_at).toLocaleString() : '—';
-    sourceLine = `Originally ${baselineLabel}. Changed by ${who} on ${when}.`;
+    const who = detail.overridden_by || detail.confidence_provenance?.overridden_by || 'analyst';
+    const whenRaw = detail.overridden_at || detail.confidence_provenance?.overridden_at;
+    const when = whenRaw ? new Date(whenRaw).toLocaleString() : null;
+    if (when) {
+      sourceLine = `Source: Analyst override by ${who} at ${when}`;
+    } else {
+      const baseline = detail.baseline_effective || detail.source_confidence || detail.feed_default_confidence;
+      const baselineLabel = confidenceLabel(baseline);
+      sourceLine = `Originally ${baselineLabel}. Changed by ${who}${whenRaw ? ` on ${new Date(whenRaw).toLocaleString()}` : ''}.`;
+    }
   } else if (detail.source === 'feed_provided' || detail.source === 'feed_entry') {
     sourceLine = 'Source: Feed entry confidence';
   } else if (detail.source === 'feed_default') {
-    const feed = detail.feed_name || 'feed';
+    const feed = detail.feed_name || detail.confidence_feed_name || 'feed';
     sourceLine = `Source: Feed default from ${feed}`;
+  } else if (detail.source === 'ioc_source_default') {
+    const srcName = detail.confidence_source_name
+      || detail.confidence_provenance?.source_name
+      || 'source';
+    sourceLine = `Source: IOC source default from ${srcName}`;
+  } else if (detail.source === 'manual_entry') {
+    sourceLine = 'Source: Manual entry';
   } else if (detail.source === 'system_fallback') {
     sourceLine = 'Source: System fallback';
-  } else if (detail.source === 'unknown') {
-    sourceLine = 'Source: Unknown';
-  } else if (detail.source_description) {
-    sourceLine = `Source: ${detail.source_description}`;
+  } else {
+    const provenanceLine = formatProvenanceLabel(detail);
+    if (provenanceLine) {
+      sourceLine = provenanceLine;
+    } else if (detail.source === 'unknown') {
+      sourceLine = 'Source: Unknown';
+    }
   }
 
   const reasonLine = hasOverride && detail.override_reason
@@ -73,7 +100,7 @@ export function getIocConfidencePresentation(detail) {
     overrideLine: hasOverride ? sourceLine : null,
     reasonLine,
     badgeStyle,
-    sourceDescription: detail.source_description || null
+    sourceDescription: detail.source_description || detail.confidence_provenance?.label || null
   };
 }
 
