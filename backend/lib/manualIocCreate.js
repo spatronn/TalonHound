@@ -33,8 +33,7 @@ export function serializeManualIocResponse(row, source, expiration) {
     ioc_source_id: row.ioc_source_id != null ? Number(row.ioc_source_id) : null,
     source: source ? {
       id: source.id,
-      name: source.name,
-      display_name: source.display_name || source.name
+      name: source.name
     } : null,
     confidence: row.confidence,
     category: row.category,
@@ -69,13 +68,16 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const { rows: sourceRows } = await pool.query(
-    `SELECT id, name, display_name, default_confidence, default_expire_policy, default_expire_days, active
+    `SELECT id, name, default_confidence, default_expire_policy, default_expire_days, active
      FROM ioc_sources WHERE id = $1`,
     [sourceId]
   );
   const sourceRow = sourceRows[0];
-  if (!sourceRow || sourceRow.active === false) {
-    return { status: 400, body: { message: 'Invalid or inactive IOC source' } };
+  if (!sourceRow) {
+    return { status: 400, body: { message: 'Invalid IOC source' } };
+  }
+  if (sourceRow.active === false) {
+    return { status: 400, body: { message: 'Selected IOC source is inactive.' } };
   }
 
   const observableType = inferObservableType(value);
@@ -165,8 +167,7 @@ export async function createManualIoc(pool, body, opts = {}) {
 
   const source = {
     id: Number(sourceRow.id),
-    name: sourceRow.name,
-    display_name: sourceRow.display_name || sourceRow.name
+    name: sourceRow.name
   };
   const response = serializeManualIocResponse(fresh, source, expiration);
 

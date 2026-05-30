@@ -6043,7 +6043,7 @@ app.get('/api/ioc/recent', async (req, res) => {
         i.observable,
         i.observable_type,
         i.source_name,
-        COALESCE(s.display_name, s.name, i.source_name) AS source_display_name,
+        COALESCE(s.name, i.source_name) AS source_label,
         i.confidence,
         i.category,
         i.created_at,

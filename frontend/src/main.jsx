@@ -6378,25 +6378,27 @@ function ApiKeysPage() {
 
 const TAG_CATEGORY_OPTIONS = ['malware', 'campaign', 'actor', 'behavior', 'source', 'custom'];
 
-const IOC_SOURCE_TYPE_OPTIONS = [
-  { value: 'manual', label: 'Manual' },
-  { value: 'internal_hunting', label: 'Internal hunting' },
-  { value: 'external_report', label: 'External report' },
-  { value: 'feed', label: 'Feed' },
-  { value: 'test', label: 'Test' }
-];
-
 const IOC_EXPIRE_POLICY_OPTIONS = [
   { value: 'never', label: 'Never expire' },
   { value: 'expire_after_days', label: 'Expire after days' },
   { value: 'custom_date', label: 'Custom date' }
 ];
 
+const IOC_SOURCE_MODAL_STYLE = {
+  width: 'min(680px, 96vw)',
+  maxHeight: '90vh',
+  overflowY: 'auto',
+  background: 'linear-gradient(180deg, #111827 0%, #0f172a 100%)',
+  borderRadius: 12,
+  padding: 24,
+  border: '1px solid #334155',
+  color: '#e2e8f0',
+  boxShadow: '0 24px 60px rgba(2,6,23,0.55)'
+};
+
 const EMPTY_IOC_SOURCE_FORM = {
   name: '',
-  display_name: '',
   description: '',
-  source_type: 'manual',
   default_confidence: '',
   default_expire_policy: 'never',
   default_expire_days: '',
@@ -6642,6 +6644,8 @@ function IocSourcesPage() {
   const [error, setError] = useState('');
   const [showInactive, setShowInactive] = useState(true);
   const [showFormModal, setShowFormModal] = useState(false);
+  const [disableTarget, setDisableTarget] = useState(null);
+  const [disableBusy, setDisableBusy] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_IOC_SOURCE_FORM);
   const [saving, setSaving] = useState(false);
@@ -6665,6 +6669,12 @@ function IocSourcesPage() {
 
   useEffect(() => { load().catch(() => {}); }, [load]);
 
+  function closeFormModal() {
+    setShowFormModal(false);
+    setEditing(null);
+    setFormError('');
+  }
+
   function openCreateModal() {
     setEditing(null);
     setForm(EMPTY_IOC_SOURCE_FORM);
@@ -6676,9 +6686,7 @@ function IocSourcesPage() {
     setEditing(source);
     setForm({
       name: source?.name || '',
-      display_name: source?.display_name || '',
       description: source?.description || '',
-      source_type: source?.source_type || 'manual',
       default_confidence: source?.default_confidence || '',
       default_expire_policy: source?.default_expire_policy || 'never',
       default_expire_days: source?.default_expire_days ?? '',
@@ -6692,6 +6700,14 @@ function IocSourcesPage() {
     return String(value || '').trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
   }
 
+  function formatDefaultExpire(source) {
+    if (source?.default_expire_policy === 'expire_after_days') {
+      return `${source.default_expire_days || '?'} days`;
+    }
+    if (source?.default_expire_policy === 'custom_date') return 'Custom date';
+    return 'Never';
+  }
+
   async function submitForm(e) {
     e.preventDefault();
     if (!isAdmin) return;
@@ -6699,9 +6715,7 @@ function IocSourcesPage() {
     setFormError('');
     try {
       const payload = {
-        display_name: form.display_name.trim() || undefined,
         description: form.description.trim() || null,
-        source_type: form.source_type,
         default_confidence: form.default_confidence || null,
         default_expire_policy: form.default_expire_policy || null,
         default_expire_days: form.default_expire_policy === 'expire_after_days'
@@ -6712,13 +6726,14 @@ function IocSourcesPage() {
       if (editing?.id) {
         await api.patch(`/ioc-sources/${editing.id}`, payload);
       } else {
-        await api.post('/ioc-sources', {
-          ...payload,
-          name: normalizeNameInput(form.name)
-        });
+        const normalizedName = normalizeNameInput(form.name);
+        if (normalizedName.length < 3) {
+          setFormError('Name must be 3–64 characters: letters, numbers, underscore, hyphen.');
+          return;
+        }
+        await api.post('/ioc-sources', { ...payload, name: normalizedName });
       }
-      setShowFormModal(false);
-      setEditing(null);
+      closeFormModal();
       setForm(EMPTY_IOC_SOURCE_FORM);
       await load();
     } catch (err) {
@@ -6728,18 +6743,29 @@ function IocSourcesPage() {
     }
   }
 
-  async function toggleActive(source) {
+  async function enableSource(source) {
     if (!source?.id || !isAdmin) return;
-    const next = !source.active;
-    const ok = next
-      ? true
-      : window.confirm(`Disable source "${source.display_name || source.name}"? It will no longer appear in Add IOC.`);
-    if (!ok) return;
+    setError('');
     try {
-      await api.patch(`/ioc-sources/${source.id}`, { active: next });
+      await api.patch(`/ioc-sources/${source.id}`, { active: true });
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Update failed'));
+      setError(apiErrorMessage(err, 'Enable failed'));
+    }
+  }
+
+  async function confirmDisableSource() {
+    if (!disableTarget?.id || !isAdmin) return;
+    setDisableBusy(true);
+    setError('');
+    try {
+      await api.patch(`/ioc-sources/${disableTarget.id}`, { active: false });
+      setDisableTarget(null);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Disable failed'));
+    } finally {
+      setDisableBusy(false);
     }
   }
 
@@ -6757,58 +6783,54 @@ function IocSourcesPage() {
   return (
     <AppShell>
       <section style={ui.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
-          <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div style={{ minWidth: 0, flex: '1 1 280px' }}>
             <h1 style={ui.pageTitle}>IOC Sources</h1>
-            <p style={ui.pageSub}>Manage normalized sources for manual IOC entries on Operations &gt; Add IOC.</p>
+            <p style={ui.pageSub}>Provenance labels for manual IOC entries. Disabling a source hides it from Add IOC only — existing IOCs are unchanged.</p>
           </div>
-          <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Source</button>
+          <button type="button" style={{ ...ui.btnPrimary, flexShrink: 0 }} onClick={openCreateModal}>Add Source</button>
         </div>
 
-        <label style={{ ...ui.checkLabel, display: 'inline-flex', marginBottom: 12 }}>
-          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-          Show inactive sources
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+          <label style={{ ...ui.checkLabel, display: 'inline-flex', margin: 0 }}>
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+            Show inactive sources
+          </label>
+        </div>
 
         {error ? <div style={{ ...ui.banner, marginBottom: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
 
         <div style={{ overflowX: 'auto' }}>
-          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="ioc-table" style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={ui.thead}>
                 <th style={ui.th}>Name</th>
-                <th style={ui.th}>Display Name</th>
-                <th style={ui.th}>Type</th>
                 <th style={ui.th}>Default Confidence</th>
                 <th style={ui.th}>Default Expire</th>
                 <th style={ui.th}>Active</th>
-                <th style={ui.th}>Actions</th>
+                <th style={{ ...ui.th, textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={5} style={ui.td}>Loading…</td></tr>
               ) : sources.length ? sources.map((s) => (
                 <tr key={s.id} style={{ ...ui.tr, opacity: s.active ? 1 : 0.62 }}>
                   <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', monospace" }}>{s.name}</td>
-                  <td style={ui.td}>{s.display_name || s.name}</td>
-                  <td style={ui.td}>{s.source_type}</td>
                   <td style={ui.td}>{s.default_confidence || '—'}</td>
-                  <td style={ui.td}>
-                    {s.default_expire_policy === 'expire_after_days'
-                      ? `${s.default_expire_days || '?'} days`
-                      : (s.default_expire_policy === 'custom_date' ? 'Custom date' : 'Never')}
-                  </td>
+                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
                   <td style={ui.td}>{s.active ? 'Yes' : 'No'}</td>
-                  <td style={ui.td}>
+                  <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(s)}>Edit</button>
-                    <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => toggleActive(s).catch(() => {})}>
-                      {s.active ? 'Disable' : 'Enable'}
-                    </button>
+                    {s.active ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setDisableTarget(s)}>Disable</button>
+                    ) : (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableSource(s).catch(() => {})}>Enable</button>
+                    )}
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={7} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
+                <tr><td colSpan={5} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -6816,67 +6838,94 @@ function IocSourcesPage() {
       </section>
 
       {showFormModal ? (
-        <ModalOverlay onClose={() => setShowFormModal(false)}>
-          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editing ? 'Edit IOC Source' : 'Add IOC Source'}</h3>
-          <form onSubmit={submitForm}>
-            {!editing ? (
-              <FeedFormField ui={ui} label="Name" helper="3–64 chars: letters, numbers, underscore, hyphen." fullWidth>
-                <input
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))}
-                  onBlur={() => setForm((x) => ({ ...x, name: normalizeNameInput(x.name) }))}
-                  style={ui.input}
-                  placeholder="Internal_Hunting"
-                />
+        <div
+          role="presentation"
+          onClick={closeFormModal}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.78)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={IOC_SOURCE_MODAL_STYLE}>
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 6 }}>
+              {editing ? 'Edit IOC Source' : 'Add IOC Source'}
+            </h3>
+            <p style={{ ...ui.pageSub, marginTop: 0, marginBottom: 16 }}>
+              {editing ? 'Update defaults for manual IOC provenance.' : 'Create a provenance label used when adding manual IOCs.'}
+            </p>
+            <form onSubmit={submitForm} style={{ display: 'grid', gap: 14 }}>
+              {!editing ? (
+                <FeedFormField ui={ui} label="Name" helper="3–64 chars: letters, numbers, underscore, hyphen." fullWidth>
+                  <input
+                    required
+                    value={form.name}
+                    onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))}
+                    onBlur={() => setForm((x) => ({ ...x, name: normalizeNameInput(x.name) }))}
+                    style={ui.input}
+                    placeholder="Internal_Hunting"
+                  />
+                </FeedFormField>
+              ) : (
+                <FeedFormField ui={ui} label="Name" helper="Source name is immutable after creation." fullWidth>
+                  <input value={form.name} readOnly style={{ ...ui.input, opacity: 0.85, cursor: 'not-allowed' }} />
+                </FeedFormField>
+              )}
+              <FeedFormField ui={ui} label="Description" fullWidth>
+                <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} placeholder="Optional" />
               </FeedFormField>
-            ) : (
-              <FeedFormField ui={ui} label="Name" fullWidth>
-                <input value={form.name} disabled style={{ ...ui.input, opacity: 0.7 }} />
+              <FeedFormField ui={ui} label="Default Confidence" fullWidth>
+                <select value={form.default_confidence} onChange={(e) => setForm((x) => ({ ...x, default_confidence: e.target.value }))} style={ui.select}>
+                  <option value="">— None —</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
               </FeedFormField>
-            )}
-            <FeedFormField ui={ui} label="Display Name" fullWidth>
-              <input value={form.display_name} onChange={(e) => setForm((x) => ({ ...x, display_name: e.target.value }))} style={ui.input} />
-            </FeedFormField>
-            <FeedFormField ui={ui} label="Type" fullWidth>
-              <select value={form.source_type} onChange={(e) => setForm((x) => ({ ...x, source_type: e.target.value }))} style={ui.select}>
-                {IOC_SOURCE_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </FeedFormField>
-            <FeedFormField ui={ui} label="Description" fullWidth>
-              <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} />
-            </FeedFormField>
-            <FeedFormField ui={ui} label="Default Confidence" fullWidth>
-              <select value={form.default_confidence} onChange={(e) => setForm((x) => ({ ...x, default_confidence: e.target.value }))} style={ui.select}>
-                <option value="">— None —</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </FeedFormField>
-            <FeedFormField ui={ui} label="Default Expire Policy" fullWidth>
-              <select value={form.default_expire_policy} onChange={(e) => setForm((x) => ({ ...x, default_expire_policy: e.target.value }))} style={ui.select}>
-                {IOC_EXPIRE_POLICY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </FeedFormField>
-            {form.default_expire_policy === 'expire_after_days' ? (
-              <FeedFormField ui={ui} label="Default Expire Days" fullWidth>
-                <input type="number" min={1} max={3650} required value={form.default_expire_days} onChange={(e) => setForm((x) => ({ ...x, default_expire_days: e.target.value }))} style={ui.input} />
+              <FeedFormField ui={ui} label="Default Expire Policy" fullWidth>
+                <select value={form.default_expire_policy} onChange={(e) => setForm((x) => ({ ...x, default_expire_policy: e.target.value }))} style={ui.select}>
+                  {IOC_EXPIRE_POLICY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </FeedFormField>
-            ) : null}
-            <FeedFormField ui={ui} label="Active" fullWidth>
-              <label style={ui.checkLabel}>
-                <input type="checkbox" checked={form.active} onChange={(e) => setForm((x) => ({ ...x, active: e.target.checked }))} />
-                Source is active
-              </label>
-            </FeedFormField>
-            {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Source')}</button>
+              {form.default_expire_policy === 'expire_after_days' ? (
+                <FeedFormField ui={ui} label="Default Expire Days" fullWidth>
+                  <input type="number" min={1} max={3650} required value={form.default_expire_days} onChange={(e) => setForm((x) => ({ ...x, default_expire_days: e.target.value }))} style={ui.input} />
+                </FeedFormField>
+              ) : null}
+              <FeedFormField ui={ui} label="Active" fullWidth>
+                <label style={ui.checkLabel}>
+                  <input type="checkbox" checked={form.active} onChange={(e) => setForm((x) => ({ ...x, active: e.target.checked }))} />
+                  Source is active (visible in Add IOC)
+                </label>
+              </FeedFormField>
+              {formError ? <div style={{ ...ui.banner, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid #334155' }}>
+                <button type="button" style={ui.btn} onClick={closeFormModal}>Cancel</button>
+                <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editing ? 'Save' : 'Create Source')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {disableTarget ? (
+        <div
+          role="presentation"
+          onClick={() => !disableBusy && setDisableTarget(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(520px, 96vw)' }}>
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Disable IOC Source?</h3>
+            <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+              This source will no longer be available when adding new IOCs.
+            </p>
+            <p style={{ margin: '0 0 20px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
+              Existing IOCs linked to <strong style={{ color: '#e2e8f0' }}>{disableTarget.name}</strong> will not be deleted, expired, or modified.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => setDisableTarget(null)}>Cancel</button>
+              <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
+                {disableBusy ? 'Disabling…' : 'Disable Source'}
+              </button>
             </div>
-          </form>
-        </ModalOverlay>
+          </div>
+        </div>
       ) : null}
     </AppShell>
   );
@@ -11108,7 +11157,7 @@ function IOCAddPage() {
     const value = (r, k) => {
       if (k === 'observable') return r.observable;
       if (k === 'type') return r.observable_type;
-      if (k === 'source') return r.source_display_name || r.source_name || '';
+      if (k === 'source') return r.source_label || r.source_name || '';
       if (k === 'confidence') return r.confidence || '';
       if (k === 'ts') return new Date(r.created_at || 0).getTime();
       return '';
@@ -11154,7 +11203,7 @@ function IOCAddPage() {
       if (data?.skipped) {
         setMessage({ type: 'duplicate', text: 'Already in list (duplicate).' });
       } else {
-        const srcLabel = data?.source?.display_name || data?.source?.name || data?.source_name || 'source';
+        const srcLabel = data?.source?.name || data?.source_name || 'source';
         const expLabel = data?.expiration_policy === 'never'
           ? 'never expires'
           : (data?.expires_at ? `expires ${formatUserDateTime(data.expires_at)}` : 'expiration set');
@@ -11195,7 +11244,7 @@ function IOCAddPage() {
           )}
           {!sourcesLoading && !sources.length && canWrite ? (
             <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 8, border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fde68a', fontSize: 14 }}>
-              No IOC sources defined. Please create a source first.
+              No active IOC sources defined. Please create or enable a source first.
               {' '}
               <Link to="/administration/ioc-sources" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration → IOC Sources</Link>
             </div>
@@ -11232,7 +11281,7 @@ function IOCAddPage() {
                 >
                   <option value="">{sourcesLoading ? 'Loading sources…' : 'Select source…'}</option>
                   {sources.map((s) => (
-                    <option key={s.id} value={s.id}>{s.display_name || s.name}</option>
+                    <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
@@ -11311,7 +11360,7 @@ function IOCAddPage() {
               <tbody>
                 {sortedRecentRows.map((r, idx) => {
                   const conf = confidencePillStyle(r.confidence);
-                  const sourceLabel = r.source_display_name || r.source_name;
+                  const sourceLabel = r.source_label || r.source_name;
                   const sourceStyle = sourceBadgeStyle(sourceLabel);
                   return (
                     <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #1f2937', transition: 'background 0.15s ease-in-out' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#111827'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>

@@ -128,9 +128,7 @@ export function serializeIocSourceRow(row) {
   return {
     id: Number(row.id),
     name: row.name,
-    display_name: row.display_name || row.name,
     description: row.description || null,
-    source_type: row.source_type || 'manual',
     default_confidence: row.default_confidence || null,
     default_expire_policy: row.default_expire_policy || null,
     default_expire_days: row.default_expire_days != null ? Number(row.default_expire_days) : null,

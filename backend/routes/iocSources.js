@@ -2,7 +2,6 @@ import { requireRole, ROLES } from '../lib/rbac.js';
 import {
   normalizeSourceNameInput,
   validateSourceName,
-  validateSourceType,
   validateDefaultConfidence,
   validateDefaultExpirePolicy,
   validateExpireDays,
@@ -12,7 +11,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstant
 import { pickSafeFields } from '../lib/auditRedaction.js';
 
 const SOURCE_AUDIT_FIELDS = [
-  'name', 'display_name', 'source_type', 'default_confidence',
+  'name', 'description', 'default_confidence',
   'default_expire_policy', 'default_expire_days', 'active'
 ];
 
@@ -20,17 +19,21 @@ function isAdmin(req) {
   return String(req.user?.role || 'admin').trim().toLowerCase() === ROLES.ADMIN;
 }
 
+function resolveExpireDays(body, policyValue) {
+  if (policyValue === 'expire_after_days') {
+    return validateExpireDays(body.default_expire_days, true);
+  }
+  return validateExpireDays(body.default_expire_days, false);
+}
+
 function validateSourcePayload(body, partial = false) {
   const errors = [];
 
-  if (!partial || body.name !== undefined) {
+  if (!partial) {
     const nameCheck = validateSourceName(body.name);
     if (!nameCheck.ok) errors.push(nameCheck.error);
-  }
-
-  if (body.source_type !== undefined) {
-    const typeCheck = validateSourceType(body.source_type);
-    if (!typeCheck.ok) errors.push(typeCheck.error);
+  } else if (body.name !== undefined) {
+    errors.push('Source name cannot be changed after creation');
   }
 
   if (body.default_confidence !== undefined) {
@@ -43,18 +46,27 @@ function validateSourcePayload(body, partial = false) {
     if (!polCheck.ok) errors.push(polCheck.error);
   }
 
-  if (body.default_expire_days !== undefined) {
-    const policy = body.default_expire_policy;
-    const daysRequired = policy === 'expire_after_days';
-    const daysCheck = validateExpireDays(body.default_expire_days, daysRequired);
+  const policy = body.default_expire_policy;
+  if (body.default_expire_days !== undefined || policy === 'expire_after_days') {
+    const daysCheck = resolveExpireDays(body, policy);
     if (!daysCheck.ok) errors.push(daysCheck.error);
   }
 
-  if (body.default_expire_policy === 'expire_after_days' && body.default_expire_days == null) {
+  if (policy === 'expire_after_days' && body.default_expire_days == null) {
     errors.push('default_expire_days is required when default_expire_policy is expire_after_days');
   }
 
   return errors;
+}
+
+function resolveSourceAuditAction(before, after) {
+  if (before.active !== false && after.active === false) {
+    return AUDIT_ACTION.IOC_SOURCE_DISABLED;
+  }
+  if (before.active === false && after.active !== false) {
+    return AUDIT_ACTION.IOC_SOURCE_ENABLED;
+  }
+  return AUDIT_ACTION.IOC_SOURCE_UPDATED;
 }
 
 /**
@@ -89,13 +101,9 @@ export function registerIocSourceRoutes(app, pool, audit) {
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
     const nameCheck = validateSourceName(body.name);
-    const typeCheck = validateSourceType(body.source_type || 'manual');
     const confCheck = validateDefaultConfidence(body.default_confidence);
     const polCheck = validateDefaultExpirePolicy(body.default_expire_policy);
-    const daysCheck = validateExpireDays(
-      body.default_expire_days,
-      polCheck.value === 'expire_after_days'
-    );
+    const daysCheck = resolveExpireDays(body, polCheck.value);
     if (!daysCheck.ok) return res.status(400).json({ message: daysCheck.error });
 
     const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId)
@@ -108,13 +116,11 @@ export function registerIocSourceRoutes(app, pool, audit) {
            name, display_name, description, source_type,
            default_confidence, default_expire_policy, default_expire_days,
            active, created_by
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE), $9::uuid)
+         ) VALUES ($1, $1, $2, 'manual', $3, $4, $5, COALESCE($6, TRUE), $7::uuid)
          RETURNING *`,
         [
           nameCheck.value,
-          body.display_name ? String(body.display_name).trim() : nameCheck.value,
           body.description ? String(body.description).trim() || null : null,
-          typeCheck.value,
           confCheck.value,
           polCheck.value,
           daysCheck.value,
@@ -130,11 +136,14 @@ export function registerIocSourceRoutes(app, pool, audit) {
         entityId: String(source.id),
         entityDisplay: source.name,
         severity: AUDIT_SEVERITY.INFO,
-        after: pickSafeFields(source, SOURCE_AUDIT_FIELDS)
+        after: pickSafeFields(source, SOURCE_AUDIT_FIELDS),
+        metadata: { source_id: source.id, source_name: source.name }
       });
       return res.status(201).json({ source });
     } catch (err) {
-      if (err.code === '23505') return res.status(409).json({ message: 'IOC source name already exists' });
+      if (err.code === '23505') {
+        return res.status(409).json({ message: 'An IOC source with this name already exists' });
+      }
       return res.status(500).json({ message: 'Failed to create IOC source', detail: err.message });
     }
   });
@@ -151,22 +160,16 @@ export function registerIocSourceRoutes(app, pool, audit) {
 
     const fields = [];
     const params = [id];
+    const changedFields = [];
 
     const setField = (col, val) => {
       params.push(val);
       fields.push(`${col} = $${params.length}`);
+      changedFields.push(col);
     };
 
-    if (body.display_name !== undefined) {
-      setField('display_name', body.display_name ? String(body.display_name).trim() : null);
-    }
     if (body.description !== undefined) {
       setField('description', body.description ? String(body.description).trim() || null : null);
-    }
-    if (body.source_type !== undefined) {
-      const typeCheck = validateSourceType(body.source_type);
-      if (!typeCheck.ok) return res.status(400).json({ message: typeCheck.error });
-      setField('source_type', typeCheck.value);
     }
     if (body.default_confidence !== undefined) {
       const confCheck = validateDefaultConfidence(body.default_confidence);
@@ -198,9 +201,10 @@ export function registerIocSourceRoutes(app, pool, audit) {
         params
       );
       const source = serializeIocSourceRow(rows[0]);
-      const action = body.active === false
-        ? AUDIT_ACTION.IOC_SOURCE_DISABLED
-        : AUDIT_ACTION.IOC_SOURCE_UPDATED;
+      const action = resolveSourceAuditAction(before, source);
+      const severity = action === AUDIT_ACTION.IOC_SOURCE_DISABLED
+        ? AUDIT_SEVERITY.WARNING
+        : AUDIT_SEVERITY.INFO;
 
       await audit?.auditSuccess({
         req,
@@ -208,9 +212,14 @@ export function registerIocSourceRoutes(app, pool, audit) {
         entityType: AUDIT_ENTITY.IOC_SOURCE,
         entityId: String(source.id),
         entityDisplay: source.name,
-        severity: body.active === false ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+        severity,
         before: pickSafeFields(before, SOURCE_AUDIT_FIELDS),
-        after: pickSafeFields(source, SOURCE_AUDIT_FIELDS)
+        after: pickSafeFields(source, SOURCE_AUDIT_FIELDS),
+        metadata: {
+          source_id: source.id,
+          source_name: source.name,
+          changed_fields: changedFields
+        }
       });
 
       return res.json({ source });
