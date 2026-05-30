@@ -47,6 +47,8 @@ import {
   iocConfidenceSelectSql
 } from './lib/schemaCapabilities.js';
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
+import { registerIocSourceRoutes } from './routes/iocSources.js';
+import { createManualIoc } from './lib/manualIocCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
 import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone } from './lib/integrationSchedule.js';
@@ -4162,6 +4164,8 @@ registerIocConfidenceRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache
 });
 registerRouteModule('ioc_confidence');
+registerIocSourceRoutes(app, pool, auditLogService);
+registerRouteModule('ioc_sources');
 registerRouteModule('tags_inline');
 
 function isAdminUser(req) {
@@ -4441,90 +4445,25 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
 });
 
 app.post('/api/ioc/ip', async (req, res) => {
-  const { ip, source_name, source_url, confidence = 'medium', category = null, note = null } = req.body || {};
-
-  if (!ip || !source_name) {
-    return res.status(400).json({ message: 'ip and source_name are required' });
-  }
-
-  const value = String(ip).trim();
-  const isUrl = /^https?:\/\//i.test(value);
-  const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(value);
-  const inferredType = (isUrl || value.includes('/')) ? 'url' : (isIpv4 ? 'ip' : 'domain');
-
   try {
-    if (inferredType !== 'ip') {
-      const qObs = `
-        INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
-        SELECT $1, $2, $3, $4, $5, $6, $7
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM ioc_items
-          WHERE observable = $1
-            AND observable_type = $2
-            AND source_name = $3
-            AND confidence = $5
-            AND COALESCE(category, '') = COALESCE($6, '')
-            AND COALESCE(source_url, '') = COALESCE($4, '')
-        )
-        RETURNING *
-      `;
-      const { rows } = await pool.query(qObs, [value, inferredType, source_name, source_url || null, confidence, category, note]);
-      if (!rows.length) return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
+    const result = await createManualIoc(pool, req.body || {}, {
+      req,
+      user: req.user,
+      audit: auditLogService,
+      onAfterInsert: async () => {
+        scheduleGeoCacheRefreshAfterAdd();
+      }
+    });
 
-      await pool.query(
-        `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (ioc_public_id, observable_type, observable_value) DO NOTHING`,
-        [rows[0].public_id, rows[0].observable_type, String(rows[0].observable || '').toLowerCase()]
-      ).catch(() => {});
-
-      scheduleGeoCacheRefreshAfterAdd();
+    if (result.status === 201 && result.body?.id) {
       await pool.query(
         `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
          VALUES ('add', $1, $2, $3)`,
-        [rows[0].id, rows[0].observable, rows[0].observable_type]
+        [result.body.id, result.body.observable, result.body.observable_type]
       ).catch(() => {});
-      return res.status(201).json(rows[0]);
     }
 
-    const q = `
-      INSERT INTO ioc_items (observable, observable_type, source_name, source_url, confidence, category, note)
-      SELECT $1, 'ip', $2, $3, $4, $5, $6
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM ioc_items
-        WHERE observable = $1
-          AND observable_type = 'ip'
-          AND source_name = $2
-          AND confidence = $4
-          AND COALESCE(category, '') = COALESCE($5, '')
-          AND COALESCE(source_url, '') = COALESCE($3, '')
-      )
-      RETURNING *
-    `;
-    const values = [value, source_name, source_url || null, confidence, category, note];
-    const { rows } = await pool.query(q, values);
-
-    if (!rows.length) {
-      return res.status(200).json({ skipped: true, reason: 'duplicate_tuple' });
-    }
-
-    await pool.query(
-      `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (ioc_public_id, observable_type, observable_value) DO NOTHING`,
-      [rows[0].public_id, rows[0].observable_type, String(rows[0].observable || '').toLowerCase()]
-    ).catch(() => {});
-
-    scheduleGeoCacheRefreshAfterAdd();
-    await pool.query(
-      `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
-       VALUES ('add', $1, $2, $3)`,
-      [rows[0].id, rows[0].observable, rows[0].observable_type]
-    ).catch(() => {});
-
-    return res.status(201).json(rows[0]);
+    return res.status(result.status).json(result.body);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create record', detail: err.message });
   }
@@ -6104,13 +6043,16 @@ app.get('/api/ioc/recent', async (req, res) => {
         i.observable,
         i.observable_type,
         i.source_name,
+        COALESCE(s.display_name, s.name, i.source_name) AS source_display_name,
         i.confidence,
         i.category,
         i.created_at,
+        i.expires_at,
         c.asn,
         c.country_code,
         c.as_name
       FROM ioc_items i
+      LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
       LEFT JOIN ioc_ip_geo_cache c ON c.ip = CASE WHEN i.observable_type = 'ip' THEN i.observable::inet ELSE NULL END
       ORDER BY i.created_at DESC
       LIMIT ($1)
