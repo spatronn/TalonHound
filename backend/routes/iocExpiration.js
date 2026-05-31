@@ -16,7 +16,6 @@ import {
 } from '../lib/auditIocContext.js';
 import { evaluateIocStatusOverrideRequest } from '../lib/iocStatusOverrideGuards.js';
 import { parseManualExpirationInput } from '../lib/iocSourceValidation.js';
-import { AUDIT_ACTION } from '../lib/auditConstants.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
 const IOC_STATUS_AUDIT_FIELDS = [
