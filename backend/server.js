@@ -71,6 +71,13 @@ import {
   formatIntegrationJobDisplayName,
   withIntegrationJobDisplayName
 } from './lib/integrationJobLabels.js';
+import {
+  VT_PROVIDER,
+  VT_NOT_INDEXED_MESSAGE,
+  buildVtNotIndexedResponse,
+  isVtResourceNotFound,
+  vtHttpErrorMessage
+} from './lib/virustotalEnrichment.js';
 
 const { Pool } = pg;
 
@@ -6288,7 +6295,6 @@ async function saveRiskSnapshot() {
   }
 }
 
-const VT_PROVIDER = 'virustotal';
 const VT_TTL_HOURS = Math.max(1, Number(process.env.VIRUSTOTAL_ENRICHMENT_TTL_HOURS || 24));
 const VT_TIMEOUT_MS = Math.max(3000, Number(process.env.VIRUSTOTAL_TIMEOUT_MS || 12000));
 
@@ -6376,7 +6382,21 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
     const r = await pool.query(q, [VT_PROVIDER, iocId]);
     if (!r.rowCount) return res.json({ status: 'not_found' });
     const row = r.rows[0];
-    return res.json({ status: row.status, summary: row.normalized_summary, error_message: row.error_message, fetched_at: row.fetched_at, expires_at: row.expires_at });
+    if (row.status === 'not_found') {
+      return res.json(buildVtNotIndexedResponse({
+        fetched_at: row.fetched_at,
+        expires_at: row.expires_at
+      }));
+    }
+    return res.json({
+      status: row.status,
+      provider: VT_PROVIDER,
+      summary: row.normalized_summary,
+      error_message: row.error_message,
+      fetched_at: row.fetched_at,
+      expires_at: row.expires_at,
+      is_error: row.status === 'error'
+    });
   } catch {
     return res.status(500).json({ message: 'Failed to fetch VirusTotal enrichment' });
   }
@@ -6430,7 +6450,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     } finally { clearTimeout(t); }
 
     if (vtRes.status === 429) {
-      const msg = 'VirusTotal rate limit reached. Try again later.';
+      const msg = vtHttpErrorMessage(429);
       await auditLogService.auditFailure({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
@@ -6440,10 +6460,49 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
         severity: AUDIT_SEVERITY.WARNING,
         metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg }
       }).catch(() => {});
-      return res.status(429).json({ message: msg });
+      return res.status(429).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
     }
-    if (!vtRes.ok) {
-      const msg = 'VirusTotal enrichment failed';
+    if (isVtResourceNotFound(vtRes.status)) {
+      const fetchedAt = new Date();
+      const expiresAt = new Date(fetchedAt.getTime() + (providerCfg.ttl_hours || VT_TTL_HOURS) * 3600 * 1000);
+      const payload = buildVtNotIndexedResponse({
+        fetched_at: fetchedAt.toISOString(),
+        expires_at: expiresAt.toISOString()
+      });
+      await pool.query(
+        `INSERT INTO ioc_enrichments (ioc_id,ioc_value,ioc_type,provider,status,normalized_summary,raw_response,error_message,fetched_at,expires_at,updated_at)
+         VALUES ($1,$2,$3,$4,'not_found',NULL,NULL,$5,$6,$7,NOW())
+         ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET
+           ioc_id=EXCLUDED.ioc_id,
+           status='not_found',
+           normalized_summary=NULL,
+           raw_response=NULL,
+           error_message=EXCLUDED.error_message,
+           fetched_at=EXCLUDED.fetched_at,
+           expires_at=EXCLUDED.expires_at,
+           updated_at=NOW()`,
+        [iocId, item.ioc_value, iocType, VT_PROVIDER, VT_NOT_INDEXED_MESSAGE, fetchedAt.toISOString(), expiresAt.toISOString()]
+      );
+      await auditLogService.auditSuccess({
+        req,
+        action: AUDIT_ACTION.VT_ENRICHMENT_NOT_INDEXED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: item.ioc_value,
+        entityDisplay: item.ioc_value,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          provider: VT_PROVIDER,
+          observable_type: iocType,
+          observable_value: item.ioc_value,
+          ioc_id: iocId,
+          http_status: 404,
+          message: VT_NOT_INDEXED_MESSAGE
+        }
+      }).catch(() => {});
+      return res.json(payload);
+    }
+    if (vtRes.status === 401 || vtRes.status === 403) {
+      const msg = vtHttpErrorMessage(vtRes.status);
       await auditLogService.auditFailure({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
@@ -6453,7 +6512,20 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
         severity: AUDIT_SEVERITY.WARNING,
         metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg, http_status: vtRes.status }
       }).catch(() => {});
-      return res.status(502).json({ message: msg });
+      return res.status(502).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
+    }
+    if (!vtRes.ok) {
+      const msg = vtHttpErrorMessage(vtRes.status);
+      await auditLogService.auditFailure({
+        req,
+        action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: item.ioc_value,
+        entityDisplay: item.ioc_value,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg, http_status: vtRes.status }
+      }).catch(() => {});
+      return res.status(502).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
     }
 
     const raw = await vtRes.json();
@@ -6486,7 +6558,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       }
     }).catch(() => {});
 
-    return res.json({ status: 'success', summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
+    return res.json({ status: 'success', provider: VT_PROVIDER, is_error: false, summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
   } catch (err) {
     const msg = String(err?.name) === 'AbortError' ? 'VirusTotal enrichment timed out' : 'VirusTotal enrichment failed';
     if (item?.ioc_value) {
@@ -6506,8 +6578,10 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
         }
       }).catch(() => {});
     }
-    if (String(err?.name) === 'AbortError') return res.status(504).json({ message: 'VirusTotal enrichment timed out' });
-    return res.status(500).json({ message: 'VirusTotal enrichment failed' });
+    if (String(err?.name) === 'AbortError') {
+      return res.status(504).json({ status: 'error', provider: VT_PROVIDER, message: 'VirusTotal enrichment timed out', is_error: true });
+    }
+    return res.status(500).json({ status: 'error', provider: VT_PROVIDER, message: 'VirusTotal enrichment failed', is_error: true });
   }
 });
 

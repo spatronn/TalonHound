@@ -9053,6 +9053,10 @@ function LegacyIOCDetailsRedirect() {
   );
 }
 
+function isVtNotIndexedPayload(data) {
+  return data?.status === 'not_found' && data?.is_error === false;
+}
+
 function VirusTotalEnrichmentCard({ iocId, active = true }) {
   const [state, setState] = useState({ status: 'loading', summary: null, message: '', fetchedAt: null, expiresAt: null });
   const [open, setOpen] = useState(true);
@@ -9066,6 +9070,16 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
     try {
       const { data } = await api.get(`/ioc/${iocId}/enrichments/virustotal`);
       if (data?.status === 'api_key_missing') return setState({ status: 'api_key_missing', summary: null, message: 'VirusTotal API key is not configured.', fetchedAt: null, expiresAt: null });
+      if (isVtNotIndexedPayload(data)) {
+        setHasLoaded(true);
+        return setState({
+          status: 'vt_not_indexed',
+          summary: null,
+          message: data.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.',
+          fetchedAt: data.fetched_at || null,
+          expiresAt: data.expires_at || null
+        });
+      }
       if (data?.status === 'not_found') return setState({ status: 'not_found', summary: null, message: 'VirusTotal enrichment has not been run yet.', fetchedAt: null, expiresAt: null });
       setHasLoaded(true);
       return setState({ status: 'success', summary: data?.summary || null, message: '', fetchedAt: data?.fetched_at || null, expiresAt: data?.expires_at || null });
@@ -9085,9 +9099,22 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
     try {
       const { data } = await api.post(`/ioc/${iocId}/enrichments/virustotal/refresh`);
       setOpen(true);
+      if (isVtNotIndexedPayload(data)) {
+        setHasLoaded(true);
+        setState({
+          status: 'vt_not_indexed',
+          summary: null,
+          message: data.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.',
+          fetchedAt: data.fetched_at || null,
+          expiresAt: data.expires_at || null
+        });
+        return;
+      }
       setState({ status: 'success', summary: data?.summary || null, message: '', fetchedAt: data?.fetched_at || null, expiresAt: data?.expires_at || null });
     } catch (err) {
-      const msg = err?.response?.status === 429 ? 'VirusTotal rate limit reached. Try again later.' : (err?.response?.data?.message || 'VirusTotal enrichment failed.');
+      const msg = err?.response?.status === 429
+        ? 'VirusTotal rate limit reached. Try again later.'
+        : (err?.response?.data?.message || 'VirusTotal enrichment failed.');
       setState({ status: 'error', summary: null, message: msg, fetchedAt: null, expiresAt: null });
     } finally { setRefreshing(false); }
   }
@@ -9110,6 +9137,18 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
   if (!hasDetails) {
     if (state.status === 'loading') return <div style={compactCardStyle}><span style={{ color:'#94a3b8', fontSize:13 }}>Loading VirusTotal enrichment...</span></div>;
     if (state.status === 'not_found') return <div style={compactCardStyle}><span style={{ color:'#cbd5e1', fontSize:13 }}>VirusTotal enrichment has not been run yet.</span><button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Running VirusTotal enrichment...' : 'Enrich with VirusTotal'}</button></div>;
+    if (state.status === 'vt_not_indexed') {
+      return (
+        <div style={{ ...compactCardStyle, borderColor: '#334155', background: '#0f172a' }}>
+          <span style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.5, flex: 1 }}>
+            {state.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.'}
+          </span>
+          <button onClick={() => refresh().catch(() => {})} disabled={refreshing}>
+            {refreshing ? 'Checking VirusTotal…' : 'Check again'}
+          </button>
+        </div>
+      );
+    }
     if (state.status === 'api_key_missing') return <div style={{ ...compactCardStyle, borderColor:'#92400e' }}><span style={{ color:'#fcd34d', fontSize:13 }}>VirusTotal API key is not configured.</span><Link to="/administration/enrichment-providers" style={{ color:'#93c5fd', fontSize:13 }}>Configure in Administration</Link></div>;
     return <div style={{ ...compactCardStyle, borderColor:'#7f1d1d' }}><span style={{ color:'#fca5a5', fontSize:13 }}>{state.message || 'VirusTotal enrichment failed.'}</span><button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Running VirusTotal enrichment...' : 'Retry'}</button></div>;
   }
