@@ -193,6 +193,135 @@ async function fetchIocRows(pool, feed, window) {
   return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
 }
 
+async function withTransaction(pool, fn) {
+  if (typeof pool.connect !== 'function') {
+    return fn(pool);
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback failures; preserve original error
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function persistPublishedFeedSnapshot(pool, snapshot) {
+  const feedId = Number(snapshot.feedId);
+  const paramsJson = snapshot.paramsJson || {};
+  const iocType = String(paramsJson.ioc_type || '');
+  const window = String(paramsJson.window || '');
+  const status = String(snapshot.status || 'success');
+  const paramsText = JSON.stringify(paramsJson);
+
+  return withTransaction(pool, async (client) => {
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [`published_feed_snapshots:${feedId}:${iocType}:${window}`]
+    );
+
+    if (status !== 'success') {
+      const { rows } = await client.query(
+        `SELECT id
+         FROM published_feed_snapshots
+         WHERE feed_id = $1
+           AND status = 'failed'
+           AND params->>'ioc_type' = $2
+           AND params->>'window' = $3
+         ORDER BY generated_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [feedId, iocType, window]
+      );
+
+      if (rows[0]?.id) {
+        await client.query(
+          `UPDATE published_feed_snapshots
+           SET generated_at = NOW(),
+               item_count = 0,
+               content_hash = NULL,
+               content = '',
+               status = 'failed',
+               error_message = $2,
+               params = $3::jsonb
+           WHERE id = $1`,
+          [rows[0].id, snapshot.errorMessage || null, paramsText]
+        );
+        return;
+      }
+
+      await client.query(
+        `INSERT INTO published_feed_snapshots
+           (feed_id, item_count, content_hash, content, status, error_message, params)
+         VALUES ($1, 0, NULL, '', 'failed', $2, $3::jsonb)`,
+        [feedId, snapshot.errorMessage || null, paramsText]
+      );
+      return;
+    }
+
+    const { rows } = await client.query(
+      `SELECT id, content_hash
+       FROM published_feed_snapshots
+       WHERE feed_id = $1
+         AND status = 'success'
+         AND params->>'ioc_type' = $2
+         AND params->>'window' = $3
+       ORDER BY generated_at DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [feedId, iocType, window]
+    );
+
+    if (!rows[0]?.id) {
+      await client.query(
+        `INSERT INTO published_feed_snapshots
+           (feed_id, item_count, content_hash, content, status, error_message, params)
+         VALUES ($1, $2, $3, $4, 'success', NULL, $5::jsonb)`,
+        [feedId, snapshot.itemCount, snapshot.contentHash, snapshot.content, paramsText]
+      );
+      return;
+    }
+
+    if (rows[0].content_hash === snapshot.contentHash) {
+      await client.query(
+        `UPDATE published_feed_snapshots
+         SET generated_at = NOW(),
+             item_count = $2,
+             content_hash = $3,
+             status = 'success',
+             error_message = NULL,
+             params = $4::jsonb
+         WHERE id = $1`,
+        [rows[0].id, snapshot.itemCount, snapshot.contentHash, paramsText]
+      );
+      return;
+    }
+
+    await client.query(
+      `UPDATE published_feed_snapshots
+       SET generated_at = NOW(),
+           item_count = $2,
+           content_hash = $3,
+           content = $4,
+           status = 'success',
+           error_message = NULL,
+           params = $5::jsonb
+       WHERE id = $1`,
+      [rows[0].id, snapshot.itemCount, snapshot.contentHash, snapshot.content, paramsText]
+    );
+  });
+}
+
 export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) {
   const id = Number(feedId);
   if (!Number.isFinite(id) || id <= 0) {
@@ -217,23 +346,28 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         filters_hash: filtersHash(feed, window)
       };
 
-      await pool.query(
-        `INSERT INTO published_feed_snapshots
-           (feed_id, item_count, content_hash, content, status, error_message, params)
-         VALUES ($1, $2, $3, $4, 'success', NULL, $5::jsonb)`,
-        [id, item_count, content_hash, content, JSON.stringify(paramsJson)]
-      );
+      await persistPublishedFeedSnapshot(pool, {
+        feedId: id,
+        itemCount: item_count,
+        contentHash: content_hash,
+        content,
+        status: 'success',
+        paramsJson
+      });
 
       results.push({ window, status: 'success', item_count });
     } catch (err) {
       const msg = String(err?.message || err);
       const paramsJson = { ioc_type: feed.ioc_type, window, filters_hash: filtersHash(feed, window) };
-      await pool.query(
-        `INSERT INTO published_feed_snapshots
-           (feed_id, item_count, content_hash, content, status, error_message, params)
-         VALUES ($1, 0, NULL, '', 'failed', $2, $3::jsonb)`,
-        [id, msg, JSON.stringify(paramsJson)]
-      );
+      await persistPublishedFeedSnapshot(pool, {
+        feedId: id,
+        itemCount: 0,
+        contentHash: null,
+        content: '',
+        status: 'failed',
+        errorMessage: msg,
+        paramsJson
+      });
       results.push({ window, status: 'failed', error: msg });
     }
   }
