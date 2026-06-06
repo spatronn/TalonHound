@@ -89,8 +89,8 @@ const { Pool } = pg;
 
 const app = express();
 const port = process.env.PORT || 3000;
-const demoEmail = process.env.DEMO_EMAIL || 'demo@demo.local';
-const demoPassword = process.env.DEMO_PASSWORD || 'Password1!';
+const demoEmail = String(process.env.DEMO_EMAIL || '').trim();
+const demoPassword = String(process.env.DEMO_PASSWORD || '').trim();
 const LOG_STORAGE = (process.env.LOG_STORAGE || 'postgres').toLowerCase();
 const USE_CLICKHOUSE = LOG_STORAGE === 'clickhouse';
 
@@ -4391,7 +4391,7 @@ app.post('/api/auth/login', async (req, res) => {
     /* fall through to env-based demo login if DB unavailable */
   }
 
-  if (loginId === demoEmail && password === demoPassword) {
+  if (demoEmail && demoPassword && loginId === demoEmail && password === demoPassword) {
     const token = signUserToken(loginId);
     appendAuthCookie(req, res, token);
     appendCsrfCookie(req, res);
