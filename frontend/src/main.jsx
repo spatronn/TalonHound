@@ -4743,7 +4743,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
+      <section className="integrations-feeds-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 4, color: '#f1f5f9' }}>{title}</h2>
@@ -4786,21 +4786,34 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         ) : null}
 
         {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'fixed', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", minWidth: 980, width: '100%' }}>
+          <div className="integrations-feeds-table-scroll">
+            <table className="ioc-table integrations-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+              <colgroup>
+                <col className="integrations-feeds-col-state" />
+                <col className="integrations-feeds-col-feed" />
+                <col className="integrations-feeds-col-health" />
+                <col className="integrations-feeds-col-schedule" />
+                <col className="integrations-feeds-col-confidence" />
+                <col className="integrations-feeds-col-expiration" />
+                <col className="integrations-feeds-col-last-success" />
+                <col className="integrations-feeds-col-metrics" />
+                <col className="integrations-feeds-col-error" />
+                <col className="integrations-feeds-col-next-run" />
+                <col className="integrations-feeds-col-action" />
+              </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
-                  <th style={{ width: 88 }}>State</th>
-                  <th style={{ width: '16%' }}>Feed</th>
-                  <th style={{ width: 88 }}>Health</th>
-                  <th style={{ width: 110 }}>Schedule</th>
-                  <th style={{ width: 96 }}>Confidence</th>
-                  <th style={{ width: 120 }}>Expiration</th>
-                  <th style={{ width: 130 }}>Last Success</th>
-                  <th style={{ width: '34%' }}>Last Run Metrics</th>
-                  <th style={{ width: 120 }}>Last Error</th>
-                  <th style={{ width: 120 }}>Next Run</th>
-                  <th style={{ width: 100 }}>Action</th>
+                  <th>State</th>
+                  <th>Feed</th>
+                  <th>Health</th>
+                  <th>Schedule</th>
+                  <th>Confidence</th>
+                  <th>Expiration</th>
+                  <th>Last Success</th>
+                  <th>Last Run Metrics</th>
+                  <th>Last Error</th>
+                  <th>Next Run</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -4817,7 +4830,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                           {state.label}
                         </span>
                       </td>
-                      <td style={{ color: '#e2e8f0', fontWeight: 600, overflowWrap: 'anywhere' }}>{i.name}</td>
+                      <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>{i.name}</td>
                       <td>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
                           {health.label}
@@ -4838,8 +4851,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{isActive ? formatUserDateTime(i.next_run_at) : '-'}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      <td className="integrations-feeds-action-cell">
+                        <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                           <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive} style={{ fontSize: 11, padding: '4px 8px' }} title={!isActive ? 'Enable the feed before running manually.' : undefined}>
                             {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
                           </button>
@@ -11623,6 +11636,42 @@ function App() {
         table th:last-child, table td:last-child { border-right: none !important; }
         .ioc-table th, .ioc-table td { border-right: 1px solid #334155 !important; }
         .ioc-table th:last-child, .ioc-table td:last-child { border-right: none !important; }
+        .integrations-feeds-table-scroll {
+          overflow-x: auto;
+          max-width: 100%;
+          -webkit-overflow-scrolling: touch;
+        }
+        .integrations-feeds-table {
+          width: 100%;
+          min-width: 1320px;
+          table-layout: auto;
+        }
+        .integrations-feeds-table .integrations-feeds-col-state { min-width: 88px; width: 88px; }
+        .integrations-feeds-table .integrations-feeds-col-feed { min-width: 200px; }
+        .integrations-feeds-table .integrations-feeds-col-health { min-width: 92px; width: 92px; }
+        .integrations-feeds-table .integrations-feeds-col-schedule { min-width: 110px; }
+        .integrations-feeds-table .integrations-feeds-col-confidence { min-width: 104px; }
+        .integrations-feeds-table .integrations-feeds-col-expiration { min-width: 120px; }
+        .integrations-feeds-table .integrations-feeds-col-last-success { min-width: 130px; }
+        .integrations-feeds-table .integrations-feeds-col-metrics { min-width: 280px; }
+        .integrations-feeds-table .integrations-feeds-col-error { min-width: 120px; }
+        .integrations-feeds-table .integrations-feeds-col-next-run { min-width: 120px; }
+        .integrations-feeds-table .integrations-feeds-col-action { min-width: 108px; width: 108px; }
+        .integrations-feeds-table .integrations-feeds-feed-name {
+          word-break: normal;
+          overflow-wrap: normal;
+          white-space: normal;
+        }
+        .integrations-feeds-table .integrations-feeds-action-cell {
+          white-space: nowrap;
+          vertical-align: top;
+        }
+        .integrations-feeds-table .integrations-feeds-action-buttons {
+          min-width: 96px;
+        }
+        .integrations-feeds-table .integrations-feeds-action-buttons button {
+          white-space: nowrap;
+        }
         .published-feeds-page input:focus,
         .published-feeds-page select:focus,
         .published-feeds-page textarea:focus {
