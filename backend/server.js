@@ -17,7 +17,7 @@ import {
   appendCsrfCookie,
   clearCsrfCookie
 } from './lib/auth.js';
-import { rbacHttpPolicy, ROLES } from './lib/rbac.js';
+import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
@@ -29,6 +29,10 @@ import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
+import {
+  loadIntegrationQueueHealthSnapshot,
+  runIntegrationQueueRecover
+} from './lib/integrationQueueApi.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -107,6 +111,7 @@ const importQueue = new Queue(queueName, { connection: redis });
 const signalQueue = new Queue(signalQueueName, { connection: redis });
 const llmRiskQueue = new Queue(llmRiskQueueName, { connection: redis });
 const llmRiskAdvisor = createLlmRiskAdvisor({ redis, queue: llmRiskQueue, db: pool });
+const auditLogService = createAuditLogService(pool);
 
 // Geo cache refresh tuning (local/kısıtlı ortam için düşürülebilir)
 
@@ -3595,6 +3600,32 @@ app.get('/api/integrations', async (req, res) => {
       // queue telemetry optional
     }
     integrationsTimingLog(timingEnabled, 'queue query', queueStart);
+
+    try {
+      const snapshot = await loadIntegrationQueueHealthSnapshot(pool, importQueue);
+      const lastFailedQ = await pool.query(
+        `SELECT error_message, integration_key, finished_at
+         FROM integration_queue_jobs
+         WHERE status = 'failed' AND error_message IS NOT NULL
+         ORDER BY COALESCE(finished_at, queued_at) DESC
+         LIMIT 1`
+      );
+      const lastFailed = lastFailedQ.rows[0] || null;
+      queue = {
+        ...queue,
+        queue_health: snapshot.health,
+        bull_counts: snapshot.bull_counts,
+        db_counts: snapshot.db_counts,
+        source_locks: snapshot.source_locks,
+        oldest_waiting_age_seconds: snapshot.oldest_waiting_age_seconds,
+        worker_count: snapshot.worker_count,
+        last_failure_reason: lastFailed?.error_message || null,
+        last_failure_at: lastFailed?.finished_at || null,
+        last_failure_integration_key: lastFailed?.integration_key || null
+      };
+    } catch (err) {
+      console.warn('[integrations] queue health snapshot failed', err.message);
+    }
     }
 
     integrationsTimingLog(timingEnabled, 'endpoint total', handlerStart);
@@ -3644,6 +3675,61 @@ async function assertIntegrationFeedActive(key) {
   }
   return { ok: true };
 }
+
+app.post('/api/integrations/queue/recover', requireRole(ROLES.ADMIN), async (req, res) => {
+  const dryRun = String(req.query?.dry_run || req.query?.dryRun || '').toLowerCase() === 'true';
+  try {
+    const preview = dryRun
+      ? await loadIntegrationQueueHealthSnapshot(pool, importQueue)
+      : null;
+    if (dryRun) {
+      return res.json({
+        dry_run: true,
+        queue_health: preview?.health || null,
+        dry_run_reconcile: preview?.dry_run_reconcile || null,
+        dry_run_locks: preview?.dry_run_locks || null,
+        recovery_needed: Boolean(preview?.health?.recovery_needed)
+      });
+    }
+
+    const result = await runIntegrationQueueRecover(pool, importQueue, { dryRun: false });
+    if (!result.reconciled_count && !(result.actions_taken || []).length) {
+      return res.json({
+        ok: true,
+        message: 'No recovery actions were required',
+        ...result
+      });
+    }
+
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_QUEUE_RECOVERY,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: 'integration-imports',
+      entityDisplay: queueName,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: {
+        reconciled_count: result.reconciled_count,
+        actions_taken: result.actions_taken,
+        stale_active_jobs: (result.stale_active_jobs || []).map((j) => j.job_id),
+        stale_stalled_jobs: (result.stale_stalled_jobs || []).map((j) => j.job_id)
+      }
+    });
+
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    await auditLogService.auditFailure({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_QUEUE_RECOVERY,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: 'integration-imports',
+      entityDisplay: queueName,
+      severity: AUDIT_SEVERITY.CRITICAL,
+      metadata: { dry_run: dryRun, error: err?.message || String(err) }
+    }).catch(() => {});
+    return res.status(500).json({ message: 'Queue recovery failed', detail: err.message });
+  }
+});
 
 app.post('/api/integrations/run-now', async (_req, res) => {
   try {
@@ -4179,18 +4265,17 @@ app.put('/api/users/me/preferences', async (req, res) => {
   }
 });
 
-registerUserManagementRoutes(app, pool);
+registerUserManagementRoutes(app, pool, auditLogService);
 registerRouteModule('users');
 registerPublicFeedRoutes(app, pool);
 registerRouteModule('public_feeds');
-registerPublishedFeedRoutes(app, pool);
+registerPublishedFeedRoutes(app, pool, auditLogService);
 registerRouteModule('published_feeds');
-registerApiKeyRoutes(app, pool);
+registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
 registerRouteModule('audit');
 
-const auditLogService = createAuditLogService(pool);
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('rdap_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
