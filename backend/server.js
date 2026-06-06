@@ -23,6 +23,7 @@ import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
+import { registerBulkTriageRoutes } from './routes/bulkTriage.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
@@ -4547,6 +4548,7 @@ registerRouteModule('published_feeds');
 registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
+registerBulkTriageRoutes(app, pool, { auditLogService, findIncidentRow });
 registerRouteModule('audit');
 
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
