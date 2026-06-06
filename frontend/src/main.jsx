@@ -1764,6 +1764,8 @@ function IOCMatchEventsPage() {
   const [activeDateQuick, setActiveDateQuick] = useState('24h');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dateError, setDateError] = useState('');
   const filtersRef = useRef(null);
@@ -1809,31 +1811,43 @@ function IOCMatchEventsPage() {
     return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
-  const loadEvents = useCallback(async (q = '', assignedTo = null, fromVal = '', toVal = '', verdictVals = [], detectionVals = []) => {
-    const fromIso = toIsoOrNull(fromVal);
-    const toIso = toIsoOrNull(toVal);
+  const loadEvents = useCallback(async () => {
+    const fromIso = toIsoOrNull(dateFrom);
+    const toIso = toIsoOrNull(dateTo);
     if (fromIso && toIso && fromIso > toIso) {
       setDateError('Invalid date range: From must be earlier than or equal to To.');
       setRows([]);
+      setTotalRows(0);
+      setTotalPages(1);
       return;
     }
     setDateError('');
     setLoading(true);
     try {
-      const params = { limit: 120, q: q || undefined };
-      if (assignedTo) params.assigned_to = assignedTo; // UI hint, backend may ignore
+      const params = {
+        page,
+        page_size: pageSize,
+        q: String(query || '').trim() || undefined
+      };
       if (fromIso) params.from = fromIso;
       if (toIso) params.to = toIso;
-      if (Array.isArray(verdictVals) && verdictVals.length && verdictVals.length < ALL_VERDICTS.length) params.verdict = verdictVals.join(',');
-      if (Array.isArray(detectionVals) && detectionVals.length && detectionVals.length < ALL_DETECTIONS.length) params.detection = detectionVals.join(',');
+      if (verdictFilter.length && verdictFilter.length < ALL_VERDICTS.length) params.verdict = verdictFilter.join(',');
+      if (detectionFilter.length && detectionFilter.length < ALL_DETECTIONS.length) params.detection = detectionFilter.join(',');
+      if (assigneeFilter && assigneeFilter !== 'all') params.assignee = assigneeFilter;
+      if (sourceFilter && sourceFilter !== 'all') params.source = sourceFilter;
       const { data } = await api.get('/ioc/match-events', { params });
       setRows(data?.items || []);
+      const pagination = data?.pagination || {};
+      setTotalRows(Number(pagination.total ?? data?.total ?? 0));
+      setTotalPages(Math.max(1, Number(pagination.total_pages || 1)));
     } catch {
       setRows([]);
+      setTotalRows(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, query, dateFrom, dateTo, verdictFilter, detectionFilter, assigneeFilter, sourceFilter]);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -1866,7 +1880,7 @@ function IOCMatchEventsPage() {
     setDateTo(def.to);
     setActiveDateQuick('24h');
     setQuery('');
-    loadEvents('', null, def.from, def.to).catch(() => {});
+    loadEvents().catch(() => {});
   }, [loadEvents]);
 
   const openReview = useCallback((evt) => {
@@ -1916,9 +1930,12 @@ function IOCMatchEventsPage() {
     setDateFrom(def.from);
     setDateTo(def.to);
     setActiveDateQuick('24h');
-    loadEvents('', null, def.from, def.to).catch(() => {});
     loadUsers().catch(() => {});
-  }, [loadEvents, loadUsers]);
+  }, [loadUsers]);
+
+  useEffect(() => {
+    loadEvents().catch(() => {});
+  }, [loadEvents]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -1944,53 +1961,13 @@ function IOCMatchEventsPage() {
   }, [userLookup]);
 
   const searchTerm = String(query || '').trim().toLowerCase();
-  const filteredRows = useMemo(() => {
-    return (rows || []).filter((evt) => {
-      const detection = String(evt.detection_mode || '').toLowerCase();
-      const verdict = String(evt.verdict || '').toLowerCase();
-      const assigneeRaw = String(evt.assigned_to || '').trim();
-      const assignee = resolveAssignee(assigneeRaw);
-      const source = String((evt.source_names && evt.source_names[0]) || evt.source_name || '').trim();
-
-      if (Array.isArray(detectionFilter) && detectionFilter.length && detectionFilter.length < ALL_DETECTIONS.length && !detectionFilter.includes(detection)) return false;
-      if (Array.isArray(verdictFilter) && verdictFilter.length && verdictFilter.length < ALL_VERDICTS.length) {
-        const verdictNorm = verdict || 'unreviewed';
-        if (!verdictFilter.includes(verdictNorm)) return false;
-      }
-
-      if (assigneeFilter === 'unassigned') {
-        if (assigneeRaw) return false;
-      } else if (assigneeFilter !== 'all') {
-        if (assignee.toLowerCase() !== assigneeFilter.toLowerCase()) return false;
-      }
-
-      if (sourceFilter !== 'all' && source.toLowerCase() !== sourceFilter.toLowerCase()) return false;
-
-      if (searchTerm) {
-        const hay = [
-          `#${evt.id}`,
-          String(evt.id || ''),
-          evt.matched_ioc,
-          source,
-          assignee,
-          evt.destination_ip,
-          evt.host_name
-        ].map((x) => String(x || '').toLowerCase()).join(' | ');
-        if (!hay.includes(searchTerm)) return false;
-      }
-
-      return true;
-    });
-  }, [rows, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, resolveAssignee, userEmail, searchTerm]);
 
   useEffect(() => {
     setPage(1);
   }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeDateQuick, dateFrom, dateTo, pageSize]);
 
-  const totalRows = filteredRows.length;
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pagedRows = rows;
 
   const activeFilters = [];
   if (dateFrom || dateTo) {
@@ -2001,7 +1978,8 @@ function IOCMatchEventsPage() {
         setDateFrom('');
         setDateTo('');
         setActiveDateQuick('');
-        loadEvents(query, null, '', '', verdictFilter, detectionFilter).catch(() => {});
+        setPage(1);
+        loadEvents().catch(() => {});
       }
     });
   }
@@ -2039,11 +2017,11 @@ function IOCMatchEventsPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {}); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); loadEvents().catch(() => {}); } }}
               placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
-            <button onClick={() => loadEvents(query, null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {})}>Search</button>
+            <button onClick={() => { setPage(1); loadEvents().catch(() => {}); }}>Search</button>
           </div>
 
           <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2071,7 +2049,8 @@ function IOCMatchEventsPage() {
                   const t = toDateTimeLocal(now);
                   setDateFrom(f);
                   setDateTo(t);
-                  loadEvents(query, null, f, t, verdictFilter, detectionFilter).catch(() => {});
+                  setPage(1);
+                  loadEvents().catch(() => {});
                 }}
                 style={{
                   borderRadius: 999,
@@ -3162,26 +3141,9 @@ function IncidentPage() {
   const [status, setStatus] = useState('');
   const [verdict, setVerdict] = useState([]);
   const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [from, setFrom] = useState(() => {
-    const now = new Date();
-    const d = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${day}T${hh}:${mm}`;
-  });
-  const [to, setTo] = useState(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${day}T${hh}:${mm}`;
-  });
-  const [quickRange, setQuickRange] = useState('24h');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [quickRange, setQuickRange] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
@@ -3231,7 +3193,10 @@ function IncidentPage() {
     setStatus('');
     setVerdict([]);
     setAssigneeFilter('all');
-    applyQuickRange('24h');
+    setFrom('');
+    setTo('');
+    setQuickRange('');
+    setPage(1);
   };
 
   const assigneeOptions = useMemo(() => {
@@ -3303,6 +3268,9 @@ function IncidentPage() {
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
         <h2 style={{ marginTop: 0 }}>Incidents</h2>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 8 }}>
+          Default view shows all open incidents plus closed incidents from the last 7 days. Use date filters to narrow further.
+        </div>
 
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>

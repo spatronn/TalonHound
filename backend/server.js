@@ -1220,13 +1220,20 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
 
 app.get('/api/ioc/match-events', async (req, res) => {
   try {
-    const limit = Math.min(Math.max(Number(req.query?.limit || 20), 1), 100);
+    const page = Math.max(Number(req.query?.page || 1), 1);
+    const pageSize = Math.min(
+      Math.max(Number(req.query?.page_size || req.query?.pageSize || req.query?.limit || 20), 1),
+      100
+    );
+    const offset = (page - 1) * pageSize;
     const qStr = String(req.query?.q || '').trim();
     const fromStr = String(req.query?.from || '').trim();
     const toStr = String(req.query?.to || '').trim();
     const verdictStr = String(req.query?.verdict || '').trim();
     const detectionStr = String(req.query?.detection || '').trim();
     const activityIdStr = String(req.query?.activity_id || req.query?.activityId || '').trim();
+    const assigneeStr = String(req.query?.assignee || '').trim();
+    const sourceStr = String(req.query?.source || '').trim();
 
     const where = [];
     const params = [];
@@ -1255,7 +1262,7 @@ app.get('/api/ioc/match-events', async (req, res) => {
         .split(',')
         .map((v) => String(v || '').trim().toLowerCase())
         .filter(Boolean)
-        .filter((v) => ['unreviewed', 'in_progress', 'fp', 'tp'].includes(v));
+        .filter((v) => ['unreviewed', 'in_progress', 'fp', 'tp', 'suspicious'].includes(v));
       const parts = [];
       for (const v of verdictVals) {
         if (v === 'unreviewed') {
@@ -1317,8 +1324,32 @@ app.get('/api/ioc/match-events', async (req, res) => {
       }
     }
 
-    params.push(limit);
+    if (assigneeStr) {
+      if (assigneeStr.toLowerCase() === 'unassigned') {
+        where.push(`(m.assigned_to IS NULL OR m.assigned_to = '')`);
+      } else {
+        params.push(assigneeStr);
+        where.push(`m.assigned_to = $${params.length}`);
+      }
+    }
+
+    if (sourceStr && sourceStr.toLowerCase() !== 'all') {
+      params.push(sourceStr);
+      where.push(`m.source_name = $${params.length}`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const countQ = await pool.query(
+      `SELECT COUNT(*)::bigint AS total FROM ioc_match_events m ${whereSql}`,
+      params
+    );
+    const total = Number(countQ.rows?.[0]?.total || 0);
+
+    params.push(pageSize);
     const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
 
     const sql = `
       WITH recent AS (
@@ -1378,9 +1409,9 @@ app.get('/api/ioc/match-events', async (req, res) => {
             END
           ) AS detection_mode
         FROM ioc_match_events m
-        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ${whereSql}
         ORDER BY m.created_at DESC, m.id DESC
-        LIMIT $${limitIdx}
+        LIMIT $${limitIdx} OFFSET $${offsetIdx}
       ), source_agg AS (
         SELECT
           i.observable AS observable_norm,
@@ -1410,10 +1441,19 @@ app.get('/api/ioc/match-events', async (req, res) => {
       ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
       : q.rows;
 
-    return res.json({ total: items.length, items });
+    return res.json({
+      total,
+      items,
+      pagination: {
+        page,
+        page_size: pageSize,
+        total,
+        total_pages: Math.max(1, Math.ceil(total / pageSize))
+      }
+    });
   } catch (err) {
     console.error('[ioc-match-events] failed', err);
-    return res.status(500).json({ total: 0, items: [] });
+    return res.status(500).json({ total: 0, items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 } });
   }
 });
 
@@ -1711,6 +1751,10 @@ app.get('/api/incidents', async (req, res) => {
         params.push(to.toISOString());
         where.push(`a.created_at <= $${params.length}::timestamptz`);
       }
+    }
+
+    if (!fromStr && !toStr) {
+      where.push(`(a.status = 'open' OR a.created_at >= NOW() - INTERVAL '7 days')`);
     }
 
     where.push(`EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`);
