@@ -21,17 +21,6 @@ function readCookie(name) {
   return '';
 }
 
-function promptRequiredReason(actionLabel) {
-  const reason = window.prompt(`${actionLabel}\n\nReason (required, min 3 characters):`);
-  if (reason == null) return null;
-  const trimmed = String(reason).trim();
-  if (trimmed.length < 3) {
-    window.alert('Reason is required (minimum 3 characters).');
-    return null;
-  }
-  return trimmed.slice(0, 4000);
-}
-
 const api = axios.create({ baseURL: '/api', withCredentials: true });
 
 api.interceptors.request.use((config) => {
@@ -880,6 +869,182 @@ function ModalOverlay({ children, onClose }) {
         {children}
       </div>
     </div>
+  );
+}
+
+const ReasonPromptContext = React.createContext(null);
+
+function ReasonPromptProvider({ children }) {
+  const [state, setState] = useState(null);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const resolverRef = useRef(null);
+
+  const requestRequiredReason = useCallback((actionLabel, options = {}) => {
+    if (resolverRef.current) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      resolverRef.current = resolve;
+      setReason('');
+      setError('');
+      setState({
+        title: options.title || actionLabel,
+        description: options.description || 'Provide a reason for this action (minimum 3 characters).',
+        confirmLabel: options.confirmLabel || 'Confirm'
+      });
+    });
+  }, []);
+
+  const close = useCallback((value) => {
+    const resolve = resolverRef.current;
+    resolverRef.current = null;
+    setState(null);
+    setReason('');
+    setError('');
+    if (resolve) resolve(value);
+  }, []);
+
+  const handleCancel = useCallback(() => close(null), [close]);
+
+  const handleSubmit = useCallback(() => {
+    const trimmed = String(reason || '').trim();
+    if (trimmed.length < 3) {
+      setError('Reason is required (minimum 3 characters).');
+      return;
+    }
+    close(trimmed.slice(0, 4000));
+  }, [reason, close]);
+
+  const value = useMemo(() => requestRequiredReason, [requestRequiredReason]);
+
+  const inputStyle = {
+    padding: '8px 10px',
+    borderRadius: 6,
+    border: '1px solid #475569',
+    background: '#0f172a',
+    color: '#e2e8f0',
+    fontSize: 13,
+    width: '100%',
+    boxSizing: 'border-box',
+    minHeight: 72,
+    resize: 'vertical'
+  };
+
+  return (
+    <ReasonPromptContext.Provider value={value}>
+      {children}
+      {state ? (
+        <ModalOverlay onClose={handleCancel}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9', fontSize: 18 }}>{state.title}</h3>
+          <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}>{state.description}</p>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>Reason</span>
+            <textarea
+              value={reason}
+              onChange={(e) => { setReason(e.target.value); if (error) setError(''); }}
+              rows={4}
+              placeholder="Enter reason…"
+              style={inputStyle}
+              autoFocus
+            />
+          </label>
+          {error ? (
+            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+              {error}
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+            <button type="button" onClick={handleCancel}>Cancel</button>
+            <button type="button" onClick={handleSubmit}>{state.confirmLabel}</button>
+          </div>
+        </ModalOverlay>
+      ) : null}
+    </ReasonPromptContext.Provider>
+  );
+}
+
+function useReasonPrompt() {
+  const ctx = useContext(ReasonPromptContext);
+  if (!ctx) throw new Error('useReasonPrompt must be used within ReasonPromptProvider');
+  return ctx;
+}
+
+const SAVED_VIEW_STORAGE = {
+  detectionEvents: 'demo.savedViews.detectionEvents',
+  incidents: 'demo.savedViews.incidents'
+};
+
+const BULK_TRIAGE_MAX = 100;
+
+function loadSavedViews(storageKey) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedViews(storageKey, views) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(views.slice(0, 20)));
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function BulkActionConfirmModal({
+  open,
+  title,
+  description,
+  confirmLabel,
+  loading,
+  error,
+  reason,
+  onReasonChange,
+  onCancel,
+  onConfirm,
+  extraContent = null
+}) {
+  if (!open) return null;
+  return (
+    <ModalOverlay onClose={loading ? undefined : onCancel}>
+      <h3 style={{ marginTop: 0, color: '#f1f5f9', fontSize: 18 }}>{title}</h3>
+      <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}>{description}</p>
+      {extraContent}
+      <label style={{ display: 'grid', gap: 6 }}>
+        <span style={{ color: '#94a3b8', fontSize: 13 }}>Reason (required, min 3 characters)</span>
+        <textarea
+          value={reason}
+          onChange={(e) => onReasonChange(e.target.value)}
+          rows={4}
+          placeholder="Enter reason…"
+          style={{
+            padding: '8px 10px',
+            borderRadius: 6,
+            border: '1px solid #475569',
+            background: '#0f172a',
+            color: '#e2e8f0',
+            fontSize: 13,
+            width: '100%',
+            boxSizing: 'border-box',
+            minHeight: 72,
+            resize: 'vertical'
+          }}
+          autoFocus
+        />
+      </label>
+      {error ? (
+        <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+          {error}
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+        <button type="button" onClick={onCancel} disabled={loading}>Cancel</button>
+        <button type="button" onClick={onConfirm} disabled={loading}>{loading ? 'Working…' : confirmLabel}</button>
+      </div>
+    </ModalOverlay>
   );
 }
 
@@ -1770,7 +1935,17 @@ function IOCMatchEventsPage() {
   const [dateError, setDateError] = useState('');
   const filtersRef = useRef(null);
   const navigate = useNavigate();
-  const { userEmail } = useSession();
+  const { userEmail, canWrite } = useSession();
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkModal, setBulkModal] = useState(null);
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkError, setBulkError] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState('');
+  const [bulkAssignee, setBulkAssignee] = useState('');
+  const [savedViews, setSavedViews] = useState(() => loadSavedViews(SAVED_VIEW_STORAGE.detectionEvents));
+  const [saveViewName, setSaveViewName] = useState('');
+  const [showSaveViewInput, setShowSaveViewInput] = useState(false);
 
   const toDateTimeLocal = (d) => {
     const dt = new Date(d);
@@ -1880,8 +2055,118 @@ function IOCMatchEventsPage() {
     setDateTo(def.to);
     setActiveDateQuick('24h');
     setQuery('');
+    setPage(1);
+    setBulkResult('');
     loadEvents().catch(() => {});
   }, [loadEvents]);
+
+  const saveCurrentView = useCallback(() => {
+    const name = String(saveViewName || '').trim();
+    if (!name) return;
+    const view = {
+      name,
+      savedAt: new Date().toISOString(),
+      filters: {
+        query,
+        detectionFilter,
+        verdictFilter,
+        assigneeFilter,
+        sourceFilter,
+        dateFrom,
+        dateTo,
+        activeDateQuick,
+        pageSize
+      }
+    };
+    const next = [...savedViews.filter((v) => v.name !== name), view];
+    persistSavedViews(SAVED_VIEW_STORAGE.detectionEvents, next);
+    setSavedViews(next);
+    setSaveViewName('');
+    setShowSaveViewInput(false);
+  }, [saveViewName, savedViews, query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, dateFrom, dateTo, activeDateQuick, pageSize]);
+
+  const loadSavedView = useCallback((view) => {
+    const f = view?.filters || {};
+    setQuery(String(f.query || ''));
+    setDetectionFilter(Array.isArray(f.detectionFilter) && f.detectionFilter.length ? f.detectionFilter : ALL_DETECTIONS);
+    setVerdictFilter(Array.isArray(f.verdictFilter) && f.verdictFilter.length ? f.verdictFilter : ALL_VERDICTS);
+    setAssigneeFilter(f.assigneeFilter || 'all');
+    setSourceFilter(f.sourceFilter || 'all');
+    setDateFrom(f.dateFrom || '');
+    setDateTo(f.dateTo || '');
+    setActiveDateQuick(f.activeDateQuick || '');
+    if (f.pageSize) setPageSize(Number(f.pageSize) || 20);
+    setPage(1);
+    setBulkResult('');
+  }, [ALL_DETECTIONS, ALL_VERDICTS]);
+
+  const toggleSelected = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else {
+        if (next.size >= BULK_TRIAGE_MAX) return prev;
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllPage = useCallback(() => {
+    const pageIds = rows.map((r) => r.id);
+    setSelectedIds((prev) => {
+      const allOnPage = pageIds.length > 0 && pageIds.every((id) => prev.has(id));
+      if (allOnPage) {
+        const next = new Set(prev);
+        for (const id of pageIds) next.delete(id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const id of pageIds) {
+        if (next.size >= BULK_TRIAGE_MAX) break;
+        next.add(id);
+      }
+      return next;
+    });
+  }, [rows]);
+
+  const openBulkVerdict = useCallback((verdict) => {
+    if (!selectedIds.size) return;
+    setBulkReason('');
+    setBulkError('');
+    setBulkAssignee('');
+    setBulkModal({ action: 'verdict', verdict });
+  }, [selectedIds.size]);
+
+  const submitBulkDetection = useCallback(async () => {
+    if (!bulkModal) return;
+    const reason = String(bulkReason || '').trim();
+    if (reason.length < 3) {
+      setBulkError('Reason is required (minimum 3 characters).');
+      return;
+    }
+    setBulkLoading(true);
+    setBulkError('');
+    try {
+      const payload = {
+        ids: Array.from(selectedIds),
+        verdict: bulkModal.verdict,
+        reason
+      };
+      const assignee = String(bulkAssignee || '').trim();
+      if (assignee) payload.assigned_to = assignee;
+      const { data } = await api.patch('/ioc/match-events/bulk/verdict', payload);
+      setBulkResult(`Bulk complete: ${data?.succeeded ?? 0} succeeded, ${data?.failed ?? 0} failed.`);
+      setSelectedIds(new Set());
+      setBulkModal(null);
+      setBulkReason('');
+      await loadEvents();
+    } catch (err) {
+      setBulkError(apiErrorMessage(err, 'Bulk action failed'));
+    } finally {
+      setBulkLoading(false);
+    }
+  }, [bulkModal, bulkReason, bulkAssignee, selectedIds, loadEvents]);
 
   const openReview = useCallback((evt) => {
     setSelectedEvent(evt || null);
@@ -2032,8 +2317,51 @@ function IOCMatchEventsPage() {
                 <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
               </span>
             )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
-            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear all</button>
+            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Reset filters</button>
           </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px' }}>
+            <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Saved views</span>
+            {showSaveViewInput ? (
+              <>
+                <input value={saveViewName} onChange={(e) => setSaveViewName(e.target.value)} placeholder="View name" style={{ minWidth: 160 }} />
+                <button onClick={saveCurrentView} disabled={!String(saveViewName || '').trim()}>Save</button>
+                <button onClick={() => { setShowSaveViewInput(false); setSaveViewName(''); }}>Cancel</button>
+              </>
+            ) : (
+              <button onClick={() => setShowSaveViewInput(true)} style={{ fontSize: 12 }}>Save current view</button>
+            )}
+            <select
+              value=""
+              onChange={(e) => {
+                const name = e.target.value;
+                if (!name) return;
+                const view = savedViews.find((v) => v.name === name);
+                if (view) loadSavedView(view);
+              }}
+              style={{ minWidth: 180, fontSize: 12 }}
+            >
+              <option value="">Load saved view…</option>
+              {savedViews.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+            </select>
+          </div>
+
+          {canWrite && selectedIds.size > 0 ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', border: '1px solid #1d4ed8', borderRadius: 10, background: 'rgba(30,58,138,0.25)', padding: '8px 10px' }}>
+              <span style={{ color: '#dbeafe', fontSize: 13, fontWeight: 700 }}>{selectedIds.size} selected (max {BULK_TRIAGE_MAX})</span>
+              {[
+                ['fp', 'Set FP'],
+                ['tp', 'Set TP'],
+                ['suspicious', 'Set Suspicious'],
+                ['in_progress', 'Set In Progress'],
+                ['security_test', 'Security Test']
+              ].map(([v, lbl]) => (
+                <button key={v} onClick={() => openBulkVerdict(v)} style={{ fontSize: 12 }}>{lbl}</button>
+              ))}
+              <button onClick={() => setSelectedIds(new Set())} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear selection</button>
+            </div>
+          ) : null}
+          {bulkResult ? <div style={{ color: '#86efac', fontSize: 13 }}>{bulkResult}</div> : null}
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input type="datetime-local" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setActiveDateQuick(''); }} />
@@ -2136,6 +2464,16 @@ function IOCMatchEventsPage() {
           <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1260 }}>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                {canWrite ? (
+                  <th style={{ width: 36 }}>
+                    <input
+                      type="checkbox"
+                      checked={pagedRows.length > 0 && pagedRows.every((r) => selectedIds.has(r.id))}
+                      onChange={toggleSelectAllPage}
+                      title="Select all on this page"
+                    />
+                  </th>
+                ) : null}
                 <th style={{ width: 80 }}>ID</th>
                 <th style={{ width: 170 }}>Detected At</th>
                 <th style={{ width: 240 }}>Matched IOC</th>
@@ -2148,11 +2486,21 @@ function IOCMatchEventsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>Loading detection events...</td></tr>
+                <tr><td colSpan={canWrite ? 9 : 8} style={{ color: '#94a3b8' }}>Loading detection events...</td></tr>
               ) : pagedRows.length ? pagedRows.map((evt) => {
                 const vm = verdictMeta(evt.verdict);
                 return (
                   <tr key={evt.id} style={{ borderTop: '1px solid #334155' }}>
+                    {canWrite ? (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(evt.id)}
+                          onChange={() => toggleSelected(evt.id)}
+                          disabled={!selectedIds.has(evt.id) && selectedIds.size >= BULK_TRIAGE_MAX}
+                        />
+                      </td>
+                    ) : null}
                     <td>{evt.id}</td>
                     <td>{formatUserDateTime(evt.detected_at || evt.last_seen_at || evt.event_time || evt.created_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{highlight(evt.matched_ioc)}</td>
@@ -2190,7 +2538,7 @@ function IOCMatchEventsPage() {
                   </tr>
                 );
               }) : (
-                <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No detection events found.</td></tr>
+                <tr><td colSpan={canWrite ? 9 : 8} style={{ color: '#94a3b8' }}>No detection events found.</td></tr>
               )}
             </tbody>
           </table>
@@ -2212,6 +2560,19 @@ function IOCMatchEventsPage() {
           </div>
         </div>
       </section>
+
+      <BulkActionConfirmModal
+        open={Boolean(bulkModal)}
+        title="Confirm bulk verdict"
+        description={`Apply verdict to ${selectedIds.size} detection event(s)? This cannot be undone in bulk.`}
+        confirmLabel="Apply verdict"
+        loading={bulkLoading}
+        error={bulkError}
+        reason={bulkReason}
+        onReasonChange={setBulkReason}
+        onCancel={() => { if (!bulkLoading) { setBulkModal(null); setBulkReason(''); setBulkError(''); } }}
+        onConfirm={() => submitBulkDetection().catch(() => {})}
+      />
 
       {selectedEvent ? (
         <div onClick={closeReview} style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.7)', display: 'grid', placeItems: 'center', zIndex: 50, padding: 16 }}>
@@ -3135,6 +3496,7 @@ function IncidentRelatedLogsTable({ incidentId }) {
 
 function IncidentPage() {
   const navigate = useNavigate();
+  const { canWrite } = useSession();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -3147,6 +3509,16 @@ function IncidentPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkModal, setBulkModal] = useState(null);
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkError, setBulkError] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState('');
+  const [bulkAssignee, setBulkAssignee] = useState('');
+  const [savedViews, setSavedViews] = useState(() => loadSavedViews(SAVED_VIEW_STORAGE.incidents));
+  const [saveViewName, setSaveViewName] = useState('');
+  const [showSaveViewInput, setShowSaveViewInput] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3197,6 +3569,114 @@ function IncidentPage() {
     setTo('');
     setQuickRange('');
     setPage(1);
+    setBulkResult('');
+  };
+
+  const saveCurrentView = () => {
+    const name = String(saveViewName || '').trim();
+    if (!name) return;
+    const view = {
+      name,
+      savedAt: new Date().toISOString(),
+      filters: { query, status, verdict, assigneeFilter, from, to, quickRange, pageSize }
+    };
+    const next = [...savedViews.filter((v) => v.name !== name), view];
+    persistSavedViews(SAVED_VIEW_STORAGE.incidents, next);
+    setSavedViews(next);
+    setSaveViewName('');
+    setShowSaveViewInput(false);
+  };
+
+  const loadSavedView = (view) => {
+    const f = view?.filters || {};
+    setQuery(String(f.query || ''));
+    setStatus(f.status || '');
+    setVerdict(Array.isArray(f.verdict) ? f.verdict : []);
+    setAssigneeFilter(f.assigneeFilter || 'all');
+    setFrom(f.from || '');
+    setTo(f.to || '');
+    setQuickRange(f.quickRange || '');
+    if (f.pageSize) setPageSize(Number(f.pageSize) || 20);
+    setPage(1);
+    setBulkResult('');
+  };
+
+  const incidentKey = (it) => String(it.incident_id || it.id);
+
+  const toggleSelected = (key) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else {
+        if (next.size >= BULK_TRIAGE_MAX) return prev;
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllPage = () => {
+    const pageKeys = items.map(incidentKey);
+    setSelectedIds((prev) => {
+      const allOnPage = pageKeys.length > 0 && pageKeys.every((k) => prev.has(k));
+      if (allOnPage) {
+        const next = new Set(prev);
+        for (const k of pageKeys) next.delete(k);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const k of pageKeys) {
+        if (next.size >= BULK_TRIAGE_MAX) break;
+        next.add(k);
+      }
+      return next;
+    });
+  };
+
+  const openBulkModal = (action, extra = {}) => {
+    if (!selectedIds.size) return;
+    setBulkReason('');
+    setBulkError('');
+    setBulkAssignee('');
+    setBulkModal({ action, ...extra });
+  };
+
+  const submitBulkIncident = async () => {
+    if (!bulkModal) return;
+    const reason = String(bulkReason || '').trim();
+    if (reason.length < 3) {
+      setBulkError('Reason is required (minimum 3 characters).');
+      return;
+    }
+    setBulkLoading(true);
+    setBulkError('');
+    try {
+      const payload = { ids: Array.from(selectedIds), reason };
+      if (bulkModal.action === 'verdict') payload.verdict = bulkModal.verdict;
+      if (bulkModal.action === 'assign') {
+        const assignee = String(bulkAssignee || '').trim();
+        if (!assignee) {
+          setBulkError('Assignee email is required.');
+          setBulkLoading(false);
+          return;
+        }
+        payload.assigned_to = assignee;
+      }
+      if (bulkModal.action === 'close') {
+        payload.close = true;
+        payload.close_verdict = bulkModal.verdict;
+      }
+      const { data } = await api.patch('/incidents/bulk', payload);
+      setBulkResult(`Bulk complete: ${data?.succeeded ?? 0} succeeded, ${data?.failed ?? 0} failed.`);
+      setSelectedIds(new Set());
+      setBulkModal(null);
+      setBulkReason('');
+      await load();
+    } catch (err) {
+      setBulkError(apiErrorMessage(err, 'Bulk action failed'));
+    } finally {
+      setBulkLoading(false);
+    }
   };
 
   const assigneeOptions = useMemo(() => {
@@ -3306,7 +3786,7 @@ function IncidentPage() {
               Last 7 days
             </button>
             <button onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
-            <button onClick={resetFilters}>Clear</button>
+            <button onClick={resetFilters}>Reset filters</button>
           </div>
           <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Active Filters</span>
@@ -3316,8 +3796,53 @@ function IncidentPage() {
                 <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
               </span>
             )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
-            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear all</button>
+            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Reset filters</button>
           </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px' }}>
+            <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Saved views</span>
+            {showSaveViewInput ? (
+              <>
+                <input value={saveViewName} onChange={(e) => setSaveViewName(e.target.value)} placeholder="View name" style={{ minWidth: 160 }} />
+                <button onClick={saveCurrentView} disabled={!String(saveViewName || '').trim()}>Save</button>
+                <button onClick={() => { setShowSaveViewInput(false); setSaveViewName(''); }}>Cancel</button>
+              </>
+            ) : (
+              <button onClick={() => setShowSaveViewInput(true)} style={{ fontSize: 12 }}>Save current view</button>
+            )}
+            <select
+              value=""
+              onChange={(e) => {
+                const name = e.target.value;
+                if (!name) return;
+                const view = savedViews.find((v) => v.name === name);
+                if (view) loadSavedView(view);
+              }}
+              style={{ minWidth: 180, fontSize: 12 }}
+            >
+              <option value="">Load saved view…</option>
+              {savedViews.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+            </select>
+          </div>
+
+          {canWrite && selectedIds.size > 0 ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', border: '1px solid #1d4ed8', borderRadius: 10, background: 'rgba(30,58,138,0.25)', padding: '8px 10px' }}>
+              <span style={{ color: '#dbeafe', fontSize: 13, fontWeight: 700 }}>{selectedIds.size} selected (max {BULK_TRIAGE_MAX})</span>
+              {[
+                ['verdict', 'TP', 'Set TP'],
+                ['verdict', 'FP', 'Set FP'],
+                ['verdict', 'Suspicious', 'Set Suspicious'],
+                ['verdict', 'security_test', 'Security Test']
+              ].map(([action, v, lbl]) => (
+                <button key={v} onClick={() => openBulkModal(action, { verdict: v })} style={{ fontSize: 12 }}>{lbl}</button>
+              ))}
+              <button onClick={() => openBulkModal('assign')} style={{ fontSize: 12 }}>Assign</button>
+              <button onClick={() => openBulkModal('close', { verdict: 'FP' })} style={{ fontSize: 12 }}>Close as FP</button>
+              <button onClick={() => openBulkModal('close', { verdict: 'TP' })} style={{ fontSize: 12 }}>Close as TP</button>
+              <button onClick={() => setSelectedIds(new Set())} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear selection</button>
+            </div>
+          ) : null}
+          {bulkResult ? <div style={{ color: '#86efac', fontSize: 13 }}>{bulkResult}</div> : null}
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress'].map((v) => (
@@ -3345,6 +3870,16 @@ function IncidentPage() {
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
+                {canWrite ? (
+                  <th style={{ width: 36 }}>
+                    <input
+                      type="checkbox"
+                      checked={items.length > 0 && items.every((it) => selectedIds.has(incidentKey(it)))}
+                      onChange={toggleSelectAllPage}
+                      title="Select all on this page"
+                    />
+                  </th>
+                ) : null}
                 {headerCell('Incident ID', 'incidentId')}
                 {headerCell('Created At', 'createdAt')}
                 {headerCell('IOC', 'ioc')}
@@ -3359,8 +3894,18 @@ function IncidentPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={11} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
+              {loading ? <tr><td colSpan={canWrite ? 12 : 11} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
                 <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.incident_id || it.id}`)}>
+                  {canWrite ? (
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(incidentKey(it))}
+                        onChange={() => toggleSelected(incidentKey(it))}
+                        disabled={!selectedIds.has(incidentKey(it)) && selectedIds.size >= BULK_TRIAGE_MAX}
+                      />
+                    </td>
+                  ) : null}
                   <td><b>#{it.incident_id || '-'}</b></td>
                   <td>{formatUserDateTime(it.created_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
@@ -3373,7 +3918,7 @@ function IncidentPage() {
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.assigned_to || 'Unassigned'}</td>
                   <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
                 </tr>
-              )) : <tr><td colSpan={11} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
+              )) : <tr><td colSpan={canWrite ? 12 : 11} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -3392,6 +3937,51 @@ function IncidentPage() {
           </div>
         </div>
       </section>
+
+      <BulkActionConfirmModal
+        open={Boolean(bulkModal)}
+        title={
+          bulkModal?.action === 'close' ? 'Confirm bulk close'
+            : bulkModal?.action === 'assign' ? 'Confirm bulk assign'
+              : 'Confirm bulk verdict'
+        }
+        description={
+          bulkModal?.action === 'assign'
+            ? `Assign ${selectedIds.size} incident(s). Enter assignee email below.`
+            : `Apply action to ${selectedIds.size} incident(s)? Review selection before confirming.`
+        }
+        confirmLabel={
+          bulkModal?.action === 'close' ? 'Close incidents'
+            : bulkModal?.action === 'assign' ? 'Assign incidents'
+              : 'Apply verdict'
+        }
+        loading={bulkLoading}
+        error={bulkError}
+        reason={bulkReason}
+        onReasonChange={setBulkReason}
+        onCancel={() => { if (!bulkLoading) { setBulkModal(null); setBulkReason(''); setBulkError(''); } }}
+        onConfirm={() => submitBulkIncident().catch(() => {})}
+        extraContent={bulkModal?.action === 'assign' ? (
+          <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>Assignee email</span>
+            <input
+              value={bulkAssignee}
+              onChange={(e) => setBulkAssignee(e.target.value)}
+              placeholder="analyst@example.com"
+              style={{
+                padding: '8px 10px',
+                borderRadius: 6,
+                border: '1px solid #475569',
+                background: '#0f172a',
+                color: '#e2e8f0',
+                fontSize: 13,
+                width: '100%',
+                boxSizing: 'border-box'
+              }}
+            />
+          </label>
+        ) : null}
+      />
     </AppShell>
   );
 }
@@ -4356,6 +4946,7 @@ function RiskExplanationPanel({ explanation, item }) {
 
 function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, showRunAll = true } = {}) {
   const { canWrite } = useSession();
+  const requestRequiredReason = useReasonPrompt();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [integrations, setIntegrations] = useState([]);
@@ -4584,9 +5175,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
     setSettingsCredentialsError('');
     setSettingsCredentialsSuccess('');
-    setSavingCredentialsKey(key);
-    const reason = promptRequiredReason('Update integration credentials');
+    const reason = await requestRequiredReason('Update integration credentials');
     if (!reason) return;
+    setSavingCredentialsKey(key);
     try {
       const payload = { auth_key: settingsDraftAuthKey.trim(), reason };
       if (AUTH_KEY_FEED_CONFIG[key]?.supportsRecentDays) {
@@ -6148,6 +6739,7 @@ function AuditLogsPage() {
 
 function ApiKeysPage() {
   const { canWrite } = useSession();
+  const requestRequiredReason = useReasonPrompt();
   const [searchParams] = useSearchParams();
   const preselectedFeedId = searchParams.get('feed_id');
   const ui = PUBLISHED_FEEDS_UI;
@@ -6246,7 +6838,7 @@ function ApiKeysPage() {
 
   async function rotateKey(keyId) {
     if (!canWrite || !window.confirm('Rotate this key? The old token stops working immediately.')) return;
-    const reason = promptRequiredReason('Rotate API key');
+    const reason = await requestRequiredReason('Rotate API key');
     if (!reason) return;
     try {
       const { data } = await api.post(`/api-keys/${keyId}/rotate`, { reason });
@@ -6265,7 +6857,7 @@ function ApiKeysPage() {
 
   async function revokeKey(keyId) {
     if (!canWrite || !window.confirm('Revoke this API key? Pull access stops immediately.')) return;
-    const reason = promptRequiredReason('Revoke API key');
+    const reason = await requestRequiredReason('Revoke API key');
     if (!reason) return;
     try {
       await api.post(`/api-keys/${keyId}/revoke`, { reason });
@@ -7014,6 +7606,7 @@ function IocSourcesPage() {
 
 function EnrichmentProvidersPage() {
   const { canWrite } = useSession();
+  const requestRequiredReason = useReasonPrompt();
   const [loading, setLoading] = useState(true);
   const [vt, setVt] = useState(null);
   const [ipinfo, setIpinfo] = useState(null);
@@ -7094,7 +7687,7 @@ function EnrichmentProvidersPage() {
   }
 
   async function saveIpinfo() {
-    const reason = promptRequiredReason('Update IPinfo Lite provider settings');
+    const reason = await requestRequiredReason('Update IPinfo Lite provider settings');
     if (!reason) return;
     setBusy((b) => ({ ...b, ipSave: true }));
     setFeedback({ type: '', text: '' });
@@ -7751,6 +8344,7 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
 
 function UsersPage() {
   const { isAdmin, userId } = useSession();
+  const requestRequiredReason = useReasonPrompt();
   const ui = PUBLISHED_FEEDS_UI;
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -7810,7 +8404,7 @@ function UsersPage() {
         ? 'Are you sure you want to deactivate this user?'
         : 'Are you sure you want to activate this user?';
     if (!window.confirm(confirmMsg)) return;
-    const reason = promptRequiredReason(next === 'passive' ? 'Deactivate user' : 'Activate user');
+    const reason = await requestRequiredReason(next === 'passive' ? 'Deactivate user' : 'Activate user');
     if (!reason) return;
     setStatusBusyId(targetId);
     setActionError('');
@@ -8212,6 +8806,7 @@ function IOCSuppressionsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAdmin } = useSession();
+  const requestRequiredReason = useReasonPrompt();
   const ui = PUBLISHED_FEEDS_UI;
 
   const [items, setItems] = useState([]);
@@ -8358,7 +8953,7 @@ function IOCSuppressionsPage() {
 
   async function confirmRemove() {
     if (!removeItem?.id) return;
-    const reason = promptRequiredReason('Remove IOC suppression');
+    const reason = await requestRequiredReason('Remove IOC suppression');
     if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
@@ -10138,6 +10733,7 @@ function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
   const { isAdmin, canWrite } = useSession();
+  const requestRequiredReason = useReasonPrompt();
   const detailsPublicId = String(publicId || '').trim();
   const ui = PUBLISHED_FEEDS_UI;
 
@@ -10314,7 +10910,7 @@ function IOCDetailsPage() {
   async function submitRemoveSuppression() {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0) return;
-    const reason = promptRequiredReason('Remove IOC suppression');
+    const reason = await requestRequiredReason('Remove IOC suppression');
     if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
@@ -11721,6 +12317,7 @@ function App() {
       `}</style>
       <BrowserRouter>
         <SessionProvider>
+        <ReasonPromptProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
@@ -11755,6 +12352,7 @@ function App() {
           <Route path="/settings" element={<Navigate to="/administration" replace />} />
           <Route path="*" element={<DefaultRedirect />} />
         </Routes>
+        </ReasonPromptProvider>
         </SessionProvider>
       </BrowserRouter>
     </>
