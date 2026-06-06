@@ -9,6 +9,7 @@ import {
   testIpinfoLiteConnection,
   maskToken
 } from '../services/ipinfoLiteService.js';
+import { parseActionReason } from '../lib/reasonValidation.js';
 
 const IPINFO_PROVIDER = 'ipinfo_lite';
 
@@ -188,6 +189,10 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
   });
 
   app.put('/api/admin/enrichment-providers/ipinfo-lite', async (req, res) => {
+    const reasonCheck = parseActionReason(req.body);
+    if (!reasonCheck.ok) {
+      return res.status(400).json({ message: reasonCheck.message });
+    }
     try {
       const enabled = req.body?.enabled !== false;
       const token = typeof req.body?.token === 'string' ? req.body.token.trim() : undefined;
@@ -227,7 +232,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         entityDisplay: 'IPinfo Lite',
         severity: AUDIT_SEVERITY.INFO,
         after: { enabled, base_url: config.base_url, timeout_seconds: config.timeout_seconds, token_updated: Boolean(token) },
-        metadata: { provider: IPINFO_PROVIDER }
+        metadata: { provider: IPINFO_PROVIDER, reason: reasonCheck.reason }
       }).catch(() => {});
 
       const cfg = await getIpinfoLiteConfig(pool);

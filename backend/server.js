@@ -33,6 +33,7 @@ import {
   loadIntegrationQueueHealthSnapshot,
   runIntegrationQueueRecover
 } from './lib/integrationQueueApi.js';
+import { parseActionReason } from './lib/reasonValidation.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -1533,9 +1534,23 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
       return res.status(400).json({ message: 'Invalid verdict. Use fp, tp, suspicious, in_progress or null.' });
     }
 
-    const note = rawNote == null || String(rawNote).trim() === ''
-      ? null
-      : String(rawNote).trim().slice(0, 4000);
+    const verdictChanging = verdict !== null && String(beforeRow.verdict || '') !== String(verdict || '');
+    let actionReason = null;
+    if (verdictChanging) {
+      if (verdict === 'in_progress') {
+        const optionalReason = parseActionReason(req.body);
+        actionReason = optionalReason.ok ? optionalReason.reason : 'Analyst took ownership';
+      } else {
+        const reasonCheck = parseActionReason(req.body);
+        if (!reasonCheck.ok) {
+          return res.status(400).json({ message: reasonCheck.message });
+        }
+        actionReason = reasonCheck.reason;
+      }
+    }
+
+    const note = actionReason
+      || (rawNote == null || String(rawNote).trim() === '' ? null : String(rawNote).trim().slice(0, 4000));
 
     const reviewedBy = String(req.user?.username || req.user?.email || '').trim() || null;
     const assignTo = String(req.body?.assigned_to || '').trim() || reviewedBy;
@@ -1588,7 +1603,8 @@ app.patch('/api/ioc/match-events/:id/verdict', async (req, res) => {
         metadata: {
           activity_id: afterRow.activity_id,
           detection_type: afterRow.detection_type,
-          reviewed_by: afterRow.reviewed_by
+          reviewed_by: afterRow.reviewed_by,
+          reason: actionReason || null
         }
       }).catch((e) => console.warn('[audit] match event verdict log failed', e?.message || e));
     }
@@ -2899,7 +2915,6 @@ app.patch('/api/incidents/:id', async (req, res) => {
     if (!incident?.id) return res.status(404).json({ message: 'Incident not found' });
 
     const bodyVerdict = req.body?.verdict;
-    const note = req.body?.note == null ? null : String(req.body.note).trim().slice(0, 4000);
     const takeOwnership = Boolean(req.body?.take_ownership || req.body?.takeOwnership);
     const propagateToEvents = Boolean(req.body?.propagate_to_events || req.body?.propagateToEvents);
     const propagationNote = req.body?.propagation_note == null ? null : String(req.body.propagation_note).trim().slice(0, 4000);
@@ -2912,6 +2927,36 @@ app.patch('/api/incidents/:id', async (req, res) => {
     const allowedVerdicts = new Set(['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress']);
     if (verdict !== null && !allowedVerdicts.has(verdict)) {
       return res.status(400).json({ message: 'Invalid verdict' });
+    }
+
+    await tx.query('BEGIN');
+
+    const curQ = await tx.query(
+      `SELECT * FROM ioc_activity WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
+      [incident.id]
+    );
+    if (!curQ.rowCount) {
+      await tx.query('ROLLBACK');
+      return res.status(404).json({ message: 'Incident not found' });
+    }
+
+    const current = curQ.rows[0];
+    const nextVerdictPreview = verdict ?? current.verdict ?? 'Unreviewed';
+    const verdictChanging = verdict !== null && String(current.verdict || '') !== String(nextVerdictPreview || '');
+    const willClose = ['TP', 'FP', 'Suspicious'].includes(nextVerdictPreview);
+    let actionReason = null;
+    if (verdictChanging || (willClose && String(current.status || '') !== 'closed')) {
+      if (takeOwnership && nextVerdictPreview === 'In Progress') {
+        const optionalReason = parseActionReason(req.body);
+        actionReason = optionalReason.ok ? optionalReason.reason : 'Analyst took ownership';
+      } else {
+        const reasonCheck = parseActionReason(req.body);
+        if (!reasonCheck.ok) {
+          await tx.query('ROLLBACK');
+          return res.status(400).json({ message: reasonCheck.message });
+        }
+        actionReason = reasonCheck.reason;
+      }
     }
 
     const derivedStatus = (v) => {
@@ -2927,19 +2972,9 @@ app.patch('/api/incidents/:id', async (req, res) => {
       Unreviewed: null
     };
 
-    await tx.query('BEGIN');
-
-    const curQ = await tx.query(
-      `SELECT * FROM ioc_activity WHERE id = $1::uuid LIMIT 1 FOR UPDATE`,
-      [incident.id]
-    );
-    if (!curQ.rowCount) {
-      await tx.query('ROLLBACK');
-      return res.status(404).json({ message: 'Incident not found' });
-    }
-
-    const current = curQ.rows[0];
     const nextVerdict = verdict ?? current.verdict ?? 'Unreviewed';
+    const note = actionReason
+      || (req.body?.note == null ? null : String(req.body.note).trim().slice(0, 4000));
     const nextStatus = derivedStatus(nextVerdict);
 
     const updQ = await tx.query(
@@ -3000,7 +3035,7 @@ app.patch('/api/incidents/:id', async (req, res) => {
         metadata: {
           incident_uuid: updated.id,
           propagate_to_events: propagateToEvents,
-          note: note || null
+          reason: actionReason || note || null
         }
       }).catch((e) => console.warn('[audit] incident verdict log failed', e?.message || e));
     }
@@ -3015,7 +3050,7 @@ app.patch('/api/incidents/:id', async (req, res) => {
         severity: AUDIT_SEVERITY.INFO,
         before: { status: current.status, verdict: current.verdict },
         after: { status: updated.status, verdict: updated.verdict },
-        metadata: { incident_uuid: updated.id, note: note || null }
+        metadata: { incident_uuid: updated.id, reason: actionReason || note || null }
       }).catch((e) => console.warn('[audit] incident close log failed', e?.message || e));
     }
 
@@ -4178,6 +4213,10 @@ app.put('/api/integrations/:key/credentials', async (req, res) => {
   if (!authKey) {
     return res.status(400).json({ message: 'auth_key is required' });
   }
+  const reasonCheck = parseActionReason(req.body);
+  if (!reasonCheck.ok) {
+    return res.status(400).json({ message: reasonCheck.message });
+  }
 
   try {
     const prevQ = await pool.query(
@@ -4217,7 +4256,8 @@ app.put('/api/integrations/:key/credentials', async (req, res) => {
       metadata: {
         feed_key: key,
         feed_name: prev.name,
-        source: 'ui'
+        source: 'ui',
+        reason: reasonCheck.reason
       }
     }).catch((e) => {
       console.warn('[audit] integration credentials log failed', e?.message || e);
@@ -5927,6 +5967,8 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
   const iocId = parsePositiveInt(req.params?.id);
   if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  const reasonCheck = parseActionReason(req.body);
+  if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
   try {
     const iocQ = await pool.query('SELECT observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
     if (!iocQ.rowCount) return res.status(404).json({ message: 'IOC not found' });
@@ -5957,7 +5999,7 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
         severity: AUDIT_SEVERITY.WARNING,
         before: { active: true, reason: row.reason },
         after: { active: false },
-        metadata: { ioc_id: iocId, removed_count: q.rowCount }
+        metadata: { ioc_id: iocId, removed_count: q.rowCount, reason: reasonCheck.reason }
       }).catch((e) => console.warn('[audit] suppression delete log failed', e?.message || e));
     }
     return res.json({ ok: true, updated: q.rowCount || 0 });
@@ -6086,6 +6128,8 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
   const id = parsePositiveInt(req.params?.id);
   if (!id) return res.status(400).json({ message: 'Invalid id' });
+  const reasonCheck = parseActionReason(req.body);
+  if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
   try {
     const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
     if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
@@ -6102,7 +6146,8 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
       entityDisplay: `${q.rows[0].ioc_value} (${q.rows[0].ioc_type})`,
       severity: AUDIT_SEVERITY.WARNING,
       before: { active: beforeQ.rows[0].active, reason: beforeQ.rows[0].reason },
-      after: { active: false }
+      after: { active: false },
+      metadata: { reason: reasonCheck.reason }
     }).catch((e) => console.warn('[audit] suppression delete log failed', e?.message || e));
     return res.json({ ok: true });
   } catch (err) {

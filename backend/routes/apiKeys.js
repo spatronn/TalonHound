@@ -2,6 +2,7 @@ import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { parseActionReason } from '../lib/reasonValidation.js';
 
 const FEED_ACCESS_TYPE = 'feed_access';
 
@@ -178,6 +179,8 @@ export function registerApiKeyRoutes(app, pool, audit) {
   app.post('/api/api-keys/:keyId/rotate', requireRole(ROLES.ADMIN), async (req, res) => {
     const keyId = Number(req.params.keyId);
     if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
+    const reasonCheck = parseActionReason(req.body);
+    if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
 
     try {
       const existing = await pool.query(
@@ -211,7 +214,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
         entityDisplay: key.name,
         severity: AUDIT_SEVERITY.WARNING,
         after: apiKeyAuditSnapshot({ ...rows[0], feed_name: meta.feed_name, feed_ioc_type: meta.feed_ioc_type }),
-        metadata: { feed_id: key.feed_id, masked_key: `${rawToken.slice(0, 8)}…` }
+        metadata: { feed_id: key.feed_id, masked_key: `${rawToken.slice(0, 8)}…`, reason: reasonCheck.reason }
       });
 
       return res.json({
@@ -227,6 +230,8 @@ export function registerApiKeyRoutes(app, pool, audit) {
   app.post('/api/api-keys/:keyId/revoke', requireRole(ROLES.ADMIN), async (req, res) => {
     const keyId = Number(req.params.keyId);
     if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
+    const reasonCheck = parseActionReason(req.body);
+    if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
 
     try {
       const beforeQ = await pool.query(
@@ -263,7 +268,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
         severity: AUDIT_SEVERITY.CRITICAL,
         before,
         after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0]?.name, feed_ioc_type: feedQ.rows[0]?.ioc_type }),
-        metadata: { revoked: true }
+        metadata: { revoked: true, reason: reasonCheck.reason }
       });
 
       return res.json({ api_key: key });

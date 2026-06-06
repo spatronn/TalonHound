@@ -12,3 +12,9 @@ export function parseRequiredReason(raw, opts = {}) {
   }
   return { ok: true, reason: reason.slice(0, maxLength) };
 }
+
+/** Accept explicit reason; fall back to legacy note field during API transition. */
+export function parseActionReason(body, opts = {}) {
+  const raw = body?.reason ?? body?.note;
+  return parseRequiredReason(raw, opts);
+}

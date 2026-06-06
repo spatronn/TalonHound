@@ -21,6 +21,17 @@ function readCookie(name) {
   return '';
 }
 
+function promptRequiredReason(actionLabel) {
+  const reason = window.prompt(`${actionLabel}\n\nReason (required, min 3 characters):`);
+  if (reason == null) return null;
+  const trimmed = String(reason).trim();
+  if (trimmed.length < 3) {
+    window.alert('Reason is required (minimum 3 characters).');
+    return null;
+  }
+  return trimmed.slice(0, 4000);
+}
+
 const api = axios.create({ baseURL: '/api', withCredentials: true });
 
 api.interceptors.request.use((config) => {
@@ -1875,11 +1886,17 @@ function IOCMatchEventsPage() {
 
   const submitReview = useCallback(async () => {
     if (!selectedEvent?.id) return;
+    const reason = String(reviewNote || '').trim();
+    if (reviewVerdict && reason.length < 3) {
+      window.alert('Reason is required when setting a verdict (minimum 3 characters).');
+      return;
+    }
     setSavingReview(true);
     try {
       const payload = {
         verdict: reviewVerdict || null,
-        note: reviewNote.trim() || null
+        reason: reason || null,
+        note: reason || null
       };
       const { data } = await api.patch(`/ioc/match-events/${selectedEvent.id}/verdict`, payload);
       const updated = data?.item || null;
@@ -2241,8 +2258,8 @@ function IOCMatchEventsPage() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Analyst Note</label>
-              <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={5} placeholder="Optional analyst note" style={{ width: '100%' }} />
+              <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Reason (required for verdict)</label>
+              <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={5} placeholder="Why is this verdict being set?" style={{ width: '100%' }} />
             </div>
 
             <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12 }}>
@@ -2297,11 +2314,17 @@ function IOCMatchEventDetailsPage() {
 
   const saveVerdict = useCallback(async (nextVerdict = verdict, nextNote = note, extra = {}) => {
     if (!id) return;
+    const reason = String(nextNote || '').trim();
+    if (nextVerdict && nextVerdict !== 'in_progress' && reason.length < 3) {
+      window.alert('Reason is required when setting a verdict (minimum 3 characters).');
+      return;
+    }
     setSaving(true);
     try {
       const { data } = await api.patch(`/ioc/match-events/${id}/verdict`, {
         verdict: nextVerdict || null,
-        note: String(nextNote || '').trim() || null,
+        reason: reason || null,
+        note: reason || null,
         ...extra
       });
       const it = data?.item || null;
@@ -2393,8 +2416,8 @@ function IOCMatchEventDetailsPage() {
               </div>
 
               <div style={{ display: 'grid', gap: 8 }}>
-                <label style={{ color: '#94a3b8', fontSize: 13 }}>Analyst Note</label>
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder="Optional analyst note" style={{ width: '100%' }} />
+                <label style={{ color: '#94a3b8', fontSize: 13 }}>Reason (required for verdict)</label>
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder="Why is this verdict being set?" style={{ width: '100%' }} />
               </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2842,7 +2865,8 @@ function IncidentDetailsPage() {
     if (!id) return;
     setSaving(true);
     try {
-      const { data } = await api.patch(`/incidents/${id}`, { verdict, note, ...patch });
+      const reason = String(note || '').trim();
+      const { data } = await api.patch(`/incidents/${id}`, { verdict, reason, note: reason, ...patch });
       setItem((prev) => ({ ...(prev || {}), ...(data?.item || {}) }));
       if (data?.item?.note != null) setNote(String(data.item.note || ''));
       setEventsRefreshKey((k) => k + 1);
@@ -2882,8 +2906,13 @@ function IncidentDetailsPage() {
   const isFinalVerdict = verdict === 'TP' || verdict === 'FP' || verdict === 'Suspicious';
 
   async function onClickSave() {
+    const reason = String(note || '').trim();
+    if (String(verdict || '') !== String(item?.verdict || '') && reason.length < 3) {
+      window.alert('Reason is required when changing verdict (minimum 3 characters).');
+      return;
+    }
     if (isFinalVerdict) {
-      setPropagationNote(String(note || ''));
+      setPropagationNote(reason);
       setShowPropagateModal(true);
       return;
     }
@@ -2922,8 +2951,8 @@ function IncidentDetailsPage() {
                 <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
                   <option>TP</option><option>FP</option><option>Suspicious</option><option>Unreviewed</option><option>In Progress</option>
                 </select>
-                <label>Note</label>
-                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
+                <label>Reason</label>
+                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Required when changing verdict" />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => onClickSave().catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
@@ -4588,8 +4617,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsCredentialsError('');
     setSettingsCredentialsSuccess('');
     setSavingCredentialsKey(key);
+    const reason = promptRequiredReason('Update integration credentials');
+    if (!reason) return;
     try {
-      const payload = { auth_key: settingsDraftAuthKey.trim() };
+      const payload = { auth_key: settingsDraftAuthKey.trim(), reason };
       if (AUTH_KEY_FEED_CONFIG[key]?.supportsRecentDays) {
         payload.recent_days = Number(settingsDraftRecentDays);
       }
@@ -6234,8 +6265,10 @@ function ApiKeysPage() {
 
   async function rotateKey(keyId) {
     if (!canWrite || !window.confirm('Rotate this key? The old token stops working immediately.')) return;
+    const reason = promptRequiredReason('Rotate API key');
+    if (!reason) return;
     try {
-      const { data } = await api.post(`/api-keys/${keyId}/rotate`);
+      const { data } = await api.post(`/api-keys/${keyId}/rotate`, { reason });
       const key = keys.find((k) => k.id === keyId);
       setTokenReveal({
         title: 'API key rotated',
@@ -6251,8 +6284,10 @@ function ApiKeysPage() {
 
   async function revokeKey(keyId) {
     if (!canWrite || !window.confirm('Revoke this API key? Pull access stops immediately.')) return;
+    const reason = promptRequiredReason('Revoke API key');
+    if (!reason) return;
     try {
-      await api.post(`/api-keys/${keyId}/revoke`);
+      await api.post(`/api-keys/${keyId}/revoke`, { reason });
       await loadAll();
     } catch {
       alert('Failed to revoke API key');
@@ -7078,10 +7113,12 @@ function EnrichmentProvidersPage() {
   }
 
   async function saveIpinfo() {
+    const reason = promptRequiredReason('Update IPinfo Lite provider settings');
+    if (!reason) return;
     setBusy((b) => ({ ...b, ipSave: true }));
     setFeedback({ type: '', text: '' });
     try {
-      await api.put('/admin/enrichment-providers/ipinfo-lite', ipForm);
+      await api.put('/admin/enrichment-providers/ipinfo-lite', { ...ipForm, reason });
       setFeedback({ type: 'success', text: 'IPinfo Lite settings saved.' });
       setIpForm((f) => ({ ...f, token: '' }));
       await load();
@@ -7791,10 +7828,12 @@ function UsersPage() {
         ? 'Are you sure you want to deactivate this user?'
         : 'Are you sure you want to activate this user?';
     if (!window.confirm(confirmMsg)) return;
+    const reason = promptRequiredReason(next === 'passive' ? 'Deactivate user' : 'Activate user');
+    if (!reason) return;
     setStatusBusyId(targetId);
     setActionError('');
     try {
-      await api.patch(`/users/${targetId}/status`, { status: next });
+      await api.patch(`/users/${targetId}/status`, { status: next, reason });
       await loadUsers();
     } catch (err) {
       setActionError(apiErrorMessage(err, 'Failed to update status'));
@@ -8337,10 +8376,12 @@ function IOCSuppressionsPage() {
 
   async function confirmRemove() {
     if (!removeItem?.id) return;
+    const reason = promptRequiredReason('Remove IOC suppression');
+    if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
     try {
-      await api.delete(`/ioc-suppressions/${removeItem.id}`);
+      await api.delete(`/ioc-suppressions/${removeItem.id}`, { data: { reason } });
       setRemoveItem(null);
       setToast('Suppression removed');
       await load();
@@ -10291,10 +10332,12 @@ function IOCDetailsPage() {
   async function submitRemoveSuppression() {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0) return;
+    const reason = promptRequiredReason('Remove IOC suppression');
+    if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
     try {
-      await api.delete(`/ioc/${iocId}/suppress`);
+      await api.delete(`/ioc/${iocId}/suppress`, { data: { reason } });
       setShowRemoveConfirm(false);
       setActionToast('Suppression removed');
       await load();
