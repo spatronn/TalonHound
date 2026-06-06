@@ -7645,6 +7645,7 @@ function CreateUserModal({ onClose, onCreated }) {
             style={ui.select}
           >
             <option value="admin">Admin (Full Access)</option>
+            <option value="analyst">Analyst (Triage)</option>
             <option value="readonly">Read Only (View Only)</option>
           </select>
         </FeedFormField>

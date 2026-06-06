@@ -1,14 +1,17 @@
 /**
- * Role-based access (stage 1). Future: add permission checks alongside or instead of roles.
- * @typedef {'admin' | 'readonly'} AppRole
+ * Role-based access (stage 2). Analyst can triage; admin retains full control.
+ * @typedef {'admin' | 'analyst' | 'readonly'} AppRole
  */
 
 export const ROLES = Object.freeze({
   ADMIN: 'admin',
+  ANALYST: 'analyst',
   READONLY: 'readonly'
 });
 
-const ALL_APP_ROLES = new Set([ROLES.ADMIN, ROLES.READONLY]);
+const ALL_APP_ROLES = new Set([ROLES.ADMIN, ROLES.ANALYST, ROLES.READONLY]);
+
+export const BULK_TRIAGE_MAX_ITEMS = 100;
 
 export function normalizeAppRole(value) {
   const r = String(value || '').trim().toLowerCase();
@@ -22,6 +25,20 @@ export function effectiveRoleFromPayload(roleClaim) {
   if (n) return n;
   if (roleClaim === undefined || roleClaim === null || roleClaim === '') return ROLES.ADMIN;
   return null;
+}
+
+export function isAdminRole(role) {
+  return normalizeAppRole(role) === ROLES.ADMIN;
+}
+
+export function isReadOnlyRole(role) {
+  return normalizeAppRole(role) === ROLES.READONLY;
+}
+
+/** Analyst and admin may change verdicts, assign, and run bulk triage. */
+export function canTriage(role) {
+  const r = normalizeAppRole(role);
+  return r === ROLES.ADMIN || r === ROLES.ANALYST;
 }
 
 /**
@@ -40,6 +57,11 @@ export function requireRole(...allowed) {
     }
     return next();
   };
+}
+
+/** Shorthand for verdict/assign/bulk triage routes. */
+export function requireTriageRole() {
+  return requireRole(ROLES.ADMIN, ROLES.ANALYST);
 }
 
 /**

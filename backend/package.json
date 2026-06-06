@@ -25,6 +25,7 @@
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",
     "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
+    "test:rbac": "node --test lib/rbac.test.js",
     "test:retro-status": "node --test lib/retroStatus.test.js",
     "smoke:routes": "node scripts/smoke-routes.js"
   },
