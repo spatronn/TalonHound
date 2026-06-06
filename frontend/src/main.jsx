@@ -21,6 +21,17 @@ function readCookie(name) {
   return '';
 }
 
+function promptRequiredReason(actionLabel) {
+  const reason = window.prompt(`${actionLabel}\n\nReason (required, min 3 characters):`);
+  if (reason == null) return null;
+  const trimmed = String(reason).trim();
+  if (trimmed.length < 3) {
+    window.alert('Reason is required (minimum 3 characters).');
+    return null;
+  }
+  return trimmed.slice(0, 4000);
+}
+
 const api = axios.create({ baseURL: '/api', withCredentials: true });
 
 api.interceptors.request.use((config) => {
@@ -1753,6 +1764,8 @@ function IOCMatchEventsPage() {
   const [activeDateQuick, setActiveDateQuick] = useState('24h');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dateError, setDateError] = useState('');
   const filtersRef = useRef(null);
@@ -1798,31 +1811,43 @@ function IOCMatchEventsPage() {
     return { label: 'Unreviewed', color: '#94a3b8' };
   };
 
-  const loadEvents = useCallback(async (q = '', assignedTo = null, fromVal = '', toVal = '', verdictVals = [], detectionVals = []) => {
-    const fromIso = toIsoOrNull(fromVal);
-    const toIso = toIsoOrNull(toVal);
+  const loadEvents = useCallback(async () => {
+    const fromIso = toIsoOrNull(dateFrom);
+    const toIso = toIsoOrNull(dateTo);
     if (fromIso && toIso && fromIso > toIso) {
       setDateError('Invalid date range: From must be earlier than or equal to To.');
       setRows([]);
+      setTotalRows(0);
+      setTotalPages(1);
       return;
     }
     setDateError('');
     setLoading(true);
     try {
-      const params = { limit: 120, q: q || undefined };
-      if (assignedTo) params.assigned_to = assignedTo; // UI hint, backend may ignore
+      const params = {
+        page,
+        page_size: pageSize,
+        q: String(query || '').trim() || undefined
+      };
       if (fromIso) params.from = fromIso;
       if (toIso) params.to = toIso;
-      if (Array.isArray(verdictVals) && verdictVals.length && verdictVals.length < ALL_VERDICTS.length) params.verdict = verdictVals.join(',');
-      if (Array.isArray(detectionVals) && detectionVals.length && detectionVals.length < ALL_DETECTIONS.length) params.detection = detectionVals.join(',');
+      if (verdictFilter.length && verdictFilter.length < ALL_VERDICTS.length) params.verdict = verdictFilter.join(',');
+      if (detectionFilter.length && detectionFilter.length < ALL_DETECTIONS.length) params.detection = detectionFilter.join(',');
+      if (assigneeFilter && assigneeFilter !== 'all') params.assignee = assigneeFilter;
+      if (sourceFilter && sourceFilter !== 'all') params.source = sourceFilter;
       const { data } = await api.get('/ioc/match-events', { params });
       setRows(data?.items || []);
+      const pagination = data?.pagination || {};
+      setTotalRows(Number(pagination.total ?? data?.total ?? 0));
+      setTotalPages(Math.max(1, Number(pagination.total_pages || 1)));
     } catch {
       setRows([]);
+      setTotalRows(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, query, dateFrom, dateTo, verdictFilter, detectionFilter, assigneeFilter, sourceFilter]);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -1855,7 +1880,7 @@ function IOCMatchEventsPage() {
     setDateTo(def.to);
     setActiveDateQuick('24h');
     setQuery('');
-    loadEvents('', null, def.from, def.to).catch(() => {});
+    loadEvents().catch(() => {});
   }, [loadEvents]);
 
   const openReview = useCallback((evt) => {
@@ -1875,11 +1900,17 @@ function IOCMatchEventsPage() {
 
   const submitReview = useCallback(async () => {
     if (!selectedEvent?.id) return;
+    const reason = String(reviewNote || '').trim();
+    if (reviewVerdict && reason.length < 3) {
+      window.alert('Reason is required when setting a verdict (minimum 3 characters).');
+      return;
+    }
     setSavingReview(true);
     try {
       const payload = {
         verdict: reviewVerdict || null,
-        note: reviewNote.trim() || null
+        reason: reason || null,
+        note: reason || null
       };
       const { data } = await api.patch(`/ioc/match-events/${selectedEvent.id}/verdict`, payload);
       const updated = data?.item || null;
@@ -1899,9 +1930,12 @@ function IOCMatchEventsPage() {
     setDateFrom(def.from);
     setDateTo(def.to);
     setActiveDateQuick('24h');
-    loadEvents('', null, def.from, def.to).catch(() => {});
     loadUsers().catch(() => {});
-  }, [loadEvents, loadUsers]);
+  }, [loadUsers]);
+
+  useEffect(() => {
+    loadEvents().catch(() => {});
+  }, [loadEvents]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -1927,53 +1961,13 @@ function IOCMatchEventsPage() {
   }, [userLookup]);
 
   const searchTerm = String(query || '').trim().toLowerCase();
-  const filteredRows = useMemo(() => {
-    return (rows || []).filter((evt) => {
-      const detection = String(evt.detection_mode || '').toLowerCase();
-      const verdict = String(evt.verdict || '').toLowerCase();
-      const assigneeRaw = String(evt.assigned_to || '').trim();
-      const assignee = resolveAssignee(assigneeRaw);
-      const source = String((evt.source_names && evt.source_names[0]) || evt.source_name || '').trim();
-
-      if (Array.isArray(detectionFilter) && detectionFilter.length && detectionFilter.length < ALL_DETECTIONS.length && !detectionFilter.includes(detection)) return false;
-      if (Array.isArray(verdictFilter) && verdictFilter.length && verdictFilter.length < ALL_VERDICTS.length) {
-        const verdictNorm = verdict || 'unreviewed';
-        if (!verdictFilter.includes(verdictNorm)) return false;
-      }
-
-      if (assigneeFilter === 'unassigned') {
-        if (assigneeRaw) return false;
-      } else if (assigneeFilter !== 'all') {
-        if (assignee.toLowerCase() !== assigneeFilter.toLowerCase()) return false;
-      }
-
-      if (sourceFilter !== 'all' && source.toLowerCase() !== sourceFilter.toLowerCase()) return false;
-
-      if (searchTerm) {
-        const hay = [
-          `#${evt.id}`,
-          String(evt.id || ''),
-          evt.matched_ioc,
-          source,
-          assignee,
-          evt.destination_ip,
-          evt.host_name
-        ].map((x) => String(x || '').toLowerCase()).join(' | ');
-        if (!hay.includes(searchTerm)) return false;
-      }
-
-      return true;
-    });
-  }, [rows, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, resolveAssignee, userEmail, searchTerm]);
 
   useEffect(() => {
     setPage(1);
   }, [query, detectionFilter, verdictFilter, assigneeFilter, sourceFilter, activeDateQuick, dateFrom, dateTo, pageSize]);
 
-  const totalRows = filteredRows.length;
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(page, totalPages);
-  const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pagedRows = rows;
 
   const activeFilters = [];
   if (dateFrom || dateTo) {
@@ -1984,7 +1978,8 @@ function IOCMatchEventsPage() {
         setDateFrom('');
         setDateTo('');
         setActiveDateQuick('');
-        loadEvents(query, null, '', '', verdictFilter, detectionFilter).catch(() => {});
+        setPage(1);
+        loadEvents().catch(() => {});
       }
     });
   }
@@ -2022,11 +2017,11 @@ function IOCMatchEventsPage() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') loadEvents(query, null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {}); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); loadEvents().catch(() => {}); } }}
               placeholder="Search by ID, IP, domain, hash, or source... (e.g., 47.104.248.7 or #21371)"
               style={{ minWidth: 560, flex: 1 }}
             />
-            <button onClick={() => loadEvents(query, null, dateFrom, dateTo, verdictFilter, detectionFilter).catch(() => {})}>Search</button>
+            <button onClick={() => { setPage(1); loadEvents().catch(() => {}); }}>Search</button>
           </div>
 
           <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2054,7 +2049,8 @@ function IOCMatchEventsPage() {
                   const t = toDateTimeLocal(now);
                   setDateFrom(f);
                   setDateTo(t);
-                  loadEvents(query, null, f, t, verdictFilter, detectionFilter).catch(() => {});
+                  setPage(1);
+                  loadEvents().catch(() => {});
                 }}
                 style={{
                   borderRadius: 999,
@@ -2241,8 +2237,8 @@ function IOCMatchEventsPage() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Analyst Note</label>
-              <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={5} placeholder="Optional analyst note" style={{ width: '100%' }} />
+              <label style={{ display: 'block', fontSize: 13, marginBottom: 6, color: '#94a3b8' }}>Reason (required for verdict)</label>
+              <textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} rows={5} placeholder="Why is this verdict being set?" style={{ width: '100%' }} />
             </div>
 
             <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12 }}>
@@ -2297,11 +2293,17 @@ function IOCMatchEventDetailsPage() {
 
   const saveVerdict = useCallback(async (nextVerdict = verdict, nextNote = note, extra = {}) => {
     if (!id) return;
+    const reason = String(nextNote || '').trim();
+    if (nextVerdict && nextVerdict !== 'in_progress' && reason.length < 3) {
+      window.alert('Reason is required when setting a verdict (minimum 3 characters).');
+      return;
+    }
     setSaving(true);
     try {
       const { data } = await api.patch(`/ioc/match-events/${id}/verdict`, {
         verdict: nextVerdict || null,
-        note: String(nextNote || '').trim() || null,
+        reason: reason || null,
+        note: reason || null,
         ...extra
       });
       const it = data?.item || null;
@@ -2393,8 +2395,8 @@ function IOCMatchEventDetailsPage() {
               </div>
 
               <div style={{ display: 'grid', gap: 8 }}>
-                <label style={{ color: '#94a3b8', fontSize: 13 }}>Analyst Note</label>
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder="Optional analyst note" style={{ width: '100%' }} />
+                <label style={{ color: '#94a3b8', fontSize: 13 }}>Reason (required for verdict)</label>
+                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder="Why is this verdict being set?" style={{ width: '100%' }} />
               </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2842,7 +2844,8 @@ function IncidentDetailsPage() {
     if (!id) return;
     setSaving(true);
     try {
-      const { data } = await api.patch(`/incidents/${id}`, { verdict, note, ...patch });
+      const reason = String(note || '').trim();
+      const { data } = await api.patch(`/incidents/${id}`, { verdict, reason, note: reason, ...patch });
       setItem((prev) => ({ ...(prev || {}), ...(data?.item || {}) }));
       if (data?.item?.note != null) setNote(String(data.item.note || ''));
       setEventsRefreshKey((k) => k + 1);
@@ -2882,8 +2885,13 @@ function IncidentDetailsPage() {
   const isFinalVerdict = verdict === 'TP' || verdict === 'FP' || verdict === 'Suspicious';
 
   async function onClickSave() {
+    const reason = String(note || '').trim();
+    if (String(verdict || '') !== String(item?.verdict || '') && reason.length < 3) {
+      window.alert('Reason is required when changing verdict (minimum 3 characters).');
+      return;
+    }
     if (isFinalVerdict) {
-      setPropagationNote(String(note || ''));
+      setPropagationNote(reason);
       setShowPropagateModal(true);
       return;
     }
@@ -2922,8 +2930,8 @@ function IncidentDetailsPage() {
                 <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
                   <option>TP</option><option>FP</option><option>Suspicious</option><option>Unreviewed</option><option>In Progress</option>
                 </select>
-                <label>Note</label>
-                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
+                <label>Reason</label>
+                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Required when changing verdict" />
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => onClickSave().catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
@@ -3133,26 +3141,9 @@ function IncidentPage() {
   const [status, setStatus] = useState('');
   const [verdict, setVerdict] = useState([]);
   const [assigneeFilter, setAssigneeFilter] = useState('all');
-  const [from, setFrom] = useState(() => {
-    const now = new Date();
-    const d = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${day}T${hh}:${mm}`;
-  });
-  const [to, setTo] = useState(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${day}T${hh}:${mm}`;
-  });
-  const [quickRange, setQuickRange] = useState('24h');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [quickRange, setQuickRange] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [pagination, setPagination] = useState({ page: 1, page_size: 20, total: 0, total_pages: 1 });
@@ -3202,7 +3193,10 @@ function IncidentPage() {
     setStatus('');
     setVerdict([]);
     setAssigneeFilter('all');
-    applyQuickRange('24h');
+    setFrom('');
+    setTo('');
+    setQuickRange('');
+    setPage(1);
   };
 
   const assigneeOptions = useMemo(() => {
@@ -3274,6 +3268,9 @@ function IncidentPage() {
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
         <h2 style={{ marginTop: 0 }}>Incidents</h2>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 8 }}>
+          Default view shows all open incidents plus closed incidents from the last 7 days. Use date filters to narrow further.
+        </div>
 
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -4588,8 +4585,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsCredentialsError('');
     setSettingsCredentialsSuccess('');
     setSavingCredentialsKey(key);
+    const reason = promptRequiredReason('Update integration credentials');
+    if (!reason) return;
     try {
-      const payload = { auth_key: settingsDraftAuthKey.trim() };
+      const payload = { auth_key: settingsDraftAuthKey.trim(), reason };
       if (AUTH_KEY_FEED_CONFIG[key]?.supportsRecentDays) {
         payload.recent_days = Number(settingsDraftRecentDays);
       }
@@ -4744,7 +4743,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
+      <section className="integrations-feeds-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div>
             <h2 style={{ marginTop: 0, marginBottom: 4, color: '#f1f5f9' }}>{title}</h2>
@@ -4787,21 +4786,34 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         ) : null}
 
         {loading ? <div style={{ color: '#94a3b8' }}>Loading...</div> : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', tableLayout: 'fixed', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", minWidth: 980, width: '100%' }}>
+          <div className="integrations-feeds-table-scroll">
+            <table className="ioc-table integrations-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+              <colgroup>
+                <col className="integrations-feeds-col-state" />
+                <col className="integrations-feeds-col-feed" />
+                <col className="integrations-feeds-col-health" />
+                <col className="integrations-feeds-col-schedule" />
+                <col className="integrations-feeds-col-confidence" />
+                <col className="integrations-feeds-col-expiration" />
+                <col className="integrations-feeds-col-last-success" />
+                <col className="integrations-feeds-col-metrics" />
+                <col className="integrations-feeds-col-error" />
+                <col className="integrations-feeds-col-next-run" />
+                <col className="integrations-feeds-col-action" />
+              </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
-                  <th style={{ width: 88 }}>State</th>
-                  <th style={{ width: '16%' }}>Feed</th>
-                  <th style={{ width: 88 }}>Health</th>
-                  <th style={{ width: 110 }}>Schedule</th>
-                  <th style={{ width: 96 }}>Confidence</th>
-                  <th style={{ width: 120 }}>Expiration</th>
-                  <th style={{ width: 130 }}>Last Success</th>
-                  <th style={{ width: '34%' }}>Last Run Metrics</th>
-                  <th style={{ width: 120 }}>Last Error</th>
-                  <th style={{ width: 120 }}>Next Run</th>
-                  <th style={{ width: 100 }}>Action</th>
+                  <th>State</th>
+                  <th>Feed</th>
+                  <th>Health</th>
+                  <th>Schedule</th>
+                  <th>Confidence</th>
+                  <th>Expiration</th>
+                  <th>Last Success</th>
+                  <th>Last Run Metrics</th>
+                  <th>Last Error</th>
+                  <th>Next Run</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -4818,7 +4830,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                           {state.label}
                         </span>
                       </td>
-                      <td style={{ color: '#e2e8f0', fontWeight: 600, overflowWrap: 'anywhere' }}>{i.name}</td>
+                      <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>{i.name}</td>
                       <td>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
                           {health.label}
@@ -4839,8 +4851,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{isActive ? formatUserDateTime(i.next_run_at) : '-'}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      <td className="integrations-feeds-action-cell">
+                        <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                           <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !isActive} style={{ fontSize: 11, padding: '4px 8px' }} title={!isActive ? 'Enable the feed before running manually.' : undefined}>
                             {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
                           </button>
@@ -6234,8 +6246,10 @@ function ApiKeysPage() {
 
   async function rotateKey(keyId) {
     if (!canWrite || !window.confirm('Rotate this key? The old token stops working immediately.')) return;
+    const reason = promptRequiredReason('Rotate API key');
+    if (!reason) return;
     try {
-      const { data } = await api.post(`/api-keys/${keyId}/rotate`);
+      const { data } = await api.post(`/api-keys/${keyId}/rotate`, { reason });
       const key = keys.find((k) => k.id === keyId);
       setTokenReveal({
         title: 'API key rotated',
@@ -6251,8 +6265,10 @@ function ApiKeysPage() {
 
   async function revokeKey(keyId) {
     if (!canWrite || !window.confirm('Revoke this API key? Pull access stops immediately.')) return;
+    const reason = promptRequiredReason('Revoke API key');
+    if (!reason) return;
     try {
-      await api.post(`/api-keys/${keyId}/revoke`);
+      await api.post(`/api-keys/${keyId}/revoke`, { reason });
       await loadAll();
     } catch {
       alert('Failed to revoke API key');
@@ -7078,10 +7094,12 @@ function EnrichmentProvidersPage() {
   }
 
   async function saveIpinfo() {
+    const reason = promptRequiredReason('Update IPinfo Lite provider settings');
+    if (!reason) return;
     setBusy((b) => ({ ...b, ipSave: true }));
     setFeedback({ type: '', text: '' });
     try {
-      await api.put('/admin/enrichment-providers/ipinfo-lite', ipForm);
+      await api.put('/admin/enrichment-providers/ipinfo-lite', { ...ipForm, reason });
       setFeedback({ type: 'success', text: 'IPinfo Lite settings saved.' });
       setIpForm((f) => ({ ...f, token: '' }));
       await load();
@@ -7791,10 +7809,12 @@ function UsersPage() {
         ? 'Are you sure you want to deactivate this user?'
         : 'Are you sure you want to activate this user?';
     if (!window.confirm(confirmMsg)) return;
+    const reason = promptRequiredReason(next === 'passive' ? 'Deactivate user' : 'Activate user');
+    if (!reason) return;
     setStatusBusyId(targetId);
     setActionError('');
     try {
-      await api.patch(`/users/${targetId}/status`, { status: next });
+      await api.patch(`/users/${targetId}/status`, { status: next, reason });
       await loadUsers();
     } catch (err) {
       setActionError(apiErrorMessage(err, 'Failed to update status'));
@@ -8337,10 +8357,12 @@ function IOCSuppressionsPage() {
 
   async function confirmRemove() {
     if (!removeItem?.id) return;
+    const reason = promptRequiredReason('Remove IOC suppression');
+    if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
     try {
-      await api.delete(`/ioc-suppressions/${removeItem.id}`);
+      await api.delete(`/ioc-suppressions/${removeItem.id}`, { data: { reason } });
       setRemoveItem(null);
       setToast('Suppression removed');
       await load();
@@ -10291,10 +10313,12 @@ function IOCDetailsPage() {
   async function submitRemoveSuppression() {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0) return;
+    const reason = promptRequiredReason('Remove IOC suppression');
+    if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
     try {
-      await api.delete(`/ioc/${iocId}/suppress`);
+      await api.delete(`/ioc/${iocId}/suppress`, { data: { reason } });
       setShowRemoveConfirm(false);
       setActionToast('Suppression removed');
       await load();
@@ -11612,6 +11636,42 @@ function App() {
         table th:last-child, table td:last-child { border-right: none !important; }
         .ioc-table th, .ioc-table td { border-right: 1px solid #334155 !important; }
         .ioc-table th:last-child, .ioc-table td:last-child { border-right: none !important; }
+        .integrations-feeds-table-scroll {
+          overflow-x: auto;
+          max-width: 100%;
+          -webkit-overflow-scrolling: touch;
+        }
+        .integrations-feeds-table {
+          width: 100%;
+          min-width: 1320px;
+          table-layout: auto;
+        }
+        .integrations-feeds-table .integrations-feeds-col-state { min-width: 88px; width: 88px; }
+        .integrations-feeds-table .integrations-feeds-col-feed { min-width: 200px; }
+        .integrations-feeds-table .integrations-feeds-col-health { min-width: 92px; width: 92px; }
+        .integrations-feeds-table .integrations-feeds-col-schedule { min-width: 110px; }
+        .integrations-feeds-table .integrations-feeds-col-confidence { min-width: 104px; }
+        .integrations-feeds-table .integrations-feeds-col-expiration { min-width: 120px; }
+        .integrations-feeds-table .integrations-feeds-col-last-success { min-width: 130px; }
+        .integrations-feeds-table .integrations-feeds-col-metrics { min-width: 280px; }
+        .integrations-feeds-table .integrations-feeds-col-error { min-width: 120px; }
+        .integrations-feeds-table .integrations-feeds-col-next-run { min-width: 120px; }
+        .integrations-feeds-table .integrations-feeds-col-action { min-width: 108px; width: 108px; }
+        .integrations-feeds-table .integrations-feeds-feed-name {
+          word-break: normal;
+          overflow-wrap: normal;
+          white-space: normal;
+        }
+        .integrations-feeds-table .integrations-feeds-action-cell {
+          white-space: nowrap;
+          vertical-align: top;
+        }
+        .integrations-feeds-table .integrations-feeds-action-buttons {
+          min-width: 96px;
+        }
+        .integrations-feeds-table .integrations-feeds-action-buttons button {
+          white-space: nowrap;
+        }
         .published-feeds-page input:focus,
         .published-feeds-page select:focus,
         .published-feeds-page textarea:focus {

@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import { normalizeAppRole, requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { parseActionReason } from '../lib/reasonValidation.js';
 
 const USER_STATUSES = new Set(['active', 'passive']);
 
@@ -182,6 +183,15 @@ export function registerUserManagementRoutes(app, pool, audit) {
       nextRole = nr;
     }
 
+    let roleChangeReason = null;
+    if (nextRole != null) {
+      const reasonCheck = parseActionReason(body);
+      if (!reasonCheck.ok) {
+        return res.status(400).json({ message: reasonCheck.message });
+      }
+      roleChangeReason = reasonCheck.reason;
+    }
+
     try {
       const cur = await pool.query(
         'SELECT id, public_id, username, first_name, last_name, role, status, password_hash FROM users WHERE id = $1',
@@ -245,7 +255,11 @@ export function registerUserManagementRoutes(app, pool, audit) {
           severity: AUDIT_SEVERITY.CRITICAL,
           before: { role: before?.role },
           after: { role: after?.role },
-          metadata: { previous_role: before?.role, new_role: after?.role }
+          metadata: {
+            previous_role: before?.role,
+            new_role: after?.role,
+            reason: roleChangeReason
+          }
         });
       }
 
@@ -281,6 +295,11 @@ export function registerUserManagementRoutes(app, pool, audit) {
       return res.status(400).json({ message: 'status must be active or passive' });
     }
 
+    const reasonCheck = parseActionReason(req.body);
+    if (!reasonCheck.ok) {
+      return res.status(400).json({ message: reasonCheck.message });
+    }
+
     if (next === 'passive' && req.user?.id != null && Number(req.user.id) === id) {
       return res.status(403).json({ message: 'Cannot deactivate your own account' });
     }
@@ -312,7 +331,11 @@ export function registerUserManagementRoutes(app, pool, audit) {
         severity: next === 'passive' ? AUDIT_SEVERITY.CRITICAL : AUDIT_SEVERITY.WARNING,
         before,
         after: userAuditSnapshot(rows[0]),
-        metadata: { previous_status: before?.status, new_status: user.status }
+        metadata: {
+          previous_status: before?.status,
+          new_status: user.status,
+          reason: reasonCheck.reason
+        }
       });
 
       return res.json({ user });

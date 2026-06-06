@@ -98,10 +98,12 @@ Expected: `lock_waiters = 0` during steady state.
 
 ### Login smoke test
 
+Create a database user via the Users admin screen, or for **local dev only** set `DEMO_EMAIL` and `DEMO_PASSWORD` in `.env` (see `.env.example`). Production deployments should leave both unset.
+
 ```bash
 curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"demo@demo.local","password":"Password1!"}'
+  -d '{"email":"<your-user>","password":"<your-password>"}'
 ```
 
 Expected: `200`
