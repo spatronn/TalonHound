@@ -72,9 +72,11 @@ export function registerIocExportRoutes(app, pool) {
     if (filters.tag) {
       params.push(filters.tag);
       where.push(`EXISTS (
-        SELECT 1 FROM ioc_item_tags it
-        JOIN ioc_tags t ON t.id = it.tag_id
-        WHERE it.ioc_item_id = i.id AND LOWER(t.name) = LOWER($${params.length})
+        SELECT 1 FROM ioc_tags it
+        JOIN tags t ON t.id = it.tag_id
+        WHERE it.ioc_id = i.id
+          AND it.ioc_observable_type = i.observable_type
+          AND LOWER(t.name) = LOWER($${params.length})
       )`);
     }
 
@@ -103,9 +105,10 @@ export function registerIocExportRoutes(app, pool) {
          FROM ioc_items i
          LEFT JOIN LATERAL (
            SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS names
-           FROM ioc_item_tags it
-           JOIN ioc_tags t ON t.id = it.tag_id
-           WHERE it.ioc_item_id = i.id
+           FROM ioc_tags it
+           JOIN tags t ON t.id = it.tag_id
+           WHERE it.ioc_id = i.id
+             AND it.ioc_observable_type = i.observable_type
          ) tags ON TRUE
          ${whereSql}
          ORDER BY i.last_seen_at DESC NULLS LAST, i.id DESC

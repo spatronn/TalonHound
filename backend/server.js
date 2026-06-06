@@ -1459,6 +1459,8 @@ app.get('/api/ioc/match-events', async (req, res) => {
   }
 });
 
+registerBulkTriageRoutes(app, pool, { auditLogService, findIncidentRow });
+
 app.get('/api/ioc/match-events/:id', async (req, res) => {
   try {
     const id = Number(req.params?.id);
@@ -4549,7 +4551,6 @@ registerRouteModule('published_feeds');
 registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
-registerBulkTriageRoutes(app, pool, { auditLogService, findIncidentRow });
 registerIocExportRoutes(app, pool);
 registerRouteModule('audit');
 
