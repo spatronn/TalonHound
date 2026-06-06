@@ -28,6 +28,7 @@ import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
+import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -615,10 +616,38 @@ function scheduleGeoCacheRefreshAfterAdd() {
 
 // schema migrations are handled by migrate.js
 
+app.get('/healthz', (_req, res) => {
+  res.json(buildHealthPayload('ok', { process: 'ok' }));
+});
+
+app.get('/readyz', async (_req, res) => {
+  const result = await runReadinessChecks(pool, redis, { useClickhouse: USE_CLICKHOUSE });
+  const payload = buildHealthPayload(result.ok ? 'ok' : 'error', result.checks);
+  if (!result.ok) {
+    payload.error = result.error;
+    return res.status(503).json(payload);
+  }
+  return res.json(payload);
+});
+
 app.get('/health', async (_req, res) => {
   try {
-    await pool.query('SELECT 1');
-    res.json({ ok: true, service: 'backend', db: 'up' });
+    const result = await runReadinessChecks(pool, redis, { useClickhouse: USE_CLICKHOUSE });
+    if (result.ok) {
+      return res.json({
+        ok: true,
+        service: 'backend',
+        db: 'up',
+        ...buildHealthPayload('ok', result.checks)
+      });
+    }
+    return res.status(500).json({
+      ok: false,
+      service: 'backend',
+      db: result.checks.postgres === 'ok' ? 'up' : 'down',
+      ...buildHealthPayload('error', result.checks),
+      error: result.error
+    });
   } catch {
     res.status(500).json({ ok: false, service: 'backend', db: 'down' });
   }
