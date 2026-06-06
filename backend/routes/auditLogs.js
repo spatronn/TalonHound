@@ -39,7 +39,7 @@ function csvEscape(value) {
  * @param {import('pg').Pool} pool
  */
 export function registerAuditLogRoutes(app, pool) {
-  app.get('/api/ioc/:id/audit-logs', requireRole(ROLES.ADMIN), async (req, res) => {
+  app.get('/api/ioc/:id/audit-logs', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
     const rawId = String(req.params?.id || '').trim();
     if (!rawId) return res.status(400).json({ message: 'IOC id is required' });
 
@@ -80,7 +80,7 @@ export function registerAuditLogRoutes(app, pool) {
     }
   });
 
-  app.get('/api/audit-logs', requireRole(ROLES.ADMIN), async (req, res) => {
+  app.get('/api/audit-logs', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
     const page = Math.max(1, Number(req.query?.page || 1));
     const pageSize = Math.min(100, Math.max(1, Number(req.query?.pageSize || 25)));
     const offset = (page - 1) * pageSize;
@@ -228,7 +228,7 @@ export function registerAuditLogRoutes(app, pool) {
     }
   });
 
-  app.get('/api/audit-logs/:id', requireRole(ROLES.ADMIN), async (req, res) => {
+  app.get('/api/audit-logs/:id', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) {
       return res.status(400).json({ message: 'Invalid id' });

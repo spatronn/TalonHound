@@ -59,7 +59,7 @@ export function registerUserManagementRoutes(app, pool, audit) {
       return res.status(400).json({ message: 'username and password are required' });
     }
     if (normalizeAppRole(roleRaw) === null && roleRaw != null && String(roleRaw).trim() !== '') {
-      return res.status(400).json({ message: 'role must be admin or readonly' });
+      return res.status(400).json({ message: 'role must be admin, analyst, or readonly' });
     }
 
     try {
@@ -178,7 +178,7 @@ export function registerUserManagementRoutes(app, pool, audit) {
     if (Object.prototype.hasOwnProperty.call(body, 'role')) {
       const nr = normalizeAppRole(body.role);
       if (nr === null && String(body.role || '').trim() !== '') {
-        return res.status(400).json({ message: 'role must be admin or readonly' });
+        return res.status(400).json({ message: 'role must be admin, analyst, or readonly' });
       }
       nextRole = nr;
     }

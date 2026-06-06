@@ -23,6 +23,8 @@ import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
+import { registerBulkTriageRoutes } from './routes/bulkTriage.js';
+import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
@@ -1456,6 +1458,8 @@ app.get('/api/ioc/match-events', async (req, res) => {
     return res.status(500).json({ total: 0, items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 } });
   }
 });
+
+registerBulkTriageRoutes(app, pool, { auditLogService, findIncidentRow });
 
 app.get('/api/ioc/match-events/:id', async (req, res) => {
   try {
@@ -4547,6 +4551,7 @@ registerRouteModule('published_feeds');
 registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
+registerIocExportRoutes(app, pool);
 registerRouteModule('audit');
 
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
