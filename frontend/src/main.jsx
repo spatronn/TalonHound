@@ -5729,8 +5729,21 @@ function IntegrationsQueueStatusPage() {
 function IntegrationsRecentRunsPage() {
   const [loading, setLoading] = useState(true);
   const [recentRuns, setRecentRuns] = useState([]);
-  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, started: 170, reason: 320 });
+  const [tableWidths, setTableWidths] = useState({
+    id: 96,
+    integration: 150,
+    name: 150,
+    state: 92,
+    queued: 158,
+    started: 158,
+    finished: 158,
+    duration: 100,
+    reason: 260,
+  });
   const [resizeState, setResizeState] = useState(null);
+  const tableMinWidth = Object.values(tableWidths).reduce((sum, width) => sum + width, 0);
+  const ellipsisCellStyle = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const resizeHandleStyle = { position: 'absolute', right: 0, top: 0, width: 8, height: '100%', cursor: 'col-resize' };
 
   async function load() {
     setLoading(true);
@@ -5786,13 +5799,13 @@ function IntegrationsRecentRunsPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', padding: 16, minWidth: 0, maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <h2 style={{ marginTop: 0 }}>Recent Runs</h2>
-          <button onClick={() => load().catch(() => {})}>Refresh</button>
+          <button type="button" onClick={() => load().catch(() => {})} style={{ flex: '0 0 auto' }}>Refresh</button>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+        <div style={{ overflowX: 'auto', overflowY: 'hidden', maxWidth: '100%', width: '100%', minWidth: 0 }}>
+          <table className="ioc-table recent-runs-table" cellPadding="10" style={{ borderCollapse: 'collapse', background: '#fff', tableLayout: 'fixed', width: '100%', minWidth: tableMinWidth, fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
             <colgroup>
               <col style={{ width: tableWidths.id }} />
               <col style={{ width: tableWidths.integration }} />
@@ -5800,19 +5813,21 @@ function IntegrationsRecentRunsPage() {
               <col style={{ width: tableWidths.state }} />
               <col style={{ width: tableWidths.queued }} />
               <col style={{ width: tableWidths.started }} />
+              <col style={{ width: tableWidths.finished }} />
+              <col style={{ width: tableWidths.duration }} />
               <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-                <th style={{ position: 'relative' }}>Job ID<div onMouseDown={(e) => startResize('id', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Integration<div onMouseDown={(e) => startResize('integration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Name<div onMouseDown={(e) => startResize('name', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>State<div onMouseDown={(e) => startResize('state', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Queued At<div onMouseDown={(e) => startResize('queued', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Started At<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th>Finished At</th>
-                <th>Duration</th>
-                <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Job ID">Job ID<div onMouseDown={(e) => startResize('id', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Integration">Integration<div onMouseDown={(e) => startResize('integration', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Name">Name<div onMouseDown={(e) => startResize('name', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="State">State<div onMouseDown={(e) => startResize('state', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Queued At">Queued At<div onMouseDown={(e) => startResize('queued', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Started At">Started At<div onMouseDown={(e) => startResize('started', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Finished At">Finished At<div onMouseDown={(e) => startResize('finished', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Duration">Duration<div onMouseDown={(e) => startResize('duration', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Reason">Reason<div onMouseDown={(e) => startResize('reason', e)} style={resizeHandleStyle} /></th>
               </tr>
             </thead>
             <tbody>
@@ -5825,18 +5840,20 @@ function IntegrationsRecentRunsPage() {
                   : null;
                 return (
                 <tr key={String(r.job_id || r.id)} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job_id || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.integration_name || r.integration_key || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{integrationJobDisplayName(r) || r.job_type || '-'}</td>
-                  <td style={{ color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ⚠' : ''}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatUserDateTime(r.finished_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{durationMs != null ? formatDurationMs(Math.max(0, durationMs)) : '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: r.possibly_stuck ? '#b45309' : undefined }} title={reasonText}>
-                    {reasonText}
+                  <td style={ellipsisCellStyle} title={r.job_id || '-'}>{r.job_id || '-'}</td>
+                  <td style={ellipsisCellStyle} title={r.integration_name || r.integration_key || '-'}>{r.integration_name || r.integration_key || '-'}</td>
+                  <td style={ellipsisCellStyle} title={integrationJobDisplayName(r) || r.job_type || '-'}>{integrationJobDisplayName(r) || r.job_type || '-'}</td>
+                  <td style={{ ...ellipsisCellStyle, color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }} title={statusLabel(r.state || r.status)}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ⚠' : ''}</td>
+                  <td style={ellipsisCellStyle} title={formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
+                  <td style={ellipsisCellStyle} title={formatUserDateTime(r.started_at)}>{formatUserDateTime(r.started_at)}</td>
+                  <td style={ellipsisCellStyle} title={formatUserDateTime(r.finished_at)}>{formatUserDateTime(r.finished_at)}</td>
+                  <td style={ellipsisCellStyle} title={durationMs != null ? formatDurationMs(Math.max(0, durationMs)) : '-'}>{durationMs != null ? formatDurationMs(Math.max(0, durationMs)) : '-'}</td>
+                  <td style={{ ...ellipsisCellStyle, color: r.possibly_stuck ? '#b45309' : undefined }} title={reasonText}>
+                    <span style={{ display: 'inline-block', maxWidth: reasonText && reasonText !== '-' ? 'calc(100% - 92px)' : '100%', verticalAlign: 'middle', ...ellipsisCellStyle }}>
+                      {reasonText}
+                    </span>
                     {reasonText && reasonText !== '-' ? (
-                      <span style={{ marginLeft: 8, display: 'inline-flex', gap: 6 }}>
+                      <span style={{ marginLeft: 8, display: 'inline-flex', gap: 6, verticalAlign: 'middle' }}>
                         <button style={{ fontSize: 11 }} onClick={() => window.alert(reasonText)}>View</button>
                         <button style={{ fontSize: 11 }} onClick={() => navigator.clipboard?.writeText(reasonText).catch(() => {})}>Copy</button>
                       </span>
