@@ -63,6 +63,8 @@ services:
       - db
       - redis
       - clickhouse
+    volumes:
+      - ./backups:/backups
     healthcheck:
       test:
         [
