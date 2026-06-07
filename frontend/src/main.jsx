@@ -3695,13 +3695,14 @@ function IncidentPage() {
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
 
   const [tableWidths, setTableWidths] = useState({
-    incidentId: 110,
-    createdAt: 170,
+    select: 36,
+    incident_id: 110,
+    created_at: 170,
     ioc: 240,
     type: 90,
-    observedHosts: 130,
-    firstSeen: 170,
-    lastSeen: 170,
+    observed_hosts: 130,
+    first_seen: 170,
+    last_seen: 170,
     status: 100,
     verdict: 120,
     assignee: 160,
@@ -3714,7 +3715,7 @@ function IncidentPage() {
     const onMove = (e) => {
       const delta = e.clientX - resizeState.startX;
       const next = Math.max(80, resizeState.startWidth + delta);
-      setTableWidths((prev) => ({ ...prev, [resizeState.col]: next }));
+      setTableWidths((prev) => ({ ...prev, [resizeState.key]: next }));
     };
     const onUp = () => setResizeState(null);
     window.addEventListener('mousemove', onMove);
@@ -3725,20 +3726,37 @@ function IncidentPage() {
     };
   }, [resizeState]);
 
-  const startResize = (e, col) => {
+  const startResize = (e, key) => {
     e.preventDefault();
     e.stopPropagation();
-    setResizeState({ col, startX: e.clientX, startWidth: tableWidths[col] || 120 });
+    setResizeState({ key, startX: e.clientX, startWidth: tableWidths[key] || 120 });
   };
 
-  const headerCell = (label, col, extraProps = {}) => (
-    <th style={{ position: 'relative', ...(col ? { width: tableWidths[col] } : {}), ...extraProps }}>
-      {label}
-      {col && (
+  // Regression guard: keep this order as the single source for colgroup/header/body; resize uses stable keys, not rendered indexes.
+  const incidentTableColumns = [
+    ...(canWrite ? [{ key: 'select', label: 'Select', resizable: false }] : []),
+    { key: 'incident_id', label: 'Incident ID' },
+    { key: 'created_at', label: 'Created At' },
+    { key: 'ioc', label: 'IOC' },
+    { key: 'type', label: 'Type' },
+    { key: 'observed_hosts', label: <span title="Number of unique hosts where this IOC was observed in logs">Observed Hosts</span> },
+    { key: 'first_seen', label: 'First Seen' },
+    { key: 'last_seen', label: 'Last Seen' },
+    { key: 'status', label: 'Status' },
+    { key: 'verdict', label: 'Verdict' },
+    { key: 'assignee', label: 'Assignee' },
+    { key: 'action', label: 'Action' }
+  ];
+  const incidentTableMinWidth = incidentTableColumns.reduce((sum, col) => sum + (tableWidths[col.key] || 120), 0);
+
+  const headerCell = (col) => (
+    <th key={col.key} data-column-key={col.key} style={{ position: 'relative', width: tableWidths[col.key] }}>
+      {col.label}
+      {col.resizable !== false && (
         <span
-          onMouseDown={(e) => startResize(e, col)}
+          onMouseDown={(e) => startResize(e, col.key)}
           style={{ position: 'absolute', right: 0, top: 0, width: 8, height: '100%', cursor: 'col-resize', userSelect: 'none' }}
-          title="Resize"
+          title={`Resize ${typeof col.label === 'string' ? col.label : col.key}`}
         />
       )}
     </th>
@@ -3854,24 +3872,16 @@ function IncidentPage() {
         </div>
 
         <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1500 }}>
+          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: incidentTableMinWidth }}>
             <colgroup>
-              <col style={{ width: tableWidths.incidentId }} />
-              <col style={{ width: tableWidths.createdAt }} />
-              <col style={{ width: tableWidths.ioc }} />
-              <col style={{ width: tableWidths.type }} />
-              <col style={{ width: tableWidths.observedHosts }} />
-              <col style={{ width: tableWidths.firstSeen }} />
-              <col style={{ width: tableWidths.lastSeen }} />
-              <col style={{ width: tableWidths.status }} />
-              <col style={{ width: tableWidths.verdict }} />
-              <col style={{ width: tableWidths.assignee }} />
-              <col style={{ width: tableWidths.action }} />
+              {incidentTableColumns.map((col) => (
+                <col key={col.key} data-column-key={col.key} style={{ width: tableWidths[col.key] }} />
+              ))}
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', background: '#1f2937' }}>
-                {canWrite ? (
-                  <th style={{ width: 36 }}>
+                {incidentTableColumns.map((col) => col.key === 'select' ? (
+                  <th key={col.key} data-column-key={col.key} style={{ width: tableWidths.select }}>
                     <input
                       type="checkbox"
                       checked={items.length > 0 && items.every((it) => selectedIds.has(incidentKey(it)))}
@@ -3879,25 +3889,14 @@ function IncidentPage() {
                       title="Select all on this page"
                     />
                   </th>
-                ) : null}
-                {headerCell('Incident ID', 'incidentId')}
-                {headerCell('Created At', 'createdAt')}
-                {headerCell('IOC', 'ioc')}
-                {headerCell('Type', 'type')}
-                {headerCell(<span title="Number of unique hosts where this IOC was observed in logs">Observed Hosts</span>, 'observedHosts')}
-                {headerCell('First Seen', 'firstSeen')}
-                {headerCell('Last Seen', 'lastSeen')}
-                {headerCell('Status', 'status')}
-                {headerCell('Verdict', 'verdict')}
-                {headerCell('Assignee', 'assignee')}
-                {headerCell('Action', 'action')}
+                ) : headerCell(col))}
               </tr>
             </thead>
             <tbody>
               {loading ? <tr><td colSpan={canWrite ? 12 : 11} style={{ color: '#94a3b8' }}>Loading incidents...</td></tr> : items.length ? items.map((it) => (
                 <tr key={it.id} style={{ borderTop: '1px solid #334155', cursor: 'pointer' }} onClick={() => navigate(`/incidents/${it.incident_id || it.id}`)}>
                   {canWrite ? (
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td data-column-key="select" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(incidentKey(it))}
@@ -3906,17 +3905,17 @@ function IncidentPage() {
                       />
                     </td>
                   ) : null}
-                  <td><b>#{it.incident_id || '-'}</b></td>
-                  <td>{formatUserDateTime(it.created_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
-                  <td>{it.ioc_type}</td>
-                  <td>{it.asset_count || 0}</td>
-                  <td>{formatUserDateTime(it.first_seen)}</td>
-                  <td>{formatUserDateTime(it.last_seen)}</td>
-                  <td>{it.status}</td>
-                  <td>{it.verdict}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.assigned_to || 'Unassigned'}</td>
-                  <td><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
+                  <td data-column-key="incident_id"><b>#{it.incident_id || '-'}</b></td>
+                  <td data-column-key="created_at">{formatUserDateTime(it.created_at)}</td>
+                  <td data-column-key="ioc" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
+                  <td data-column-key="type">{it.ioc_type}</td>
+                  <td data-column-key="observed_hosts">{it.asset_count || 0}</td>
+                  <td data-column-key="first_seen">{formatUserDateTime(it.first_seen)}</td>
+                  <td data-column-key="last_seen">{formatUserDateTime(it.last_seen)}</td>
+                  <td data-column-key="status">{it.status}</td>
+                  <td data-column-key="verdict">{it.verdict}</td>
+                  <td data-column-key="assignee" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.assigned_to || 'Unassigned'}</td>
+                  <td data-column-key="action"><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
                 </tr>
               )) : <tr><td colSpan={canWrite ? 12 : 11} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}
             </tbody>
