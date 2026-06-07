@@ -290,8 +290,10 @@ docker compose up -d --build
 **Key env vars**
 - `LLM_RISK_QUEUE_NAME` (default `llm-risk-jobs`)
 - `LLM_RISK_ADVISOR_ENABLED` (default `false`)
-- `LLM_RISK_ADVISOR_URL` (Ollama endpoint)
-- `LLM_RISK_ADVISOR_MODEL` (default `qwen2.5:7b`)
+- `OLLAMA_BASE_URL` (default `http://192.168.1.14:11434`)
+- `OLLAMA_MODEL` (default `qwen2.5:14b`)
+- `LLM_RISK_ADVISOR_URL` (Ollama generate endpoint; default `http://192.168.1.14:11434/api/generate`)
+- `LLM_RISK_ADVISOR_MODEL` (default `qwen2.5:14b`; falls back to `OLLAMA_MODEL`)
 - `LLM_RISK_ADVISOR_TIMEOUT_MS` (default `8000`)
 - `LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS` (default `25000`)
 - `LLM_RISK_ADVISOR_AI_WEIGHT` (code default `1`; `docker-compose.yml` may override to `3` — see `docs/risk-engine-analytics.md`)
