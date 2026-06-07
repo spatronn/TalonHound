@@ -88,13 +88,19 @@ Preview (no changes):
 ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --dry-run
 ```
 
-Execute restore:
+Execute restore (PostgreSQL only; default):
 
 ```bash
 ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm
 ```
 
-PostgreSQL only (skip ClickHouse files):
+PostgreSQL + ClickHouse (when bundle includes `clickhouse/`):
+
+```bash
+./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm --restore-clickhouse
+```
+
+Explicit PostgreSQL-only alias:
 
 ```bash
 ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm --postgres-only
@@ -106,7 +112,7 @@ The restore script will:
 2. Stop writer services
 3. `pg_restore --clean --if-exists` into `demo` database
 4. `npm run migrate` (forward-only)
-5. Import ClickHouse Native files if present
+5. Import ClickHouse Native files when `--restore-clickhouse` is passed
 6. Start services again
 
 ### Manual PostgreSQL restore (equivalent)
