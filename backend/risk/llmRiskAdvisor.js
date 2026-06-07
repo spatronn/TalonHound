@@ -834,8 +834,9 @@ function buildIncidentPayload(incident = {}) {
 
 export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
   const enabled = toBool(process.env.LLM_RISK_ADVISOR_ENABLED, false);
-  const url = String(process.env.LLM_RISK_ADVISOR_URL || 'http://192.168.1.8:11434/api/generate').trim();
-  const model = String(process.env.LLM_RISK_ADVISOR_MODEL || 'qwen2.5:14b').trim();
+  const ollamaBaseUrl = String(process.env.OLLAMA_BASE_URL || 'http://192.168.1.14:11434').trim().replace(/\/+$/, '');
+  const url = String(process.env.LLM_RISK_ADVISOR_URL || `${ollamaBaseUrl}/api/generate`).trim();
+  const model = String(process.env.LLM_RISK_ADVISOR_MODEL || process.env.OLLAMA_MODEL || 'qwen2.5:14b').trim();
   const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 15000), 1000);
   const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 30000), timeoutMs);
   const llmTemperature = Number(process.env.LLM_RISK_TEMPERATURE ?? 0.2);
