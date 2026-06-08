@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, command as clickhouseCommand } from './lib/clickhouse.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { createSuppressionStats, fetchActiveSuppressionIndex, filterSuppressedPairs } from './lib/ioc-suppression.js';
+import { filterRetroRowsWithRealtimeDuplicates } from './lib/iocRetroDedup.js';
 import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 
 const { Pool } = pg;
@@ -272,7 +273,10 @@ async function insertMatchEvents(client, rows) {
     if (!prev.confidence && r.confidence) prev.confidence = r.confidence;
   }
 
-  const deduped = Array.from(uniq.values());
+  const { kept: deduped, skipped } = await filterRetroRowsWithRealtimeDuplicates(client, Array.from(uniq.values()));
+  if (!deduped.length) {
+    return { inserted: 0, skipped_realtime_duplicate_count: skipped.length, ...suppressionStats.toJSON() };
+  }
   const values = [];
   const params = [];
   const activityCache = new Map();
@@ -350,8 +354,8 @@ async function insertMatchEvents(client, rows) {
 
   const withRaw = deduped.filter((r) => Boolean(r.raw_log_snapshot)).length;
   const withNorm = deduped.filter((r) => Boolean(r.normalized_event_json)).length;
-  console.info(`[retro-event-create] inserted=${deduped.length} source_type_sample=${deduped[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
-  return { inserted: deduped.length, ...suppressionStats.toJSON() };
+  console.info(`[retro-event-create] inserted=${deduped.length} skipped_realtime_duplicate=${skipped.length} source_type_sample=${deduped[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
+  return { inserted: deduped.length, skipped_realtime_duplicate_count: skipped.length, ...suppressionStats.toJSON() };
 }
 
 function normalizeSourceType(event = {}) {
@@ -603,6 +607,7 @@ async function runRetroWindowBatch() {
 
   let inserted = 0;
   let suppressedCount = 0;
+  let skippedRealtimeDuplicateCount = 0;
   if (rows.length > 0) {
     const mapped = rows.map((r) => mapRowToEvent(r));
     const client = await pool.connect();
@@ -611,6 +616,7 @@ async function runRetroWindowBatch() {
       const insertResult = await insertMatchEvents(client, mapped);
       inserted = Number(insertResult.inserted || 0);
       suppressedCount = Number(insertResult.suppressed_count || 0);
+      skippedRealtimeDuplicateCount = Number(insertResult.skipped_realtime_duplicate_count || 0);
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -648,6 +654,7 @@ async function runRetroWindowBatch() {
       pendingBefore: pendingBeforeStats.pending,
       pendingAfter: pendingBeforeStats.pending,
       inserted,
+      skipped_realtime_duplicate_count: skippedRealtimeDuplicateCount,
       suppressed_count: suppressedCount,
       matchedRows: rows.length,
       durationMs,
@@ -681,6 +688,7 @@ async function runRetroWindowBatch() {
     pendingBefore: pendingBeforeStats.pending,
     pendingAfter: pendingAfterStats.pending,
     inserted,
+    skipped_realtime_duplicate_count: skippedRealtimeDuplicateCount,
     suppressed_count: suppressedCount,
     matchedRows: rows.length,
     durationMs,
@@ -754,7 +762,7 @@ async function runAdaptiveLoop() {
 
   const chunkState = res.chunkCompleted ? 'chunk_complete' : 'chunk_page';
   logStatus(
-    `${chunkState} page_full=${res.pageFull ? 1 : 0} pending_before=${res.pendingBefore} pending_after=${res.pendingAfter} pending_range=${res.pendingMinTs || 'none'}..${res.pendingMaxTs || 'none'} inserted=${res.inserted || 0} suppressed_count=${res.suppressed_count || 0} matched_rows=${res.matchedRows || 0} duration_ms=${res.durationMs} pace=${pace} sleep_ms=${nextSleepMs}`
+    `${chunkState} page_full=${res.pageFull ? 1 : 0} pending_before=${res.pendingBefore} pending_after=${res.pendingAfter} pending_range=${res.pendingMinTs || 'none'}..${res.pendingMaxTs || 'none'} inserted=${res.inserted || 0} skipped_realtime_duplicate=${res.skipped_realtime_duplicate_count || 0} suppressed_count=${res.suppressed_count || 0} matched_rows=${res.matchedRows || 0} duration_ms=${res.durationMs} pace=${pace} sleep_ms=${nextSleepMs}`
   );
 
   await sleep(nextSleepMs);
