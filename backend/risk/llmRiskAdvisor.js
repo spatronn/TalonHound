@@ -1,6 +1,14 @@
 import crypto from 'crypto';
 import { buildIncidentStatsSnapshot, buildIncidentVersion } from './llmRiskCommon.js';
 import { inferEvidenceTier, normalizeVerdict } from '../lib/riskEngine.js';
+import {
+  MISSING_CONTEXT_VALUES,
+  RECOMMENDED_CONTROLS,
+  SAFE_RECOMMENDED_ACTIONS,
+  THREAT_CLASSES,
+  normalizeEnvironmentInsightOutput,
+  normalizeStructuredAiInsight
+} from './aiInsightSchema.js';
 
 const ALLOWED_ADJUSTMENTS = new Set([-20, -10, -5, 0, 5, 10, 15, 20]);
 const LOW_EVIDENCE_TIERS = new Set(['dns_only', 'blocked_only', 'generic_only', 'unknown', 'false_positive']);
@@ -313,13 +321,17 @@ function buildRelatedIocEvidenceReason({ data, relatedIocs, hasHighVolume, hasMu
 export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', incidentData = null) {
   const parsed = raw && typeof raw === 'object' ? raw : {};
   const data = incidentData && typeof incidentData === 'object' ? incidentData : {};
+  const withStructured = (out) => ({
+    ...out,
+    structured_output: normalizeStructuredAiInsight({ ...parsed, ...out }, data)
+  });
   let confidence = normalizeConfidence(parsed.confidence);
   let reason = cleanReason(parsed.reason || fallbackReason || 'fallback');
   const rawModelAdjustment = normalizeAdjustment(parsed.adjustment ?? parsed.risk_adjustment);
   let adjustment = rawModelAdjustment;
 
   if (/blacklist/i.test(reason)) {
-    return { adjustment: 0, confidence: 0, reason: 'invalid_reason_blacklist_reference', raw_model_adjustment: rawModelAdjustment };
+    return withStructured({ adjustment: 0, confidence: 0, reason: 'invalid_reason_blacklist_reference', raw_model_adjustment: rawModelAdjustment });
   }
 
   const appendOnce = (base, msg) => (String(base).includes(msg) ? String(base) : `${base} ${msg}`.trim());
@@ -423,13 +435,13 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
       hasNetworkLevelAccess
     });
     const limitedConfidence = clamp(Math.max(confidence || 0, 0.45), 0.45, 0.65);
-    return {
+    return withStructured({
       adjustment: 0,
       confidence: limitedConfidence,
       reason: reasonOut,
       raw_model_adjustment: rawModelAdjustment,
       normalization_reason: 'invalid_reason_persistence_contradiction'
-    };
+    });
   }
   const hasRepeatedOnly = /(repeated dns|repeated)/i.test(evidenceText);
   const hasStrongMaliciousContext = hasStrongMaliciousContextMetric;
@@ -495,7 +507,7 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
     hasNetworkLevelAccess: Boolean(hasAcceptedOrSuccessful)
   });
 
-  return {
+  return withStructured({
     adjustment,
     confidence,
     reason,
@@ -527,7 +539,7 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
       explicitBenign ? 'explicit_benign_or_fp' : null,
       dnsResponseIpRelations.length > 0 ? 'dns_response_ip_forensic_only' : null
     ].filter(Boolean)
-  };
+  });
 }
 
 function buildGenericPrompt() {
@@ -663,7 +675,17 @@ Return ONLY JSON:
   "main_risk_drivers": [],
   "risk_reducing_factors": [],
   "reason": "",
-  "recommended_action": ""
+  "recommended_action": "",
+  "summary": "",
+  "threat_class": "${THREAT_CLASSES.join('|')}",
+  "confidence_score": 0-100,
+  "impact_level": "low|medium|high|critical|unknown",
+  "evidence_strength": "weak|moderate|strong",
+  "risk_drivers": [],
+  "risk_reducers": [],
+  "missing_context": ["${MISSING_CONTEXT_VALUES.join('|')}"],
+  "recommended_controls": ["${RECOMMENDED_CONTROLS.join('|')}"],
+  "recommended_actions": ["${SAFE_RECOMMENDED_ACTIONS.join('|')}"]
 }`;
 }
 
@@ -753,7 +775,46 @@ function buildIncidentPayload(incident = {}) {
     history: {
       previous_incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0),
       previous_verdict: normalizeAdvisorVerdict(incident?.previous_verdict)
-    }
+    },
+    ioc_metadata: incident?.ioc_metadata || {
+      value: String(incident?.ioc_value || incident?.observable_value || ''),
+      type: iocType,
+      status: incident?.ioc_status || incident?.status || null,
+      confidence: incident?.ioc_confidence || incident?.confidence || null,
+      source: incident?.ioc_source || incident?.source_name || null,
+      source_count: Number(incident?.ioc_source_count || 0) || null,
+      tags: parseTags(incident?.tags),
+      primary_threat_classification: incident?.primary_threat_classification || incident?.threat_classification || incident?.category || null,
+      first_seen: incident?.ioc_first_seen_at || incident?.first_seen || null,
+      last_seen: incident?.ioc_last_seen_at || incident?.last_seen || null,
+      expires_at: incident?.expires_at || null,
+      suppressed: Boolean(incident?.suppressed || incident?.suppression?.active),
+      false_positive: normalizeAdvisorVerdict(incident?.previous_verdict) === 'fp' || normalizeAdvisorVerdict(incident?.verdict) === 'fp'
+    },
+    threat_intel: incident?.threat_intel || {
+      virustotal: { available: false },
+      rdap: { available: false },
+      feed: {
+        source_name: incident?.source_name || null,
+        source_confidence: incident?.confidence || null
+      }
+    },
+    environment_impact: incident?.environment_impact || {
+      observed_hosts_count: observedHosts,
+      detection_events_count: eventCount,
+      incident_count: Math.max(Number(incident?.previous_incident_count || 0), 0) + 1,
+      allowed_count: Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0),
+      blocked_count: Math.max(Number(incident?.blocked_connections || snapshot.blocked_connections || 0), 0),
+      unknown_count: Math.max(eventCount - Math.max(Number(incident?.accepted_connections || snapshot.accepted_connections || 0), 0) - Math.max(Number(incident?.blocked_connections || snapshot.blocked_connections || 0), 0), 0),
+      parser_sources: incident?.event_summary?.source_types || {},
+      first_seen_in_environment: incident?.first_seen || null,
+      last_seen_in_environment: incident?.last_seen || null,
+      related_evidence_logs_summary: evidenceSummary,
+      related_incidents: Math.max(Number(incident?.previous_incident_count || 0), 0),
+      max_incident_risk: Number(incident?.risk_score || 0),
+      average_incident_risk: Number(incident?.risk_score || 0)
+    },
+    context_pack_version: 'ai_insight_v2_context_pack_1'
   };
 
   if (iocType === 'domain') {
@@ -953,6 +1014,8 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
         llm_risk_confidence: persisted.llm_risk_confidence,
         llm_risk_reason: persisted.llm_risk_reason,
         llm_related_evidence: persisted.llm_related_evidence,
+        structured_output: persisted.structured_output_json,
+        incident_payload: persisted.context_pack_json,
         raw_model_adjustment: persisted.raw_model_adjustment,
         normalization_reason: persisted.normalization_reason,
         llm_last_updated_at: persisted.llm_last_updated_at,
@@ -990,6 +1053,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
         llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
         llm_risk_reason: normalized.reason,
         llm_related_evidence: source?.llm_related_evidence || normalized.llm_related_evidence || null,
+        ai_insight: source?.structured_output || normalized.structured_output || null,
         raw_model_adjustment: normalized.raw_model_adjustment,
         normalization_reason: normalized.normalization_reason,
         hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
@@ -1016,7 +1080,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     }
   }
 
-  async function persistInsight({ incident, version, normalized }) {
+  async function persistInsight({ incident, version, normalized, contextPack = null }) {
     if (!db || typeof db.query !== 'function') return;
     const activityId = String(incident?.id || incident?.incident_id || '').trim();
     if (!activityId || !version) return;
@@ -1026,11 +1090,13 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
            activity_id, incident_id, insight_version,
            llm_risk_adjustment, llm_risk_confidence, llm_risk_reason,
            llm_related_evidence, raw_model_adjustment, normalization_reason,
+           structured_output_json, context_pack_json,
            llm_last_updated_at, updated_at
          ) VALUES (
            $1::uuid, $2::bigint, $3::text,
            $4::int, $5::double precision, $6::text,
            $7::jsonb, $8::int, $9::text,
+           $10::jsonb, $11::jsonb,
            NOW(), NOW()
          )
          ON CONFLICT (activity_id, insight_version)
@@ -1047,6 +1113,8 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
            llm_related_evidence = EXCLUDED.llm_related_evidence,
            raw_model_adjustment = EXCLUDED.raw_model_adjustment,
            normalization_reason = EXCLUDED.normalization_reason,
+           structured_output_json = EXCLUDED.structured_output_json,
+           context_pack_json = EXCLUDED.context_pack_json,
            llm_last_updated_at = NOW(),
            updated_at = NOW()`,
         [
@@ -1058,7 +1126,9 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
           normalized?.reason ?? null,
           normalized?.llm_related_evidence ? JSON.stringify(normalized.llm_related_evidence) : null,
           Number.isFinite(Number(normalized?.raw_model_adjustment)) ? Number(normalized.raw_model_adjustment) : null,
-          normalized?.normalization_reason ?? null
+          normalized?.normalization_reason ?? null,
+          normalized?.structured_output ? JSON.stringify(normalized.structured_output) : null,
+          contextPack ? JSON.stringify(contextPack) : null
         ]
       );
     } catch {
@@ -1143,7 +1213,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
 
         const normalized = normalizeAdvisorOutput(modelJson, 'ok', incidentPayload);
         console.info(`[llm-confidence-trace] incident_id=${incident?.incident_id || incident?.id || ''} ioc_type=${incidentPayload?.ioc_type || ''} model_raw_confidence=${Number(modelJson?.confidence || 0)} normalized_confidence=${Number(normalized?.confidence || 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'ok'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=false cache_write_value=pending`);
-        return { ok: true, normalized };
+        return { ok: true, normalized, incidentPayload };
       } catch (err) {
         if (isTimeoutError(err)) return { ok: false, kind: 'timeout', reason: 'timeout' };
         return { ok: false, kind: 'network', reason: 'endpoint_unreachable' };
@@ -1165,18 +1235,19 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     }
 
     const normalized = result.normalized;
+    const incidentPayload = result.incidentPayload || buildIncidentPayload(incident);
     await setCached({
       incidentId: incident?.id || incident?.incident_id,
       version,
       value: {
         ...normalized,
         ioc_type: incident?.ioc_type || null,
-        incident_payload: buildIncidentPayload(incident),
+        incident_payload: incidentPayload,
         llm_last_updated_at: new Date().toISOString(),
         llm_version: version || null
       }
     });
-    await persistInsight({ incident, version, normalized });
+    await persistInsight({ incident, version, normalized, contextPack: incidentPayload });
 
     const tier = inferEvidenceTier(incident || {});
     const aiDeltaEffective = computeEffectiveAiDelta(normalized.adjustment, normalized.confidence, tier, aiWeight);
@@ -1187,6 +1258,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
       llm_risk_reason: normalized.reason,
       llm_related_evidence: normalized.llm_related_evidence || null,
+      ai_insight: normalized.structured_output || null,
       raw_model_adjustment: normalized.raw_model_adjustment,
       normalization_reason: normalized.normalization_reason,
       hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
@@ -1198,6 +1270,74 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       ai_delta_effective: Number(aiDeltaEffective.toFixed(2)),
       final_risk_score: Number(finalRisk.toFixed(2))
     };
+  }
+
+  async function generateEnvironmentInsight(inputSummary = {}, { timeoutMsOverride } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(Number(timeoutMsOverride || manualTimeoutMs), 1000));
+    try {
+      const prompt = `You are a cybersecurity posture assistant. Return ONLY JSON.
+Rules:
+- Analyze only the aggregate Environment Insight Input.
+- Do not claim confirmed compromise unless aggregate evidence supports it.
+- Do not recommend automatic blocking, suppression, closing, deletion, expiration, quarantine, or host isolation.
+- Recommendations must be practical defensive controls, not automated remediation.
+- If tags/classification or allow/block data is weak, mention the visibility gap.
+- Use controlled values for posture_level and control_area.
+Output JSON schema:
+{
+  "executive_summary": "",
+  "posture_level": "low|moderate|elevated|high|critical",
+  "primary_exposure": "",
+  "key_findings": [],
+  "risk_score_explanation": {
+    "why_score_is_high_or_low": "",
+    "main_risk_drivers": [],
+    "main_risk_reducers": []
+  },
+  "top_recommendations": [
+    { "control_area": "${RECOMMENDED_CONTROLS.join('|')}", "recommendation": "", "reason": "", "priority": "low|medium|high" }
+  ],
+  "visibility_gaps": [],
+  "trend_notes": ""
+}
+
+Environment Insight Input:
+${JSON.stringify(inputSummary, null, 2)}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          stream: false,
+          format: 'json',
+          options: {
+            temperature: Number.isFinite(llmTemperature) ? llmTemperature : 0.2,
+            num_ctx: Math.max(llmNumCtx, 4096),
+            num_predict: Math.max(llmNumPredict, 500)
+          },
+          prompt
+        }),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        return { ok: false, reason: `llm_http_${response.status}` };
+      }
+      const body = await response.json();
+      const modelJson = extractJson(body?.response);
+      if (!modelJson) return { ok: false, reason: 'invalid_json' };
+      return {
+        ok: true,
+        model,
+        output: normalizeEnvironmentInsightOutput(modelJson, inputSummary),
+        raw_output: modelJson
+      };
+    } catch (err) {
+      return { ok: false, reason: isTimeoutError(err) ? 'timeout' : 'endpoint_unreachable' };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function computeVersion(input) {
@@ -1227,6 +1367,7 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     computeVersion,
     getCached,
     enqueueEvaluation,
-    evaluateAndCache
+    evaluateAndCache,
+    generateEnvironmentInsight
   };
 }

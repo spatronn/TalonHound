@@ -27,6 +27,7 @@ export const AUDIT_ACTION = Object.freeze({
   INCIDENT_VERDICT_CHANGED: 'incident.verdict_changed',
   INCIDENT_ASSIGNED: 'incident.assigned',
   INCIDENT_AI_INSIGHT_UPDATED: 'incident.ai_insight.updated',
+  ENVIRONMENT_AI_INSIGHT_REFRESH: 'environment_ai_insight.refresh',
   USER_CREATED: 'user.created',
   USER_UPDATED: 'user.updated',
   USER_DELETED: 'user.deleted',
@@ -107,6 +108,7 @@ export const AUDIT_ENTITY = Object.freeze({
   IOC_SOURCE: 'ioc_source',
   SETTINGS: 'settings',
   ENRICHMENT: 'enrichment',
+  ENVIRONMENT_AI_INSIGHT: 'environment_ai_insight',
   AUTH: 'auth'
 });
 
@@ -126,6 +128,7 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.INCIDENT_VERDICT_CHANGED]: 'Incident Verdict Changed',
   [AUDIT_ACTION.INCIDENT_ASSIGNED]: 'Incident Assigned',
   [AUDIT_ACTION.INCIDENT_AI_INSIGHT_UPDATED]: 'AI Insight Updated',
+  [AUDIT_ACTION.ENVIRONMENT_AI_INSIGHT_REFRESH]: 'Environment AI Insight Refresh',
   [AUDIT_ACTION.USER_CREATED]: 'User Created',
   [AUDIT_ACTION.USER_UPDATED]: 'User Updated',
   [AUDIT_ACTION.USER_DELETED]: 'User Deleted',

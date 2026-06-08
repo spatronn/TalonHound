@@ -12,6 +12,16 @@ export const MANUAL_EXPIRE_POLICIES = Object.freeze([
   'custom_date'
 ]);
 
+export const PRIMARY_THREAT_CLASSIFICATIONS = Object.freeze([
+  'phishing',
+  'malware',
+  'c2',
+  'scanner',
+  'suspicious_infra',
+  'test',
+  'unknown'
+]);
+
 const NAME_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;
 
 export function normalizeSourceNameInput(raw) {
@@ -55,6 +65,15 @@ export function validateDefaultExpirePolicy(value) {
     return { ok: false, error: `default_expire_policy must be one of: ${MANUAL_EXPIRE_POLICIES.join(', ')}` };
   }
   return { ok: true, value: p };
+}
+
+export function validatePrimaryThreatClassification(value) {
+  if (value == null || value === '') return { ok: true, value: null };
+  const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!PRIMARY_THREAT_CLASSIFICATIONS.includes(normalized)) {
+    return { ok: false, error: `primary threat classification must be one of: ${PRIMARY_THREAT_CLASSIFICATIONS.join(', ')}` };
+  }
+  return { ok: true, value: normalized };
 }
 
 export function validateExpireDays(value, required = false) {
@@ -130,6 +149,7 @@ export function serializeIocSourceRow(row) {
     name: row.name,
     description: row.description || null,
     default_confidence: row.default_confidence || null,
+    default_threat_classification: row.default_threat_classification || null,
     default_expire_policy: row.default_expire_policy || null,
     default_expire_days: row.default_expire_days != null ? Number(row.default_expire_days) : null,
     active: Boolean(row.active),

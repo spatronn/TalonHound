@@ -1278,8 +1278,9 @@ function AppShell({ children }) {
           <Link to="/system" style={menuStyle(isActive('/system'))}>0. System</Link>
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/analytics'))}>2. Analytics</div>
-            <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
-            <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
+	            <Link to="/analytics" style={subMenuStyle(isActive('/analytics'))}>Overview</Link>
+	            <Link to="/analytics/environment-insight" style={subMenuStyle(isActive('/analytics/environment-insight'))}>Environment Insight</Link>
+	            <Link to="/analytics/statistics" style={subMenuStyle(isActive('/analytics/statistics'))}>Statistics</Link>
             <Link to="/analytics/detection-events" style={subMenuStyle(isActive('/analytics/detection-events'))}>Detection Events</Link>
             <Link to="/risk-overview" style={subMenuStyle(isActive('/risk-overview'))}>Risk Overview</Link>
           </div>
@@ -1717,6 +1718,124 @@ function AnalyticsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+function EnvironmentInsightPage() {
+  const navigate = useNavigate();
+  const [range, setRange] = useState('30d');
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const card = { border: '1px solid #334155', borderRadius: 12, background: '#0f172a', padding: 14, minWidth: 0 };
+  const muted = { color: '#94a3b8', fontSize: 13 };
+  const chip = (value) => <span key={value} style={{ display: 'inline-flex', padding: '3px 9px', borderRadius: 999, border: '1px solid #334155', background: '#111827', color: '#cbd5e1', fontSize: 12 }}>{String(value).replaceAll('_', ' ')}</span>;
+  const listCounts = (items = []) => (items.length ? items.map((it) => (
+    <div key={it.key || it.control_area} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid #1f2937', padding: '5px 0' }}>
+      <span>{String(it.key || it.control_area || 'unknown').replaceAll('_', ' ')}</span><b>{it.count}</b>
+    </div>
+  )) : <div style={muted}>No data</div>);
+
+  async function load() {
+    setLoading(true); setError('');
+    try {
+      const { data: res } = await api.get('/analytics/environment-insight', { params: { range } });
+      setData(res);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to load Environment Insight'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refresh() {
+    setRefreshing(true); setError('');
+    try {
+      const { data: res } = await api.post('/analytics/environment-insight/refresh', null, { params: { range } });
+      setData(res);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Environment Insight generation failed'));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => { load().catch(() => {}); }, [range]);
+
+  const insight = data?.insight || {};
+  const summary = data?.input_summary || {};
+  const totals = summary?.totals || {};
+  const ratio = summary?.allowed_blocked_unknown_ratio || {};
+
+  return (
+    <AppShell>
+      <section style={{ display: 'grid', gap: 14, minWidth: 0 }}>
+        <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={{ margin: '0 0 4px' }}>Environment Insight</h2>
+            <div style={muted}>Aggregate AI posture summary. No automatic remediation is performed.</div>
+            <div style={{ ...muted, marginTop: 6 }}>Generated: {data?.generated_at ? formatUserDateTime(data.generated_at) : 'Not generated yet'}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <select value={range} onChange={(e) => setRange(e.target.value)} disabled={loading || refreshing}>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+            </select>
+            <button onClick={() => load().catch(() => {})} disabled={loading || refreshing}>{loading ? 'Loading…' : 'Reload'}</button>
+            <button onClick={() => refresh().catch(() => {})} disabled={refreshing}>{refreshing ? 'Generating…' : 'Refresh Insight'}</button>
+          </div>
+        </div>
+
+        {error ? <div style={{ ...card, borderColor: '#7f1d1d', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+          <div style={card}><div style={muted}>Posture Level</div><div style={{ fontSize: 28, fontWeight: 800, textTransform: 'capitalize' }}>{insight.posture_level || '—'}</div></div>
+          <div style={card}><div style={muted}>Primary Exposure</div><div style={{ fontSize: 20, fontWeight: 700 }}>{insight.primary_exposure || '—'}</div></div>
+          <div style={card}><div style={muted}>Incidents</div><div style={{ fontSize: 28, fontWeight: 800 }}>{totals.total_incidents ?? '—'}</div><div style={muted}>Open {totals.open_incidents ?? 0} / Closed {totals.closed_incidents ?? 0}</div></div>
+          <div style={card}><div style={muted}>Detection Events</div><div style={{ fontSize: 28, fontWeight: 800 }}>{totals.detection_events ?? '—'}</div><div style={muted}>Observed hosts {totals.observed_hosts ?? 0}</div></div>
+        </div>
+
+        <div style={card}>
+          <h3 style={{ marginTop: 0 }}>Executive Summary</h3>
+          <p style={{ margin: 0, lineHeight: 1.55, color: '#cbd5e1' }}>{insight.executive_summary || 'No generated insight yet.'}</p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+          <div style={card}><h3 style={{ marginTop: 0 }}>Key Findings</h3>{(insight.key_findings || []).length ? <ul>{insight.key_findings.map((x) => <li key={x}>{x}</li>)}</ul> : <div style={muted}>No findings yet</div>}</div>
+          <div style={card}><h3 style={{ marginTop: 0 }}>Visibility Gaps</h3>{(insight.visibility_gaps || []).length ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{insight.visibility_gaps.map(chip)}</div> : <div style={muted}>No gaps reported</div>}</div>
+        </div>
+
+        <div style={card}>
+          <h3 style={{ marginTop: 0 }}>Top Recommendations</h3>
+          {(insight.top_recommendations || []).length ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {insight.top_recommendations.map((r, idx) => (
+                <div key={`${r.control_area}-${idx}`} style={{ border: '1px solid #334155', borderRadius: 10, padding: 10, background: '#111827' }}>
+                  <b>{String(r.control_area || '').replaceAll('_', ' ')}</b> <span style={{ color: '#94a3b8' }}>({r.priority || 'medium'})</span>
+                  <div style={{ color: '#e2e8f0', marginTop: 4 }}>{r.recommendation}</div>
+                  <div style={muted}>{r.reason}</div>
+                </div>
+              ))}
+            </div>
+          ) : <div style={muted}>Generate insight to see recommendations.</div>}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+          <div style={card}><h4 style={{ marginTop: 0 }}>Threat Class Distribution</h4>{listCounts(summary.threat_class_distribution || [])}</div>
+          <div style={card}><h4 style={{ marginTop: 0 }}>Recommended Controls</h4>{listCounts(summary.recommended_controls_frequency || [])}</div>
+          <div style={card}><h4 style={{ marginTop: 0 }}>Missing Context</h4>{listCounts(summary.missing_context_frequency || [])}</div>
+          <div style={card}><h4 style={{ marginTop: 0 }}>Allow / Block / Unknown</h4>{listCounts([{ key: 'allowed', count: ratio.allowed || 0 }, { key: 'blocked', count: ratio.blocked || 0 }, { key: 'unknown', count: ratio.unknown || 0 }])}</div>
+        </div>
+
+        <div style={{ ...card, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => navigate('/incidents')}>View related incidents</button>
+          <button onClick={() => navigate('/analytics/detection-events')}>View detection events</button>
+          <button onClick={() => navigate('/ioc')}>Open IOC list</button>
         </div>
       </section>
     </AppShell>
@@ -3344,20 +3463,30 @@ function IncidentDetailsPage() {
                         const adj = Number(item.llm_risk_adjustment || 0);
                         const adjColor = adj > 0 ? '#fca5a5' : adj < 0 ? '#86efac' : '#94a3b8';
                         const adjText = adj > 0 ? `+${adj}` : `${adj}`;
-                        const conf = Number(item.llm_risk_confidence);
-                        const confText = Number.isFinite(conf) ? `${Math.round(Math.min(Math.max(conf, 0), 1) * 100)}%` : '—';
+	                        const conf = Number(item.llm_risk_confidence);
+	                        const confText = Number.isFinite(conf) ? `${Math.round(Math.min(Math.max(conf, 0), 1) * 100)}%` : '—';
+	                        const insight = item.ai_insight || {};
+	                        const chip = (value) => <span key={value} style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 999, border: '1px solid #334155', background: '#111827', color: '#cbd5e1', fontSize: 11 }}>{String(value).replaceAll('_', ' ')}</span>;
 
-                        return (
-                          <>
-                            <div style={{ fontSize: 13 }}>Adjustment: <b style={{ color: adjColor }}>{adjText}</b></div>
-                            <div style={{ fontSize: 13 }}>Confidence: <b>{confText}</b></div>
-                            <div style={{ fontSize: 13, display: 'grid', gridTemplateColumns: '60px 1fr', gap: 8, alignItems: 'start' }}>
-                              <span>Reason:</span>
+	                        return (
+	                          <>
+	                            <div style={{ fontSize: 13 }}>Adjustment: <b style={{ color: adjColor }}>{adjText}</b></div>
+	                            <div style={{ fontSize: 13 }}>Confidence: <b>{confText}</b></div>
+	                            {insight?.summary ? <div style={{ fontSize: 13 }}>Summary: <span style={{ color: '#cbd5e1' }}>{insight.summary}</span></div> : null}
+	                            {insight?.threat_class ? <div style={{ fontSize: 13 }}>Threat Class: <b>{String(insight.threat_class).replaceAll('_', ' ')}</b></div> : null}
+	                            {insight?.impact_level ? <div style={{ fontSize: 13 }}>Impact: <b>{insight.impact_level}</b> • Evidence: <b>{insight.evidence_strength || '—'}</b></div> : null}
+	                            <div style={{ fontSize: 13, display: 'grid', gridTemplateColumns: '60px 1fr', gap: 8, alignItems: 'start' }}>
+	                              <span>Reason:</span>
                               <span style={{ color: '#cbd5e1', whiteSpace: 'normal', overflow: 'visible', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.4 }}>
                                 {item.llm_risk_reason || '—'}
-                              </span>
-                            </div>
-                            {item.llm_related_evidence ? (
+	                              </span>
+	                            </div>
+	                            {Array.isArray(insight.risk_drivers) && insight.risk_drivers.length ? <div style={{ fontSize: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}><span style={{ color: '#94a3b8' }}>Drivers:</span>{insight.risk_drivers.map(chip)}</div> : null}
+	                            {Array.isArray(insight.risk_reducers) && insight.risk_reducers.length ? <div style={{ fontSize: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}><span style={{ color: '#94a3b8' }}>Reducers:</span>{insight.risk_reducers.map(chip)}</div> : null}
+	                            {Array.isArray(insight.missing_context) && insight.missing_context.length ? <div style={{ fontSize: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}><span style={{ color: '#fcd34d' }}>Missing:</span>{insight.missing_context.map(chip)}</div> : null}
+	                            {Array.isArray(insight.recommended_controls) && insight.recommended_controls.length ? <div style={{ fontSize: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}><span style={{ color: '#93c5fd' }}>Controls:</span>{insight.recommended_controls.map(chip)}</div> : null}
+	                            {Array.isArray(insight.recommended_actions) && insight.recommended_actions.length ? <div style={{ fontSize: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}><span style={{ color: '#86efac' }}>Safe actions:</span>{insight.recommended_actions.map(chip)}</div> : null}
+	                            {item.llm_related_evidence ? (
                               <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
                                 <div style={{ color: '#cbd5e1', marginBottom: 4 }}>Related Evidence:</div>
                                 <div>- Domain: {item.llm_related_evidence.domain || '—'}</div>
@@ -7073,6 +7202,17 @@ const IOC_EXPIRE_POLICY_OPTIONS = [
   { value: 'custom_date', label: 'Custom date' }
 ];
 
+const PRIMARY_THREAT_CLASS_OPTIONS = [
+  { value: '', label: '— Not selected —' },
+  { value: 'phishing', label: 'Phishing' },
+  { value: 'malware', label: 'Malware' },
+  { value: 'c2', label: 'C2' },
+  { value: 'scanner', label: 'Scanner' },
+  { value: 'suspicious_infra', label: 'Suspicious Infra' },
+  { value: 'test', label: 'Test' },
+  { value: 'unknown', label: 'Unknown' }
+];
+
 const IOC_SOURCE_MODAL_STYLE = {
   width: 'min(680px, 96vw)',
   maxHeight: '90vh',
@@ -7089,6 +7229,7 @@ const EMPTY_IOC_SOURCE_FORM = {
   name: '',
   description: '',
   default_confidence: '',
+  default_threat_classification: '',
   default_expire_policy: 'never',
   default_expire_days: '',
   active: true
@@ -7376,8 +7517,9 @@ function IocSourcesPage() {
     setForm({
       name: source?.name || '',
       description: source?.description || '',
-      default_confidence: source?.default_confidence || '',
-      default_expire_policy: source?.default_expire_policy || 'never',
+	      default_confidence: source?.default_confidence || '',
+	      default_threat_classification: source?.default_threat_classification || '',
+	      default_expire_policy: source?.default_expire_policy || 'never',
       default_expire_days: source?.default_expire_days ?? '',
       active: source?.active !== false
     });
@@ -7405,8 +7547,9 @@ function IocSourcesPage() {
     try {
       const payload = {
         description: form.description.trim() || null,
-        default_confidence: form.default_confidence || null,
-        default_expire_policy: form.default_expire_policy || null,
+	        default_confidence: form.default_confidence || null,
+	        default_threat_classification: form.default_threat_classification || null,
+	        default_expire_policy: form.default_expire_policy || null,
         default_expire_days: form.default_expire_policy === 'expire_after_days'
           ? Number(form.default_expire_days) || null
           : null,
@@ -7494,20 +7637,22 @@ function IocSourcesPage() {
             <thead>
               <tr style={ui.thead}>
                 <th style={ui.th}>Name</th>
-                <th style={ui.th}>Default Confidence</th>
-                <th style={ui.th}>Default Expire</th>
+	                  <th style={ui.th}>Default Confidence</th>
+	                  <th style={ui.th}>Default Threat Class</th>
+	                  <th style={ui.th}>Default Expire</th>
                 <th style={ui.th}>Active</th>
                 <th style={{ ...ui.th, textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={ui.td}>Loading…</td></tr>
+	                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : sources.length ? sources.map((s) => (
                 <tr key={s.id} style={{ ...ui.tr, opacity: s.active ? 1 : 0.62 }}>
-                  <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', monospace" }}>{s.name}</td>
-                  <td style={ui.td}>{s.default_confidence || '—'}</td>
-                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
+	                  <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', monospace" }}>{s.name}</td>
+	                  <td style={ui.td}>{s.default_confidence || '—'}</td>
+	                  <td style={ui.td}>{String(s.default_threat_classification || '—').replaceAll('_', ' ')}</td>
+	                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
                   <td style={ui.td}>{s.active ? 'Yes' : 'No'}</td>
                   <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(s)}>Edit</button>
@@ -7519,7 +7664,7 @@ function IocSourcesPage() {
                   </td>
                 </tr>
               )) : (
-                <tr><td colSpan={5} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
+	                <tr><td colSpan={6} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -7559,14 +7704,19 @@ function IocSourcesPage() {
               <FeedFormField ui={ui} label="Description" fullWidth>
                 <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} placeholder="Optional" />
               </FeedFormField>
-              <FeedFormField ui={ui} label="Default Confidence" fullWidth>
+	              <FeedFormField ui={ui} label="Default Confidence" fullWidth>
                 <select value={form.default_confidence} onChange={(e) => setForm((x) => ({ ...x, default_confidence: e.target.value }))} style={ui.select}>
                   <option value="">— None —</option>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                 </select>
-              </FeedFormField>
+	              </FeedFormField>
+	              <FeedFormField ui={ui} label="Default Threat Classification" helper="Optional but improves AI Insight quality." fullWidth>
+	                <select value={form.default_threat_classification} onChange={(e) => setForm((x) => ({ ...x, default_threat_classification: e.target.value }))} style={ui.select}>
+	                  {PRIMARY_THREAT_CLASS_OPTIONS.map((o) => <option key={o.value || 'none'} value={o.value}>{o.label}</option>)}
+	                </select>
+	              </FeedFormField>
               <FeedFormField ui={ui} label="Default Expire Policy" fullWidth>
                 <select value={form.default_expire_policy} onChange={(e) => setForm((x) => ({ ...x, default_expire_policy: e.target.value }))} style={ui.select}>
                   {IOC_EXPIRE_POLICY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -11788,6 +11938,7 @@ function IOCAddPage() {
   const [sourceId, setSourceId] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [category, setCategory] = useState('');
+  const [primaryThreatClass, setPrimaryThreatClass] = useState('');
   const [note, setNote] = useState('');
   const [expirationPolicy, setExpirationPolicy] = useState('never');
   const [expireDays, setExpireDays] = useState('30');
@@ -11820,6 +11971,7 @@ function IOCAddPage() {
     const src = sources.find((s) => String(s.id) === String(nextSourceId));
     if (!src) return;
     if (src.default_confidence) setConfidenceValue(src.default_confidence);
+    if (src.default_threat_classification) setPrimaryThreatClass(src.default_threat_classification);
     const pol = src.default_expire_policy || 'never';
     setExpirationPolicy(pol);
     if (pol === 'expire_after_days' && src.default_expire_days) {
@@ -11839,6 +11991,7 @@ function IOCAddPage() {
     setSourceId('');
     setSourceUrl('');
     setCategory('');
+    setPrimaryThreatClass('');
     setNote('');
     setExpirationPolicy('never');
     setExpireDays('30');
@@ -11984,6 +12137,7 @@ function IOCAddPage() {
       source_url: sourceUrl.trim() || undefined,
       confidence: confidenceValue,
       category: category.trim() || undefined,
+      primary_threat_classification: primaryThreatClass || undefined,
       note: note.trim() || undefined,
       expiration_policy: expirationPolicy
     };
@@ -12047,11 +12201,16 @@ function IOCAddPage() {
               <Link to="/administration/ioc-sources" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration → IOC Sources</Link>
             </div>
           ) : null}
-          {message && (
+              {message && (
             <div role="alert" style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, fontSize: 14, ...messageStyle }}>
               {message.text}
             </div>
-          )}
+              )}
+	          {!primaryThreatClass ? (
+	            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fde68a', fontSize: 13 }}>
+	              No threat classification selected. AI insight quality may be lower.
+	            </div>
+	          ) : null}
 
           <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gap: 14 }}>
             <div>
@@ -12119,11 +12278,17 @@ function IOCAddPage() {
                   <option value="high">High</option>
                 </select>
               </div>
-              <div>
-                <label htmlFor="category" style={fieldLabelStyle}>Category</label>
-                <input id="category" value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canWrite} style={inputStyle} />
-              </div>
-            </div>
+	              <div>
+	                <label htmlFor="category" style={fieldLabelStyle}>Category</label>
+	                <input id="category" value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canWrite} style={inputStyle} />
+	              </div>
+	            </div>
+	            <div>
+	              <label htmlFor="primary-threat-class" style={fieldLabelStyle}>Primary Threat Classification</label>
+	              <select id="primary-threat-class" value={primaryThreatClass} onChange={(e) => setPrimaryThreatClass(e.target.value)} disabled={!canWrite} style={inputStyle}>
+	                {PRIMARY_THREAT_CLASS_OPTIONS.map((o) => <option key={o.value || 'none'} value={o.value}>{o.label}</option>)}
+	              </select>
+	            </div>
 
             <div>
               <label htmlFor="note" style={fieldLabelStyle}>Note</label>
@@ -12338,8 +12503,9 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
           
-          <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
-          <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
+	          <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
+	          <Route path="/analytics/environment-insight" element={<Protected><EnvironmentInsightPage /></Protected>} />
+	          <Route path="/analytics/statistics" element={<Protected><AnalyticsStatisticsPage /></Protected>} />
           <Route path="/analytics/detection-events" element={<Protected><IOCMatchEventsPage /></Protected>} />
           <Route path="/analytics/detection-events/:id" element={<Protected><IOCMatchEventDetailsPage /></Protected>} />
           <Route path="/risk-overview" element={<Protected><RiskOverviewPage /></Protected>} />
