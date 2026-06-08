@@ -4,6 +4,7 @@ import {
   validateSourceName,
   validateDefaultConfidence,
   validateDefaultExpirePolicy,
+  validatePrimaryThreatClassification,
   validateExpireDays,
   serializeIocSourceRow
 } from '../lib/iocSourceValidation.js';
@@ -11,7 +12,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstant
 import { pickSafeFields } from '../lib/auditRedaction.js';
 
 const SOURCE_AUDIT_FIELDS = [
-  'name', 'description', 'default_confidence',
+  'name', 'description', 'default_confidence', 'default_threat_classification',
   'default_expire_policy', 'default_expire_days', 'active'
 ];
 
@@ -39,6 +40,10 @@ function validateSourcePayload(body, partial = false) {
   if (body.default_confidence !== undefined) {
     const confCheck = validateDefaultConfidence(body.default_confidence);
     if (!confCheck.ok) errors.push(confCheck.error);
+  }
+  if (body.default_threat_classification !== undefined) {
+    const classCheck = validatePrimaryThreatClassification(body.default_threat_classification);
+    if (!classCheck.ok) errors.push(classCheck.error);
   }
 
   if (body.default_expire_policy !== undefined) {
@@ -102,6 +107,7 @@ export function registerIocSourceRoutes(app, pool, audit) {
 
     const nameCheck = validateSourceName(body.name);
     const confCheck = validateDefaultConfidence(body.default_confidence);
+    const threatClassCheck = validatePrimaryThreatClassification(body.default_threat_classification);
     const polCheck = validateDefaultExpirePolicy(body.default_expire_policy);
     const daysCheck = resolveExpireDays(body, polCheck.value);
     if (!daysCheck.ok) return res.status(400).json({ message: daysCheck.error });
@@ -114,14 +120,15 @@ export function registerIocSourceRoutes(app, pool, audit) {
       const { rows } = await pool.query(
         `INSERT INTO ioc_sources (
            name, display_name, description, source_type,
-           default_confidence, default_expire_policy, default_expire_days,
+           default_confidence, default_threat_classification, default_expire_policy, default_expire_days,
            active, created_by
-         ) VALUES ($1, $1, $2, 'manual', $3, $4, $5, COALESCE($6, TRUE), $7::uuid)
+         ) VALUES ($1, $1, $2, 'manual', $3, $4, $5, $6, COALESCE($7, TRUE), $8::uuid)
          RETURNING *`,
         [
           nameCheck.value,
           body.description ? String(body.description).trim() || null : null,
           confCheck.value,
+          threatClassCheck.value,
           polCheck.value,
           daysCheck.value,
           body.active,
@@ -175,6 +182,11 @@ export function registerIocSourceRoutes(app, pool, audit) {
       const confCheck = validateDefaultConfidence(body.default_confidence);
       if (!confCheck.ok) return res.status(400).json({ message: confCheck.error });
       setField('default_confidence', confCheck.value);
+    }
+    if (body.default_threat_classification !== undefined) {
+      const classCheck = validatePrimaryThreatClassification(body.default_threat_classification);
+      if (!classCheck.ok) return res.status(400).json({ message: classCheck.error });
+      setField('default_threat_classification', classCheck.value);
     }
     if (body.default_expire_policy !== undefined) {
       const polCheck = validateDefaultExpirePolicy(body.default_expire_policy);

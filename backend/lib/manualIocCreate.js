@@ -1,5 +1,5 @@
 import { recomputeIocGlobalStatus } from './iocExpiration.js';
-import { parseManualExpirationInput } from './iocSourceValidation.js';
+import { parseManualExpirationInput, validatePrimaryThreatClassification } from './iocSourceValidation.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
@@ -58,6 +58,7 @@ export function serializeManualIocResponse(row, source, expiration) {
     } : null,
     confidence: row.confidence,
     category: row.category,
+    primary_threat_classification: row.primary_threat_classification || null,
     note: row.note,
     status: row.status || 'active',
     expires_at: row.expires_at,
@@ -89,7 +90,7 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const { rows: sourceRows } = await pool.query(
-    `SELECT id, name, default_confidence, default_expire_policy, default_expire_days, active
+    `SELECT id, name, default_confidence, default_threat_classification, default_expire_policy, default_expire_days, active
      FROM ioc_sources WHERE id = $1`,
     [sourceId]
   );
@@ -117,6 +118,8 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const confidence = normalizeConfidence(body?.confidence ?? sourceRow.default_confidence);
+  const threatClassCheck = validatePrimaryThreatClassification(body?.primary_threat_classification ?? sourceRow.default_threat_classification);
+  if (!threatClassCheck.ok) return { status: 400, body: { message: threatClassCheck.error } };
   const confidenceProvenance = resolveManualIocConfidenceProvenance(body, sourceRow, confidence);
   const sourceName = String(sourceRow.name);
   const sourceUrl = body?.source_url ? String(body.source_url).trim() || null : null;
@@ -128,12 +131,12 @@ export async function createManualIoc(pool, body, opts = {}) {
 
   const insertQ = `
     INSERT INTO ioc_items (
-      observable, observable_type, source_name, source_url, confidence, category, note,
+      observable, observable_type, source_name, source_url, confidence, category, primary_threat_classification, note,
       ioc_source_id, confidence_source, confidence_source_name,
       manual_status_override, manual_status, manual_expires_at,
       manual_override_reason, manual_override_by_user_id, manual_override_at
     )
-    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, 'active', $11, $12, $13::uuid, NOW()
+    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, 'active', $12, $13, $14::uuid, NOW()
     WHERE NOT EXISTS (
       SELECT 1 FROM ioc_items
       WHERE observable = $1
@@ -142,6 +145,7 @@ export async function createManualIoc(pool, body, opts = {}) {
         AND confidence = $5
         AND COALESCE(category, '') = COALESCE($6, '')
         AND COALESCE(source_url, '') = COALESCE($4, '')
+        AND COALESCE(primary_threat_classification, '') = COALESCE($7, '')
     )
     RETURNING *
   `;
@@ -153,6 +157,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     sourceUrl,
     confidence,
     category,
+    threatClassCheck.value,
     note,
     sourceId,
     confidenceProvenance.confidence_source,
@@ -206,6 +211,7 @@ export async function createManualIoc(pool, body, opts = {}) {
       severity: AUDIT_SEVERITY.INFO,
       after: pickSafeFields(response, [
         'id', 'observable', 'observable_type', 'source_name', 'ioc_source_id',
+        'primary_threat_classification',
         'status', 'expires_at', 'manual_expires_at', 'expiration_policy'
       ]),
       metadata: {

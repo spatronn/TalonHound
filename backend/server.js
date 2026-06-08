@@ -44,6 +44,14 @@ import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
+import { normalizeRdapTarget } from './lib/domainRoot.js';
+import { deriveMissingContext, deriveThreatClassFromContext, normalizeEnvironmentInsightOutput } from './risk/aiInsightSchema.js';
+import {
+  buildEnvironmentInsightSummary as buildEnvironmentInsightSummaryFromDb,
+  parseEnvironmentInsightRange,
+  safeJson,
+  topCountsFromRows
+} from './lib/environmentInsight.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
@@ -1866,6 +1874,180 @@ function llmNormSourceType(ev = {}) {
   return 'generic';
 }
 
+function eventOutcomeBucket(row = {}) {
+  const action = String(row?.match_context?.action || row?.normalized_event_json?.action || '').toLowerCase();
+  const status = Number(row?.normalized_event_json?.status || row?.match_context?.status || 0);
+  if (['accept', 'accepted', 'allow', 'allowed', 'permit', 'pass'].includes(action) || (status >= 200 && status < 400)) return 'allowed';
+  if (['deny', 'denied', 'drop', 'blocked', 'block', 'reject'].includes(action) || [401, 403, 407].includes(status)) return 'blocked';
+  return 'unknown';
+}
+
+async function buildIocAiContextPack(context, eventRows = []) {
+  const iocValue = String(context?.ioc_value || '').trim();
+  const iocType = String(context?.ioc_type || '').trim().toLowerCase();
+  const out = {
+    ioc_metadata: {
+      value: iocValue,
+      type: iocType,
+      status: context?.status || null,
+      confidence: context?.confidence || null,
+      source: context?.source_name || null,
+      source_count: null,
+      tags: [],
+      primary_threat_classification: null,
+      first_seen: context?.first_seen || null,
+      last_seen: context?.last_seen || null,
+      expires_at: context?.expires_at || null,
+      suppressed: false,
+      false_positive: String(context?.verdict || '').toLowerCase() === 'fp'
+    },
+    threat_intel: {
+      virustotal: { available: false },
+      rdap: { available: false },
+      feed: { source_name: context?.source_name || null, source_confidence: context?.confidence || null }
+    },
+    environment_impact: {
+      observed_hosts_count: Number(context?.asset_count || context?.observed_hosts || 0),
+      detection_events_count: Number(context?.event_count || 0),
+      incident_count: 1 + Number(context?.previous_incident_count || 0),
+      allowed_count: 0,
+      blocked_count: 0,
+      unknown_count: 0,
+      parser_sources: context?.event_summary?.source_types || {},
+      first_seen_in_environment: context?.first_seen || null,
+      last_seen_in_environment: context?.last_seen || null,
+      related_evidence_logs_summary: context?.evidence_summary || null,
+      related_incidents: Number(context?.previous_incident_count || 0),
+      max_incident_risk: Number(context?.risk_score || 0),
+      average_incident_risk: Number(context?.risk_score || 0)
+    },
+    history: {
+      previous_false_positive: String(context?.previous_verdict || '').toLowerCase() === 'fp',
+      suppressed: false,
+      previous_incidents_for_same_ioc: Number(context?.previous_incident_count || 0)
+    }
+  };
+
+  for (const row of eventRows || []) {
+    const bucket = eventOutcomeBucket(row);
+    out.environment_impact[`${bucket}_count`] = Number(out.environment_impact[`${bucket}_count`] || 0) + 1;
+  }
+
+  if (!iocValue || !iocType) return out;
+  try {
+    const itemQ = await pool.query(
+      `SELECT i.id, i.public_id, i.observable, i.observable_type, i.status, i.confidence, i.source_name,
+              i.source_url, i.category, i.primary_threat_classification, i.first_seen_at, i.last_seen_at,
+              i.expires_at, i.confidence_source, i.confidence_source_name,
+              s.name AS managed_source_name, s.default_confidence, s.default_threat_classification,
+              COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags
+       FROM ioc_items i
+       LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+       LEFT JOIN LATERAL (
+         SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS tags
+         FROM ioc_tags it
+         JOIN tags t ON t.id = it.tag_id
+         WHERE it.ioc_id = i.id
+       ) tag_agg ON TRUE
+       WHERE lower(i.observable) = lower($1)
+         AND lower(i.observable_type) = lower($2)
+       ORDER BY i.created_at DESC
+       LIMIT 1`,
+      [iocValue, iocType]
+    );
+    const item = itemQ.rows?.[0] || null;
+    if (item) {
+      out.ioc_metadata = {
+        ...out.ioc_metadata,
+        id: item.id,
+        public_id: item.public_id,
+        status: item.status || out.ioc_metadata.status,
+        confidence: item.confidence || out.ioc_metadata.confidence,
+        source: item.managed_source_name || item.source_name || out.ioc_metadata.source,
+        source_count: 1,
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        category: item.category || null,
+        primary_threat_classification: item.primary_threat_classification || item.default_threat_classification || item.category || null,
+        first_seen: item.first_seen_at || out.ioc_metadata.first_seen,
+        last_seen: item.last_seen_at || out.ioc_metadata.last_seen,
+        expires_at: item.expires_at || null
+      };
+      out.threat_intel.feed = {
+        source_name: item.managed_source_name || item.source_name || null,
+        feed_default_confidence: item.default_confidence || null,
+        source_confidence: item.confidence || null,
+        analyst_override: item.confidence_source === 'analyst_override'
+      };
+      const vtQ = await pool.query(
+        `SELECT status, normalized_summary, fetched_at
+         FROM ioc_enrichments
+         WHERE provider = $1 AND ioc_id = $2
+         ORDER BY fetched_at DESC NULLS LAST
+         LIMIT 1`,
+        [VT_PROVIDER, item.id]
+      ).catch(() => ({ rows: [] }));
+      const vt = vtQ.rows?.[0];
+      const vtSummary = safeJson(vt?.normalized_summary);
+      if (vtSummary && vt?.status === 'success') {
+        out.threat_intel.virustotal = {
+          available: true,
+          malicious_count: Number(vtSummary?.stats?.malicious || 0),
+          suspicious_count: Number(vtSummary?.stats?.suspicious || 0),
+          harmless_count: Number(vtSummary?.stats?.harmless || 0),
+          categories: vtSummary?.domain?.categories || [],
+          last_analysis_date: vtSummary?.last_analysis_date || vt?.fetched_at || null
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[ai-context-pack] IOC metadata unavailable', err?.message || err);
+  }
+
+  try {
+    const parsed = normalizeRdapTarget(iocValue, iocType);
+    if (parsed.ok) {
+      const rdapQ = await pool.query(
+        `SELECT registrar, registration_date, domain_age_days, nameservers, rdap_status, last_enriched_at
+         FROM ioc_domain_enrichment
+         WHERE root_domain = $1
+         LIMIT 1`,
+        [parsed.rdap_domain]
+      ).catch(() => ({ rows: [] }));
+      const rdap = rdapQ.rows?.[0];
+      if (rdap?.rdap_status === 'success') {
+        out.threat_intel.rdap = {
+          available: true,
+          registrar: rdap.registrar || null,
+          creation_date: rdap.registration_date || null,
+          domain_age_days: rdap.domain_age_days ?? null,
+          country: null,
+          nameservers: safeJson(rdap.nameservers) || [],
+          last_enriched_at: rdap.last_enriched_at || null
+        };
+      }
+    }
+  } catch {
+    // unsupported IOC type for RDAP
+  }
+
+  const suppressionQ = await pool.query(
+    `SELECT id, active, reason, expires_at
+     FROM ioc_suppressions
+     WHERE lower(ioc_value) = lower($1)
+       AND lower(ioc_type) = lower($2)
+       AND active = TRUE
+       AND (expires_at IS NULL OR expires_at > NOW())
+     LIMIT 1`,
+    [iocValue, iocType]
+  ).catch(() => ({ rows: [] }));
+  const suppression = suppressionQ.rows?.[0] || null;
+  out.ioc_metadata.suppressed = Boolean(suppression);
+  out.history.suppressed = Boolean(suppression);
+  out.missing_context = deriveMissingContext({ ...context, ...out, ioc_type: iocType });
+  out.primary_threat_class = deriveThreatClassFromContext({ ...context, ...out, ioc_type: iocType });
+  return out;
+}
+
 async function buildIncidentAiInsightContext(activityId) {
   const q = await loadIncidentWithStats(activityId);
   if (!q.rowCount) return null;
@@ -1894,17 +2076,27 @@ async function buildIncidentAiInsightContext(activityId) {
     source_type: llmNormSourceType(r),
     parser_source: r.parser_source,
     match_context: r.match_context,
-    normalized_event_json: r.normalized_event_json,
-    raw_log_snapshot: r.raw_log_snapshot
+    normalized_event_json: r.normalized_event_json
   }));
   context.sample_events = rows.slice(0, 5).map((r) => ({
     detected_at: r.event_time || r.created_at || null,
     source_type: llmNormSourceType(r),
     matched_ioc: r.matched_ioc,
-    raw_sample: String(r.raw_log_snapshot || '').slice(0, 500),
     method: r?.normalized_event_json?.method || r?.match_context?.method || null,
-    status: r?.normalized_event_json?.status || r?.match_context?.status || null
+    status: r?.normalized_event_json?.status || r?.match_context?.status || null,
+    action: r?.match_context?.action || r?.normalized_event_json?.action || null
   }));
+  const aiPack = await buildIocAiContextPack(context, rows);
+  context.ai_context_pack = aiPack;
+  context.ioc_metadata = aiPack.ioc_metadata;
+  context.threat_intel = aiPack.threat_intel;
+  context.environment_impact = aiPack.environment_impact;
+  context.tags = aiPack.ioc_metadata.tags;
+  context.primary_threat_classification = aiPack.ioc_metadata.primary_threat_classification;
+  context.playbook_coverage = {
+    ...(context.playbook_coverage || {}),
+    ti_classification: aiPack.primary_threat_class
+  };
 
   return context;
 }
@@ -3238,6 +3430,118 @@ app.get('/api/analytics/statistics', async (req, res) => {
   } catch (err) {
     console.error('[analytics-statistics] failed', err);
     return res.status(500).json({ hours: 24, top_sources: [], top_clients: [], risky_clients: [], timeline: [] });
+  }
+});
+
+async function buildEnvironmentInsightSummary(rangeDays) {
+  return buildEnvironmentInsightSummaryFromDb({
+    pool,
+    rangeDays,
+    calculateIncidentRisk,
+    computeInstitutionRiskOverview,
+    incidentStatsSelect: IOC_MATCH_EVENT_STATS_SELECT
+  });
+}
+
+app.get('/api/analytics/environment-insight', async (req, res) => {
+  const rangeDays = parseEnvironmentInsightRange(req.query?.range);
+  try {
+    const latestQ = await pool.query(
+      `SELECT *
+       FROM environment_ai_insights
+       WHERE range_days = $1
+       ORDER BY generated_at DESC
+       LIMIT 1`,
+      [rangeDays]
+    );
+    if (!latestQ.rowCount) {
+      const input_summary = await buildEnvironmentInsightSummary(rangeDays);
+      const fallback = normalizeEnvironmentInsightOutput({}, input_summary);
+      return res.json({ status: 'not_generated', range_days: rangeDays, input_summary, insight: fallback, generated_at: null });
+    }
+    const row = latestQ.rows[0];
+    return res.json({
+      status: 'ready',
+      range_days: rangeDays,
+      generated_at: row.generated_at,
+      model: row.model,
+      input_summary: row.input_summary_json,
+      insight: row.output_json
+    });
+  } catch (err) {
+    console.error('[environment-insight] GET failed', err);
+    return res.status(500).json({ message: 'Failed to load Environment Insight' });
+  }
+});
+
+app.post('/api/analytics/environment-insight/refresh', async (req, res) => {
+  const rangeDays = parseEnvironmentInsightRange(req.query?.range || req.body?.range);
+  let inputSummary = null;
+  try {
+    inputSummary = await buildEnvironmentInsightSummary(rangeDays);
+    const generated = await llmRiskAdvisor.generateEnvironmentInsight(inputSummary, {
+      timeoutMsOverride: llmRiskAdvisor.manualTimeoutMs
+    });
+    if (!generated.ok) {
+      await auditLogService.auditFailure({
+        req,
+        action: AUDIT_ACTION.ENVIRONMENT_AI_INSIGHT_REFRESH,
+        entityType: AUDIT_ENTITY.ENVIRONMENT_AI_INSIGHT,
+        entityId: `${rangeDays}d`,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { range_days: rangeDays, model: process.env.OLLAMA_MODEL || process.env.LLM_RISK_ADVISOR_MODEL || null, reason: generated.reason }
+      });
+      return res.status(502).json({ message: 'Environment Insight generation failed', reason: generated.reason, input_summary: inputSummary });
+    }
+
+    const createdBy = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId) ? req.user.publicId : null;
+    const insertQ = await pool.query(
+      `INSERT INTO environment_ai_insights (
+         range_days, period_start, period_end, generated_at, model,
+         input_summary_json, output_json, created_by, triggered_by
+       ) VALUES ($1, $2, $3, NOW(), $4, $5::jsonb, $6::jsonb, $7::uuid, $8)
+       RETURNING *`,
+      [
+        rangeDays,
+        inputSummary.period_start,
+        inputSummary.period_end,
+        generated.model,
+        JSON.stringify(inputSummary),
+        JSON.stringify(generated.output),
+        createdBy,
+        'manual_refresh'
+      ]
+    );
+    const row = insertQ.rows[0];
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.ENVIRONMENT_AI_INSIGHT_REFRESH,
+      entityType: AUDIT_ENTITY.ENVIRONMENT_AI_INSIGHT,
+      entityId: String(row.id),
+      entityDisplay: `${rangeDays}d Environment Insight`,
+      severity: AUDIT_SEVERITY.INFO,
+      after: { generated_at: row.generated_at, range_days: rangeDays, model: generated.model },
+      metadata: { range_days: rangeDays, generated_at: row.generated_at, model: generated.model, success: true }
+    });
+    return res.json({
+      status: 'ready',
+      range_days: rangeDays,
+      generated_at: row.generated_at,
+      model: row.model,
+      input_summary: row.input_summary_json,
+      insight: row.output_json
+    });
+  } catch (err) {
+    console.error('[environment-insight] refresh failed', err);
+    await auditLogService.auditFailure({
+      req,
+      action: AUDIT_ACTION.ENVIRONMENT_AI_INSIGHT_REFRESH,
+      entityType: AUDIT_ENTITY.ENVIRONMENT_AI_INSIGHT,
+      entityId: `${rangeDays}d`,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: { range_days: rangeDays, error: err?.message || String(err) }
+    });
+    return res.status(500).json({ message: 'Environment Insight refresh failed', input_summary: inputSummary });
   }
 });
 

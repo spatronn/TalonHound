@@ -89,14 +89,34 @@ async function loadIncident(id) {
        ev.blocked_connections,
        ev.inbound_events,
        ev.outbound_events,
-       ev.blacklist_hits,
-       ev.confidence,
-       NULL::text[] AS tags,
-       COALESCE(prev.previous_incident_count, 0)::int AS previous_incident_count,
-       COALESCE(prev.previous_verdict, 'unknown') AS previous_verdict
-     FROM ioc_activity a
-     CROSS JOIN ev
-     LEFT JOIN LATERAL (
+	       ev.blacklist_hits,
+	       ev.confidence,
+	       COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags,
+	       i.primary_threat_classification,
+	       i.category,
+	       i.status AS ioc_status,
+	       i.confidence AS ioc_confidence,
+	       i.source_name AS ioc_source,
+	       i.expires_at,
+	       COALESCE(prev.previous_incident_count, 0)::int AS previous_incident_count,
+	       COALESCE(prev.previous_verdict, 'unknown') AS previous_verdict
+	     FROM ioc_activity a
+	     CROSS JOIN ev
+	     LEFT JOIN LATERAL (
+	       SELECT *
+	       FROM ioc_items i
+	       WHERE lower(i.observable) = lower(a.ioc_value)
+	         AND lower(i.observable_type) = lower(a.ioc_type)
+	       ORDER BY i.created_at DESC
+	       LIMIT 1
+	     ) i ON TRUE
+	     LEFT JOIN LATERAL (
+	       SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS tags
+	       FROM ioc_tags it
+	       JOIN tags t ON t.id = it.tag_id
+	       WHERE it.ioc_id = i.id
+	     ) tag_agg ON TRUE
+	     LEFT JOIN LATERAL (
        SELECT
          COUNT(*)::int AS previous_incident_count,
          COALESCE((

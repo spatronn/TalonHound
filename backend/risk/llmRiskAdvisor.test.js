@@ -63,7 +63,8 @@ test('domain invalid_reason path uses tiered fallback, not URL hardcoded string'
   assert.equal(out.adjustment, 0);
   assert.ok(out.confidence >= 0.45 && out.confidence <= 0.65);
   assert.ok(!out.reason.includes('Repeated proxy URL access attempts'));
-  assert.ok(out.reason.includes('normalized detection events supported by'));
+  assert.ok(out.reason.includes('normalized detection events'));
+  assert.ok(out.reason.includes('DNS activity related to the IOC domain'));
 });
 
 test('domain model DNS-heavy reason is rewritten when proxy signals exist in payload evidence', () => {
