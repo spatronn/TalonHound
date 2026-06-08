@@ -9,6 +9,10 @@ import {
   normalizeEnvironmentInsightOutput,
   normalizeStructuredAiInsight
 } from './aiInsightSchema.js';
+import {
+  compactEnvironmentInsightSummary,
+  environmentInsightPayloadMetrics
+} from '../lib/environmentInsight.js';
 
 const ALLOWED_ADJUSTMENTS = new Set([-20, -10, -5, 0, 5, 10, 15, 20]);
 const LOW_EVIDENCE_TIERS = new Set(['dns_only', 'blocked_only', 'generic_only', 'unknown', 'false_positive']);
@@ -903,6 +907,10 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
   const llmTemperature = Number(process.env.LLM_RISK_TEMPERATURE ?? 0.2);
   const llmNumCtx = Math.max(Number(process.env.LLM_RISK_NUM_CTX ?? 2048), 256);
   const llmNumPredict = Math.max(Number(process.env.LLM_RISK_NUM_PREDICT ?? 180), 1);
+  const environmentInsightTimeoutMs = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_LLM_TIMEOUT_MS || 90000), 1000);
+  const environmentInsightMaxPromptChars = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_MAX_PROMPT_CHARS || 12000), 1000);
+  const environmentInsightMaxOutputTokens = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_MAX_OUTPUT_TOKENS || 350), 64);
+  const environmentInsightTopSampleLimit = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_TOP_SAMPLE_LIMIT || 5), 0);
   const cacheTtlSeconds = Math.max(Number(process.env.LLM_RISK_ADVISOR_CACHE_TTL_SECONDS || 3600), 30);
   const aiWeight = Math.max(Number(process.env.LLM_RISK_ADVISOR_AI_WEIGHT || 1), 0);
 
@@ -1272,72 +1280,95 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     };
   }
 
+  function buildEnvironmentInsightPrompt(inputSummary = {}, { mode = 'standard' } = {}) {
+    const compactInput = compactEnvironmentInsightSummary(inputSummary, {
+      topSampleLimit: mode === 'compact_retry' ? 0 : environmentInsightTopSampleLimit,
+      listLimit: mode === 'compact_retry' ? 5 : 10
+    });
+    const inputJson = JSON.stringify(compactInput);
+    const prompt = `Return concise cybersecurity posture JSON only. No markdown.
+Rules: analyze aggregate metrics only; never recommend or imply automatic blocking, suppression, closing, deletion, expiration, quarantine, isolation, verdict/status/tag/confidence changes, or other state mutation. Use controlled values.
+Limits: executive_summary <= 60 words; key_findings max 5 short strings; visibility_gaps max 5; top_recommendations max 5; each recommendation <= 120 chars; do not repeat all input metrics.
+Schema: {"executive_summary":"","posture_level":"low|moderate|elevated|high|critical","primary_exposure":"","key_findings":[],"risk_score_explanation":{"why_score_is_high_or_low":"","main_risk_drivers":[],"main_risk_reducers":[]},"top_recommendations":[{"control_area":"${RECOMMENDED_CONTROLS.join('|')}","recommendation":"","reason":"","priority":"low|medium|high"}],"visibility_gaps":[],"trend_notes":""}
+Input:${inputJson}`;
+    return {
+      prompt,
+      inputSummary: compactInput,
+      metrics: environmentInsightPayloadMetrics(compactInput, prompt)
+    };
+  }
+
   async function generateEnvironmentInsight(inputSummary = {}, { timeoutMsOverride } = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.max(Number(timeoutMsOverride || manualTimeoutMs), 1000));
-    try {
-      const prompt = `You are a cybersecurity posture assistant. Return ONLY JSON.
-Rules:
-- Analyze only the aggregate Environment Insight Input.
-- Do not claim confirmed compromise unless aggregate evidence supports it.
-- Do not recommend automatic blocking, suppression, closing, deletion, expiration, quarantine, or host isolation.
-- Recommendations must be practical defensive controls, not automated remediation.
-- If tags/classification or allow/block data is weak, mention the visibility gap.
-- Use controlled values for posture_level and control_area.
-Output JSON schema:
-{
-  "executive_summary": "",
-  "posture_level": "low|moderate|elevated|high|critical",
-  "primary_exposure": "",
-  "key_findings": [],
-  "risk_score_explanation": {
-    "why_score_is_high_or_low": "",
-    "main_risk_drivers": [],
-    "main_risk_reducers": []
-  },
-  "top_recommendations": [
-    { "control_area": "${RECOMMENDED_CONTROLS.join('|')}", "recommendation": "", "reason": "", "priority": "low|medium|high" }
-  ],
-  "visibility_gaps": [],
-  "trend_notes": ""
-}
+    const timeoutBudgetMs = Math.max(Number(timeoutMsOverride || environmentInsightTimeoutMs), 1000);
 
-Environment Insight Input:
-${JSON.stringify(inputSummary, null, 2)}`;
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          stream: false,
-          format: 'json',
-          options: {
-            temperature: Number.isFinite(llmTemperature) ? llmTemperature : 0.2,
-            num_ctx: Math.max(llmNumCtx, 4096),
-            num_predict: Math.max(llmNumPredict, 500)
-          },
-          prompt
-        }),
-        signal: controller.signal
-      });
-      if (!response.ok) {
-        return { ok: false, reason: `llm_http_${response.status}` };
-      }
-      const body = await response.json();
-      const modelJson = extractJson(body?.response);
-      if (!modelJson) return { ok: false, reason: 'invalid_json' };
-      return {
-        ok: true,
-        model,
-        output: normalizeEnvironmentInsightOutput(modelJson, inputSummary),
-        raw_output: modelJson
+    async function attempt(mode) {
+      const requestBuiltAt = Date.now();
+      const { prompt, inputSummary: compactInput, metrics } = buildEnvironmentInsightPrompt(inputSummary, { mode });
+      const requestMetrics = {
+        ...metrics,
+        mode,
+        timeout_ms: timeoutBudgetMs,
+        max_prompt_chars: environmentInsightMaxPromptChars,
+        requested_output_tokens: environmentInsightMaxOutputTokens,
+        model
       };
-    } catch (err) {
-      return { ok: false, reason: isTimeoutError(err) ? 'timeout' : 'endpoint_unreachable' };
-    } finally {
-      clearTimeout(timer);
+      if (prompt.length > environmentInsightMaxPromptChars) {
+        return { ok: false, reason: 'prompt_too_large', metrics: requestMetrics };
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutBudgetMs);
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            stream: false,
+            format: 'json',
+            options: {
+              temperature: Number.isFinite(llmTemperature) ? llmTemperature : 0.2,
+              num_ctx: Math.max(llmNumCtx, 4096),
+              num_predict: environmentInsightMaxOutputTokens
+            },
+            prompt
+          }),
+          signal: controller.signal
+        });
+        const durationMs = Date.now() - requestBuiltAt;
+        if (!response.ok) {
+          return { ok: false, reason: `llm_http_${response.status}`, metrics: { ...requestMetrics, duration_ms: durationMs } };
+        }
+        const body = await response.json();
+        const modelJson = extractJson(body?.response);
+        if (!modelJson) return { ok: false, reason: 'invalid_json', metrics: { ...requestMetrics, duration_ms: durationMs } };
+        return {
+          ok: true,
+          model,
+          output: normalizeEnvironmentInsightOutput(modelJson, compactInput),
+          raw_output: modelJson,
+          input_summary: compactInput,
+          metrics: { ...requestMetrics, duration_ms: durationMs },
+          generation_mode: mode
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          reason: isTimeoutError(err) ? 'timeout' : 'endpoint_unreachable',
+          metrics: { ...requestMetrics, duration_ms: Date.now() - requestBuiltAt }
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     }
+
+    const first = await attempt('standard');
+    if (first.ok || first.reason !== 'timeout') return first;
+    const retry = await attempt('compact_retry');
+    if (retry.ok) {
+      retry.previous_failure = { reason: first.reason, metrics: first.metrics };
+    }
+    return retry.ok ? retry : { ...retry, previous_failure: { reason: first.reason, metrics: first.metrics } };
   }
 
   function computeVersion(input) {
@@ -1363,6 +1394,10 @@ ${JSON.stringify(inputSummary, null, 2)}`;
     enabled,
     timeoutMs,
     manualTimeoutMs,
+    environmentInsightTimeoutMs,
+    environmentInsightMaxPromptChars,
+    environmentInsightMaxOutputTokens,
+    environmentInsightTopSampleLimit,
     fallback,
     computeVersion,
     getCached,

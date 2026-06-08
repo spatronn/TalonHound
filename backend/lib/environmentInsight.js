@@ -33,12 +33,88 @@ export function safeJson(value) {
   try { return JSON.parse(value); } catch { return null; }
 }
 
+function cleanText(value, max = 180) {
+  if (value == null || typeof value === 'object' || typeof value === 'function') return '';
+  return String(value).replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function asTextArray(value, maxItems = 6) {
+  return (Array.isArray(value) ? value : [])
+    .map((x) => cleanText(x, 80))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+export function compactEnvironmentInsightSummary(input = {}, opts = {}) {
+  const topSampleLimit = Math.max(Number(opts.topSampleLimit ?? 5), 0);
+  const listLimit = Math.max(Number(opts.listLimit ?? 10), 1);
+  const samples = Array.isArray(input.highest_risk_incidents) ? input.highest_risk_incidents : [];
+  const compactSamples = samples.slice(0, topSampleLimit).map((row) => ({
+    id: row.id || null,
+    incident_id: row.incident_id || null,
+    public_id: row.public_id || row.ioc_public_id || null,
+    ioc_type: row.ioc_type || null,
+    risk_score: Number(row.risk_score || 0),
+    threat_class: row.threat_class || 'unknown',
+    tags: asTextArray(row.tags, 6),
+    source: cleanText(row.source, 80) || null,
+    observed_hosts_count: Number(row.observed_hosts_count || row.asset_count || 0),
+    event_count: Number(row.event_count || 0),
+    reason_summary: cleanText(row.reason_summary || row.reason, 180) || null
+  }));
+
+  return {
+    range_days: input.range_days,
+    period_start: input.period_start,
+    period_end: input.period_end,
+    aggregate_package_version: input.aggregate_package_version || 'environment_insight_v1',
+    totals: input.totals || {},
+    top_ioc_types: (input.top_ioc_types || []).slice(0, listLimit),
+    top_ioc_sources: (input.top_ioc_sources || []).slice(0, listLimit),
+    top_tags: (input.top_tags || []).slice(0, listLimit),
+    threat_class_distribution: (input.threat_class_distribution || []).slice(0, listLimit),
+    recommended_controls_frequency: (input.recommended_controls_frequency || []).slice(0, listLimit),
+    missing_context_frequency: (input.missing_context_frequency || []).slice(0, listLimit),
+    allowed_blocked_unknown_ratio: input.allowed_blocked_unknown_ratio || { allowed: 0, blocked: 0, unknown: 0 },
+    top_risk_drivers: (input.top_risk_drivers || []).slice(0, listLimit),
+    top_risk_reducers: (input.top_risk_reducers || []).slice(0, listLimit),
+    highest_risk_incidents: compactSamples,
+    institution_risk: input.institution_risk ? {
+      score: input.institution_risk.score,
+      level: input.institution_risk.level
+    } : null,
+    safety_constraints: {
+      no_automatic_remediation: true,
+      allowed_actions_are_navigation_or_refresh_only: true
+    }
+  };
+}
+
+export function environmentInsightPayloadMetrics(summary = {}, prompt = '') {
+  const inputJson = JSON.stringify(summary || {});
+  return {
+    input_summary_bytes: Buffer.byteLength(inputJson),
+    input_summary_chars: inputJson.length,
+    final_prompt_chars: String(prompt || '').length,
+    incidents_aggregated: Number(summary?.totals?.total_incidents || 0),
+    top_samples: Array.isArray(summary?.highest_risk_incidents) ? summary.highest_risk_incidents.length : 0,
+    threat_class_buckets: Array.isArray(summary?.threat_class_distribution) ? summary.threat_class_distribution.length : 0,
+    top_tags: Array.isArray(summary?.top_tags) ? summary.top_tags.length : 0,
+    top_sources: Array.isArray(summary?.top_ioc_sources) ? summary.top_ioc_sources.length : 0,
+    controls_buckets: Array.isArray(summary?.recommended_controls_frequency) ? summary.recommended_controls_frequency.length : 0,
+    missing_buckets: Array.isArray(summary?.missing_context_frequency) ? summary.missing_context_frequency.length : 0,
+    top_driver_buckets: Array.isArray(summary?.top_risk_drivers) ? summary.top_risk_drivers.length : 0,
+    top_reducer_buckets: Array.isArray(summary?.top_risk_reducers) ? summary.top_risk_reducers.length : 0
+  };
+}
+
 export async function buildEnvironmentInsightSummary({
   pool,
   rangeDays,
   calculateIncidentRisk,
   computeInstitutionRiskOverview,
-  incidentStatsSelect
+  incidentStatsSelect,
+  topSampleLimit = 5
 }) {
   const periodQ = await pool.query(
     `SELECT NOW() - ($1::text || ' days')::interval AS period_start, NOW() AS period_end`,
@@ -117,13 +193,31 @@ export async function buildEnvironmentInsightSummary({
             COALESCE(ev.inbound_events, 0) AS inbound_events,
             COALESCE(ev.outbound_events, 0) AS outbound_events,
             COALESCE(ev.blacklist_hits, 0) AS blacklist_hits,
-            ev.confidence
+            ev.confidence,
+            i.public_id AS ioc_public_id,
+            COALESCE(NULLIF(i.source_name, ''), 'unknown') AS ioc_source_name,
+            COALESCE(NULLIF(i.primary_threat_classification, ''), 'unknown') AS primary_threat_classification,
+            COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags
      FROM ioc_activity a
      LEFT JOIN LATERAL (
        SELECT ${incidentStatsSelect}
        FROM ioc_match_events m
        WHERE m.activity_id = a.id
      ) ev ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT i2.id, i2.public_id, i2.source_name, i2.primary_threat_classification
+       FROM ioc_items i2
+       WHERE lower(i2.observable) = lower(a.ioc_value)
+         AND lower(i2.observable_type) = lower(a.ioc_type)
+       ORDER BY i2.created_at DESC
+       LIMIT 1
+     ) i ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS tags
+       FROM ioc_tags it
+       JOIN tags t ON t.id = it.tag_id
+       WHERE it.ioc_id = i.id
+     ) tag_agg ON TRUE
      WHERE COALESCE(a.last_seen, a.first_seen, a.created_at) >= $1::timestamptz
      ORDER BY COALESCE(a.last_seen, a.first_seen, a.created_at) DESC
      LIMIT 300`,
@@ -133,14 +227,19 @@ export async function buildEnvironmentInsightSummary({
   const scored = (riskQ.rows || []).map((row) => ({ ...row, ...calculateIncidentRisk(row) }));
   const topRisk = scored
     .sort((a, b) => Number(b.risk_score || 0) - Number(a.risk_score || 0))
-    .slice(0, 5)
+    .slice(0, Math.max(Number(topSampleLimit || 5), 0))
     .map((row) => ({
       id: row.id,
       incident_id: row.incident_id,
-      ioc_value: row.ioc_value,
+      public_id: row.ioc_public_id || null,
       ioc_type: row.ioc_type,
       risk_score: Number(row.risk_score || 0),
-      reason: row.reason || null
+      threat_class: row.primary_threat_classification || 'unknown',
+      tags: asTextArray(row.tags, 6),
+      source: row.ioc_source_name || null,
+      observed_hosts_count: Number(row.asset_count || 0),
+      event_count: Number(row.event_count || 0),
+      reason_summary: cleanText(row.reason, 180) || null
     }));
 
   const aiRows = (aiQ.rows || []).map((row) => safeJson(row.structured_output_json) || {}).filter((row) => Object.keys(row).length);
