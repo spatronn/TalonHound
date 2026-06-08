@@ -3439,7 +3439,8 @@ async function buildEnvironmentInsightSummary(rangeDays) {
     rangeDays,
     calculateIncidentRisk,
     computeInstitutionRiskOverview,
-    incidentStatsSelect: IOC_MATCH_EVENT_STATS_SELECT
+    incidentStatsSelect: IOC_MATCH_EVENT_STATS_SELECT,
+    topSampleLimit: llmRiskAdvisor.environmentInsightTopSampleLimit
   });
 }
 
@@ -3479,9 +3480,7 @@ app.post('/api/analytics/environment-insight/refresh', async (req, res) => {
   let inputSummary = null;
   try {
     inputSummary = await buildEnvironmentInsightSummary(rangeDays);
-    const generated = await llmRiskAdvisor.generateEnvironmentInsight(inputSummary, {
-      timeoutMsOverride: llmRiskAdvisor.manualTimeoutMs
-    });
+    const generated = await llmRiskAdvisor.generateEnvironmentInsight(inputSummary);
     if (!generated.ok) {
       await auditLogService.auditFailure({
         req,
@@ -3489,11 +3488,25 @@ app.post('/api/analytics/environment-insight/refresh', async (req, res) => {
         entityType: AUDIT_ENTITY.ENVIRONMENT_AI_INSIGHT,
         entityId: `${rangeDays}d`,
         severity: AUDIT_SEVERITY.WARNING,
-        metadata: { range_days: rangeDays, model: process.env.OLLAMA_MODEL || process.env.LLM_RISK_ADVISOR_MODEL || null, reason: generated.reason }
+        metadata: {
+          range_days: rangeDays,
+          model: process.env.OLLAMA_MODEL || process.env.LLM_RISK_ADVISOR_MODEL || null,
+          reason: generated.reason,
+          metrics: generated.metrics || null,
+          previous_failure: generated.previous_failure || null
+        }
       });
-      return res.status(502).json({ message: 'Environment Insight generation failed', reason: generated.reason, input_summary: inputSummary });
+      const status = generated.reason === 'prompt_too_large' ? 422 : 502;
+      return res.status(status).json({
+        message: 'Environment Insight generation failed',
+        reason: generated.reason,
+        metrics: generated.metrics || null,
+        previous_failure: generated.previous_failure || null,
+        input_summary: inputSummary
+      });
     }
 
+    const persistedInputSummary = generated.input_summary || inputSummary;
     const createdBy = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId) ? req.user.publicId : null;
     const insertQ = await pool.query(
       `INSERT INTO environment_ai_insights (
@@ -3503,10 +3516,10 @@ app.post('/api/analytics/environment-insight/refresh', async (req, res) => {
        RETURNING *`,
       [
         rangeDays,
-        inputSummary.period_start,
-        inputSummary.period_end,
+        persistedInputSummary.period_start || inputSummary.period_start,
+        persistedInputSummary.period_end || inputSummary.period_end,
         generated.model,
-        JSON.stringify(inputSummary),
+        JSON.stringify(persistedInputSummary),
         JSON.stringify(generated.output),
         createdBy,
         'manual_refresh'
@@ -3521,7 +3534,15 @@ app.post('/api/analytics/environment-insight/refresh', async (req, res) => {
       entityDisplay: `${rangeDays}d Environment Insight`,
       severity: AUDIT_SEVERITY.INFO,
       after: { generated_at: row.generated_at, range_days: rangeDays, model: generated.model },
-      metadata: { range_days: rangeDays, generated_at: row.generated_at, model: generated.model, success: true }
+      metadata: {
+        range_days: rangeDays,
+        generated_at: row.generated_at,
+        model: generated.model,
+        success: true,
+        generation_mode: generated.generation_mode || 'standard',
+        metrics: generated.metrics || null,
+        previous_failure: generated.previous_failure || null
+      }
     });
     return res.json({
       status: 'ready',
@@ -3529,7 +3550,12 @@ app.post('/api/analytics/environment-insight/refresh', async (req, res) => {
       generated_at: row.generated_at,
       model: row.model,
       input_summary: row.input_summary_json,
-      insight: row.output_json
+      insight: row.output_json,
+      generation_metadata: {
+        mode: generated.generation_mode || 'standard',
+        metrics: generated.metrics || null,
+        previous_failure: generated.previous_failure || null
+      }
     });
   } catch (err) {
     console.error('[environment-insight] refresh failed', err);

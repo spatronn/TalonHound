@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAdvisorOutput } from './llmRiskAdvisor.js';
+import { createLlmRiskAdvisor, normalizeAdvisorOutput } from './llmRiskAdvisor.js';
 
 function buildEnrichedDomainIncident() {
   return {
@@ -99,4 +99,130 @@ test('URL playbook incomplete still uses URL-specific fallback', () => {
   );
   assert.equal(out.normalization_reason, 'invalid_reason_persistence_contradiction');
   assert.ok(out.reason.includes('proxy URL') || out.reason.includes('observed network activity'));
+});
+
+function withEnv(overrides, fn) {
+  const prev = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    prev[key] = process.env[key];
+    process.env[key] = String(value);
+  }
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      for (const key of Object.keys(overrides)) {
+        if (prev[key] === undefined) delete process.env[key];
+        else process.env[key] = prev[key];
+      }
+    });
+}
+
+function baseEnvironmentSummary() {
+  return {
+    range_days: 30,
+    totals: { total_incidents: 4, open_incidents: 2, closed_incidents: 2, detection_events: 20, observed_hosts: 3 },
+    threat_class_distribution: [{ key: 'phishing', count: 3 }],
+    top_tags: [{ key: 'phishing', count: 3 }],
+    top_ioc_sources: [{ key: 'feed', count: 4 }],
+    recommended_controls_frequency: [{ key: 'email_gateway', count: 2 }],
+    missing_context_frequency: [{ key: 'rdap_missing', count: 1 }],
+    allowed_blocked_unknown_ratio: { allowed: 8, blocked: 10, unknown: 2 },
+    top_risk_drivers: [{ key: 'repeated activity', count: 2 }],
+    top_risk_reducers: [],
+    highest_risk_incidents: [{ id: 'a', incident_id: 1, risk_score: 80, reason_summary: 'sample' }]
+  };
+}
+
+test('environment insight oversized prompt is rejected before LLM call', async () => {
+  const oldFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    throw new Error('should not call fetch');
+  };
+  try {
+    await withEnv({ ENVIRONMENT_INSIGHT_MAX_PROMPT_CHARS: 1000 }, async () => {
+      const advisor = createLlmRiskAdvisor();
+      const summary = {
+        ...baseEnvironmentSummary(),
+        top_tags: Array.from({ length: 100 }, (_, i) => ({ key: `tag-${i}`, count: i }))
+      };
+      const out = await advisor.generateEnvironmentInsight(summary);
+      assert.equal(out.ok, false);
+      assert.equal(out.reason, 'prompt_too_large');
+      assert.equal(called, false);
+      assert.ok(out.metrics.final_prompt_chars > out.metrics.max_prompt_chars);
+    });
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('environment insight timeout remains graceful when retry also times out', async () => {
+  const oldFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    const err = new Error('aborted');
+    err.name = 'AbortError';
+    throw err;
+  };
+  try {
+    const advisor = createLlmRiskAdvisor();
+    const out = await advisor.generateEnvironmentInsight(baseEnvironmentSummary());
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, 'timeout');
+    assert.equal(calls, 2);
+    assert.equal(out.previous_failure.reason, 'timeout');
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('environment insight compact retry can succeed after first timeout', async () => {
+  const oldFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      const err = new Error('aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
+    return {
+      ok: true,
+      async json() {
+        return {
+          response: JSON.stringify({
+            executive_summary: 'Concise posture summary.',
+            posture_level: 'moderate',
+            primary_exposure: 'phishing',
+            key_findings: ['Phishing dominates observed risk.'],
+            risk_score_explanation: {
+              why_score_is_high_or_low: 'Moderate due to limited data.',
+              main_risk_drivers: ['phishing'],
+              main_risk_reducers: ['blocked activity']
+            },
+            top_recommendations: [
+              { control_area: 'email_gateway', recommendation: 'Review email gateway detections.', reason: 'Phishing is dominant.', priority: 'medium' }
+            ],
+            visibility_gaps: ['rdap_missing'],
+            trend_notes: 'No trend comparison available.'
+          })
+        };
+      }
+    };
+  };
+  try {
+    const advisor = createLlmRiskAdvisor();
+    const out = await advisor.generateEnvironmentInsight(baseEnvironmentSummary());
+    assert.equal(out.ok, true);
+    assert.equal(out.generation_mode, 'compact_retry');
+    assert.equal(out.previous_failure.reason, 'timeout');
+    assert.equal(calls, 2);
+    assert.equal(out.output.posture_level, 'moderate');
+    assert.equal(out.input_summary.highest_risk_incidents.length, 0);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
 });
