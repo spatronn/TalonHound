@@ -12,6 +12,7 @@ import {
   confidenceLabel
 } from './lib/iocConfidenceCard.js';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
+import './incidents.css';
 
 const CSRF_COOKIE_NAME = 'demo_csrf';
 
@@ -3918,18 +3919,18 @@ function IncidentPage() {
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
 
   const [tableWidths, setTableWidths] = useState({
-    select: 36,
-    incident_id: 110,
-    created_at: 170,
-    ioc: 240,
-    type: 90,
+    select: 40,
+    incident_id: 120,
+    created_at: 180,
+    ioc: 200,
+    type: 100,
     observed_hosts: 130,
-    first_seen: 170,
-    last_seen: 170,
+    first_seen: 180,
+    last_seen: 180,
     status: 100,
     verdict: 120,
-    assignee: 160,
-    action: 100
+    assignee: 140,
+    action: 88
   });
   const [resizeState, setResizeState] = useState(null);
 
@@ -3987,69 +3988,83 @@ function IncidentPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+      <section className="incidents-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
         <h2 style={{ marginTop: 0 }}>Incidents</h2>
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 8 }}>
           Default view shows all open incidents plus closed incidents from the last 7 days. Use date filters to narrow further.
         </div>
 
-        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input placeholder="Search IOC or #IncidentID..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load().catch(() => {}); } }} style={{ minWidth: 320 }} />
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <div className="incidents-filters">
+          <div className="incidents-filters-row incidents-filters-row-primary">
+            <input
+              className="incidents-search"
+              placeholder="Search IOC or #IncidentID..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load().catch(() => {}); } }}
+            />
+            <select className="incidents-select-compact" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Status: All</option>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
-            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+            <select className="incidents-select-compact" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
               <option value="all">Assignee: All</option>
               <option value="unassigned">Assignee: Unassigned</option>
               {assigneeOptions.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
-            <input type="datetime-local" value={from} onChange={(e) => { setFrom(e.target.value); setQuickRange(''); }} />
-            <input type="datetime-local" value={to} onChange={(e) => { setTo(e.target.value); setQuickRange(''); }} />
+          </div>
+          <div className="incidents-filters-row incidents-filters-row-secondary">
+            <input type="datetime-local" className="incidents-date-input" value={from} onChange={(e) => { setFrom(e.target.value); setQuickRange(''); }} />
+            <input type="datetime-local" className="incidents-date-input" value={to} onChange={(e) => { setTo(e.target.value); setQuickRange(''); }} />
             <button
+              type="button"
+              className="incidents-quick-btn"
               onClick={() => applyQuickRange('1h')}
               style={{ borderColor: quickRange === '1h' ? '#93c5fd' : '#475569' }}
             >
               Last 1 hour
             </button>
             <button
+              type="button"
+              className="incidents-quick-btn"
               onClick={() => applyQuickRange('24h')}
               style={{ borderColor: quickRange === '24h' ? '#93c5fd' : '#475569' }}
             >
               Last 24 hours
             </button>
             <button
+              type="button"
+              className="incidents-quick-btn"
               onClick={() => applyQuickRange('7d')}
               style={{ borderColor: quickRange === '7d' ? '#93c5fd' : '#475569' }}
             >
               Last 7 days
             </button>
-            <button onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
-            <button onClick={resetFilters}>Reset filters</button>
+            <button type="button" onClick={() => { setPage(1); load().catch(() => {}); }}>Filter</button>
+            <button type="button" onClick={resetFilters}>Reset filters</button>
           </div>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="incidents-meta-row">
             <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Active Filters</span>
             {activeFilters.length ? activeFilters.map((f) => (
-              <span key={f.key + f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #475569', borderRadius: 999, padding: '3px 8px', fontSize: 12, color: '#cbd5e1' }}>
+              <span key={f.key + f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #475569', borderRadius: 999, padding: '3px 8px', fontSize: 12, color: '#cbd5e1', maxWidth: '100%' }}>
                 {f.label}
-                <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
+                <button type="button" onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
               </span>
             )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
-            <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Reset filters</button>
+            <button type="button" className="incidents-meta-reset" onClick={resetFilters} style={{ fontSize: 12 }}>Reset filters</button>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', padding: '8px 10px' }}>
+          <div className="incidents-saved-row">
             <span style={{ color: '#93c5fd', fontSize: 12, fontWeight: 700 }}>Saved views</span>
             {showSaveViewInput ? (
               <>
-                <input value={saveViewName} onChange={(e) => setSaveViewName(e.target.value)} placeholder="View name" style={{ minWidth: 160 }} />
-                <button onClick={saveCurrentView} disabled={!String(saveViewName || '').trim()}>Save</button>
-                <button onClick={() => { setShowSaveViewInput(false); setSaveViewName(''); }}>Cancel</button>
+                <input value={saveViewName} onChange={(e) => setSaveViewName(e.target.value)} placeholder="View name" style={{ width: 160, maxWidth: '100%' }} />
+                <button type="button" onClick={saveCurrentView} disabled={!String(saveViewName || '').trim()}>Save</button>
+                <button type="button" onClick={() => { setShowSaveViewInput(false); setSaveViewName(''); }}>Cancel</button>
               </>
             ) : (
-              <button onClick={() => setShowSaveViewInput(true)} style={{ fontSize: 12 }}>Save current view</button>
+              <button type="button" onClick={() => setShowSaveViewInput(true)} style={{ fontSize: 12 }}>Save current view</button>
             )}
             <select
               value=""
@@ -4059,7 +4074,7 @@ function IncidentPage() {
                 const view = savedViews.find((v) => v.name === name);
                 if (view) loadSavedView(view);
               }}
-              style={{ minWidth: 180, fontSize: 12 }}
+              style={{ width: 180, maxWidth: '100%', fontSize: 12 }}
             >
               <option value="">Load saved view…</option>
               {savedViews.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
@@ -4067,7 +4082,7 @@ function IncidentPage() {
           </div>
 
           {canWrite && selectedIds.size > 0 ? (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', border: '1px solid #1d4ed8', borderRadius: 10, background: 'rgba(30,58,138,0.25)', padding: '8px 10px' }}>
+            <div className="incidents-bulk-row">
               <span style={{ color: '#dbeafe', fontSize: 13, fontWeight: 700 }}>{selectedIds.size} selected (max {BULK_TRIAGE_MAX})</span>
               {[
                 ['verdict', 'TP', 'Set TP'],
@@ -4075,27 +4090,27 @@ function IncidentPage() {
                 ['verdict', 'Suspicious', 'Set Suspicious'],
                 ['verdict', 'security_test', 'Security Test']
               ].map(([action, v, lbl]) => (
-                <button key={v} onClick={() => openBulkModal(action, { verdict: v })} style={{ fontSize: 12 }}>{lbl}</button>
+                <button type="button" key={v} onClick={() => openBulkModal(action, { verdict: v })} style={{ fontSize: 12 }}>{lbl}</button>
               ))}
-              <button onClick={() => openBulkModal('assign')} style={{ fontSize: 12 }}>Assign</button>
-              <button onClick={() => openBulkModal('close', { verdict: 'FP' })} style={{ fontSize: 12 }}>Close as FP</button>
-              <button onClick={() => openBulkModal('close', { verdict: 'TP' })} style={{ fontSize: 12 }}>Close as TP</button>
-              <button onClick={() => setSelectedIds(new Set())} style={{ marginLeft: 'auto', fontSize: 12 }}>Clear selection</button>
+              <button type="button" onClick={() => openBulkModal('assign')} style={{ fontSize: 12 }}>Assign</button>
+              <button type="button" onClick={() => openBulkModal('close', { verdict: 'FP' })} style={{ fontSize: 12 }}>Close as FP</button>
+              <button type="button" onClick={() => openBulkModal('close', { verdict: 'TP' })} style={{ fontSize: 12 }}>Close as TP</button>
+              <button type="button" className="incidents-bulk-clear" onClick={() => setSelectedIds(new Set())} style={{ fontSize: 12 }}>Clear selection</button>
             </div>
           ) : null}
           {bulkResult ? <div style={{ color: '#86efac', fontSize: 13 }}>{bulkResult}</div> : null}
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="incidents-verdict-row">
             {['TP', 'FP', 'Suspicious', 'Unreviewed', 'In Progress'].map((v) => (
-              <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <label key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#cbd5e1' }}>
                 <input type="checkbox" checked={verdict.includes(v)} onChange={() => toggleVerdict(v)} /> {v}
               </label>
             ))}
           </div>
         </div>
 
-        <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-          <table width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: incidentTableMinWidth }}>
+        <div className="incidents-table-wrap">
+          <table className="incidents-table" cellPadding="10" style={{ minWidth: incidentTableMinWidth }}>
             <colgroup>
               {incidentTableColumns.map((col) => (
                 <col key={col.key} data-column-key={col.key} style={{ width: tableWidths[col.key] }} />
@@ -4130,14 +4145,14 @@ function IncidentPage() {
                   ) : null}
                   <td data-column-key="incident_id"><b>#{it.incident_id || '-'}</b></td>
                   <td data-column-key="created_at">{formatUserDateTime(it.created_at)}</td>
-                  <td data-column-key="ioc" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value}</td>
+                  <td data-column-key="ioc">{it.ioc_value}</td>
                   <td data-column-key="type">{it.ioc_type}</td>
                   <td data-column-key="observed_hosts">{it.asset_count || 0}</td>
                   <td data-column-key="first_seen">{formatUserDateTime(it.first_seen)}</td>
                   <td data-column-key="last_seen">{formatUserDateTime(it.last_seen)}</td>
                   <td data-column-key="status">{it.status}</td>
                   <td data-column-key="verdict">{it.verdict}</td>
-                  <td data-column-key="assignee" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.assigned_to || 'Unassigned'}</td>
+                  <td data-column-key="assignee">{it.assigned_to || 'Unassigned'}</td>
                   <td data-column-key="action"><button onClick={(e) => { e.stopPropagation(); navigate(`/incidents/${it.incident_id || it.id}`); }}>View</button></td>
                 </tr>
               )) : <tr><td colSpan={canWrite ? 12 : 11} style={{ color: '#94a3b8' }}>No incidents.</td></tr>}

@@ -1,0 +1,155 @@
+/* Incidents list — tuned for 100% zoom @ 1920px with sidebar open */
+
+.incidents-page {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.incidents-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.incidents-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.incidents-search {
+  width: clamp(260px, 28vw, 420px);
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+}
+
+.incidents-select-compact {
+  flex: 0 1 auto;
+  min-width: 128px;
+  max-width: 168px;
+  box-sizing: border-box;
+}
+
+.incidents-date-input {
+  width: 190px;
+  min-width: 180px;
+  max-width: 200px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+
+.incidents-quick-btn {
+  flex: 0 1 auto;
+  max-width: 92px;
+  min-width: 72px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: normal;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.incidents-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0b1220;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+
+.incidents-meta-row .incidents-meta-reset {
+  margin-left: auto;
+}
+
+.incidents-saved-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0b1220;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+
+.incidents-saved-row input,
+.incidents-saved-row select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.incidents-bulk-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #1d4ed8;
+  border-radius: 10px;
+  background: rgba(30, 58, 138, 0.25);
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+
+.incidents-bulk-row .incidents-bulk-clear {
+  margin-left: auto;
+}
+
+.incidents-verdict-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.incidents-table-wrap {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.incidents-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.incidents-table th,
+.incidents-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.incidents-table td[data-column-key='ioc'],
+.incidents-table th[data-column-key='ioc'] {
+  white-space: nowrap;
+}
+
+.incidents-table td[data-column-key='assignee'] {
+  white-space: nowrap;
+}
