@@ -322,18 +322,57 @@ function rowToMatchEvents(r, lookupMap) {
   return out;
 }
 
+function createLookupStats() {
+  return {
+    ch_lookup_hits: 0,
+    ch_lookup_misses: 0,
+    pg_supplement_attempted: false,
+    pg_supplement_keys: 0,
+    pg_supplement_found: 0,
+    pg_supplement_skipped: 0,
+    skipped_pg_supplement_keys: 0,
+    skip_reason: null
+  };
+}
+
+function mergeLookupStats(into, from) {
+  if (!from) return into;
+  into.ch_lookup_hits += Number(from.ch_lookup_hits || 0);
+  into.ch_lookup_misses += Number(from.ch_lookup_misses || 0);
+  into.pg_supplement_attempted = into.pg_supplement_attempted || Boolean(from.pg_supplement_attempted);
+  into.pg_supplement_keys += Number(from.pg_supplement_keys || 0);
+  into.pg_supplement_found += Number(from.pg_supplement_found || 0);
+  into.pg_supplement_skipped += Number(from.pg_supplement_skipped || 0);
+  into.skipped_pg_supplement_keys += Number(from.skipped_pg_supplement_keys || 0);
+  if (from.skip_reason && !into.skip_reason) into.skip_reason = from.skip_reason;
+  return into;
+}
+
 async function toMatchRowsFromScanned(chRows, pgClient = null) {
-  if (!chRows.length) return [];
+  const lookupStats = createLookupStats();
+  if (!chRows.length) return { matchRows: [], lookupStats };
+
   const tupleList = collectLookupTuplesForBatch(chRows);
   const lookupMap = await fetchIocLookupMatches(tupleList);
-  if (pgClient) {
-    await supplementLookupMapFromPostgres(pgClient, tupleList, lookupMap);
+
+  for (const [obs, typ] of tupleList) {
+    if (lookupMap.get(`${typ}\t${obs}`)) {
+      lookupStats.ch_lookup_hits += 1;
+    } else {
+      lookupStats.ch_lookup_misses += 1;
+    }
   }
+
+  if (pgClient) {
+    const pgStats = await supplementLookupMapFromPostgres(pgClient, tupleList, lookupMap);
+    mergeLookupStats(lookupStats, pgStats);
+  }
+
   const out = [];
   for (const r of chRows) {
     out.push(...rowToMatchEvents(r, lookupMap));
   }
-  return out;
+  return { matchRows: out, lookupStats };
 }
 
 async function getOrInitState(client) {
@@ -631,10 +670,20 @@ async function runBatch() {
 
     if (!scanned.length) {
       await client.query('COMMIT');
-      return { scanned: 0, matched: 0, inserted: 0, affectedActivityIds: [], suppressed_count: 0, duration_ms: Date.now() - startedAtMs };
+      return {
+        scanned: 0,
+        matched: 0,
+        inserted: 0,
+        affectedActivityIds: [],
+        suppressed_count: 0,
+        suppressed_by_global_count: 0,
+        skipped_suppressed_iocs: 0,
+        lookupStats: createLookupStats(),
+        duration_ms: Date.now() - startedAtMs
+      };
     }
 
-    const matchedRows = await toMatchRowsFromScanned(scanned, client);
+    const { matchRows: matchedRows, lookupStats } = await toMatchRowsFromScanned(scanned, client);
     const insertResult = await insertMatchEvents(client, matchedRows);
 
     const last = scanned[scanned.length - 1];
@@ -651,6 +700,7 @@ async function runBatch() {
       skipped_suppressed_iocs: Number(insertResult.skipped_suppressed_iocs || 0),
       last_ts: last.ingest_time || last.ts,
       last_row_hash: last.row_hash,
+      lookupStats,
       duration_ms: Date.now() - startedAtMs
     };
   } catch (err) {
@@ -745,6 +795,7 @@ async function tick() {
   let totalDurationMs = 0;
   const suppressionStats = createSuppressionStats();
   const affectedActivityIds = new Set();
+  const lookupStats = createLookupStats();
 
   for (let i = 0; i < MAX_BATCHES_PER_TICK; i += 1) {
     const result = await runBatch();
@@ -756,6 +807,7 @@ async function tick() {
       suppressed_by_global_count: result.suppressed_by_global_count,
       skipped_suppressed_iocs: result.skipped_suppressed_iocs
     });
+    mergeLookupStats(lookupStats, result.lookupStats);
     for (const id of (result.affectedActivityIds || [])) affectedActivityIds.add(String(id));
     totalDurationMs += Number(result.duration_ms || 0);
     if (result.scanned < BATCH_SIZE) break;
@@ -775,26 +827,29 @@ async function tick() {
       replayScanned = replayRows.length;
       lastReplayWindowAtMs = nowMs;
       if (replayRows.length) {
-        const mapped = await toMatchRowsFromScanned(replayRows, client);
-        replayMatched = mapped.length;
-        lateArrivalCount = replayRows.filter((r) => {
-          const ets = r?.ts ? new Date(r.ts).getTime() : 0;
-          const its = r?.ingest_time ? new Date(r.ingest_time).getTime() : 0;
-          return ets > 0 && its > 0 && (its - ets) > 60_000;
-        }).length;
-        const client = await pool.connect();
+        const replayClient = await pool.connect();
+        let replayBegan = false;
         try {
-          await client.query('BEGIN');
-          const replayInsertResult = await insertMatchEvents(client, mapped);
+          const { matchRows: mapped, lookupStats: replayLookupStats } = await toMatchRowsFromScanned(replayRows, replayClient);
+          mergeLookupStats(lookupStats, replayLookupStats);
+          replayMatched = mapped.length;
+          lateArrivalCount = replayRows.filter((r) => {
+            const ets = r?.ts ? new Date(r.ts).getTime() : 0;
+            const its = r?.ingest_time ? new Date(r.ingest_time).getTime() : 0;
+            return ets > 0 && its > 0 && (its - ets) > 60_000;
+          }).length;
+          await replayClient.query('BEGIN');
+          replayBegan = true;
+          const replayInsertResult = await insertMatchEvents(replayClient, mapped);
           replayInserted = replayInsertResult.inserted;
           suppressionStats.merge(replayInsertResult);
           for (const id of (replayInsertResult.affectedActivityIds || [])) affectedActivityIds.add(String(id));
-          await client.query('COMMIT');
+          await replayClient.query('COMMIT');
         } catch (err) {
-          await client.query('ROLLBACK');
+          if (replayBegan) await replayClient.query('ROLLBACK').catch(() => {});
           throw err;
         } finally {
-          client.release();
+          replayClient.release();
         }
       }
     } catch (err) {
@@ -808,7 +863,18 @@ async function tick() {
 
   if (totalScanned > 0 || replayScanned > 0) {
     const s = suppressionStats.toJSON();
-    console.log(`[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} suppressed_count=${s.suppressed_count} suppressed_by_global_count=${s.suppressed_by_global_count} llm_trigger_candidates=${affectedActivityIds.size} late_arrival_count=${lateArrivalCount} duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`);
+    const pgSkipHint = lookupStats.skip_reason ? ` pg_supplement_skip_reason=${lookupStats.skip_reason}` : '';
+    console.log(
+      `[ioc-correlation] realtime_scanned=${totalScanned} realtime_matched=${totalMatched} realtime_inserted=${totalInserted} `
+      + `replay_scanned=${replayScanned} replay_matched=${replayMatched} replay_inserted=${replayInserted} `
+      + `ch_lookup_hits=${lookupStats.ch_lookup_hits} ch_lookup_misses=${lookupStats.ch_lookup_misses} `
+      + `pg_supplement_attempted=${lookupStats.pg_supplement_attempted} pg_supplement_keys=${lookupStats.pg_supplement_keys} `
+      + `pg_supplement_found=${lookupStats.pg_supplement_found} pg_supplement_skipped=${lookupStats.pg_supplement_skipped} `
+      + `skipped_pg_supplement_keys=${lookupStats.skipped_pg_supplement_keys}${pgSkipHint} `
+      + `suppressed_count=${s.suppressed_count} suppressed_by_global_count=${s.suppressed_by_global_count} `
+      + `llm_trigger_candidates=${affectedActivityIds.size} late_arrival_count=${lateArrivalCount} `
+      + `duration_ms=${totalDurationMs} replay_ran=${shouldRunReplay}`
+    );
   }
 }
 
