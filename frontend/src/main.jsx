@@ -11524,18 +11524,6 @@ function IOCDetailsPage() {
   const [confidenceSaving, setConfidenceSaving] = useState(false);
   const [confidenceError, setConfidenceError] = useState('');
   const { options: threatClassOptions, labelFor: threatClassLabelFor } = useThreatClassifications();
-  const threatClassEditOptions = useMemo(() => {
-    const currentSlug = summary?.threat_classification || summary?.primary_threat_classification || 'unknown';
-    const opts = [...threatClassOptions];
-    if (currentSlug && !opts.some((o) => o.value === currentSlug)) {
-      opts.unshift({
-        value: currentSlug,
-        label: `${summary?.threat_classification_label || threatClassLabelFor(currentSlug)} (Inactive)`,
-        system_default: false
-      });
-    }
-    return opts;
-  }, [threatClassOptions, summary, threatClassLabelFor]);
   const [threatActors, setThreatActors] = useState([]);
   const [showThreatClassModal, setShowThreatClassModal] = useState(false);
   const [threatClassDraft, setThreatClassDraft] = useState('unknown');
@@ -11770,6 +11758,18 @@ function IOCDetailsPage() {
   }
 
   const summary = data.summary;
+  const threatClassEditOptions = useMemo(() => {
+    const currentSlug = summary?.threat_classification || summary?.primary_threat_classification || 'unknown';
+    const opts = [...threatClassOptions];
+    if (currentSlug && !opts.some((o) => o.value === currentSlug)) {
+      opts.unshift({
+        value: currentSlug,
+        label: `${summary?.threat_classification_label || threatClassLabelFor(currentSlug)} (Inactive)`,
+        system_default: false
+      });
+    }
+    return opts;
+  }, [threatClassOptions, summary, threatClassLabelFor]);
   const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
