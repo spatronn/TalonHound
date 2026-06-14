@@ -7871,7 +7871,7 @@ function ThreatClassificationManagerPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Threat Classifications</h1>
-            <p style={ui.pageSub}>Manage platform threat classifications used on IOCs. Unknown is always active and cannot be disabled.</p>
+            <p style={ui.pageSub}>Manage platform threat classifications used on IOCs. Use display order to control picker and list sorting. Unknown is always active and cannot be disabled.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
@@ -7884,41 +7884,58 @@ function ThreatClassificationManagerPage() {
 
         {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
 
-        <div style={{ marginTop: 16, overflowX: 'auto' }}>
-          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ marginTop: 16, overflowX: 'auto', maxWidth: '100%' }}>
+          <table className="ioc-table threat-classifications-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={ui.th}>Name</th>
-                <th style={ui.th}>Slug</th>
-                <th style={ui.th}>Description</th>
-                <th style={ui.th}>Active</th>
-                <th style={ui.th}>System Default</th>
-                <th style={ui.th}>Sort Order</th>
-                <th style={ui.th}>Created At</th>
-                <th style={ui.th}>Actions</th>
+                <th className="tc-col-classification" style={ui.th}>Classification</th>
+                <th className="tc-col-description" style={ui.th}>Description</th>
+                <th className="tc-col-status" style={ui.th}>Status</th>
+                <th className="tc-col-builtin" style={ui.th} title="Platform-managed classification">Built-in</th>
+                <th className="tc-col-order" style={ui.th} title="Display order in dropdowns and lists">Order</th>
+                <th className="tc-col-actions" style={ui.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : !items.length ? (
-                <tr><td colSpan={8} style={ui.td}>No classifications found.</td></tr>
+                <tr><td colSpan={6} style={ui.td}>No classifications found.</td></tr>
               ) : items.map((item) => (
                 <tr key={item.id} style={{ opacity: item.active ? 1 : 0.62 }}>
-                  <td style={ui.td}><div style={{ fontWeight: 600 }}>{item.name}</div></td>
-                  <td style={ui.td}><code style={{ fontSize: 12 }}>{item.slug}</code></td>
-                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{item.description || '—'}</td>
-                  <td style={ui.td}>{item.active ? 'Yes' : 'No'}</td>
-                  <td style={ui.td}>{item.system_default ? 'Yes' : 'No'}</td>
-                  <td style={ui.td}>{item.sort_order ?? '—'}</td>
-                  <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
-                  <td style={ui.td}>
-                    <button type="button" style={ui.btn} onClick={() => openEditModal(item)}>Edit</button>
-                    {item.slug === 'unknown' ? null : item.active ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableItem(item).catch(() => {})}>Disable</button>
-                    ) : (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableItem(item).catch(() => {})}>Enable</button>
-                    )}
+                  <td className="tc-col-classification" style={ui.td}>
+                    <div style={{ fontWeight: 600 }}>{item.name}</div>
+                    <code style={{ fontSize: 11, color: '#64748b' }}>{item.slug}</code>
+                  </td>
+                  <td className="tc-col-description tc-description-cell" style={ui.td} title={item.description || undefined}>
+                    {item.description || '—'}
+                  </td>
+                  <td className="tc-col-status" style={ui.td}>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      background: item.active ? 'rgba(22, 101, 52, 0.35)' : 'rgba(71, 85, 105, 0.35)',
+                      color: item.active ? '#86efac' : '#94a3b8',
+                      border: `1px solid ${item.active ? '#166534' : '#475569'}`
+                    }}
+                    >
+                      {item.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="tc-col-builtin" style={ui.td}>{item.system_default ? 'Yes' : '—'}</td>
+                  <td className="tc-col-order" style={ui.td}>{item.sort_order ?? '—'}</td>
+                  <td className="tc-col-actions tc-actions-cell" style={ui.td}>
+                    <div className="tc-action-buttons">
+                      <button type="button" style={ui.btn} onClick={() => openEditModal(item)}>Edit</button>
+                      {item.slug === 'unknown' ? null : item.active ? (
+                        <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableItem(item).catch(() => {})}>Disable</button>
+                      ) : (
+                        <button type="button" style={ui.btn} onClick={() => enableItem(item).catch(() => {})}>Enable</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -7963,8 +7980,8 @@ function ThreatClassificationManagerPage() {
             <FeedFormField ui={ui} label="Description" fullWidth>
               <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
             </FeedFormField>
-            <FeedFormField ui={ui} label="Sort Order" fullWidth>
-              <input type="number" value={form.sort_order} onChange={(e) => setForm((x) => ({ ...x, sort_order: e.target.value }))} style={ui.input} />
+            <FeedFormField ui={ui} label="Display order" helper="Controls the order in classification dropdowns and lists. Lower numbers appear first." fullWidth>
+              <input type="number" min={0} step={1} value={form.sort_order} onChange={(e) => setForm((x) => ({ ...x, sort_order: e.target.value }))} style={ui.input} />
             </FeedFormField>
             <FeedFormField ui={ui} label="Active" fullWidth>
               <label style={ui.checkLabel}>
@@ -13459,6 +13476,38 @@ function App() {
         }
         .integrations-feeds-table .integrations-feeds-action-buttons button {
           white-space: nowrap;
+        }
+        .threat-classifications-table {
+          width: 100%;
+          table-layout: fixed;
+          font-size: 13px;
+        }
+        .threat-classifications-table .tc-col-classification { width: 24%; min-width: 160px; }
+        .threat-classifications-table .tc-col-description { width: auto; }
+        .threat-classifications-table .tc-col-status { width: 88px; }
+        .threat-classifications-table .tc-col-builtin { width: 72px; text-align: center; }
+        .threat-classifications-table .tc-col-order { width: 64px; text-align: center; }
+        .threat-classifications-table .tc-col-actions { width: 160px; }
+        .threat-classifications-table .tc-description-cell {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 0;
+        }
+        .threat-classifications-table .tc-actions-cell {
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+        .threat-classifications-table .tc-action-buttons {
+          display: inline-flex;
+          flex-wrap: nowrap;
+          gap: 6px;
+          align-items: center;
+        }
+        .threat-classifications-table .tc-action-buttons button {
+          white-space: nowrap;
+          padding: 6px 10px;
+          font-size: 12px;
         }
         .published-feeds-page input:focus,
         .published-feeds-page select:focus,
