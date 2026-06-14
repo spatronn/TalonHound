@@ -9709,8 +9709,10 @@ function IOCHotListPage() {
                     ) : null}
                   </td>
                   <td className="hot-ioc-type-cell">{obsType || '-'}</td>
-                  <td className="hot-ioc-classifications-cell" title={formatThreatClassificationsText(r.threat_classifications)}>
-                    {formatThreatClassificationsText(r.threat_classifications)}
+                  <td className="hot-ioc-classifications-cell">
+                    <span className="hot-ioc-classifications-text" title={formatThreatClassificationsText(r.threat_classifications)}>
+                      {formatThreatClassificationsText(r.threat_classifications)}
+                    </span>
                   </td>
                   <td className="hot-ioc-numeric-cell">{Number.isFinite(Number(r.evidence_logs)) ? Number(r.evidence_logs) : '-'}</td>
                   <td className="hot-ioc-numeric-cell">{Number(r.source_count ?? 0)}</td>
@@ -13732,6 +13734,11 @@ function App() {
           background: #1f2937 !important;
           border-bottom: 1px solid #334155;
         }
+        .hot-ioc-table th,
+        .hot-ioc-table td {
+          display: table-cell;
+          box-sizing: border-box;
+        }
         .hot-ioc-table th {
           padding: 10px 8px;
           color: #94a3b8;
@@ -13740,15 +13747,19 @@ function App() {
           text-transform: uppercase;
           letter-spacing: 0.05em;
           text-align: left;
+          vertical-align: middle;
+          border-bottom: 1px solid #334155;
         }
         .hot-ioc-table td {
           padding: 10px 8px;
           color: #e2e8f0;
           vertical-align: top;
-          border-bottom: 1px solid #1e293b;
         }
         .hot-ioc-table tbody tr {
           background: #111827 !important;
+        }
+        .hot-ioc-table tbody tr:not(:last-child) td {
+          border-bottom: 1px solid #1e293b;
         }
         .hot-ioc-table tbody tr:hover {
           background: #1e293b !important;
@@ -13808,12 +13819,14 @@ function App() {
         }
         .hot-ioc-classifications-cell {
           font-size: 12px;
-          line-height: 1.35;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          min-width: 0;
+        }
+        .hot-ioc-classifications-text {
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;
+          overflow: hidden;
+          line-height: 1.35;
           word-break: break-word;
         }
         .hot-ioc-date-cell {
