@@ -39,6 +39,15 @@ describe('getIocStatusCardPresentation', () => {
     assert.ok(!p.buttons.includes('reactivate_ioc'));
   });
 
+  it('shows reactivated_by_match_at when present', () => {
+    const p = getIocStatusCardPresentation({
+      status: 'active',
+      expires_at: '2026-07-01T00:00:00.000Z',
+      reactivated_by_match_at: '2026-06-14T10:00:00.000Z'
+    });
+    assert.ok(p.fields.some((f) => f.key === 'reactivated_by_match_at'));
+  });
+
   it('expired IOC shows expired_at only and reactivate actions', () => {
     const p = getIocStatusCardPresentation(expiredSummary);
     assert.equal(p.lifecycle, 'expired');

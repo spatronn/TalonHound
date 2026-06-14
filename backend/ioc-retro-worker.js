@@ -6,6 +6,11 @@ import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { createSuppressionStats, fetchActiveSuppressionIndex, filterSuppressedPairs } from './lib/ioc-suppression.js';
 import { filterRetroRowsWithRealtimeDuplicates } from './lib/iocRetroDedup.js';
 import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
+import { createAuditLogService } from './lib/auditLogService.js';
+import {
+  batchReactivateExpiredMatchesForRows,
+  annotateMatchRowsWithReactivation
+} from './lib/iocMatchReactivation.js';
 
 const { Pool } = pg;
 
@@ -16,6 +21,8 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'demo'
 });
+
+const matchReactivationAudit = createAuditLogService(pool);
 
 const RETRO_SCAN_INTERVAL_SECONDS = Math.max(Number(process.env.IOC_RETRO_SCAN_INTERVAL_SECONDS || 3600), 30);
 const RETRO_LOOKBACK_DAYS = Math.max(Number(process.env.IOC_RETRO_LOOKBACK_DAYS || 30), 1);
@@ -254,6 +261,16 @@ async function insertMatchEvents(client, rows) {
     return { inserted: 0, ...suppressionStats.toJSON() };
   }
   rows = allowedRows;
+
+  const reactivation = await batchReactivateExpiredMatchesForRows(client, rows, {
+    audit: matchReactivationAudit,
+    actor: { actor_type: 'system', source: 'ioc-retro' },
+    detectionType: 'retroactive'
+  });
+  if (reactivation.reactivated > 0) {
+    rows = annotateMatchRowsWithReactivation(rows, reactivation.reactivatedKeys);
+    console.info(`[ioc-retro] expired_ioc_reactivated=${reactivation.reactivated}`);
+  }
 
   const uniq = new Map();
   for (const r of rows) {

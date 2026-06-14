@@ -24,6 +24,7 @@ export function normalizeExpirationAuditReason(reason) {
   const r = String(reason || '').trim();
   if (!r) return 'expires_at_reached';
   if (r === 'policy_ttl') return 'expires_at_reached';
+  if (r === 'correlation_match') return 'correlation_match';
   return r;
 }
 

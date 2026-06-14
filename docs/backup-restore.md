@@ -1,149 +1,170 @@
 # Backup and restore runbook
 
-Docker Compose deployment for `demo-runbook`. Adjust paths and volume names for your host.
+Docker Compose deployment for `demo-runbook`. Backup/restore is **CLI-first** in Faz 1; Admin UI/API will come later.
 
 ## What to back up
 
-| Component | Critical data | Notes |
+| Component | Critical data | Faz 1 |
 |-----------|---------------|-------|
-| **PostgreSQL** (`postgres_data`) | IOCs, incidents, users, audit logs, integration state | **Must back up** |
-| **ClickHouse** (`clickhouse_data`) | Syslog logs, observables, evidence tables | **Must back up** if `LOG_STORAGE=clickhouse` |
-| **Redis** | BullMQ job metadata, ephemeral caches | **Optional** — queues can be reconciled; do not rely on Redis for durable state |
-| **TLS certs** (`proxy/certs/`) | HTTPS certificates | Back up if not managed externally |
-| **`.env`** | Secrets | Store in a secret manager; never commit to git |
+| **PostgreSQL** (`postgres_data`) | IOCs, incidents, users, audit logs, integration state, `schema_migrations` | **Required** — `postgres.dump` |
+| **ClickHouse** (`clickhouse_data`) | Syslog logs, observables, incident evidence | **Optional** — Native table exports |
+| **Redis** | BullMQ queues, cache | **Excluded** — reconcile queues after restore |
+| **`.env`** | Secrets | **Not in bundle** — store separately |
+| **TLS certs** (`proxy/certs/`) | HTTPS | Manual if not managed externally |
 
-Redis holds BullMQ queues and short-lived cache keys. After restore, run integration queue recovery from **Threat Intelligence → Job Queue Status** if workers report stale jobs.
+### ClickHouse tables (optional backup)
+
+Included only when `--include-clickhouse` is passed (not the default):
+
+- `default.syslog_logs`
+- `default.syslog_observables`
+- `security_evidence.incident_related_logs`
+
+Excluded but rebuildable (listed in `manifest.json` as `excluded_rebuildable_tables`):
+
+- `default.ioc_lookup`
+- `default.ioc_lookup_by_updated`
+- `default.ioc_lookup_sync_state`
+- `default.ioc_retro_state`
+
+Workers can repopulate lookup/retro state from PostgreSQL after restore.
+
+## Backup bundle layout
+
+```text
+backups/demo-runbook-YYYYMMDDTHHMMSSZ/
+  manifest.json
+  postgres.dump          # pg_dump -Fc
+  checksums.sha256
+  README.txt
+  clickhouse/            # only with --include-clickhouse
+    default.syslog_logs.native
+    default.syslog_observables.native
+    security_evidence.incident_related_logs.native
+```
+
+Host path `backups/` is bind-mounted to `/backups` in the backend container for future API use. Generated bundles are git-ignored.
 
 ## Pre-backup checklist
 
-1. Note stack version: `git rev-parse HEAD`
-2. Prefer quiet period: pause scheduler if needed (`docker compose stop integration-scheduler`)
-3. Ensure no migration is running
+1. Note stack version: `git rev-parse HEAD` (recorded in `manifest.json`)
+2. **Quiet period recommended** — avoid backup during migrations, large feed imports, or retro scans
+3. Optionally pause scheduler: `docker compose stop integration-scheduler`
+4. Ensure no migration is running: `docker compose run --rm backend npm run migrate:list`
 
-## PostgreSQL backup
+## Create backup (recommended)
 
 ```bash
 cd /opt/demo-runbook
-mkdir -p backups
-STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+chmod +x scripts/backup-stack.sh scripts/restore-stack.sh
 
-docker compose exec -T db pg_dump -U demo -d demo -Fc \
-  > "backups/postgres-demo-${STAMP}.dump"
-```
-
-Verify archive:
-
-```bash
-ls -lh backups/postgres-demo-*.dump
-```
-
-## ClickHouse backup
-
-Logical export (works for demo-scale volumes):
-
-```bash
-STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-BACKUP_DIR="backups/clickhouse-${STAMP}"
-mkdir -p "$BACKUP_DIR"
-
-for table in syslog_logs syslog_observables; do
-  docker compose exec -T clickhouse clickhouse-client \
-    --user demo --password "$CLICKHOUSE_PASSWORD" \
-    --query "SELECT * FROM ${table} FORMAT Native" \
-    > "${BACKUP_DIR}/${table}.native"
-done
-
-# Evidence schema (if initialized)
-docker compose exec -T clickhouse clickhouse-client \
-  --user demo --password "$CLICKHOUSE_PASSWORD" \
-  --query "SHOW TABLES FROM security_evidence" 2>/dev/null || true
-```
-
-For larger deployments, use ClickHouse `BACKUP TO Disk(...)` or vendor snapshot tooling instead of full native exports.
-
-## Optional helper script
-
-```bash
+# PostgreSQL only (default)
 ./scripts/backup-stack.sh
+
+# PostgreSQL + ClickHouse
+./scripts/backup-stack.sh --include-clickhouse
 ```
 
-## Restore PostgreSQL
-
-**Warning:** restore overwrites the current database.
+Custom output root:
 
 ```bash
-cd /opt/demo-runbook
-docker compose stop backend integration-worker integration-scheduler signal-worker \
-  ioc-correlation-worker ioc-retro-worker ioc-expiration-worker ioc-match-count-worker \
+BACKUP_ROOT=/data/backups ./scripts/backup-stack.sh
+```
+
+Verify:
+
+```bash
+ls -la backups/demo-runbook-*/
+sha256sum -c backups/demo-runbook-*/checksums.sha256
+```
+
+## Restore (CLI only)
+
+**Warning:** restore **overwrites** the current PostgreSQL database. Faz 1 does not expose a mutating restore API.
+
+Preview (no changes):
+
+```bash
+./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --dry-run
+```
+
+Execute restore (PostgreSQL only; default):
+
+```bash
+./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm
+```
+
+PostgreSQL + ClickHouse (when bundle includes `clickhouse/`):
+
+```bash
+./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm --restore-clickhouse
+```
+
+Explicit PostgreSQL-only alias:
+
+```bash
+./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm --postgres-only
+```
+
+The restore script will:
+
+1. Verify `checksums.sha256` (unless `--skip-checksum`)
+2. Stop writer services
+3. `pg_restore --clean --if-exists` into `demo` database
+4. `npm run migrate` (forward-only)
+5. Import ClickHouse Native files when `--restore-clickhouse` is passed
+6. Start services again
+
+### Manual PostgreSQL restore (equivalent)
+
+```bash
+docker compose stop backend integration-scheduler integration-worker signal-engine \
+  ioc-correlation-engine ioc-retro-engine ioc-expiration-worker ioc-match-count-worker \
   llm-risk-worker syslog-receiver
 
-DUMP=backups/postgres-demo-YYYYMMDDTHHMMSSZ.dump
-
-docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists < "$DUMP"
+docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists \
+  < backups/demo-runbook-YYYYMMDDTHHMMSSZ/postgres.dump
 
 docker compose run --rm backend npm run migrate
-docker compose up -d backend integration-worker integration-scheduler
+docker compose up -d
 ```
-
-## Restore ClickHouse
-
-```bash
-docker compose stop syslog-receiver ioc-correlation-worker ioc-retro-worker
-
-BACKUP_DIR=backups/clickhouse-YYYYMMDDTHHMMSSZ
-
-docker compose exec -T clickhouse clickhouse-client \
-  --user demo --password "$CLICKHOUSE_PASSWORD" \
-  --query "TRUNCATE TABLE syslog_logs"
-
-docker compose exec -T clickhouse clickhouse-client \
-  --user demo --password "$CLICKHOUSE_PASSWORD" \
-  --query "INSERT INTO syslog_logs FORMAT Native" \
-  < "${BACKUP_DIR}/syslog_logs.native"
-
-docker compose up -d syslog-receiver ioc-correlation-worker ioc-retro-worker
-```
-
-Repeat for other exported tables as needed.
 
 ## Post-restore verification
 
 1. **Health**
    ```bash
-   curl -s http://localhost:3000/readyz | jq .
+   docker compose exec backend wget -qO- http://127.0.0.1:3000/readyz
    ```
-   Expect `"status":"ok"` and postgres/redis/clickhouse checks ok.
 
 2. **Migrations**
    ```bash
    docker compose run --rm backend npm run migrate:list
    ```
 
-3. **Login** — use a DB user (not env bootstrap unless configured for dev).
+3. **Login** — use a database user (not env bootstrap unless configured for dev).
 
-4. **IOC sample** — open IOC list in UI or:
-   ```bash
-   curl -s -b cookies.txt http://localhost:3000/api/ioc/list?page=1&page_size=5
-   ```
+4. **Integration queue** — **Threat Intelligence → Job Queue Status** → Recover Queue if `recovery_needed` is true.
 
-5. **Integration queue** — open **Threat Intelligence → Job Queue Status**, click **Recover Queue** if `recovery_needed` is true.
+5. **Audit** — spot-check **Administration → Audit Logs**.
 
-6. **Audit** — confirm recent rows in **Administration → Audit Logs**.
+## RPO / RTO (demo / pilot)
 
-## RPO / RTO guidance (demo / pilot)
-
-| Metric | Practical target |
-|--------|------------------|
-| **RPO** | 24h (daily backup) or 1h (automated cron) |
+| Metric | Target |
+|--------|--------|
+| **RPO** | 24h (daily backup) or per cron |
 | **RTO** | 1–2h manual restore on single VM |
 
-Automate `pg_dump` via cron or your orchestrator. Test restore quarterly.
+Test restore quarterly. No automatic retention in Faz 1.
 
 ## Disaster recovery (single VM)
 
-1. Provision replacement VM with Docker Compose
-2. Clone repo at known git tag
+1. Provision VM with Docker Compose
+2. Clone repo at known git tag (match `manifest.json` `git_sha` when possible)
 3. Restore `.env` from secret store
-4. Restore Postgres + ClickHouse dumps
-5. `docker compose up -d` per `docs/deployment.md`
+4. `docker compose up -d db redis clickhouse` (minimal)
+5. `./scripts/restore-stack.sh --backup <bundle> --confirm`
 6. Run verification steps above
+
+## Legacy flat backups
+
+Older `backups/postgres-demo-*.dump` and `backups/clickhouse-*/` layouts are deprecated. Use new bundle directories or manual `pg_restore` per the manual section.
