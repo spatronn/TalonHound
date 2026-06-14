@@ -8,6 +8,22 @@ function timeKey(value) {
   return Number.isNaN(ms) ? String(value || '') : new Date(ms).toISOString();
 }
 
+/** Retro is unnecessary when the IOC was already in lookup at log ingest time. */
+export function shouldSkipRetroBecauseIocPresentAtIngest(row = {}) {
+  const mc = row?.match_context;
+  return mc?.ioc_was_present_at_ingest === true;
+}
+
+export function filterRetroRowsPresentAtIngest(rows = []) {
+  const kept = [];
+  const skipped = [];
+  for (const row of rows) {
+    if (shouldSkipRetroBecauseIocPresentAtIngest(row)) skipped.push(row);
+    else kept.push(row);
+  }
+  return { kept, skipped };
+}
+
 export function normalizeRetroSourceType(row = {}) {
   const explicit = clean(row.source_type);
   const tokens = [row.source_type, row.parser_source, row.source, row.protocol]
@@ -32,7 +48,23 @@ export function isRealtimeEquivalentForRetro(retro = {}, realtime = {}) {
 
   const retroSourceType = normalizeRetroSourceType(retro);
   const realtimeSourceType = normalizeRetroSourceType(realtime);
-  if (retroSourceType !== realtimeSourceType) return false;
+
+  if (retroSourceType !== realtimeSourceType) {
+    // syslog_observables retro stub vs generic realtime on same keys (e.g. #58733/#58742).
+    if (
+      clean(retro.parser_source) === 'syslog_observables'
+      && retroSourceType === 'dns'
+      && realtimeSourceType === 'generic'
+    ) {
+      // fall through to shared identity match
+    } else if (retroSourceType === 'dns' && realtimeSourceType === 'proxy') {
+      return false;
+    } else if (retroSourceType === 'proxy' && realtimeSourceType === 'dns') {
+      return false;
+    } else {
+      return false;
+    }
+  }
 
   const retroLogId = clean(retro.syslog_log_id);
   const realtimeLogId = clean(realtime.syslog_log_id);

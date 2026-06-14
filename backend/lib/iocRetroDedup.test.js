@@ -2,14 +2,50 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   filterRetroRowsWithRealtimeDuplicates,
+  filterRetroRowsPresentAtIngest,
   isRealtimeEquivalentForRetro,
-  normalizeRetroSourceType
+  normalizeRetroSourceType,
+  shouldSkipRetroBecauseIocPresentAtIngest
 } from './iocRetroDedup.js';
 
 test('retro source type normalizes generic bind DNS realtime as DNS', () => {
   assert.equal(normalizeRetroSourceType({ source_type: 'generic', parser_source: 'bind_dns' }), 'dns');
   assert.equal(normalizeRetroSourceType({ source_type: 'dns', parser_source: 'syslog_observables' }), 'dns');
   assert.equal(normalizeRetroSourceType({ source_type: 'proxy', parser_source: 'squid_proxy' }), 'proxy');
+});
+
+test('skip retro rows when IOC was already present at ingest', () => {
+  const row = {
+    matched_ioc: 'aasdaonz.mechanickhodakarami.shop',
+    match_context: { ioc_was_present_at_ingest: true }
+  };
+  assert.equal(shouldSkipRetroBecauseIocPresentAtIngest(row), true);
+  const out = filterRetroRowsPresentAtIngest([row, { matched_ioc: 'other.test', match_context: { ioc_was_present_at_ingest: false } }]);
+  assert.equal(out.kept.length, 1);
+  assert.equal(out.skipped.length, 1);
+});
+
+test('incident #900 pattern: generic realtime and syslog_observables dns retro are equivalent', () => {
+  const retro = {
+    matched_ioc: 'aasdaonz.mechanickhodakarami.shop',
+    ioc_type: 'domain',
+    source: 'syslog:192.168.1.140',
+    host: 'ollama',
+    _bucketStart: '2026-06-14T21:55:00.000Z',
+    parser_source: 'syslog_observables',
+    source_type: 'dns'
+  };
+  const realtime = {
+    matched_ioc: 'aasdaonz.mechanickhodakarami.shop',
+    ioc_type: 'domain',
+    source: 'syslog:192.168.1.140',
+    host_name: 'ollama',
+    bucket_start: '2026-06-14T21:55:00.000Z',
+    detection_type: 'realtime',
+    parser_source: 'unknown',
+    source_type: 'generic'
+  };
+  assert.equal(isRealtimeEquivalentForRetro(retro, realtime), true);
 });
 
 test('retro realtime equivalent ignores parser name but keeps source type boundary', () => {

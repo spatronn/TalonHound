@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery, command as clickhouseCommand } from './lib/clickhouse.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { createSuppressionStats, fetchActiveSuppressionIndex, filterSuppressedPairs } from './lib/ioc-suppression.js';
-import { filterRetroRowsWithRealtimeDuplicates } from './lib/iocRetroDedup.js';
+import { filterRetroRowsWithRealtimeDuplicates, filterRetroRowsPresentAtIngest } from './lib/iocRetroDedup.js';
 import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import {
@@ -262,6 +262,17 @@ async function insertMatchEvents(client, rows) {
   }
   rows = allowedRows;
 
+  const { kept: ingestPresentKept, skipped: skippedIngestPresent } = filterRetroRowsPresentAtIngest(rows);
+  rows = ingestPresentKept;
+  if (!rows.length) {
+    return {
+      inserted: 0,
+      skipped_ioc_present_at_ingest_count: skippedIngestPresent.length,
+      skipped_realtime_duplicate_count: 0,
+      ...suppressionStats.toJSON()
+    };
+  }
+
   const reactivation = await batchReactivateExpiredMatchesForRows(client, rows, {
     audit: matchReactivationAudit,
     actor: { actor_type: 'system', source: 'ioc-retro' },
@@ -292,7 +303,12 @@ async function insertMatchEvents(client, rows) {
 
   const { kept: deduped, skipped } = await filterRetroRowsWithRealtimeDuplicates(client, Array.from(uniq.values()));
   if (!deduped.length) {
-    return { inserted: 0, skipped_realtime_duplicate_count: skipped.length, ...suppressionStats.toJSON() };
+    return {
+      inserted: 0,
+      skipped_ioc_present_at_ingest_count: skippedIngestPresent.length,
+      skipped_realtime_duplicate_count: skipped.length,
+      ...suppressionStats.toJSON()
+    };
   }
   const values = [];
   const params = [];
@@ -371,8 +387,13 @@ async function insertMatchEvents(client, rows) {
 
   const withRaw = deduped.filter((r) => Boolean(r.raw_log_snapshot)).length;
   const withNorm = deduped.filter((r) => Boolean(r.normalized_event_json)).length;
-  console.info(`[retro-event-create] inserted=${deduped.length} skipped_realtime_duplicate=${skipped.length} source_type_sample=${deduped[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
-  return { inserted: deduped.length, skipped_realtime_duplicate_count: skipped.length, ...suppressionStats.toJSON() };
+  console.info(`[retro-event-create] inserted=${deduped.length} skipped_ioc_present_at_ingest=${skippedIngestPresent.length} skipped_realtime_duplicate=${skipped.length} source_type_sample=${deduped[0]?.source_type || 'unknown'} has_raw_log_snapshot=${withRaw > 0} has_normalized_event_json=${withNorm > 0}`);
+  return {
+    inserted: deduped.length,
+    skipped_ioc_present_at_ingest_count: skippedIngestPresent.length,
+    skipped_realtime_duplicate_count: skipped.length,
+    ...suppressionStats.toJSON()
+  };
 }
 
 function normalizeSourceType(event = {}) {
@@ -400,7 +421,13 @@ function mapRowToEvent(r) {
     ioc_was_present_at_ingest: iocWasPresentAtIngest,
     ioc_updated_at: r.ioc_updated_at || null
   };
-  const sourceType = normalizeSourceType({ parser_source: 'syslog_observables', source: r.source, protocol: 'dns', match_context: matchContext });
+  const protocol = r.ioc_type === 'url' ? 'http' : 'syslog';
+  const sourceType = normalizeSourceType({
+    parser_source: 'syslog_observables',
+    source: r.source,
+    protocol,
+    match_context: matchContext
+  });
   const normalizedEvent = {
     source_type: sourceType,
     parser_source: 'syslog_observables',
@@ -411,13 +438,13 @@ function mapRowToEvent(r) {
     dst_ip: null,
     response_ip: null,
     domain: r.ioc_type === 'domain' ? r.matched_ioc : null,
-    query: r.ioc_type === 'domain' ? r.matched_ioc : null,
+    query: null,
     url: r.ioc_type === 'url' ? r.matched_ioc : null,
     action: null,
     status: null,
     method: null,
     port: null,
-    protocol: 'dns',
+    protocol,
     event_time: r.ts || null
   };
   return {
@@ -426,7 +453,7 @@ function mapRowToEvent(r) {
     source: r.source,
     parser_source: 'syslog_observables',
     destination_ip: null,
-    protocol: 'dns',
+    protocol,
     matched_ioc: r.matched_ioc,
     ioc_type: r.ioc_type,
     source_name: r.source_name || null,
@@ -625,6 +652,7 @@ async function runRetroWindowBatch() {
   let inserted = 0;
   let suppressedCount = 0;
   let skippedRealtimeDuplicateCount = 0;
+  let skippedIocPresentAtIngestCount = 0;
   if (rows.length > 0) {
     const mapped = rows.map((r) => mapRowToEvent(r));
     const client = await pool.connect();
@@ -634,6 +662,7 @@ async function runRetroWindowBatch() {
       inserted = Number(insertResult.inserted || 0);
       suppressedCount = Number(insertResult.suppressed_count || 0);
       skippedRealtimeDuplicateCount = Number(insertResult.skipped_realtime_duplicate_count || 0);
+      skippedIocPresentAtIngestCount = Number(insertResult.skipped_ioc_present_at_ingest_count || 0);
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -672,6 +701,7 @@ async function runRetroWindowBatch() {
       pendingAfter: pendingBeforeStats.pending,
       inserted,
       skipped_realtime_duplicate_count: skippedRealtimeDuplicateCount,
+      skipped_ioc_present_at_ingest_count: skippedIocPresentAtIngestCount,
       suppressed_count: suppressedCount,
       matchedRows: rows.length,
       durationMs,
@@ -706,6 +736,7 @@ async function runRetroWindowBatch() {
     pendingAfter: pendingAfterStats.pending,
     inserted,
     skipped_realtime_duplicate_count: skippedRealtimeDuplicateCount,
+    skipped_ioc_present_at_ingest_count: skippedIocPresentAtIngestCount,
     suppressed_count: suppressedCount,
     matchedRows: rows.length,
     durationMs,
@@ -779,7 +810,7 @@ async function runAdaptiveLoop() {
 
   const chunkState = res.chunkCompleted ? 'chunk_complete' : 'chunk_page';
   logStatus(
-    `${chunkState} page_full=${res.pageFull ? 1 : 0} pending_before=${res.pendingBefore} pending_after=${res.pendingAfter} pending_range=${res.pendingMinTs || 'none'}..${res.pendingMaxTs || 'none'} inserted=${res.inserted || 0} skipped_realtime_duplicate=${res.skipped_realtime_duplicate_count || 0} suppressed_count=${res.suppressed_count || 0} matched_rows=${res.matchedRows || 0} duration_ms=${res.durationMs} pace=${pace} sleep_ms=${nextSleepMs}`
+    `${chunkState} page_full=${res.pageFull ? 1 : 0} pending_before=${res.pendingBefore} pending_after=${res.pendingAfter} pending_range=${res.pendingMinTs || 'none'}..${res.pendingMaxTs || 'none'} inserted=${res.inserted || 0} skipped_ioc_present_at_ingest=${res.skipped_ioc_present_at_ingest_count || 0} skipped_realtime_duplicate=${res.skipped_realtime_duplicate_count || 0} suppressed_count=${res.suppressed_count || 0} matched_rows=${res.matchedRows || 0} duration_ms=${res.durationMs} pace=${pace} sleep_ms=${nextSleepMs}`
   );
 
   await sleep(nextSleepMs);
