@@ -28,6 +28,7 @@
     "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
     "test:rbac": "node --test lib/rbac.test.js",
     "test:bulk-triage": "node --test lib/bulkTriageHelpers.test.js",
+    "test:incident-list-scope": "node --test lib/incidentListScope.test.js",
     "test:ioc-export": "node --test lib/iocExportHelpers.test.js",
     "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js",
     "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/bulkTriageHelpers.test.js lib/bulkRouteOrder.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",

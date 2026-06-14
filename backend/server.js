@@ -38,6 +38,7 @@ import {
   runIntegrationQueueRecover
 } from './lib/integrationQueueApi.js';
 import { parseActionReason } from './lib/reasonValidation.js';
+import { INCIDENTS_DEFAULT_SCOPE_WHERE } from './lib/incidentListScope.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -1776,7 +1777,7 @@ app.get('/api/incidents', async (req, res) => {
     }
 
     if (!fromStr && !toStr) {
-      where.push(`(a.status = 'open' OR a.created_at >= NOW() - INTERVAL '7 days')`);
+      where.push(INCIDENTS_DEFAULT_SCOPE_WHERE);
     }
 
     where.push(`EXISTS (SELECT 1 FROM ioc_match_events m WHERE m.activity_id = a.id)`);
