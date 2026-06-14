@@ -28,6 +28,15 @@ export function getIocStatusCardPresentation(summary, { suppressionActive } = {}
     fields.push({ key: 'expired_at', label: 'Expired at:', kind: 'datetime', raw: summary.expired_at });
   }
 
+  if (summary?.reactivated_by_match_at) {
+    fields.push({
+      key: 'reactivated_by_match_at',
+      label: 'Reactivated by match:',
+      kind: 'datetime',
+      raw: summary.reactivated_by_match_at
+    });
+  }
+
   const expirationReason = String(summary?.expiration_reason || '').trim();
   if (lifecycle !== 'false_positive' || expirationReason) {
     fields.push({

@@ -4,7 +4,8 @@
 
 import {
   buildIocExpirationAuditPayload,
-  buildMembershipExpirationAuditPayload
+  buildMembershipExpirationAuditPayload,
+  formatMembershipEntityDisplay
 } from './auditIocContext.js';
 
 export const EXPIRATION_MODES = Object.freeze([
@@ -680,4 +681,236 @@ export async function syncMembershipAfterIocImport(client, {
     explicitConfidence: resolvedConfidence
   });
   return membershipId;
+}
+
+function normIocStatus(status) {
+  return String(status || 'active').trim().toLowerCase();
+}
+
+function pgIocTypeFromMatchType(iocType) {
+  const t = String(iocType || '').trim().toLowerCase();
+  if (t === 'ipv4') return 'ip';
+  return t;
+}
+
+/**
+ * On correlation match reactivation: extend TTL from match time using feed policy days.
+ * Respects enabled flag; returns null when policy does not define a finite TTL.
+ */
+export function computeMatchReactivationExpiresAt(policy, now = new Date()) {
+  if (!policy?.enabled || policy.expiration_mode === 'never') return null;
+  const mode = String(policy.expiration_mode || '');
+  const ttl = Number(policy.ttl_days);
+  const grace = Number(policy.grace_days ?? policy.ttl_days);
+  if (mode === 'missing_from_feed_ttl') {
+    if (!Number.isFinite(grace) || grace <= 0) return null;
+    return addDays(now, grace);
+  }
+  if (mode === 'fixed_ttl' || mode === 'last_seen_ttl') {
+    if (!Number.isFinite(ttl) || ttl <= 0) return null;
+    return addDays(now, ttl);
+  }
+  return null;
+}
+
+async function reactivateMembershipOnMatch(client, membershipRow, policy, matchAt, audit, actor) {
+  const now = matchAt instanceof Date ? matchAt : new Date(matchAt);
+  const membershipId = membershipRow.id;
+
+  if (membershipRow.override_enabled) {
+    if (membershipRow.override_status === 'expired') {
+      return { changed: false, reason: 'membership_override_expired' };
+    }
+    await client.query(
+      `UPDATE ioc_feed_memberships
+       SET last_seen_in_feed = $2,
+           missing_since = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [membershipId, now]
+    );
+    await applyMembershipComputedFields(client, membershipId, policy, now);
+  } else {
+    const expiresAt = computeMatchReactivationExpiresAt(policy, now);
+    await client.query(
+      `UPDATE ioc_feed_memberships
+       SET status = 'active',
+           expired_at = NULL,
+           expiration_reason = NULL,
+           last_seen_in_feed = $2,
+           missing_since = NULL,
+           policy_expires_at = $3,
+           expires_at = $3,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [membershipId, now, expiresAt]
+    );
+  }
+
+  if (audit?.auditLog) {
+    await audit.auditLog({
+      action: 'ioc_feed_membership.reactivated_by_match',
+      entityType: 'ioc_feed_membership',
+      entityId: String(membershipId),
+      entityDisplay: formatMembershipEntityDisplay({
+        observableType: membershipRow.ioc_observable_type,
+        observable: membershipRow.observable,
+        feedName: membershipRow.feed_name,
+        membershipId
+      }),
+      before: { status: 'expired' },
+      after: { status: 'active' },
+      metadata: {
+        actor_type: actor.actor_type,
+        feed_id: membershipRow.feed_id,
+        feed_name: membershipRow.feed_name,
+        ioc_item_id: membershipRow.ioc_item_id,
+        reason: 'correlation_match'
+      },
+      source: actor.source || 'ioc-correlation'
+    });
+  }
+
+  return { changed: true };
+}
+
+/**
+ * Expired IOC matched in realtime/retro correlation → reactivate using feed policy TTL from match time.
+ * Skips IOCs with manual_status_override = expired. Detection proceeds either way.
+ */
+export async function reactivateIocOnCorrelationMatch(client, {
+  observable,
+  observableType,
+  sourceName = null,
+  matchAt = new Date(),
+  detectionType = 'realtime',
+  audit = null,
+  actor = { actor_type: 'system', source: 'ioc-correlation' }
+}) {
+  const pgType = pgIocTypeFromMatchType(observableType);
+  const value = String(observable || '').trim();
+  if (!value || !pgType) return { reactivated: false, reason: 'invalid_input' };
+
+  const { rows } = await client.query(
+    `SELECT id, observable, observable_type, status, expires_at, expired_at, expiration_reason,
+            manual_status_override, manual_status, manual_expires_at
+     FROM ioc_items
+     WHERE lower(observable) = lower($1)
+       AND lower(observable_type) = lower($2)
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [value, pgType]
+  );
+  const ioc = rows[0];
+  if (!ioc) return { reactivated: false, reason: 'not_found' };
+  if (normIocStatus(ioc.status) !== 'expired') {
+    return { reactivated: false, reason: 'not_expired', iocId: ioc.id };
+  }
+  if (ioc.manual_status_override && normIocStatus(ioc.manual_status) === 'expired') {
+    return { reactivated: false, reason: 'manual_override_expired', iocId: ioc.id };
+  }
+
+  const feedId = sourceName ? await resolveFeedIdBySourceName(client, sourceName) : null;
+  const now = matchAt instanceof Date ? matchAt : new Date(matchAt);
+
+  let membershipSql = `
+    SELECT m.*, i.observable, f.name AS feed_name
+    FROM ioc_feed_memberships m
+    JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+    LEFT JOIN integration_feeds f ON f.integration_id = m.feed_id
+    WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2 AND m.status = 'expired'
+  `;
+  const membershipParams = [ioc.id, ioc.observable_type];
+  if (feedId) {
+    membershipParams.push(feedId);
+    membershipSql += ` AND m.feed_id = $3::uuid`;
+  }
+
+  const { rows: memberships } = await client.query(membershipSql, membershipParams);
+  let targets = memberships.filter((m) => !(m.override_enabled && m.override_status === 'expired'));
+
+  if (!targets.length) {
+    const allQ = await client.query(
+      `SELECT m.*, i.observable, f.name AS feed_name
+       FROM ioc_feed_memberships m
+       JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+       LEFT JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = $1 AND m.ioc_observable_type = $2 AND m.status = 'expired'
+         AND NOT (m.override_enabled AND m.override_status = 'expired')`,
+      [ioc.id, ioc.observable_type]
+    );
+    targets = allQ.rows || [];
+  }
+
+  let membershipChanges = 0;
+  for (const m of targets) {
+    const policy = await getFeedPolicy(client, m.feed_id, ioc.observable_type);
+    const res = await reactivateMembershipOnMatch(client, m, policy, now, audit, actor);
+    if (res.changed) membershipChanges += 1;
+  }
+
+  if (!targets.length && !membershipChanges) {
+    const countQ = await client.query(
+      `SELECT COUNT(*)::int AS c FROM ioc_feed_memberships
+       WHERE ioc_item_id = $1 AND ioc_observable_type = $2`,
+      [ioc.id, ioc.observable_type]
+    );
+    if (Number(countQ.rows[0]?.c || 0) > 0) {
+      return { reactivated: false, reason: 'no_reactivatable_membership', iocId: ioc.id };
+    }
+  }
+
+  await client.query(
+    `UPDATE ioc_items
+     SET reactivated_by_match_at = $3
+     WHERE id = $1 AND observable_type = $2`,
+    [ioc.id, ioc.observable_type, now.toISOString()]
+  );
+
+  const recompute = await recomputeIocGlobalStatus(client, ioc.id, ioc.observable_type, { audit: null, actor });
+
+  const updatedQ = await client.query(
+    `SELECT status, expires_at, expired_at FROM ioc_items WHERE id = $1 AND observable_type = $2`,
+    [ioc.id, ioc.observable_type]
+  );
+  const updated = updatedQ.rows[0] || {};
+
+  if (audit?.auditLog) {
+    const auditPayload = buildIocExpirationAuditPayload({
+      iocId: ioc.id,
+      observable: ioc.observable,
+      observableType: ioc.observable_type,
+      oldStatus: ioc.status,
+      newStatus: updated.status || recompute.status || 'active',
+      oldExpiresAt: ioc.expires_at,
+      expiredAt: null,
+      newExpiresAt: updated.expires_at,
+      reason: 'correlation_match',
+      actor
+    });
+    auditPayload.metadata.detection_type = detectionType;
+    auditPayload.metadata.memberships_reactivated = membershipChanges;
+    if (feedId) auditPayload.metadata.feed_id = String(feedId);
+
+    await audit.auditLog({
+      action: 'ioc.reactivated_by_match',
+      entityType: 'ioc',
+      entityId: String(ioc.id),
+      entityDisplay: auditPayload.entityDisplay,
+      before: auditPayload.before,
+      after: auditPayload.after,
+      metadata: auditPayload.metadata,
+      source: actor.source || 'ioc-correlation'
+    });
+  }
+
+  return {
+    reactivated: true,
+    iocId: ioc.id,
+    observable: ioc.observable,
+    observableType: ioc.observable_type,
+    sourceName: sourceName || null,
+    membershipChanges,
+    status: recompute.status || 'active'
+  };
 }

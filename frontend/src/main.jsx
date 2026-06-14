@@ -630,8 +630,10 @@ function auditJsonBlock(value) {
 const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
   'ioc.expired',
   'ioc.reactivated_by_user',
+  'ioc.reactivated_by_match',
   'ioc_feed_membership.expired',
-  'ioc_feed_membership.expired_by_user'
+  'ioc_feed_membership.expired_by_user',
+  'ioc_feed_membership.reactivated_by_match'
 ]);
 
 function formatExpirationPolicyLabel(policy) {
@@ -721,6 +723,7 @@ function formatExpirationAuditReasonLabel(reason) {
   if (value === 'expires_at_reached') return 'Expires at reached';
   if (value === 'all_feed_memberships_expired') return 'All feed memberships expired';
   if (value === 'manual_override') return 'Manual override';
+  if (value === 'correlation_match') return 'Correlation match';
   return value.replace(/_/g, ' ');
 }
 

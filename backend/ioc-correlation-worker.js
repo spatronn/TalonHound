@@ -10,6 +10,12 @@ import { normalizeObservable } from './lib/observable-normalization.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { createSuppressionStats, fetchActiveSuppressionIndex, filterSuppressedPairs } from './lib/ioc-suppression.js';
 import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
+import { createAuditLogService } from './lib/auditLogService.js';
+import {
+  batchReactivateExpiredMatchesForRows,
+  supplementLookupMapFromPostgres,
+  annotateMatchRowsWithReactivation
+} from './lib/iocMatchReactivation.js';
 
 const { Pool } = pg;
 
@@ -40,6 +46,7 @@ const LLM_RISK_SNAPSHOT_TTL_SECONDS = Math.max(Number(process.env.LLM_RISK_SNAPS
 const redisUrl = getRedisUrl();
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const llmRiskQueue = new Queue(LLM_RISK_QUEUE_NAME, { connection: redis });
+const matchReactivationAudit = createAuditLogService(pool);
 
 let stopping = false;
 let lastIocLookupSyncAtMs = 0;
@@ -315,10 +322,13 @@ function rowToMatchEvents(r, lookupMap) {
   return out;
 }
 
-async function toMatchRowsFromScanned(chRows) {
+async function toMatchRowsFromScanned(chRows, pgClient = null) {
   if (!chRows.length) return [];
   const tupleList = collectLookupTuplesForBatch(chRows);
   const lookupMap = await fetchIocLookupMatches(tupleList);
+  if (pgClient) {
+    await supplementLookupMapFromPostgres(pgClient, tupleList, lookupMap);
+  }
   const out = [];
   for (const r of chRows) {
     out.push(...rowToMatchEvents(r, lookupMap));
@@ -453,6 +463,16 @@ async function insertMatchEvents(client, rows) {
     };
   }
   rows = allowedRows;
+
+  const reactivation = await batchReactivateExpiredMatchesForRows(client, rows, {
+    audit: matchReactivationAudit,
+    actor: { actor_type: 'system', source: 'ioc-correlation' },
+    detectionType: rows[0]?.detection_type || 'realtime'
+  });
+  if (reactivation.reactivated > 0) {
+    rows = annotateMatchRowsWithReactivation(rows, reactivation.reactivatedKeys);
+    console.info(`[ioc-correlation] expired_ioc_reactivated=${reactivation.reactivated}`);
+  }
 
   // Deduplicate same (dedup_key, bucket_start) inside this batch to avoid
   // "ON CONFLICT DO UPDATE command cannot affect row a second time".
@@ -614,7 +634,7 @@ async function runBatch() {
       return { scanned: 0, matched: 0, inserted: 0, affectedActivityIds: [], suppressed_count: 0, duration_ms: Date.now() - startedAtMs };
     }
 
-    const matchedRows = await toMatchRowsFromScanned(scanned);
+    const matchedRows = await toMatchRowsFromScanned(scanned, client);
     const insertResult = await insertMatchEvents(client, matchedRows);
 
     const last = scanned[scanned.length - 1];
@@ -755,7 +775,7 @@ async function tick() {
       replayScanned = replayRows.length;
       lastReplayWindowAtMs = nowMs;
       if (replayRows.length) {
-        const mapped = await toMatchRowsFromScanned(replayRows);
+        const mapped = await toMatchRowsFromScanned(replayRows, client);
         replayMatched = mapped.length;
         lateArrivalCount = replayRows.filter((r) => {
           const ets = r?.ts ? new Date(r.ts).getTime() : 0;

@@ -6577,6 +6577,7 @@ app.get('/api/ioc/details', async (req, res) => {
         i.expires_at,
         i.expired_at,
         i.expiration_reason,
+        i.reactivated_by_match_at,
         i.manual_status_override,
         i.manual_status,
         ${confidenceSelect}
@@ -6761,6 +6762,7 @@ app.get('/api/ioc/details', async (req, res) => {
       expires_at: lifecycleRow.expires_at || null,
       expired_at: lifecycleRow.expired_at || null,
       expiration_reason: lifecycleRow.expiration_reason || null,
+      reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
       manual_status_override: Boolean(lifecycleRow.manual_status_override),
       manual_status: lifecycleRow.manual_status || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,

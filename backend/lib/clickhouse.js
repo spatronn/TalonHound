@@ -375,3 +375,48 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     last_sync_id: Number(last.id)
   };
 }
+
+/** Re-insert expired IOCs into ClickHouse lookup (reverse legacy tombstones). */
+export async function backfillExpiredIocsToLookup(pgPool, opts = {}) {
+  const batchSize = Math.max(Number(opts.batchSize || 5000), 100);
+  if (!pgPool?.query) return { written: 0 };
+
+  const { rows } = await pgPool.query(
+    `SELECT DISTINCT ON (lower(i.observable), lower(i.observable_type), COALESCE(i.source_name, ''))
+            lower(i.observable) AS observable,
+            CASE WHEN i.observable_type = 'hostname' THEN 'domain' ELSE i.observable_type END AS observable_type,
+            i.confidence,
+            COALESCE(i.source_name, 'unknown') AS source_name,
+            COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS updated_at
+     FROM ioc_items i
+     WHERE COALESCE(i.status, 'active') = 'expired'
+       AND i.observable IS NOT NULL
+       AND i.observable != ''
+       AND i.observable_type IN ('domain', 'hostname', 'url', 'ip', 'sha256')
+     ORDER BY lower(i.observable), lower(i.observable_type), COALESCE(i.source_name, ''), i.created_at ASC
+     LIMIT $1`,
+    [batchSize]
+  );
+
+  if (!rows?.length) return { written: 0 };
+
+  const values = rows.map((r) => {
+    const observableType = String(r.observable_type || '').toLowerCase();
+    const observable = observableType === 'url'
+      ? normalizeObservable('url', String(r.observable || ''))
+      : String(r.observable || '').toLowerCase();
+    const updatedAt = r.updated_at instanceof Date
+      ? r.updated_at.toISOString().replace('T', ' ').replace('Z', '')
+      : String(r.updated_at || '').replace('T', ' ').replace('Z', '');
+    return {
+      observable,
+      observable_type: observableType,
+      confidence: confidenceToInt(r.confidence),
+      source_name: r.source_name || 'unknown',
+      updated_at: updatedAt
+    };
+  });
+
+  await clickhouse.insert({ table: 'ioc_lookup', values, format: 'JSONEachRow' });
+  return { written: values.length };
+}

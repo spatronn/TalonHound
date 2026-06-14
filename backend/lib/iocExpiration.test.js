@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import {
   validateExpirationPolicyInput,
   computePolicyExpiresAt,
+  computeMatchReactivationExpiresAt,
   resolveMembershipStatus,
   formatExpirationSummary,
   sourceNameMatchesFeed,
   feedKeyForSourceName,
-  syncMembershipAfterIocImport
+  syncMembershipAfterIocImport,
+  reactivateIocOnCorrelationMatch
 } from './iocExpiration.js';
 
 describe('validateExpirationPolicyInput', () => {
@@ -97,6 +99,50 @@ describe('source mapping', () => {
   it('maps USOM source to feed key', () => {
     assert.equal(feedKeyForSourceName('USOM:TR-CERT'), 'usom-trcert');
     assert.ok(sourceNameMatchesFeed('EmergingThreats:foo.rules', 'et-blockrules'));
+  });
+});
+
+describe('computeMatchReactivationExpiresAt', () => {
+  const now = new Date('2026-06-14T12:00:00Z');
+
+  it('returns now + ttl_days for last_seen_ttl', () => {
+    const at = computeMatchReactivationExpiresAt(
+      { enabled: true, expiration_mode: 'last_seen_ttl', ttl_days: 30 },
+      now
+    );
+    assert.equal(at.toISOString(), '2026-07-14T12:00:00.000Z');
+  });
+
+  it('returns null when policy disabled', () => {
+    assert.equal(computeMatchReactivationExpiresAt({ enabled: false, expiration_mode: 'last_seen_ttl', ttl_days: 30 }, now), null);
+  });
+});
+
+describe('reactivateIocOnCorrelationMatch', () => {
+  it('skips IOC with manual override expired', async () => {
+    const client = {
+      async query(sql) {
+        if (String(sql).includes('FROM ioc_items')) {
+          return {
+            rows: [{
+              id: 1,
+              observable: 'evil.test',
+              observable_type: 'domain',
+              status: 'expired',
+              manual_status_override: true,
+              manual_status: 'expired'
+            }]
+          };
+        }
+        return { rows: [] };
+      }
+    };
+    const res = await reactivateIocOnCorrelationMatch(client, {
+      observable: 'evil.test',
+      observableType: 'domain'
+    });
+    assert.equal(res.reactivated, false);
+    assert.equal(res.reason, 'manual_override_expired');
   });
 });
 

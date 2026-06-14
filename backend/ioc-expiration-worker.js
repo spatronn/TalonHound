@@ -2,7 +2,7 @@ import './lib/ensure-db-password.js';
 import pg from 'pg';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { runExpirationWorkerBatch } from './lib/iocExpiration.js';
-import { pushIocLookupTombstones } from './lib/clickhouse.js';
+import { backfillExpiredIocsToLookup } from './lib/clickhouse.js';
 
 const { Pool } = pg;
 
@@ -19,6 +19,20 @@ const BATCH_SIZE = Math.max(Number(process.env.IOC_EXPIRATION_BATCH_SIZE || 500)
 
 const audit = createAuditLogService(pool);
 let stopping = false;
+let backfillDone = false;
+
+async function maybeBackfillExpiredLookup() {
+  if (backfillDone) return;
+  backfillDone = true;
+  try {
+    const res = await backfillExpiredIocsToLookup(pool);
+    if (Number(res?.written || 0) > 0) {
+      console.log(`[ioc-expiration] expired_lookup_backfill written=${res.written}`);
+    }
+  } catch (err) {
+    console.warn('[ioc-expiration] expired_lookup_backfill failed', err?.message || err);
+  }
+}
 
 async function tick() {
   const client = await pool.connect();
@@ -27,24 +41,6 @@ async function tick() {
       batchSize: BATCH_SIZE,
       audit
     });
-
-    if (res.expiredMemberships > 0) {
-      const tomb = await client.query(
-        `SELECT DISTINCT lower(i.observable) AS observable,
-                CASE WHEN i.observable_type = 'hostname' THEN 'domain' ELSE i.observable_type END AS observable_type,
-                i.source_name
-         FROM ioc_feed_memberships m
-         JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
-         WHERE m.status = 'expired' AND m.expired_at >= NOW() - INTERVAL '2 minutes'
-           AND i.observable_type IN ('domain', 'url', 'ip', 'sha256')
-         LIMIT 5000`
-      );
-      if (tomb.rows?.length) {
-        await pushIocLookupTombstones(tomb.rows).catch((err) => {
-          console.warn('[ioc-expiration] lookup tombstone push failed', err?.message || err);
-        });
-      }
-    }
 
     if (res.expiredMemberships > 0 || res.iocGlobalExpired > 0) {
       console.log(
@@ -60,6 +56,7 @@ async function tick() {
 
 async function main() {
   console.log(`[ioc-expiration] worker started poll_ms=${POLL_MS} batch_size=${BATCH_SIZE}`);
+  await maybeBackfillExpiredLookup();
   while (!stopping) {
     await tick();
     await new Promise((r) => setTimeout(r, POLL_MS));
