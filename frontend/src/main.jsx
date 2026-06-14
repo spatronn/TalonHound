@@ -639,6 +639,10 @@ const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
 const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_classification.updated',
   'ioc.threat_actor.updated',
+  'threat_classification.created',
+  'threat_classification.updated',
+  'threat_classification.disabled',
+  'threat_classification.enabled',
   'threat_actor.created',
   'threat_actor.updated',
   'threat_actor.disabled',
@@ -1376,10 +1380,11 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
-            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/users') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags') && !isActive('/administration/threat-actors') && !isActive('/administration/ioc-sources'))}>Settings</Link>
+            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/users') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags') && !isActive('/administration/threat-classifications') && !isActive('/administration/threat-actors') && !isActive('/administration/ioc-sources'))}>Settings</Link>
             {isAdmin ? <Link to="/administration/users" style={subMenuStyle(isActive('/administration/users'))}>Users</Link> : null}
             <Link to="/administration/audit-logs" style={subMenuStyle(isActive('/administration/audit-logs'))}>Audit Logs</Link>
             <Link to="/administration/tags" style={subMenuStyle(isActive('/administration/tags'))}>Tags</Link>
+            {isAdmin ? <Link to="/administration/threat-classifications" style={subMenuStyle(isActive('/administration/threat-classifications'))}>Threat Classifications</Link> : null}
             {isAdmin ? <Link to="/administration/threat-actors" style={subMenuStyle(isActive('/administration/threat-actors'))}>Threat Actors</Link> : null}
             {isAdmin ? <Link to="/administration/ioc-sources" style={subMenuStyle(isActive('/administration/ioc-sources'))}>IOC Sources</Link> : null}
             <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
@@ -7565,6 +7570,266 @@ function TagManagerPage() {
   );
 }
 
+function slugifyThreatClassificationName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+const EMPTY_THREAT_CLASSIFICATION_FORM = {
+  name: '',
+  slug: '',
+  description: '',
+  active: true,
+  sort_order: 100
+};
+
+function ThreatClassificationManagerPage() {
+  const { isAdmin } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showInactive, setShowInactive] = useState(true);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [form, setForm] = useState(EMPTY_THREAT_CLASSIFICATION_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoading(true);
+    setError('');
+    try {
+      const params = showInactive ? { include_inactive: true } : { include_inactive: false };
+      const { data } = await api.get('/admin/threat-classifications', { params });
+      setItems(Array.isArray(data?.threat_classifications) ? data.threat_classifications : []);
+    } catch (err) {
+      setItems([]);
+      setError(apiErrorMessage(err, 'Failed to load threat classifications'));
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin, showInactive]);
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+
+  function openCreateModal() {
+    setEditingItem(null);
+    setForm(EMPTY_THREAT_CLASSIFICATION_FORM);
+    setSlugTouched(false);
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  function openEditModal(item) {
+    setEditingItem(item);
+    setForm({
+      name: item?.name || '',
+      slug: item?.slug || '',
+      description: item?.description || '',
+      active: item?.active !== false,
+      sort_order: item?.sort_order ?? 100
+    });
+    setSlugTouched(true);
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  async function submitForm(e) {
+    e.preventDefault();
+    if (!isAdmin) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const payload = {
+        name: form.name.trim(),
+        slug: form.slug.trim(),
+        description: form.description,
+        active: form.active,
+        sort_order: Number(form.sort_order)
+      };
+      if (editingItem?.id) {
+        await api.patch(`/admin/threat-classifications/${editingItem.id}`, payload);
+      } else {
+        await api.post('/admin/threat-classifications', payload);
+      }
+      setShowFormModal(false);
+      setEditingItem(null);
+      setForm(EMPTY_THREAT_CLASSIFICATION_FORM);
+      await load();
+    } catch (err) {
+      setFormError(apiErrorMessage(err, editingItem ? 'Update failed' : 'Create failed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableItem(item) {
+    if (!item?.id || !isAdmin) return;
+    if (item.slug === 'unknown') {
+      setError('Unknown classification cannot be disabled.');
+      return;
+    }
+    const ok = window.confirm(`Disable classification "${item.name}"? Existing IOC assignments will remain visible, but it will no longer appear in pickers.`);
+    if (!ok) return;
+    setError('');
+    try {
+      await api.patch(`/admin/threat-classifications/${item.id}/disable`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Disable failed'));
+    }
+  }
+
+  async function enableItem(item) {
+    if (!item?.id || !isAdmin) return;
+    setError('');
+    try {
+      await api.patch(`/admin/threat-classifications/${item.id}/enable`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Enable failed'));
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <section style={ui.section}>
+          <h1 style={ui.pageTitle}>Threat Classifications</h1>
+          <p style={ui.pageSub}>Admin access required.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Threat Classifications</h1>
+            <p style={ui.pageSub}>Manage platform threat classifications used on IOCs. Unknown is always active and cannot be disabled.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={ui.checkLabel}>
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              Show inactive
+            </label>
+            <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Classification</button>
+          </div>
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div style={{ marginTop: 16, overflowX: 'auto' }}>
+          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>Name</th>
+                <th style={ui.th}>Slug</th>
+                <th style={ui.th}>Description</th>
+                <th style={ui.th}>Active</th>
+                <th style={ui.th}>System Default</th>
+                <th style={ui.th}>Sort Order</th>
+                <th style={ui.th}>Created At</th>
+                <th style={ui.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} style={ui.td}>Loading…</td></tr>
+              ) : !items.length ? (
+                <tr><td colSpan={8} style={ui.td}>No classifications found.</td></tr>
+              ) : items.map((item) => (
+                <tr key={item.id} style={{ opacity: item.active ? 1 : 0.62 }}>
+                  <td style={ui.td}><div style={{ fontWeight: 600 }}>{item.name}</div></td>
+                  <td style={ui.td}><code style={{ fontSize: 12 }}>{item.slug}</code></td>
+                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{item.description || '—'}</td>
+                  <td style={ui.td}>{item.active ? 'Yes' : 'No'}</td>
+                  <td style={ui.td}>{item.system_default ? 'Yes' : 'No'}</td>
+                  <td style={ui.td}>{item.sort_order ?? '—'}</td>
+                  <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
+                  <td style={ui.td}>
+                    <button type="button" style={ui.btn} onClick={() => openEditModal(item)}>Edit</button>
+                    {item.slug === 'unknown' ? null : item.active ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableItem(item).catch(() => {})}>Disable</button>
+                    ) : (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableItem(item).catch(() => {})}>Enable</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {showFormModal ? (
+        <ModalOverlay onClose={() => setShowFormModal(false)}>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingItem ? 'Edit Threat Classification' : 'Add Threat Classification'}</h3>
+          <form onSubmit={submitForm}>
+            <FeedFormField ui={ui} label="Name" fullWidth>
+              <input
+                required
+                value={form.name}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setForm((x) => ({
+                    ...x,
+                    name,
+                    slug: !slugTouched && !editingItem ? slugifyThreatClassificationName(name) : x.slug
+                  }));
+                }}
+                style={ui.input}
+                placeholder="e.g. Phishing"
+              />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Slug" helper="Lowercase snake_case. Used in API/DB." fullWidth>
+              <input
+                required
+                value={form.slug}
+                disabled={editingItem?.slug === 'unknown'}
+                onChange={(e) => {
+                  setSlugTouched(true);
+                  setForm((x) => ({ ...x, slug: slugifyThreatClassificationName(e.target.value) }));
+                }}
+                style={ui.input}
+                placeholder="phishing"
+              />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Description" fullWidth>
+              <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Sort Order" fullWidth>
+              <input type="number" value={form.sort_order} onChange={(e) => setForm((x) => ({ ...x, sort_order: e.target.value }))} style={ui.input} />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Active" fullWidth>
+              <label style={ui.checkLabel}>
+                <input type="checkbox" checked={form.active} disabled={editingItem?.slug === 'unknown'} onChange={(e) => setForm((x) => ({ ...x, active: e.target.checked }))} />
+                Classification is active
+              </label>
+            </FeedFormField>
+            {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
+              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Classification')}</button>
+            </div>
+          </form>
+        </ModalOverlay>
+      ) : null}
+    </AppShell>
+  );
+}
+
 const EMPTY_THREAT_ACTOR_FORM = {
   name: '',
   aliases: '',
@@ -11259,6 +11524,18 @@ function IOCDetailsPage() {
   const [confidenceSaving, setConfidenceSaving] = useState(false);
   const [confidenceError, setConfidenceError] = useState('');
   const { options: threatClassOptions, labelFor: threatClassLabelFor } = useThreatClassifications();
+  const threatClassEditOptions = useMemo(() => {
+    const currentSlug = summary?.threat_classification || summary?.primary_threat_classification || 'unknown';
+    const opts = [...threatClassOptions];
+    if (currentSlug && !opts.some((o) => o.value === currentSlug)) {
+      opts.unshift({
+        value: currentSlug,
+        label: `${summary?.threat_classification_label || threatClassLabelFor(currentSlug)} (Inactive)`,
+        system_default: false
+      });
+    }
+    return opts;
+  }, [threatClassOptions, summary, threatClassLabelFor]);
   const [threatActors, setThreatActors] = useState([]);
   const [showThreatClassModal, setShowThreatClassModal] = useState(false);
   const [threatClassDraft, setThreatClassDraft] = useState('unknown');
@@ -12037,8 +12314,11 @@ function IOCDetailsPage() {
                       </button>
                     ) : null}
                   </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>
-                    {summary.threat_classification_label || threatClassLabelFor(summary.threat_classification || summary.primary_threat_classification || 'unknown')}
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span>{summary.threat_classification_label || threatClassLabelFor(summary.threat_classification || summary.primary_threat_classification || 'unknown')}</span>
+                    {summary.threat_classification_active === false ? (
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, border: '1px solid #7f1d1d', color: '#fca5a5' }}>Inactive</span>
+                    ) : null}
                   </div>
                 </div>
 
@@ -12372,7 +12652,7 @@ function IOCDetailsPage() {
                 disabled={threatClassSaving}
                 style={ui.input}
               >
-                {threatClassOptions.map((opt) => (
+                {threatClassEditOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
@@ -13057,6 +13337,7 @@ function App() {
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
           <Route path="/administration/audit-logs" element={<Protected><AuditLogsPage /></Protected>} />
           <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />
+          <Route path="/administration/threat-classifications" element={<Protected><ThreatClassificationManagerPage /></Protected>} />
           <Route path="/administration/threat-actors" element={<Protected><ThreatActorManagerPage /></Protected>} />
           <Route path="/administration/ioc-sources" element={<Protected><IocSourcesPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />

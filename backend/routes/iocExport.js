@@ -1,6 +1,6 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { csvEscape, parseIocExportQuery } from '../lib/iocExportHelpers.js';
-import { normalizeThreatClassification, threatClassificationLabel } from '../lib/threatClassification.js';
+import { buildThreatClassificationResponseFields } from '../lib/threatClassification.js';
 
 /**
  * @param {import('express').Express} app
@@ -100,6 +100,8 @@ export function registerIocExportRoutes(app, pool) {
            COALESCE(i.status, 'active') AS status,
            i.source_name AS source,
            i.threat_classification,
+           tc.name AS threat_classification_label,
+           tc.active AS threat_classification_active,
            ta.name AS threat_actor_name,
            i.first_seen_at,
            i.last_seen_at,
@@ -107,6 +109,7 @@ export function registerIocExportRoutes(app, pool) {
            COALESCE(tags.names, ARRAY[]::text[]) AS tags
          FROM ioc_items i
          LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
+         LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
          LEFT JOIN LATERAL (
            SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS names
            FROM ioc_tags it
@@ -120,24 +123,19 @@ export function registerIocExportRoutes(app, pool) {
         params
       );
 
-      const items = rowsQ.rows.map((row) => {
-        const tc = normalizeThreatClassification(row.threat_classification);
-        return {
-          ioc_value: row.ioc_value,
-          ioc_type: row.ioc_type,
-          confidence: row.confidence,
-          status: row.status,
-          source: row.source,
-          threat_classification: tc,
-          threat_classification_label: threatClassificationLabel(tc),
-          primary_threat_classification: tc,
-          threat_actor_name: row.threat_actor_name || null,
-          first_seen: row.first_seen_at,
-          last_seen: row.last_seen_at,
-          expires_at: row.expires_at,
-          tags: row.tags || []
-        };
-      });
+      const items = rowsQ.rows.map((row) => ({
+        ioc_value: row.ioc_value,
+        ioc_type: row.ioc_type,
+        confidence: row.confidence,
+        status: row.status,
+        source: row.source,
+        ...buildThreatClassificationResponseFields(row),
+        threat_actor_name: row.threat_actor_name || null,
+        first_seen: row.first_seen_at,
+        last_seen: row.last_seen_at,
+        expires_at: row.expires_at,
+        tags: row.tags || []
+      }));
 
       const pagination = {
         page,

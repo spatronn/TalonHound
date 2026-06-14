@@ -120,7 +120,8 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const confidence = normalizeConfidence(body?.confidence ?? sourceRow.default_confidence);
-  const threatClassCheck = validatePrimaryThreatClassification(
+  const threatClassCheck = await validatePrimaryThreatClassification(
+    pool,
     body?.threat_classification ?? body?.primary_threat_classification ?? sourceRow.default_threat_classification
   );
   if (!threatClassCheck.ok) return { status: 400, body: { message: threatClassCheck.error } };

@@ -41,10 +41,6 @@ function validateSourcePayload(body, partial = false) {
     const confCheck = validateDefaultConfidence(body.default_confidence);
     if (!confCheck.ok) errors.push(confCheck.error);
   }
-  if (body.default_threat_classification !== undefined) {
-    const classCheck = validatePrimaryThreatClassification(body.default_threat_classification);
-    if (!classCheck.ok) errors.push(classCheck.error);
-  }
 
   if (body.default_expire_policy !== undefined) {
     const polCheck = validateDefaultExpirePolicy(body.default_expire_policy);
@@ -107,7 +103,8 @@ export function registerIocSourceRoutes(app, pool, audit) {
 
     const nameCheck = validateSourceName(body.name);
     const confCheck = validateDefaultConfidence(body.default_confidence);
-    const threatClassCheck = validatePrimaryThreatClassification(body.default_threat_classification);
+    const threatClassCheck = await validatePrimaryThreatClassification(pool, body.default_threat_classification);
+    if (!threatClassCheck.ok) return res.status(400).json({ message: threatClassCheck.error });
     const polCheck = validateDefaultExpirePolicy(body.default_expire_policy);
     const daysCheck = resolveExpireDays(body, polCheck.value);
     if (!daysCheck.ok) return res.status(400).json({ message: daysCheck.error });
@@ -184,7 +181,7 @@ export function registerIocSourceRoutes(app, pool, audit) {
       setField('default_confidence', confCheck.value);
     }
     if (body.default_threat_classification !== undefined) {
-      const classCheck = validatePrimaryThreatClassification(body.default_threat_classification);
+      const classCheck = await validatePrimaryThreatClassification(pool, body.default_threat_classification);
       if (!classCheck.ok) return res.status(400).json({ message: classCheck.error });
       setField('default_threat_classification', classCheck.value);
     }

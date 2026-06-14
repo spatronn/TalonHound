@@ -1,17 +1,20 @@
 import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import {
-  normalizeThreatClassification,
-  threatClassificationResponseFields,
-  validateThreatClassification
+  buildThreatClassificationResponseFields,
+  normalizeClassificationSlug,
+  validateThreatClassificationSlug
 } from '../lib/threatClassification.js';
 import { resolveThreatActorById } from './threatActors.js';
 
 async function fetchIocRow(pool, iocId, observableType) {
   const { rows } = await pool.query(
     `SELECT i.id, i.public_id, i.observable, i.observable_type, i.threat_classification, i.threat_actor_id,
-            ta.name AS threat_actor_name
+            ta.name AS threat_actor_name,
+            tc.name AS threat_classification_label,
+            tc.active AS threat_classification_active
      FROM ioc_items i
      LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
+     LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
      WHERE i.id = $1 AND i.observable_type = $2`,
     [iocId, observableType]
   );
@@ -43,18 +46,22 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       return res.status(400).json({ success: false, error: 'observable_type is required' });
     }
 
-    const check = validateThreatClassification(req.body?.threat_classification ?? req.body?.primary_threat_classification);
+    const check = await validateThreatClassificationSlug(
+      pool,
+      req.body?.threat_classification ?? req.body?.primary_threat_classification,
+      { requireActive: true }
+    );
     if (!check.ok) return res.status(400).json({ success: false, error: check.error });
 
     try {
       const prev = await fetchIocRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
-      const oldClass = normalizeThreatClassification(prev.threat_classification);
+      const oldClass = normalizeClassificationSlug(prev.threat_classification);
       if (oldClass === check.value) {
         return res.json({
           success: true,
-          ...threatClassificationResponseFields(check.value),
+          ...buildThreatClassificationResponseFields(prev),
           public_id: prev.public_id
         });
       }
@@ -67,6 +74,8 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       );
       const updated = rows[0];
       invalidateDetailsCache(updated.public_id);
+
+      const refreshed = await fetchIocRow(pool, iocId, observableType);
 
       await audit.auditSuccess({
         req,
@@ -87,7 +96,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       return res.json({
         success: true,
         public_id: updated.public_id,
-        ...threatClassificationResponseFields(updated.threat_classification)
+        ...buildThreatClassificationResponseFields(refreshed || updated)
       });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
@@ -178,9 +187,9 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
 }
 
 export function buildThreatMetadataFields(row) {
-  if (!row) return threatClassificationResponseFields('unknown');
+  if (!row) return buildThreatClassificationResponseFields('unknown');
   return {
-    ...threatClassificationResponseFields(row.threat_classification),
+    ...buildThreatClassificationResponseFields(row),
     threat_actor_id: row.threat_actor_id || null,
     threat_actor_name: row.threat_actor_name || null
   };
@@ -202,9 +211,11 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
   const values = pairs.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::text)`).join(', ');
   const params = pairs.flatMap((p) => [p.id, p.observable_type]);
   const { rows } = await pool.query(
-    `SELECT i.id, i.observable_type, i.threat_classification, i.threat_actor_id, ta.name AS threat_actor_name
+    `SELECT i.id, i.observable_type, i.threat_classification, i.threat_actor_id, ta.name AS threat_actor_name,
+            tc.name AS threat_classification_label, tc.active AS threat_classification_active
      FROM ioc_items i
      LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
+     LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
      WHERE (i.id, i.observable_type) IN (VALUES ${values})`,
     params
   );

@@ -12,11 +12,12 @@ export const MANUAL_EXPIRE_POLICIES = Object.freeze([
   'custom_date'
 ]);
 
-import { listThreatClassifications, validateThreatClassification } from './threatClassification.js';
+import { validateThreatClassificationSlug } from './threatClassification.js';
 
-export const PRIMARY_THREAT_CLASSIFICATIONS = Object.freeze(
-  listThreatClassifications().map((x) => x.value)
-);
+export async function validatePrimaryThreatClassification(pool, value) {
+  if (value == null || value === '') return { ok: true, value: 'unknown' };
+  return validateThreatClassificationSlug(pool, value, { requireActive: true });
+}
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;
 
@@ -61,11 +62,6 @@ export function validateDefaultExpirePolicy(value) {
     return { ok: false, error: `default_expire_policy must be one of: ${MANUAL_EXPIRE_POLICIES.join(', ')}` };
   }
   return { ok: true, value: p };
-}
-
-export function validatePrimaryThreatClassification(value) {
-  if (value == null || value === '') return { ok: true, value: 'unknown' };
-  return validateThreatClassification(value);
 }
 
 export function validateExpireDays(value, required = false) {

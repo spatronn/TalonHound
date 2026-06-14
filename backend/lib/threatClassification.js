@@ -1,30 +1,8 @@
-/** Canonical threat classification enum (single source of truth). */
+/** Threat classification slug normalization + DB-backed dictionary registry. */
 
-export const THREAT_CLASSIFICATIONS = Object.freeze([
-  { value: 'unknown', label: 'Unknown' },
-  { value: 'phishing', label: 'Phishing' },
-  { value: 'credential_theft', label: 'Credential Theft' },
-  { value: 'malware', label: 'Malware' },
-  { value: 'ransomware', label: 'Ransomware' },
-  { value: 'command_and_control', label: 'Command and Control (C2)' },
-  { value: 'botnet', label: 'Botnet' },
-  { value: 'exploit', label: 'Exploit / Exploitation' },
-  { value: 'scanner_recon', label: 'Scanner / Reconnaissance' },
-  { value: 'suspicious_infrastructure', label: 'Suspicious Infrastructure' },
-  { value: 'spam_abuse', label: 'Spam / Abuse' },
-  { value: 'dropper_downloader', label: 'Dropper / Downloader' },
-  { value: 'payload_hosting', label: 'Payload Hosting' },
-  { value: 'data_exfiltration', label: 'Data Exfiltration' },
-  { value: 'cryptomining', label: 'Cryptomining' },
-  { value: 'fraud_scam', label: 'Fraud / Scam' },
-  { value: 'typosquatting_impersonation', label: 'Typosquatting / Impersonation' },
-  { value: 'benign_test', label: 'Benign / Test' }
-]);
+export const UNKNOWN_THREAT_CLASSIFICATION = 'unknown';
 
-const VALUE_SET = new Set(THREAT_CLASSIFICATIONS.map((x) => x.value));
-const LABEL_BY_VALUE = new Map(THREAT_CLASSIFICATIONS.map((x) => [x.value, x.label]));
-
-/** Legacy DB/API/tag values → canonical slug. */
+/** Legacy free-text / tag values → canonical slug before dictionary lookup. */
 const LEGACY_NORMALIZE_MAP = Object.freeze({
   c2: 'command_and_control',
   command_and_control: 'command_and_control',
@@ -40,44 +18,151 @@ const LEGACY_NORMALIZE_MAP = Object.freeze({
   'exploit / exploitation': 'exploit'
 });
 
-export function threatClassificationLabel(value) {
-  const v = normalizeThreatClassification(value);
-  return LABEL_BY_VALUE.get(v) || 'Unknown';
-}
+/** @type {Map<string, { slug: string, name: string, active: boolean, system_default: boolean, sort_order: number }> | null} */
+let registryCache = null;
 
-export function listThreatClassifications() {
-  return THREAT_CLASSIFICATIONS.map(({ value, label }) => ({ value, label }));
-}
-
-export function normalizeThreatClassification(raw, { defaultValue = 'unknown' } = {}) {
+export function normalizeClassificationSlug(raw, { defaultValue = UNKNOWN_THREAT_CLASSIFICATION } = {}) {
   if (raw == null || raw === '') return defaultValue;
   let s = String(raw).trim().toLowerCase();
+  if (s === 'not selected' || s === '— not selected —') return UNKNOWN_THREAT_CLASSIFICATION;
   s = s.replace(/[\s-]+/g, '_');
   if (LEGACY_NORMALIZE_MAP[s]) return LEGACY_NORMALIZE_MAP[s];
-  if (VALUE_SET.has(s)) return s;
+  if (/^[a-z0-9_]+$/.test(s)) return s;
   return defaultValue;
 }
 
-export function validateThreatClassification(raw, { allowEmpty = false } = {}) {
-  if (raw == null || raw === '') {
-    if (allowEmpty) return { ok: true, value: 'unknown' };
-    return { ok: true, value: 'unknown' };
-  }
-  const normalized = normalizeThreatClassification(raw, { defaultValue: null });
-  if (!normalized || !VALUE_SET.has(normalized)) {
-    return {
-      ok: false,
-      error: `threat_classification must be one of: ${[...VALUE_SET].join(', ')}`
-    };
-  }
-  return { ok: true, value: normalized };
+/** @deprecated use normalizeClassificationSlug */
+export function normalizeThreatClassification(raw, opts) {
+  return normalizeClassificationSlug(raw, opts);
 }
 
-export function threatClassificationResponseFields(value) {
-  const v = normalizeThreatClassification(value);
+export function normalizeThreatClassificationSlugInput(raw) {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+export function invalidateThreatClassificationRegistry() {
+  registryCache = null;
+}
+
+export async function loadThreatClassificationRegistry(pool) {
+  const { rows } = await pool.query(
+    `SELECT slug, name, active, system_default, sort_order
+     FROM threat_classifications
+     ORDER BY sort_order ASC, name ASC`
+  );
+  const map = new Map();
+  for (const row of rows) {
+    map.set(row.slug, {
+      slug: row.slug,
+      name: row.name,
+      active: Boolean(row.active),
+      system_default: Boolean(row.system_default),
+      sort_order: Number(row.sort_order) || 0
+    });
+  }
+  registryCache = map;
+  return map;
+}
+
+export async function ensureThreatClassificationRegistry(pool) {
+  if (registryCache) return registryCache;
+  return loadThreatClassificationRegistry(pool);
+}
+
+function fallbackLabel(slug) {
+  if (slug === UNKNOWN_THREAT_CLASSIFICATION) return 'Unknown';
+  return String(slug).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function lookupThreatClassificationEntry(slug) {
+  return registryCache?.get(slug) || null;
+}
+
+export async function listActiveThreatClassifications(pool) {
+  const reg = await ensureThreatClassificationRegistry(pool);
+  return [...reg.values()]
+    .filter((x) => x.active)
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+    .map((x) => ({
+      value: x.slug,
+      label: x.name,
+      system_default: x.system_default
+    }));
+}
+
+export async function validateThreatClassificationSlug(pool, raw, { requireActive = true } = {}) {
+  const slug = normalizeClassificationSlug(raw);
+  if (slug === UNKNOWN_THREAT_CLASSIFICATION) {
+    return { ok: true, value: slug };
+  }
+  const reg = await ensureThreatClassificationRegistry(pool);
+  const entry = reg.get(slug);
+  if (!entry) {
+    return { ok: false, error: `threat_classification must be a valid active classification slug (unknown allowed)` };
+  }
+  if (requireActive && !entry.active) {
+    return { ok: false, error: `threat classification "${slug}" is inactive and cannot be assigned to new IOCs` };
+  }
+  return { ok: true, value: slug };
+}
+
+/** @deprecated use validateThreatClassificationSlug */
+export async function validateThreatClassification(pool, raw, opts) {
+  return validateThreatClassificationSlug(pool, raw, opts);
+}
+
+export function threatClassificationLabelFromRow(row) {
+  if (row?.threat_classification_label) return row.threat_classification_label;
+  const slug = normalizeClassificationSlug(row?.threat_classification);
+  const cached = lookupThreatClassificationEntry(slug);
+  return cached?.name || fallbackLabel(slug);
+}
+
+export function threatClassificationLabel(value) {
+  const slug = normalizeClassificationSlug(value);
+  const cached = lookupThreatClassificationEntry(slug);
+  return cached?.name || fallbackLabel(slug);
+}
+
+export function buildThreatClassificationResponseFields(rowOrSlug) {
+  const slug = typeof rowOrSlug === 'string'
+    ? normalizeClassificationSlug(rowOrSlug)
+    : normalizeClassificationSlug(rowOrSlug?.threat_classification);
+  const cached = lookupThreatClassificationEntry(slug);
+  const label = (typeof rowOrSlug === 'object' && rowOrSlug?.threat_classification_label)
+    ? rowOrSlug.threat_classification_label
+    : (cached?.name || fallbackLabel(slug));
+  let active = cached?.active;
+  if (typeof rowOrSlug === 'object' && rowOrSlug?.threat_classification_active != null) {
+    active = Boolean(rowOrSlug.threat_classification_active);
+  }
   return {
-    threat_classification: v,
-    threat_classification_label: threatClassificationLabel(v),
-    primary_threat_classification: v
+    threat_classification: slug,
+    threat_classification_label: label,
+    threat_classification_active: active ?? true,
+    primary_threat_classification: slug
   };
+}
+
+/** @deprecated alias */
+export function threatClassificationResponseFields(rowOrSlug) {
+  return buildThreatClassificationResponseFields(rowOrSlug);
+}
+
+/** @deprecated */
+export function listThreatClassifications() {
+  if (!registryCache) return [{ value: UNKNOWN_THREAT_CLASSIFICATION, label: 'Unknown', system_default: true }];
+  return listActiveThreatClassificationsSync();
+}
+
+function listActiveThreatClassificationsSync() {
+  return [...registryCache.values()]
+    .filter((x) => x.active)
+    .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+    .map((x) => ({ value: x.slug, label: x.name, system_default: x.system_default }));
 }

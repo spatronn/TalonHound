@@ -67,8 +67,9 @@ import {
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { registerIocSourceRoutes } from './routes/iocSources.js';
 import { registerThreatActorRoutes } from './routes/threatActors.js';
+import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
 import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem } from './routes/iocThreatMetadata.js';
-import { threatClassificationLabel, normalizeThreatClassification } from './lib/threatClassification.js';
+import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
@@ -115,6 +116,10 @@ const pool = new Pool({
   user: process.env.DB_USER || 'demo',
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'demo'
+});
+
+loadThreatClassificationRegistry(pool).catch((err) => {
+  console.warn('[threat-classifications] registry preload skipped:', err?.message || err);
 });
 
 const redisUrl = getRedisUrl();
@@ -1946,10 +1951,13 @@ async function buildIocAiContextPack(context, eventRows = []) {
               i.expires_at, i.confidence_source, i.confidence_source_name,
               s.name AS managed_source_name, s.default_confidence, s.default_threat_classification,
               ta.name AS threat_actor_name,
+              tc.name AS threat_classification_label,
+              tc.active AS threat_classification_active,
               COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags
        FROM ioc_items i
        LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
        LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
+       LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
        LEFT JOIN LATERAL (
          SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS tags
          FROM ioc_tags it
@@ -1974,12 +1982,7 @@ async function buildIocAiContextPack(context, eventRows = []) {
         source_count: 1,
         tags: Array.isArray(item.tags) ? item.tags : [],
         category: item.category || null,
-        threat_classification: normalizeThreatClassification(
-          item.threat_classification || item.default_threat_classification || 'unknown'
-        ),
-        primary_threat_classification: normalizeThreatClassification(
-          item.threat_classification || item.default_threat_classification || 'unknown'
-        ),
+        ...buildThreatClassificationResponseFields(item),
         threat_actor_id: item.threat_actor_id || null,
         threat_actor_name: item.threat_actor_name || null,
         first_seen: item.first_seen_at || out.ioc_metadata.first_seen,
@@ -4909,10 +4912,12 @@ registerIocConfidenceRoutes(app, pool, auditLogService, {
 });
 registerRouteModule('ioc_confidence');
 registerIocSourceRoutes(app, pool, auditLogService);
+registerThreatClassificationRoutes(app, pool, auditLogService);
 registerThreatActorRoutes(app, pool, auditLogService);
 registerIocThreatMetadataRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache
 });
+registerRouteModule('threat_classifications');
 registerRouteModule('threat_actors');
 registerRouteModule('ioc_threat_metadata');
 registerRouteModule('ioc_sources');
@@ -6654,6 +6659,8 @@ app.get('/api/ioc/details', async (req, res) => {
         i.threat_classification,
         i.threat_actor_id,
         ta.name AS threat_actor_name,
+        tc.name AS threat_classification_label,
+        tc.active AS threat_classification_active,
         i.manual_status_override,
         i.manual_status,
         ${confidenceSelect}
@@ -6669,6 +6676,7 @@ app.get('/api/ioc/details', async (req, res) => {
        AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)
       ${confidenceJoin}
       LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
+      LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
       ORDER BY i.created_at DESC
       LIMIT 500
     `;
