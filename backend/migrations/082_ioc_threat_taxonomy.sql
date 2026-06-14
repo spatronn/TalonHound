@@ -143,8 +143,8 @@ ON CONFLICT (slug) DO UPDATE SET
 UPDATE ioc_items i
 SET threat_classification = v.new_class
 FROM (
-  SELECT DISTINCT ON (it.ioc_item_id, it.ioc_observable_type)
-    it.ioc_item_id,
+  SELECT DISTINCT ON (it.ioc_id, it.ioc_observable_type)
+    it.ioc_id,
     it.ioc_observable_type,
     CASE lower(t.slug)
       WHEN 'phishing' THEN 'phishing'
@@ -155,9 +155,9 @@ FROM (
   FROM ioc_tags it
   INNER JOIN tags t ON t.id = it.tag_id
   WHERE lower(t.slug) IN ('phishing', 'ransomware', 'c2', 'malware')
-  ORDER BY it.ioc_item_id, it.ioc_observable_type, t.slug
+  ORDER BY it.ioc_id, it.ioc_observable_type, t.slug
 ) v
-WHERE i.id = v.ioc_item_id
+WHERE i.id = v.ioc_id
   AND i.observable_type = v.ioc_observable_type
   AND v.new_class IS NOT NULL
   AND COALESCE(i.threat_classification, 'unknown') = 'unknown';
@@ -168,7 +168,7 @@ SET threat_actor_id = ta.id
 FROM ioc_tags it
 INNER JOIN tags t ON t.id = it.tag_id
 INNER JOIN threat_actors ta ON ta.slug = lower(t.slug)
-WHERE it.ioc_item_id = i.id
+WHERE it.ioc_id = i.id
   AND it.ioc_observable_type = i.observable_type
   AND lower(t.slug) IN ('apt29', 'apt28', 'lazarus')
   AND i.threat_actor_id IS NULL;
