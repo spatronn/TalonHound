@@ -30,7 +30,7 @@ import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
-import { AUDIT_ACTION, AUDIT_ENTITY } from './lib/auditConstants.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
 import {
@@ -57,7 +57,6 @@ import {
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
-import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
 import {
   hasIocConfidenceColumns,
