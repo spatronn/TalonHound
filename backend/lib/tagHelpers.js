@@ -1,10 +1,19 @@
 export const TAG_CATEGORIES = Object.freeze([
-  'malware',
-  'campaign',
-  'actor',
   'behavior',
-  'source',
+  'campaign',
+  'theme',
+  'targeting',
+  'source-context',
+  'review-state',
+  'vulnerability',
   'custom'
+]);
+
+/** Legacy categories kept for display of inactive migrated tags. */
+export const LEGACY_TAG_CATEGORIES = Object.freeze([
+  'malware',
+  'actor',
+  'source'
 ]);
 
 const LEGACY_TAG_TYPES = new Set(['threat', 'actor', 'technique', 'context']);
@@ -19,17 +28,16 @@ export function normalizeTagSlug(value) {
 
 export function categoryToLegacyType(category) {
   const c = String(category || '').trim().toLowerCase();
-  if (c === 'actor') return 'actor';
   if (c === 'behavior') return 'technique';
-  if (c === 'malware' || c === 'campaign') return 'threat';
+  if (c === 'campaign') return 'threat';
   return 'context';
 }
 
 export function legacyTypeToCategory(type) {
   const t = String(type || '').trim().toLowerCase();
-  if (t === 'actor') return 'actor';
+  if (t === 'actor') return 'custom';
   if (t === 'technique') return 'behavior';
-  if (t === 'threat') return 'malware';
+  if (t === 'threat') return 'campaign';
   return 'custom';
 }
 

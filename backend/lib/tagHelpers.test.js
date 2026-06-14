@@ -21,15 +21,16 @@ test('normalizeTagSlug slugifies values', () => {
 });
 
 test('categoryToLegacyType maps categories to enum', () => {
-  assert.equal(categoryToLegacyType('malware'), 'threat');
-  assert.equal(categoryToLegacyType('actor'), 'actor');
+  assert.equal(categoryToLegacyType('malware'), 'context');
+  assert.equal(categoryToLegacyType('actor'), 'context');
   assert.equal(categoryToLegacyType('behavior'), 'technique');
+  assert.equal(categoryToLegacyType('campaign'), 'threat');
   assert.equal(categoryToLegacyType('custom'), 'context');
 });
 
 test('legacyTypeToCategory maps enum to categories', () => {
-  assert.equal(legacyTypeToCategory('threat'), 'malware');
-  assert.equal(legacyTypeToCategory('actor'), 'actor');
+  assert.equal(legacyTypeToCategory('threat'), 'campaign');
+  assert.equal(legacyTypeToCategory('actor'), 'custom');
   assert.equal(legacyTypeToCategory('technique'), 'behavior');
 });
 

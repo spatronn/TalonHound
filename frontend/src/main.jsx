@@ -636,6 +636,17 @@ const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
   'ioc_feed_membership.reactivated_by_match'
 ]);
 
+const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
+  'ioc.threat_classification.updated',
+  'ioc.threat_actor.updated',
+  'threat_actor.created',
+  'threat_actor.updated',
+  'threat_actor.disabled',
+  'threat_actor.enabled',
+  'tag.disabled',
+  'tag.enabled'
+]);
+
 function formatExpirationPolicyLabel(policy) {
   const value = String(policy || '').trim();
   if (!value) return '—';
@@ -717,6 +728,12 @@ function AuditEntityCell({ row }) {
   );
 }
 
+function formatThreatClassificationLabel(value) {
+  const slug = String(value || 'unknown').trim() || 'unknown';
+  if (slug === 'unknown') return 'Unknown';
+  return slug.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function formatExpirationAuditReasonLabel(reason) {
   const value = String(reason || '').trim();
   if (!value) return '—';
@@ -724,7 +741,24 @@ function formatExpirationAuditReasonLabel(reason) {
   if (value === 'all_feed_memberships_expired') return 'All feed memberships expired';
   if (value === 'manual_override') return 'Manual override';
   if (value === 'correlation_match') return 'Correlation match';
+  if (value.startsWith('legacy-migrated')) return value.replace(/-/g, ' ');
   return value.replace(/_/g, ' ');
+}
+
+function formatTaxonomyAuditMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const parts = [];
+  const oldClass = auditMetadataValue(metadata, 'old_classification');
+  const newClass = auditMetadataValue(metadata, 'new_classification');
+  if (oldClass != null && newClass != null) {
+    parts.push(`${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}`);
+  }
+  const oldActor = auditMetadataValue(metadata, 'old_threat_actor');
+  const newActor = auditMetadataValue(metadata, 'new_threat_actor');
+  if (oldActor != null || newActor != null) {
+    parts.push(`${oldActor || 'Not selected'} → ${newActor || 'Not selected'}`);
+  }
+  return parts.length ? parts.join(' · ') : null;
 }
 
 function formatAuditStatusTransition(metadata) {
@@ -759,6 +793,37 @@ function AuditExpirationSummary({ item }) {
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#111827' }}>
       <div style={{ fontWeight: 700, marginBottom: 10, color: '#f8fafc' }}>IOC expiration context</div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 10, fontSize: 13 }}>
+            <span style={{ color: '#94a3b8' }}>{label}</span>
+            <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AuditTaxonomySummary({ item }) {
+  if (!item || !IOC_TAXONOMY_AUDIT_ACTIONS.has(String(item.action || ''))) return null;
+  const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  const oldClass = auditSnapshotValue(item, 'old_classification') || metadata.old_classification;
+  const newClass = auditSnapshotValue(item, 'new_classification') || metadata.new_classification;
+  const oldActor = auditSnapshotValue(item, 'old_threat_actor') || metadata.old_threat_actor;
+  const newActor = auditSnapshotValue(item, 'new_threat_actor') || metadata.new_threat_actor;
+  const rows = [
+    ['Classification', oldClass != null && newClass != null ? `${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}` : null],
+    ['Threat actor', oldActor != null || newActor != null ? `${oldActor || 'Not selected'} → ${newActor || 'Not selected'}` : null],
+    ['IOC', auditSnapshotValue(item, 'ioc_value', 'observable')],
+    ['Type', auditSnapshotValue(item, 'ioc_observable_type', 'observable_type')]
+  ].filter(([, value]) => value && value !== '—');
+
+  if (!rows.length) return null;
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#111827' }}>
+      <div style={{ fontWeight: 700, marginBottom: 10, color: '#f8fafc' }}>Threat taxonomy context</div>
       <div style={{ display: 'grid', gap: 8 }}>
         {rows.map(([label, value]) => (
           <div key={label} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 10, fontSize: 13 }}>
@@ -1311,10 +1376,11 @@ function AppShell({ children }) {
 
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(location.pathname.startsWith('/administration'))}>6. Administration</div>
-            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/users') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags') && !isActive('/administration/ioc-sources'))}>Settings</Link>
+            <Link to="/administration" style={subMenuStyle(isActive('/administration') && !isActive('/administration/users') && !isActive('/administration/api-keys') && !isActive('/administration/audit-logs') && !isActive('/administration/enrichment-providers') && !isActive('/administration/tags') && !isActive('/administration/threat-actors') && !isActive('/administration/ioc-sources'))}>Settings</Link>
             {isAdmin ? <Link to="/administration/users" style={subMenuStyle(isActive('/administration/users'))}>Users</Link> : null}
             <Link to="/administration/audit-logs" style={subMenuStyle(isActive('/administration/audit-logs'))}>Audit Logs</Link>
             <Link to="/administration/tags" style={subMenuStyle(isActive('/administration/tags'))}>Tags</Link>
+            {isAdmin ? <Link to="/administration/threat-actors" style={subMenuStyle(isActive('/administration/threat-actors'))}>Threat Actors</Link> : null}
             {isAdmin ? <Link to="/administration/ioc-sources" style={subMenuStyle(isActive('/administration/ioc-sources'))}>IOC Sources</Link> : null}
             <Link to="/administration/api-keys" style={subMenuStyle(isActive('/administration/api-keys'))}>API Keys</Link>
             <Link to="/administration/enrichment-providers" style={subMenuStyle(isActive('/administration/enrichment-providers'))}>Enrichment Providers</Link>
@@ -6858,6 +6924,7 @@ function AuditLogsPage() {
             <div><strong>Entity:</strong> {detailItem.entity_type} · <span title={formatAuditEntityPrimary(detailItem)}>{truncateAuditText(formatAuditEntityPrimary(detailItem), 120)}</span></div>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>{formatAuditEntitySubtitle(detailItem)}</div>
             <AuditExpirationSummary item={detailItem} />
+            <AuditTaxonomySummary item={detailItem} />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <span style={auditSeverityBadgeStyle(detailItem.severity)}>{detailItem.severity}</span>
               <span style={auditStatusBadgeStyle(detailItem.status)}>{detailItem.status}</span>
@@ -7197,7 +7264,7 @@ function ApiKeysPage() {
   );
 }
 
-const TAG_CATEGORY_OPTIONS = ['malware', 'campaign', 'actor', 'behavior', 'source', 'custom'];
+const TAG_CATEGORY_OPTIONS = ['behavior', 'campaign', 'theme', 'targeting', 'source-context', 'review-state', 'vulnerability', 'custom'];
 
 const IOC_EXPIRE_POLICY_OPTIONS = [
   { value: 'never', label: 'Never expire' },
@@ -7205,16 +7272,35 @@ const IOC_EXPIRE_POLICY_OPTIONS = [
   { value: 'custom_date', label: 'Custom date' }
 ];
 
-const PRIMARY_THREAT_CLASS_OPTIONS = [
-  { value: '', label: '— Not selected —' },
-  { value: 'phishing', label: 'Phishing' },
-  { value: 'malware', label: 'Malware' },
-  { value: 'c2', label: 'C2' },
-  { value: 'scanner', label: 'Scanner' },
-  { value: 'suspicious_infra', label: 'Suspicious Infra' },
-  { value: 'test', label: 'Test' },
-  { value: 'unknown', label: 'Unknown' }
-];
+const DEFAULT_THREAT_CLASSIFICATION_OPTIONS = [{ value: 'unknown', label: 'Unknown' }];
+
+function useThreatClassifications() {
+  const [options, setOptions] = useState(DEFAULT_THREAT_CLASSIFICATION_OPTIONS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await api.get('/threat-classifications');
+        const list = Array.isArray(data) ? data : (Array.isArray(data?.classifications) ? data.classifications : []);
+        if (active && list.length) setOptions(list);
+      } catch {
+        /* keep default */
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const labelFor = useCallback((value) => {
+    const slug = String(value || 'unknown').trim() || 'unknown';
+    return options.find((o) => o.value === slug)?.label || formatThreatClassificationLabel(slug);
+  }, [options]);
+
+  return { options, loading, labelFor };
+}
 
 const IOC_SOURCE_MODAL_STYLE = {
   width: 'min(680px, 96vw)',
@@ -7369,7 +7455,7 @@ function TagManagerPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Tag Manager</h1>
-            <p style={ui.pageSub}>Manage central IOC tags used across detail, edit, and feed filtering workflows.</p>
+            <p style={ui.pageSub}>Manage operational/context IOC tags. Threat classifications and threat actors are managed separately.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
@@ -7407,7 +7493,14 @@ function TagManagerPage() {
                     <div style={{ fontSize: 11, color: '#64748b' }}>{tag.slug || tag.name}</div>
                   </td>
                   <td style={ui.td}>{tag.category || '—'}</td>
-                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{tag.description || '—'}</td>
+                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>
+                    {tag.description || '—'}
+                    {(String(tag.description || '').includes('legacy-migrated') || tag.is_active === false) ? (
+                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, fontStyle: 'italic' }}>
+                        Legacy migrated tag — use Threat Classification or Threat Actor fields instead.
+                      </div>
+                    ) : null}
+                  </td>
                   <td style={ui.td}>
                     {tag.color ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -7447,6 +7540,9 @@ function TagManagerPage() {
             </FeedFormField>
             <FeedFormField ui={ui} label="Description" fullWidth>
               <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
+              <span style={{ ...ui.helper, display: 'block', marginTop: 6 }}>
+                Do not use tags for threat classifications or threat actors — those are managed under Administration → Threat Actors and the IOC threat classification field.
+              </span>
             </FeedFormField>
             <FeedFormField ui={ui} label="Color" helper="Optional hex or CSS color for UI chips." fullWidth>
               <input value={form.color} onChange={(e) => setForm((x) => ({ ...x, color: e.target.value }))} style={ui.input} placeholder="#ef4444" />
@@ -7469,9 +7565,230 @@ function TagManagerPage() {
   );
 }
 
+const EMPTY_THREAT_ACTOR_FORM = {
+  name: '',
+  aliases: '',
+  description: '',
+  active: true
+};
+
+function formatThreatActorAliases(aliases) {
+  if (!aliases) return '—';
+  if (Array.isArray(aliases)) return aliases.length ? aliases.join(', ') : '—';
+  return String(aliases).trim() || '—';
+}
+
+function ThreatActorManagerPage() {
+  const { isAdmin } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [actors, setActors] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showInactive, setShowInactive] = useState(true);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editingActor, setEditingActor] = useState(null);
+  const [form, setForm] = useState(EMPTY_THREAT_ACTOR_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoading(true);
+    setError('');
+    try {
+      const params = showInactive ? { include_inactive: true } : { include_inactive: false };
+      const { data } = await api.get('/admin/threat-actors', { params });
+      setActors(Array.isArray(data?.threat_actors) ? data.threat_actors : []);
+    } catch (err) {
+      setActors([]);
+      setError(apiErrorMessage(err, 'Failed to load threat actors'));
+    } finally {
+      setLoading(false);
+    }
+  }, [isAdmin, showInactive]);
+
+  useEffect(() => {
+    load().catch(() => {});
+  }, [load]);
+
+  function openCreateModal() {
+    setEditingActor(null);
+    setForm(EMPTY_THREAT_ACTOR_FORM);
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  function openEditModal(actor) {
+    setEditingActor(actor);
+    setForm({
+      name: actor?.name || '',
+      aliases: formatThreatActorAliases(actor?.aliases) === '—' ? '' : formatThreatActorAliases(actor?.aliases),
+      description: actor?.description || '',
+      active: actor?.active !== false
+    });
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  async function submitForm(e) {
+    e.preventDefault();
+    if (!isAdmin) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const payload = {
+        name: form.name.trim(),
+        aliases: form.aliases,
+        description: form.description,
+        active: form.active
+      };
+      if (editingActor?.id) {
+        await api.patch(`/admin/threat-actors/${editingActor.id}`, payload);
+      } else {
+        await api.post('/admin/threat-actors', payload);
+      }
+      setShowFormModal(false);
+      setEditingActor(null);
+      setForm(EMPTY_THREAT_ACTOR_FORM);
+      await load();
+    } catch (err) {
+      setFormError(apiErrorMessage(err, editingActor ? 'Update failed' : 'Create failed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableActor(actor) {
+    if (!actor?.id || !isAdmin) return;
+    const ok = window.confirm(`Disable threat actor "${actor.name}"? Existing IOC assignments will remain visible, but the actor will no longer appear in pickers.`);
+    if (!ok) return;
+    setError('');
+    try {
+      await api.patch(`/admin/threat-actors/${actor.id}/disable`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Disable failed'));
+    }
+  }
+
+  async function enableActor(actor) {
+    if (!actor?.id || !isAdmin) return;
+    setError('');
+    try {
+      await api.patch(`/admin/threat-actors/${actor.id}/enable`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Enable failed'));
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <section style={ui.section}>
+          <h1 style={ui.pageTitle}>Threat Actors</h1>
+          <p style={ui.pageSub}>Admin access required.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Threat Actors</h1>
+            <p style={ui.pageSub}>Manage named threat actors linked to IOCs. Classifications are configured separately.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={ui.checkLabel}>
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              Show inactive
+            </label>
+            <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Threat Actor</button>
+          </div>
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div style={{ marginTop: 16, overflowX: 'auto' }}>
+          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>Name</th>
+                <th style={ui.th}>Aliases</th>
+                <th style={ui.th}>Description</th>
+                <th style={ui.th}>Active</th>
+                <th style={ui.th}>Created At</th>
+                <th style={ui.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+              ) : !actors.length ? (
+                <tr><td colSpan={6} style={ui.td}>No threat actors found.</td></tr>
+              ) : actors.map((actor) => (
+                <tr key={actor.id} style={{ opacity: actor.active ? 1 : 0.62 }}>
+                  <td style={ui.td}>
+                    <div style={{ fontWeight: 600 }}>{actor.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{actor.slug || actor.name}</div>
+                  </td>
+                  <td style={{ ...ui.td, maxWidth: 220, whiteSpace: 'normal' }}>{formatThreatActorAliases(actor.aliases)}</td>
+                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{actor.description || '—'}</td>
+                  <td style={ui.td}>{actor.active ? 'Yes' : 'No'}</td>
+                  <td style={ui.td}>{formatUserDateTime(actor.created_at)}</td>
+                  <td style={ui.td}>
+                    <button type="button" style={ui.btn} onClick={() => openEditModal(actor)}>Edit</button>
+                    {actor.active ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableActor(actor).catch(() => {})}>Disable</button>
+                    ) : (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableActor(actor).catch(() => {})}>Enable</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {showFormModal ? (
+        <ModalOverlay onClose={() => setShowFormModal(false)}>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingActor ? 'Edit Threat Actor' : 'Add Threat Actor'}</h3>
+          <form onSubmit={submitForm}>
+            <FeedFormField ui={ui} label="Name" fullWidth>
+              <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. APT29" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Aliases" helper="Comma-separated alternate names." fullWidth>
+              <input value={form.aliases} onChange={(e) => setForm((x) => ({ ...x, aliases: e.target.value }))} style={ui.input} placeholder="Cozy Bear, The Dukes" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Description" fullWidth>
+              <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Active" fullWidth>
+              <label style={ui.checkLabel}>
+                <input type="checkbox" checked={form.active} onChange={(e) => setForm((x) => ({ ...x, active: e.target.checked }))} />
+                Threat actor is active
+              </label>
+            </FeedFormField>
+            {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
+              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingActor ? 'Save Changes' : 'Create Threat Actor')}</button>
+            </div>
+          </form>
+        </ModalOverlay>
+      ) : null}
+    </AppShell>
+  );
+}
+
 function IocSourcesPage() {
   const { isAdmin } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
+  const { options: threatClassOptions } = useThreatClassifications();
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -7716,8 +8033,8 @@ function IocSourcesPage() {
                 </select>
 	              </FeedFormField>
 	              <FeedFormField ui={ui} label="Default Threat Classification" helper="Optional but improves AI Insight quality." fullWidth>
-	                <select value={form.default_threat_classification} onChange={(e) => setForm((x) => ({ ...x, default_threat_classification: e.target.value }))} style={ui.select}>
-	                  {PRIMARY_THREAT_CLASS_OPTIONS.map((o) => <option key={o.value || 'none'} value={o.value}>{o.label}</option>)}
+	                <select value={form.default_threat_classification || 'unknown'} onChange={(e) => setForm((x) => ({ ...x, default_threat_classification: e.target.value }))} style={ui.select}>
+	                  {threatClassOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
 	                </select>
 	              </FeedFormField>
               <FeedFormField ui={ui} label="Default Expire Policy" fullWidth>
@@ -10805,6 +11122,8 @@ function iocAuditMetadataSummary(metadata) {
   if (!metadata || typeof metadata !== 'object') return '-';
   const confidenceText = formatConfidenceAuditMetadata(metadata);
   if (confidenceText) return confidenceText;
+  const taxonomyText = formatTaxonomyAuditMetadata(metadata);
+  if (taxonomyText) return taxonomyText;
   const expirationParts = [];
   const iocValue = auditMetadataValue(metadata, 'ioc_value');
   const iocType = auditMetadataValue(metadata, 'ioc_observable_type', 'observable_type');
@@ -10939,6 +11258,16 @@ function IOCDetailsPage() {
   const [confidenceReason, setConfidenceReason] = useState('');
   const [confidenceSaving, setConfidenceSaving] = useState(false);
   const [confidenceError, setConfidenceError] = useState('');
+  const { options: threatClassOptions, labelFor: threatClassLabelFor } = useThreatClassifications();
+  const [threatActors, setThreatActors] = useState([]);
+  const [showThreatClassModal, setShowThreatClassModal] = useState(false);
+  const [threatClassDraft, setThreatClassDraft] = useState('unknown');
+  const [threatClassSaving, setThreatClassSaving] = useState(false);
+  const [threatClassError, setThreatClassError] = useState('');
+  const [showThreatActorModal, setShowThreatActorModal] = useState(false);
+  const [threatActorDraft, setThreatActorDraft] = useState('');
+  const [threatActorSaving, setThreatActorSaving] = useState(false);
+  const [threatActorError, setThreatActorError] = useState('');
 
   async function load() {
     setLoading(true);
@@ -11011,6 +11340,20 @@ function IOCDetailsPage() {
   useEffect(() => {
     if (!isAdmin && activeTab === 'audit') setActiveTab('overview');
   }, [isAdmin, activeTab]);
+
+  useEffect(() => {
+    if (!canWrite) return undefined;
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await api.get('/admin/threat-actors', { params: { include_inactive: false } });
+        if (active) setThreatActors(Array.isArray(data?.threat_actors) ? data.threat_actors : []);
+      } catch {
+        if (active) setThreatActors([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [canWrite]);
 
   useEffect(() => {
     const iocId = Number(data?.summary?.id);
@@ -11193,6 +11536,71 @@ function IOCDetailsPage() {
 
   async function clearConfidenceOverride() {
     await submitConfidenceOverride(true);
+  }
+
+  function openThreatClassEditor() {
+    setThreatClassDraft(summary?.threat_classification || summary?.primary_threat_classification || 'unknown');
+    setThreatClassError('');
+    setShowThreatClassModal(true);
+  }
+
+  async function submitThreatClassification() {
+    const iocId = Number(summary?.id);
+    const observableType = String(summary?.observable_type || '').trim();
+    if (!Number.isFinite(iocId) || !observableType) return;
+
+    setThreatClassSaving(true);
+    setThreatClassError('');
+    try {
+      const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-classification`, {
+        observable_type: observableType,
+        threat_classification: threatClassDraft
+      });
+      if (!patchData?.success) {
+        setThreatClassError(patchData?.error || 'Request failed');
+        return;
+      }
+      setShowThreatClassModal(false);
+      setActionToast('Threat classification updated');
+      await load();
+    } catch (err) {
+      setThreatClassError(apiErrorMessage(err, 'Failed to update threat classification'));
+    } finally {
+      setThreatClassSaving(false);
+    }
+  }
+
+  function openThreatActorEditor() {
+    setThreatActorDraft(summary?.threat_actor_id || '');
+    setThreatActorError('');
+    setShowThreatActorModal(true);
+  }
+
+  async function submitThreatActor() {
+    const iocId = Number(summary?.id);
+    const observableType = String(summary?.observable_type || '').trim();
+    if (!Number.isFinite(iocId) || !observableType) return;
+
+    setThreatActorSaving(true);
+    setThreatActorError('');
+    try {
+      const body = {
+        observable_type: observableType,
+        threat_actor_id: threatActorDraft || null
+      };
+      const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-actor`, body);
+      if (!patchData?.success) {
+        setThreatActorError(patchData?.error || 'Request failed');
+        return;
+      }
+      setShowThreatActorModal(false);
+      setActionToast('Threat actor updated');
+      await load();
+    } catch (err) {
+      setThreatActorError(apiErrorMessage(err, 'Failed to update threat actor'));
+    } finally {
+      setThreatActorSaving(false);
+    }
   }
 
   function openExpirationAction(type, membershipId = null) {
@@ -11621,6 +12029,34 @@ function IOCDetailsPage() {
                 </div>
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Classification</div>
+                    {canWrite ? (
+                      <button type="button" onClick={openThreatClassEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>
+                    {summary.threat_classification_label || threatClassLabelFor(summary.threat_classification || summary.primary_threat_classification || 'unknown')}
+                  </div>
+                </div>
+
+                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Actor</div>
+                    {canWrite ? (
+                      <button type="button" onClick={openThreatActorEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>
+                    {summary.threat_actor_name || 'Not selected'}
+                  </div>
+                </div>
+
+                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                   <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {iocTags.length ? iocTags.map((tag) => (
@@ -11923,6 +12359,63 @@ function IOCDetailsPage() {
           </div>
         </ModalOverlay>
       ) : null}
+
+      {showThreatClassModal ? (
+        <ModalOverlay onClose={() => !threatClassSaving && setShowThreatClassModal(false)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat classification</h3>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <span style={ui.label}>Threat classification</span>
+              <select
+                value={threatClassDraft}
+                onChange={(e) => setThreatClassDraft(e.target.value)}
+                disabled={threatClassSaving}
+                style={ui.input}
+              >
+                {threatClassOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" style={ui.btn} onClick={() => setShowThreatClassModal(false)} disabled={threatClassSaving}>Cancel</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => submitThreatClassification().catch(() => {})} disabled={threatClassSaving}>
+                {threatClassSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {showThreatActorModal ? (
+        <ModalOverlay onClose={() => !threatActorSaving && setShowThreatActorModal(false)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat actor</h3>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <span style={ui.label}>Threat actor</span>
+              <select
+                value={threatActorDraft}
+                onChange={(e) => setThreatActorDraft(e.target.value)}
+                disabled={threatActorSaving}
+                style={ui.input}
+              >
+                <option value="">Not selected</option>
+                {threatActors.map((actor) => (
+                  <option key={actor.id} value={actor.id}>{actor.name}</option>
+                ))}
+              </select>
+            </div>
+            {threatActorError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatActorError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" style={ui.btn} onClick={() => setShowThreatActorModal(false)} disabled={threatActorSaving}>Cancel</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => submitThreatActor().catch(() => {})} disabled={threatActorSaving}>
+                {threatActorSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
     </AppShell>
   );
 }
@@ -11930,6 +12423,9 @@ function IOCDetailsPage() {
 function IOCAddPage() {
   const navigate = useNavigate();
   const { canWrite } = useSession();
+  const { options: threatClassOptions } = useThreatClassifications();
+  const [threatActors, setThreatActors] = useState([]);
+  const [threatActorsLoading, setThreatActorsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [recentRows, setRecentRows] = useState([]);
@@ -11941,7 +12437,8 @@ function IOCAddPage() {
   const [sourceId, setSourceId] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [category, setCategory] = useState('');
-  const [primaryThreatClass, setPrimaryThreatClass] = useState('');
+  const [primaryThreatClass, setPrimaryThreatClass] = useState('unknown');
+  const [threatActorId, setThreatActorId] = useState('');
   const [note, setNote] = useState('');
   const [expirationPolicy, setExpirationPolicy] = useState('never');
   const [expireDays, setExpireDays] = useState('30');
@@ -11970,11 +12467,28 @@ function IOCAddPage() {
 
   useEffect(() => { loadSources().catch(() => {}); }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setThreatActorsLoading(true);
+      try {
+        const { data } = await api.get('/admin/threat-actors', { params: { include_inactive: false } });
+        if (active) setThreatActors(Array.isArray(data?.threat_actors) ? data.threat_actors : []);
+      } catch {
+        if (active) setThreatActors([]);
+      } finally {
+        if (active) setThreatActorsLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   function applySourceDefaults(nextSourceId) {
     const src = sources.find((s) => String(s.id) === String(nextSourceId));
     if (!src) return;
     if (src.default_confidence) setConfidenceValue(src.default_confidence);
     if (src.default_threat_classification) setPrimaryThreatClass(src.default_threat_classification);
+    else setPrimaryThreatClass('unknown');
     const pol = src.default_expire_policy || 'never';
     setExpirationPolicy(pol);
     if (pol === 'expire_after_days' && src.default_expire_days) {
@@ -11994,7 +12508,8 @@ function IOCAddPage() {
     setSourceId('');
     setSourceUrl('');
     setCategory('');
-    setPrimaryThreatClass('');
+    setPrimaryThreatClass('unknown');
+    setThreatActorId('');
     setNote('');
     setExpirationPolicy('never');
     setExpireDays('30');
@@ -12140,10 +12655,14 @@ function IOCAddPage() {
       source_url: sourceUrl.trim() || undefined,
       confidence: confidenceValue,
       category: category.trim() || undefined,
-      primary_threat_classification: primaryThreatClass || undefined,
+      threat_classification: primaryThreatClass || 'unknown',
+      primary_threat_classification: primaryThreatClass || 'unknown',
       note: note.trim() || undefined,
       expiration_policy: expirationPolicy
     };
+    if (threatActorId) {
+      payload.threat_actor_id = threatActorId;
+    }
     if (expirationPolicy === 'expire_after_days') {
       payload.expire_days = Number(expireDays);
     }
@@ -12209,9 +12728,9 @@ function IOCAddPage() {
               {message.text}
             </div>
               )}
-	          {!primaryThreatClass ? (
+          {primaryThreatClass === 'unknown' ? (
 	            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fde68a', fontSize: 13 }}>
-	              No threat classification selected. AI insight quality may be lower.
+	              Threat classification is Unknown. AI insight quality may be lower.
 	            </div>
 	          ) : null}
 
@@ -12289,7 +12808,16 @@ function IOCAddPage() {
 	            <div>
 	              <label htmlFor="primary-threat-class" style={fieldLabelStyle}>Primary Threat Classification</label>
 	              <select id="primary-threat-class" value={primaryThreatClass} onChange={(e) => setPrimaryThreatClass(e.target.value)} disabled={!canWrite} style={inputStyle}>
-	                {PRIMARY_THREAT_CLASS_OPTIONS.map((o) => <option key={o.value || 'none'} value={o.value}>{o.label}</option>)}
+	                {threatClassOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+	              </select>
+	            </div>
+	            <div>
+	              <label htmlFor="threat-actor-id" style={fieldLabelStyle}>Threat Actor (optional)</label>
+	              <select id="threat-actor-id" value={threatActorId} onChange={(e) => setThreatActorId(e.target.value)} disabled={!canWrite || threatActorsLoading} style={inputStyle}>
+	                <option value="">{threatActorsLoading ? 'Loading threat actors…' : 'Not selected'}</option>
+	                {threatActors.map((actor) => (
+	                  <option key={actor.id} value={actor.id}>{actor.name}</option>
+	                ))}
 	              </select>
 	            </div>
 
@@ -12529,6 +13057,7 @@ function App() {
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
           <Route path="/administration/audit-logs" element={<Protected><AuditLogsPage /></Protected>} />
           <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />
+          <Route path="/administration/threat-actors" element={<Protected><ThreatActorManagerPage /></Protected>} />
           <Route path="/administration/ioc-sources" element={<Protected><IocSourcesPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />

@@ -29,6 +29,8 @@ import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
+import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
+import { AUDIT_ACTION, AUDIT_ENTITY } from './lib/auditConstants.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
 import {
@@ -65,6 +67,9 @@ import {
 } from './lib/schemaCapabilities.js';
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { registerIocSourceRoutes } from './routes/iocSources.js';
+import { registerThreatActorRoutes } from './routes/threatActors.js';
+import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem } from './routes/iocThreatMetadata.js';
+import { threatClassificationLabel, normalizeThreatClassification } from './lib/threatClassification.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
@@ -1895,6 +1900,7 @@ async function buildIocAiContextPack(context, eventRows = []) {
       source_count: null,
       tags: [],
       primary_threat_classification: null,
+      threat_classification: 'unknown',
       first_seen: context?.first_seen || null,
       last_seen: context?.last_seen || null,
       expires_at: context?.expires_at || null,
@@ -1937,12 +1943,14 @@ async function buildIocAiContextPack(context, eventRows = []) {
   try {
     const itemQ = await pool.query(
       `SELECT i.id, i.public_id, i.observable, i.observable_type, i.status, i.confidence, i.source_name,
-              i.source_url, i.category, i.primary_threat_classification, i.first_seen_at, i.last_seen_at,
+              i.source_url, i.category, i.threat_classification, i.threat_actor_id, i.first_seen_at, i.last_seen_at,
               i.expires_at, i.confidence_source, i.confidence_source_name,
               s.name AS managed_source_name, s.default_confidence, s.default_threat_classification,
+              ta.name AS threat_actor_name,
               COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags
        FROM ioc_items i
        LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+       LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
        LEFT JOIN LATERAL (
          SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS tags
          FROM ioc_tags it
@@ -1967,7 +1975,14 @@ async function buildIocAiContextPack(context, eventRows = []) {
         source_count: 1,
         tags: Array.isArray(item.tags) ? item.tags : [],
         category: item.category || null,
-        primary_threat_classification: item.primary_threat_classification || item.default_threat_classification || item.category || null,
+        threat_classification: normalizeThreatClassification(
+          item.threat_classification || item.default_threat_classification || 'unknown'
+        ),
+        primary_threat_classification: normalizeThreatClassification(
+          item.threat_classification || item.default_threat_classification || 'unknown'
+        ),
+        threat_actor_id: item.threat_actor_id || null,
+        threat_actor_name: item.threat_actor_name || null,
         first_seen: item.first_seen_at || out.ioc_metadata.first_seen,
         last_seen: item.last_seen_at || out.ioc_metadata.last_seen,
         expires_at: item.expires_at || null
@@ -4895,6 +4910,12 @@ registerIocConfidenceRoutes(app, pool, auditLogService, {
 });
 registerRouteModule('ioc_confidence');
 registerIocSourceRoutes(app, pool, auditLogService);
+registerThreatActorRoutes(app, pool, auditLogService);
+registerIocThreatMetadataRoutes(app, pool, auditLogService, {
+  invalidateDetailsCache: invalidateIocDetailsCache
+});
+registerRouteModule('threat_actors');
+registerRouteModule('ioc_threat_metadata');
 registerRouteModule('ioc_sources');
 registerRouteModule('tags_inline');
 
@@ -4980,16 +5001,27 @@ app.post('/api/admin/tags', async (req, res) => {
   if (!name) return res.status(400).json({ message: 'name is required' });
   const slug = String(req.body?.slug || name).trim().toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
   const category = String(req.body?.category || 'custom').trim().toLowerCase();
-  const allowed = new Set(['threat','actor','technique','context','custom']);
-  const safeCategory = allowed.has(category) ? category : 'custom';
+  if (!isValidCategory(category)) {
+    return res.status(400).json({ message: `category must be one of: behavior, campaign, theme, targeting, source-context, review-state, vulnerability, custom` });
+  }
+  const legacyType = categoryToLegacyType(category);
   const enabled = req.body?.is_active !== false;
   try {
     const q = await pool.query(
       `INSERT INTO tags (name, slug, type, category, description, color, enabled, updated_at)
        VALUES ($1, $2, $3::tag_type, $4, $5, $6, $7, NOW())
        RETURNING id, name, slug, description, color, category, type, enabled, created_at, updated_at`,
-      [name.toLowerCase(), slug, safeCategory === 'custom' ? 'context' : safeCategory, safeCategory, req.body?.description || null, req.body?.color || null, enabled]
+      [name.toLowerCase(), slug, legacyType, category, req.body?.description || null, req.body?.color || null, enabled]
     );
+    const tag = q.rows[0];
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.TAG_CREATED,
+      entityType: AUDIT_ENTITY.TAG,
+      entityId: String(tag.id),
+      entityDisplay: tag.name,
+      after: { name: tag.name, category: tag.category, is_active: Boolean(tag.enabled) }
+    });
     return res.status(201).json({ tag: {
       id: q.rows[0].id, name: q.rows[0].name, slug: q.rows[0].slug, description: q.rows[0].description, color: q.rows[0].color,
       category: q.rows[0].category || q.rows[0].type || 'custom', is_active: Boolean(q.rows[0].enabled), created_at: q.rows[0].created_at, updated_at: q.rows[0].updated_at
@@ -5007,16 +5039,39 @@ app.put('/api/admin/tags/:id', async (req, res) => {
   const fields = [];
   const params = [id];
   if (req.body?.name != null) { params.push(String(req.body.name).trim().toLowerCase()); fields.push(`name = $${params.length}`); }
-  if (req.body?.category != null) { const c = String(req.body.category).trim().toLowerCase(); const t = c === 'custom' ? 'context' : c; params.push(c); fields.push(`category = $${params.length}`); params.push(t); fields.push(`type = $${params.length}::tag_type`); }
+  if (req.body?.category != null) {
+    const c = String(req.body.category).trim().toLowerCase();
+    if (!isValidCategory(c)) {
+      return res.status(400).json({ message: 'Invalid tag category' });
+    }
+    params.push(c);
+    fields.push(`category = $${params.length}`);
+    params.push(categoryToLegacyType(c));
+    fields.push(`type = $${params.length}::tag_type`);
+  }
   if (req.body?.description != null) { params.push(String(req.body.description).trim() || null); fields.push(`description = $${params.length}`); }
   if (req.body?.color != null) { params.push(String(req.body.color).trim() || null); fields.push(`color = $${params.length}`); }
   if (req.body?.is_active != null) { params.push(Boolean(req.body.is_active)); fields.push(`enabled = $${params.length}`); }
   if (!fields.length) return res.status(400).json({ message: 'No fields to update' });
   fields.push('updated_at = NOW()');
   try {
+    const prevQ = await pool.query('SELECT * FROM tags WHERE id = $1', [id]);
+    const prev = prevQ.rows[0];
+    if (!prev) return res.status(404).json({ message: 'Tag not found' });
     const q = await pool.query(`UPDATE tags SET ${fields.join(', ')} WHERE id = $1 RETURNING id,name,slug,description,color,category,type,enabled,created_at,updated_at`, params);
-    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
     const r = q.rows[0];
+    const action = prev.enabled !== false && r.enabled === false
+      ? AUDIT_ACTION.TAG_DISABLED
+      : (prev.enabled === false && r.enabled !== false ? AUDIT_ACTION.TAG_ENABLED : AUDIT_ACTION.TAG_UPDATED);
+    await auditLogService.auditSuccess({
+      req,
+      action,
+      entityType: AUDIT_ENTITY.TAG,
+      entityId: String(r.id),
+      entityDisplay: r.name,
+      before: { name: prev.name, category: prev.category, is_active: Boolean(prev.enabled) },
+      after: { name: r.name, category: r.category, is_active: Boolean(r.enabled) }
+    });
     return res.json({ tag: { id:r.id,name:r.name,slug:r.slug,description:r.description,color:r.color,category:r.category||r.type||'custom',is_active:Boolean(r.enabled),created_at:r.created_at,updated_at:r.updated_at } });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
@@ -5028,8 +5083,19 @@ app.delete('/api/admin/tags/:id', async (req, res) => {
   const id = parsePositiveInt(req.params?.id);
   if (!id) return res.status(400).json({ message: 'Invalid id' });
   try {
-    const q = await pool.query('UPDATE tags SET enabled = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id', [id]);
-    if (!q.rowCount) return res.status(404).json({ message: 'Tag not found' });
+    const prevQ = await pool.query('SELECT * FROM tags WHERE id = $1', [id]);
+    const prev = prevQ.rows[0];
+    if (!prev) return res.status(404).json({ message: 'Tag not found' });
+    const q = await pool.query('UPDATE tags SET enabled = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id, name, enabled', [id]);
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.TAG_DISABLED,
+      entityType: AUDIT_ENTITY.TAG,
+      entityId: String(id),
+      entityDisplay: prev.name,
+      before: { is_active: Boolean(prev.enabled) },
+      after: { is_active: false }
+    });
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to disable tag', detail: err.message });
@@ -5440,9 +5506,10 @@ async function handleIocList(req, res) {
           as_name: null
         }));
         const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+        const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
         const finalItems = pageItems.map((it) => {
           const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-          return { ...it, ...c };
+          return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
         });
         const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: 1 } };
         if (t) {
@@ -5533,9 +5600,10 @@ async function handleIocList(req, res) {
         t.beforeJsonSerialize = Date.now();
       }
       const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+      const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
       const finalItems = pageItems.map((it) => {
         const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-        return { ...it, ...c };
+        return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
       });
       const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
       if (t) {
@@ -5628,9 +5696,10 @@ async function handleIocList(req, res) {
         }));
       })();
       const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+      const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
       const finalItems = pageItems.map((it) => {
         const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-        return { ...it, ...c };
+        return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
       });
       const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: finalItems.length ? 1 : 0 } };
       if (t) {
@@ -5658,22 +5727,22 @@ async function handleIocList(req, res) {
       ? params[prefixedHashSearch.typeIdx - 1]
       : null;
     const sourceSql = prefixedHashSearch && hashTypeLiteral
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at
          FROM ioc_items
          WHERE (
            (observable_type = '${hashTypeLiteral}' AND LOWER(observable) = $1)
            OR (${prefixedHashSearch.noteExpr} = $1)
          )`
       : prefixedHashSearch
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at
          FROM ioc_items
          WHERE (
            (observable_type = $${prefixedHashSearch.typeIdx} AND LOWER(observable) = $${prefixedHashSearch.exactIdx})
            OR (${prefixedHashSearch.noteExpr} = $${prefixedHashSearch.exactIdx})
          )`
       : fullScan
-        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at FROM ioc_items${recentClause}`
-        : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at FROM ioc_items${recentClause}`
+        : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at
            FROM ioc_items
            ORDER BY created_at DESC
            LIMIT 2000`;
@@ -5695,7 +5764,9 @@ async function handleIocList(req, res) {
           COUNT(*)::int AS source_count,
           ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
           ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
-          ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set
+          ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set,
+          (ARRAY_AGG(threat_classification ORDER BY id ASC))[1] AS threat_classification,
+          (ARRAY_AGG(threat_actor_id ORDER BY id ASC))[1] AS threat_actor_id
         FROM filtered
         GROUP BY observable, observable_type
       )
@@ -5714,7 +5785,7 @@ async function handleIocList(req, res) {
       ? `
       ${base}
       SELECT g.id, g.public_id, g.observable, g.observable_type, g.observable AS ip, g.first_seen_at, g.last_seen_at, g.source_count,
-             g.source_names, g.confidence_set, g.category_set,
+             g.source_names, g.confidence_set, g.category_set, g.threat_classification, g.threat_actor_id,
              NULL::bigint AS asn, NULL::text AS country_code, NULL::text AS as_name,
              COUNT(*) OVER()::int AS total
       FROM grouped g
@@ -5732,7 +5803,8 @@ async function handleIocList(req, res) {
         WHERE ${geoWhere}
       )
       SELECT id, public_id, observable, observable_type, ip, first_seen_at, last_seen_at, source_count,
-             source_names, confidence_set, category_set, asn, country_code, as_name, total
+             source_names, confidence_set, category_set, threat_classification, threat_actor_id,
+             asn, country_code, as_name, total
       FROM with_geo
       ORDER BY last_seen_at DESC
       LIMIT $${numBase + 3}
@@ -5767,9 +5839,10 @@ async function handleIocList(req, res) {
     if (t) t.beforeResultMapping = Date.now();
     const itemsRaw = listRes.rows.map(({ total: _drop, ...row }) => row);
     const confMap = await buildDisplayConfidenceForItems(pool, itemsRaw, { includeInactiveMemberships: true });
+    const threatMetaMap = await enrichItemsWithThreatMetadata(pool, itemsRaw);
     const items = itemsRaw.map((it) => {
       const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-      return { ...it, ...c };
+      return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
     });
     if (t) t.afterResultMapping = Date.now();
     if (t) t.beforeJsonSerialize = Date.now();
@@ -6064,9 +6137,10 @@ app.get('/api/ioc/hot', async (req, res) => {
     }
 
     const confMapHot = await buildDisplayConfidenceForItems(pool, items, { includeInactiveMemberships: true });
+    const threatMetaMapHot = await enrichItemsWithThreatMetadata(pool, items);
     items = items.map((it) => {
       const c = confMapHot.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-      return { ...it, ...c };
+      return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMapHot);
     });
 
     const statsQ = `
@@ -6578,6 +6652,9 @@ app.get('/api/ioc/details', async (req, res) => {
         i.expired_at,
         i.expiration_reason,
         i.reactivated_by_match_at,
+        i.threat_classification,
+        i.threat_actor_id,
+        ta.name AS threat_actor_name,
         i.manual_status_override,
         i.manual_status,
         ${confidenceSelect}
@@ -6592,6 +6669,7 @@ app.get('/api/ioc/details', async (req, res) => {
         ON i.observable = s.observable
        AND (s.observable_type IS NULL OR i.observable_type = s.observable_type)
       ${confidenceJoin}
+      LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
       ORDER BY i.created_at DESC
       LIMIT 500
     `;
@@ -6763,6 +6841,7 @@ app.get('/api/ioc/details', async (req, res) => {
       expired_at: lifecycleRow.expired_at || null,
       expiration_reason: lifecycleRow.expiration_reason || null,
       reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
+      ...buildThreatMetadataFields(lifecycleRow),
       manual_status_override: Boolean(lifecycleRow.manual_status_override),
       manual_status: lifecycleRow.manual_status || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,

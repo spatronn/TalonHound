@@ -196,7 +196,7 @@ export async function buildEnvironmentInsightSummary({
             ev.confidence,
             i.public_id AS ioc_public_id,
             COALESCE(NULLIF(i.source_name, ''), 'unknown') AS ioc_source_name,
-            COALESCE(NULLIF(i.primary_threat_classification, ''), 'unknown') AS primary_threat_classification,
+            COALESCE(NULLIF(i.threat_classification, ''), 'unknown') AS threat_classification,
             COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags
      FROM ioc_activity a
      LEFT JOIN LATERAL (
@@ -205,7 +205,7 @@ export async function buildEnvironmentInsightSummary({
        WHERE m.activity_id = a.id
      ) ev ON TRUE
      LEFT JOIN LATERAL (
-       SELECT i2.id, i2.public_id, i2.source_name, i2.primary_threat_classification
+       SELECT i2.id, i2.public_id, i2.source_name, i2.threat_classification
        FROM ioc_items i2
        WHERE lower(i2.observable) = lower(a.ioc_value)
          AND lower(i2.observable_type) = lower(a.ioc_type)
@@ -234,7 +234,7 @@ export async function buildEnvironmentInsightSummary({
       public_id: row.ioc_public_id || null,
       ioc_type: row.ioc_type,
       risk_score: Number(row.risk_score || 0),
-      threat_class: row.primary_threat_classification || 'unknown',
+      threat_class: row.threat_classification || 'unknown',
       tags: asTextArray(row.tags, 6),
       source: row.ioc_source_name || null,
       observed_hosts_count: Number(row.asset_count || 0),

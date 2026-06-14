@@ -12,15 +12,11 @@ export const MANUAL_EXPIRE_POLICIES = Object.freeze([
   'custom_date'
 ]);
 
-export const PRIMARY_THREAT_CLASSIFICATIONS = Object.freeze([
-  'phishing',
-  'malware',
-  'c2',
-  'scanner',
-  'suspicious_infra',
-  'test',
-  'unknown'
-]);
+import { listThreatClassifications, validateThreatClassification } from './threatClassification.js';
+
+export const PRIMARY_THREAT_CLASSIFICATIONS = Object.freeze(
+  listThreatClassifications().map((x) => x.value)
+);
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;
 
@@ -68,12 +64,8 @@ export function validateDefaultExpirePolicy(value) {
 }
 
 export function validatePrimaryThreatClassification(value) {
-  if (value == null || value === '') return { ok: true, value: null };
-  const normalized = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (!PRIMARY_THREAT_CLASSIFICATIONS.includes(normalized)) {
-    return { ok: false, error: `primary threat classification must be one of: ${PRIMARY_THREAT_CLASSIFICATIONS.join(', ')}` };
-  }
-  return { ok: true, value: normalized };
+  if (value == null || value === '') return { ok: true, value: 'unknown' };
+  return validateThreatClassification(value);
 }
 
 export function validateExpireDays(value, required = false) {

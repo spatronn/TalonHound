@@ -1,5 +1,6 @@
 import { recomputeIocGlobalStatus } from './iocExpiration.js';
 import { parseManualExpirationInput, validatePrimaryThreatClassification } from './iocSourceValidation.js';
+import { threatClassificationResponseFields } from './threatClassification.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
@@ -58,7 +59,8 @@ export function serializeManualIocResponse(row, source, expiration) {
     } : null,
     confidence: row.confidence,
     category: row.category,
-    primary_threat_classification: row.primary_threat_classification || null,
+    ...threatClassificationResponseFields(row.threat_classification),
+    threat_actor_id: row.threat_actor_id || null,
     note: row.note,
     status: row.status || 'active',
     expires_at: row.expires_at,
@@ -118,8 +120,25 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const confidence = normalizeConfidence(body?.confidence ?? sourceRow.default_confidence);
-  const threatClassCheck = validatePrimaryThreatClassification(body?.primary_threat_classification ?? sourceRow.default_threat_classification);
+  const threatClassCheck = validatePrimaryThreatClassification(
+    body?.threat_classification ?? body?.primary_threat_classification ?? sourceRow.default_threat_classification
+  );
   if (!threatClassCheck.ok) return { status: 400, body: { message: threatClassCheck.error } };
+
+  let threatActorId = null;
+  if (body?.threat_actor_id != null && body?.threat_actor_id !== '') {
+    threatActorId = String(body.threat_actor_id).trim();
+    if (!/^[0-9a-f-]{36}$/i.test(threatActorId)) {
+      return { status: 400, body: { message: 'threat_actor_id must be a valid UUID' } };
+    }
+    const actorQ = await pool.query(
+      `SELECT id FROM threat_actors WHERE id = $1::uuid AND active = TRUE`,
+      [threatActorId]
+    );
+    if (!actorQ.rows.length) {
+      return { status: 400, body: { message: 'Invalid or inactive threat actor' } };
+    }
+  }
   const confidenceProvenance = resolveManualIocConfidenceProvenance(body, sourceRow, confidence);
   const sourceName = String(sourceRow.name);
   const sourceUrl = body?.source_url ? String(body.source_url).trim() || null : null;
@@ -131,12 +150,12 @@ export async function createManualIoc(pool, body, opts = {}) {
 
   const insertQ = `
     INSERT INTO ioc_items (
-      observable, observable_type, source_name, source_url, confidence, category, primary_threat_classification, note,
+      observable, observable_type, source_name, source_url, confidence, category, threat_classification, threat_actor_id, note,
       ioc_source_id, confidence_source, confidence_source_name,
       manual_status_override, manual_status, manual_expires_at,
       manual_override_reason, manual_override_by_user_id, manual_override_at
     )
-    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, 'active', $12, $13, $14::uuid, NOW()
+    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE, 'active', $13, $14, $15::uuid, NOW()
     WHERE NOT EXISTS (
       SELECT 1 FROM ioc_items
       WHERE observable = $1
@@ -145,7 +164,8 @@ export async function createManualIoc(pool, body, opts = {}) {
         AND confidence = $5
         AND COALESCE(category, '') = COALESCE($6, '')
         AND COALESCE(source_url, '') = COALESCE($4, '')
-        AND COALESCE(primary_threat_classification, '') = COALESCE($7, '')
+        AND COALESCE(threat_classification, 'unknown') = COALESCE($7, 'unknown')
+        AND COALESCE(threat_actor_id::text, '') = COALESCE($8::text, '')
     )
     RETURNING *
   `;
@@ -158,6 +178,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     confidence,
     category,
     threatClassCheck.value,
+    threatActorId,
     note,
     sourceId,
     confidenceProvenance.confidence_source,
@@ -211,7 +232,7 @@ export async function createManualIoc(pool, body, opts = {}) {
       severity: AUDIT_SEVERITY.INFO,
       after: pickSafeFields(response, [
         'id', 'observable', 'observable_type', 'source_name', 'ioc_source_id',
-        'primary_threat_classification',
+        'threat_classification', 'threat_actor_id',
         'status', 'expires_at', 'manual_expires_at', 'expiration_policy'
       ]),
       metadata: {

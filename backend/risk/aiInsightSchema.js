@@ -107,7 +107,8 @@ export function normalizePrimaryThreatClass(value) {
 
 export function deriveThreatClassFromContext(context = {}) {
   const direct = normalizeEnum(
-    context?.ioc_metadata?.primary_threat_classification
+    context?.ioc_metadata?.threat_classification
+      || context?.ioc_metadata?.primary_threat_classification
       || context?.primary_threat_classification
       || context?.playbook_coverage?.ti_classification,
     THREAT_CLASSES,
