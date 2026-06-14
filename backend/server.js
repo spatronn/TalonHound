@@ -70,6 +70,7 @@ import { registerThreatActorRoutes } from './routes/threatActors.js';
 import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
 import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem } from './routes/iocThreatMetadata.js';
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
+import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
@@ -5300,6 +5301,9 @@ async function handleIocList(req, res) {
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
 
   const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
+  const classificationFilter = parseThreatClassificationFilterParam(
+    req.query.threat_classification ?? req.query.threat_classifications
+  );
   const allowedSizes = [5, 10, 25, 100];
   const size = Number(page_size);
   const currentPage = Math.max(Number(page) || 1, 1);
@@ -5319,6 +5323,16 @@ async function handleIocList(req, res) {
   if (confidence) {
     params.push(confidence);
     filters.push(`confidence = $${params.length}`);
+  }
+
+  if (classificationFilter.length) {
+    params.push(classificationFilter);
+    filters.push(`EXISTS (
+      SELECT 1 FROM ioc_threat_classifications itc
+      WHERE itc.ioc_id = ioc_items.id
+        AND itc.ioc_observable_type = ioc_items.observable_type
+        AND itc.classification_slug = ANY($${params.length}::text[])
+    )`);
   }
 
   if (q) {
@@ -5983,6 +5997,9 @@ app.get('/api/ioc/hot', async (req, res) => {
 
   const typeRaw = String(req.query.type || '').trim().toLowerCase();
   const qRaw = String(req.query.q || '').trim();
+  const classificationFilterHot = parseThreatClassificationFilterParam(
+    req.query.threat_classification ?? req.query.threat_classifications
+  );
   const params = [];
   let extraWhere = '';
 
@@ -6014,6 +6031,16 @@ app.get('/api/ioc/hot', async (req, res) => {
   if (qRaw) {
     params.push(`%${qRaw}%`);
     extraWhere += ` AND (observable ILIKE $${params.length} OR public_id::text ILIKE $${params.length}) `;
+  }
+
+  if (classificationFilterHot.length) {
+    params.push(classificationFilterHot);
+    extraWhere += ` AND EXISTS (
+      SELECT 1 FROM ioc_threat_classifications itc
+      WHERE itc.ioc_id = ioc_items.id
+        AND itc.ioc_observable_type = ioc_items.observable_type
+        AND itc.classification_slug = ANY($${params.length}::text[])
+    ) `;
   }
 
   const suppressedParsed = parseHotIocSuppressedParam(req.query.suppressed);
@@ -6848,7 +6875,7 @@ app.get('/api/ioc/details', async (req, res) => {
       expired_at: lifecycleRow.expired_at || null,
       expiration_reason: lifecycleRow.expiration_reason || null,
       reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
-      ...buildThreatMetadataFields(lifecycleRow),
+      ...(await buildThreatMetadataFields(pool, lifecycleRow)),
       manual_status_override: Boolean(lifecycleRow.manual_status_override),
       manual_status: lifecycleRow.manual_status || null,
       first_seen_at: rows[rows.length - 1]?.created_at || null,

@@ -1,6 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { csvEscape, parseIocExportQuery } from '../lib/iocExportHelpers.js';
 import { buildThreatClassificationResponseFields } from '../lib/threatClassification.js';
+import { loadIocThreatClassificationDetails } from '../lib/iocThreatClassifications.js';
 
 /**
  * @param {import('express').Express} app
@@ -94,6 +95,7 @@ export function registerIocExportRoutes(app, pool) {
 
       const rowsQ = await pool.query(
         `SELECT
+           i.id,
            i.observable AS ioc_value,
            i.observable_type AS ioc_type,
            i.confidence,
@@ -123,19 +125,33 @@ export function registerIocExportRoutes(app, pool) {
         params
       );
 
-      const items = rowsQ.rows.map((row) => ({
-        ioc_value: row.ioc_value,
-        ioc_type: row.ioc_type,
-        confidence: row.confidence,
-        status: row.status,
-        source: row.source,
-        ...buildThreatClassificationResponseFields(row),
-        threat_actor_name: row.threat_actor_name || null,
-        first_seen: row.first_seen_at,
-        last_seen: row.last_seen_at,
-        expires_at: row.expires_at,
-        tags: row.tags || []
-      }));
+      const detailMap = await loadIocThreatClassificationDetails(
+        pool,
+        rowsQ.rows.map((row) => ({ id: row.id, observable_type: row.ioc_type }))
+      );
+
+      const items = rowsQ.rows.map((row) => {
+        const key = `${Number(row.id)}|${String(row.ioc_type || '')}`;
+        const multi = detailMap.get(key) || buildThreatClassificationResponseFields(row);
+        const labels = (multi.threat_classifications || [])
+          .filter((x) => x.value !== 'unknown')
+          .map((x) => x.label)
+          .join('; ');
+        return {
+          ioc_value: row.ioc_value,
+          ioc_type: row.ioc_type,
+          confidence: row.confidence,
+          status: row.status,
+          source: row.source,
+          ...multi,
+          threat_classifications_export: labels || 'Unknown',
+          threat_actor_name: row.threat_actor_name || null,
+          first_seen: row.first_seen_at,
+          last_seen: row.last_seen_at,
+          expires_at: row.expires_at,
+          tags: row.tags || []
+        };
+      });
 
       const pagination = {
         page,
@@ -148,7 +164,7 @@ export function registerIocExportRoutes(app, pool) {
         return res.json({ items, pagination, filters });
       }
 
-      const header = ['ioc_value', 'ioc_type', 'confidence', 'status', 'source', 'threat_classification', 'threat_classification_label', 'threat_actor_name', 'first_seen', 'last_seen', 'expires_at', 'tags'];
+      const header = ['ioc_value', 'ioc_type', 'confidence', 'status', 'source', 'threat_classification', 'threat_classification_label', 'threat_classifications', 'threat_actor_name', 'first_seen', 'last_seen', 'expires_at', 'tags'];
       const lines = [header.join(',')];
       for (const item of items) {
         lines.push([
@@ -159,6 +175,7 @@ export function registerIocExportRoutes(app, pool) {
           csvEscape(item.source),
           csvEscape(item.threat_classification),
           csvEscape(item.threat_classification_label),
+          csvEscape(item.threat_classifications_export),
           csvEscape(item.threat_actor_name),
           csvEscape(item.first_seen),
           csvEscape(item.last_seen),

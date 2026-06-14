@@ -48,7 +48,10 @@ async function findDuplicateSlug(pool, { slug, excludeId = null }) {
 
 async function countIocUsageBySlug(pool, slug) {
   const { rows } = await pool.query(
-    `SELECT COUNT(*)::bigint AS cnt FROM ioc_items WHERE threat_classification = $1`,
+    `SELECT (
+       (SELECT COUNT(*)::bigint FROM ioc_items WHERE threat_classification = $1)
+       + (SELECT COUNT(*)::bigint FROM ioc_threat_classifications WHERE classification_slug = $1)
+     ) AS cnt`,
     [slug]
   );
   return Number(rows[0]?.cnt || 0);

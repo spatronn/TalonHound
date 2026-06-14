@@ -13,10 +13,15 @@ export const MANUAL_EXPIRE_POLICIES = Object.freeze([
 ]);
 
 import { validateThreatClassificationSlug } from './threatClassification.js';
+import { validateIocThreatClassificationSlugs } from './iocThreatClassifications.js';
 
 export async function validatePrimaryThreatClassification(pool, value) {
   if (value == null || value === '') return { ok: true, value: 'unknown' };
   return validateThreatClassificationSlug(pool, value, { requireActive: true });
+}
+
+export async function validateThreatClassifications(pool, value) {
+  return validateIocThreatClassificationSlugs(pool, value, { requireActive: true });
 }
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;

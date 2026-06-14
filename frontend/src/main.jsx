@@ -638,6 +638,7 @@ const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
 
 const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_classification.updated',
+  'ioc.threat_classifications.updated',
   'ioc.threat_actor.updated',
   'threat_classification.created',
   'threat_classification.updated',
@@ -752,10 +753,22 @@ function formatExpirationAuditReasonLabel(reason) {
 function formatTaxonomyAuditMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') return null;
   const parts = [];
-  const oldClass = auditMetadataValue(metadata, 'old_classification');
-  const newClass = auditMetadataValue(metadata, 'new_classification');
-  if (oldClass != null && newClass != null) {
-    parts.push(`${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}`);
+  const oldClasses = metadata.old_classifications || (metadata.old_classification != null ? [metadata.old_classification] : null);
+  const newClasses = metadata.new_classifications || (metadata.new_classification != null ? [metadata.new_classification] : null);
+  if (Array.isArray(oldClasses) || Array.isArray(newClasses)) {
+    const oldText = Array.isArray(oldClasses) && oldClasses.length
+      ? oldClasses.map((x) => formatThreatClassificationLabel(x)).join(', ')
+      : 'Unknown';
+    const newText = Array.isArray(newClasses) && newClasses.length
+      ? newClasses.map((x) => formatThreatClassificationLabel(x)).join(', ')
+      : 'Unknown';
+    parts.push(`${oldText} → ${newText}`);
+  } else {
+    const oldClass = auditMetadataValue(metadata, 'old_classification');
+    const newClass = auditMetadataValue(metadata, 'new_classification');
+    if (oldClass != null && newClass != null) {
+      parts.push(`${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}`);
+    }
   }
   const oldActor = auditMetadataValue(metadata, 'old_threat_actor');
   const newActor = auditMetadataValue(metadata, 'new_threat_actor');
@@ -816,8 +829,15 @@ function AuditTaxonomySummary({ item }) {
   const newClass = auditSnapshotValue(item, 'new_classification') || metadata.new_classification;
   const oldActor = auditSnapshotValue(item, 'old_threat_actor') || metadata.old_threat_actor;
   const newActor = auditSnapshotValue(item, 'new_threat_actor') || metadata.new_threat_actor;
+  const oldClasses = item?.before_data?.threat_classifications || metadata.old_classifications
+    || (oldClass != null ? [oldClass] : null);
+  const newClasses = item?.after_data?.threat_classifications || metadata.new_classifications
+    || (newClass != null ? [newClass] : null);
+  const classSummary = Array.isArray(oldClasses) || Array.isArray(newClasses)
+    ? `${(Array.isArray(oldClasses) && oldClasses.length ? oldClasses.map((x) => formatThreatClassificationLabel(x)).join(', ') : 'Unknown')} → ${(Array.isArray(newClasses) && newClasses.length ? newClasses.map((x) => formatThreatClassificationLabel(x)).join(', ') : 'Unknown')}`
+    : (oldClass != null && newClass != null ? `${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}` : null);
   const rows = [
-    ['Classification', oldClass != null && newClass != null ? `${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}` : null],
+    ['Classifications', classSummary],
     ['Threat actor', oldActor != null || newActor != null ? `${oldActor || 'Not selected'} → ${newActor || 'Not selected'}` : null],
     ['IOC', auditSnapshotValue(item, 'ioc_value', 'observable')],
     ['Type', auditSnapshotValue(item, 'ioc_observable_type', 'observable_type')]
@@ -7307,6 +7327,140 @@ function useThreatClassifications() {
   return { options, loading, labelFor };
 }
 
+function normalizeSelectedThreatClasses(selected) {
+  const slugs = (Array.isArray(selected) ? selected : [])
+    .map((s) => String(s || '').trim())
+    .filter((s) => s && s !== 'unknown');
+  return [...new Set(slugs)];
+}
+
+function threatClassesFromSummary(summary) {
+  if (Array.isArray(summary?.threat_classifications)) {
+    return summary.threat_classifications
+      .map((x) => x?.value)
+      .filter((v) => v && v !== 'unknown');
+  }
+  const legacy = summary?.threat_classification || summary?.primary_threat_classification;
+  if (legacy && legacy !== 'unknown') return [legacy];
+  return [];
+}
+
+function formatThreatClassificationsText(classifications, { emptyLabel = 'Unknown' } = {}) {
+  const list = Array.isArray(classifications) ? classifications : [];
+  const visible = list.filter((x) => x?.value && x.value !== 'unknown');
+  if (!visible.length) return emptyLabel;
+  return visible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ');
+}
+
+function ThreatClassificationBadges({ classifications, max = 5, emptyLabel = 'Unknown' }) {
+  const list = Array.isArray(classifications) ? classifications : [];
+  const visible = list.filter((x) => x?.value && x.value !== 'unknown');
+  const items = visible.length ? visible : [{ label: emptyLabel, value: 'unknown' }];
+  const shown = items.slice(0, max);
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {shown.map((c) => (
+        <span
+          key={c.value}
+          style={{
+            fontSize: 12,
+            padding: '2px 8px',
+            borderRadius: 999,
+            background: '#1e293b',
+            border: '1px solid #334155',
+            color: '#e2e8f0'
+          }}
+        >
+          {c.label || formatThreatClassificationLabel(c.value)}
+          {c.active === false ? ' (Inactive)' : ''}
+        </span>
+      ))}
+      {items.length > max ? <span style={{ color: '#94a3b8', fontSize: 12 }}>+{items.length - max}</span> : null}
+    </span>
+  );
+}
+
+function ThreatClassificationMultiSelect({
+  value,
+  onChange,
+  options,
+  inactiveOptions = [],
+  disabled = false
+}) {
+  const selected = normalizeSelectedThreatClasses(value);
+  const allOptions = [...options];
+  for (const inactive of inactiveOptions) {
+    if (inactive?.value && !allOptions.some((o) => o.value === inactive.value)) {
+      allOptions.unshift(inactive);
+    }
+  }
+
+  function toggle(slug) {
+    if (disabled) return;
+    if (slug === 'unknown') {
+      onChange([]);
+      return;
+    }
+    const set = new Set(selected);
+    if (set.has(slug)) set.delete(slug);
+    else set.add(slug);
+    onChange([...set]);
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}>
+        {selected.length ? selected.map((slug) => {
+          const label = allOptions.find((o) => o.value === slug)?.label || formatThreatClassificationLabel(slug);
+          return (
+            <span
+              key={slug}
+              style={{
+                fontSize: 12,
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: '#172554',
+                border: '1px solid #334155',
+                color: '#bfdbfe'
+              }}
+            >
+              {label}
+              {!disabled ? (
+                <button
+                  type="button"
+                  onClick={() => toggle(slug)}
+                  style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
+                  aria-label={`Remove ${label}`}
+                >
+                  ×
+                </button>
+              ) : null}
+            </span>
+          );
+        }) : <span style={{ color: '#94a3b8', fontSize: 13 }}>Unknown (no classifications selected)</span>}
+      </div>
+      <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 180, overflowY: 'auto', background: '#0f172a' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13 }}>
+          <input type="checkbox" checked={!selected.length} onChange={() => onChange([])} disabled={disabled} />
+          Unknown
+        </label>
+        {allOptions.filter((o) => o.value !== 'unknown').map((opt) => (
+          <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(opt.value)}
+              onChange={() => toggle(opt.value)}
+              disabled={disabled}
+            />
+            {opt.label}
+            {inactiveOptions.some((x) => x.value === opt.value) ? ' (Inactive)' : ''}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const IOC_SOURCE_MODAL_STYLE = {
   width: 'min(680px, 96vw)',
   maxHeight: '90vh',
@@ -9233,6 +9387,7 @@ function isNewlyActiveHotIoc(firstSeenLog) {
 
 function IOCHotListPage() {
   const navigate = useNavigate();
+  const { options: threatClassOptions } = useThreatClassifications();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_type: [], by_source: [] });
   const [loading, setLoading] = useState(false);
@@ -9244,6 +9399,7 @@ function IOCHotListPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [showSuppressed, setShowSuppressed] = useState(false);
+  const [classificationFilter, setClassificationFilter] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0, total_pages: 1 });
 
   const loadHot = useCallback(async () => {
@@ -9254,6 +9410,7 @@ function IOCHotListPage() {
       if (typeFilter) params.type = typeFilter;
       if (sinceFilter) params.last_seen_since = sinceFilter;
       if (search) params.q = search;
+      if (classificationFilter.length) params.threat_classifications = classificationFilter.join(',');
       const { data } = await api.get('/ioc/hot', { params });
       setItems(data.items || []);
       setSummary(data.summary || { total: 0, by_type: [], by_source: [] });
@@ -9265,7 +9422,7 @@ function IOCHotListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, typeFilter, sinceFilter, search, showSuppressed]);
+  }, [page, pageSize, typeFilter, sinceFilter, search, showSuppressed, classificationFilter]);
 
   useEffect(() => {
     loadHot();
@@ -9408,6 +9565,23 @@ function IOCHotListPage() {
             <span style={{ fontSize: 12, color: '#64748b' }}>Suppressed IOCs are hidden by default.</span>
           </label>
           <label style={{ fontSize: 14, color: '#cbd5e1' }}>
+            Classifications{' '}
+            <select
+              multiple
+              value={classificationFilter}
+              onChange={(e) => {
+                setPage(1);
+                setClassificationFilter([...e.target.selectedOptions].map((o) => o.value));
+              }}
+              style={{ minWidth: 180, minHeight: 72, padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
+              title="Contains filter (OR)"
+            >
+              {threatClassOptions.filter((o) => o.value !== 'unknown').map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
             Page size{' '}
             <select
               value={pageSize}
@@ -9462,6 +9636,7 @@ function IOCHotListPage() {
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
                 <th>IOC</th>
                 <th style={{ width: 110 }}>Type</th>
+                <th style={{ width: 220 }}>Classifications</th>
                 <th style={{ width: 110 }}>Evidence Logs</th>
                 <th style={{ width: 96 }}>Sources</th>
                 <th style={{ width: 200 }}>First Seen</th>
@@ -9502,6 +9677,9 @@ function IOCHotListPage() {
                     </span>
                   </td>
                   <td style={{ textTransform: 'lowercase' }}>{r.observable_type || '-'}</td>
+                  <td title={formatThreatClassificationsText(r.threat_classifications)} style={{ fontSize: 12, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+                    {formatThreatClassificationsText(r.threat_classifications)}
+                  </td>
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number.isFinite(Number(r.evidence_logs)) ? Number(r.evidence_logs) : '-'}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.source_count ?? 0)}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.first_seen_log)}</td>
@@ -9904,6 +10082,7 @@ function IOCSuppressionsPage() {
 
 function IOCListPage() {
   const navigate = useNavigate();
+  const { options: threatClassOptions } = useThreatClassifications();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
   const [pageSize, setPageSize] = useState(5);
@@ -9918,6 +10097,7 @@ function IOCListPage() {
     source: 260,
     confidence: 120,
     category: 120,
+    classifications: 220,
     timestamp: 170
   });
   const [sortState, setSortState] = useState({ key: null, dir: null });
@@ -9934,6 +10114,7 @@ function IOCListPage() {
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
   const [suppressionFilter, setSuppressionFilter] = useState('include');
+  const [classificationFilter, setClassificationFilter] = useState([]);
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -9956,6 +10137,7 @@ function IOCListPage() {
           page: targetPage,
           page_size: targetSize,
           q: search || undefined,
+          threat_classifications: classificationFilter.length ? classificationFilter.join(',') : undefined,
         }
       });
       const items = listRes.data.items || [];
@@ -9968,7 +10150,7 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }, [search]);
+  }, [search, classificationFilter]);
 
   useEffect(() => {
     loadSummary().catch(() => {});
@@ -10251,6 +10433,23 @@ function IOCListPage() {
           </select>
           {suppressionIndexLoading ? <span style={{ fontSize: 12, color: '#64748b' }}>Loading suppression index…</span> : null}
 
+          <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Classifications:</label>
+          <select
+            multiple
+            value={classificationFilter}
+            onChange={(e) => {
+              const next = [...e.target.selectedOptions].map((o) => o.value);
+              setClassificationFilter(next);
+              setPage(1);
+            }}
+            style={{ minWidth: 180, minHeight: 72, padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0' }}
+            title="Contains filter (OR). IOCs matching any selected classification."
+          >
+            {threatClassOptions.filter((o) => o.value !== 'unknown').map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
           Listed Items <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
@@ -10283,6 +10482,7 @@ function IOCListPage() {
             <col style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
             <col style={{ width: columnWidths.category }} />
+            <col style={{ width: columnWidths.classifications }} />
             <col style={{ width: columnWidths.source }} />
             <col style={{ width: columnWidths.confidence }} />
             <col style={{ width: columnWidths.timestamp }} />
@@ -10295,6 +10495,7 @@ function IOCListPage() {
               </th>
               <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th style={{ position: 'relative' }}>Classifications<div onMouseDown={(e) => startResize('classifications', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
@@ -10323,6 +10524,9 @@ function IOCListPage() {
                   ) : null}
                 </td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
+                <td title={formatThreatClassificationsText(r.threat_classifications)} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
+                  {formatThreatClassificationsText(r.threat_classifications)}
+                </td>
                 <td title={(r.source_names && r.source_names[0]) || '-'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   {r.source_count > 1 ? (
                     <button onClick={() => openSourceDetails(r)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
@@ -11526,7 +11730,7 @@ function IOCDetailsPage() {
   const { options: threatClassOptions, labelFor: threatClassLabelFor } = useThreatClassifications();
   const [threatActors, setThreatActors] = useState([]);
   const [showThreatClassModal, setShowThreatClassModal] = useState(false);
-  const [threatClassDraft, setThreatClassDraft] = useState('unknown');
+  const [threatClassDraft, setThreatClassDraft] = useState([]);
   const [threatClassSaving, setThreatClassSaving] = useState(false);
   const [threatClassError, setThreatClassError] = useState('');
   const [showThreatActorModal, setShowThreatActorModal] = useState(false);
@@ -11758,18 +11962,15 @@ function IOCDetailsPage() {
   }
 
   const summary = data.summary;
-  const threatClassEditOptions = useMemo(() => {
-    const currentSlug = summary?.threat_classification || summary?.primary_threat_classification || 'unknown';
-    const opts = [...threatClassOptions];
-    if (currentSlug && !opts.some((o) => o.value === currentSlug)) {
-      opts.unshift({
-        value: currentSlug,
-        label: `${summary?.threat_classification_label || threatClassLabelFor(currentSlug)} (Inactive)`,
-        system_default: false
-      });
-    }
-    return opts;
-  }, [threatClassOptions, summary, threatClassLabelFor]);
+  const threatClassEditInactiveOptions = useMemo(() => {
+    const current = threatClassesFromSummary(summary);
+    return current
+      .filter((slug) => !threatClassOptions.some((o) => o.value === slug))
+      .map((slug) => ({
+        value: slug,
+        label: `${summary?.threat_classifications?.find((x) => x.value === slug)?.label || threatClassLabelFor(slug)} (Inactive)`
+      }));
+  }, [summary, threatClassOptions, threatClassLabelFor]);
   const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
@@ -11816,7 +12017,7 @@ function IOCDetailsPage() {
   }
 
   function openThreatClassEditor() {
-    setThreatClassDraft(summary?.threat_classification || summary?.primary_threat_classification || 'unknown');
+    setThreatClassDraft(threatClassesFromSummary(summary));
     setThreatClassError('');
     setShowThreatClassModal(true);
   }
@@ -11829,16 +12030,17 @@ function IOCDetailsPage() {
     setThreatClassSaving(true);
     setThreatClassError('');
     try {
-      const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-classification`, {
+      const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-classifications`, {
         observable_type: observableType,
-        threat_classification: threatClassDraft
+        classifications: normalizeSelectedThreatClasses(threatClassDraft),
+        threat_classifications: normalizeSelectedThreatClasses(threatClassDraft)
       });
       if (!patchData?.success) {
         setThreatClassError(patchData?.error || 'Request failed');
         return;
       }
       setShowThreatClassModal(false);
-      setActionToast('Threat classification updated');
+      setActionToast('Threat classifications updated');
       await load();
     } catch (err) {
       setThreatClassError(apiErrorMessage(err, 'Failed to update threat classification'));
@@ -12307,7 +12509,7 @@ function IOCDetailsPage() {
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Classification</div>
+                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Classifications</div>
                     {canWrite ? (
                       <button type="button" onClick={openThreatClassEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
                         Edit
@@ -12315,10 +12517,7 @@ function IOCDetailsPage() {
                     ) : null}
                   </div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span>{summary.threat_classification_label || threatClassLabelFor(summary.threat_classification || summary.primary_threat_classification || 'unknown')}</span>
-                    {summary.threat_classification_active === false ? (
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, border: '1px solid #7f1d1d', color: '#fca5a5' }}>Inactive</span>
-                    ) : null}
+                    <ThreatClassificationBadges classifications={summary.threat_classifications} />
                   </div>
                 </div>
 
@@ -12642,21 +12841,15 @@ function IOCDetailsPage() {
 
       {showThreatClassModal ? (
         <ModalOverlay onClose={() => !threatClassSaving && setShowThreatClassModal(false)}>
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat classification</h3>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat classifications</h3>
           <div style={{ display: 'grid', gap: 12 }}>
-            <div>
-              <span style={ui.label}>Threat classification</span>
-              <select
-                value={threatClassDraft}
-                onChange={(e) => setThreatClassDraft(e.target.value)}
-                disabled={threatClassSaving}
-                style={ui.input}
-              >
-                {threatClassEditOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
+            <ThreatClassificationMultiSelect
+              value={threatClassDraft}
+              onChange={setThreatClassDraft}
+              options={threatClassOptions}
+              inactiveOptions={threatClassEditInactiveOptions}
+              disabled={threatClassSaving}
+            />
             {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={ui.btn} onClick={() => setShowThreatClassModal(false)} disabled={threatClassSaving}>Cancel</button>
@@ -12717,7 +12910,7 @@ function IOCAddPage() {
   const [sourceId, setSourceId] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [category, setCategory] = useState('');
-  const [primaryThreatClass, setPrimaryThreatClass] = useState('unknown');
+  const [primaryThreatClass, setPrimaryThreatClass] = useState([]);
   const [threatActorId, setThreatActorId] = useState('');
   const [note, setNote] = useState('');
   const [expirationPolicy, setExpirationPolicy] = useState('never');
@@ -12767,8 +12960,9 @@ function IOCAddPage() {
     const src = sources.find((s) => String(s.id) === String(nextSourceId));
     if (!src) return;
     if (src.default_confidence) setConfidenceValue(src.default_confidence);
-    if (src.default_threat_classification) setPrimaryThreatClass(src.default_threat_classification);
-    else setPrimaryThreatClass('unknown');
+    if (src.default_threat_classification && src.default_threat_classification !== 'unknown') {
+      setPrimaryThreatClass([src.default_threat_classification]);
+    } else setPrimaryThreatClass([]);
     const pol = src.default_expire_policy || 'never';
     setExpirationPolicy(pol);
     if (pol === 'expire_after_days' && src.default_expire_days) {
@@ -12788,7 +12982,7 @@ function IOCAddPage() {
     setSourceId('');
     setSourceUrl('');
     setCategory('');
-    setPrimaryThreatClass('unknown');
+    setPrimaryThreatClass([]);
     setThreatActorId('');
     setNote('');
     setExpirationPolicy('never');
@@ -12929,14 +13123,16 @@ function IOCAddPage() {
     }
     setSubmitting(true);
 
+    const selectedClasses = normalizeSelectedThreatClasses(primaryThreatClass);
     const payload = {
       ip: iocValue.trim(),
       source_id: Number(sourceId),
       source_url: sourceUrl.trim() || undefined,
       confidence: confidenceValue,
       category: category.trim() || undefined,
-      threat_classification: primaryThreatClass || 'unknown',
-      primary_threat_classification: primaryThreatClass || 'unknown',
+      threat_classifications: selectedClasses,
+      threat_classification: selectedClasses[0] || 'unknown',
+      primary_threat_classification: selectedClasses[0] || 'unknown',
       note: note.trim() || undefined,
       expiration_policy: expirationPolicy
     };
@@ -13008,9 +13204,9 @@ function IOCAddPage() {
               {message.text}
             </div>
               )}
-          {primaryThreatClass === 'unknown' ? (
+          {!normalizeSelectedThreatClasses(primaryThreatClass).length ? (
 	            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fde68a', fontSize: 13 }}>
-	              Threat classification is Unknown. AI insight quality may be lower.
+	              Threat classifications are Unknown. AI insight quality may be lower.
 	            </div>
 	          ) : null}
 
@@ -13086,10 +13282,13 @@ function IOCAddPage() {
 	              </div>
 	            </div>
 	            <div>
-	              <label htmlFor="primary-threat-class" style={fieldLabelStyle}>Primary Threat Classification</label>
-	              <select id="primary-threat-class" value={primaryThreatClass} onChange={(e) => setPrimaryThreatClass(e.target.value)} disabled={!canWrite} style={inputStyle}>
-	                {threatClassOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-	              </select>
+	              <label style={fieldLabelStyle}>Threat Classifications</label>
+	              <ThreatClassificationMultiSelect
+	                value={primaryThreatClass}
+	                onChange={setPrimaryThreatClass}
+	                options={threatClassOptions}
+	                disabled={!canWrite}
+	              />
 	            </div>
 	            <div>
 	              <label htmlFor="threat-actor-id" style={fieldLabelStyle}>Threat Actor (optional)</label>

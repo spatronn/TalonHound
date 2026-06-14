@@ -1,20 +1,23 @@
 import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import {
-  buildThreatClassificationResponseFields,
-  normalizeClassificationSlug,
-  validateThreatClassificationSlug
-} from '../lib/threatClassification.js';
+  buildMultiThreatClassificationResponseFields,
+  diffThreatClassificationSlugs,
+  fetchIocThreatClassificationSlugs,
+  loadIocThreatClassificationDetails,
+  mergeIocThreatMetadataItem,
+  normalizeIocThreatClassificationSlugs,
+  replaceIocThreatClassifications,
+  validateIocThreatClassificationSlugs
+} from '../lib/iocThreatClassifications.js';
+import { normalizeClassificationSlug } from '../lib/threatClassification.js';
 import { resolveThreatActorById } from './threatActors.js';
 
 async function fetchIocRow(pool, iocId, observableType) {
   const { rows } = await pool.query(
     `SELECT i.id, i.public_id, i.observable, i.observable_type, i.threat_classification, i.threat_actor_id,
-            ta.name AS threat_actor_name,
-            tc.name AS threat_classification_label,
-            tc.active AS threat_classification_active
+            ta.name AS threat_actor_name
      FROM ioc_items i
      LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
-     LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
      WHERE i.id = $1 AND i.observable_type = $2`,
     [iocId, observableType]
   );
@@ -23,6 +26,34 @@ async function fetchIocRow(pool, iocId, observableType) {
 
 function actorDisplayName(row) {
   return row?.threat_actor_name || null;
+}
+
+function userLabel(req) {
+  return req.user?.email || req.user?.username || req.user?.publicId || null;
+}
+
+function parseClassificationBody(body) {
+  if (Array.isArray(body?.threat_classifications)) return body.threat_classifications;
+  if (Array.isArray(body?.classifications)) return body.classifications;
+  if (body?.threat_classification != null || body?.primary_threat_classification != null) {
+    return [body?.threat_classification ?? body?.primary_threat_classification];
+  }
+  return body?.threat_classifications;
+}
+
+async function buildIocClassificationResponse(pool, iocId, observableType, baseRow = null) {
+  const row = baseRow || await fetchIocRow(pool, iocId, observableType);
+  if (!row) return null;
+  const slugs = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+  const detailMap = await loadIocThreatClassificationDetails(pool, [{ id: iocId, observable_type: observableType }]);
+  const key = `${Number(iocId)}|${String(observableType || '')}`;
+  const fields = detailMap.get(key) || buildMultiThreatClassificationResponseFields(slugs);
+  return {
+    public_id: row.public_id,
+    threat_actor_id: row.threat_actor_id || null,
+    threat_actor_name: actorDisplayName(row),
+    ...fields
+  };
 }
 
 /**
@@ -36,7 +67,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
     ? opts.invalidateDetailsCache
     : () => {};
 
-  app.patch('/api/ioc/:id/threat-classification', async (req, res) => {
+  async function applyIocThreatClassifications(req, res, { auditAction }) {
     const iocId = Number(req.params.id);
     if (!Number.isFinite(iocId) || iocId <= 0) {
       return res.status(400).json({ success: false, error: 'Invalid IOC id' });
@@ -46,62 +77,70 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       return res.status(400).json({ success: false, error: 'observable_type is required' });
     }
 
-    const check = await validateThreatClassificationSlug(
-      pool,
-      req.body?.threat_classification ?? req.body?.primary_threat_classification,
-      { requireActive: true }
-    );
+    const check = await validateIocThreatClassificationSlugs(pool, parseClassificationBody(req.body), {
+      requireActive: true
+    });
     if (!check.ok) return res.status(400).json({ success: false, error: check.error });
 
     try {
       const prev = await fetchIocRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
-      const oldClass = normalizeClassificationSlug(prev.threat_classification);
-      if (oldClass === check.value) {
-        return res.json({
-          success: true,
-          ...buildThreatClassificationResponseFields(prev),
-          public_id: prev.public_id
-        });
+      const oldSlugs = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+      const legacyOld = oldSlugs.length
+        ? oldSlugs
+        : (normalizeClassificationSlug(prev.threat_classification) === 'unknown' ? [] : [normalizeClassificationSlug(prev.threat_classification)]);
+
+      const newSlugs = check.value;
+      const sortKey = (arr) => [...arr].sort().join('|');
+      const same = sortKey(legacyOld) === sortKey(newSlugs);
+      if (same) {
+        const unchanged = await buildIocClassificationResponse(pool, iocId, observableType, prev);
+        return res.json({ success: true, ...unchanged });
       }
 
-      const { rows } = await pool.query(
-        `UPDATE ioc_items SET threat_classification = $3
-         WHERE id = $1 AND observable_type = $2
-         RETURNING public_id, threat_classification`,
-        [iocId, observableType, check.value]
-      );
-      const updated = rows[0];
-      invalidateDetailsCache(updated.public_id);
+      await replaceIocThreatClassifications(pool, {
+        iocId,
+        observableType,
+        slugs: newSlugs,
+        sourceType: 'analyst',
+        sourceName: 'ui',
+        actor: userLabel(req)
+      });
+      invalidateDetailsCache(prev.public_id);
 
-      const refreshed = await fetchIocRow(pool, iocId, observableType);
-
+      const diff = diffThreatClassificationSlugs(legacyOld, newSlugs);
       await audit.auditSuccess({
         req,
-        action: AUDIT_ACTION.IOC_THREAT_CLASSIFICATION_UPDATED,
+        action: auditAction,
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(iocId),
         entityDisplay: `${observableType} · ${prev.observable}`,
         metadata: {
           observable_type: observableType,
           ioc_value: prev.observable,
-          old_classification: oldClass,
-          new_classification: check.value
+          old_classification: legacyOld[0] || 'unknown',
+          new_classification: newSlugs[0] || 'unknown',
+          ...diff
         },
-        before: { threat_classification: oldClass },
-        after: { threat_classification: check.value }
+        before: { threat_classifications: legacyOld },
+        after: { threat_classifications: newSlugs }
       });
 
-      return res.json({
-        success: true,
-        public_id: updated.public_id,
-        ...buildThreatClassificationResponseFields(refreshed || updated)
-      });
+      const response = await buildIocClassificationResponse(pool, iocId, observableType, prev);
+      return res.json({ success: true, ...response });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
-  });
+  }
+
+  app.patch('/api/ioc/:id/threat-classifications', (req, res) =>
+    applyIocThreatClassifications(req, res, { auditAction: AUDIT_ACTION.IOC_THREAT_CLASSIFICATIONS_UPDATED })
+  );
+
+  app.patch('/api/ioc/:id/threat-classification', (req, res) =>
+    applyIocThreatClassifications(req, res, { auditAction: AUDIT_ACTION.IOC_THREAT_CLASSIFICATION_UPDATED })
+  );
 
   app.patch('/api/ioc/:id/threat-actor', async (req, res) => {
     const iocId = Number(req.params.id);
@@ -186,10 +225,26 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
   });
 }
 
-export function buildThreatMetadataFields(row) {
-  if (!row) return buildThreatClassificationResponseFields('unknown');
+export async function buildThreatMetadataFields(pool, row) {
+  if (!row) return buildMultiThreatClassificationResponseFields([]);
+  if (Number.isFinite(Number(row.id)) && row.observable_type) {
+    const detailMap = await loadIocThreatClassificationDetails(pool, [{
+      id: row.id,
+      observable_type: row.observable_type
+    }]);
+    const key = `${Number(row.id)}|${String(row.observable_type || '')}`;
+    const fields = detailMap.get(key);
+    if (fields) {
+      return {
+        ...fields,
+        threat_actor_id: row.threat_actor_id || null,
+        threat_actor_name: row.threat_actor_name || null
+      };
+    }
+  }
+  const slugs = normalizeIocThreatClassificationSlugs(row.threat_classification);
   return {
-    ...buildThreatClassificationResponseFields(row),
+    ...buildMultiThreatClassificationResponseFields(slugs.length ? slugs : []),
     threat_actor_id: row.threat_actor_id || null,
     threat_actor_name: row.threat_actor_name || null
   };
@@ -211,16 +266,22 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
   const values = pairs.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::text)`).join(', ');
   const params = pairs.flatMap((p) => [p.id, p.observable_type]);
   const { rows } = await pool.query(
-    `SELECT i.id, i.observable_type, i.threat_classification, i.threat_actor_id, ta.name AS threat_actor_name,
-            tc.name AS threat_classification_label, tc.active AS threat_classification_active
+    `SELECT i.id, i.observable_type, i.threat_classification, i.threat_actor_id, ta.name AS threat_actor_name
      FROM ioc_items i
      LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
-     LEFT JOIN threat_classifications tc ON tc.slug = i.threat_classification
      WHERE (i.id, i.observable_type) IN (VALUES ${values})`,
     params
   );
+
+  const detailMap = await loadIocThreatClassificationDetails(pool, pairs);
   for (const row of rows) {
-    map.set(`${Number(row.id)}|${String(row.observable_type)}`, buildThreatMetadataFields(row));
+    const key = `${Number(row.id)}|${String(row.observable_type)}`;
+    const fields = detailMap.get(key) || buildMultiThreatClassificationResponseFields([]);
+    map.set(key, {
+      ...fields,
+      threat_actor_id: row.threat_actor_id || null,
+      threat_actor_name: row.threat_actor_name || null
+    });
   }
   return map;
 }
@@ -229,5 +290,5 @@ export function mergeThreatMetadataItem(item, metaMap) {
   const key = `${Number(item?.id)}|${String(item?.observable_type || '')}`;
   const meta = metaMap?.get(key);
   if (meta) return { ...item, ...meta };
-  return { ...item, ...buildThreatMetadataFields(item) };
+  return mergeIocThreatMetadataItem(item, null, null);
 }

@@ -1,6 +1,10 @@
 import { recomputeIocGlobalStatus } from './iocExpiration.js';
-import { parseManualExpirationInput, validatePrimaryThreatClassification } from './iocSourceValidation.js';
-import { threatClassificationResponseFields } from './threatClassification.js';
+import { parseManualExpirationInput, validateThreatClassifications } from './iocSourceValidation.js';
+import {
+  buildMultiThreatClassificationResponseFields,
+  legacyThreatClassificationColumnValue,
+  replaceIocThreatClassifications
+} from './iocThreatClassifications.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
@@ -43,8 +47,9 @@ function normalizeConfidence(value) {
   return 'medium';
 }
 
-export function serializeManualIocResponse(row, source, expiration) {
+export function serializeManualIocResponse(row, source, expiration, classificationFields = null) {
   if (!row) return null;
+  const classFields = classificationFields || buildMultiThreatClassificationResponseFields([]);
   return {
     id: Number(row.id),
     public_id: row.public_id,
@@ -59,7 +64,7 @@ export function serializeManualIocResponse(row, source, expiration) {
     } : null,
     confidence: row.confidence,
     category: row.category,
-    ...threatClassificationResponseFields(row.threat_classification),
+    ...classFields,
     threat_actor_id: row.threat_actor_id || null,
     note: row.note,
     status: row.status || 'active',
@@ -120,11 +125,14 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const confidence = normalizeConfidence(body?.confidence ?? sourceRow.default_confidence);
-  const threatClassCheck = await validatePrimaryThreatClassification(
-    pool,
-    body?.threat_classification ?? body?.primary_threat_classification ?? sourceRow.default_threat_classification
-  );
+  const rawClassifications = body?.threat_classifications
+    ?? (body?.threat_classification != null || body?.primary_threat_classification != null
+      ? [body?.threat_classification ?? body?.primary_threat_classification]
+      : sourceRow.default_threat_classification);
+  const threatClassCheck = await validateThreatClassifications(pool, rawClassifications);
   if (!threatClassCheck.ok) return { status: 400, body: { message: threatClassCheck.error } };
+  const threatClassSlugs = threatClassCheck.value;
+  const legacyThreatClass = legacyThreatClassificationColumnValue(threatClassSlugs);
 
   let threatActorId = null;
   if (body?.threat_actor_id != null && body?.threat_actor_id !== '') {
@@ -178,7 +186,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     sourceUrl,
     confidence,
     category,
-    threatClassCheck.value,
+    legacyThreatClass,
     threatActorId,
     note,
     sourceId,
@@ -195,6 +203,15 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const row = rows[0];
+  await replaceIocThreatClassifications(pool, {
+    iocId: row.id,
+    observableType: row.observable_type,
+    slugs: threatClassSlugs,
+    sourceType: 'manual',
+    sourceName,
+    actor: userId
+  }).catch(() => {});
+
   await pool.query(
     `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
      VALUES ($1, $2, $3)
@@ -221,7 +238,8 @@ export async function createManualIoc(pool, body, opts = {}) {
     id: Number(sourceRow.id),
     name: sourceRow.name
   };
-  const response = serializeManualIocResponse(fresh, source, expiration);
+  const classFields = buildMultiThreatClassificationResponseFields(threatClassSlugs);
+  const response = serializeManualIocResponse(fresh, source, expiration, classFields);
 
   if (opts.audit?.auditSuccess && opts.req) {
     await opts.audit.auditSuccess({
@@ -233,7 +251,7 @@ export async function createManualIoc(pool, body, opts = {}) {
       severity: AUDIT_SEVERITY.INFO,
       after: pickSafeFields(response, [
         'id', 'observable', 'observable_type', 'source_name', 'ioc_source_id',
-        'threat_classification', 'threat_actor_id',
+        'threat_classification', 'threat_classifications', 'threat_actor_id',
         'status', 'expires_at', 'manual_expires_at', 'expiration_policy'
       ]),
       metadata: {
