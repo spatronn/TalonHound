@@ -9404,7 +9404,6 @@ function isNewlyActiveHotIoc(firstSeenLog) {
 
 function IOCHotListPage() {
   const navigate = useNavigate();
-  const { options: threatClassOptions } = useThreatClassifications();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({ total: 0, by_type: [], by_source: [] });
   const [loading, setLoading] = useState(false);
@@ -9416,7 +9415,6 @@ function IOCHotListPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [showSuppressed, setShowSuppressed] = useState(false);
-  const [classificationFilter, setClassificationFilter] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, page_size: 50, total: 0, total_pages: 1 });
 
   const loadHot = useCallback(async () => {
@@ -9427,7 +9425,6 @@ function IOCHotListPage() {
       if (typeFilter) params.type = typeFilter;
       if (sinceFilter) params.last_seen_since = sinceFilter;
       if (search) params.q = search;
-      if (classificationFilter.length) params.threat_classifications = classificationFilter.join(',');
       const { data } = await api.get('/ioc/hot', { params });
       setItems(data.items || []);
       setSummary(data.summary || { total: 0, by_type: [], by_source: [] });
@@ -9439,7 +9436,7 @@ function IOCHotListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, typeFilter, sinceFilter, search, showSuppressed, classificationFilter]);
+  }, [page, pageSize, typeFilter, sinceFilter, search, showSuppressed]);
 
   useEffect(() => {
     loadHot();
@@ -9580,23 +9577,6 @@ function IOCHotListPage() {
             />
             <span>Show suppressed IOCs</span>
             <span style={{ fontSize: 12, color: '#64748b' }}>Suppressed IOCs are hidden by default.</span>
-          </label>
-          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
-            Classifications{' '}
-            <select
-              multiple
-              value={classificationFilter}
-              onChange={(e) => {
-                setPage(1);
-                setClassificationFilter([...e.target.selectedOptions].map((o) => o.value));
-              }}
-              style={{ minWidth: 180, minHeight: 72, padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
-              title="Contains filter (OR)"
-            >
-              {threatClassOptions.filter((o) => o.value !== 'unknown').map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
           </label>
           <label style={{ fontSize: 14, color: '#cbd5e1' }}>
             Page size{' '}
@@ -10099,7 +10079,6 @@ function IOCSuppressionsPage() {
 
 function IOCListPage() {
   const navigate = useNavigate();
-  const { options: threatClassOptions } = useThreatClassifications();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
   const [pageSize, setPageSize] = useState(5);
@@ -10131,7 +10110,6 @@ function IOCListPage() {
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
   const [suppressionFilter, setSuppressionFilter] = useState('include');
-  const [classificationFilter, setClassificationFilter] = useState([]);
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -10154,7 +10132,6 @@ function IOCListPage() {
           page: targetPage,
           page_size: targetSize,
           q: search || undefined,
-          threat_classifications: classificationFilter.length ? classificationFilter.join(',') : undefined,
         }
       });
       const items = listRes.data.items || [];
@@ -10167,7 +10144,7 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }, [search, classificationFilter]);
+  }, [search]);
 
   useEffect(() => {
     loadSummary().catch(() => {});
@@ -10449,23 +10426,6 @@ function IOCListPage() {
             <option value="only">Only suppressed</option>
           </select>
           {suppressionIndexLoading ? <span style={{ fontSize: 12, color: '#64748b' }}>Loading suppression index…</span> : null}
-
-          <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Classifications:</label>
-          <select
-            multiple
-            value={classificationFilter}
-            onChange={(e) => {
-              const next = [...e.target.selectedOptions].map((o) => o.value);
-              setClassificationFilter(next);
-              setPage(1);
-            }}
-            style={{ minWidth: 180, minHeight: 72, padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0' }}
-            title="Contains filter (OR). IOCs matching any selected classification."
-          >
-            {threatClassOptions.filter((o) => o.value !== 'unknown').map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
 
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
