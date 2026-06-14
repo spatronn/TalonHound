@@ -9402,6 +9402,50 @@ function isNewlyActiveHotIoc(firstSeenLog) {
   return Date.now() - t <= 60 * 60 * 1000;
 }
 
+function hotIocObservableWrapClass(observableType) {
+  const t = String(observableType || '').toLowerCase();
+  return (t === 'ip' || t === 'ip6')
+    ? 'hot-ioc-observable-value--nowrap'
+    : 'hot-ioc-observable-value--wrap';
+}
+
+function formatHotIocTableDateTime(value) {
+  if (!value && value !== 0) return '-';
+  const timeZone = localStorage.getItem('demo_timezone') || 'UTC';
+
+  let dt;
+  if (value instanceof Date) {
+    dt = value;
+  } else if (typeof value === 'number') {
+    const ms = value > 1e12 ? value : value * 1000;
+    dt = new Date(ms);
+  } else {
+    const raw = String(value).trim();
+    if (!raw) return '-';
+    if (/^\d+$/.test(raw)) {
+      const num = Number(raw);
+      const ms = num > 1e12 ? num : num * 1000;
+      dt = new Date(ms);
+    } else {
+      const hasTz = /([zZ]|[+\-]\d{2}:?\d{2})$/.test(raw);
+      const normalized = raw.includes(' ') ? raw.replace(' ', 'T') : raw;
+      dt = new Date(hasTz ? normalized : `${normalized}Z`);
+    }
+  }
+
+  if (Number.isNaN(dt.getTime())) return '-';
+
+  return dt.toLocaleString('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
 function IOCHotListPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
@@ -9442,18 +9486,6 @@ function IOCHotListPage() {
     loadHot();
   }, [loadHot]);
 
-  const hotBadge = (bg, color) => ({
-    display: 'inline-block',
-    marginLeft: 6,
-    marginTop: 4,
-    padding: '2px 8px',
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 700,
-    background: bg,
-    color
-  });
-
   function applySearch() {
     setPage(1);
     setSearch(String(searchInput || '').trim());
@@ -9469,230 +9501,233 @@ function IOCHotListPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Hot IOC List</h2>
-        <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
+      <section className="hot-ioc-list-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <h2 style={{ marginTop: 0, color: '#f1f5f9' }}>Hot IOC List</h2>
+        <div className="hot-ioc-subtitle">
           Indicators with at least one environment match (hits &gt; 0), from PostgreSQL snapshot. Sorted by last seen in logs.
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Records</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total}</div>
-          </div>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>IP</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.ip}</div>
-          </div>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>URL</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.url}</div>
-          </div>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>Hash (MD5/SHA*)</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.hash}</div>
-          </div>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>Domain</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.domain}</div>
-          </div>
-          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8' }}>IPv6</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{typeCounts.ip6}</div>
-          </div>
+        <div className="hot-ioc-summary-grid">
+          {[
+            ['Total Records', summary.total],
+            ['IP', typeCounts.ip],
+            ['URL', typeCounts.url],
+            ['Hash (MD5/SHA*)', typeCounts.hash],
+            ['Domain', typeCounts.domain],
+            ['IPv6', typeCounts.ip6]
+          ].map(([label, count]) => (
+            <div key={label} className="hot-ioc-summary-card">
+              <div className="hot-ioc-summary-label">{label}</div>
+              <div className="hot-ioc-summary-value">{count}</div>
+            </div>
+          ))}
         </div>
 
-        <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
-          <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Top 5 sources</div>
-          <div style={{ marginTop: 6, fontSize: 14, display: 'grid', gap: 6 }}>
+        <div className="hot-ioc-sources-panel">
+          <div className="hot-ioc-sources-title">Top 5 sources</div>
+          <div className="hot-ioc-sources-list">
             {summary.by_source?.length ? summary.by_source.map((s, idx) => (
-              <div key={s.source_name || idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>
-                <span style={{ color: '#cbd5e1' }}>{idx + 1}. {s.source_name}</span>
-                <b style={{ color: '#e2e8f0' }}>{s.count}</b>
+              <div key={s.source_name || idx} className="hot-ioc-sources-row">
+                <span className="hot-ioc-sources-name" title={s.source_name}>{idx + 1}. {s.source_name}</span>
+                <b className="hot-ioc-sources-count">{s.count}</b>
               </div>
-            )) : <span style={{ color: '#94a3b8' }}>No data</span>}
+            )) : <span className="hot-ioc-sources-empty">No data</span>}
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14, alignItems: 'center' }}>
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') applySearch(); }}
-            placeholder="Search by IOC value or public ID"
-            style={{ minWidth: 320 }}
-          />
-          <button onClick={applySearch}>Search</button>
-          <button
-            onClick={() => {
-              setSearchInput('');
-              setSearch('');
-              setShowSuppressed(false);
-              setPage(1);
-            }}
-          >
-            Clear
-          </button>
-
-          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
-            Type{' '}
-            <select
-              value={typeFilter}
-              onChange={(e) => {
-                setPage(1);
-                setTypeFilter(e.target.value);
-              }}
-              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
-            >
-              <option value="">All</option>
-              <option value="ip">IP</option>
-              <option value="domain">Domain</option>
-              <option value="hash">Hash</option>
-            </select>
-          </label>
-          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
-            Last seen in logs{' '}
-            <select
-              value={sinceFilter}
-              onChange={(e) => {
-                setPage(1);
-                setSinceFilter(e.target.value);
-              }}
-              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
-            >
-              <option value="">Any time</option>
-              <option value="1h">Last hour</option>
-              <option value="24h">Last 24 hours</option>
-              <option value="7d">Last 7 days</option>
-            </select>
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#cbd5e1', cursor: 'pointer' }}>
+        <div className="hot-ioc-filter-bar">
+          <div className="hot-ioc-filter-group hot-ioc-filter-search">
             <input
-              type="checkbox"
-              checked={showSuppressed}
-              onChange={(e) => {
-                setPage(1);
-                setShowSuppressed(e.target.checked);
-              }}
+              className="hot-ioc-search-input"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') applySearch(); }}
+              placeholder="Search by IOC value or public ID"
             />
-            <span>Show suppressed IOCs</span>
-            <span style={{ fontSize: 12, color: '#64748b' }}>Suppressed IOCs are hidden by default.</span>
-          </label>
-          <label style={{ fontSize: 14, color: '#cbd5e1' }}>
-            Page size{' '}
-            <select
-              value={pageSize}
-              onChange={(e) => {
+            <button type="button" onClick={applySearch}>Search</button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput('');
+                setSearch('');
+                setShowSuppressed(false);
                 setPage(1);
-                setPageSize(Number(e.target.value));
               }}
-              style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0', marginLeft: 6 }}
             >
-              {[25, 50, 100, 200].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </label>
+              Clear
+            </button>
+          </div>
+
+          <div className="hot-ioc-filter-group">
+            <label>
+              Type
+              <select
+                className="hot-ioc-select"
+                value={typeFilter}
+                onChange={(e) => {
+                  setPage(1);
+                  setTypeFilter(e.target.value);
+                }}
+              >
+                <option value="">All</option>
+                <option value="ip">IP</option>
+                <option value="domain">Domain</option>
+                <option value="hash">Hash</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="hot-ioc-filter-group">
+            <label>
+              Last seen in logs
+              <select
+                className="hot-ioc-select hot-ioc-select--wide"
+                value={sinceFilter}
+                onChange={(e) => {
+                  setPage(1);
+                  setSinceFilter(e.target.value);
+                }}
+              >
+                <option value="">Any time</option>
+                <option value="1h">Last hour</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="hot-ioc-filter-group hot-ioc-filter-group--secondary">
+            <label className="hot-ioc-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={showSuppressed}
+                onChange={(e) => {
+                  setPage(1);
+                  setShowSuppressed(e.target.checked);
+                }}
+              />
+              <span className="hot-ioc-filter-checkbox-text">
+                <span>Show suppressed IOCs</span>
+                <span className="hot-ioc-filter-hint">Suppressed IOCs are hidden by default.</span>
+              </span>
+            </label>
+            <label>
+              Page size
+              <select
+                className="hot-ioc-select"
+                value={pageSize}
+                onChange={(e) => {
+                  setPage(1);
+                  setPageSize(Number(e.target.value));
+                }}
+              >
+                {[25, 50, 100, 200].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
-            Hot IOCs <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
-            <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
-            Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
+        <div className="hot-ioc-count-bar">
+          <div className="hot-ioc-count-text">
+            Hot IOCs <span className="hot-ioc-count-number">{pagination.total}</span>
+            <span className="hot-ioc-count-sep">|</span>
+            Page <span className="hot-ioc-count-number">{pagination.page}</span> / <span className="hot-ioc-count-number">{pagination.total_pages}</span>
           </div>
         </div>
 
         {(loading || banner) && (
-          <div style={{ marginBottom: 10, padding: 10, background: loading ? '#e0f2fe' : '#fee2e2', border: `1px solid ${loading ? '#7dd3fc' : '#fecaca'}`, borderRadius: 6, color: '#0f172a' }}>
+          <div className={`hot-ioc-banner ${loading ? 'hot-ioc-banner--loading' : 'hot-ioc-banner--error'}`}>
             {loading ? 'Loading hot IOCs...' : banner}
           </div>
         )}
 
         {!loading && !banner && items.length === 0 && (
-          <div style={{ marginBottom: 10, padding: 10, background: '#fff8e1', border: '1px solid #ffe0a3', borderRadius: 6, color: '#0f172a' }}>
+          <div className="hot-ioc-banner hot-ioc-banner--empty">
             No hot IOCs yet — nothing in your environment has matched a listed indicator.
           </div>
         )}
 
-        <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-          <table
-            className="ioc-table"
-            width="100%"
-            cellPadding="10"
-            style={{
-              borderCollapse: 'collapse',
-              minWidth: 720,
-              background: '#fff',
-              tableLayout: 'fixed',
-              fontSize: 13,
-              fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace"
-            }}
-          >
+        <div className="hot-ioc-table-wrap">
+          <table className="ioc-table hot-ioc-table" cellPadding="10">
+            <colgroup>
+              <col className="hot-ioc-col-ioc" />
+              <col className="hot-ioc-col-type" />
+              <col className="hot-ioc-col-classifications" />
+              <col className="hot-ioc-col-evidence" />
+              <col className="hot-ioc-col-sources" />
+              <col className="hot-ioc-col-first-seen" />
+              <col className="hot-ioc-col-last-seen" />
+            </colgroup>
             <thead>
-              <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
+              <tr>
                 <th>IOC</th>
-                <th style={{ width: 110 }}>Type</th>
-                <th style={{ width: 220 }}>Classifications</th>
-                <th style={{ width: 110 }}>Evidence Logs</th>
-                <th style={{ width: 96 }}>Sources</th>
-                <th style={{ width: 200 }}>First Seen</th>
-                <th style={{ width: 200 }}>Last Seen</th>
+                <th>Type</th>
+                <th>Classifications</th>
+                <th>Evidence Logs</th>
+                <th>Sources</th>
+                <th>First Seen</th>
+                <th>Last Seen</th>
               </tr>
             </thead>
             <tbody>
               {items.map((r) => {
                 const isSuppressed = isSuppressionActiveRow(r.suppression);
+                const obsType = r.observable_type || '';
                 return (
                 <tr
-                  key={`${r.observable_type || ''}:${r.observable || ''}:${r.public_id || r.id}`}
-                  style={{
-                    borderBottom: '1px solid #f1f5f9',
-                    cursor: r.public_id ? 'pointer' : 'default',
-                    background: isSuppressed ? '#f8fafc' : '#fff',
-                    opacity: isSuppressed ? 0.82 : 1
-                  }}
+                  key={`${obsType}:${r.observable || ''}:${r.public_id || r.id}`}
+                  className={isSuppressed ? 'hot-ioc-row--suppressed' : undefined}
+                  style={{ cursor: r.public_id ? 'pointer' : 'default' }}
                   onClick={() => {
                     if (r.public_id) navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`);
                   }}
                 >
-                  <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                    <span style={{ color: isSuppressed ? '#64748b' : '#93c5fd', textDecoration: 'underline', fontWeight: 600 }}>{r.observable || '-'}</span>
-                    <span style={{ display: 'block' }}>
-                      {isSuppressed ? (
-                        <>
-                          <span style={hotBadge('#334155', '#cbd5e1')}>Suppressed</span>
-                          <span style={hotBadge('#14532d', '#86efac')}>False Positive</span>
-                        </>
-                      ) : null}
-                      {!isSuppressed && isNewlyActiveHotIoc(r.first_seen_log) ? (
-                        <span style={hotBadge('#312e81', '#c7d2fe')}>Newly active</span>
-                      ) : null}
-                      {!isSuppressed && Number(r.evidence_logs ?? 0) > 100 ? (
-                        <span style={hotBadge('#78350f', '#fcd34d')}>High activity</span>
-                      ) : null}
+                  <td className="hot-ioc-observable-cell">
+                    <span
+                      className={`hot-ioc-observable-value ${hotIocObservableWrapClass(obsType)} ${isSuppressed ? 'hot-ioc-observable-value--muted' : ''}`}
+                      title={r.observable || undefined}
+                    >
+                      {r.observable || '-'}
                     </span>
+                    {(isSuppressed || isNewlyActiveHotIoc(r.first_seen_log) || Number(r.evidence_logs ?? 0) > 100) ? (
+                      <div className="hot-ioc-badge-row">
+                        {isSuppressed ? (
+                          <>
+                            <span className="hot-ioc-row-badge" style={{ background: '#334155', color: '#cbd5e1' }}>Suppressed</span>
+                            <span className="hot-ioc-row-badge" style={{ background: '#14532d', color: '#86efac' }}>False Positive</span>
+                          </>
+                        ) : null}
+                        {!isSuppressed && isNewlyActiveHotIoc(r.first_seen_log) ? (
+                          <span className="hot-ioc-row-badge" style={{ background: '#312e81', color: '#c7d2fe' }}>Newly active</span>
+                        ) : null}
+                        {!isSuppressed && Number(r.evidence_logs ?? 0) > 100 ? (
+                          <span className="hot-ioc-row-badge" style={{ background: '#78350f', color: '#fcd34d' }}>High activity</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </td>
-                  <td style={{ textTransform: 'lowercase' }}>{r.observable_type || '-'}</td>
-                  <td title={formatThreatClassificationsText(r.threat_classifications)} style={{ fontSize: 12, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+                  <td className="hot-ioc-type-cell">{obsType || '-'}</td>
+                  <td className="hot-ioc-classifications-cell" title={formatThreatClassificationsText(r.threat_classifications)}>
                     {formatThreatClassificationsText(r.threat_classifications)}
                   </td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number.isFinite(Number(r.evidence_logs)) ? Number(r.evidence_logs) : '-'}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{Number(r.source_count ?? 0)}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.first_seen_log)}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{formatUserDateTime(r.last_seen_log)}</td>
+                  <td className="hot-ioc-numeric-cell">{Number.isFinite(Number(r.evidence_logs)) ? Number(r.evidence_logs) : '-'}</td>
+                  <td className="hot-ioc-numeric-cell">{Number(r.source_count ?? 0)}</td>
+                  <td className="hot-ioc-date-cell">{formatHotIocTableDateTime(r.first_seen_log)}</td>
+                  <td className="hot-ioc-date-cell">{formatHotIocTableDateTime(r.last_seen_log)}</td>
                 </tr>
               );})}
             </tbody>
           </table>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+        <div className="hot-ioc-pagination">
+          <button type="button" disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
             Previous
           </button>
           <button
-            style={{ minWidth: 92, fontWeight: 600 }}
+            type="button"
             disabled={pagination.page >= pagination.total_pages}
             onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))}
           >
@@ -13468,6 +13503,337 @@ function App() {
           white-space: nowrap;
           padding: 6px 10px;
           font-size: 12px;
+        }
+        .hot-ioc-list-page {
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+        .hot-ioc-list-page .hot-ioc-subtitle {
+          color: #94a3b8;
+          font-size: 13px;
+          margin-bottom: 16px;
+          line-height: 1.45;
+        }
+        .hot-ioc-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+        .hot-ioc-summary-card {
+          border: 1px solid #334155;
+          border-radius: 10px;
+          padding: 10px 12px;
+          background: #0f172a;
+          min-width: 0;
+        }
+        .hot-ioc-summary-label {
+          font-size: 12px;
+          color: #94a3b8;
+        }
+        .hot-ioc-summary-value {
+          font-size: 22px;
+          font-weight: 700;
+          color: #e2e8f0;
+          line-height: 1.2;
+        }
+        .hot-ioc-sources-panel {
+          margin-bottom: 14px;
+          padding: 10px 12px;
+          border: 1px solid #334155;
+          border-radius: 8px;
+          background: #0f172a;
+          min-width: 0;
+        }
+        .hot-ioc-sources-title {
+          font-size: 13px;
+          color: #94a3b8;
+          margin-bottom: 8px;
+        }
+        .hot-ioc-sources-list {
+          display: grid;
+          gap: 6px;
+          font-size: 14px;
+        }
+        .hot-ioc-sources-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 12px;
+          border-bottom: 1px dashed #334155;
+          padding-bottom: 4px;
+          min-width: 0;
+        }
+        .hot-ioc-sources-name {
+          color: #cbd5e1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .hot-ioc-sources-count {
+          color: #e2e8f0;
+          flex-shrink: 0;
+          font-variant-numeric: tabular-nums;
+        }
+        .hot-ioc-sources-empty {
+          color: #94a3b8;
+        }
+        .hot-ioc-filter-bar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 12px 16px;
+          max-width: 100%;
+          margin-bottom: 14px;
+          padding: 12px 14px;
+          border: 1px solid #334155;
+          border-radius: 10px;
+          background: #0f172a;
+        }
+        .hot-ioc-filter-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          flex-shrink: 0;
+        }
+        .hot-ioc-filter-group label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+          color: #cbd5e1;
+          margin: 0;
+          white-space: nowrap;
+        }
+        .hot-ioc-filter-search {
+          flex: 1 1 320px;
+          min-width: min(100%, 320px);
+        }
+        .hot-ioc-search-input {
+          width: clamp(280px, 35vw, 520px);
+          max-width: 100%;
+          min-width: 0;
+          flex: 1 1 auto;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: 1px solid #334155;
+          background: #111827;
+          color: #e2e8f0;
+          font-size: 14px;
+          box-sizing: border-box;
+        }
+        .hot-ioc-select {
+          padding: 6px 8px;
+          border-radius: 8px;
+          border: 1px solid #334155;
+          font-weight: 600;
+          background: #111827;
+          color: #e2e8f0;
+          min-width: 110px;
+        }
+        .hot-ioc-select--wide {
+          min-width: 140px;
+        }
+        .hot-ioc-filter-group--secondary {
+          flex: 1 1 100%;
+          flex-wrap: wrap;
+          gap: 12px 16px;
+        }
+        .hot-ioc-filter-checkbox {
+          display: inline-flex;
+          align-items: flex-start;
+          gap: 8px;
+          cursor: pointer;
+          font-size: 14px;
+          color: #cbd5e1;
+          white-space: normal;
+        }
+        .hot-ioc-filter-checkbox-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 0;
+        }
+        .hot-ioc-filter-hint {
+          font-size: 12px;
+          color: #64748b;
+          line-height: 1.3;
+          white-space: normal;
+        }
+        .hot-ioc-count-bar {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 10px;
+          padding: 10px 12px;
+          border: 1px solid #334155;
+          border-radius: 10px;
+          background: #0f172a;
+        }
+        .hot-ioc-count-text {
+          font-size: 15px;
+          font-weight: 600;
+          color: #e2e8f0;
+          white-space: nowrap;
+        }
+        .hot-ioc-count-number {
+          font-size: 18px;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+        }
+        .hot-ioc-count-sep {
+          margin: 0 8px;
+          color: #94a3b8;
+        }
+        .hot-ioc-banner {
+          margin-bottom: 10px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          font-size: 13px;
+        }
+        .hot-ioc-banner--loading {
+          background: rgba(14, 116, 144, 0.22);
+          border: 1px solid #0e7490;
+          color: #bae6fd;
+        }
+        .hot-ioc-banner--error {
+          background: rgba(127, 29, 29, 0.28);
+          border: 1px solid #991b1b;
+          color: #fca5a5;
+        }
+        .hot-ioc-banner--empty {
+          background: rgba(120, 53, 15, 0.22);
+          border: 1px solid #854d0e;
+          color: #fde68a;
+        }
+        .hot-ioc-table-wrap {
+          overflow-x: auto;
+          max-width: 100%;
+          border: 1px solid #334155;
+          border-radius: 10px;
+          -webkit-overflow-scrolling: touch;
+        }
+        .hot-ioc-table {
+          width: 100%;
+          min-width: 960px;
+          table-layout: fixed;
+          border-collapse: collapse;
+          font-size: 13px;
+          font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+          background: #0f172a;
+        }
+        .hot-ioc-table thead tr {
+          background: #1f2937 !important;
+          border-bottom: 1px solid #334155;
+        }
+        .hot-ioc-table th {
+          padding: 10px 8px;
+          color: #94a3b8;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          text-align: left;
+        }
+        .hot-ioc-table td {
+          padding: 10px 8px;
+          color: #e2e8f0;
+          vertical-align: top;
+          border-bottom: 1px solid #1e293b;
+        }
+        .hot-ioc-table tbody tr {
+          background: #111827 !important;
+        }
+        .hot-ioc-table tbody tr:hover {
+          background: #1e293b !important;
+        }
+        .hot-ioc-row--suppressed {
+          opacity: 0.82;
+        }
+        .hot-ioc-col-ioc { width: 28%; }
+        .hot-ioc-col-type { width: 7%; }
+        .hot-ioc-col-classifications { width: 18%; }
+        .hot-ioc-col-evidence { width: 9%; }
+        .hot-ioc-col-sources { width: 8%; }
+        .hot-ioc-col-first-seen { width: 15%; }
+        .hot-ioc-col-last-seen { width: 15%; }
+        .hot-ioc-observable-cell {
+          min-width: 0;
+        }
+        .hot-ioc-observable-value {
+          display: block;
+          color: #93c5fd;
+          text-decoration: underline;
+          font-weight: 600;
+          line-height: 1.4;
+        }
+        .hot-ioc-observable-value--muted {
+          color: #64748b;
+        }
+        .hot-ioc-observable-value--nowrap {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          word-break: normal;
+        }
+        .hot-ioc-observable-value--wrap {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          white-space: normal;
+        }
+        .hot-ioc-badge-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px 6px;
+          margin-top: 4px;
+          align-items: center;
+        }
+        .hot-ioc-row-badge {
+          display: inline-block;
+          padding: 1px 7px;
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1.35;
+          white-space: nowrap;
+        }
+        .hot-ioc-type-cell {
+          text-transform: lowercase;
+        }
+        .hot-ioc-classifications-cell {
+          font-size: 12px;
+          line-height: 1.35;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          word-break: break-word;
+        }
+        .hot-ioc-date-cell {
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+          font-size: 12px;
+        }
+        .hot-ioc-numeric-cell {
+          font-variant-numeric: tabular-nums;
+          text-align: right;
+        }
+        .hot-ioc-pagination {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 12px;
+        }
+        .hot-ioc-pagination button {
+          min-width: 92px;
+          font-weight: 600;
         }
         .published-feeds-page input:focus,
         .published-feeds-page select:focus,
