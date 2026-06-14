@@ -1,5 +1,8 @@
 -- IOC threat taxonomy refactor: canonical classification, threat actors, tag legacy migration.
 -- Idempotent where practical; safe for single-user controlled migration.
+-- Large-table deploys: disable per-statement timeout for this migration transaction.
+SET LOCAL statement_timeout = 0;
+SET LOCAL lock_timeout = '120s';
 
 CREATE TABLE IF NOT EXISTS threat_actors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
