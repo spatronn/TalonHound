@@ -39,6 +39,7 @@ import {
 } from './lib/integrationQueueApi.js';
 import { parseActionReason } from './lib/reasonValidation.js';
 import { INCIDENTS_DEFAULT_SCOPE_WHERE } from './lib/incidentListScope.js';
+import { isSubstantiveDnsEvent } from './lib/eventEvidenceSignals.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { calculateIncidentRisk, calculateInstitutionRisk } from './lib/riskEngine.js';
 import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
@@ -2082,8 +2083,14 @@ async function buildIncidentAiInsightContext(activityId) {
   const rows = evQ.rows || [];
   const sourceTypes = {};
   for (const r of rows) {
-    const st = llmNormSourceType(r);
-    sourceTypes[st] = (sourceTypes[st] || 0) + 1;
+    const v2 = classifyEventContext({
+      ...r,
+      ioc_type: context.ioc_type,
+      ioc_value: context.ioc_value
+    });
+    const fam = String(v2?.event_family || llmNormSourceType(r) || 'generic').toLowerCase();
+    if (fam === 'dns' && !isSubstantiveDnsEvent({ ...r, event_family: fam })) continue;
+    if (fam && fam !== 'generic') sourceTypes[fam] = (sourceTypes[fam] || 0) + 1;
   }
   context.event_summary = { ...(context.event_summary || {}), source_types: sourceTypes };
   context.playbook_coverage = {
@@ -2091,20 +2098,38 @@ async function buildIncidentAiInsightContext(activityId) {
     dns_evidence: Number(sourceTypes.dns || 0) > 0,
     proxy_evidence: Number(sourceTypes.proxy || 0) > 0
   };
-  context.explanation_events = rows.map((r) => ({
-    source_type: llmNormSourceType(r),
-    parser_source: r.parser_source,
-    match_context: r.match_context,
-    normalized_event_json: r.normalized_event_json
-  }));
-  context.sample_events = rows.slice(0, 5).map((r) => ({
-    detected_at: r.event_time || r.created_at || null,
-    source_type: llmNormSourceType(r),
-    matched_ioc: r.matched_ioc,
-    method: r?.normalized_event_json?.method || r?.match_context?.method || null,
-    status: r?.normalized_event_json?.status || r?.match_context?.status || null,
-    action: r?.match_context?.action || r?.normalized_event_json?.action || null
-  }));
+  context.explanation_events = rows.map((r) => {
+    const v2 = classifyEventContext({
+      ...r,
+      ioc_type: context.ioc_type,
+      ioc_value: context.ioc_value
+    });
+    return {
+      source_type: String(v2?.event_family || llmNormSourceType(r) || 'generic').toLowerCase(),
+      event_family: v2?.event_family || null,
+      parser_source: r.parser_source,
+      match_context: r.match_context,
+      normalized_event_json: r.normalized_event_json,
+      raw_log_snapshot: r.raw_log_snapshot
+    };
+  });
+  context.sample_events = rows.slice(0, 5).map((r) => {
+    const v2 = classifyEventContext({
+      ...r,
+      ioc_type: context.ioc_type,
+      ioc_value: context.ioc_value
+    });
+    return {
+      detected_at: r.event_time || r.created_at || null,
+      source_type: String(v2?.event_family || llmNormSourceType(r) || 'generic').toLowerCase(),
+      event_family: v2?.event_family || null,
+      matched_ioc: r.matched_ioc,
+      method: r?.normalized_event_json?.method || r?.match_context?.method || null,
+      status: r?.normalized_event_json?.status || r?.match_context?.status || null,
+      action: r?.match_context?.action || r?.normalized_event_json?.action || null,
+      raw_log_snapshot: r.raw_log_snapshot
+    };
+  });
   const aiPack = await buildIocAiContextPack(context, rows);
   context.ai_context_pack = aiPack;
   context.ioc_metadata = aiPack.ioc_metadata;

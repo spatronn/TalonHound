@@ -4,6 +4,13 @@
  * not copied blindly from risk_breakdown when event distribution is available.
  */
 
+import {
+  inferEventFamilyFromRow,
+  isProxyAccessObservedEvent,
+  isProxyFailedEvent,
+  isSubstantiveDnsEvent
+} from './eventEvidenceSignals.js';
+
 function fmtNum(n, digits = 2) {
   const x = Number(n);
   if (!Number.isFinite(x)) return null;
@@ -32,6 +39,8 @@ export const ACTION_OUTCOME_LABELS = {
   observed_access: 'Observed Access',
   proxy_allowed: 'Observed Access',
   dns_observed: 'DNS Observed',
+  proxy_failed: 'Proxy Failed',
+  proxy_error: 'Proxy Error',
   unknown: 'Unknown Outcome',
   none: 'No Outcome'
 };
@@ -46,26 +55,13 @@ export function formatActionOutcomeLabel(outcome) {
   return ACTION_OUTCOME_LABELS[key] || (key ? key.replace(/_/g, ' ') : 'Unknown Outcome');
 }
 
-function normSourceType(value) {
-  const st = String(value || '').toLowerCase();
-  if (st === 'squid_proxy') return 'proxy';
-  return st;
-}
-
 function normalizeEventRow(row = {}) {
-  const sourceType = normSourceType(row.source_type);
-  const parser = String(row.parser_source || '').toLowerCase();
-  let family = sourceType;
-  if (!family || family === 'generic' || family === 'unknown') {
-    if (/(proxy|squid|web|url|http)/.test(parser)) family = 'proxy';
-    else if (/(^|\s)dns(\s|$)|resolver|query|bind_dns/.test(parser)) family = 'dns';
-    else if (/(firewall|forti|palo|pan-os|checkpoint|traffic|netflow)/.test(parser)) family = 'firewall';
-    else family = sourceType || 'generic';
-  }
+  const family = inferEventFamilyFromRow(row);
+  const sourceType = String(row.source_type || family || '').toLowerCase();
   return {
     family,
-    source_type: sourceType || family,
-    parser_source: parser,
+    source_type: sourceType === 'squid_proxy' ? 'proxy' : sourceType,
+    parser_source: String(row.parser_source || '').toLowerCase(),
     method: String(row?.normalized_event_json?.method || row?.match_context?.method || '').toUpperCase(),
     status: String(row?.normalized_event_json?.status || row?.match_context?.status || row?.match_context?.http_status || ''),
     action: String(row?.match_context?.action || row?.normalized_event_json?.action || '').toLowerCase(),
@@ -79,28 +75,32 @@ function collectEventFamilies(context = {}) {
     : {};
   const stCount = (key) => Math.max(Number(sourceTypes[key] || 0), 0);
 
-  let hasDns = Boolean(context?.has_dns_evidence) || stCount('dns') > 0;
-  let hasProxy = Boolean(context?.has_proxy_evidence) || stCount('proxy') > 0 || stCount('squid_proxy') > 0;
-  let hasFirewall = Boolean(context?.has_firewall_evidence) || stCount('firewall') > 0;
-  let hasEndpoint = Boolean(context?.has_endpoint_evidence) || stCount('endpoint') > 0;
-
   const rows = [];
   if (Array.isArray(context?.explanation_events)) rows.push(...context.explanation_events);
   if (Array.isArray(context?.sample_events)) rows.push(...context.sample_events);
 
-  for (const raw of rows) {
-    const ev = normalizeEventRow(raw);
-    if (ev.family === 'dns') hasDns = true;
-    if (ev.family === 'proxy') hasProxy = true;
-    if (ev.family === 'firewall') hasFirewall = true;
-    if (/(endpoint|edr|xdr|sysmon|process|file|hash)/.test(ev.family)) hasEndpoint = true;
-  }
+  let hasDns = false;
+  let hasProxy = false;
+  let hasFirewall = false;
+  let hasEndpoint = false;
 
-  const iocType = String(context?.ioc_type || '').toLowerCase();
-  if (iocType === 'domain') hasDns = true;
-  if (iocType === 'url') hasProxy = true;
-  if (iocType === 'ip' || iocType === 'ip6') hasFirewall = true;
-  if (['sha256', 'md5', 'sha1', 'imphash', 'tlsh', 'ssdeep'].includes(iocType)) hasEndpoint = true;
+  if (rows.length) {
+    for (const raw of rows) {
+      const family = inferEventFamilyFromRow(raw);
+      if (family === 'dns' && isSubstantiveDnsEvent(raw)) hasDns = true;
+      if (family === 'proxy') hasProxy = true;
+      if (family === 'firewall') hasFirewall = true;
+      if (/(endpoint|edr|xdr|sysmon|process|file|hash)/.test(family)) hasEndpoint = true;
+    }
+  } else {
+    hasDns = Boolean(context?.has_dns_evidence) || stCount('dns') > 0;
+    hasProxy = Boolean(context?.has_proxy_evidence) || stCount('proxy') > 0 || stCount('squid_proxy') > 0;
+    hasFirewall = Boolean(context?.has_firewall_evidence) || stCount('firewall') > 0;
+    hasEndpoint = Boolean(context?.has_endpoint_evidence) || stCount('endpoint') > 0;
+
+    const iocType = String(context?.ioc_type || '').toLowerCase();
+    if (['sha256', 'md5', 'sha1', 'imphash', 'tlsh', 'ssdeep'].includes(iocType)) hasEndpoint = true;
+  }
 
   const sourceFamilies = [hasEndpoint, hasProxy, hasDns, hasFirewall].filter(Boolean).length;
 
@@ -141,21 +141,6 @@ export function deriveExplanationEvidenceTier(context = {}, breakdown = {}) {
   return { tier: fallback, label: formatEvidenceTierLabel(fallback) };
 }
 
-function isProxyAccessObserved(ev = {}) {
-  const action = String(ev.action || '').toLowerCase();
-  if (['accept', 'accepted', 'allow', 'allowed', 'permit'].includes(action)) return true;
-
-  const method = String(ev.method || '').toUpperCase();
-  const status = String(ev.status || '');
-  const raw = String(ev.raw_sample || '').toLowerCase();
-
-  if (method === 'CONNECT' && /(^|\D)(200|301|302)(\D|$)/.test(status || raw)) return true;
-  if (/tcp_miss\/200|http\/200|connect\/200|\/200\b/.test(raw)) return true;
-  if (/(GET|POST|HEAD|PUT|DELETE)/.test(method) && /200|301|302/.test(status || raw)) return true;
-
-  return false;
-}
-
 function isBlockedAction(ev = {}) {
   const action = String(ev.action || '').toLowerCase();
   return ['deny', 'denied', 'drop', 'dropped', 'block', 'blocked', 'reject', 'rejected'].includes(action);
@@ -167,15 +152,19 @@ export function deriveExplanationActionOutcome(context = {}, breakdown = {}) {
   const f = collectEventFamilies(context);
 
   const eventRows = [];
-  if (Array.isArray(context?.explanation_events)) eventRows.push(...context.explanation_events.map(normalizeEventRow));
-  if (Array.isArray(context?.sample_events)) eventRows.push(...context.sample_events.map(normalizeEventRow));
+  if (Array.isArray(context?.explanation_events)) eventRows.push(...context.explanation_events);
+  if (Array.isArray(context?.sample_events)) eventRows.push(...context.sample_events);
 
-  const proxyAccessObserved = eventRows.some((ev) => (ev.family === 'proxy' || ev.source_type === 'proxy') && isProxyAccessObserved(ev));
-  const blockedObserved = eventRows.some((ev) => isBlockedAction(ev));
+  const proxyAccessObserved = eventRows.some((row) => isProxyAccessObservedEvent(row));
+  const proxyFailed = eventRows.some((row) => isProxyFailedEvent(row));
+  const blockedObserved = eventRows.some((row) => isBlockedAction(normalizeEventRow(row)));
 
   if (accepted > 0) return { outcome: 'allowed', label: formatActionOutcomeLabel('allowed') };
   if (blocked > 0 || (blockedObserved && accepted === 0)) {
     return { outcome: 'blocked', label: formatActionOutcomeLabel('blocked') };
+  }
+  if (proxyFailed) {
+    return { outcome: 'proxy_failed', label: formatActionOutcomeLabel('proxy_failed') };
   }
   if (proxyAccessObserved || (f.hasProxy && accepted > 0)) {
     return { outcome: 'observed_access', label: formatActionOutcomeLabel('observed_access') };
@@ -183,8 +172,8 @@ export function deriveExplanationActionOutcome(context = {}, breakdown = {}) {
   if (f.hasDns && !f.hasProxy && accepted === 0 && blocked === 0) {
     return { outcome: 'dns_observed', label: formatActionOutcomeLabel('dns_observed') };
   }
-  if (f.hasDns && f.hasProxy && proxyAccessObserved) {
-    return { outcome: 'observed_access', label: formatActionOutcomeLabel('observed_access') };
+  if (f.hasProxy) {
+    return { outcome: 'unknown', label: formatActionOutcomeLabel('unknown') };
   }
 
   const fallback = breakdown?.action_outcome || 'unknown';
@@ -213,6 +202,8 @@ export function buildRiskExplanation(risk = {}, llmRisk = {}, context = {}) {
   }
   if (action.outcome === 'observed_access') {
     notes.push('Proxy telemetry indicates successful or allowed access was observed.');
+  } else if (action.outcome === 'proxy_failed') {
+    notes.push('Proxy telemetry indicates a failed or error response; this is not confirmed allowed access.');
   } else if (action.outcome === 'dns_observed') {
     notes.push('Only DNS query/resolution activity was observed without confirmed allowed network access.');
   }
