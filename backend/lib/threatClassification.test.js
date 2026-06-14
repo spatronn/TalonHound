@@ -27,11 +27,11 @@ describe('threatClassification slug normalization', () => {
   it('builds response fields with row label when provided', () => {
     const fields = buildThreatClassificationResponseFields({
       threat_classification: 'exploit',
-      threat_classification_label: 'Exploit / Exploitation',
+      threat_classification_label: 'Exploit',
       threat_classification_active: true
     });
     assert.equal(fields.threat_classification, 'exploit');
-    assert.equal(fields.threat_classification_label, 'Exploit / Exploitation');
+    assert.equal(fields.threat_classification_label, 'Exploit');
     assert.equal(fields.threat_classification_active, true);
     assert.equal(fields.primary_threat_classification, 'exploit');
   });

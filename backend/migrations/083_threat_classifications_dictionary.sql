@@ -32,7 +32,7 @@ VALUES
   ('Ransomware', 'ransomware', NULL, TRUE, 40, TRUE),
   ('Command and Control (C2)', 'command_and_control', NULL, TRUE, 50, TRUE),
   ('Botnet', 'botnet', NULL, TRUE, 60, TRUE),
-  ('Exploit / Exploitation', 'exploit', NULL, TRUE, 70, TRUE),
+  ('Exploit', 'exploit', NULL, TRUE, 70, TRUE),
   ('Scanner / Reconnaissance', 'scanner_recon', NULL, TRUE, 80, TRUE),
   ('Suspicious Infrastructure', 'suspicious_infrastructure', NULL, TRUE, 90, TRUE),
   ('Spam / Abuse', 'spam_abuse', NULL, TRUE, 100, TRUE),
