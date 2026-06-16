@@ -47,6 +47,44 @@ describe('buildIocExpirationAuditPayload', () => {
     assert.equal(payload.before.observable, 'example-malicious-domain.com');
     assert.equal(payload.after.status, 'expired');
   });
+
+  it('includes multiple affected feeds in metadata', () => {
+    const payload = buildIocExpirationAuditPayload({
+      iocId: 2081878,
+      observable: 'haberhemencebinde.shop',
+      observableType: 'domain',
+      oldStatus: 'active',
+      newStatus: 'expired',
+      oldExpiresAt: '2026-05-28T10:04:52.762Z',
+      expiredAt: '2026-05-28T10:05:08.313Z',
+      reason: 'all_feed_memberships_expired',
+      actor: { actor_type: 'system', source: 'expiration-worker' },
+      affectedFeeds: [
+        {
+          membershipId: 42,
+          feedId: '11111111-1111-4111-8111-111111111111',
+          feedName: 'USOM TR-CERT',
+          oldExpiresAt: '2026-05-28T10:04:52.762Z',
+          expiredAt: '2026-05-28T10:05:08.313Z',
+          reason: 'policy_ttl'
+        },
+        {
+          membershipId: 43,
+          feedId: '22222222-2222-4222-8222-222222222222',
+          feedName: 'URLhaus',
+          oldExpiresAt: '2026-05-28T10:04:52.762Z',
+          expiredAt: '2026-05-28T10:05:08.313Z',
+          reason: 'policy_ttl'
+        }
+      ]
+    });
+
+    assert.equal(payload.entityDisplay, 'domain · haberhemencebinde.shop');
+    assert.equal(payload.metadata.affected_feeds.length, 2);
+    assert.equal(payload.metadata.feed_name, 'USOM TR-CERT, URLhaus');
+    assert.deepEqual(payload.metadata.feed_names, ['USOM TR-CERT', 'URLhaus']);
+    assert.equal(payload.metadata.source, 'expiration-worker');
+  });
 });
 
 describe('buildMembershipExpirationAuditPayload', () => {

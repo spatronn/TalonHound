@@ -41,6 +41,14 @@ export function normalizeExpirationAuditReason(reason) {
  *   actor?: { actor_type?: string, source?: string },
  *   feed?: { feed_id?: string|null, feed_name?: string|null }|null,
  *   membershipId?: number|null,
+ *   affectedFeeds?: Array<{
+ *     membershipId?: number,
+ *     feedId?: string|null,
+ *     feedName?: string|null,
+ *     oldExpiresAt?: unknown,
+ *     expiredAt?: unknown,
+ *     reason?: string|null,
+ *   }>,
  * }} input
  */
 function iocSnapshotFields(iocId, observable, observableType) {
@@ -66,9 +74,36 @@ export function buildIocExpirationAuditPayload(input) {
     source: input.actor?.source || 'expiration-worker'
   };
 
-  if (input.feed?.feed_id) metadata.feed_id = String(input.feed.feed_id);
-  if (input.feed?.feed_name) metadata.feed_name = input.feed.feed_name;
-  if (input.membershipId != null) metadata.membership_id = Number(input.membershipId);
+  const affectedFeeds = Array.isArray(input.affectedFeeds)
+    ? input.affectedFeeds.filter((feed) => feed && (feed.membershipId != null || feed.feedId || feed.feedName))
+    : [];
+
+  if (affectedFeeds.length) {
+    metadata.affected_feeds = affectedFeeds.map((feed) => ({
+      membership_id: feed.membershipId != null ? Number(feed.membershipId) : undefined,
+      feed_id: feed.feedId ? String(feed.feedId) : undefined,
+      feed_name: feed.feedName || undefined,
+      reason: feed.reason ? normalizeExpirationAuditReason(feed.reason) : undefined,
+      old_expires_at: isoOrNull(feed.oldExpiresAt),
+      expired_at: isoOrNull(feed.expiredAt)
+    })).map((feed) => Object.fromEntries(Object.entries(feed).filter(([, value]) => value != null)));
+
+    const feedNames = metadata.affected_feeds.map((feed) => feed.feed_name).filter(Boolean);
+    if (feedNames.length === 1) {
+      metadata.feed_name = feedNames[0];
+      const feedId = metadata.affected_feeds[0]?.feed_id;
+      if (feedId) metadata.feed_id = feedId;
+      const membershipId = metadata.affected_feeds[0]?.membership_id;
+      if (membershipId != null) metadata.membership_id = membershipId;
+    } else if (feedNames.length > 1) {
+      metadata.feed_names = feedNames;
+      metadata.feed_name = feedNames.join(', ');
+    }
+  } else {
+    if (input.feed?.feed_id) metadata.feed_id = String(input.feed.feed_id);
+    if (input.feed?.feed_name) metadata.feed_name = input.feed.feed_name;
+    if (input.membershipId != null) metadata.membership_id = Number(input.membershipId);
+  }
 
   const before = {
     ...snapshot,

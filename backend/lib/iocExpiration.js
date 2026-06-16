@@ -4,7 +4,6 @@
 
 import {
   buildIocExpirationAuditPayload,
-  buildMembershipExpirationAuditPayload,
   formatMembershipEntityDisplay
 } from './auditIocContext.js';
 
@@ -311,35 +310,48 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
   );
 
   if (audit?.auditLog) {
-    const action = nextStatus === 'expired' ? 'ioc.expired' : 'ioc.status.changed';
-    const auditPayload = nextStatus === 'expired'
-      ? buildIocExpirationAuditPayload({
-        iocId: iocItemId,
-        observable: ioc.observable,
-        observableType,
-        oldStatus: ioc.status,
-        newStatus: nextStatus,
-        oldExpiresAt: ioc.expires_at,
-        expiredAt,
-        newExpiresAt: minExpires,
-        reason: expirationReason || 'expires_at_reached',
-        actor
-      })
-      : {
-        entityDisplay: null,
-        metadata: { actor_type: actor.actor_type, ioc_observable_type: observableType }
-      };
+    const expiredMemberships = Array.isArray(opts.expiredMemberships) ? opts.expiredMemberships : [];
+    const workerMembershipExpiry = expiredMemberships.length > 0;
 
-    await audit.auditLog({
-      action,
-      entityType: 'ioc',
-      entityId: String(iocItemId),
-      entityDisplay: auditPayload.entityDisplay,
-      before: auditPayload.before || { status: ioc.status, expires_at: ioc.expires_at },
-      after: auditPayload.after || { status: nextStatus, expires_at: minExpires, expired_at: expiredAt },
-      metadata: auditPayload.metadata,
-      source: actor.source || 'expiration-worker'
-    });
+    if (!(workerMembershipExpiry && nextStatus !== 'expired')) {
+      const action = nextStatus === 'expired' ? 'ioc.expired' : 'ioc.status.changed';
+      const auditPayload = nextStatus === 'expired'
+        ? buildIocExpirationAuditPayload({
+          iocId: iocItemId,
+          observable: ioc.observable,
+          observableType,
+          oldStatus: ioc.status,
+          newStatus: nextStatus,
+          oldExpiresAt: ioc.expires_at,
+          expiredAt,
+          newExpiresAt: minExpires,
+          reason: expirationReason || 'expires_at_reached',
+          actor,
+          affectedFeeds: expiredMemberships.map((membership) => ({
+            membershipId: membership.membershipId,
+            feedId: membership.feedId,
+            feedName: membership.feedName,
+            oldExpiresAt: membership.oldExpiresAt,
+            expiredAt: membership.expiredAt,
+            reason: membership.reason
+          }))
+        })
+        : {
+          entityDisplay: null,
+          metadata: { actor_type: actor.actor_type, ioc_observable_type: observableType }
+        };
+
+      await audit.auditLog({
+        action,
+        entityType: 'ioc',
+        entityId: String(iocItemId),
+        entityDisplay: auditPayload.entityDisplay,
+        before: auditPayload.before || { status: ioc.status, expires_at: ioc.expires_at },
+        after: auditPayload.after || { status: nextStatus, expires_at: minExpires, expired_at: expiredAt },
+        metadata: auditPayload.metadata,
+        source: actor.source || 'expiration-worker'
+      });
+    }
   }
 
   return { changed: true, status: nextStatus };
@@ -540,7 +552,7 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
   );
 
   let expiredMemberships = 0;
-  const iocTouches = new Set();
+  const iocTouches = new Map();
 
   for (const row of rows) {
     const expiredAt = now.toISOString();
@@ -552,42 +564,31 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
       [row.id, row.expiration_reason || 'policy_ttl']
     );
     expiredMemberships += 1;
-    iocTouches.add(`${row.ioc_observable_type}|${row.ioc_item_id}`);
-
-    if (audit?.auditLog) {
-      const auditPayload = buildMembershipExpirationAuditPayload({
-        membershipId: row.id,
-        iocId: row.ioc_item_id,
-        observable: row.observable,
+    const touchKey = `${row.ioc_observable_type}|${row.ioc_item_id}`;
+    if (!iocTouches.has(touchKey)) {
+      iocTouches.set(touchKey, {
+        iocItemId: row.ioc_item_id,
         observableType: row.ioc_observable_type,
-        feedId: row.feed_id,
-        feedName: row.feed_name,
-        oldExpiresAt: row.expires_at,
-        expiredAt,
-        reason: row.expiration_reason || 'policy_ttl',
-        actor: workerActor
-      });
-
-      await audit.auditLog({
-        action: 'ioc_feed_membership.expired',
-        entityType: 'ioc_feed_membership',
-        entityId: String(row.id),
-        entityDisplay: auditPayload.entityDisplay,
-        before: auditPayload.before,
-        after: auditPayload.after,
-        metadata: auditPayload.metadata,
-        source: workerActor.source
+        expiredMemberships: []
       });
     }
+    iocTouches.get(touchKey).expiredMemberships.push({
+      membershipId: row.id,
+      feedId: row.feed_id,
+      feedName: row.feed_name,
+      oldExpiresAt: row.expires_at,
+      expiredAt,
+      reason: row.expiration_reason || 'policy_ttl'
+    });
   }
 
   let iocRecomputed = 0;
   let iocGlobalExpired = 0;
-  for (const key of iocTouches) {
-    const [observableType, iocItemId] = key.split('|');
-    const res = await recomputeIocGlobalStatus(client, Number(iocItemId), observableType, {
+  for (const touch of iocTouches.values()) {
+    const res = await recomputeIocGlobalStatus(client, touch.iocItemId, touch.observableType, {
       audit,
-      actor: workerActor
+      actor: workerActor,
+      expiredMemberships: touch.expiredMemberships
     });
     if (res.changed) {
       iocRecomputed += 1;

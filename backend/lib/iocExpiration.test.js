@@ -9,7 +9,8 @@ import {
   sourceNameMatchesFeed,
   feedKeyForSourceName,
   syncMembershipAfterIocImport,
-  reactivateIocOnCorrelationMatch
+  reactivateIocOnCorrelationMatch,
+  runExpirationWorkerBatch
 } from './iocExpiration.js';
 
 describe('validateExpirationPolicyInput', () => {
@@ -176,5 +177,138 @@ describe('syncMembershipAfterIocImport canonical IOC lookup', () => {
     assert.ok(!lookup.sql.includes('source_name = $3'));
     assert.equal(Array.isArray(lookup.params), true);
     assert.equal(lookup.params.length, 2);
+  });
+});
+
+function buildExpirationWorkerMockClient({ membershipRows, membershipStatusesAfter = ['expired'], iocRow }) {
+  const defaultIocRow = iocRow || {
+    id: 99,
+    observable: 'evil.example',
+    observable_type: 'domain',
+    status: 'active',
+    manual_status_override: false,
+    expires_at: '2020-01-01T00:00:00Z',
+    expired_at: null,
+    expiration_reason: null
+  };
+
+  return {
+    async query(sql) {
+      const s = String(sql);
+      if (s.includes('FROM ioc_feed_memberships m') && s.includes('LIMIT')) {
+        return { rows: membershipRows };
+      }
+      if (s.includes('UPDATE ioc_feed_memberships') && s.includes("status = 'expired'")) {
+        return { rowCount: 1 };
+      }
+      if (s.includes('FROM ioc_items') && s.includes('manual_status_override')) {
+        return { rows: [defaultIocRow] };
+      }
+      if (s.includes('FROM ioc_suppressions')) {
+        return { rows: [] };
+      }
+      if (s.includes('SELECT status FROM ioc_feed_memberships')) {
+        return { rows: membershipStatusesAfter.map((status) => ({ status })) };
+      }
+      if (s.includes('MIN(expires_at)')) {
+        return { rows: [{ min_exp: null }] };
+      }
+      if (s.includes('UPDATE ioc_items')) {
+        return { rowCount: 1 };
+      }
+      return { rows: [] };
+    }
+  };
+}
+
+describe('runExpirationWorkerBatch audit', () => {
+  it('emits single ioc.expired with feed metadata and no membership.expired', async () => {
+    const auditCalls = [];
+    const audit = { auditLog: async (entry) => { auditCalls.push(entry); } };
+    const client = buildExpirationWorkerMockClient({
+      membershipRows: [{
+        id: 42,
+        ioc_item_id: 99,
+        ioc_observable_type: 'domain',
+        feed_id: '11111111-1111-4111-8111-111111111111',
+        status: 'active',
+        expires_at: '2020-01-01T00:00:00Z',
+        expiration_reason: 'policy_ttl',
+        observable: 'evil.example',
+        feed_name: 'USOM TR-CERT'
+      }]
+    });
+
+    await runExpirationWorkerBatch(client, { audit, batchSize: 10 });
+
+    assert.equal(auditCalls.filter((entry) => entry.action === 'ioc_feed_membership.expired').length, 0);
+    const iocExpired = auditCalls.filter((entry) => entry.action === 'ioc.expired');
+    assert.equal(iocExpired.length, 1);
+    assert.equal(iocExpired[0].entityDisplay, 'domain · evil.example');
+    assert.equal(iocExpired[0].metadata.feed_name, 'USOM TR-CERT');
+    assert.equal(iocExpired[0].metadata.membership_id, 42);
+    assert.equal(iocExpired[0].source, 'expiration-worker');
+  });
+
+  it('deduplicates audit logs when multiple memberships expire for the same IOC', async () => {
+    const auditCalls = [];
+    const audit = { auditLog: async (entry) => { auditCalls.push(entry); } };
+    const client = buildExpirationWorkerMockClient({
+      membershipRows: [
+        {
+          id: 42,
+          ioc_item_id: 99,
+          ioc_observable_type: 'domain',
+          feed_id: '11111111-1111-4111-8111-111111111111',
+          status: 'active',
+          expires_at: '2020-01-01T00:00:00Z',
+          expiration_reason: 'policy_ttl',
+          observable: 'evil.example',
+          feed_name: 'USOM TR-CERT'
+        },
+        {
+          id: 43,
+          ioc_item_id: 99,
+          ioc_observable_type: 'domain',
+          feed_id: '22222222-2222-4222-8222-222222222222',
+          status: 'active',
+          expires_at: '2020-01-01T00:00:00Z',
+          expiration_reason: 'policy_ttl',
+          observable: 'evil.example',
+          feed_name: 'URLhaus'
+        }
+      ]
+    });
+
+    await runExpirationWorkerBatch(client, { audit, batchSize: 10 });
+
+    assert.equal(auditCalls.filter((entry) => entry.action === 'ioc_feed_membership.expired').length, 0);
+    const iocExpired = auditCalls.filter((entry) => entry.action === 'ioc.expired');
+    assert.equal(iocExpired.length, 1);
+    assert.equal(iocExpired[0].metadata.affected_feeds.length, 2);
+    assert.equal(iocExpired[0].metadata.feed_name, 'USOM TR-CERT, URLhaus');
+  });
+
+  it('does not emit user-facing audit when IOC global status stays active', async () => {
+    const auditCalls = [];
+    const audit = { auditLog: async (entry) => { auditCalls.push(entry); } };
+    const client = buildExpirationWorkerMockClient({
+      membershipRows: [{
+        id: 42,
+        ioc_item_id: 99,
+        ioc_observable_type: 'domain',
+        feed_id: '11111111-1111-4111-8111-111111111111',
+        status: 'active',
+        expires_at: '2020-01-01T00:00:00Z',
+        expiration_reason: 'policy_ttl',
+        observable: 'evil.example',
+        feed_name: 'USOM TR-CERT'
+      }],
+      membershipStatusesAfter: ['expired', 'active']
+    });
+
+    await runExpirationWorkerBatch(client, { audit, batchSize: 10 });
+
+    assert.equal(auditCalls.length, 0);
   });
 });
