@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLlmRiskAdvisor, normalizeAdvisorOutput } from './llmRiskAdvisor.js';
+import {
+  createLlmRiskAdvisor,
+  normalizeAdvisorOutput,
+  buildAdvisorParseFallback,
+  PERSISTABLE_PARSE_FALLBACK_REASONS
+} from './llmRiskAdvisor.js';
 
 function buildEnrichedDomainIncident() {
   return {
@@ -222,6 +227,143 @@ test('environment insight compact retry can succeed after first timeout', async 
     assert.equal(calls, 2);
     assert.equal(out.output.posture_level, 'moderate');
     assert.equal(out.input_summary.highest_risk_incidents.length, 0);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('manual sync timeout defaults below manual background timeout', () => {
+  const advisor = createLlmRiskAdvisor();
+  assert.ok(advisor.manualSyncTimeoutMs <= advisor.manualTimeoutMs);
+  assert.ok(advisor.manualSyncTimeoutMs >= 5000);
+});
+
+test('buildAdvisorParseFallback exposes user-facing invalid_json reason', () => {
+  const out = buildAdvisorParseFallback('invalid_json', { ioc_type: 'domain' });
+  assert.equal(out.adjustment, 0);
+  assert.equal(out.confidence, 0.45);
+  assert.equal(out.normalization_reason, 'invalid_json');
+  assert.match(out.reason, /could not be parsed reliably/i);
+  assert.ok(out.structured_output?.summary);
+  assert.ok(PERSISTABLE_PARSE_FALLBACK_REASONS.has('invalid_json'));
+});
+
+test('evaluateAndCache persists invalid_json fallback', async () => {
+  const oldFetch = globalThis.fetch;
+  let persisted = false;
+  const mockDb = {
+    query: async (sql) => {
+      if (String(sql).includes('INSERT INTO incident_ai_insights')) persisted = true;
+      return { rows: [] };
+    }
+  };
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ response: 'not-json{{{', done_reason: 'length' })
+  });
+  try {
+    const advisor = createLlmRiskAdvisor({ db: mockDb, redis: null, queue: null });
+    const out = await advisor.evaluateAndCache({
+      incident: {
+        id: 'a5d54a5e-61a4-472e-843b-5b2a64c144f7',
+        incident_id: 900,
+        ioc_type: 'domain',
+        event_count: 2,
+        verdict: 'Unreviewed'
+      },
+      baseRisk: 30,
+      version: 'test-invalid-json',
+      force: true,
+      timeoutMsOverride: 5000,
+      maxAttempts: 1
+    });
+    assert.equal(persisted, true);
+    assert.equal(out.llm_risk_adjustment, 0);
+    assert.equal(out.normalization_reason, 'invalid_json');
+    assert.match(out.llm_risk_reason, /could not be parsed reliably/i);
+    assert.ok(out.llm_last_updated_at);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('evaluateAndCache persists valid JSON response', async () => {
+  const oldFetch = globalThis.fetch;
+  let persisted = false;
+  const mockDb = {
+    query: async (sql) => {
+      if (String(sql).includes('INSERT INTO incident_ai_insights')) persisted = true;
+      return { rows: [] };
+    }
+  };
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      response: JSON.stringify({
+        risk_adjustment: 5,
+        confidence: 0.6,
+        reason: 'Observed DNS and proxy activity related to the IOC domain from one host.'
+      }),
+      done_reason: 'stop'
+    })
+  });
+  try {
+    const advisor = createLlmRiskAdvisor({ db: mockDb, redis: null, queue: null });
+    const out = await advisor.evaluateAndCache({
+      incident: {
+        id: 'a5d54a5e-61a4-472e-843b-5b2a64c144f7',
+        incident_id: 899,
+        ioc_type: 'domain',
+        event_count: 2,
+        verdict: 'Unreviewed'
+      },
+      baseRisk: 30,
+      version: 'test-valid-json',
+      force: true,
+      timeoutMsOverride: 5000,
+      maxAttempts: 1
+    });
+    assert.equal(persisted, true);
+    assert.equal(out.llm_risk_adjustment, 5);
+    assert.ok(out.llm_last_updated_at);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test('evaluateAndCache timeout does not persist fallback insight', async () => {
+  const oldFetch = globalThis.fetch;
+  let persisted = false;
+  const mockDb = {
+    query: async (sql) => {
+      if (String(sql).includes('INSERT INTO incident_ai_insights')) persisted = true;
+      return { rows: [] };
+    }
+  };
+  globalThis.fetch = async (_url, opts = {}) => new Promise((_resolve, reject) => {
+    opts?.signal?.addEventListener('abort', () => {
+      reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+    });
+  });
+  try {
+    const advisor = createLlmRiskAdvisor({ db: mockDb, redis: null, queue: null });
+    const out = await advisor.evaluateAndCache({
+      incident: {
+        id: 'a5d54a5e-61a4-472e-843b-5b2a64c144f7',
+        incident_id: 900,
+        ioc_type: 'domain',
+        event_count: 2,
+        verdict: 'Unreviewed'
+      },
+      baseRisk: 30,
+      version: 'test-timeout',
+      force: true,
+      timeoutMsOverride: 40,
+      maxAttempts: 1
+    });
+    assert.equal(persisted, false);
+    assert.equal(out.llm_risk_reason, 'timeout');
+    assert.equal(out.llm_risk_adjustment, 0);
   } finally {
     globalThis.fetch = oldFetch;
   }

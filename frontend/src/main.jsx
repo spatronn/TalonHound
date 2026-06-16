@@ -3448,7 +3448,15 @@ function IncidentDetailsPage() {
       }
       setAiStillAnalyzing(false);
       await load();
-    } catch {
+    } catch (err) {
+      const httpStatus = Number(err?.response?.status || 0);
+      const isGatewayTimeout = httpStatus === 504 || httpStatus === 408;
+      if (isGatewayTimeout) {
+        setAiStillAnalyzing(true);
+        setAiError('AI analysis is taking longer than expected. Retrying in background...');
+        setTimeout(() => setAiError(''), 6000);
+        return;
+      }
       setAiStillAnalyzing(false);
       setAiError('AI analysis failed');
       setTimeout(() => setAiError(''), 3000);

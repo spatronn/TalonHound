@@ -2261,16 +2261,25 @@ app.post('/api/incidents/:id/ai-analyze', async (req, res) => {
       baseRisk: risk.risk_score,
       version: incidentVersion,
       force: true,
-      timeoutMsOverride: llmRiskAdvisor.manualTimeoutMs
+      timeoutMsOverride: llmRiskAdvisor.manualSyncTimeoutMs,
+      maxAttempts: 1
     });
 
-    if (String(llmRisk?.llm_risk_reason || '').toLowerCase() === 'timeout') {
-      await llmRiskAdvisor.enqueueEvaluation({
+    const deferReasons = new Set(['timeout', 'endpoint_unreachable', 'invalid_json']);
+    const deferReason = String(llmRisk?.llm_risk_reason || '').toLowerCase();
+    if (deferReasons.has(deferReason)) {
+      const enqueued = await llmRiskAdvisor.enqueueEvaluation({
         incidentId: context?.id,
         version: incidentVersion,
-        reason: 'manual_timeout_retry_background'
+        reason: 'manual_timeout_retry_background',
+        force: true
       });
-      return res.status(202).json({ status: 'processing' });
+      console.info('[incident-ai-analyze] deferred', {
+        incident_id: context?.incident_id || null,
+        defer_reason: deferReason,
+        enqueued
+      });
+      return res.status(202).json({ status: 'processing', enqueued: Boolean(enqueued) });
     }
 
     const relatedSignals = summarizeRelatedIocSignals(context?.related_iocs);

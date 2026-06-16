@@ -546,6 +546,37 @@ export function normalizeAdvisorOutput(raw, fallbackReason = 'fallback', inciden
   });
 }
 
+export const PERSISTABLE_PARSE_FALLBACK_REASONS = new Set(['invalid_json']);
+
+export function buildAdvisorParseFallback(reasonCode = 'invalid_json', incidentData = null) {
+  const code = String(reasonCode || 'invalid_json').toLowerCase();
+  const userReason = code === 'invalid_json'
+    ? 'AI response could not be parsed reliably. No risk adjustment was applied.'
+    : 'AI analysis fallback. No risk adjustment was applied.';
+  const confidence = 0.45;
+  return {
+    adjustment: 0,
+    confidence,
+    reason: userReason,
+    raw_model_adjustment: null,
+    normalization_reason: code,
+    hasAcceptedOrSuccessfulTraffic: null,
+    hasStrongMaliciousContext: null,
+    detected_positive_factors: [],
+    detected_negative_factors: [],
+    llm_related_evidence: null,
+    structured_output: normalizeStructuredAiInsight({
+      summary: userReason,
+      risk_adjustment: 0,
+      confidence_score: Math.round(confidence * 100),
+      impact_level: 'unknown',
+      evidence_strength: 'weak',
+      main_risk_drivers: [],
+      risk_reducing_factors: ['ai_response_unparsed']
+    }, incidentData || {})
+  };
+}
+
 function buildGenericPrompt() {
   return `You are a cybersecurity risk assistant. Return a small adjustment score only.
 Rules:
@@ -903,10 +934,14 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
   const url = String(process.env.LLM_RISK_ADVISOR_URL || `${ollamaBaseUrl}/api/generate`).trim();
   const model = String(process.env.LLM_RISK_ADVISOR_MODEL || process.env.OLLAMA_MODEL || 'qwen2.5:14b').trim();
   const timeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_TIMEOUT_MS || 15000), 1000);
-  const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 30000), timeoutMs);
+  const manualTimeoutMs = Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS || 45000), timeoutMs);
+  const manualSyncTimeoutMs = Math.min(
+    Math.max(Number(process.env.LLM_RISK_ADVISOR_MANUAL_SYNC_MS || 28000), 5000),
+    manualTimeoutMs
+  );
   const llmTemperature = Number(process.env.LLM_RISK_TEMPERATURE ?? 0.2);
   const llmNumCtx = Math.max(Number(process.env.LLM_RISK_NUM_CTX ?? 2048), 256);
-  const llmNumPredict = Math.max(Number(process.env.LLM_RISK_NUM_PREDICT ?? 180), 1);
+  const llmNumPredict = Math.max(Number(process.env.LLM_RISK_NUM_PREDICT ?? 240), 1);
   const environmentInsightTimeoutMs = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_LLM_TIMEOUT_MS || 90000), 1000);
   const environmentInsightMaxPromptChars = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_MAX_PROMPT_CHARS || 12000), 1000);
   const environmentInsightMaxOutputTokens = Math.max(Number(process.env.ENVIRONMENT_INSIGHT_MAX_OUTPUT_TOKENS || 350), 64);
@@ -1144,8 +1179,8 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     }
   }
 
-  async function enqueueEvaluation({ incidentId, version, reason = 'manual' }) {
-    if (!enabled) return false;
+  async function enqueueEvaluation({ incidentId, version, reason = 'manual', force = false } = {}) {
+    if (!enabled && !force) return false;
     if (!queue || typeof queue.add !== 'function') return false;
 
     const id = String(incidentId || '').trim();
@@ -1153,23 +1188,40 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     if (!id || !v) return false;
 
     try {
+      const safe = (value) => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+      const jobId = (force || String(reason).includes('manual'))
+        ? `llm-risk-manual-${safe(id)}-${safe(v)}-${Date.now()}`
+        : `llm-risk-${safe(id)}-${safe(v)}`;
       await queue.add(
         'llm-risk-evaluate',
-        { incidentId: id, version: v, reason },
+        { incidentId: id, version: v, reason, force: Boolean(force) },
         {
-          jobId: `llm-risk:${id}:${v}`,
+          jobId,
           removeOnComplete: true,
           removeOnFail: 200,
           attempts: 1
         }
       );
       return true;
-    } catch {
+    } catch (err) {
+      console.warn('[llm-enqueue] failed', {
+        incidentId: id,
+        version: v,
+        reason,
+        error: err?.message || String(err)
+      });
       return false;
     }
   }
 
-  async function evaluateAndCache({ incident, baseRisk, version, force = false, timeoutMsOverride } = {}) {
+  async function evaluateAndCache({
+    incident,
+    baseRisk,
+    version,
+    force = false,
+    timeoutMsOverride,
+    maxAttempts = 2
+  } = {}) {
     const base = clamp(Number(baseRisk || 0), 0, 100);
     if (!enabled && !force) return fallback(base, 'disabled');
 
@@ -1181,8 +1233,9 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
       return out;
     }
 
+    const attemptBudget = Math.max(Number(maxAttempts || 1), 1);
     const initialTimeout = Math.max(Number(timeoutMsOverride || timeoutMs), 1000);
-    const retryBackoffMs = 5000;
+    const retryBackoffMs = attemptBudget > 1 ? 5000 : 0;
     const secondTimeout = initialTimeout + 5000;
 
     async function singleAttempt(requestTimeoutMs) {
@@ -1216,8 +1269,21 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
         const body = await response.json();
         const modelJson = extractJson(body?.response);
         if (!modelJson) {
+          console.warn('[llm-generate] invalid_json', {
+            incident_id: incident?.incident_id || incident?.id || null,
+            done_reason: body?.done_reason || null,
+            response_len: String(body?.response || '').length,
+            eval_ms: body?.eval_duration ? Math.round(body.eval_duration / 1e6) : null
+          });
           return { ok: false, kind: 'parse', reason: 'invalid_json' };
         }
+
+        console.info('[llm-generate]', {
+          incident_id: incident?.incident_id || incident?.id || null,
+          done_reason: body?.done_reason || null,
+          eval_ms: body?.eval_duration ? Math.round(body.eval_duration / 1e6) : null,
+          prompt_eval_ms: body?.prompt_eval_duration ? Math.round(body.prompt_eval_duration / 1e6) : null
+        });
 
         const normalized = normalizeAdvisorOutput(modelJson, 'ok', incidentPayload);
         console.info(`[llm-confidence-trace] incident_id=${incident?.incident_id || incident?.id || ''} ioc_type=${incidentPayload?.ioc_type || ''} model_raw_confidence=${Number(modelJson?.confidence || 0)} normalized_confidence=${Number(normalized?.confidence || 0)} reason_valid=${String(normalized?.reason || '').startsWith('invalid_reason_') ? 'false' : 'true'} reason_validation_code=${normalized?.normalization_reason || 'ok'} used_fallback_reason=${String(normalized?.reason || '').includes('fallback') ? 'true' : 'false'} is_low_confidence=${Number(normalized?.confidence || 0) < 0.4} effective_adjustment=${Number(normalized?.adjustment || 0)} final_confidence_returned=${Number(normalized?.confidence || 0)} cache_hit=false cache_write_value=pending`);
@@ -1233,51 +1299,65 @@ export function createLlmRiskAdvisor({ redis, queue, db } = {}) {
     const first = await singleAttempt(initialTimeout);
     let result = first;
 
-    if (!first.ok && first.kind === 'timeout') {
+    if (!first.ok && first.kind === 'timeout' && attemptBudget > 1) {
       await sleep(retryBackoffMs);
       result = await singleAttempt(secondTimeout);
     }
 
+    async function finalizeEvaluation({ normalized, incidentPayload }) {
+      await setCached({
+        incidentId: incident?.id || incident?.incident_id,
+        version,
+        value: {
+          ...normalized,
+          ioc_type: incident?.ioc_type || null,
+          incident_payload: incidentPayload,
+          llm_last_updated_at: new Date().toISOString(),
+          llm_version: version || null
+        }
+      });
+      await persistInsight({ incident, version, normalized, contextPack: incidentPayload });
+
+      const tier = inferEvidenceTier(incident || {});
+      const aiDeltaEffective = computeEffectiveAiDelta(normalized.adjustment, normalized.confidence, tier, aiWeight);
+      const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence, incident);
+      return {
+        risk_before_llm: Number(base.toFixed(2)),
+        llm_risk_adjustment: normalized.adjustment,
+        llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
+        llm_risk_reason: normalized.reason,
+        llm_related_evidence: normalized.llm_related_evidence || null,
+        ai_insight: normalized.structured_output || null,
+        raw_model_adjustment: normalized.raw_model_adjustment,
+        normalization_reason: normalized.normalization_reason,
+        hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
+        hasStrongMaliciousContext: normalized.hasStrongMaliciousContext,
+        detected_positive_factors: normalized.detected_positive_factors || [],
+        detected_negative_factors: normalized.detected_negative_factors || [],
+        llm_last_updated_at: new Date().toISOString(),
+        llm_version: version || null,
+        ai_delta_effective: Number(aiDeltaEffective.toFixed(2)),
+        final_risk_score: Number(finalRisk.toFixed(2))
+      };
+    }
+
     if (!result.ok) {
+      const failureReason = String(result.reason || 'fallback').toLowerCase();
+      if (PERSISTABLE_PARSE_FALLBACK_REASONS.has(failureReason)) {
+        const incidentPayload = buildIncidentPayload(incident);
+        const normalized = buildAdvisorParseFallback(failureReason, incidentPayload);
+        console.warn('[llm-generate] persisted_parse_fallback', {
+          incident_id: incident?.incident_id || incident?.id || null,
+          failure_reason: failureReason
+        });
+        return finalizeEvaluation({ normalized, incidentPayload });
+      }
       return fallback(base, result.reason || 'fallback');
     }
 
     const normalized = result.normalized;
     const incidentPayload = result.incidentPayload || buildIncidentPayload(incident);
-    await setCached({
-      incidentId: incident?.id || incident?.incident_id,
-      version,
-      value: {
-        ...normalized,
-        ioc_type: incident?.ioc_type || null,
-        incident_payload: incidentPayload,
-        llm_last_updated_at: new Date().toISOString(),
-        llm_version: version || null
-      }
-    });
-    await persistInsight({ incident, version, normalized, contextPack: incidentPayload });
-
-    const tier = inferEvidenceTier(incident || {});
-    const aiDeltaEffective = computeEffectiveAiDelta(normalized.adjustment, normalized.confidence, tier, aiWeight);
-    const finalRisk = computeFinalRisk(base, normalized.adjustment, normalized.confidence, incident);
-    return {
-      risk_before_llm: Number(base.toFixed(2)),
-      llm_risk_adjustment: normalized.adjustment,
-      llm_risk_confidence: Number(normalized.confidence.toFixed(3)),
-      llm_risk_reason: normalized.reason,
-      llm_related_evidence: normalized.llm_related_evidence || null,
-      ai_insight: normalized.structured_output || null,
-      raw_model_adjustment: normalized.raw_model_adjustment,
-      normalization_reason: normalized.normalization_reason,
-      hasAcceptedOrSuccessfulTraffic: normalized.hasAcceptedOrSuccessfulTraffic,
-      hasStrongMaliciousContext: normalized.hasStrongMaliciousContext,
-      detected_positive_factors: normalized.detected_positive_factors || [],
-      detected_negative_factors: normalized.detected_negative_factors || [],
-      llm_last_updated_at: new Date().toISOString(),
-      llm_version: version || null,
-      ai_delta_effective: Number(aiDeltaEffective.toFixed(2)),
-      final_risk_score: Number(finalRisk.toFixed(2))
-    };
+    return finalizeEvaluation({ normalized, incidentPayload });
   }
 
   function buildEnvironmentInsightPrompt(inputSummary = {}, { mode = 'standard' } = {}) {
@@ -1394,6 +1474,7 @@ Input:${inputJson}`;
     enabled,
     timeoutMs,
     manualTimeoutMs,
+    manualSyncTimeoutMs,
     environmentInsightTimeoutMs,
     environmentInsightMaxPromptChars,
     environmentInsightMaxOutputTokens,

@@ -7,6 +7,8 @@ import { calculateIncidentRisk } from '../lib/riskEngine.js';
 import { createLlmRiskAdvisor } from '../risk/llmRiskAdvisor.js';
 import { buildIncidentStatsSnapshot } from '../risk/llmRiskCommon.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from '../risk/incidentAiInsightContext.js';
+import { IOC_MATCH_EVENT_STATS_SELECT } from '../lib/incidentEventAggSql.js';
+import { buildThreatClassificationResponseFields } from '../lib/threatClassification.js';
 
 const { Pool } = pg;
 
@@ -50,90 +52,29 @@ function eventOutcome(ev = {}) {
 
 async function loadIncident(id) {
   const q = await pool.query(
-    `WITH ev AS (
-       SELECT
-         COUNT(*)::bigint AS event_count,
-         COUNT(DISTINCT COALESCE(NULLIF(m.destination_ip, ''), NULLIF(m.host_name, '')))::int AS asset_count,
-         SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('accept','accepted','allow','allowed','permit') THEN 1 ELSE 0 END)::bigint AS accepted_connections,
-         SUM(CASE WHEN LOWER(COALESCE(m.match_context->>'action', '')) IN ('deny','denied','drop','blocked','block') THEN 1 ELSE 0 END)::bigint AS blocked_connections,
-         SUM(CASE
-               WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'inbound'
-                 OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'inbound'
-               THEN 1 ELSE 0
-             END)::bigint AS inbound_events,
-         SUM(CASE
-               WHEN LOWER(COALESCE(m.match_context->>'direction', '')) = 'outbound'
-                 OR LOWER(COALESCE(m.match_context->>'flow', '')) = 'outbound'
-               THEN 1 ELSE 0
-             END)::bigint AS outbound_events,
-         SUM(CASE
-               WHEN LOWER(COALESCE(m.match_context->>'list', '')) = 'blacklist'
-                 OR LOWER(COALESCE(m.match_context->>'threat_list', '')) = 'blacklist'
-                 OR LOWER(COALESCE(m.source_name, '')) LIKE '%blacklist%'
-               THEN 1 ELSE 0
-             END)::bigint AS blacklist_hits,
-         CASE
-           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'high') THEN 'high'
-           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'medium') THEN 'medium'
-           WHEN BOOL_OR(LOWER(COALESCE(m.confidence, '')) = 'low') THEN 'low'
-           ELSE NULL
-         END AS confidence
-       FROM ioc_match_events m
-       WHERE m.activity_id = $1::uuid
-     )
-     SELECT
+    `SELECT
        a.*,
-       ev.event_count,
-       ev.asset_count,
-       ev.accepted_connections,
-       ev.blocked_connections,
-       ev.inbound_events,
-       ev.outbound_events,
-	       ev.blacklist_hits,
-	       ev.confidence,
-	       COALESCE(tag_agg.tags, ARRAY[]::text[]) AS tags,
-	       i.threat_classification,
-	       i.threat_classification AS primary_threat_classification,
-	       i.category,
-	       i.status AS ioc_status,
-	       i.confidence AS ioc_confidence,
-	       i.source_name AS ioc_source,
-	       i.expires_at,
-	       COALESCE(prev.previous_incident_count, 0)::int AS previous_incident_count,
-	       COALESCE(prev.previous_verdict, 'unknown') AS previous_verdict
-	     FROM ioc_activity a
-	     CROSS JOIN ev
-	     LEFT JOIN LATERAL (
-	       SELECT *
-	       FROM ioc_items i
-	       WHERE lower(i.observable) = lower(a.ioc_value)
-	         AND lower(i.observable_type) = lower(a.ioc_type)
-	       ORDER BY i.created_at DESC
-	       LIMIT 1
-	     ) i ON TRUE
-	     LEFT JOIN LATERAL (
-	       SELECT ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS tags
-	       FROM ioc_tags it
-	       JOIN tags t ON t.id = it.tag_id
-	       WHERE it.ioc_id = i.id
-	     ) tag_agg ON TRUE
-	     LEFT JOIN LATERAL (
-       SELECT
-         COUNT(*)::int AS previous_incident_count,
-         COALESCE((
-           SELECT LOWER(COALESCE(a3.verdict, 'unknown'))
-           FROM ioc_activity a3
-           WHERE a3.ioc_value = a.ioc_value
-             AND a3.ioc_type = a.ioc_type
-             AND a3.id <> a.id
-           ORDER BY a3.updated_at DESC
-           LIMIT 1
-         ), 'unknown') AS previous_verdict
-       FROM ioc_activity a2
-       WHERE a2.ioc_value = a.ioc_value
-         AND a2.ioc_type = a.ioc_type
-         AND a2.id <> a.id
-     ) prev ON true
+       COALESCE(ev.asset_count, 0) AS asset_count,
+       COALESCE(ev.event_count, 0) AS event_count,
+       COALESCE(ev.accepted_connections, 0) AS accepted_connections,
+       COALESCE(ev.blocked_connections, 0) AS blocked_connections,
+       COALESCE(ev.inbound_events, 0) AS inbound_events,
+       COALESCE(ev.outbound_events, 0) AS outbound_events,
+       COALESCE(ev.blacklist_hits, 0) AS blacklist_hits,
+       ev.dominant_source_type,
+       ev.dominant_parser_source,
+       ev.detection_type,
+       ev.has_endpoint_evidence,
+       ev.has_proxy_evidence,
+       ev.has_dns_evidence,
+       ev.has_firewall_evidence,
+       ev.confidence
+     FROM ioc_activity a
+     LEFT JOIN LATERAL (
+       SELECT ${IOC_MATCH_EVENT_STATS_SELECT}
+       FROM ioc_match_events m
+       WHERE m.activity_id = a.id
+     ) ev ON TRUE
      WHERE a.id = $1::uuid
      LIMIT 1`,
     [id]
@@ -141,6 +82,46 @@ async function loadIncident(id) {
 
   const incident = q.rows?.[0] || null;
   if (!incident) return null;
+
+  const itemQ = await pool.query(
+    `SELECT i.id, i.threat_classification, i.category, i.status, i.confidence, i.source_name, i.expires_at
+     FROM ioc_items i
+     WHERE lower(i.observable) = lower($1)
+       AND lower(i.observable_type) = lower($2)
+     ORDER BY i.created_at DESC
+     LIMIT 1`,
+    [incident.ioc_value, incident.ioc_type]
+  );
+  const item = itemQ.rows?.[0] || null;
+  if (item) {
+    Object.assign(incident, buildThreatClassificationResponseFields(item));
+    incident.ioc_status = item.status;
+    incident.ioc_confidence = item.confidence;
+    incident.ioc_source = item.source_name;
+    incident.expires_at = item.expires_at;
+    incident.category = item.category;
+  }
+
+  const prevQ = await pool.query(
+    `SELECT
+       COUNT(*)::int AS previous_incident_count,
+       COALESCE((
+         SELECT LOWER(COALESCE(a3.verdict, 'unknown'))
+         FROM ioc_activity a3
+         WHERE a3.ioc_value = $2
+           AND a3.ioc_type = $3
+           AND a3.id <> $1::uuid
+         ORDER BY a3.updated_at DESC
+         LIMIT 1
+       ), 'unknown') AS previous_verdict
+     FROM ioc_activity a2
+     WHERE a2.ioc_value = $2
+       AND a2.ioc_type = $3
+       AND a2.id <> $1::uuid`,
+    [id, incident.ioc_value, incident.ioc_type]
+  );
+  incident.previous_incident_count = Number(prevQ.rows?.[0]?.previous_incident_count || 0);
+  incident.previous_verdict = prevQ.rows?.[0]?.previous_verdict || 'unknown';
 
   const evQ = await pool.query(
     `SELECT
@@ -235,7 +216,7 @@ async function loadIncident(id) {
     confirmed_successful_access: hasConfirmedSuccessfulAccess,
     confirmed_user_interaction: false,
     file_download_evidence: false,
-    ti_classification: null,
+    ti_classification: incident?.threat_classification || null,
     post_submission_signal: hasPostSignals
   };
 
@@ -250,7 +231,6 @@ async function loadIncident(id) {
   }));
 
   console.info(`[llm-payload] incident_id=${incident?.incident_id || id} ioc_type=${incident?.ioc_type || ''} event_count=${rows.length} sample_events=${incident.sample_events.length} source_types=${JSON.stringify(sourceTypes)} duration_minutes=${durationMinutes}`);
-  console.info(`[llm-payload-debug] incident_id=${incident?.incident_id || id} ioc_type=${incident?.ioc_type || ''} hits=${incident?.total_hits || incident?.hits || 0} event_count=${incident?.event_count || rows.length} observed_hosts=${incident?.asset_count || 0} first_seen=${incident?.first_seen || ''} last_seen=${incident?.last_seen || ''} duration_minutes=${durationMinutes} event_summary.persistence.duration_minutes=${incident?.event_summary?.persistence?.duration_minutes || 0} event_summary.persistence.events_per_hour=${incident?.event_summary?.persistence?.events_per_hour || 0} event_summary.source_types=${JSON.stringify(sourceTypes)} event_summary.http.status_codes=${JSON.stringify(statusCodes)} event_summary.http.status_classes=${JSON.stringify(statusClasses)} event_summary.http.methods=${JSON.stringify(methods)} event_summary.outcomes=${JSON.stringify(outcomes)} sample_events_count=${incident.sample_events.length}`);
 
   return enrichIncidentContextWithRelatedIocs(incident, { pool });
 }
@@ -260,6 +240,9 @@ const worker = new Worker(
   async (job) => {
     const incidentId = String(job.data?.incidentId || '').trim();
     const requestedVersion = String(job.data?.version || '').trim();
+    const force = Boolean(job.data?.force)
+      || job.data?.reason === 'manual_timeout_retry_background'
+      || job.data?.reason === 'manual';
     if (!incidentId) return { skipped: true, reason: 'missing_incident_id' };
 
     const incident = await loadIncident(incidentId);
@@ -273,26 +256,31 @@ const worker = new Worker(
     }
 
     const snapshot = buildIncidentStatsSnapshot(incident);
-    if (snapshot.total_events < 50 || snapshot.unique_hosts < 2) {
+    if (!force && (snapshot.total_events < 50 || snapshot.unique_hosts < 2)) {
       return { skipped: true, reason: 'below_threshold', total_events: snapshot.total_events, unique_hosts: snapshot.unique_hosts };
     }
 
     const output = await advisor.evaluateAndCache({
       incident,
       baseRisk: risk.risk_score,
-      version: currentVersion
+      version: currentVersion,
+      force: true,
+      timeoutMsOverride: advisor.manualTimeoutMs,
+      maxAttempts: 2
     });
 
     const relatedSignals = summarizeRelatedIocSignals(incident?.related_iocs);
     console.log('[ai-insight][debug]', {
       incident_id: incident?.incident_id || null,
       context_path: 'worker',
+      force,
       ...relatedSignals,
       hasAcceptedOrSuccessfulTraffic: output?.hasAcceptedOrSuccessfulTraffic ?? null,
       hasStrongMaliciousContext: output?.hasStrongMaliciousContext ?? null,
       raw_model_adjustment: output?.raw_model_adjustment ?? null,
       final_adjustment: output?.llm_risk_adjustment ?? null,
-      normalization_reason: output?.normalization_reason ?? null
+      normalization_reason: output?.normalization_reason ?? null,
+      llm_risk_reason: output?.llm_risk_reason ?? null
     });
 
     return {
