@@ -118,7 +118,7 @@ test('analyst create writes audit log', async () => {
       if (sql.startsWith('INSERT INTO ioc_analyst_intelligence')) {
         return {
           rows: [{
-            id: '22222222-2222-2222-2222-222222222222',
+            id: '22222222-2222-4222-8222-222222222222',
             ioc_id: 42,
             title: 'Vendor report',
             url: 'https://example.com/report',
@@ -189,7 +189,7 @@ test('delete soft-deletes and writes audit log', async () => {
       if (sql.includes('FROM ioc_analyst_intelligence') && sql.includes('SELECT')) {
         return {
           rows: [{
-            id: '22222222-2222-2222-2222-222222222222',
+            id: '22222222-2222-4222-8222-222222222222',
             ioc_id: 42,
             title: 'To delete',
             url: null,
@@ -208,7 +208,7 @@ test('delete soft-deletes and writes audit log', async () => {
       }
       return { rows: [], rowCount: 0 };
     };
-    const res = await request(app, 'DELETE', '/api/ioc/42/analyst-intelligence/22222222-2222-2222-2222-222222222222');
+    const res = await request(app, 'DELETE', '/api/ioc/42/analyst-intelligence/22222222-2222-4222-8222-222222222222');
     assert.equal(res.status, 204);
     assert.equal(auditCalls.length, 1);
     assert.equal(auditCalls[0].action, 'ioc.analyst_intelligence.deleted');
