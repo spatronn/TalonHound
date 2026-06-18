@@ -11001,9 +11001,6 @@ function isIpEnrichmentEligible(iocValue, iocType) {
   return { eligible: false, ip: null, observable: raw };
 }
 
-  return { eligible: false, ip: null, observable: raw };
-}
-
 /** AbuseIPDB v1: IP IOC type only (not URL/domain/hash). */
 function isAbuseIpdbEligible(iocValue, iocType) {
   const raw = String(iocValue || '').trim();
