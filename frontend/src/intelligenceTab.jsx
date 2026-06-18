@@ -20,6 +20,11 @@ import {
   providerStateStyle,
   signalToneStyle
 } from './lib/intelligenceSummary.js';
+import {
+  buildAnalystReferencePayload,
+  EMPTY_ANALYST_REFERENCE_FORM,
+  toAnalystReferenceForm
+} from './lib/analystIntelligenceForm.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -124,41 +129,17 @@ export function IntelligenceSummarySection({ providerSnapshots, analystSummary }
   );
 }
 
-const EMPTY_FORM = {
-  title: '',
-  url: '',
-  source_name: '',
-  reference_type: 'other',
-  tlp: 'clear',
-  confidence: 'unknown',
-  assessment_impact: 'context_only',
-  note: ''
-};
+function AnalystReferenceFormModal({ open, formSeedKey, initialForm, isEdit = false, saving, error, onClose, onSave }) {
+  const [form, setForm] = useState(initialForm);
 
-function toAnalystReferenceForm(item) {
-  if (!item) return EMPTY_FORM;
-  return {
-    title: item.title || '',
-    url: item.url || '',
-    source_name: item.source_name || '',
-    reference_type: item.reference_type || 'other',
-    tlp: item.tlp || 'clear',
-    confidence: item.confidence || 'unknown',
-    assessment_impact: item.assessment_impact || 'context_only',
-    note: item.note || ''
-  };
-}
-
-function AnalystReferenceFormModal({ open, initial, isEdit = false, saving, error, onClose, onSave }) {
-  const [form, setForm] = useState(initial || EMPTY_FORM);
   useEffect(() => {
-    if (open) setForm(initial || EMPTY_FORM);
-  }, [open, initial]);
+    if (open) setForm(initialForm);
+  }, [open, formSeedKey, initialForm]);
 
   if (!open) return null;
 
-  function setField(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  function setField(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }));
   }
 
   return (
@@ -177,10 +158,6 @@ function AnalystReferenceFormModal({ open, initial, isEdit = false, saving, erro
           <label style={{ display: 'grid', gap: 4 }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>URL</span>
             <input value={form.url || ''} onChange={(e) => setField('url', e.target.value)} placeholder="https://..." />
-          </label>
-          <label style={{ display: 'grid', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>Source name</span>
-            <input value={form.source_name || ''} maxLength={120} onChange={(e) => setField('source_name', e.target.value)} />
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
             <label style={{ display: 'grid', gap: 4 }}>
@@ -249,6 +226,12 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
+  const modalFormSeedKey = editing?.id || 'create';
+  const modalInitialForm = useMemo(
+    () => (editing ? toAnalystReferenceForm(editing) : { ...EMPTY_ANALYST_REFERENCE_FORM }),
+    [modalFormSeedKey, modalOpen]
+  );
+
   const load = useCallback(async () => {
     if (!iocId || !active) return;
     setLoading(true);
@@ -274,12 +257,14 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
   async function handleSave(form) {
     setSaving(true);
     setFormError('');
-    const payload = toAnalystReferenceForm(form);
+    const payload = buildAnalystReferencePayload(form);
     try {
       if (editing?.id) {
-        await api.put(`/ioc/${iocId}/analyst-intelligence/${editing.id}`, payload);
+        const { data: updated } = await api.put(`/ioc/${iocId}/analyst-intelligence/${editing.id}`, payload);
+        setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
       } else {
-        await api.post(`/ioc/${iocId}/analyst-intelligence`, payload);
+        const { data: created } = await api.post(`/ioc/${iocId}/analyst-intelligence`, payload);
+        setItems((prev) => [created, ...prev]);
       }
       setModalOpen(false);
       setEditing(null);
@@ -328,7 +313,11 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700, color: '#e2e8f0', overflowWrap: 'anywhere' }}>{item.title}</div>
-                {item.source_name ? <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{item.source_name}</div> : null}
+                {item.url ? (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 4, fontSize: 12, color: '#93c5fd', overflowWrap: 'anywhere' }}>
+                    Open reference
+                  </a>
+                ) : null}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 {badgeEl(referenceTypeLabel(item.reference_type), referenceTypeBadgeStyle(item.reference_type))}
@@ -339,9 +328,6 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
             </div>
             {item.note ? <div style={{ marginTop: 8, fontSize: 13, color: '#cbd5e1', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{item.note}</div> : null}
             <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', fontSize: 12, color: '#94a3b8' }}>
-              {item.url ? (
-                <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>Open source</a>
-              ) : null}
               <span>Added by {item.created_by_username || 'unknown'}</span>
               <span>{formatUserDateTime(item.created_at)}</span>
               {item.updated_at ? <span>Updated {formatUserDateTime(item.updated_at)}</span> : null}
@@ -358,7 +344,8 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
 
       <AnalystReferenceFormModal
         open={modalOpen}
-        initial={editing ? toAnalystReferenceForm(editing) : EMPTY_FORM}
+        formSeedKey={modalFormSeedKey}
+        initialForm={modalInitialForm}
         isEdit={Boolean(editing?.id)}
         saving={saving}
         error={formError}

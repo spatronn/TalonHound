@@ -215,6 +215,134 @@ test('delete soft-deletes and writes audit log', async () => {
   });
 });
 
+test('PUT updates note, enums, and audit changed_fields without source_name', async () => {
+  await withServer(async ({ app, state, auditCalls }) => {
+    const refId = '33333333-3333-4333-8333-333333333333';
+    let updateParams = null;
+    state.handler = (sql, params) => {
+      if (sql.includes('FROM ioc_items')) {
+        return { rows: [{ id: 42, public_id: 'abc', observable: '1.2.3.4', observable_type: 'ip' }], rowCount: 1 };
+      }
+      if (sql.includes('FROM ioc_analyst_intelligence') && sql.includes('SELECT')) {
+        return {
+          rows: [{
+            id: refId,
+            ioc_id: 42,
+            title: 'Old title',
+            url: 'https://old.example',
+            source_name: 'legacy source',
+            reference_type: 'internal_note',
+            tlp: 'clear',
+            confidence: 'unknown',
+            assessment_impact: 'context_only',
+            note: 'old note'
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes('UPDATE ioc_analyst_intelligence') && sql.includes('SET title')) {
+        updateParams = params;
+        return {
+          rows: [{
+            id: refId,
+            ioc_id: 42,
+            title: 'New title',
+            url: 'https://new.example',
+            source_name: null,
+            reference_type: 'free_ti',
+            tlp: 'green',
+            confidence: 'high',
+            assessment_impact: 'supports_malicious',
+            note: 'new note line',
+            updated_by: '11111111-1111-1111-1111-111111111111',
+            updated_by_username: 'analyst1',
+            updated_at: new Date().toISOString()
+          }],
+          rowCount: 1
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+
+    const body = {
+      title: 'New title',
+      url: 'https://new.example',
+      reference_type: 'free_ti',
+      tlp: 'green',
+      confidence: 'high',
+      assessment_impact: 'supports_malicious',
+      note: 'new note line'
+    };
+    const res = await request(app, 'PUT', `/api/ioc/42/analyst-intelligence/${refId}`, { body });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.reference_type, 'free_ti');
+    assert.equal(res.data.confidence, 'high');
+    assert.equal(res.data.assessment_impact, 'supports_malicious');
+    assert.equal(res.data.note, 'new note line');
+    assert.equal(res.data.tlp, 'green');
+    assert.ok(updateParams);
+    assert.equal(updateParams[3], 'New title');
+    assert.equal(updateParams[6], 'free_ti');
+    assert.equal(updateParams[7], 'green');
+    assert.equal(updateParams[8], 'high');
+    assert.equal(updateParams[9], 'supports_malicious');
+    assert.equal(updateParams[10], 'new note line');
+    assert.equal(auditCalls.length, 1);
+    assert.equal(auditCalls[0].action, 'ioc.analyst_intelligence.updated');
+    assert.ok(auditCalls[0].metadata.changed_fields.includes('note'));
+    assert.ok(auditCalls[0].metadata.changed_fields.includes('reference_type'));
+    assert.ok(auditCalls[0].metadata.changed_fields.includes('confidence'));
+    assert.ok(auditCalls[0].metadata.changed_fields.includes('assessment_impact'));
+    assert.ok(auditCalls[0].metadata.changed_fields.includes('tlp'));
+  });
+});
+
+test('create works without source_name', async () => {
+  await withServer(async ({ app, state }) => {
+    state.handler = (sql, params) => {
+      if (sql.includes('FROM ioc_items')) {
+        return { rows: [{ id: 42, public_id: 'abc', observable: '1.2.3.4', observable_type: 'ip' }], rowCount: 1 };
+      }
+      if (sql.startsWith('INSERT INTO ioc_analyst_intelligence')) {
+        assert.equal(params[4], null);
+        return {
+          rows: [{
+            id: '44444444-4444-4444-8444-444444444444',
+            ioc_id: 42,
+            title: 'No source',
+            url: null,
+            source_name: null,
+            reference_type: 'other',
+            tlp: 'clear',
+            confidence: 'unknown',
+            assessment_impact: 'context_only',
+            note: null,
+            created_by: '11111111-1111-1111-1111-111111111111',
+            created_by_username: 'analyst1',
+            created_at: new Date().toISOString(),
+            updated_by: null,
+            updated_by_username: null,
+            updated_at: null
+          }],
+          rowCount: 1
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+    const res = await request(app, 'POST', '/api/ioc/42/analyst-intelligence', {
+      body: {
+        title: 'No source',
+        reference_type: 'other',
+        tlp: 'clear',
+        confidence: 'unknown',
+        assessment_impact: 'context_only'
+      }
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.data.source_name, null);
+  });
+});
+
 test('requireRole rejects readonly for write routes', () => {
   const handler = requireRole(ROLES.ADMIN, ROLES.ANALYST);
   const req = { user: { role: 'readonly' }, authVia: 'session' };
