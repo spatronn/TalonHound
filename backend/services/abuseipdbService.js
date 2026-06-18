@@ -67,7 +67,7 @@ export function isCacheFresh(row, config, { force = false } = {}) {
   const ttlMs = Math.max(1, Number(config?.cache_ttl_hours || DEFAULT_TTL_HOURS)) * 60 * 60 * 1000;
   const ageMs = Date.now() - at;
 
-  if (row.max_age_days !== config.max_age_days || row.verbose !== config.verbose) {
+  if (row.max_age_days !== config.max_age_days || row.verbose_enabled !== config.verbose) {
     return false;
   }
 
@@ -142,12 +142,12 @@ export async function upsertAbuseIpdbEnrichment(pool, record) {
   const summary = { ...(record.normalized_summary || {}), provider_status: record.provider_status };
   const { rows } = await pool.query(
     `INSERT INTO ioc_abuseipdb_enrichment (
-      ip, provider_status, max_age_days, verbose, normalized_summary, raw_json, error_message, last_enriched_at, updated_at
+      ip, provider_status, max_age_days, verbose_enabled, normalized_summary, raw_json, error_message, last_enriched_at, updated_at
     ) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7,$8::timestamptz,NOW())
     ON CONFLICT (ip) DO UPDATE SET
       provider_status = EXCLUDED.provider_status,
       max_age_days = EXCLUDED.max_age_days,
-      verbose = EXCLUDED.verbose,
+      verbose_enabled = EXCLUDED.verbose_enabled,
       normalized_summary = EXCLUDED.normalized_summary,
       raw_json = EXCLUDED.raw_json,
       error_message = EXCLUDED.error_message,

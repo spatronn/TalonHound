@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS ioc_abuseipdb_enrichment (
   ip TEXT NOT NULL,
   provider_status TEXT NULL,
   max_age_days INTEGER NOT NULL DEFAULT 90,
-  verbose BOOLEAN NOT NULL DEFAULT false,
+  verbose_enabled BOOLEAN NOT NULL DEFAULT false,
   normalized_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
   raw_json JSONB NULL,
   error_message TEXT NULL,
