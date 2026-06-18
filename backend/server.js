@@ -27,6 +27,7 @@ import { registerBulkTriageRoutes } from './routes/bulkTriage.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
+import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
@@ -57,6 +58,7 @@ import {
   topCountsFromRows
 } from './lib/environmentInsight.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
+import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
@@ -4940,6 +4942,8 @@ registerRouteModule('audit');
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('rdap_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
+registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
+registerRouteModule('abuseipdb_enrichment');
 registerRouteModule('ip_enrichment');
 registerIocExpirationRoutes(app, pool, auditLogService);
 registerRouteModule('ioc_expiration');
@@ -7546,6 +7550,13 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
     else if (ipinfo.configured && ipinfo.last_success_at) ipinfoStatus = 'healthy';
     else if (ipinfo.configured) ipinfoStatus = 'configured';
 
+    const abuseipdb = await getAbuseIpdbConfig(pool);
+    let abuseStatus = 'not_configured';
+    if (!abuseipdb.enabled && abuseipdb.configured) abuseStatus = 'disabled';
+    else if (abuseipdb.configured && abuseipdb.last_error_at && (!abuseipdb.last_success_at || new Date(abuseipdb.last_error_at) > new Date(abuseipdb.last_success_at))) abuseStatus = 'error';
+    else if (abuseipdb.configured && abuseipdb.last_success_at) abuseStatus = 'healthy';
+    else if (abuseipdb.configured) abuseStatus = 'configured';
+
     return res.json({ providers: [
       {
         provider: VT_PROVIDER,
@@ -7576,6 +7587,23 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
         last_success_at: ipinfo.last_success_at,
         last_error_at: ipinfo.last_error_at,
         last_error_message: ipinfo.last_error_message
+      },
+      {
+        provider: abuseipdb.provider_key,
+        name: abuseipdb.display_name,
+        enabled: abuseipdb.enabled,
+        configured: abuseipdb.configured,
+        masked_key: abuseipdb.api_key_masked,
+        source: abuseipdb.source,
+        cache_ttl_hours: abuseipdb.cache_ttl_hours,
+        timeout_ms: abuseipdb.timeout_ms,
+        max_age_days: abuseipdb.max_age_days,
+        verbose: abuseipdb.verbose,
+        status: abuseStatus,
+        last_test_at: abuseipdb.last_test_at,
+        last_success_at: abuseipdb.last_success_at,
+        last_error_at: abuseipdb.last_error_at,
+        last_error_message: abuseipdb.last_error_message
       },
       getRdapProviderAdminSummary()
     ]});

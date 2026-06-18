@@ -3324,6 +3324,7 @@ function RiskOverviewPage() {
 
 function IncidentDetailsPage() {
   const { id } = useParams();
+  const { canWrite, isAdmin } = useSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [item, setItem] = useState(null);
@@ -3537,6 +3538,10 @@ function IncidentDetailsPage() {
                 </div>
 
                 <RiskExplanationPanel explanation={item.risk_explanation} item={item} />
+
+                {String(item.ioc_type || '').toLowerCase() === 'ip' ? (
+                  <AbuseIpdbEnrichmentCard iocValue={item.ioc_value} iocType={item.ioc_type} active={tab === 'summary'} canRefresh={canWrite} isAdmin={isAdmin} />
+                ) : null}
 
                 <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -8550,16 +8555,18 @@ function IocSourcesPage() {
 }
 
 function EnrichmentProvidersPage() {
-  const { canWrite } = useSession();
+  const { canWrite, isAdmin } = useSession();
   const requestRequiredReason = useReasonPrompt();
   const [loading, setLoading] = useState(true);
   const [vt, setVt] = useState(null);
   const [ipinfo, setIpinfo] = useState(null);
+  const [abuseipdb, setAbuseipdb] = useState(null);
   const [rdap, setRdap] = useState(null);
   const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
   const [ipForm, setIpForm] = useState({ enabled: true, token: '', base_url: 'https://api.ipinfo.io/lite', timeout_seconds: 6, usage_note: '' });
+  const [abuseForm, setAbuseForm] = useState({ enabled: false, api_key: '', cache_ttl_hours: 24, timeout_ms: 8000, max_age_days: 90, verbose: false, test_ip: '' });
   const [feedback, setFeedback] = useState({ type: '', text: '' });
-  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false });
+  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false, abuseSave: false, abuseTest: false, abuseRemove: false });
 
   const statusMeta = (status) => {
     const s = String(status || '').toLowerCase();
@@ -8576,9 +8583,11 @@ function EnrichmentProvidersPage() {
       const { data } = await api.get('/admin/enrichment-providers');
       const vtRow = (data?.providers || []).find((x) => x.provider === 'virustotal') || null;
       const ipRow = (data?.providers || []).find((x) => x.provider === 'ipinfo_lite') || null;
+      const abuseRow = (data?.providers || []).find((x) => x.provider === 'abuseipdb') || null;
       const rdapRow = (data?.providers || []).find((x) => x.provider === 'rdap') || null;
       setVt(vtRow);
       setIpinfo(ipRow);
+      setAbuseipdb(abuseRow);
       setRdap(rdapRow);
       if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
       if (ipRow) {
@@ -8587,6 +8596,16 @@ function EnrichmentProvidersPage() {
           enabled: ipRow.enabled,
           base_url: ipRow.base_url || 'https://api.ipinfo.io/lite',
           timeout_seconds: ipRow.timeout_seconds || 6
+        }));
+      }
+      if (abuseRow) {
+        setAbuseForm((f) => ({
+          ...f,
+          enabled: abuseRow.enabled,
+          cache_ttl_hours: abuseRow.cache_ttl_hours || abuseRow.ttl_hours || 24,
+          timeout_ms: abuseRow.timeout_ms || 8000,
+          max_age_days: abuseRow.max_age_days || 90,
+          verbose: abuseRow.verbose === true
         }));
       }
     } finally { setLoading(false); }
@@ -8671,9 +8690,51 @@ function EnrichmentProvidersPage() {
     } finally { setBusy((b) => ({ ...b, ipRemove: false })); }
   }
 
+  async function saveAbuseipdb() {
+    setBusy((b) => ({ ...b, abuseSave: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const reason = await requestRequiredReason('Update AbuseIPDB provider settings');
+      if (!reason) return;
+      await api.put('/admin/enrichment-providers/abuseipdb', { ...abuseForm, reason });
+      setFeedback({ type: 'success', text: 'AbuseIPDB settings saved.' });
+      setAbuseForm((f) => ({ ...f, api_key: '' }));
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
+    } finally { setBusy((b) => ({ ...b, abuseSave: false })); }
+  }
+
+  async function testAbuseipdb() {
+    setBusy((b) => ({ ...b, abuseTest: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const body = abuseForm.test_ip?.trim() ? { ip: abuseForm.test_ip.trim() } : {};
+      const { data } = await api.post('/admin/enrichment-providers/abuseipdb/test', body);
+      setFeedback({ type: 'success', text: data?.message || `AbuseIPDB connection successful (${data?.ip || '8.8.8.8'})` });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Test failed';
+      setFeedback({ type: /rate limit/i.test(msg) ? 'warn' : 'error', text: msg });
+      await load();
+    } finally { setBusy((b) => ({ ...b, abuseTest: false })); }
+  }
+
+  async function removeAbuseKey() {
+    setBusy((b) => ({ ...b, abuseRemove: true }));
+    try {
+      await api.post('/admin/enrichment-providers/abuseipdb/remove-key');
+      setFeedback({ type: 'success', text: 'AbuseIPDB API key removed.' });
+      await load();
+    } catch {
+      setFeedback({ type: 'error', text: 'Remove failed' });
+    } finally { setBusy((b) => ({ ...b, abuseRemove: false })); }
+  }
+
   const cardShell = { border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a', marginBottom:16 };
   const vtSm = statusMeta(vt?.status);
   const ipSm = statusMeta(ipinfo?.status);
+  const abuseSm = statusMeta(abuseipdb?.status === 'disabled' ? 'not_configured' : (abuseipdb?.status || 'not_configured'));
   const rdapSm = statusMeta(rdap?.status === 'disabled' ? 'not_configured' : (rdap?.status || 'healthy'));
   const anyBusy = Object.values(busy).some(Boolean);
 
@@ -8741,6 +8802,38 @@ function EnrichmentProvidersPage() {
           <button onClick={()=>removeIpToken().catch(()=>{})} disabled={!canWrite || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5' }}>{busy.ipRemove ? 'Removing...' : 'Remove token'}</button>
         </div>
         {ipinfo.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last error:</b> {ipinfo.last_error_message}</div> : null}
+      </div> : null}
+
+      {abuseipdb ? <div style={cardShell}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+          <div>
+            <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>AbuseIPDB</h3>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>Read-only public IP reputation checks (check endpoint only).</div>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <span style={{ border:`1px solid ${abuseSm.border}`, background:abuseSm.bg, color:abuseSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{abuseipdb.enabled ? abuseSm.label : 'Disabled'}</span>
+            <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:6 }}><input type='checkbox' checked={abuseForm.enabled} onChange={(e)=>setAbuseForm((x)=>({...x, enabled:e.target.checked}))} disabled={!isAdmin}/> Enabled</label>
+          </div>
+        </div>
+        <div style={{ marginTop:14 }}>
+          <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>API Key</label>
+          <input type='password' value={abuseForm.api_key} onChange={(e)=>setAbuseForm((x)=>({...x, api_key:e.target.value}))} placeholder={abuseipdb.masked_key ? 'Leave blank to keep current key' : 'Paste AbuseIPDB API key'} disabled={!isAdmin} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
+          {abuseipdb.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current key: {abuseipdb.masked_key}</div> : null}
+          <div style={{ marginTop:4, color:'#64748b', fontSize:12 }}>Env fallback: ABUSEIPDB_API_KEY. Key is never returned in plaintext.</div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:10, marginTop:14 }}>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Cache TTL (hours)<input type='number' min='1' value={abuseForm.cache_ttl_hours} onChange={(e)=>setAbuseForm((x)=>({...x, cache_ttl_hours:Number(e.target.value)}))} disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Timeout (ms)<input type='number' min='3000' value={abuseForm.timeout_ms} onChange={(e)=>setAbuseForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+          <label style={{ color:'#cbd5e1', fontSize:13 }}>Max age (days)<input type='number' min='1' max='365' value={abuseForm.max_age_days} onChange={(e)=>setAbuseForm((x)=>({...x, max_age_days:Number(e.target.value)}))} disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+          <label style={{ color:'#cbd5e1', fontSize:13, display:'flex', alignItems:'center', gap:8, marginTop:22 }}><input type='checkbox' checked={abuseForm.verbose} onChange={(e)=>setAbuseForm((x)=>({...x, verbose:e.target.checked}))} disabled={!isAdmin}/> Verbose reports</label>
+        </div>
+        <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginTop:14 }}>Test IP (optional, public IPv4/IPv6)<input value={abuseForm.test_ip} onChange={(e)=>setAbuseForm((x)=>({...x, test_ip:e.target.value}))} placeholder='Defaults to 8.8.8.8' disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+        <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
+          <button onClick={()=>saveAbuseipdb().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.abuseSave ? 'Saving...' : 'Save'}</button>
+          <button onClick={()=>testAbuseipdb().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }}>{busy.abuseTest ? 'Testing...' : 'Test Connection'}</button>
+          <button onClick={()=>removeAbuseKey().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5' }}>{busy.abuseRemove ? 'Removing...' : 'Remove key'}</button>
+        </div>
+        {abuseipdb.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last error:</b> {abuseipdb.last_error_message}</div> : null}
       </div> : null}
 
       {rdap ? <div style={cardShell}>
@@ -10908,6 +11001,223 @@ function isIpEnrichmentEligible(iocValue, iocType) {
   return { eligible: false, ip: null, observable: raw };
 }
 
+  return { eligible: false, ip: null, observable: raw };
+}
+
+/** AbuseIPDB v1: IP IOC type only (not URL/domain/hash). */
+function isAbuseIpdbEligible(iocValue, iocType) {
+  const raw = String(iocValue || '').trim();
+  const type = String(iocType || '').toLowerCase();
+  if (type !== 'ip') return { eligible: false, ip: null, privateIp: false, observable: raw };
+  const ip = ipEnrichStripHostPort(raw.split('/')[0]);
+  if (!IP_ENRICH_IPV4_RE.test(ip) && !ip.includes(':')) {
+    return { eligible: false, ip: null, privateIp: false, observable: raw };
+  }
+  if (IP_ENRICH_IPV4_RE.test(ip) && ipEnrichIsPrivateIpv4(ip)) {
+    return { eligible: true, ip, privateIp: true, observable: raw };
+  }
+  if (ip.includes(':') && !IP_ENRICH_IPV4_RE.test(ip)) {
+    return { eligible: true, ip, privateIp: false, observable: raw };
+  }
+  return { eligible: true, ip, privateIp: false, observable: raw };
+}
+
+function abuseIpdbRiskMeta(label) {
+  const l = String(label || '').toLowerCase();
+  if (l === 'high') return { text: 'High', border: '#7f1d1d', bg: 'rgba(220,38,38,0.14)', color: '#fca5a5' };
+  if (l === 'suspicious') return { text: 'Suspicious', border: '#b45309', bg: 'rgba(217,119,6,0.14)', color: '#fcd34d' };
+  if (l === 'low') return { text: 'Low', border: '#1d4ed8', bg: 'rgba(37,99,235,0.14)', color: '#93c5fd' };
+  if (l === 'clean') return { text: 'Clean / No reports', border: '#166534', bg: 'rgba(22,163,74,0.14)', color: '#86efac' };
+  return { text: 'Unknown', border: '#475569', bg: 'rgba(71,85,105,0.18)', color: '#94a3b8' };
+}
+
+function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false }) {
+  const target = useMemo(() => isAbuseIpdbEligible(iocValue, iocType), [iocValue, iocType]);
+  if (!target.eligible || !target.ip) return null;
+
+  const [state, setState] = useState({ status: 'loading', data: null, message: '' });
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const ip = target.ip;
+
+  const load = useCallback(async () => {
+    if (!ip || !active) return;
+    if (target.privateIp) {
+      setHasLoaded(true);
+      setState({ status: 'private_ip', data: null, message: 'AbuseIPDB only supports public IP reputation checks' });
+      return;
+    }
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get(`/enrichment/abuseipdb/ip/${encodeURIComponent(ip)}`);
+      setHasLoaded(true);
+      if (data?.provider_status === 'unsupported_private_ip') {
+        setState({ status: 'private_ip', data, message: data?.message || 'AbuseIPDB only supports public IP reputation checks' });
+      } else if (data?.provider_status === 'not_configured') {
+        setState({ status: 'not_configured', data, message: 'AbuseIPDB API key is not configured' });
+      } else if (data?.provider_status === 'disabled') {
+        setState({ status: 'disabled', data, message: 'AbuseIPDB provider is disabled' });
+      } else if (data?.enriched) {
+        setState({ status: 'success', data, message: '' });
+      } else if (data?.last_enriched_at && data?.provider_status && data.provider_status !== 'success') {
+        setState({ status: 'failed', data, message: data?.error_message || 'AbuseIPDB lookup failed' });
+      } else {
+        setState({ status: 'not_found', data, message: '' });
+      }
+    } catch (err) {
+      setHasLoaded(true);
+      setState({ status: 'error', data: err?.response?.data || null, message: err?.response?.data?.message || 'Failed to load AbuseIPDB enrichment' });
+    }
+  }, [ip, active, target.privateIp]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
+
+  async function refresh(force = false) {
+    if (!canRefresh) return;
+    setRefreshing(true);
+    try {
+      const { data } = await api.post(`/enrichment/abuseipdb/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`);
+      if (data?.enriched || data?.provider_status === 'success') {
+        setState({ status: 'success', data, message: '' });
+      } else {
+        setState({ status: 'failed', data, message: data?.error_message || data?.error || data?.message || 'AbuseIPDB lookup failed' });
+      }
+    } catch (err) {
+      const status = err?.response?.status;
+      const body = err?.response?.data || {};
+      const msg = status === 409
+        ? (body.message || 'AbuseIPDB is not available')
+        : (status === 429
+          ? 'AbuseIPDB rate limit reached. Try again later.'
+          : (body.message || body.error || 'AbuseIPDB lookup failed'));
+      const nextStatus = body.provider_status === 'not_configured' ? 'not_configured'
+        : (body.provider_status === 'disabled' ? 'disabled' : 'failed');
+      setState({ status: nextStatus, data: body, message: msg });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const d = state.data || {};
+  const risk = abuseIpdbRiskMeta(d.risk_label);
+
+  if (!active && !hasLoaded) return null;
+
+  if (state.status === 'loading') {
+    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading AbuseIPDB enrichment...</span></div>;
+  }
+
+  if (state.status === 'private_ip') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#475569', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IP only</span></div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 6 }}>{state.message}</div>
+      </div>
+    );
+  }
+
+  if (state.status === 'not_configured') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#92400e', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB</div>
+        <div style={{ color: '#fcd34d', fontSize: 13, marginTop: 6 }}>{state.message}</div>
+        {isAdmin ? <Link to="/administration/enrichment-providers" style={{ color: '#93c5fd', fontSize: 13, marginTop: 8 }}>Configure provider</Link> : null}
+      </div>
+    );
+  }
+
+  if (state.status === 'disabled') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 6 }}>AbuseIPDB provider is disabled</div>
+      </div>
+    );
+  }
+
+  if (state.status === 'not_found') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IP reputation</span></div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Public IP abuse confidence and report summary</div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ color: '#cbd5e1', fontSize: 13 }}>No AbuseIPDB data yet for {ip}</span>
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh AbuseIPDB'}</button> : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'error' || state.status === 'failed') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB</div>
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message}</span>
+        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Retry'}</button> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+      <EnrichmentIntelligenceStyles />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+            AbuseIPDB
+            <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IP reputation</span>
+            {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
+          </div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+            {d.last_enriched_at || d.fetched_at ? `Last checked: ${formatUserDateTime(d.last_enriched_at || d.fetched_at)}` : 'On-demand IP reputation'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh AbuseIPDB'}</button> : null}
+          {canRefresh && isAdmin ? <button type="button" onClick={() => refresh(true).catch(() => {})} disabled={refreshing} title="Admin force refresh">Force</button> : null}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ border: `1px solid ${risk.border}`, background: risk.bg, color: risk.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
+          Score: {Number.isFinite(Number(d.abuseConfidenceScore)) ? d.abuseConfidenceScore : '—'} · {risk.text}
+        </span>
+      </div>
+
+      <div className="enrichment-summary-grid" style={{ marginTop: 12 }}>
+        <EnrichmentFieldCard label="IP" value={d.ipAddress || ip} variant="compact" />
+        <EnrichmentFieldCard label="Total Reports" value={d.totalReports} />
+        <EnrichmentFieldCard label="Distinct Reporters" value={d.numDistinctUsers} />
+        <EnrichmentFieldCard label="Last Reported" value={d.lastReportedAt ? formatUserDateTime(d.lastReportedAt) : null} />
+        <EnrichmentFieldCard label="Country" value={d.countryCode} />
+        <EnrichmentFieldCard label="ISP" value={d.isp} wide />
+        <EnrichmentFieldCard label="Usage Type" value={d.usageType} wide />
+        <EnrichmentFieldCard label="Domain" value={d.domain} />
+        <EnrichmentFieldCard label="Hostnames" value={Array.isArray(d.hostnames) && d.hostnames.length ? d.hostnames.join(', ') : null} wide />
+      </div>
+
+      {Array.isArray(d.recent_reports_summary) && d.recent_reports_summary.length ? (
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
+          <div style={{ color: '#cbd5e1', fontWeight: 600, marginBottom: 6 }}>Recent reports (summary)</div>
+          {d.recent_reports_summary.slice(0, 5).map((r, idx) => (
+            <div key={idx} style={{ color: '#94a3b8', marginTop: idx ? 6 : 0 }}>
+              {r.reportedAt ? formatUserDateTime(r.reportedAt) : '—'}
+              {r.categories?.length ? ` · categories: ${r.categories.join(', ')}` : ''}
+              {r.comment ? ` · ${r.comment}` : ''}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * UI-only eligibility for RDAP card (backend validation unchanged).
  * @returns {{ eligible: boolean, host: string|null, rdapDomain: string|null, reason: string|null }}
@@ -12666,6 +12976,7 @@ function IOCDetailsPage() {
               <div style={{ display: 'grid', gap: 14 }}>
                 <VirusTotalEnrichmentCard iocId={summary.id} active={intelligenceTabActive} />
                 <IpEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
+                <AbuseIpdbEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} canRefresh={canWrite} isAdmin={isAdmin} />
                 {isRdapEligibleObservable(summary.observable, summary.observable_type).eligible ? (
                   <RdapEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
                 ) : null}

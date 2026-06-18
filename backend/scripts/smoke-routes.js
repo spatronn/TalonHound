@@ -33,6 +33,10 @@ const CHECKS = [
     path: '/api/enrichment/ip/8.8.8.8'
   },
   {
+    name: 'abuseipdb_enrichment',
+    path: '/api/enrichment/abuseipdb/ip/8.8.8.8'
+  },
+  {
     name: 'ioc_expiration_feed_policy',
     path: '/api/threat-feeds/__smoke_missing_feed__/expiration-policy',
     assert: (res, body) => {
@@ -60,7 +64,7 @@ const CHECKS = [
     assert: (_res, body) => {
       const data = /** @type {{ providers?: Array<{ provider?: string }> }} */ (body);
       const providers = (data?.providers || []).map((p) => p.provider);
-      for (const key of ['virustotal', 'ipinfo_lite', 'rdap']) {
+      for (const key of ['virustotal', 'ipinfo_lite', 'abuseipdb', 'rdap']) {
         if (!providers.includes(key)) {
           throw new Error(`admin enrichment providers missing ${key}; got ${providers.join(', ')}`);
         }

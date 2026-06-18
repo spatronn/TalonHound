@@ -20,6 +20,7 @@
     "test:audit": "node --test lib/auditRedaction.test.js",
     "test:tags": "node --test lib/tagHelpers.test.js",
     "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js services/rdapEnrichmentService.test.js",
+    "test:abuseipdb": "node --test lib/abuseipdbEnrichment.test.js services/abuseipdbService.test.js routes/abuseipdbEnrichment.test.js",
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/auditIocContext.test.js",
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
