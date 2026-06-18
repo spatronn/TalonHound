@@ -11,6 +11,7 @@ import {
   confidenceBadgeStyle,
   confidenceLabel
 } from './lib/iocConfidenceCard.js';
+import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import './incidents.css';
 
@@ -3539,9 +3540,7 @@ function IncidentDetailsPage() {
 
                 <RiskExplanationPanel explanation={item.risk_explanation} item={item} />
 
-                {String(item.ioc_type || '').toLowerCase() === 'ip' ? (
-                  <AbuseIpdbEnrichmentCard iocValue={item.ioc_value} iocType={item.ioc_type} active={tab === 'summary'} canRefresh={canWrite} isAdmin={isAdmin} />
-                ) : null}
+                <AbuseIpdbEnrichmentCard iocValue={item.ioc_value} iocType={item.ioc_type} active={tab === 'summary'} canRefresh={canWrite} isAdmin={isAdmin} />
 
                 <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -10984,75 +10983,21 @@ function rdapExtractHost(iocValue, iocType) {
   return { ok: true, host: hostname };
 }
 
-const IP_ENRICH_IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-
-function ipEnrichIsPrivateIpv4(host) {
-  const parts = String(host || '').split('.').map((p) => Number(p));
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return true;
-  const [a, b] = parts;
-  if (a === 10 || a === 127 || a === 0) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a >= 224) return true;
-  return false;
-}
-
-function ipEnrichStripHostPort(host) {
-  let h = String(host || '').trim().toLowerCase();
-  h = h.replace(/\.$/, '').replace(/^\[/, '').replace(/\]$/, '');
-  const portIdx = h.indexOf(':');
-  if (portIdx > 0 && /^\d+$/.test(h.slice(portIdx + 1))) h = h.slice(0, portIdx);
-  return h;
-}
-
-/**
- * UI eligibility for IP Enrichment card (IP IOC or URL with public IP host).
- */
 function isIpEnrichmentEligible(iocValue, iocType) {
-  const raw = String(iocValue || '').trim();
-  const type = String(iocType || '').toLowerCase();
-  if (!raw) return { eligible: false, ip: null, observable: null };
-  if (type === 'domain' || type === 'hash' || type === 'file_hash' || type === 'email') {
-    return { eligible: false, ip: null, observable: raw };
-  }
-  if (type === 'ip') {
-    const ip = ipEnrichStripHostPort(raw.split('/')[0]);
-    if (!IP_ENRICH_IPV4_RE.test(ip) && !ip.includes(':')) return { eligible: false, ip: null, observable: raw };
-    if (IP_ENRICH_IPV4_RE.test(ip) && ipEnrichIsPrivateIpv4(ip)) return { eligible: false, ip, observable: raw };
-    return { eligible: true, ip, observable: raw };
-  }
-  if (type === 'url') {
-    try {
-      const u = new URL(raw);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') return { eligible: false, ip: null, observable: raw };
-      const host = ipEnrichStripHostPort(u.hostname);
-      if (!IP_ENRICH_IPV4_RE.test(host) && !host.includes(':')) return { eligible: false, ip: null, observable: raw };
-      if (IP_ENRICH_IPV4_RE.test(host) && ipEnrichIsPrivateIpv4(host)) return { eligible: false, ip: host, observable: raw };
-      return { eligible: true, ip: host, observable: raw };
-    } catch {
-      return { eligible: false, ip: null, observable: raw };
-    }
-  }
-  return { eligible: false, ip: null, observable: raw };
+  return getIpEnrichmentEligibility(iocValue, iocType);
 }
 
-/** AbuseIPDB v1: IP IOC type only (not URL/domain/hash). */
 function isAbuseIpdbEligible(iocValue, iocType) {
-  const raw = String(iocValue || '').trim();
-  const type = String(iocType || '').toLowerCase();
-  if (type !== 'ip') return { eligible: false, ip: null, privateIp: false, observable: raw };
-  const ip = ipEnrichStripHostPort(raw.split('/')[0]);
-  if (!IP_ENRICH_IPV4_RE.test(ip) && !ip.includes(':')) {
-    return { eligible: false, ip: null, privateIp: false, observable: raw };
-  }
-  if (IP_ENRICH_IPV4_RE.test(ip) && ipEnrichIsPrivateIpv4(ip)) {
-    return { eligible: true, ip, privateIp: true, observable: raw };
-  }
-  if (ip.includes(':') && !IP_ENRICH_IPV4_RE.test(ip)) {
-    return { eligible: true, ip, privateIp: false, observable: raw };
-  }
-  return { eligible: true, ip, privateIp: false, observable: raw };
+  return getAbuseIpdbEligibility(iocValue, iocType);
+}
+
+function AbuseIpdbTargetNote({ observable, ip }) {
+  return (
+    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12, minWidth: 0 }}>
+      <div style={{ color: '#94a3b8' }}>Observed: <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{observable || '-'}</span></div>
+      <div style={{ color: '#94a3b8', marginTop: 4 }}>Parsed IP: <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{ip || '-'}</span></div>
+    </div>
+  );
 }
 
 function abuseIpdbRiskMeta(label) {
@@ -11109,7 +11054,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
   }, [load, active]);
 
   async function refresh(force = false) {
-    if (!canRefresh) return;
+    if (!canRefresh || target.privateIp) return;
     setRefreshing(true);
     try {
       const { data } = await api.post(`/enrichment/abuseipdb/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`);
@@ -11148,6 +11093,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
     return (
       <div style={{ ...compactCardStyle, borderColor: '#475569', flexDirection: 'column', alignItems: 'stretch' }}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IP only</span></div>
+        <AbuseIpdbTargetNote observable={target.observable} ip={ip} />
         <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 6 }}>{state.message}</div>
       </div>
     );
@@ -11179,6 +11125,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
           <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IP reputation</span></div>
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Public IP abuse confidence and report summary</div>
         </div>
+        <AbuseIpdbTargetNote observable={target.observable} ip={ip} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: '#cbd5e1', fontSize: 13 }}>No AbuseIPDB data yet for {ip}</span>
           {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh AbuseIPDB'}</button> : null}
@@ -11216,6 +11163,8 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
           {canRefresh && isAdmin ? <button type="button" onClick={() => refresh(true).catch(() => {})} disabled={refreshing} title="Admin force refresh">Force</button> : null}
         </div>
       </div>
+
+      <AbuseIpdbTargetNote observable={target.observable} ip={d.ipAddress || ip} />
 
       <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ border: `1px solid ${risk.border}`, background: risk.bg, color: risk.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
