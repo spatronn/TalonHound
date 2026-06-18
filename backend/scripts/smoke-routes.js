@@ -37,6 +37,17 @@ const CHECKS = [
     path: '/api/enrichment/abuseipdb/ip/8.8.8.8'
   },
   {
+    name: 'analyst_intelligence',
+    path: '/api/ioc/999999999/analyst-intelligence',
+    assert: (res, body) => {
+      if (res.status !== 404) return;
+      const data = /** @type {{ message?: string }} */ (body);
+      if (data?.message !== 'IOC not found') {
+        throw new Error(`expected application 404 IOC not found, got ${JSON.stringify(body)}`);
+      }
+    }
+  },
+  {
     name: 'ioc_expiration_feed_policy',
     path: '/api/threat-feeds/__smoke_missing_feed__/expiration-policy',
     assert: (res, body) => {

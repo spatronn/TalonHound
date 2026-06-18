@@ -28,6 +28,11 @@ import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
+import {
+  registerAnalystIntelligenceRoutes,
+  enrichItemsWithAnalystIntelligenceCounts,
+  mergeAnalystIntelligenceItem
+} from './routes/analystIntelligence.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
@@ -4944,6 +4949,8 @@ registerRouteModule('rdap_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
+registerAnalystIntelligenceRoutes(app, pool, auditLogService);
+registerRouteModule('analyst_intelligence');
 registerRouteModule('ip_enrichment');
 registerIocExpirationRoutes(app, pool, auditLogService);
 registerRouteModule('ioc_expiration');
@@ -5335,6 +5342,17 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
   }
 });
 
+async function finalizeIocListPageItems(pool, pageItems) {
+  const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
+  const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
+  const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, pageItems);
+  return pageItems.map((it) => {
+    const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+    const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
+    return mergeAnalystIntelligenceItem(merged, analystMap);
+  });
+}
+
 async function handleIocList(req, res) {
   const timingEnabled = IOC_LIST_TIMING || req.query.timing === '1';
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
@@ -5562,12 +5580,7 @@ async function handleIocList(req, res) {
           country_code: null,
           as_name: null
         }));
-        const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
-        const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
-        const finalItems = pageItems.map((it) => {
-          const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-          return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-        });
+        const finalItems = await finalizeIocListPageItems(pool, pageItems);
         const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: 1 } };
         if (t) {
           t.beforeJsonStringify = Date.now();
@@ -5656,12 +5669,7 @@ async function handleIocList(req, res) {
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
-      const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
-      const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
-      const finalItems = pageItems.map((it) => {
-        const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-        return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-      });
+      const finalItems = await finalizeIocListPageItems(pool, pageItems);
       const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
@@ -5752,12 +5760,7 @@ async function handleIocList(req, res) {
           as_name: null
         }));
       })();
-      const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
-      const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
-      const finalItems = pageItems.map((it) => {
-        const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-        return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-      });
+      const finalItems = await finalizeIocListPageItems(pool, pageItems);
       const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: finalItems.length ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
@@ -5895,12 +5898,7 @@ async function handleIocList(req, res) {
     }
     if (t) t.beforeResultMapping = Date.now();
     const itemsRaw = listRes.rows.map(({ total: _drop, ...row }) => row);
-    const confMap = await buildDisplayConfidenceForItems(pool, itemsRaw, { includeInactiveMemberships: true });
-    const threatMetaMap = await enrichItemsWithThreatMetadata(pool, itemsRaw);
-    const items = itemsRaw.map((it) => {
-      const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-      return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-    });
+    const items = await finalizeIocListPageItems(pool, itemsRaw);
     if (t) t.afterResultMapping = Date.now();
     if (t) t.beforeJsonSerialize = Date.now();
 
@@ -6206,12 +6204,7 @@ app.get('/api/ioc/hot', async (req, res) => {
       items = items.map((it) => ({ ...it, evidence_logs: null }));
     }
 
-    const confMapHot = await buildDisplayConfidenceForItems(pool, items, { includeInactiveMemberships: true });
-    const threatMetaMapHot = await enrichItemsWithThreatMetadata(pool, items);
-    items = items.map((it) => {
-      const c = confMapHot.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-      return mergeThreatMetadataItem({ ...it, ...c }, threatMetaMapHot);
-    });
+    items = await finalizeIocListPageItems(pool, items);
 
     const statsQ = `
       WITH grouped AS (

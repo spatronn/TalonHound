@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { parse as parseTld } from 'tldts';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import { api } from './lib/api.js';
 import { getIocStatusCardPresentation, IOC_STATUS_ACTION_BUTTONS } from './lib/iocStatusCard.js';
 import {
   CONFIDENCE_OPTIONS,
@@ -12,44 +12,9 @@ import {
   confidenceLabel
 } from './lib/iocConfidenceCard.js';
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
+import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import './incidents.css';
-
-const CSRF_COOKIE_NAME = 'demo_csrf';
-
-function readCookie(name) {
-  const parts = `; ${document.cookie}`.split(`; ${name}=`);
-  if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift() || '');
-  return '';
-}
-
-const api = axios.create({ baseURL: '/api', withCredentials: true });
-
-api.interceptors.request.use((config) => {
-  const method = String(config.method || 'get').toLowerCase();
-  if (['post', 'put', 'patch', 'delete'].includes(method)) {
-    const csrf = readCookie(CSRF_COOKIE_NAME);
-    if (csrf) {
-      config.headers = config.headers || {};
-      config.headers['X-CSRF-Token'] = csrf;
-    }
-  }
-  return config;
-});
-
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    const url = String(err.config?.url || '');
-    const st = err.response?.status;
-    if ((st === 401 || st === 403) && !url.includes('/auth/login')) {
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        window.location.assign('/login');
-      }
-    }
-    return Promise.reject(err);
-  }
-);
 
 const SessionContext = React.createContext({
   authState: 'loading',
@@ -10687,6 +10652,17 @@ function IOCListPage() {
                       <span style={suppressionBadgeStyle('fp')}>False Positive</span>
                     </>
                   ) : null}
+                  {Number(r.analyst_intelligence_count || 0) > 0 ? (
+                    Number(r.supports_malicious_count || 0) > 0 ? (
+                      <span style={{ display: 'inline-block', borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700, border: '1px solid #7f1d1d', background: 'rgba(220,38,38,0.14)', color: '#991b1b' }}>
+                        Malicious ref: {r.supports_malicious_count}
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-block', borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600, border: '1px solid #475569', background: '#f1f5f9', color: '#334155' }}>
+                        Refs: {r.analyst_intelligence_count}
+                      </span>
+                    )
+                  ) : null}
                 </td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
                 <td title={formatThreatClassificationsText(r.threat_classifications)} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
@@ -10795,9 +10771,10 @@ function isVtNotIndexedPayload(data) {
   return data?.status === 'not_found' && data?.is_error === false;
 }
 
-function VirusTotalEnrichmentCard({ iocId, active = true }) {
+function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSnapshot }) {
   const [state, setState] = useState({ status: 'loading', summary: null, message: '', fetchedAt: null, expiresAt: null });
   const [open, setOpen] = useState(true);
+  const [showDetails, setShowDetails] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -10868,7 +10845,24 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
   const chip = (label, value, c) => <span key={label} style={{ padding:'6px 10px', borderRadius:999, border:`1px solid ${c.b}`, background:c.bg, color:c.t, fontSize:12 }}>{label}: <b>{value}</b></span>;
 
   const hasDetails = state.status === 'success';
-  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const cardShellStyle = compact
+    ? { marginBottom: 0, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0b1220' }
+    : { marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' };
+  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    const s = state.summary || {};
+    const stats = s.stats || {};
+    onSnapshot({
+      status: state.status,
+      malicious: stats.malicious ?? 0,
+      suspicious: stats.suspicious ?? 0,
+      detected: Number(s?.detection_ratio?.detected || 0),
+      total: Number(s?.detection_ratio?.total || 0),
+      stats
+    });
+  }, [state, onSnapshot]);
 
   if (!active && !hasLoaded) return null;
 
@@ -10891,19 +10885,19 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
     return <div style={{ ...compactCardStyle, borderColor:'#7f1d1d' }}><span style={{ color:'#fca5a5', fontSize:13 }}>{state.message || 'VirusTotal enrichment failed.'}</span><button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Running VirusTotal enrichment...' : 'Retry'}</button></div>;
   }
 
-  return <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+  return <div style={cardShellStyle}>
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
       <div>
-        <div style={{ fontWeight:700, color:'#e2e8f0' }}>VirusTotal Intelligence <span style={{ marginLeft:8, border:'1px solid #1d4ed8', color:'#93c5fd', borderRadius:999, padding:'2px 8px', fontSize:11 }}>VirusTotal</span></div>
-        <div style={{ color:'#94a3b8', fontSize:12, marginTop:4 }}>External reputation and analysis summary</div>
+        <div style={{ fontWeight:700, color:'#e2e8f0' }}>VirusTotal{compact ? '' : ' Intelligence'} <span style={{ marginLeft:8, border:'1px solid #1d4ed8', color:'#93c5fd', borderRadius:999, padding:'2px 8px', fontSize:11 }}>VirusTotal</span></div>
+        {!compact ? <div style={{ color:'#94a3b8', fontSize:12, marginTop:4 }}>External reputation and analysis summary</div> : null}
       </div>
       <button onClick={() => setOpen((v) => !v)} style={{ padding:'6px 10px' }}>{open ? 'Collapse' : 'Expand'}</button>
     </div>
 
     {open ? <>
-      <div style={{ display:'grid', gridTemplateColumns:'1.2fr 1fr', gap:12, marginTop:12 }}>
+      <div style={{ display:'grid', gridTemplateColumns: compact ? '1fr' : '1.2fr 1fr', gap:12, marginTop:12 }}>
         <div style={{ border:'1px solid #334155', borderRadius:10, padding:12, background:'#0b1220' }}>
-          <div style={{ fontSize:30, fontWeight:800 }}>{detected} / {total}</div>
+          <div style={{ fontSize: compact ? 24 : 30, fontWeight:800 }}>{detected} / {total}</div>
           <div style={{ color:'#94a3b8', fontSize:12 }}>engines flagged this IOC</div>
           <div style={{ marginTop:8, display:'inline-block', border:'1px solid #475569', borderRadius:999, padding:'3px 10px', fontSize:12, color: severityDetected ? '#fca5a5' : '#86efac' }}>{severityDetected ? 'Detected' : 'No detections'}</div>
         </div>
@@ -10918,15 +10912,17 @@ function VirusTotalEnrichmentCard({ iocId, active = true }) {
         </div>
       </div>
 
+      {(!compact || showDetails) ? (
       <div style={{ marginTop:12, border:'1px solid #334155', borderRadius:10, overflow:'hidden' }}>
         <div style={{ padding:10, background:'#111827', borderBottom:'1px solid #334155', fontWeight:700 }}>Top detections</div>
         {topDetections.length ? <table width='100%' cellPadding='8' style={{ borderCollapse:'collapse', fontSize:13 }}><thead><tr style={{ textAlign:'left', background:'#0b1220' }}><th>Engine</th><th>Category</th><th>Result</th></tr></thead><tbody>{topDetections.map((r, i)=><tr key={`${r.engine}-${i}`} style={{ borderTop:'1px solid #334155' }}><td>{r.engine}</td><td>{r.category || '-'}</td><td style={{ whiteSpace:'normal', overflowWrap:'anywhere' }}>{r.result || '-'}</td></tr>)}</tbody></table> : <div style={{ padding:10, color:'#94a3b8' }}>Top detections are not available for this IOC.</div>}
       </div>
+      ) : compact ? <div style={{ marginTop: 8 }}><button onClick={() => setShowDetails(true)}>Expand vendor results</button></div> : null}
 
-      {vendorResults.length > 5 ? <div style={{ marginTop:8 }}><button onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide vendor results' : 'Show all vendor results'}</button></div> : null}
-      {showAll ? <div style={{ marginTop:8, border:'1px solid #334155', borderRadius:10, maxHeight:260, overflow:'auto' }}><div style={{ padding:10, background:'#111827', borderBottom:'1px solid #334155', fontWeight:700 }}>Security vendors' analysis</div><table width='100%' cellPadding='8' style={{ borderCollapse:'collapse', fontSize:12 }}><thead><tr style={{ textAlign:'left', background:'#0b1220' }}><th>Vendor</th><th>Category</th><th>Result</th><th>Method</th></tr></thead><tbody>{vendorResults.map((r, i)=><tr key={`${r.engine}-${i}`} style={{ borderTop:'1px solid #334155' }}><td>{r.engine}</td><td>{r.category || '-'}</td><td style={{ maxWidth:360, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.result || '-'}</td><td>{r.method || '-'}</td></tr>)}</tbody></table></div> : null}
+      {showDetails && vendorResults.length > 5 ? <div style={{ marginTop:8 }}><button onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide vendor results' : 'Show all vendor results'}</button></div> : null}
+      {(showDetails || !compact) && showAll ? <div style={{ marginTop:8, border:'1px solid #334155', borderRadius:10, maxHeight:260, overflow:'auto' }}><div style={{ padding:10, background:'#111827', borderBottom:'1px solid #334155', fontWeight:700 }}>Security vendors' analysis</div><table width='100%' cellPadding='8' style={{ borderCollapse:'collapse', fontSize:12 }}><thead><tr style={{ textAlign:'left', background:'#0b1220' }}><th>Vendor</th><th>Category</th><th>Result</th><th>Method</th></tr></thead><tbody>{vendorResults.map((r, i)=><tr key={`${r.engine}-${i}`} style={{ borderTop:'1px solid #334155' }}><td>{r.engine}</td><td>{r.category || '-'}</td><td style={{ maxWidth:360, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.result || '-'}</td><td>{r.method || '-'}</td></tr>)}</tbody></table></div> : null}
 
-      <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
+      <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10, flexWrap:'wrap' }}>
         <button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</button>
         {s.permalink ? <a href={s.permalink} target='_blank' rel='noopener noreferrer' style={{ padding:'7px 10px', border:'1px solid #334155', borderRadius:8, textDecoration:'none', color:'#93c5fd' }}>Open in VirusTotal</a> : null}
       </div>
@@ -11009,7 +11005,7 @@ function abuseIpdbRiskMeta(label) {
   return { text: 'Unknown', border: '#475569', bg: 'rgba(71,85,105,0.18)', color: '#94a3b8' };
 }
 
-function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false }) {
+function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
   const target = useMemo(() => isAbuseIpdbEligible(iocValue, iocType), [iocValue, iocType]);
   if (!target.eligible || !target.ip) return null;
 
@@ -11079,9 +11075,20 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
     }
   }
 
-  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
   const d = state.data || {};
   const risk = abuseIpdbRiskMeta(d.risk_label);
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    onSnapshot({
+      status: state.status,
+      score: d.abuseConfidenceScore,
+      country: d.countryCode,
+      isp: d.isp,
+      usage_type: d.usageType
+    });
+  }, [state, d.abuseConfidenceScore, d.countryCode, d.isp, d.usageType, onSnapshot]);
 
   if (!active && !hasLoaded) return null;
 
@@ -11145,7 +11152,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
   }
 
   return (
-    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+    <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #334155', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
       <EnrichmentIntelligenceStyles />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div>
@@ -11184,7 +11191,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
         <EnrichmentFieldCard label="Hostnames" value={Array.isArray(d.hostnames) && d.hostnames.length ? d.hostnames.join(', ') : null} wide />
       </div>
 
-      {Array.isArray(d.recent_reports_summary) && d.recent_reports_summary.length ? (
+      {(!compact && Array.isArray(d.recent_reports_summary) && d.recent_reports_summary.length) ? (
         <div style={{ marginTop: 12, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 12 }}>
           <div style={{ color: '#cbd5e1', fontWeight: 600, marginBottom: 6 }}>Recent reports (summary)</div>
           {d.recent_reports_summary.slice(0, 5).map((r, idx) => (
@@ -11346,7 +11353,7 @@ function EnrichmentDetailBlock({ label, value }) {
   );
 }
 
-function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false }) {
+function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, compact = false, onSnapshot }) {
   const target = useMemo(() => isIpEnrichmentEligible(iocValue, iocType), [iocValue, iocType]);
   if (!target.eligible || !target.ip) return null;
 
@@ -11417,9 +11424,21 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false })
     }
   }
 
-  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
   const d = state.data || {};
   const signals = d.derived_signals || {};
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    onSnapshot({
+      status: state.status,
+      asn: d.asn,
+      as_name: d.as_name,
+      country: d.country || d.country_code,
+      country_code: d.country_code,
+      provider: 'IPinfo Lite'
+    });
+  }, [state.status, d.asn, d.as_name, d.country, d.country_code, onSnapshot]);
 
   const signalBadge = (label, on) => {
     const colors = on
@@ -11480,7 +11499,7 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false })
   }
 
   return (
-    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+    <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #334155', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
       <EnrichmentIntelligenceStyles />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div>
@@ -11489,9 +11508,11 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false })
             <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>IPinfo Lite</span>
             {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
           </div>
+          {!compact ? (
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
             {d.last_enriched_at ? `Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand IP intelligence'}
           </div>
+          ) : null}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
@@ -11516,12 +11537,14 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false })
         <EnrichmentFieldCard label="Provider" value="IPinfo Lite" />
       </div>
 
+      {!compact ? (
       <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {signalBadge('IPinfo Available', signals.ipinfo_available)}
         {signalBadge('ASN Available', signals.asn_available)}
         {signalBadge('Country Available', signals.country_available)}
         {d.cached ? signalBadge('Cached', true) : null}
       </div>
+      ) : null}
     </div>
   );
 }
@@ -11543,7 +11566,7 @@ function RdapTargetNote({ data }) {
   );
 }
 
-function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false }) {
+function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, compact = false, onSnapshot }) {
   const eligibility = useMemo(() => isRdapEligibleObservable(iocValue, iocType), [iocValue, iocType]);
   if (!eligibility.eligible) return null;
 
@@ -11616,9 +11639,19 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
     }
   }
 
-  const compactCardStyle = { marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
   const d = state.data || {};
   const signals = d.derived_signals || {};
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    onSnapshot({
+      status: state.status,
+      root_domain: d.rdap_domain || d.root_domain,
+      registrar: d.registrar,
+      created: d.registration_date
+    });
+  }, [state.status, d.rdap_domain, d.root_domain, d.registrar, d.registration_date, onSnapshot]);
 
   const signalBadge = (label, on, tone = 'neutral') => {
     const colors = tone === 'warn'
@@ -11676,7 +11709,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
   const rdapDomainValue = d.rdap_domain || d.root_domain || '-';
 
   return (
-    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+    <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #334155', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
       <EnrichmentIntelligenceStyles />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         <div>
@@ -11684,6 +11717,8 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
             RDAP / WHOIS Enrichment
             {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
           </div>
+          {!compact ? (
+          <>
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
             {d.last_enriched_at ? `Domain cache last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'Registration data from RDAP'}
           </div>
@@ -11691,6 +11726,8 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
             <div style={{ color: '#64748b', fontSize: 11, marginTop: 4, lineHeight: 1.45, maxWidth: 420 }}>
               RDAP data is cached by root domain and may predate this specific IOC record.
             </div>
+          ) : null}
+          </>
           ) : null}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -11714,11 +11751,14 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
         <EnrichmentFieldCard label="RDAP Status" value={d.rdap_status} />
       </div>
 
+      {!compact ? (
       <div className="enrichment-detail-stack">
         <EnrichmentDetailBlock label="Nameservers" value={nsList.length ? nsList.join(', ') : '-'} />
         <EnrichmentDetailBlock label="Status Codes" value={statusList.length ? statusList.join(' • ') : '-'} />
       </div>
+      ) : null}
 
+      {!compact ? (
       <div style={{ marginTop: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {signalBadge('RDAP Available', signals.rdap_available, signals.rdap_available ? 'ok' : 'neutral')}
         {signals.newly_registered_domain ? signalBadge('Newly Registered', true, 'warn') : null}
@@ -11727,6 +11767,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false 
         {signals.registrar_available ? signalBadge('Registrar Available', true, 'ok') : null}
         {signals.nameservers_available ? signalBadge('Nameservers Available', true, 'ok') : null}
       </div>
+      ) : null}
     </div>
   );
 }
@@ -11938,6 +11979,15 @@ function iocAuditMetadataSummary(metadata) {
   const feedName = auditMetadataValue(metadata, 'feed_name');
   if (feedName) expirationParts.push(String(feedName));
   if (expirationParts.length) return expirationParts.join(' · ');
+  if (metadata.reference_type || metadata.assessment_impact || metadata.title) {
+    const refParts = [];
+    if (metadata.title) refParts.push(String(metadata.title));
+    if (metadata.reference_type) refParts.push(String(metadata.reference_type));
+    if (metadata.assessment_impact) refParts.push(String(metadata.assessment_impact));
+    if (metadata.tlp) refParts.push(`TLP:${String(metadata.tlp).toUpperCase()}`);
+    if (metadata.url) refParts.push(String(metadata.url));
+    if (refParts.length) return refParts.join(' · ');
+  }
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
   if (metadata.cached === true) parts.push('cached');
@@ -12955,56 +13005,25 @@ function IOCDetailsPage() {
             ) : null}
 
             {activeTab === 'intelligence' ? (
-              <div style={{ display: 'grid', gap: 14 }}>
-                <VirusTotalEnrichmentCard iocId={summary.id} active={intelligenceTabActive} />
-                <IpEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
-                <AbuseIpdbEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} canRefresh={canWrite} isAdmin={isAdmin} />
-                {isRdapEligibleObservable(summary.observable, summary.observable_type).eligible ? (
-                  <RdapEnrichmentCard iocValue={summary.observable} iocType={summary.observable_type} active={intelligenceTabActive} isAdmin={isAdmin} />
-                ) : null}
-
-            {isHashObservable && hasMeaningfulFileInfo ? (
-              <div style={{ marginBottom: 14, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>File Information</div>
-                <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}>
-                  <tbody>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Name</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.file_name || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Type</th><td>{summary.file_information.file_type || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MIME</th><td>{summary.file_information.mime || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MD5</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.md5 || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA1</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.sha1 || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA256</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.sha256 || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>IMPHASH</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.imphash || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>TLSH</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.tlsh || '-'}</td></tr>
-                    <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SSDEEP</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{summary.file_information.ssdeep || '-'}</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-
-                <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-              <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
-              <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 900, fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', background: '#111827' }}>
-                    <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Note</th><th>Created At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.sources.map((s) => (
-                    <tr key={`${s.id}-${s.created_at}`} style={{ borderTop: '1px solid #334155' }}>
-                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_name || '-'}</td>
-                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_url || '-'}</td>
-                      <td>{s.confidence || '-'}</td>
-                      <td>{s.category || '-'}</td>
-                      <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{sanitizeSourceNote(s.note)}</td>
-                      <td>{formatUserDateTime(s.created_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-                </div>
-              </div>
+              <IntelligenceTabPanel
+                iocId={summary.id}
+                iocValue={summary.observable}
+                iocType={summary.observable_type}
+                active={intelligenceTabActive}
+                canWrite={canWrite}
+                isAdmin={isAdmin}
+                sources={data.sources}
+                formatUserDateTime={formatUserDateTime}
+                sanitizeSourceNote={sanitizeSourceNote}
+                isRdapEligible={isRdapEligibleObservable(summary.observable, summary.observable_type).eligible}
+                isHashObservable={isHashObservable}
+                hasMeaningfulFileInfo={hasMeaningfulFileInfo}
+                fileInformation={summary.file_information}
+                VirusTotalEnrichmentCard={VirusTotalEnrichmentCard}
+                IpEnrichmentCard={IpEnrichmentCard}
+                AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
+                RdapEnrichmentCard={RdapEnrichmentCard}
+              />
             ) : null}
 
             {activeTab === 'environment' ? (
