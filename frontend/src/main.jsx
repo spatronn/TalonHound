@@ -8738,6 +8738,14 @@ function EnrichmentProvidersPage() {
   const rdapSm = statusMeta(rdap?.status === 'disabled' ? 'not_configured' : (rdap?.status || 'healthy'));
   const anyBusy = Object.values(busy).some(Boolean);
 
+  const abuseConnectionStatus = abuseipdb?.enabled
+    ? (abuseSm.label === 'Not configured' && abuseipdb?.configured ? 'Configured' : abuseSm.label)
+    : null;
+
+  const providerFieldInputStyle = { marginTop: 6, width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' };
+  const providerGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginTop: 14, minWidth: 0 };
+  const providerFieldLabelStyle = { color: '#cbd5e1', fontSize: 13, display: 'block', minWidth: 0 };
+
   return <AppShell><section style={{ border:'1px solid #334155', borderRadius:12, background:'#111827', padding:20 }}>
     <h2 style={{ margin:'0 0 6px', color:'#f1f5f9' }}>Enrichment Providers</h2>
     <p style={{ margin:'0 0 18px', color:'#94a3b8', fontSize:14 }}>Manage external intelligence providers used for on-demand IOC enrichment.</p>
@@ -8804,30 +8812,58 @@ function EnrichmentProvidersPage() {
         {ipinfo.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last error:</b> {ipinfo.last_error_message}</div> : null}
       </div> : null}
 
-      {abuseipdb ? <div style={cardShell}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
-          <div>
+      {abuseipdb ? <div style={{ ...cardShell, boxSizing: 'border-box', minWidth: 0 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
+          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
             <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>AbuseIPDB</h3>
             <div style={{ color:'#94a3b8', fontSize:13 }}>Read-only public IP reputation checks (check endpoint only).</div>
           </div>
-          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-            <span style={{ border:`1px solid ${abuseSm.border}`, background:abuseSm.bg, color:abuseSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{abuseipdb.enabled ? abuseSm.label : 'Disabled'}</span>
-            <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:6 }}><input type='checkbox' checked={abuseForm.enabled} onChange={(e)=>setAbuseForm((x)=>({...x, enabled:e.target.checked}))} disabled={!isAdmin}/> Enabled</label>
+          <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', flexShrink: 0 }}>
+            {abuseipdb.enabled ? (
+              <span role="status" aria-label={`AbuseIPDB connection status: ${abuseConnectionStatus || 'Unknown'}`} style={{ border:`1px solid ${abuseSm.border}`, background:abuseSm.bg, color:abuseSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>{abuseConnectionStatus || 'Unknown'}</span>
+            ) : (
+              <span role="status" aria-label="AbuseIPDB provider is off" style={{ border:'1px solid #475569', background:'rgba(100,116,139,0.2)', color:'#cbd5e1', borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>Provider off</span>
+            )}
+            <label htmlFor="abuseipdb-enable-provider" style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:8, cursor: isAdmin ? 'pointer' : 'default', whiteSpace:'nowrap' }}>
+              <input id="abuseipdb-enable-provider" type="checkbox" checked={abuseForm.enabled} onChange={(e)=>setAbuseForm((x)=>({...x, enabled:e.target.checked}))} disabled={!isAdmin} aria-describedby="abuseipdb-enable-help" />
+              Enable provider
+            </label>
           </div>
         </div>
-        <div style={{ marginTop:14 }}>
-          <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>API Key</label>
-          <input type='password' value={abuseForm.api_key} onChange={(e)=>setAbuseForm((x)=>({...x, api_key:e.target.value}))} placeholder={abuseipdb.masked_key ? 'Leave blank to keep current key' : 'Paste AbuseIPDB API key'} disabled={!isAdmin} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
+        <p id="abuseipdb-enable-help" style={{ margin:'8px 0 0', color:'#64748b', fontSize:12 }}>When enabled, analysts can refresh AbuseIPDB enrichment for public IP IOCs.</p>
+        <div style={{ marginTop:14, minWidth: 0 }}>
+          <label htmlFor="abuseipdb-api-key" style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>API Key</label>
+          <input id="abuseipdb-api-key" type="password" value={abuseForm.api_key} onChange={(e)=>setAbuseForm((x)=>({...x, api_key:e.target.value}))} placeholder={abuseipdb.masked_key ? 'Leave blank to keep current key' : 'Paste AbuseIPDB API key'} disabled={!isAdmin} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
           {abuseipdb.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current key: {abuseipdb.masked_key}</div> : null}
           <div style={{ marginTop:4, color:'#64748b', fontSize:12 }}>Env fallback: ABUSEIPDB_API_KEY. Key is never returned in plaintext.</div>
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:10, marginTop:14 }}>
-          <label style={{ color:'#cbd5e1', fontSize:13 }}>Cache TTL (hours)<input type='number' min='1' value={abuseForm.cache_ttl_hours} onChange={(e)=>setAbuseForm((x)=>({...x, cache_ttl_hours:Number(e.target.value)}))} disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
-          <label style={{ color:'#cbd5e1', fontSize:13 }}>Timeout (ms)<input type='number' min='3000' value={abuseForm.timeout_ms} onChange={(e)=>setAbuseForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
-          <label style={{ color:'#cbd5e1', fontSize:13 }}>Max age (days)<input type='number' min='1' max='365' value={abuseForm.max_age_days} onChange={(e)=>setAbuseForm((x)=>({...x, max_age_days:Number(e.target.value)}))} disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
-          <label style={{ color:'#cbd5e1', fontSize:13, display:'flex', alignItems:'center', gap:8, marginTop:22 }}><input type='checkbox' checked={abuseForm.verbose} onChange={(e)=>setAbuseForm((x)=>({...x, verbose:e.target.checked}))} disabled={!isAdmin}/> Verbose reports</label>
+        <div style={providerGridStyle}>
+          <label htmlFor="abuseipdb-cache-ttl" style={providerFieldLabelStyle}>
+            Cache TTL (hours)
+            <input id="abuseipdb-cache-ttl" type="number" min="1" value={abuseForm.cache_ttl_hours} onChange={(e)=>setAbuseForm((x)=>({...x, cache_ttl_hours:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
+          <label htmlFor="abuseipdb-timeout" style={providerFieldLabelStyle}>
+            Timeout (ms)
+            <input id="abuseipdb-timeout" type="number" min="3000" value={abuseForm.timeout_ms} onChange={(e)=>setAbuseForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
+          <label htmlFor="abuseipdb-max-age" style={providerFieldLabelStyle}>
+            Max age (days)
+            <input id="abuseipdb-max-age" type="number" min="1" max="365" value={abuseForm.max_age_days} onChange={(e)=>setAbuseForm((x)=>({...x, max_age_days:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
         </div>
-        <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginTop:14 }}>Test IP (optional, public IPv4/IPv6)<input value={abuseForm.test_ip} onChange={(e)=>setAbuseForm((x)=>({...x, test_ip:e.target.value}))} placeholder='Defaults to 8.8.8.8' disabled={!isAdmin} style={{ marginTop:6, width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0' }} /></label>
+        <div style={{ marginTop: 10, minWidth: 0 }}>
+          <label htmlFor="abuseipdb-verbose-reports" style={{ display:'flex', alignItems:'flex-start', gap:12, color:'#cbd5e1', fontSize:13, cursor: isAdmin ? 'pointer' : 'default', padding:'12px 14px', borderRadius:8, border:'1px solid #334155', background:'#020617', boxSizing:'border-box', maxWidth:480, width:'100%' }}>
+            <input id="abuseipdb-verbose-reports" type="checkbox" checked={abuseForm.verbose} onChange={(e)=>setAbuseForm((x)=>({...x, verbose:e.target.checked}))} disabled={!isAdmin} style={{ marginTop:2, flexShrink:0, width:16, height:16 }} aria-describedby="abuseipdb-verbose-help" />
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display:'block', fontWeight:600, color:'#e2e8f0' }}>Verbose reports</span>
+              <span id="abuseipdb-verbose-help" style={{ display:'block', marginTop:4, color:'#64748b', fontSize:12, lineHeight:1.45 }}>Include summarized recent report categories in enrichment results.</span>
+            </span>
+          </label>
+        </div>
+        <label htmlFor="abuseipdb-test-ip" style={{ display:'block', color:'#cbd5e1', fontSize:13, marginTop:14, minWidth: 0 }}>
+          Test IP (optional, public IPv4/IPv6)
+          <input id="abuseipdb-test-ip" value={abuseForm.test_ip} onChange={(e)=>setAbuseForm((x)=>({...x, test_ip:e.target.value}))} placeholder="Defaults to 8.8.8.8" disabled={!isAdmin} style={providerFieldInputStyle} />
+        </label>
         <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
           <button onClick={()=>saveAbuseipdb().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.abuseSave ? 'Saving...' : 'Save'}</button>
           <button onClick={()=>testAbuseipdb().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }}>{busy.abuseTest ? 'Testing...' : 'Test Connection'}</button>
