@@ -7,12 +7,62 @@ import {
   iocStatusSqlClause,
   membershipDisplayStatus,
   formatFeedMembershipSource,
-  formatManualIocSource
+  formatManualIocSource,
+  applyActiveListScope,
+  activeObservableHasActiveSourceSql,
+  fetchIocListStats
 } from './iocActiveSources.js';
 import {
   buildIocInheritedConfidenceSummary,
   computeInheritedEffectiveConfidence
 } from './iocConfidence.js';
+
+test('applyActiveListScope hides items without active sources when status is active', () => {
+  const items = [
+    { observable: 'a.example', active_source_count: 1, source_names: ['manual-smoke'] },
+    { observable: 'b.example', active_source_count: 0, source_names: [] }
+  ];
+  const out = applyActiveListScope(items, 'active');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].observable, 'a.example');
+});
+
+test('applyActiveListScope keeps all items for historical/all status', () => {
+  const items = [{ active_source_count: 0 }, { active_source_count: 1 }];
+  assert.equal(applyActiveListScope(items, 'all').length, 2);
+  assert.equal(applyActiveListScope(items, 'expired').length, 2);
+});
+
+test('activeObservableHasActiveSourceSql requires active membership filters', () => {
+  const sql = activeObservableHasActiveSourceSql('i.observable', 'i.observable_type');
+  assert.match(sql, /m\.status = 'active'/);
+  assert.match(sql, /m\.purged_at IS NULL/);
+  assert.match(sql, /f\.archived_at IS NULL/);
+  assert.match(sql, /ioc_source_id IS NOT NULL/);
+});
+
+test('fetchIocListStats active mode uses membership-based top sources query', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql) {
+      queries.push(String(sql));
+      if (sql.includes('COUNT(*)::bigint AS count FROM scoped_obs')) {
+        return { rows: [{ count: '2' }] };
+      }
+      if (sql.includes('GROUP BY observable_type')) {
+        return { rows: [{ observable_type: 'domain', count: '2' }] };
+      }
+      if (sql.includes('FROM ioc_feed_memberships m')) {
+        return { rows: [{ source_name: 'manual-smoke', count: '2' }] };
+      }
+      return { rows: [] };
+    }
+  };
+  const stats = await fetchIocListStats(pool, 'active');
+  assert.equal(stats.total, 2);
+  assert.equal(stats.by_source[0].source_name, 'manual-smoke');
+  assert.ok(queries.some((q) => q.includes('m.purged_at IS NULL')));
+});
 
 test('membershipDisplayStatus distinguishes purged from expired', () => {
   assert.equal(membershipDisplayStatus({ status: 'expired', purged_at: null }), 'expired');

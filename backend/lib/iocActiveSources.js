@@ -267,3 +267,161 @@ export async function fetchLookupTombstoneRowsForObservable(db, observable, obse
   );
   return rows;
 }
+
+/**
+ * SQL predicate: observable has at least one active feed membership or manual IOC source.
+ * @param {string} observableExpr
+ * @param {string} observableTypeExpr
+ */
+export function activeObservableHasActiveSourceSql(observableExpr, observableTypeExpr) {
+  return `(
+    EXISTS (
+      SELECT 1
+      FROM ioc_feed_memberships m
+      INNER JOIN ioc_items ii
+        ON ii.id = m.ioc_item_id AND ii.observable_type = m.ioc_observable_type
+      INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+      WHERE ii.observable = ${observableExpr}
+        AND ii.observable_type = ${observableTypeExpr}
+        AND m.status = 'active'
+        AND m.purged_at IS NULL
+        AND f.archived_at IS NULL
+        AND COALESCE(ii.status, 'active') = 'active'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM ioc_items ii
+      WHERE ii.observable = ${observableExpr}
+        AND ii.observable_type = ${observableTypeExpr}
+        AND COALESCE(ii.status, 'active') = 'active'
+        AND ii.ioc_source_id IS NOT NULL
+    )
+  )`;
+}
+
+/** @param {Array<object>} items @param {string|undefined|null} statusFilter */
+export function applyActiveListScope(items, statusFilter) {
+  if (parseIocListStatusFilter(statusFilter) !== 'active') return items;
+  return (items || []).filter((it) => Number(it.active_source_count ?? it.source_count ?? 0) > 0);
+}
+
+function statusObservablesCte(mode) {
+  if (mode === 'active') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT i.observable, i.observable_type
+        FROM ioc_items i
+        WHERE COALESCE(i.status, 'active') = 'active'
+          AND ${activeObservableHasActiveSourceSql('i.observable', 'i.observable_type')}
+      )`;
+  }
+  if (mode === 'expired') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT observable, observable_type
+        FROM ioc_items
+        WHERE COALESCE(status, 'active') = 'expired'
+      )`;
+  }
+  if (mode === 'suppressed') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT observable, observable_type
+        FROM ioc_items
+        WHERE COALESCE(status, 'active') = 'suppressed'
+      )`;
+  }
+  if (mode === 'disabled') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT observable, observable_type
+        FROM ioc_items
+        WHERE COALESCE(status, 'active') = 'disabled'
+      )`;
+  }
+  return `
+    WITH scoped_obs AS (
+      SELECT DISTINCT observable, observable_type
+      FROM ioc_items
+    )`;
+}
+
+async function fetchActiveTopSources(pool, limit = 20) {
+  const { rows } = await pool.query(
+    `SELECT source_name, SUM(c)::bigint AS count
+     FROM (
+       SELECT f.name AS source_name,
+              COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+       FROM ioc_feed_memberships m
+       INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+       INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.status = 'active'
+         AND m.purged_at IS NULL
+         AND f.archived_at IS NULL
+         AND COALESCE(i.status, 'active') = 'active'
+       GROUP BY f.name
+       UNION ALL
+       SELECT COALESCE(s.name, i.source_name) AS source_name,
+              COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+       FROM ioc_items i
+       LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+       WHERE COALESCE(i.status, 'active') = 'active'
+         AND i.ioc_source_id IS NOT NULL
+       GROUP BY COALESCE(s.name, i.source_name)
+     ) src
+     GROUP BY source_name
+     ORDER BY count DESC, source_name ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+async function fetchItemRowTopSources(pool, statusClause, limit = 20) {
+  const { rows } = await pool.query(
+    `SELECT source_name, COUNT(DISTINCT (observable, observable_type))::bigint AS count
+     FROM ioc_items
+     WHERE ${statusClause}
+       AND source_name IS NOT NULL
+       AND source_name <> ''
+     GROUP BY source_name
+     ORDER BY count DESC, source_name ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {string|undefined|null} statusFilter
+ */
+export async function fetchIocListStats(pool, statusFilter = 'active') {
+  const mode = parseIocListStatusFilter(statusFilter);
+  const cte = statusObservablesCte(mode);
+
+  const [totalRes, byTypeRes] = await Promise.all([
+    pool.query(`${cte} SELECT COUNT(*)::bigint AS count FROM scoped_obs`),
+    pool.query(`${cte}
+      SELECT observable_type, COUNT(*)::bigint AS count
+      FROM scoped_obs
+      GROUP BY observable_type
+      ORDER BY count DESC`)
+  ]);
+
+  let bySource;
+  if (mode === 'active') {
+    bySource = await fetchActiveTopSources(pool, 20);
+  } else if (mode === 'all') {
+    bySource = await fetchItemRowTopSources(pool, 'TRUE', 20);
+  } else {
+    const statusClause = iocStatusSqlClause(mode) || 'TRUE';
+    bySource = await fetchItemRowTopSources(pool, statusClause, 20);
+  }
+
+  return {
+    total: Number(totalRes.rows[0]?.count || 0),
+    by_type: byTypeRes.rows,
+    by_source: bySource
+  };
+}

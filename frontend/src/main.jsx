@@ -10686,14 +10686,16 @@ function IOCListPage() {
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
-      const { data } = await api.get('/ioc/stats');
+      const { data } = await api.get('/ioc/stats', {
+        params: { status: statusFilter || 'active' }
+      });
       setSummary(data || { total: 0, by_source: [], by_type: [] });
     } catch {
       setSummary({ total: 0, by_source: [], by_type: [] });
     } finally {
       setSummaryLoading(false);
     }
-  }, []);
+  }, [statusFilter]);
 
   const loadData = useCallback(async (targetPage, targetSize) => {
     setListLoading(true);

@@ -78,9 +78,17 @@ import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDi
 import {
   enrichItemsWithActiveSourceCounts,
   fetchObservableMembershipSummary,
+  fetchIocListStats,
   iocStatusSqlClause,
-  parseIocListStatusFilter
+  parseIocListStatusFilter,
+  activeObservableHasActiveSourceSql,
+  applyActiveListScope
 } from './lib/iocActiveSources.js';
+import {
+  buildIocStatsCacheKey,
+  readIocStatsCache,
+  writeIocStatsCache
+} from './lib/iocStatsCache.js';
 import {
   hasIocConfidenceColumns,
   hasConfidenceProvenanceColumns,
@@ -167,14 +175,7 @@ const INTEGRATIONS_META_QUERY_TIMEOUT_MS = Math.max(Number(process.env.INTEGRATI
 /** Hash-only (sha256:/md5:/sha1: no asn/country) uses single SELECT + JS group by default. Set IOC_LIST_USE_CTE_FOR_HASH=1 to force the full CTE path. */
 const IOC_LIST_USE_CTE_FOR_HASH = process.env.IOC_LIST_USE_CTE_FOR_HASH === '1' || process.env.IOC_LIST_USE_CTE_FOR_HASH === 'true';
 
-// In-memory cache for IOC stats/summary (non-real-time aggregations, feed-aware via last_update + TTL).
-const IOC_STATS_TTL_MS = 60 * 60 * 1000; // 1 hour
-let iocStatsCache = {
-  key: null,
-  data: null,
-  createdAt: 0,
-  lastUpdate: null
-};
+// In-memory cache for IOC stats/summary (status-scoped; invalidated on feed purge).
 
 const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
 const iocDetailsCache = new Map();
@@ -5829,7 +5830,7 @@ async function handleIocList(req, res) {
           country_code: null,
           as_name: null
         }));
-        const finalItems = await finalizeIocListPageItems(pool, pageItems);
+        const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
         const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: 1 } };
         if (t) {
           t.beforeJsonStringify = Date.now();
@@ -5920,7 +5921,7 @@ async function handleIocList(req, res) {
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
-      const finalItems = await finalizeIocListPageItems(pool, pageItems);
+      const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
       const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
@@ -6013,7 +6014,7 @@ async function handleIocList(req, res) {
           as_name: null
         }));
       })();
-      const finalItems = await finalizeIocListPageItems(pool, pageItems);
+      const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
       const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: finalItems.length ? 1 : 0 } };
       if (t) {
         t.beforeJsonStringify = Date.now();
@@ -6060,6 +6061,13 @@ async function handleIocList(req, res) {
            ORDER BY created_at DESC
            LIMIT 2000`;
 
+    const scopedGroupSql = statusFilter === 'active'
+      ? `, scoped AS (
+          SELECT * FROM grouped g
+          WHERE ${activeObservableHasActiveSourceSql('g.observable', 'g.observable_type')}
+        )`
+      : ', scoped AS (SELECT * FROM grouped g)';
+
     const base = `
       WITH combined AS (
         ${sourceSql}
@@ -6082,7 +6090,7 @@ async function handleIocList(req, res) {
           (ARRAY_AGG(threat_actor_id ORDER BY id ASC))[1] AS threat_actor_id
         FROM filtered
         GROUP BY observable, observable_type
-      )
+      )${scopedGroupSql}
     `;
 
     const asnValue = asn ? Number(asn) : null;
@@ -6101,7 +6109,7 @@ async function handleIocList(req, res) {
              g.source_names, g.confidence_set, g.category_set, g.threat_classification, g.threat_actor_id,
              NULL::bigint AS asn, NULL::text AS country_code, NULL::text AS as_name,
              COUNT(*) OVER()::int AS total
-      FROM grouped g
+      FROM scoped g
       ORDER BY g.last_seen_at DESC
       LIMIT $${hashLiteralParams ? 2 : params.length + 1}
       OFFSET $${hashLiteralParams ? 3 : params.length + 2}
@@ -6111,7 +6119,7 @@ async function handleIocList(req, res) {
       , with_geo AS (
         SELECT g.*, g.observable AS ip, c.asn, c.country_code, c.as_name,
                COUNT(*) OVER()::int AS total
-        FROM grouped g
+        FROM scoped g
         ${geoJoin}
         WHERE ${geoWhere}
       )
@@ -6133,11 +6141,11 @@ async function handleIocList(req, res) {
     let total = listRes.rows[0]?.total ?? null;
     if (total === null && listRes.rows.length === 0) {
       const countQ = useHashFastPath
-        ? `${base} SELECT COUNT(*)::int AS total FROM grouped g`
+        ? `${base} SELECT COUNT(*)::int AS total FROM scoped g`
         : `
         ${base}
         SELECT COUNT(*)::int AS total
-        FROM grouped g
+        FROM scoped g
         ${geoJoin}
         WHERE ${geoWhere}
       `;
@@ -6151,7 +6159,7 @@ async function handleIocList(req, res) {
     }
     if (t) t.beforeResultMapping = Date.now();
     const itemsRaw = listRes.rows.map(({ total: _drop, ...row }) => row);
-    const items = await finalizeIocListPageItems(pool, itemsRaw);
+    const items = applyActiveListScope(await finalizeIocListPageItems(pool, itemsRaw), statusFilter);
     if (t) t.afterResultMapping = Date.now();
     if (t) t.beforeJsonSerialize = Date.now();
 
@@ -6395,7 +6403,7 @@ app.get('/api/ioc/hot', async (req, res) => {
         sup.sup_expires_at,
         sup.sup_created_by,
         sup.sup_created_at
-      FROM grouped g
+      FROM scoped g
       LEFT JOIN LATERAL (
         SELECT NULLIF(COUNT(DISTINCT rl.evidence_hash)::bigint, 0) AS evidence_logs
         FROM ioc_activity a
@@ -7348,90 +7356,42 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
 
 app.get('/api/ioc/summary/today', async (req, res) => {
   try {
-    const now = Date.now();
-    // Index-friendly: uses idx on created_at (DESC) instead of full-table MAX() aggregate.
-    const lastUpdateQ = await pool.query("SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1");
+    const statusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
+    const lastUpdateQ = await pool.query('SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1');
     const lastUpdate = lastUpdateQ.rows[0]?.last_update || null;
-    const cacheKey = `ioc_stats_${lastUpdate ?? 'null'}`;
+    const cacheKey = buildIocStatsCacheKey(statusFilter, lastUpdate);
 
-    if (
-      iocStatsCache.data &&
-      iocStatsCache.key === cacheKey &&
-      now - iocStatsCache.createdAt < IOC_STATS_TTL_MS
-    ) {
-      return res.json(iocStatsCache.data);
+    const cached = readIocStatsCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
     }
 
-    const base = `
-      WITH filtered AS (
-        SELECT observable, observable_type, source_name, confidence
-        FROM ioc_items
-      )
-    `;
-
-    const totalQ = `${base} SELECT COUNT(*)::bigint AS count FROM filtered`;
-    const uniqueIpsQ = `${base} SELECT COUNT(DISTINCT observable)::bigint AS count FROM filtered WHERE observable_type = 'ip'`;
-    const bySourceQ = `${base}
-      SELECT source_name, COUNT(*)::bigint AS count
-      FROM filtered
-      GROUP BY source_name
-      ORDER BY count DESC`;
-    const byConfidenceQ = `${base}
-      SELECT confidence, COUNT(*)::bigint AS count
-      FROM filtered
-      GROUP BY confidence
-      ORDER BY count DESC`;
-    const byTypeQ = `${base}
-      SELECT observable_type, COUNT(*)::bigint AS count
-      FROM filtered
-      GROUP BY observable_type
-      ORDER BY count DESC`;
-
-    const [total, uniqueIps, bySource, byConfidence, byType] = await Promise.all([
-      pool.query(totalQ),
-      pool.query(uniqueIpsQ),
-      pool.query(bySourceQ),
-      pool.query(byConfidenceQ),
-      pool.query(byTypeQ)
-    ]);
-
+    const stats = await fetchIocListStats(pool, statusFilter);
     const payload = {
       last_update: lastUpdate,
-      total: Number(total.rows[0]?.count || 0),
-      unique_ips: Number(uniqueIps.rows[0]?.count || 0),
-      by_source: bySource.rows,
-      by_confidence: byConfidence.rows,
-      by_type: byType.rows
+      total: stats.total,
+      unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
+      by_source: stats.by_source,
+      by_confidence: [],
+      by_type: stats.by_type
     };
 
-    iocStatsCache = {
-      key: cacheKey,
-      data: payload,
-      createdAt: now,
-      lastUpdate
-    };
-
+    writeIocStatsCache(cacheKey, payload);
     return res.json(payload);
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch summary', detail: err.message });
   }
 });
 
-app.get('/api/ioc/stats', async (_req, res) => {
-  // Same cache as summary/today; return a smaller payload for IOC list page.
+app.get('/api/ioc/stats', async (req, res) => {
   try {
-    const now = Date.now();
-    // Index-friendly: uses idx on created_at (DESC) instead of full-table MAX() aggregate.
-    const lastUpdateQ = await pool.query("SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1");
+    const statusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
+    const lastUpdateQ = await pool.query('SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1');
     const lastUpdate = lastUpdateQ.rows[0]?.last_update || null;
-    const cacheKey = `ioc_stats_${lastUpdate ?? 'null'}`;
+    const cacheKey = buildIocStatsCacheKey(statusFilter, lastUpdate);
 
-    if (
-      iocStatsCache.data &&
-      iocStatsCache.key === cacheKey &&
-      now - iocStatsCache.createdAt < IOC_STATS_TTL_MS
-    ) {
-      const cached = iocStatsCache.data;
+    const cached = readIocStatsCache(cacheKey);
+    if (cached) {
       return res.json({
         last_update: cached.last_update ?? lastUpdate,
         total: cached.total ?? 0,
@@ -7440,37 +7400,19 @@ app.get('/api/ioc/stats', async (_req, res) => {
       });
     }
 
-    const [totalQ, byTypeQ, topSourcesQ] = await Promise.all([
-      pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
-      pool.query(`
-        SELECT observable_type, COUNT(*)::bigint AS count
-        FROM ioc_items
-        GROUP BY observable_type
-        ORDER BY count DESC
-      `),
-      pool.query(`
-        SELECT source_name, COUNT(*)::bigint AS count
-        FROM ioc_items
-        GROUP BY source_name
-        ORDER BY count DESC
-        LIMIT 20
-      `)
-    ]);
-
+    const stats = await fetchIocListStats(pool, statusFilter);
     const payload = {
       last_update: lastUpdate,
-      total: Number(totalQ.rows[0]?.count || 0),
-      by_type: byTypeQ.rows,
-      by_source: topSourcesQ.rows
+      total: stats.total,
+      by_type: stats.by_type,
+      by_source: stats.by_source
     };
 
-    iocStatsCache = {
-      key: cacheKey,
-      // Keep a superset shape so summary/today can use it if called later.
-      data: { ...payload, unique_ips: 0, by_confidence: [] },
-      createdAt: now,
-      lastUpdate
-    };
+    writeIocStatsCache(cacheKey, {
+      ...payload,
+      unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
+      by_confidence: []
+    });
 
     return res.json(payload);
   } catch (err) {
