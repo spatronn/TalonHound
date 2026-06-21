@@ -269,7 +269,8 @@ export function buildIocInheritedConfidenceSummary({
 
   if (!analystOverride && !inherited.effective) {
     const hasActiveSource = activeMembershipRows.length > 0
-      || activeIocRows.some((r) => r.ioc_source_id);
+      || activeIocRows.some((r) => r.ioc_source_id)
+      || (String(primaryRow?.status || 'active') === 'active' && primaryRow?.ioc_source_id);
     const itemStored = hasActiveSource ? computeItemStoredConfidence(primaryRow) : null;
     if (itemStored) inherited = itemStored;
   }
@@ -329,7 +330,9 @@ export function buildIocInheritedConfidenceSummary({
     baseline_source: analystOverride ? inherited.confidence_source : null,
     membership_breakdown: membershipBreakdown,
     historical_memberships: historicalMemberships,
-    has_active_source: activeMembershipRows.length > 0 || activeIocRows.some((r) => r.ioc_source_id),
+    has_active_source: activeMembershipRows.length > 0
+      || activeIocRows.some((r) => r.ioc_source_id)
+      || (String(primaryRow?.status || 'active') === 'active' && Boolean(primaryRow?.ioc_source_id)),
     confidence_set: [...new Set(membershipBreakdown.map((m) => m.effective).filter(Boolean))].sort()
   };
   summary.confidence_provenance = buildConfidenceProvenance(summary);
