@@ -29,7 +29,7 @@ describe('computeMembershipFieldPatch no-op detection', () => {
       expired_at: null,
       expiration_reason: null
     };
-    const policy = { enabled: true, expiration_mode: 'last_seen_ttl', ttl_days: 30 };
+    const policy = { enabled: false, expiration_mode: 'never' };
     const patch = computeMembershipFieldPatch(m, policy, new Date('2026-01-02T00:00:00Z'));
     assert.equal(membershipComputedFieldsUnchanged(m, patch), true);
   });
@@ -99,23 +99,15 @@ describe('upsertMembershipOnImport conditional updates', () => {
         if (s.includes('FROM ioc_suppressions')) {
           return { rows: [] };
         }
-        if (s.includes('FROM threat_feed_expiration_policies') && s.includes('feed_id = $1')) {
-          return { rows: [{ enabled: false, expiration_mode: 'never' }] };
-        }
         if (s.includes('FROM ioc_feed_memberships') && s.includes('ioc_item_id')) {
           return { rows: [membershipRow], rowCount: 1 };
         }
-        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('last_seen_in_feed')) {
-          updates.push('touch');
-          return { rows: [], rowCount: 0 };
-        }
-        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('policy_expires_at')) {
-          updates.push('computed');
-          return { rows: [], rowCount: 0 };
-        }
-        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('explicit_confidence')) {
-          updates.push('confidence');
-          return { rows: [], rowCount: 0 };
+        if (s.startsWith('UPDATE ioc_feed_memberships')) {
+          if (s.includes('IS DISTINCT FROM')) {
+            return { rows: [], rowCount: 0 };
+          }
+          updates.push('write');
+          return { rows: [membershipRow], rowCount: 1 };
         }
         if (s.includes('FROM ioc_items') && s.includes('manual_status_override')) {
           return { rows: [{ id: 99, observable: 'evil.test', observable_type: 'domain', status: 'active', manual_status_override: false, expires_at: null, expired_at: null, expiration_reason: null }] };
