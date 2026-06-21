@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   archiveIntegrationFeed,
+  computeReimportPossible,
   isBuiltInFeed,
   previewFeedDataPurge,
   purgeFeedData,
@@ -72,6 +73,53 @@ test('previewFeedDataPurge returns preview stats', async () => {
   assert.equal(result.preview.iocs_only_from_this_feed, 4);
   assert.equal(result.preview.will_preserve_history, true);
   assert.equal(result.preview.incidents_deleted, 0);
+  assert.equal(result.preview.feed_enabled, false);
+  assert.equal(result.preview.feed_archived, false);
+  assert.equal(result.preview.reimport_possible, false);
+});
+
+test('computeReimportPossible is true only for enabled non-archived feeds', () => {
+  assert.equal(computeReimportPossible({ active: true, archived_at: null }), true);
+  assert.equal(computeReimportPossible({ active: false, archived_at: null }), false);
+  assert.equal(computeReimportPossible({ active: true, archived_at: new Date().toISOString() }), false);
+});
+
+test('previewFeedDataPurge reports reimport_possible for enabled feed', async () => {
+  const state = {
+    queries: [],
+    handler: (sql) => {
+      if (sql.includes('FROM integration_feeds')) {
+        return {
+          rows: [{
+            key: 'et-blockrules',
+            integration_id: '11111111-1111-4111-8111-111111111111',
+            name: 'Emerging Threats',
+            active: true,
+            feed_kind: 'built_in',
+            archived_at: null
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes('WITH feed_active')) {
+        return {
+          rows: [{
+            active_memberships: 1,
+            affected_iocs: 1,
+            iocs_only_from_this_feed: 1,
+            iocs_shared_with_other_sources: 0
+          }],
+          rowCount: 1
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  };
+  const client = createMockClient(state);
+  const result = await previewFeedDataPurge(client, 'et-blockrules');
+  assert.equal(result.ok, true);
+  assert.equal(result.preview.feed_enabled, true);
+  assert.equal(result.preview.reimport_possible, true);
 });
 
 test('archiveIntegrationFeed rejects built-in feed', async () => {

@@ -4613,10 +4613,17 @@ function FeedSettingsModal({
   onSaveSchedule,
   onSaveExpiration,
   onSaveCredentials,
+  onOpenPurge,
+  onArchive,
+  onRestore,
   canWrite
 }) {
   const isActive = feed?.active !== false;
-  const state = feedStatePresentation(isActive);
+  const isArchived = Boolean(feed?.archived_at);
+  const isBuiltIn = String(feed?.feed_kind || 'built_in') !== 'custom';
+  const state = isArchived
+    ? { label: 'Archived', color: '#cbd5e1', bg: 'rgba(100,116,139,0.18)', border: '#64748b' }
+    : feedStatePresentation(isActive);
   const currentCron = feed?.schedule || '0 * * * *';
   const scheduleUnchanged = draftCron === currentCron;
   const exp = draftExpiration || defaultExpirationDraft();
@@ -4645,7 +4652,8 @@ function FeedSettingsModal({
               <button
                 type="button"
                 onClick={onRequestActiveChange}
-                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: isActive ? '#fca5a5' : '#86efac', cursor: 'pointer' }}
+                disabled={isArchived}
+                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: isActive ? '#fca5a5' : '#86efac', cursor: isArchived ? 'not-allowed' : 'pointer', opacity: isArchived ? 0.5 : 1 }}
               >
                 {isActive ? 'Disable feed' : 'Enable feed'}
               </button>
@@ -4864,6 +4872,49 @@ function FeedSettingsModal({
             ) : null}
           </div>
         </div>
+
+        {canWrite ? (
+          <div style={{ borderTop: '1px solid #7f1d1d', paddingTop: 14 }}>
+            <div style={{ color: '#fca5a5', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Feed data actions</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.55, marginBottom: 10 }}>
+              Remove active IOC memberships imported from this feed. Incidents, match events, evidence logs and audit history are preserved.
+            </div>
+            {!isArchived ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={onOpenPurge}
+                  style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', cursor: 'pointer' }}
+                >
+                  Purge feed data
+                </button>
+                {!isBuiltIn ? (
+                  <button
+                    type="button"
+                    onClick={onArchive}
+                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #854d0e', background: 'rgba(120,53,15,0.2)', color: '#fcd34d', cursor: 'pointer' }}
+                  >
+                    Archive feed
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {!isBuiltIn ? (
+                  <button
+                    type="button"
+                    onClick={onRestore}
+                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #166534', background: 'rgba(20,83,45,0.2)', color: '#86efac', cursor: 'pointer' }}
+                  >
+                    Restore feed
+                  </button>
+                ) : (
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>This archived built-in feed cannot be restored from this screen.</span>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
       {error ? (
         <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
@@ -5158,18 +5209,39 @@ function RiskExplanationPanel({ explanation, item }) {
   );
 }
 
-function FeedPurgePreviewSummary({ preview }) {
+function FeedPurgePreviewSummary({ preview, loading }) {
+  if (loading) {
+    return (
+      <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 13, color: '#94a3b8' }}>
+        Loading impact summary…
+      </div>
+    );
+  }
   if (!preview) return null;
+
+  const feedState = preview.feed_archived
+    ? 'Archived'
+    : (preview.feed_enabled ? 'Enabled' : 'Disabled');
+  const reimportLabel = preview.reimport_possible ? 'Yes' : 'No';
+  const historyLabel = (preview.history_preserved ?? preview.will_preserve_history) ? 'Yes' : 'No';
+
   return (
     <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 13, lineHeight: 1.55 }}>
-      <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>Dry run summary</div>
-      <div style={{ color: '#cbd5e1' }}>Active memberships: <b>{preview.active_memberships ?? 0}</b></div>
-      <div style={{ color: '#cbd5e1' }}>IOCs only from this feed: <b>{preview.iocs_only_from_this_feed ?? 0}</b></div>
-      <div style={{ color: '#cbd5e1' }}>IOCs shared with other sources: <b>{preview.iocs_shared_with_other_sources ?? 0}</b></div>
+      <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Before purging, here is what will be affected:</div>
+      <div style={{ color: '#cbd5e1' }}>Active memberships to purge: <b>{preview.active_memberships ?? 0}</b></div>
+      <div style={{ color: '#cbd5e1' }}>IOCs that will become expired/removed: <b>{preview.iocs_only_from_this_feed ?? 0}</b></div>
+      <div style={{ color: '#cbd5e1' }}>IOCs that will stay active because of other sources: <b>{preview.iocs_shared_with_other_sources ?? 0}</b></div>
       <div style={{ color: '#94a3b8', marginTop: 8 }}>
-        Incidents deleted: {preview.incidents_deleted ?? 0} · Events deleted: {preview.events_deleted ?? 0}
+        Incidents/events/evidence deleted: {preview.incidents_deleted ?? 0}
       </div>
-      <div style={{ color: '#86efac', marginTop: 8 }}>Existing incidents, match events, evidence logs and audit history will be preserved.</div>
+      <div style={{ color: '#94a3b8' }}>History preserved: {historyLabel}</div>
+      <div style={{ color: '#94a3b8' }}>Feed state: {feedState}</div>
+      <div style={{ color: '#94a3b8' }}>Re-import possible: {reimportLabel}</div>
+      {preview.feed_enabled && !preview.feed_archived ? (
+        <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #854d0e', color: '#fcd34d', background: 'rgba(120,53,15,0.2)', fontSize: 12, lineHeight: 1.5 }}>
+          Warning: This feed is currently enabled. Future scheduled runs may re-import purged IOCs. Disable the feed first if you want this purge to remain permanent.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -5182,32 +5254,42 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !feed?.key) {
       setConfirmName('');
       setPreview(null);
       setError('');
       setLoadingPreview(false);
       setPurging(false);
+      return undefined;
     }
+
+    let cancelled = false;
+    setConfirmName('');
+    setPreview(null);
+    setError('');
+    setPurging(false);
+    setLoadingPreview(true);
+
+    (async () => {
+      try {
+        const { data } = await api.get(`/integrations/${encodeURIComponent(feed.key)}/purge-preview`);
+        if (!cancelled) setPreview(data);
+      } catch (err) {
+        if (!cancelled) {
+          setError(apiErrorMessage(err, 'Failed to load purge preview'));
+          setPreview(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingPreview(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, [open, feed?.key]);
 
   if (!open || !feed) return null;
 
   const nameMatches = String(confirmName || '').trim() === String(feed.name || '').trim();
-
-  async function runDryRun() {
-    setError('');
-    setLoadingPreview(true);
-    try {
-      const { data } = await api.get(`/integrations/${encodeURIComponent(feed.key)}/purge-preview`);
-      setPreview(data);
-    } catch (err) {
-      setError(apiErrorMessage(err, 'Dry run failed'));
-      setPreview(null);
-    } finally {
-      setLoadingPreview(false);
-    }
-  }
 
   async function runPurge() {
     if (!nameMatches || purging) return;
@@ -5215,7 +5297,7 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
     setPurging(true);
     try {
       await api.post(`/integrations/${encodeURIComponent(feed.key)}/purge`, { confirm_name: confirmName.trim() });
-      onCompleted?.();
+      onCompleted?.(feed.name || feed.key);
       onClose();
     } catch (err) {
       setError(apiErrorMessage(err, 'Purge failed'));
@@ -5231,70 +5313,19 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
         <p style={{ margin: '0 0 12px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
           This will remove active IOC memberships imported from this feed. Existing incidents, match events, evidence logs and audit history will be preserved.
         </p>
-        <label style={{ display: 'grid', gap: 4 }}>
+        <FeedPurgePreviewSummary preview={preview} loading={loadingPreview} />
+        <label style={{ display: 'grid', gap: 4, marginTop: 12 }}>
           <span style={{ fontSize: 12, color: '#94a3b8' }}>Type feed name to confirm: <b>{feed.name}</b></span>
-          <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={feed.name} />
+          <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={feed.name} disabled={purging || loadingPreview} />
         </label>
         {error ? <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 10 }}>{error}</div> : null}
-        <FeedPurgePreviewSummary preview={preview} />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
           <button type="button" onClick={onClose} disabled={purging}>Cancel</button>
-          <button type="button" onClick={() => runDryRun().catch(() => {})} disabled={loadingPreview || purging}>
-            {loadingPreview ? 'Running dry run…' : 'Dry run'}
-          </button>
-          <button type="button" onClick={() => runPurge().catch(() => {})} disabled={!nameMatches || purging}>
+          <button type="button" onClick={() => runPurge().catch(() => {})} disabled={!nameMatches || purging || loadingPreview || !preview}>
             {purging ? 'Purging…' : 'Purge'}
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function FeedActionsMenu({
-  feed,
-  canWrite,
-  open,
-  onToggle,
-  onClose,
-  onEnableDisable,
-  onPurge,
-  onArchive,
-  onRestore
-}) {
-  if (!canWrite) return null;
-  const isBuiltIn = String(feed.feed_kind || 'built_in') !== 'custom';
-  const isArchived = Boolean(feed.archived_at);
-  const isActive = feed.active !== false;
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <button type="button" onClick={onToggle} style={{ fontSize: 11, padding: '4px 8px' }} aria-expanded={open}>
-        More
-      </button>
-      {open ? (
-        <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20, minWidth: 168, background: '#0f172a', border: '1px solid #334155', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', padding: 4 }}>
-          {!isArchived ? (
-            <>
-              <button type="button" onClick={() => { onEnableDisable?.(); onClose(); }} style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 11, padding: '8px 10px', background: 'transparent', border: 'none', color: '#e2e8f0', cursor: 'pointer' }}>
-                {isActive ? 'Disable feed' : 'Enable feed'}
-              </button>
-              <button type="button" onClick={() => { onPurge?.(); onClose(); }} style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 11, padding: '8px 10px', background: 'transparent', border: 'none', color: '#fca5a5', cursor: 'pointer' }}>
-                Purge feed data
-              </button>
-              {!isBuiltIn ? (
-                <button type="button" onClick={() => { onArchive?.(); onClose(); }} style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 11, padding: '8px 10px', background: 'transparent', border: 'none', color: '#fcd34d', cursor: 'pointer' }}>
-                  Archive feed
-                </button>
-              ) : null}
-            </>
-          ) : (
-            <button type="button" onClick={() => { onRestore?.(); onClose(); }} style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 11, padding: '8px 10px', background: 'transparent', border: 'none', color: '#86efac', cursor: 'pointer' }}>
-              Restore feed
-            </button>
-          )}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -5334,8 +5365,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
   const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
   const [savingConfidenceKey, setSavingConfidenceKey] = useState('');
-  const [actionsMenuKey, setActionsMenuKey] = useState('');
   const [purgeModalFeed, setPurgeModalFeed] = useState(null);
+  const [feedActionSuccess, setFeedActionSuccess] = useState('');
   const [showArchivedFeeds, setShowArchivedFeeds] = useState(false);
 
   async function load() {
@@ -5369,6 +5400,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         name: f.name,
         schedule: f.schedule || '0 * * * *',
         active: f.active !== false,
+        feed_kind: f.feed_kind || 'built_in',
+        archived_at: f.archived_at || null,
         expiration_policy: f.expiration_policy,
         expiration_summary: f.expiration_summary,
         default_confidence: f.default_confidence
@@ -5440,7 +5473,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       key: feed.key,
       name: feed.name,
       schedule: feed.schedule || '0 * * * *',
-      active: feed.active !== false
+      active: feed.active !== false,
+      feed_kind: feed.feed_kind || 'built_in',
+      archived_at: feed.archived_at || null
     });
     try {
       const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feed.key)}/expiration-policy`);
@@ -5526,36 +5561,37 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  function toggleFeedActiveFromRow(feed) {
-    if (!canWrite || feed.archived_at) return;
-    setActiveConfirmError('');
-    setActiveConfirm({
-      key: feed.key,
-      name: feed.name,
-      mode: feed.active !== false ? 'disable' : 'enable'
-    });
-  }
-
-  async function archiveFeedFromRow(feed) {
-    if (!canWrite) return;
+  async function archiveFeedFromSettings() {
+    if (!canWrite || !settingsModal) return;
+    const feed = settingsModal;
     const ok = window.confirm(`Archive feed "${feed.name}"? It will be hidden from the default list and scheduling will stop.`);
     if (!ok) return;
     try {
       await api.patch(`/integrations/${encodeURIComponent(feed.key)}/archive`);
-      await load();
+      const list = await load();
+      syncSettingsModal(list);
+      setFeedActionSuccess(`Feed "${feed.name}" archived.`);
     } catch (err) {
       alert(apiErrorMessage(err, 'Failed to archive feed'));
     }
   }
 
-  async function restoreFeedFromRow(feed) {
-    if (!canWrite) return;
+  async function restoreFeedFromSettings() {
+    if (!canWrite || !settingsModal) return;
+    const feed = settingsModal;
     try {
       await api.patch(`/integrations/${encodeURIComponent(feed.key)}/restore`);
-      await load();
+      const list = await load();
+      syncSettingsModal(list);
+      setFeedActionSuccess(`Feed "${feed.name}" restored.`);
     } catch (err) {
       alert(apiErrorMessage(err, 'Failed to restore feed'));
     }
+  }
+
+  function handlePurgeCompleted(feedName) {
+    setFeedActionSuccess(`Feed data purged for ${feedName}.`);
+    load().then((list) => syncSettingsModal(list)).catch(() => {});
   }
 
   async function saveSettingsCredentials() {
@@ -5749,6 +5785,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         </div>
 
         {loadError ? <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>{loadError}</div> : null}
+        {feedActionSuccess ? (
+          <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(20,83,45,0.2)', fontSize: 13 }}>
+            {feedActionSuccess}
+          </div>
+        ) : null}
 
         {showHealthDashboard ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 14, marginBottom: 14 }}>
@@ -5851,21 +5892,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                             {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
                           </button>
                           {canWrite ? (
-                            <button type="button" onClick={() => openSettingsModal(i)} disabled={isArchived} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#93c5fd', cursor: isArchived ? 'not-allowed' : 'pointer', opacity: isArchived ? 0.5 : 1 }}>
+                            <button type="button" onClick={() => { setFeedActionSuccess(''); openSettingsModal(i); }} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#93c5fd', cursor: 'pointer' }}>
                               Edit
                             </button>
                           ) : null}
-                          <FeedActionsMenu
-                            feed={i}
-                            canWrite={canWrite}
-                            open={actionsMenuKey === i.key}
-                            onToggle={() => setActionsMenuKey((prev) => (prev === i.key ? '' : i.key))}
-                            onClose={() => setActionsMenuKey('')}
-                            onEnableDisable={() => toggleFeedActiveFromRow(i)}
-                            onPurge={() => setPurgeModalFeed(i)}
-                            onArchive={() => archiveFeedFromRow(i)}
-                            onRestore={() => restoreFeedFromRow(i)}
-                          />
                         </div>
                       </td>
                     </tr>
@@ -5916,6 +5946,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
           onSaveExpiration={() => saveSettingsExpiration().catch(() => {})}
           onSaveCredentials={() => saveSettingsCredentials().catch(() => {})}
+          onOpenPurge={() => setPurgeModalFeed(settingsModal)}
+          onArchive={() => archiveFeedFromSettings().catch(() => {})}
+          onRestore={() => restoreFeedFromSettings().catch(() => {})}
           canWrite={canWrite}
         />
       ) : null}
@@ -5935,7 +5968,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         feed={purgeModalFeed}
         open={Boolean(purgeModalFeed)}
         onClose={() => setPurgeModalFeed(null)}
-        onCompleted={() => load().catch(() => {})}
+        onCompleted={handlePurgeCompleted}
       />
     </AppShell>
   );
@@ -14000,7 +14033,7 @@ function App() {
         .integrations-feeds-table .integrations-feeds-col-metrics { min-width: 280px; }
         .integrations-feeds-table .integrations-feeds-col-error { min-width: 120px; }
         .integrations-feeds-table .integrations-feeds-col-next-run { min-width: 120px; }
-        .integrations-feeds-table .integrations-feeds-col-action { min-width: 128px; width: 128px; }
+        .integrations-feeds-table .integrations-feeds-col-action { min-width: 96px; width: 96px; }
         .integrations-feeds-table .integrations-feeds-feed-name {
           word-break: normal;
           overflow-wrap: normal;

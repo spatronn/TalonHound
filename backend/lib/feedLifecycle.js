@@ -26,6 +26,13 @@ export function isBuiltInFeed(feed) {
   return String(feed?.feed_kind || FEED_KIND.BUILT_IN).toLowerCase() === FEED_KIND.BUILT_IN;
 }
 
+export function computeReimportPossible(feed) {
+  if (!feed) return false;
+  const enabled = feed.active !== false;
+  const archived = isFeedArchived(feed);
+  return Boolean(enabled && !archived);
+}
+
 /**
  * Preview impact of purging active memberships for a feed (dry run).
  */
@@ -74,6 +81,8 @@ export async function previewFeedDataPurge(client, feedKey) {
   );
 
   const stats = rows[0] || {};
+  const feedEnabled = feed.active !== false;
+  const feedArchived = isFeedArchived(feed);
   return {
     ok: true,
     preview: {
@@ -85,7 +94,11 @@ export async function previewFeedDataPurge(client, feedKey) {
       iocs_shared_with_other_sources: Number(stats.iocs_shared_with_other_sources || 0),
       incidents_deleted: 0,
       events_deleted: 0,
-      will_preserve_history: true
+      will_preserve_history: true,
+      history_preserved: true,
+      feed_enabled: feedEnabled,
+      feed_archived: feedArchived,
+      reimport_possible: computeReimportPossible(feed)
     }
   };
 }
