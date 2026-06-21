@@ -23,8 +23,8 @@ describe('computeMembershipFieldPatch no-op detection', () => {
       last_seen_in_feed: '2026-01-02T00:00:00Z',
       missing_since: null,
       override_enabled: false,
-      policy_expires_at: '2026-02-01T00:00:00Z',
-      expires_at: '2026-02-01T00:00:00Z',
+      policy_expires_at: null,
+      expires_at: null,
       status: 'active',
       expired_at: null,
       expiration_reason: null
