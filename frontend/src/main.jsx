@@ -6361,6 +6361,173 @@ function IntegrationsQueueStatusPage() {
   );
 }
 
+function CustomFeedModalSection({ title, first = false, children }) {
+  return (
+    <section style={{
+      borderTop: first ? undefined : '1px solid #1e293b',
+      paddingTop: first ? 0 : 16,
+      marginTop: first ? 0 : 8
+    }}>
+      <h4 style={{
+        margin: '0 0 12px',
+        color: '#94a3b8',
+        fontSize: 11,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em'
+      }}>
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
+const CTF_FIELD_LABEL = { display: 'grid', gap: 6, marginBottom: 10 };
+const CTF_INPUT_STYLE = {
+  padding: '6px 8px',
+  borderRadius: 6,
+  border: '1px solid #475569',
+  background: '#0f172a',
+  color: '#e2e8f0',
+  fontSize: 13,
+  width: '100%'
+};
+
+function CustomFeedLifecycleFields({
+  feedActive,
+  draftCron,
+  onCronChange,
+  draftConfidence,
+  onConfidenceChange,
+  draftExpiration,
+  onExpirationChange,
+  onRequestActiveChange,
+  disabled = false
+}) {
+  const exp = draftExpiration || defaultExpirationDraft();
+  const showTtl = exp.enabled && ['fixed_ttl', 'last_seen_ttl'].includes(exp.expiration_mode);
+  const showGrace = exp.enabled && exp.expiration_mode === 'missing_from_feed_ttl';
+  const state = feedStatePresentation(feedActive !== false);
+
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{
+          display: 'inline-block',
+          padding: '2px 8px',
+          borderRadius: 999,
+          fontSize: 11,
+          fontWeight: 700,
+          color: state.color,
+          background: state.bg,
+          border: `1px solid ${state.border}`
+        }}>
+          {state.label}
+        </span>
+        {!disabled ? (
+          <button
+            type="button"
+            onClick={onRequestActiveChange}
+            style={{
+              fontSize: 12,
+              padding: '4px 10px',
+              borderRadius: 6,
+              border: '1px solid #475569',
+              background: 'transparent',
+              color: feedActive !== false ? '#fca5a5' : '#86efac',
+              cursor: 'pointer'
+            }}
+          >
+            {feedActive !== false ? 'Disable feed' : 'Enable feed'}
+          </button>
+        ) : null}
+      </div>
+
+      <label style={CTF_FIELD_LABEL}>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>Schedule</span>
+        <select
+          value={draftCron}
+          onChange={(e) => onCronChange(e.target.value)}
+          disabled={disabled}
+          style={CTF_INPUT_STYLE}
+        >
+          {FEED_SCHEDULE_OPTIONS.map((opt) => (
+            <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <label style={CTF_FIELD_LABEL}>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>Default confidence</span>
+        <span style={{ color: '#64748b', fontSize: 11 }}>Inherited IOC confidence only; explicit overrides are unchanged.</span>
+        <select
+          value={draftConfidence || 'medium'}
+          onChange={(e) => onConfidenceChange(e.target.value)}
+          disabled={disabled}
+          style={CTF_INPUT_STYLE}
+        >
+          {CONFIDENCE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </label>
+
+      <div style={{ display: 'grid', gap: 10 }}>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>Expiration policy</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={exp.enabled}
+            disabled={disabled}
+            onChange={(e) => onExpirationChange({ ...exp, enabled: e.target.checked })}
+          />
+          <span style={{ color: '#e2e8f0', fontSize: 13 }}>Enable expiration</span>
+        </label>
+        <label style={CTF_FIELD_LABEL}>
+          <span style={{ color: '#94a3b8', fontSize: 12 }}>Mode</span>
+          <select
+            value={exp.expiration_mode}
+            disabled={disabled || !exp.enabled}
+            onChange={(e) => onExpirationChange({ ...exp, expiration_mode: e.target.value })}
+            style={CTF_INPUT_STYLE}
+          >
+            {EXPIRATION_MODE_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>{opt.label}</option>
+            ))}
+          </select>
+        </label>
+        {showTtl ? (
+          <label style={CTF_FIELD_LABEL}>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>TTL days</span>
+            <input
+              type="number"
+              min={1}
+              value={exp.ttl_days}
+              disabled={disabled}
+              onChange={(e) => onExpirationChange({ ...exp, ttl_days: e.target.value })}
+              style={CTF_INPUT_STYLE}
+            />
+          </label>
+        ) : null}
+        {showGrace ? (
+          <label style={CTF_FIELD_LABEL}>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>Grace days</span>
+            <input
+              type="number"
+              min={1}
+              value={exp.grace_days}
+              disabled={disabled}
+              onChange={(e) => onExpirationChange({ ...exp, grace_days: e.target.value })}
+              style={CTF_INPUT_STYLE}
+            />
+          </label>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function CustomThreatFeedsPage() {
   const { canWrite, isAdmin, role } = useSession();
   const canRunActions = canWrite;
@@ -6380,19 +6547,10 @@ function CustomThreatFeedsPage() {
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [toast, setToast] = useState('');
-  const [settingsFeed, setSettingsFeed] = useState(null);
-  const [settingsDraftCron, setSettingsDraftCron] = useState('0 * * * *');
-  const [settingsDraftExpiration, setSettingsDraftExpiration] = useState(defaultExpirationDraft());
-  const [settingsDraftConfidence, setSettingsDraftConfidence] = useState('medium');
-  const [settingsError, setSettingsError] = useState('');
-  const [settingsExpirationError, setSettingsExpirationError] = useState('');
-  const [settingsExpirationSuccess, setSettingsExpirationSuccess] = useState('');
-  const [settingsExpirationRefreshWarn, setSettingsExpirationRefreshWarn] = useState('');
-  const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
-  const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
-  const [savingScheduleKey, setSavingScheduleKey] = useState('');
-  const [savingExpirationKey, setSavingExpirationKey] = useState('');
-  const [savingConfidenceKey, setSavingConfidenceKey] = useState('');
+  const [draftCron, setDraftCron] = useState('0 * * * *');
+  const [draftConfidence, setDraftConfidence] = useState('medium');
+  const [draftExpiration, setDraftExpiration] = useState(defaultExpirationDraft());
+  const [editActive, setEditActive] = useState(true);
   const [togglingKeys, setTogglingKeys] = useState({});
   const [activeConfirm, setActiveConfirm] = useState(null);
   const [activeConfirmError, setActiveConfirmError] = useState('');
@@ -6419,28 +6577,6 @@ function CustomThreatFeedsPage() {
 
   useEffect(() => { loadFeeds().catch(() => {}); }, []);
 
-  function syncSettingsFeed(list) {
-    if (!settingsFeed?.key) return;
-    const hit = list.find((f) => f.integration_key === settingsFeed.key || f.key === settingsFeed.key);
-    if (!hit) return;
-    setSettingsFeed({
-      key: hit.integration_key || hit.key,
-      name: hit.name,
-      schedule: hit.schedule || '0 * * * *',
-      active: hit.active !== false,
-      feed_kind: 'custom',
-      archived_at: hit.archived_at || null,
-      expiration_policy: hit.expiration_policy,
-      expiration_summary: hit.expiration_summary,
-      default_confidence: hit.default_confidence
-    });
-    setSettingsDraftCron(hit.schedule || '0 * * * *');
-    setSettingsDraftConfidence(String(hit.default_confidence || 'medium').trim().toLowerCase());
-    if (hit.expiration_policy) {
-      setSettingsDraftExpiration(defaultExpirationDraft(hit.expiration_policy));
-    }
-  }
-
   function openCreate() {
     if (!isAdmin) return;
     setEditingFeed(null);
@@ -6450,7 +6586,7 @@ function CustomThreatFeedsPage() {
     setShowModal(true);
   }
 
-  function openEdit(feed) {
+  async function openEdit(feed) {
     if (!isAdmin) return;
     setEditingFeed(feed);
     setForm({
@@ -6461,9 +6597,22 @@ function CustomThreatFeedsPage() {
       fixed_ioc_type: feed.fixed_ioc_type || 'domain',
       description: feed.description || ''
     });
+    setDraftCron(feed.schedule || '0 * * * *');
+    setDraftConfidence(String(feed.default_confidence || 'medium').trim().toLowerCase());
+    setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
+    setEditActive(feed.active !== false);
     setFormError('');
     setTestResult(null);
     setShowModal(true);
+    const feedKey = feed.integration_key || feed.key;
+    if (feedKey) {
+      try {
+        const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feedKey)}/expiration-policy`);
+        setDraftExpiration(defaultExpirationDraft(data?.policy));
+      } catch {
+        setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
+      }
+    }
   }
 
   async function saveFeed() {
@@ -6471,18 +6620,37 @@ function CustomThreatFeedsPage() {
     setSaving(true);
     setFormError('');
     try {
-      const payload = { ...form };
       if (editingFeed) {
+        const payload = { ...form };
         if (!payload.url) delete payload.url;
         await api.put(`/custom-threat-feeds/${encodeURIComponent(editingFeed.id)}`, payload);
+
+        const feedKey = editingFeed.integration_key || editingFeed.key;
+        const origSchedule = editingFeed.schedule || '0 * * * *';
+        const origConfidence = String(editingFeed.default_confidence || 'medium').trim().toLowerCase();
+
+        if (draftCron !== origSchedule) {
+          await api.put(`/integrations/${encodeURIComponent(feedKey)}/schedule`, { schedule_cron: draftCron });
+        }
+        if (draftConfidence && draftConfidence !== origConfidence) {
+          await api.patch(`/integrations/${encodeURIComponent(feedKey)}/default-confidence`, {
+            default_confidence: draftConfidence
+          });
+        }
+        const expPayload = buildExpirationPatchPayload(draftExpiration);
+        await api.patch(`/threat-feeds/${encodeURIComponent(feedKey)}/expiration-policy`, expPayload);
+
+        setShowModal(false);
+        setEditingFeed(null);
+        setToast('Custom Threat Feed updated');
       } else {
-        await api.post('/custom-threat-feeds', payload);
+        await api.post('/custom-threat-feeds', { ...form });
+        setShowModal(false);
+        setToast('Custom Threat Feed created');
       }
-      setShowModal(false);
-      setToast(editingFeed ? 'Custom Threat Feed updated' : 'Custom Threat Feed created');
       await loadFeeds();
     } catch (err) {
-      setFormError(apiErrorMessage(err, 'Failed to save Custom Threat Feed'));
+      setFormError(apiErrorMessage(err, editingFeed ? 'Failed to update Custom Threat Feed' : 'Failed to create Custom Threat Feed'));
     } finally {
       setSaving(false);
     }
@@ -6504,130 +6672,13 @@ function CustomThreatFeedsPage() {
     }
   }
 
-  async function openSettingsModal(feed) {
-    if (!isAdmin) return;
-    setSettingsError('');
-    setSettingsExpirationError('');
-    setSettingsExpirationSuccess('');
-    setSettingsExpirationRefreshWarn('');
-    setSettingsConfidenceError('');
-    setSettingsConfidenceSuccess('');
-    setSettingsDraftCron(feed.schedule || '0 * * * *');
-    setSettingsDraftConfidence(String(feed.default_confidence || 'medium').trim().toLowerCase());
-    setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
-    setSettingsFeed({
-      key: feed.integration_key || feed.key,
-      name: feed.name,
-      schedule: feed.schedule || '0 * * * *',
-      active: feed.active !== false,
-      feed_kind: 'custom',
-      archived_at: feed.archived_at || null,
-      expiration_policy: feed.expiration_policy,
-      expiration_summary: feed.expiration_summary,
-      default_confidence: feed.default_confidence
-    });
-    try {
-      const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feed.integration_key || feed.key)}/expiration-policy`);
-      setSettingsDraftExpiration(defaultExpirationDraft(data?.policy));
-    } catch {
-      setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
-    }
-  }
-
-  function closeSettingsModal() {
-    if (savingScheduleKey || savingExpirationKey || savingConfidenceKey) return;
-    setSettingsFeed(null);
-    setSettingsError('');
-  }
-
-  async function saveSettingsSchedule() {
-    if (!isAdmin || !settingsFeed) return;
-    const { key } = settingsFeed;
-    if (savingScheduleKey) return;
-    setSettingsError('');
-    setSavingScheduleKey(key);
-    try {
-      await api.put(`/integrations/${encodeURIComponent(key)}/schedule`, { schedule_cron: settingsDraftCron });
-      const { data } = await api.get('/custom-threat-feeds');
-      const updated = data?.feeds || [];
-      setFeeds(updated);
-      syncSettingsFeed(updated);
-    } catch (err) {
-      setSettingsError(apiErrorMessage(err, 'Failed to update schedule'));
-    } finally {
-      setSavingScheduleKey('');
-    }
-  }
-
-  async function saveSettingsConfidence() {
-    if (!isAdmin || !settingsFeed || !settingsDraftConfidence) return;
-    const { key } = settingsFeed;
-    if (savingConfidenceKey) return;
-    setSettingsConfidenceError('');
-    setSettingsConfidenceSuccess('');
-    setSavingConfidenceKey(key);
-    try {
-      await api.patch(`/integrations/${encodeURIComponent(key)}/default-confidence`, {
-        default_confidence: settingsDraftConfidence
-      });
-      setSettingsConfidenceSuccess('Default confidence updated. Inherited IOC confidence will reflect this at read time.');
-      const { data } = await api.get('/custom-threat-feeds');
-      const updated = data?.feeds || [];
-      setFeeds(updated);
-      syncSettingsFeed(updated);
-    } catch (err) {
-      setSettingsConfidenceError(apiErrorMessage(err, 'Failed to update default confidence'));
-    } finally {
-      setSavingConfidenceKey('');
-    }
-  }
-
-  async function saveSettingsExpiration() {
-    if (!isAdmin || !settingsFeed) return;
-    const { key } = settingsFeed;
-    if (savingExpirationKey) return;
-    setSettingsExpirationError('');
-    setSettingsExpirationSuccess('');
-    setSettingsExpirationRefreshWarn('');
-    setSavingExpirationKey(key);
-    let patchData;
-    try {
-      const { data } = await api.patch(
-        `/threat-feeds/${encodeURIComponent(key)}/expiration-policy`,
-        buildExpirationPatchPayload(settingsDraftExpiration)
-      );
-      patchData = data;
-    } catch (err) {
-      setSettingsExpirationError(apiErrorMessage(err, 'Failed to update expiration policy'));
-      setSavingExpirationKey('');
-      return;
-    }
-    setSavingExpirationKey('');
-    if (patchData?.success === false) {
-      setSettingsExpirationError(patchData.error || 'Failed to update expiration policy');
-      return;
-    }
-    if (patchData?.policy) {
-      setSettingsDraftExpiration(defaultExpirationDraft(patchData.policy));
-    }
-    setSettingsExpirationSuccess('Expiration policy updated');
-    try {
-      const { data } = await api.get('/custom-threat-feeds');
-      const updated = data?.feeds || [];
-      setFeeds(updated);
-      syncSettingsFeed(updated);
-    } catch {
-      setSettingsExpirationRefreshWarn('Policy saved, but refreshing the feed list failed.');
-    }
-  }
-
   function requestActiveChange() {
-    if (!isAdmin || !settingsFeed) return;
+    if (!isAdmin || !editingFeed) return;
     setActiveConfirmError('');
     setActiveConfirm({
-      key: settingsFeed.key,
-      name: settingsFeed.name,
-      mode: settingsFeed.active ? 'disable' : 'enable'
+      key: editingFeed.integration_key || editingFeed.key,
+      name: editingFeed.name,
+      mode: editActive ? 'disable' : 'enable'
     });
   }
 
@@ -6647,10 +6698,9 @@ function CustomThreatFeedsPage() {
     try {
       await api.patch(`/integrations/${encodeURIComponent(key)}/active`, { active: nextActive });
       setActiveConfirm(null);
-      const { data } = await api.get('/custom-threat-feeds');
-      const updated = data?.feeds || [];
-      setFeeds(updated);
-      syncSettingsFeed(updated);
+      setEditActive(nextActive);
+      setEditingFeed((prev) => (prev ? { ...prev, active: nextActive } : null));
+      await loadFeeds();
     } catch (err) {
       setActiveConfirmError(apiErrorMessage(err, 'Failed to update feed active state'));
     } finally {
@@ -6658,11 +6708,14 @@ function CustomThreatFeedsPage() {
     }
   }
 
-  function openPurgeFromSettings() {
-    if (!isAdmin || !settingsFeed) return;
-    setPurgeFeed({ key: settingsFeed.key, name: settingsFeed.name });
+  function openPurgeFromEdit() {
+    if (!isAdmin || !editingFeed) return;
+    setPurgeFeed({
+      key: editingFeed.integration_key || editingFeed.key,
+      name: editingFeed.name
+    });
     setShowPurgeModal(true);
-    setSettingsFeed(null);
+    setShowModal(false);
   }
 
   async function testFetch(feed) {
@@ -6781,8 +6834,7 @@ function CustomThreatFeedsPage() {
                       <td style={{ padding: 8 }}>{statusLabel(feed.last_run_status)}</td>
                       <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '—'}</td>
                       <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
-                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => openEdit(feed)} style={{ marginRight: 6 }}>Edit</button> : null}
-                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => openSettingsModal(feed)} style={{ marginRight: 6 }}>Feed settings</button> : null}
+                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})} style={{ marginRight: 6 }}>Edit</button> : null}
                         {canRunActions ? (
                           <>
                             <button type="button" disabled={actionFeedId === feed.id} onClick={() => testFetch(feed)} style={{ marginRight: 6 }}>Test fetch</button>
@@ -6814,84 +6866,99 @@ function CustomThreatFeedsPage() {
         </section>
 
         {showModal ? (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div style={{ background: '#111827', color: '#e2e8f0', padding: 20, borderRadius: 12, width: 'min(560px, 94vw)', maxHeight: '90vh', overflow: 'auto', border: '1px solid #334155' }}>
-              <h3 style={{ marginTop: 0 }}>{editingFeed ? 'Edit Custom Threat Feed' : 'Add Custom Threat Feed'}</h3>
-              <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0 }}>
-                Schedule, confidence, expiration, and enable/disable are managed in Feed settings after creation.
-              </p>
-              {formError ? <p style={{ color: '#fca5a5' }}>{formError}</p> : null}
-              <label style={{ display: 'block', marginBottom: 8 }}>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ width: '100%' }} /></label>
-              <label style={{ display: 'block', marginBottom: 8 }}>URL{editingFeed ? ' (leave blank to keep current)' : ''}<input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} style={{ width: '100%' }} placeholder="https://ti.example.com/feed.txt" /></label>
-              <label style={{ display: 'block', marginBottom: 8 }}>Format
-                <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} style={{ width: '100%' }}>
-                  <option value="auto">auto</option><option value="txt">txt</option><option value="csv">csv</option>
-                </select>
-              </label>
-              <label style={{ display: 'block', marginBottom: 8 }}>IOC type mode
-                <select value={form.ioc_type_mode} onChange={(e) => setForm({ ...form, ioc_type_mode: e.target.value })} style={{ width: '100%' }}>
-                  <option value="auto">auto</option><option value="fixed">fixed</option>
-                </select>
-              </label>
-              {form.ioc_type_mode === 'fixed' ? (
-                <label style={{ display: 'block', marginBottom: 8 }}>Fixed IOC type
-                  <select value={form.fixed_ioc_type} onChange={(e) => setForm({ ...form, fixed_ioc_type: e.target.value })} style={{ width: '100%' }}>
-                    <option value="domain">domain</option><option value="ip">ip</option><option value="url">url</option><option value="file_hash">file_hash</option>
-                  </select>
-                </label>
-              ) : null}
-              <label style={{ display: 'block', marginBottom: 8 }}>Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ width: '100%' }} rows={3} /></label>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setShowModal(false)} disabled={saving}>Cancel</button>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+            <div style={{
+              background: '#111827',
+              color: '#e2e8f0',
+              borderRadius: 12,
+              width: 'min(620px, 94vw)',
+              maxHeight: 'min(90vh, 860px)',
+              display: 'flex',
+              flexDirection: 'column',
+              border: '1px solid #334155'
+            }}>
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid #334155', flexShrink: 0 }}>
+                <h3 style={{ margin: 0, fontSize: 18, color: '#f1f5f9' }}>
+                  {editingFeed ? 'Edit Custom Threat Feed' : 'Add Custom Threat Feed'}
+                </h3>
+              </div>
+              <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+                {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
+
+                <CustomFeedModalSection title="Source" first>
+                  <label style={CTF_FIELD_LABEL}>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Name</span>
+                    <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={CTF_INPUT_STYLE} />
+                  </label>
+                  <label style={CTF_FIELD_LABEL}>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>URL{editingFeed ? ' (leave blank to keep current)' : ''}</span>
+                    <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} style={CTF_INPUT_STYLE} placeholder="https://ti.example.com/feed.txt" />
+                  </label>
+                  <label style={CTF_FIELD_LABEL}>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Format</span>
+                    <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} style={CTF_INPUT_STYLE}>
+                      <option value="auto">auto</option>
+                      <option value="txt">txt</option>
+                      <option value="csv">csv</option>
+                    </select>
+                  </label>
+                  <label style={CTF_FIELD_LABEL}>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>IOC type mode</span>
+                    <select value={form.ioc_type_mode} onChange={(e) => setForm({ ...form, ioc_type_mode: e.target.value })} style={CTF_INPUT_STYLE}>
+                      <option value="auto">auto</option>
+                      <option value="fixed">fixed</option>
+                    </select>
+                  </label>
+                  {form.ioc_type_mode === 'fixed' ? (
+                    <label style={CTF_FIELD_LABEL}>
+                      <span style={{ color: '#94a3b8', fontSize: 12 }}>Fixed IOC type</span>
+                      <select value={form.fixed_ioc_type} onChange={(e) => setForm({ ...form, fixed_ioc_type: e.target.value })} style={CTF_INPUT_STYLE}>
+                        <option value="domain">domain</option>
+                        <option value="ip">ip</option>
+                        <option value="url">url</option>
+                        <option value="file_hash">file_hash</option>
+                      </select>
+                    </label>
+                  ) : null}
+                  <label style={CTF_FIELD_LABEL}>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Description</span>
+                    <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...CTF_INPUT_STYLE, minHeight: 72, resize: 'vertical' }} rows={3} />
+                  </label>
+                </CustomFeedModalSection>
+
+                {editingFeed ? (
+                  <CustomFeedModalSection title="Schedule & Lifecycle">
+                    <CustomFeedLifecycleFields
+                      feedActive={editActive}
+                      draftCron={draftCron}
+                      onCronChange={setDraftCron}
+                      draftConfidence={draftConfidence}
+                      onConfidenceChange={setDraftConfidence}
+                      draftExpiration={draftExpiration}
+                      onExpirationChange={setDraftExpiration}
+                      onRequestActiveChange={requestActiveChange}
+                    />
+                    <div style={{ marginTop: 12 }}>
+                      <button type="button" onClick={openPurgeFromEdit} style={{ fontSize: 12, color: '#fca5a5', background: 'transparent', border: '1px solid #7f1d1d', borderRadius: 6, padding: '4px 10px' }}>
+                        Purge feed data
+                      </button>
+                    </div>
+                  </CustomFeedModalSection>
+                ) : null}
+              </div>
+              <div style={{
+                padding: '12px 20px',
+                borderTop: '1px solid #334155',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 8,
+                flexShrink: 0
+              }}>
+                <button type="button" onClick={() => { setShowModal(false); setEditingFeed(null); }} disabled={saving}>Cancel</button>
                 <button type="button" onClick={() => saveFeed().catch(() => {})} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
               </div>
             </div>
           </div>
-        ) : null}
-
-        {settingsFeed ? (
-          <FeedSettingsModal
-            feed={settingsFeed}
-            draftCron={settingsDraftCron}
-            onDraftChange={setSettingsDraftCron}
-            draftExpiration={settingsDraftExpiration}
-            onExpirationChange={setSettingsDraftExpiration}
-            draftConfidence={settingsDraftConfidence}
-            onConfidenceChange={setSettingsDraftConfidence}
-            savingConfidence={Boolean(savingConfidenceKey)}
-            confidenceError={settingsConfidenceError}
-            confidenceSuccess={settingsConfidenceSuccess}
-            onSaveConfidence={() => saveSettingsConfidence().catch(() => {})}
-            draftAuthKey=""
-            onAuthKeyChange={() => {}}
-            maskedAuthKey={null}
-            authKeyConfigured={false}
-            draftRecentDays="3"
-            onRecentDaysChange={() => {}}
-            testingCredentials={false}
-            credentialsTestMessage=""
-            credentialsTestOk={false}
-            onTestCredentials={() => {}}
-            savingSchedule={Boolean(savingScheduleKey)}
-            savingExpiration={Boolean(savingExpirationKey)}
-            savingCredentials={false}
-            credentialsError=""
-            credentialsSuccess=""
-            error={settingsError}
-            expirationError={settingsExpirationError}
-            expirationSuccess={settingsExpirationSuccess}
-            expirationRefreshWarn={settingsExpirationRefreshWarn}
-            onClose={closeSettingsModal}
-            onRequestActiveChange={requestActiveChange}
-            onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
-            onSaveExpiration={() => saveSettingsExpiration().catch(() => {})}
-            onSaveCredentials={() => {}}
-            onOpenPurge={openPurgeFromSettings}
-            onArchive={() => {}}
-            onRestore={() => {}}
-            purgeActive={false}
-            canWrite={isAdmin}
-          />
         ) : null}
 
         {activeConfirm ? (
