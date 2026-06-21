@@ -26,6 +26,8 @@
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js",
+    "test:custom-threat-feeds": "node --test lib/customThreatFeed.test.js",
+    "test:migrate": "node --test lib/migrationFiles.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",
     "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
     "test:rbac": "node --test lib/rbac.test.js",

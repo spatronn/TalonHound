@@ -97,6 +97,7 @@ import {
 } from './lib/schemaCapabilities.js';
 import { registerIocConfidenceRoutes } from './routes/iocConfidence.js';
 import { registerIocSourceRoutes } from './routes/iocSources.js';
+import { registerCustomThreatFeedRoutes } from './routes/customThreatFeeds.js';
 import { registerThreatActorRoutes } from './routes/threatActors.js';
 import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
 import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem } from './routes/iocThreatMetadata.js';
@@ -3951,6 +3952,7 @@ app.get('/api/integrations', async (req, res) => {
         f.created_at
       FROM integration_feeds f
       WHERE ($1::boolean OR f.archived_at IS NULL)
+        AND COALESCE(f.feed_kind, 'built_in') <> 'custom'
       ORDER BY f.archived_at NULLS FIRST, f.active DESC, f.created_at ASC, f.name ASC
     `;
 
@@ -5200,6 +5202,11 @@ registerIocConfidenceRoutes(app, pool, auditLogService, {
 });
 registerRouteModule('ioc_confidence');
 registerIocSourceRoutes(app, pool, auditLogService);
+registerCustomThreatFeedRoutes(app, pool, auditLogService, {
+  importQueue,
+  manualJobPriority: MANUAL_JOB_PRIORITY
+});
+registerRouteModule('custom_threat_feeds');
 registerThreatClassificationRoutes(app, pool, auditLogService);
 registerThreatActorRoutes(app, pool, auditLogService);
 registerIocThreatMetadataRoutes(app, pool, auditLogService, {

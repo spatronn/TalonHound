@@ -116,7 +116,13 @@ export const AUDIT_ACTION = Object.freeze({
   ENRICHMENT_PROVIDER_CONFIG_UPDATED: 'enrichment.provider_config.updated',
   AUTH_LOGIN_SUCCESS: 'auth.login.success',
   AUTH_LOGIN_FAILED: 'auth.login.failed',
-  AUTH_LOGOUT: 'auth.logout'
+  AUTH_LOGOUT: 'auth.logout',
+  CUSTOM_FEED_CREATED: 'custom_feed.created',
+  CUSTOM_FEED_UPDATED: 'custom_feed.updated',
+  CUSTOM_FEED_DEACTIVATED: 'custom_feed.deactivated',
+  CUSTOM_FEED_SYNC_QUEUED: 'custom_feed.sync_queued',
+  CUSTOM_FEED_SYNC_COMPLETED: 'custom_feed.sync_completed',
+  CUSTOM_FEED_SYNC_FAILED: 'custom_feed.sync_failed'
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -136,7 +142,8 @@ export const AUDIT_ENTITY = Object.freeze({
   SETTINGS: 'settings',
   ENRICHMENT: 'enrichment',
   ENVIRONMENT_AI_INSIGHT: 'environment_ai_insight',
-  AUTH: 'auth'
+  AUTH: 'auth',
+  CUSTOM_THREAT_FEED: 'custom_threat_feed'
 });
 
 /** Human-readable labels for UI */
@@ -241,7 +248,13 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.ENRICHMENT_PROVIDER_CONFIG_UPDATED]: 'Enrichment Provider Config Updated',
   [AUDIT_ACTION.AUTH_LOGIN_SUCCESS]: 'Login Success',
   [AUDIT_ACTION.AUTH_LOGIN_FAILED]: 'Login Failed',
-  [AUDIT_ACTION.AUTH_LOGOUT]: 'Logout'
+  [AUDIT_ACTION.AUTH_LOGOUT]: 'Logout',
+  [AUDIT_ACTION.CUSTOM_FEED_CREATED]: 'Custom Threat Feed Created',
+  [AUDIT_ACTION.CUSTOM_FEED_UPDATED]: 'Custom Threat Feed Updated',
+  [AUDIT_ACTION.CUSTOM_FEED_DEACTIVATED]: 'Custom Threat Feed Deactivated',
+  [AUDIT_ACTION.CUSTOM_FEED_SYNC_QUEUED]: 'Custom Threat Feed Sync Queued',
+  [AUDIT_ACTION.CUSTOM_FEED_SYNC_COMPLETED]: 'Custom Threat Feed Sync Completed',
+  [AUDIT_ACTION.CUSTOM_FEED_SYNC_FAILED]: 'Custom Threat Feed Sync Failed'
 });
 
 export function auditActionLabel(action) {

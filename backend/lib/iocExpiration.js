@@ -160,7 +160,7 @@ async function loadFeedMeta(client) {
     return feedMetaCache.rows;
   }
   const { rows } = await client.query(`
-    SELECT key, integration_id AS feed_id, feed_update_mode, name
+    SELECT key, integration_id AS feed_id, feed_update_mode, name, feed_kind
     FROM integration_feeds
   `);
   feedMetaCache.at = now;
@@ -171,9 +171,14 @@ async function loadFeedMeta(client) {
 export async function resolveFeedIdBySourceName(client, sourceName) {
   const feeds = await loadFeedMeta(client);
   const key = feedKeyForSourceName(sourceName);
-  if (!key) return null;
-  const row = feeds.find((f) => f.key === key);
-  return row?.feed_id || null;
+  if (key) {
+    const row = feeds.find((f) => f.key === key);
+    if (row) return row.feed_id || null;
+  }
+  const sn = String(sourceName || '').trim();
+  if (!sn) return null;
+  const custom = feeds.find((f) => String(f.feed_kind || '') === 'custom' && f.name === sn);
+  return custom?.feed_id || null;
 }
 
 export async function resolveFeedIdByKey(client, feedKey) {

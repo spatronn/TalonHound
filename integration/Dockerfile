@@ -11,6 +11,16 @@ COPY backend/lib/iocExpiration.js ./lib/iocExpiration.js
 COPY backend/lib/feedLifecycle.js ./lib/feedLifecycle.js
 COPY backend/lib/auditIocContext.js ./lib/auditIocContext.js
 COPY backend/lib/iocConfidence.js ./lib/iocConfidence.js
+COPY backend/lib/auditConstants.js ./lib/auditConstants.js
+COPY backend/lib/customThreatFeedUtils.js ./lib/customThreatFeedUtils.js
+COPY backend/lib/customThreatFeedParser.js ./lib/customThreatFeedParser.js
+COPY backend/lib/customThreatFeedFetch.js ./lib/customThreatFeedFetch.js
+COPY backend/lib/customThreatFeedSync.js ./lib/customThreatFeedSync.js
+COPY backend/lib/customThreatFeedWorkerAudit.js ./lib/customThreatFeedWorkerAudit.js
+COPY backend/lib/manualIocCreate.js ./lib/manualIocCreate.js
+COPY backend/lib/observable-normalization.js ./lib/observable-normalization.js
+COPY backend/lib/feedFormatter.js ./lib/feedFormatter.js
+COPY backend/lib/iocSourceValidation.js ./lib/iocSourceValidation.js
 COPY backend/lib/integrationQueueConfig.js ./lib/integrationQueueConfig.js
 COPY backend/lib/integrationQueueRecovery.js ./lib/integrationQueueRecovery.js
 COPY backend/lib/integrationQueueJobState.js ./lib/integrationQueueJobState.js

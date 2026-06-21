@@ -1430,6 +1430,7 @@ function AppShell({ children }) {
           <div style={{ marginTop: 8 }}>
             <div style={menuStyle(isIntegrationsActive)}>5. Threat Intelligence</div>
             <Link to="/threat-intelligence/feeds" style={subMenuStyle(isActive('/threat-intelligence/feeds') || isActive('/threat-intelligence'))}>Feeds</Link>
+            <Link to="/threat-intelligence/custom-threat-feeds" style={subMenuStyle(isActive('/threat-intelligence/custom-threat-feeds'))}>Custom Threat Feeds</Link>
             <Link to="/threat-intelligence/queue" style={subMenuStyle(isActive('/threat-intelligence/queue'))}>Job Queue Status</Link>
             <Link to="/threat-intelligence/runs" style={subMenuStyle(isActive('/threat-intelligence/runs'))}>Recent Runs</Link>
             <Link to="/threat-intelligence/published-feeds" style={subMenuStyle(isActive('/threat-intelligence/published-feeds'))}>Published Feeds</Link>
@@ -5887,6 +5888,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   const visibleIntegrations = integrations.filter((i) => {
+    if (String(i.feed_kind || 'built_in') === 'custom') return false;
     if (!showArchivedFeeds && i.archived_at) return false;
     if (Array.isArray(onlyKeys) && onlyKeys.length) return onlyKeys.includes(i.key);
     if (Array.isArray(hideKeys) && hideKeys.length) return !hideKeys.includes(i.key);
@@ -6354,6 +6356,358 @@ function IntegrationsQueueStatusPage() {
           </div>
         </div>
       </section>
+    </AppShell>
+  );
+}
+
+function CustomThreatFeedsPage() {
+  const { canWrite, isAdmin, role } = useSession();
+  const canRunActions = canWrite;
+  const [loading, setLoading] = useState(true);
+  const [feeds, setFeeds] = useState([]);
+  const [error, setError] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [editingFeed, setEditingFeed] = useState(null);
+  const [form, setForm] = useState({
+    name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain',
+    default_confidence: 'medium', sync_interval_minutes: 60, expire_missing: true,
+    enabled: true, timeout_ms: 30000, description: ''
+  });
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [actionFeedId, setActionFeedId] = useState('');
+  const [testResult, setTestResult] = useState(null);
+  const [runsFeed, setRunsFeed] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [toast, setToast] = useState('');
+
+  const emptyForm = {
+    name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain',
+    default_confidence: 'medium', sync_interval_minutes: 60, expire_missing: true,
+    enabled: true, timeout_ms: 30000, description: ''
+  };
+
+  async function loadFeeds() {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get('/custom-threat-feeds');
+      setFeeds(data?.feeds || []);
+    } catch (err) {
+      setFeeds([]);
+      setError(apiErrorMessage(err, 'Failed to load Custom Threat Feeds'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadFeeds().catch(() => {}); }, []);
+
+  function openCreate() {
+    if (!isAdmin) return;
+    setEditingFeed(null);
+    setForm(emptyForm);
+    setFormError('');
+    setTestResult(null);
+    setShowModal(true);
+  }
+
+  function openEdit(feed) {
+    if (!isAdmin) return;
+    setEditingFeed(feed);
+    setForm({
+      name: feed.name || '',
+      url: '',
+      format: feed.format || 'auto',
+      ioc_type_mode: feed.ioc_type_mode || 'auto',
+      fixed_ioc_type: feed.fixed_ioc_type || 'domain',
+      default_confidence: feed.default_confidence || 'medium',
+      sync_interval_minutes: feed.sync_interval_minutes || 60,
+      expire_missing: feed.expire_missing !== false,
+      enabled: feed.enabled !== false,
+      timeout_ms: feed.timeout_ms || 30000,
+      description: feed.description || ''
+    });
+    setFormError('');
+    setTestResult(null);
+    setShowModal(true);
+  }
+
+  async function saveFeed() {
+    if (!isAdmin) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const payload = { ...form, sync_interval_minutes: Number(form.sync_interval_minutes), timeout_ms: Number(form.timeout_ms) };
+      if (editingFeed) {
+        if (!payload.url) delete payload.url;
+        await api.put(`/custom-threat-feeds/${encodeURIComponent(editingFeed.id)}`, payload);
+      } else {
+        await api.post('/custom-threat-feeds', payload);
+      }
+      setShowModal(false);
+      setToast(editingFeed ? 'Custom Threat Feed updated' : 'Custom Threat Feed created');
+      await loadFeeds();
+    } catch (err) {
+      setFormError(apiErrorMessage(err, 'Failed to save Custom Threat Feed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deactivateFeed(feed) {
+    if (!isAdmin) return;
+    const ok = window.confirm(`Deactivate Custom Threat Feed "${feed.name}"?`);
+    if (!ok) return;
+    setActionFeedId(feed.id);
+    try {
+      await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/deactivate`);
+      setToast('Custom Threat Feed deactivated');
+      await loadFeeds();
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Failed to deactivate feed'));
+    } finally {
+      setActionFeedId('');
+    }
+  }
+
+  async function testFetch(feed) {
+    if (!canRunActions) return;
+    setActionFeedId(feed.id);
+    setTestResult(null);
+    try {
+      const { data } = await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/test-fetch`);
+      setTestResult({ feedId: feed.id, ...data });
+    } catch (err) {
+      setTestResult({ feedId: feed.id, error: apiErrorMessage(err, 'Test fetch failed') });
+    } finally {
+      setActionFeedId('');
+    }
+  }
+
+  async function syncNow(feed) {
+    if (!canRunActions) return;
+    setActionFeedId(feed.id);
+    try {
+      const { data } = await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/sync`);
+      setToast(data?.message || 'Sync queued');
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Failed to queue sync'));
+    } finally {
+      setActionFeedId('');
+    }
+  }
+
+  async function purgeFeed(feed) {
+    if (!canRunActions) return;
+    const confirmName = window.prompt(`Type the feed name exactly to confirm purge: ${feed.name}`);
+    if (confirmName !== feed.name) return;
+    setActionFeedId(feed.id);
+    try {
+      await api.post(`/integrations/${encodeURIComponent(feed.integration_key)}/purge`, {
+        confirm_name: feed.name,
+        reason: 'purge from Custom Threat Feeds'
+      });
+      setToast('Purge queued');
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Failed to queue purge'));
+    } finally {
+      setActionFeedId('');
+    }
+  }
+
+  async function openRuns(feed) {
+    setRunsFeed(feed);
+    setRunsLoading(true);
+    try {
+      const { data } = await api.get(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/runs`);
+      setRuns(data?.runs || []);
+    } catch {
+      setRuns([]);
+    } finally {
+      setRunsLoading(false);
+    }
+  }
+
+  const statusLabel = (status) => {
+    if (status === 'partial_success') return 'Partial success';
+    if (status === 'success') return 'Sync completed';
+    if (status === 'failed') return 'Failed';
+    if (status === 'running') return 'Running';
+    return status || '—';
+  };
+
+  return (
+    <AppShell>
+      <div className="page-content">
+        <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div>
+              <h2 style={{ margin: 0, color: '#f1f5f9' }}>Custom Threat Feeds</h2>
+              <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: 13 }}>
+                Sync IOCs from purchased TI feed URLs (TXT/CSV). Role: {role}.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => loadFeeds().catch(() => {})}>Refresh</button>
+              {isAdmin ? <button type="button" onClick={openCreate}>Add Custom Threat Feed</button> : null}
+            </div>
+          </div>
+
+          {toast ? <div style={{ marginBottom: 10, color: '#86efac' }}>{toast}</div> : null}
+          {error ? <div style={{ marginBottom: 10, color: '#fca5a5' }}>{error}</div> : null}
+          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : null}
+
+          {!loading && feeds.length === 0 ? (
+            <p style={{ color: '#94a3b8' }}>No Custom Threat Feeds configured.</p>
+          ) : null}
+
+          {!loading && feeds.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: '#cbd5e1' }}>
+                    <th style={{ padding: 8 }}>Name</th>
+                    <th style={{ padding: 8 }}>URL host</th>
+                    <th style={{ padding: 8 }}>Format</th>
+                    <th style={{ padding: 8 }}>IOC type</th>
+                    <th style={{ padding: 8 }}>Confidence</th>
+                    <th style={{ padding: 8 }}>Enabled</th>
+                    <th style={{ padding: 8 }}>Sync interval</th>
+                    <th style={{ padding: 8 }}>Last success</th>
+                    <th style={{ padding: 8 }}>Last run</th>
+                    <th style={{ padding: 8 }}>Last error</th>
+                    <th style={{ padding: 8 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feeds.map((feed) => (
+                    <tr key={feed.id} style={{ borderTop: '1px solid #334155', color: '#e2e8f0' }}>
+                      <td style={{ padding: 8 }}>{feed.name}</td>
+                      <td style={{ padding: 8 }}>{feed.url_host || feed.url_display}</td>
+                      <td style={{ padding: 8 }}>{feed.format}</td>
+                      <td style={{ padding: 8 }}>{feed.ioc_type_mode}{feed.fixed_ioc_type ? ` (${feed.fixed_ioc_type})` : ''}</td>
+                      <td style={{ padding: 8 }}>{feed.default_confidence}</td>
+                      <td style={{ padding: 8 }}>{feed.enabled ? 'Yes' : 'No'}</td>
+                      <td style={{ padding: 8 }}>{feed.sync_interval_minutes} min</td>
+                      <td style={{ padding: 8 }}>{feed.last_success_at ? new Date(feed.last_success_at).toLocaleString() : '—'}</td>
+                      <td style={{ padding: 8 }}>{statusLabel(feed.last_run_status)}</td>
+                      <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '—'}</td>
+                      <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
+                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => openEdit(feed)} style={{ marginRight: 6 }}>Edit</button> : null}
+                        {canRunActions ? (
+                          <>
+                            <button type="button" disabled={actionFeedId === feed.id} onClick={() => testFetch(feed)} style={{ marginRight: 6 }}>Test fetch</button>
+                            <button type="button" disabled={actionFeedId === feed.id} onClick={() => syncNow(feed)} style={{ marginRight: 6 }}>Sync now</button>
+                          </>
+                        ) : null}
+                        <button type="button" onClick={() => openRuns(feed)} style={{ marginRight: 6 }}>Runs</button>
+                        {canRunActions ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => purgeFeed(feed)} style={{ marginRight: 6 }}>Purge</button> : null}
+                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => deactivateFeed(feed)}>Deactivate</button> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {testResult ? (
+            <section style={{ marginTop: 16, padding: 12, border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
+              <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Test fetch result</h3>
+              {testResult.error ? <p style={{ color: '#fca5a5' }}>{testResult.error}</p> : (
+                <>
+                  <p style={{ color: '#cbd5e1' }}>HTTP status: {testResult.http_status}; Format: {testResult.detected_format}; Rows: {testResult.detected_rows}</p>
+                  <p style={{ color: '#cbd5e1' }}>Valid sample: {testResult.valid_sample_count}; Invalid sample: {testResult.invalid_sample_count}</p>
+                  <pre style={{ color: '#e2e8f0', fontSize: 12, overflow: 'auto' }}>{JSON.stringify(testResult.sample_parsed_iocs || [], null, 2)}</pre>
+                </>
+              )}
+            </section>
+          ) : null}
+        </section>
+
+        {showModal ? (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: '#111827', color: '#e2e8f0', padding: 20, borderRadius: 12, width: 'min(560px, 94vw)', maxHeight: '90vh', overflow: 'auto', border: '1px solid #334155' }}>
+              <h3 style={{ marginTop: 0 }}>{editingFeed ? 'Edit Custom Threat Feed' : 'Add Custom Threat Feed'}</h3>
+              {formError ? <p style={{ color: '#fca5a5' }}>{formError}</p> : null}
+              <label style={{ display: 'block', marginBottom: 8 }}>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ width: '100%' }} /></label>
+              <label style={{ display: 'block', marginBottom: 8 }}>URL{editingFeed ? ' (leave blank to keep current)' : ''}<input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} style={{ width: '100%' }} placeholder="https://ti.example.com/feed.txt" /></label>
+              <label style={{ display: 'block', marginBottom: 8 }}>Format
+                <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} style={{ width: '100%' }}>
+                  <option value="auto">auto</option><option value="txt">txt</option><option value="csv">csv</option>
+                </select>
+              </label>
+              <label style={{ display: 'block', marginBottom: 8 }}>IOC type mode
+                <select value={form.ioc_type_mode} onChange={(e) => setForm({ ...form, ioc_type_mode: e.target.value })} style={{ width: '100%' }}>
+                  <option value="auto">auto</option><option value="fixed">fixed</option>
+                </select>
+              </label>
+              {form.ioc_type_mode === 'fixed' ? (
+                <label style={{ display: 'block', marginBottom: 8 }}>Fixed IOC type
+                  <select value={form.fixed_ioc_type} onChange={(e) => setForm({ ...form, fixed_ioc_type: e.target.value })} style={{ width: '100%' }}>
+                    <option value="domain">domain</option><option value="ip">ip</option><option value="url">url</option><option value="file_hash">file_hash</option>
+                  </select>
+                </label>
+              ) : null}
+              <label style={{ display: 'block', marginBottom: 8 }}>Default confidence
+                <select value={form.default_confidence} onChange={(e) => setForm({ ...form, default_confidence: e.target.value })} style={{ width: '100%' }}>
+                  <option value="low">low</option><option value="medium">medium</option><option value="high">high</option>
+                </select>
+              </label>
+              <label style={{ display: 'block', marginBottom: 8 }}>Sync interval (minutes)<input type="number" min={5} max={10080} value={form.sync_interval_minutes} onChange={(e) => setForm({ ...form, sync_interval_minutes: e.target.value })} style={{ width: '100%' }} /></label>
+              <label style={{ display: 'block', marginBottom: 8 }}><input type="checkbox" checked={form.expire_missing} onChange={(e) => setForm({ ...form, expire_missing: e.target.checked })} /> Expire missing indicators</label>
+              <label style={{ display: 'block', marginBottom: 8 }}><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> Enabled</label>
+              <label style={{ display: 'block', marginBottom: 8 }}>Timeout (ms)<input type="number" min={1000} max={300000} value={form.timeout_ms} onChange={(e) => setForm({ ...form, timeout_ms: e.target.value })} style={{ width: '100%' }} /></label>
+              <label style={{ display: 'block', marginBottom: 8 }}>Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ width: '100%' }} rows={3} /></label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowModal(false)} disabled={saving}>Cancel</button>
+                <button type="button" onClick={() => saveFeed().catch(() => {})} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {runsFeed ? (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: '#111827', color: '#e2e8f0', padding: 20, borderRadius: 12, width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', border: '1px solid #334155' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ marginTop: 0 }}>Runs — {runsFeed.name}</h3>
+                <button type="button" onClick={() => { setRunsFeed(null); setRuns([]); }}>Close</button>
+              </div>
+              {runsLoading ? <p>Loading…</p> : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead><tr style={{ color: '#cbd5e1' }}>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Status</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Started</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Duration</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Valid</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Invalid</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Inserted</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Expired missing</th>
+                    <th style={{ padding: 6, textAlign: 'left' }}>Error</th>
+                  </tr></thead>
+                  <tbody>
+                    {runs.map((r) => (
+                      <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
+                        <td style={{ padding: 6 }}>{statusLabel(r.status)}</td>
+                        <td style={{ padding: 6 }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td>
+                        <td style={{ padding: 6 }}>{r.duration_ms != null ? `${r.duration_ms} ms` : '—'}</td>
+                        <td style={{ padding: 6 }}>{r.valid_rows}</td>
+                        <td style={{ padding: 6 }}>{r.invalid_rows}</td>
+                        <td style={{ padding: 6 }}>{r.inserted}</td>
+                        <td style={{ padding: 6 }}>{r.expired_missing}</td>
+                        <td style={{ padding: 6, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.error_message || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
     </AppShell>
   );
 }
@@ -14818,6 +15172,7 @@ function App() {
           <Route path="/threat-intelligence/enrichment" element={<Navigate to="/administration/enrichment-providers" replace />} />
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />
           <Route path="/threat-intelligence/runs" element={<Protected><IntegrationsRecentRunsPage /></Protected>} />
+          <Route path="/threat-intelligence/custom-threat-feeds" element={<Protected><CustomThreatFeedsPage /></Protected>} />
           <Route path="/threat-intelligence/published-feeds" element={<Protected><PublishedFeedsPage /></Protected>} />
           <Route path="/administration/audit-logs" element={<Protected><AuditLogsPage /></Protected>} />
           <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />

@@ -16,6 +16,8 @@ export const INTEGRATION_FEED_JOBS = Object.freeze({
   'phishtank-opendnsrr': 'phishtank-import'
 });
 
+export const CUSTOM_THREAT_FEED_JOB = 'custom-threat-feed-sync';
+
 function deriveFeedKeyFromRepeatable(repeatable, desiredByKey, desiredKeysByJobName) {
   const idRaw = String(repeatable.id || '').trim();
   const idKey = idRaw.replace(/-scheduled$/, '');
@@ -47,6 +49,90 @@ function repeatableMatchesDesired(repeatable, desiredRepeat) {
   const actualTz = String(repeatable.tz || '').trim();
   const desiredTz = String(desiredRepeat.tz || '').trim();
   return actualTz === desiredTz;
+}
+
+export async function loadCustomThreatFeedSchedules(pool) {
+  const q = await pool.query(
+    `SELECT f.key, f.schedule_cron
+     FROM custom_threat_feeds c
+     JOIN integration_feeds f ON f.integration_id = c.feed_id
+     WHERE c.enabled = TRUE
+       AND c.deactivated_at IS NULL
+       AND f.active = TRUE
+       AND f.archived_at IS NULL`
+  );
+  return (q.rows || [])
+    .map((r) => ({
+      key: String(r.key || '').trim(),
+      cron: sanitizeScheduleCron(r.schedule_cron)
+    }))
+    .filter((r) => r.key && r.key.startsWith('ctf-'));
+}
+
+async function ensureCustomFeedSchedule(importQueue, feed, slotMap) {
+  const jobId = `${feed.key}-scheduled`;
+  const repeat = desiredRepeatConfig(feed.key, feed.cron, slotMap);
+  await importQueue.add(
+    CUSTOM_THREAT_FEED_JOB,
+    { triggeredBy: 'scheduler', integration_key: feed.key },
+    { jobId, repeat }
+  );
+}
+
+export async function syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix = '[scheduler]' } = {}) {
+  const desired = await loadCustomThreatFeedSchedules(pool);
+  const slotMap = buildHourlySlotMap(desired.map((d) => ({ key: d.key, schedule: d.cron })));
+  const desiredByKey = new Map(desired.map((d) => [d.key, d]));
+  const desiredKeysByJobName = new Map([[CUSTOM_THREAT_FEED_JOB, desired.map((d) => d.key)]]);
+
+  const repeatables = await importQueue.getRepeatableJobs();
+  const seenPerFeed = new Set();
+
+  for (const r of repeatables) {
+    const jobName = String(r.name || '').trim();
+    if (jobName !== CUSTOM_THREAT_FEED_JOB) continue;
+
+    const mappedKey = deriveFeedKeyFromRepeatable(r, desiredByKey, desiredKeysByJobName);
+    const repeatCron = sanitizeScheduleCron(String(r.pattern || '').trim());
+
+    if (!mappedKey) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`${logPrefix} removed custom repeat job key=unknown pattern=${repeatCron || '-'} reason=legacy_or_unmapped`);
+      continue;
+    }
+
+    const desiredFeed = desiredByKey.get(mappedKey);
+    if (!desiredFeed) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`${logPrefix} removed custom repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=inactive_or_missing`);
+      continue;
+    }
+
+    const desiredRepeat = desiredRepeatConfig(mappedKey, desiredFeed.cron, slotMap);
+    if (!repeatableMatchesDesired(r, desiredRepeat)) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`${logPrefix} removed custom repeat job key=${mappedKey} reason=schedule_changed`);
+      continue;
+    }
+
+    const dedupKey = `${mappedKey}::${repeatConfigKey(desiredRepeat)}`;
+    if (seenPerFeed.has(dedupKey)) {
+      await importQueue.removeRepeatableByKey(r.key);
+      continue;
+    }
+    seenPerFeed.add(dedupKey);
+  }
+
+  for (const feed of desired) {
+    const repeat = desiredRepeatConfig(feed.key, feed.cron, slotMap);
+    const dedupKey = `${feed.key}::${repeatConfigKey(repeat)}`;
+    if (seenPerFeed.has(dedupKey)) continue;
+    await ensureCustomFeedSchedule(importQueue, feed, slotMap);
+    seenPerFeed.add(dedupKey);
+    console.log(`${logPrefix} ensured custom repeat job key=${feed.key} pattern=${repeat.pattern}`);
+  }
+
+  return { active: desired.length };
 }
 
 export async function loadActiveFeedSchedules(pool) {
@@ -148,11 +234,16 @@ export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefi
   }
 
   console.log(`${logPrefix} schedule sync complete, active=${desired.length}`);
+  await syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix });
   return { active: desired.length };
 }
 
 export async function syncSingleFeedSchedule(pool, importQueue, feedKey, { logPrefix = '[integrations]' } = {}) {
   const key = String(feedKey || '').trim();
+  if (key.startsWith('ctf-')) {
+    await syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix });
+    return { ok: true };
+  }
   if (!INTEGRATION_FEED_JOBS[key]) {
     return { ok: false, reason: 'unknown_feed' };
   }

@@ -1,0 +1,51 @@
+import { runCustomThreatFeedSync, loadCustomFeedByIntegrationKey } from './customThreatFeedSync.js';
+import { insertCustomFeedSyncAudit } from './customThreatFeedWorkerAudit.js';
+import { createImportMetrics } from './import-metrics.js';
+
+export async function runCustomThreatFeedImport(pool, options = {}) {
+  const integrationKey = options.integrationKey
+    || options.integration_key
+    || options.job?.data?.integration_key;
+  const triggeredBy = options.triggeredBy || options.job?.data?.triggeredBy || 'scheduler';
+  const queueJobId = options.jobId || (options.job?.id ? String(options.job.id) : null);
+  const { signal } = options;
+
+  const feed = await loadCustomFeedByIntegrationKey(pool, integrationKey);
+  if (!feed) {
+    return { skipped: true, reason: 'feed_not_found' };
+  }
+  if (!feed.enabled || feed.deactivated_at) {
+    return { skipped: true, reason: 'feed_disabled' };
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await runCustomThreatFeedSync(client, feed, {
+      signal,
+      triggeredBy,
+      queueJobId
+    });
+
+    await insertCustomFeedSyncAudit(pool, { ...result, url_host: feed.url_host }, triggeredBy);
+
+    const metrics = createImportMetrics();
+    metrics.records_inserted = result.inserted || 0;
+    metrics.records_updated = (result.updated || 0) + (result.refreshed || 0);
+    metrics.records_duplicate = result.duplicate_rows || 0;
+    metrics.records_failed = result.status === 'failed' ? 1 : 0;
+    metrics.noteSkipped(result.invalid_rows || 0);
+
+    if (result.status === 'failed') {
+      const err = new Error(result.error_message || 'Custom Threat Feed sync failed');
+      err.failureType = 'import_error';
+      throw err;
+    }
+
+    return {
+      metrics: metrics.toJSON(),
+      ...result
+    };
+  } finally {
+    client.release();
+  }
+}
