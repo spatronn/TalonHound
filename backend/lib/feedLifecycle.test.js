@@ -198,8 +198,9 @@ test('validatePurgeConfirmName requires exact trimmed match', () => {
 test('findActivePurgeJobForFeed returns active purge job', async () => {
   const state = {
     queries: [],
-    handler: (sql) => {
-      if (sql.includes('integration_queue_jobs') && sql.includes('feed_data_purge')) {
+    handler: (sql, params) => {
+      if (sql.includes('integration_queue_jobs') && sql.includes('job_name = $2')) {
+        assert.equal(params[1], 'feed_data_purge');
         return { rows: [{ job_id: 'job-1', status: 'running' }], rowCount: 1 };
       }
       return { rows: [], rowCount: 0 };
