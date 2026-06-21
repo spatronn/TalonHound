@@ -5,6 +5,7 @@
  */
 
 import { feedKeyForSourceName } from './iocExpiration.js';
+import { isActiveFeedMembership } from './iocActiveSources.js';
 
 export const CONFIDENCE_LEVELS = Object.freeze(['low', 'medium', 'high']);
 export const CONFIDENCE_SOURCES = Object.freeze({
@@ -76,7 +77,7 @@ export function computeInheritedEffectiveConfidence(input = {}) {
 
   const eligibleMemberships = includeInactiveMemberships
     ? (input.memberships || [])
-    : (input.memberships || []).filter((m) => String(m?.status || 'active') === 'active');
+    : (input.memberships || []).filter((m) => isActiveFeedMembership(m));
   const legacyMap = input.legacyExplicitByFeedKey instanceof Map
     ? input.legacyExplicitByFeedKey
     : new Map(Object.entries(input.legacyExplicitByFeedKey || {}));
@@ -151,9 +152,10 @@ export function computeInheritedEffectiveConfidence(input = {}) {
   };
 }
 
-export function buildLegacyExplicitMapFromIocRows(rows = []) {
+export function buildLegacyExplicitMapFromIocRows(rows = [], { activeOnly = true } = {}) {
   const map = new Map();
   for (const row of rows) {
+    if (activeOnly && String(row?.status || 'active') !== 'active') continue;
     const explicit = normalizeConfidence(row.source_confidence);
     if (!explicit) continue;
     const feedKey = feedKeyForSourceName(row.source_name);
@@ -255,21 +257,24 @@ export function buildIocInheritedConfidenceSummary({
   const primaryRow = seedRow || pickPrimaryIocRow(iocRows, seedPublicId);
   const analystOverride = normalizeConfidence(primaryRow?.analyst_confidence_override);
 
+  const activeMembershipRows = (membershipRows || []).filter((m) => isActiveFeedMembership(m));
+  const activeIocRows = (iocRows || []).filter((r) => String(r?.status || 'active') === 'active');
+
   let inherited = computeInheritedEffectiveConfidence({
     manualOverride: analystOverride,
-    memberships: membershipRows,
-    legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows),
-    includeInactiveMemberships: true
+    memberships: activeMembershipRows,
+    legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(activeIocRows),
+    includeInactiveMemberships: false
   });
 
   if (!analystOverride && !inherited.effective) {
-    const itemStored = computeItemStoredConfidence(primaryRow);
+    const hasActiveSource = activeMembershipRows.length > 0
+      || activeIocRows.some((r) => r.ioc_source_id);
+    const itemStored = hasActiveSource ? computeItemStoredConfidence(primaryRow) : null;
     if (itemStored) inherited = itemStored;
   }
 
-  const membershipBreakdown = (membershipRows || [])
-    .filter((m) => String(m?.status || 'active') === 'active')
-    .map((m) => ({
+  const membershipBreakdown = activeMembershipRows.map((m) => ({
       feed_key: m.feed_key || null,
       feed_name: m.feed_name || null,
       explicit_confidence: normalizeConfidence(m.explicit_confidence),
@@ -277,15 +282,23 @@ export function buildIocInheritedConfidenceSummary({
       effective: computeInheritedEffectiveConfidence({
         memberships: [m],
         legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(
-          iocRows.filter((r) => feedKeyForSourceName(r.source_name) === m.feed_key)
+          activeIocRows.filter((r) => feedKeyForSourceName(r.source_name) === m.feed_key)
         )
       }).effective
     }));
 
+  const historicalMemberships = (membershipRows || [])
+    .filter((m) => !isActiveFeedMembership(m))
+    .map((m) => ({
+      feed_key: m.feed_key || null,
+      feed_name: m.feed_name || null,
+      status: m.purged_at ? 'purged' : String(m.status || 'historical')
+    }));
+
   const baselineEffective = analystOverride
     ? computeInheritedEffectiveConfidence({
-      memberships: membershipRows,
-      legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(iocRows)
+      memberships: activeMembershipRows,
+      legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(activeIocRows)
     }).effective
     : null;
 
@@ -315,6 +328,8 @@ export function buildIocInheritedConfidenceSummary({
     baseline_effective: baselineEffective,
     baseline_source: analystOverride ? inherited.confidence_source : null,
     membership_breakdown: membershipBreakdown,
+    historical_memberships: historicalMemberships,
+    has_active_source: activeMembershipRows.length > 0 || activeIocRows.some((r) => r.ioc_source_id),
     confidence_set: [...new Set(membershipBreakdown.map((m) => m.effective).filter(Boolean))].sort()
   };
   summary.confidence_provenance = buildConfidenceProvenance(summary);
@@ -496,7 +511,23 @@ export async function buildIocConfidenceSummaryForDetails(pool, { rows, seedPubl
     return buildIocInheritedConfidenceSummary({ seedRow: null, membershipRows: [], iocRows: [], seedPublicId });
   }
 
-  const membershipRows = await fetchIocMembershipConfidenceRows(pool, seedRow.id, seedRow.observable_type);
+  const iocItemIds = [...new Set((rows || []).map((r) => Number(r.id)).filter((id) => Number.isFinite(id)))];
+  let membershipRows = [];
+  if (iocItemIds.length) {
+    const { rows: mRows } = await pool.query(
+      `SELECT m.id, m.status, m.purged_at,
+              m.explicit_confidence,
+              f.key AS feed_key,
+              f.name AS feed_name,
+              f.default_confidence AS feed_default_confidence
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = ANY($1::bigint[]) AND m.ioc_observable_type = $2
+       ORDER BY m.last_seen_in_feed DESC`,
+      [iocItemIds, seedRow.observable_type]
+    );
+    membershipRows = mRows;
+  }
   return buildIocInheritedConfidenceSummary({
     seedRow,
     membershipRows,
@@ -544,20 +575,22 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
     let source = inherited.confidence_source;
     let sourceName = inherited.confidence_feed_name;
     if (!effective) {
-      const itemStored = computeItemStoredConfidence(it);
+      const hasActiveSource = Number(it.active_source_count) > 0
+        || (memberships || []).some((m) => isActiveFeedMembership(m));
+      const itemStored = hasActiveSource ? computeItemStoredConfidence(it) : null;
       if (itemStored) {
         effective = itemStored.effective;
         source = itemStored.confidence_source;
         sourceName = itemStored.confidence_source_name;
       }
     }
-    effective = effective || normalizeConfidence(it.confidence) || null;
+    effective = effective || (Number(it.active_source_count) > 0 ? normalizeConfidence(it.confidence) : null) || null;
     out.set(k, {
       confidence_effective: effective,
       confidence_source: source || (effective ? 'legacy_item' : 'unknown'),
       confidence_source_description: effective
         ? buildConfidenceSourceDescription(source || 'unknown', sourceName)
-        : (it.source_name ? `Historical from ${it.source_name}` : 'Unknown')
+        : (Number(it.active_source_count) > 0 && it.source_name ? `Historical from ${it.source_name}` : 'No active source')
     });
   }
   return out;

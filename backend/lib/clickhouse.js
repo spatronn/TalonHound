@@ -323,6 +323,7 @@ export async function syncIocLookupFromPostgres(opts = {}) {
     WHERE observable IS NOT NULL
       AND observable != ''
       AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'sha256')
+      AND COALESCE(status, 'active') = 'active'
       AND toUInt64(id) > ${lastId}
     ORDER BY id
     LIMIT ${batchSize}

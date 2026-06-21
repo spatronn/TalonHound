@@ -79,6 +79,8 @@ export function getIocConfidencePresentation(detail) {
     sourceLine = 'Source: Manual entry';
   } else if (detail.source === 'system_fallback') {
     sourceLine = 'Source: System fallback';
+  } else if ((detail.source === 'unknown' || detail.confidence_source === 'unknown') && !detail.effective) {
+    sourceLine = 'Source: No active source';
   } else {
     const provenanceLine = formatProvenanceLabel(detail);
     if (provenanceLine) {

@@ -1,4 +1,6 @@
 import { recomputeIocGlobalStatus } from './iocExpiration.js';
+import { fetchLookupTombstoneRowsForObservable } from './iocActiveSources.js';
+import { pushIocLookupTombstones } from './clickhouse.js';
 
 export const FEED_KIND = Object.freeze({
   BUILT_IN: 'built_in',
@@ -48,7 +50,7 @@ export async function previewFeedDataPurge(client, feedKey) {
     `WITH feed_active AS (
        SELECT m.ioc_item_id, m.ioc_observable_type
        FROM ioc_feed_memberships m
-       WHERE m.feed_id = $1::uuid AND m.status = 'active'
+       WHERE m.feed_id = $1::uuid AND m.status = 'active' AND m.purged_at IS NULL
      ),
      analyzed AS (
        SELECT
@@ -60,6 +62,7 @@ export async function previewFeedDataPurge(client, feedKey) {
            WHERE m2.ioc_item_id = fa.ioc_item_id
              AND m2.ioc_observable_type = fa.ioc_observable_type
              AND m2.status = 'active'
+             AND m2.purged_at IS NULL
              AND m2.feed_id <> $1::uuid
          ) AS has_other_feed,
          EXISTS (
@@ -72,7 +75,7 @@ export async function previewFeedDataPurge(client, feedKey) {
        FROM feed_active fa
      )
      SELECT
-       (SELECT COUNT(*)::int FROM ioc_feed_memberships WHERE feed_id = $1::uuid AND status = 'active') AS active_memberships,
+       (SELECT COUNT(*)::int FROM ioc_feed_memberships WHERE feed_id = $1::uuid AND status = 'active' AND purged_at IS NULL) AS active_memberships,
        COUNT(*)::int AS affected_iocs,
        COUNT(*) FILTER (WHERE NOT has_other_feed AND NOT has_manual_source)::int AS iocs_only_from_this_feed,
        COUNT(*) FILTER (WHERE has_other_feed OR has_manual_source)::int AS iocs_shared_with_other_sources
@@ -202,6 +205,7 @@ export async function purgeFeedDataInBatches(client, feedKey, {
   let activeMembershipsRemoved = 0;
   let iocsExpired = 0;
   let iocsKeptActive = 0;
+  const expiredObservables = new Set();
   const actorUserId = actor?.userId || null;
   const actorUsername = actor?.username || null;
 
@@ -210,7 +214,7 @@ export async function purgeFeedDataInBatches(client, feedKey, {
     const { rows: batchRows } = await client.query(
       `SELECT id, ioc_item_id, ioc_observable_type
        FROM ioc_feed_memberships
-       WHERE feed_id = $1::uuid AND status = 'active'
+       WHERE feed_id = $1::uuid AND status = 'active' AND purged_at IS NULL
        ORDER BY id
        LIMIT $2`,
       [feedId, effectiveBatchSize]
@@ -254,8 +258,17 @@ export async function purgeFeedDataInBatches(client, feedKey, {
           audit,
           actor: actor || { actor_type: 'user', source: 'worker' }
         });
-        if (recompute.status === 'expired' && prevStatus !== 'expired') iocsExpired += 1;
-        else if (recompute.status === 'active') iocsKeptActive += 1;
+        if (recompute.status === 'expired' && prevStatus !== 'expired') {
+          iocsExpired += 1;
+          const obsRow = await client.query(
+            `SELECT observable, observable_type FROM ioc_items WHERE id = $1 AND observable_type = $2 LIMIT 1`,
+            [touch.iocItemId, touch.observableType]
+          );
+          const obs = obsRow.rows[0];
+          if (obs?.observable && obs?.observable_type) {
+            expiredObservables.add(`${obs.observable_type}\u0000${obs.observable}`);
+          }
+        } else if (recompute.status === 'active') iocsKeptActive += 1;
       }
 
       await client.query('COMMIT');
@@ -271,6 +284,22 @@ export async function purgeFeedDataInBatches(client, feedKey, {
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
+    }
+  }
+
+  if (expiredObservables.size > 0) {
+    try {
+      const tombstoneRows = [];
+      for (const key of expiredObservables) {
+        const [observableType, observable] = key.split('\u0000');
+        const rows = await fetchLookupTombstoneRowsForObservable(client, observable, observableType);
+        tombstoneRows.push(...rows);
+      }
+      if (tombstoneRows.length) {
+        await pushIocLookupTombstones(tombstoneRows);
+      }
+    } catch (err) {
+      console.warn('[feed-purge] ClickHouse lookup tombstone push failed:', err?.message || err);
     }
   }
 

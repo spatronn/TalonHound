@@ -273,23 +273,28 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
   }
 
   const memQ = await client.query(
-    `SELECT status FROM ioc_feed_memberships
-     WHERE ioc_item_id = $1 AND ioc_observable_type = $2`,
-    [iocItemId, observableType]
+    `SELECT m.status, m.purged_at
+     FROM ioc_feed_memberships m
+     INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+     WHERE i.observable = $1 AND i.observable_type = $2`,
+    [ioc.observable, observableType]
   );
   const memberships = memQ.rows || [];
   let nextStatus = 'expired';
   let minExpires = null;
   if (!memberships.length) {
     nextStatus = 'active';
-  } else if (memberships.some((m) => m.status === 'active')) {
+  } else if (memberships.some((m) => String(m.status) === 'active' && !m.purged_at)) {
     nextStatus = 'active';
   }
 
   const expQ = await client.query(
-    `SELECT MIN(expires_at) AS min_exp FROM ioc_feed_memberships
-     WHERE ioc_item_id = $1 AND ioc_observable_type = $2 AND status = 'active' AND expires_at IS NOT NULL`,
-    [iocItemId, observableType]
+    `SELECT MIN(m.expires_at) AS min_exp
+     FROM ioc_feed_memberships m
+     INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+     WHERE i.observable = $1 AND i.observable_type = $2
+       AND m.status = 'active' AND m.purged_at IS NULL AND m.expires_at IS NOT NULL`,
+    [ioc.observable, observableType]
   );
   minExpires = expQ.rows[0]?.min_exp || null;
 
@@ -305,8 +310,8 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
   await client.query(
     `UPDATE ioc_items
      SET status = $3, expires_at = $4, expired_at = $5, expiration_reason = $6
-     WHERE id = $1 AND observable_type = $2`,
-    [iocItemId, observableType, nextStatus, minExpires, expiredAt, expirationReason]
+     WHERE observable = $1 AND observable_type = $2`,
+    [ioc.observable, observableType, nextStatus, minExpires, expiredAt, expirationReason]
   );
 
   if (audit?.auditLog) {

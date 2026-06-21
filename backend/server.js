@@ -76,6 +76,12 @@ import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js
 import { createAuditLogService } from './lib/auditLogService.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
 import {
+  enrichItemsWithActiveSourceCounts,
+  fetchObservableMembershipSummary,
+  iocStatusSqlClause,
+  parseIocListStatusFilter
+} from './lib/iocActiveSources.js';
+import {
   hasIocConfidenceColumns,
   hasConfidenceProvenanceColumns,
   iocConfidenceJoinSql,
@@ -5577,10 +5583,11 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
 });
 
 async function finalizeIocListPageItems(pool, pageItems) {
-  const confMap = await buildDisplayConfidenceForItems(pool, pageItems, { includeInactiveMemberships: true });
-  const threatMetaMap = await enrichItemsWithThreatMetadata(pool, pageItems);
-  const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, pageItems);
-  return pageItems.map((it) => {
+  const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems);
+  const confMap = await buildDisplayConfidenceForItems(pool, enriched, { includeInactiveMemberships: false });
+  const threatMetaMap = await enrichItemsWithThreatMetadata(pool, enriched);
+  const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, enriched);
+  return enriched.map((it) => {
     const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
     const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
     return mergeAnalystIntelligenceItem(merged, analystMap);
@@ -5592,6 +5599,8 @@ async function handleIocList(req, res) {
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
 
   const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
+  const statusFilter = parseIocListStatusFilter(req.query.status);
+  const statusClause = iocStatusSqlClause(statusFilter);
   const classificationFilter = parseThreatClassificationFilterParam(
     req.query.threat_classification ?? req.query.threat_classifications
   );
@@ -5605,6 +5614,10 @@ async function handleIocList(req, res) {
   const params = [];
   let prefixedHashSearch = null;
   let prefixedObservableSearch = null;
+
+  if (statusClause) {
+    filters.push(statusClause);
+  }
 
   if (source_name) {
     params.push(`%${source_name}%`);
@@ -5761,11 +5774,13 @@ async function handleIocList(req, res) {
     if (exactObservableValue != null) {
       const obsLimit = Math.min(limit, 100);
       // ioc_observables (025): observable_value, ioc_public_id; join ioc_items for full row
+      const obsStatusClause = iocStatusSqlClause(statusFilter, 'i');
       const obsQ = `
-        SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.source_url, i.confidence, i.category, i.note, i.created_at
+        SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.source_url, i.confidence, i.category, i.note, i.created_at, i.status
         FROM ioc_observables o
         JOIN ioc_items i ON i.public_id = o.ioc_public_id
         WHERE o.observable_value = $1
+        ${obsStatusClause ? `AND ${obsStatusClause}` : ''}
         ORDER BY i.created_at DESC
         LIMIT $2`;
       if (t) t.dbQueryStart = Date.now();
@@ -5840,10 +5855,12 @@ async function handleIocList(req, res) {
       const hashValueOnly = params[prefixedHashSearch.exactIdx - 1];
       const noteExpr = prefixedHashSearch.noteExpr;
       const obsLimit = Math.max(Math.min(limit * 50, 500), 100);
+      const hashStatusClause = iocStatusSqlClause(statusFilter);
       const exactHashQ = `
-        SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+        SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at, status
         FROM ioc_file_hash
         WHERE observable = $1 OR (${noteExpr}) = $1
+        ${hashStatusClause ? `AND ${hashStatusClause}` : ''}
         ORDER BY created_at DESC
         LIMIT $2`;
       if (t) t.dbQueryStart = Date.now();
@@ -5941,10 +5958,12 @@ async function handleIocList(req, res) {
       const partitionTable = { ip: 'ioc_ip', ip6: 'ioc_ip6', domain: 'ioc_domain', url: 'ioc_url' }[obsType];
       const whereClause = (obsType === 'domain' || obsType === 'url') ? 'LOWER(observable) = $1' : 'observable = $1';
       const obsLimit = Math.max(Math.min(limit * 50, 500), 100);
+      const partStatusClause = iocStatusSqlClause(statusFilter);
       const obsQ = `
-        SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at
+        SELECT id, public_id, observable, observable_type, source_name, confidence, category, note, created_at, status
         FROM ${partitionTable}
         WHERE ${whereClause}
+        ${partStatusClause ? `AND ${partStatusClause}` : ''}
         ORDER BY created_at DESC
         LIMIT $2`;
       if (t) t.dbQueryStart = Date.now();
@@ -6021,22 +6040,22 @@ async function handleIocList(req, res) {
       ? params[prefixedHashSearch.typeIdx - 1]
       : null;
     const sourceSql = prefixedHashSearch && hashTypeLiteral
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status
          FROM ioc_items
          WHERE (
            (observable_type = '${hashTypeLiteral}' AND LOWER(observable) = $1)
            OR (${prefixedHashSearch.noteExpr} = $1)
          )`
       : prefixedHashSearch
-      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at
+      ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status
          FROM ioc_items
          WHERE (
            (observable_type = $${prefixedHashSearch.typeIdx} AND LOWER(observable) = $${prefixedHashSearch.exactIdx})
            OR (${prefixedHashSearch.noteExpr} = $${prefixedHashSearch.exactIdx})
          )`
       : fullScan
-        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at FROM ioc_items${recentClause}`
-        : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at
+        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status FROM ioc_items${recentClause}`
+        : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status
            FROM ioc_items
            ORDER BY created_at DESC
            LIMIT 2000`;
@@ -7131,6 +7150,13 @@ app.get('/api/ioc/details', async (req, res) => {
       impact.evidence_log_count = totalEvidenceLogsCount;
     }
 
+    const iocItemIds = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+    const membershipSummary = await fetchObservableMembershipSummary(pool, {
+      observable,
+      observableType,
+      iocItemIds
+    });
+
     const summary = {
       id: seedRow.id,
       public_id: seedRow.public_id,
@@ -7150,7 +7176,11 @@ app.get('/api/ioc/details', async (req, res) => {
       evidence_logs_count: totalEvidenceLogsCount,
       first_seen_log: firstSeenLog,
       last_seen_log: lastSeenLog,
-      source_count: new Set(rows.map((r) => r.source_name)).size,
+      source_count: membershipSummary.activeSourceCount,
+      active_source_count: membershipSummary.activeSourceCount,
+      historical_source_count: membershipSummary.historicalSources.length,
+      historical_sources: membershipSummary.historicalSources,
+      source_names: membershipSummary.activeSourceNames,
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
       file_information: buildFileInformation(rows, observable, rows[0].observable_type)
@@ -7169,7 +7199,7 @@ app.get('/api/ioc/details', async (req, res) => {
         feedNamesByKey: new Map()
       });
     }
-    if (!confidenceDetail?.effective && seedRow?.confidence) {
+    if (!confidenceDetail?.effective && seedRow?.confidence && membershipSummary.activeSourceCount > 0) {
       const itemStored = computeItemStoredConfidence(seedRow);
       if (itemStored) {
         confidenceDetail = {
@@ -7198,6 +7228,7 @@ app.get('/api/ioc/details', async (req, res) => {
       confidenceDetail
       && (confidenceDetail.source === 'unknown' || confidenceDetail.confidence_source === 'unknown')
       && seedRow?.confidence
+      && membershipSummary.activeSourceCount > 0
     ) {
       const itemStored = computeItemStoredConfidence(seedRow);
       if (itemStored?.effective) {
@@ -7216,6 +7247,21 @@ app.get('/api/ioc/details', async (req, res) => {
           )
         };
       }
+    }
+    if (confidenceDetail && !membershipSummary.activeSourceCount && !confidenceDetail.analyst_override) {
+      confidenceDetail = {
+        ...confidenceDetail,
+        effective: null,
+        confidence: null,
+        confidence_level: null,
+        confidence_source: 'unknown',
+        source: 'unknown',
+        source_description: 'No active source',
+        confidence_provenance: buildConfidenceProvenance({
+          confidence_source: 'unknown',
+          source_description: 'No active source'
+        })
+      };
     }
     if (confidenceDetail && !confidenceDetail.confidence_provenance) {
       confidenceDetail.confidence_provenance = buildConfidenceProvenance(confidenceDetail);
@@ -7244,7 +7290,9 @@ app.get('/api/ioc/details', async (req, res) => {
       summary,
       confidence: confidenceDetail,
       match_count: Number(summary.match_count || 0),
-      sources: rows,
+      sources: rows.filter((r) => String(r.status || 'active') === 'active'),
+      historical_sources: rows.filter((r) => String(r.status || 'active') !== 'active'),
+      feed_memberships: membershipSummary.membershipRows,
       matches: [],
       incidents,
       impact,

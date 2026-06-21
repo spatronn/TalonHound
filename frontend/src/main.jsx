@@ -10668,6 +10668,7 @@ function IOCListPage() {
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
   const [suppressionFilter, setSuppressionFilter] = useState('include');
+  const [statusFilter, setStatusFilter] = useState('active');
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
@@ -10690,6 +10691,7 @@ function IOCListPage() {
           page: targetPage,
           page_size: targetSize,
           q: search || undefined,
+          status: statusFilter || 'active',
         }
       });
       const items = listRes.data.items || [];
@@ -10702,7 +10704,7 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }, [search]);
+  }, [search, statusFilter]);
 
   useEffect(() => {
     loadSummary().catch(() => {});
@@ -10970,6 +10972,22 @@ function IOCListPage() {
             {[5, 10, 25, 100].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
+          </select>
+
+          <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Status:</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0' }}
+            title="Default list shows active IOCs only"
+          >
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+            <option value="suppressed">Suppressed</option>
+            <option value="all">All (historical)</option>
           </select>
 
           <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Suppressed:</label>
@@ -13240,11 +13258,24 @@ function IOCDetailsPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.observable_type || '-'}</div></div>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Source Count</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.source_count || 0}</div></div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Active Sources</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.active_source_count ?? summary.source_count ?? 0}</div>{Number(summary.historical_source_count || 0) > 0 ? <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{summary.historical_source_count} historical</div> : null}</div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Evidence Logs</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{Number(data.summary?.evidence_logs_count || 0)}</div></div>
                 </div>
+
+                {Array.isArray(summary.historical_sources) && summary.historical_sources.length ? (
+                  <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                    <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Historical sources</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {summary.historical_sources.map((src, idx) => (
+                        <span key={`${src.feed_name}-${idx}`} style={{ padding: '4px 10px', borderRadius: 999, border: '1px solid #475569', color: '#cbd5e1', fontSize: 12 }}>
+                          {src.feed_name} ({src.status || 'historical'})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
