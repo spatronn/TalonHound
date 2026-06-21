@@ -86,6 +86,27 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
   }));
 }
 
+export function computeLayeredProviderCoverage({
+  directSnapshots = {},
+  derivedSnapshots = {},
+  iocType,
+  rdapEligible = false,
+  derivedContext = null
+}) {
+  const direct = computeProviderCoverage(directSnapshots, { iocType, rdapEligible });
+  if (!derivedContext?.providers?.length) {
+    return { direct, derived: null, derivedHost: null };
+  }
+  const derived = computeProviderCoverage(derivedSnapshots, {
+    providerKeys: derivedContext.providers
+  });
+  return {
+    direct,
+    derived,
+    derivedHost: derivedContext.host
+  };
+}
+
 export function computeAnalystRefsSummary(summary) {
   const total = Number(summary?.total_count || 0);
   const malicious = Number(summary?.supports_malicious_count || 0);

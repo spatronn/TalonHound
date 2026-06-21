@@ -14,6 +14,7 @@ import {
   computeAnalystRefsSummary,
   computeInfrastructureSummary,
   computeOverallSignal,
+  computeLayeredProviderCoverage,
   computeProviderCoverage,
   computeReputationSummary,
   providerStateLabel,
@@ -57,7 +58,33 @@ function badgeEl(label, style) {
   );
 }
 
-export function IntelligenceSummarySection({ providerSnapshots, analystSummary, iocType, rdapEligible = false }) {
+function ProviderCoverageBadges({ coverage }) {
+  if (!coverage?.length) {
+    return <div style={{ color: '#64748b', fontSize: 11 }}>None</div>;
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {coverage.map((p) => {
+        const st = providerStateStyle(p.state);
+        return (
+          <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: st.color }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+            {p.label}: {providerStateLabel(p.state)}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+export function IntelligenceSummarySection({
+  providerSnapshots,
+  derivedProviderSnapshots,
+  derivedContext,
+  analystSummary,
+  iocType,
+  rdapEligible = false
+}) {
   const vtSnap = providerSnapshots?.virustotal || {};
   const abuseSnap = providerSnapshots?.abuseipdb || {};
   const ipinfoSnap = providerSnapshots?.ipinfo || {};
@@ -86,9 +113,16 @@ export function IntelligenceSummarySection({ providerSnapshots, analystSummary, 
     abuseipdb: showAbuse && abuseSnap.status === 'success' ? abuseSnap : null,
     rdap: showRdap && rdapSnap.status === 'success' ? rdapSnap : null
   });
-  const coverage = computeProviderCoverage(providerSnapshots, { iocType, rdapEligible });
+  const layeredCoverage = computeLayeredProviderCoverage({
+    directSnapshots: providerSnapshots,
+    derivedSnapshots: derivedProviderSnapshots,
+    iocType,
+    rdapEligible,
+    derivedContext
+  });
   const analystRefs = computeAnalystRefsSummary(analystSummary);
   const tone = signalToneStyle(overall.tone);
+  const hasDerivedCoverage = Boolean(layeredCoverage.derived?.length);
 
   return (
     <div style={sectionShellStyle}>
@@ -111,19 +145,27 @@ export function IntelligenceSummarySection({ providerSnapshots, analystSummary, 
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Infrastructure</div>
           <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{infrastructure}</div>
         </div>
-        <div style={summaryCardStyle}>
+        <div style={{ ...summaryCardStyle, gridColumn: hasDerivedCoverage ? 'span 2' : undefined }}>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Provider coverage</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {coverage.map((p) => {
-              const st = providerStateStyle(p.state);
-              return (
-                <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: st.color }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
-                  {p.label}: {providerStateLabel(p.state)}
-                </span>
-              );
-            })}
-          </div>
+          {hasDerivedCoverage ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 5, fontWeight: 600, letterSpacing: '0.02em' }}>Direct IOC</div>
+                <ProviderCoverageBadges coverage={layeredCoverage.direct} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 5, fontWeight: 600, letterSpacing: '0.02em' }}>
+                  Derived host:{' '}
+                  <span style={{ color: '#cbd5e1', fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontWeight: 500, overflowWrap: 'anywhere' }}>
+                    {layeredCoverage.derivedHost}
+                  </span>
+                </div>
+                <ProviderCoverageBadges coverage={layeredCoverage.derived} />
+              </div>
+            </div>
+          ) : (
+            <ProviderCoverageBadges coverage={layeredCoverage.direct} />
+          )}
         </div>
         <div style={summaryCardStyle}>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Analyst refs</div>
@@ -174,16 +216,8 @@ function DerivedInfrastructureSection({
         <div style={{ color: '#e2e8f0', fontWeight: 600, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", overflowWrap: 'anywhere' }}>
           {context.host}
         </div>
-        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {coverage.map((p) => {
-            const st = providerStateStyle(p.state);
-            return (
-              <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: st.color }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
-                {p.label}: {providerStateLabel(p.state)}
-              </span>
-            );
-          })}
+        <div style={{ marginTop: 8 }}>
+          <ProviderCoverageBadges coverage={coverage} />
         </div>
       </div>
       <div style={providerGridStyle}>
@@ -533,6 +567,8 @@ export function IntelligenceTabPanel({
     <div style={{ display: 'grid', gap: 14 }}>
       <IntelligenceSummarySection
         providerSnapshots={providerSnapshots}
+        derivedProviderSnapshots={derivedProviderSnapshots}
+        derivedContext={derivedContext}
         analystSummary={analystSummary}
         iocType={iocType}
         rdapEligible={isRdapEligible}

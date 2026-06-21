@@ -76,7 +76,23 @@ export function isProviderApplicable(providerKey, iocType, { rdapEligible = fals
 }
 
 export function getApplicableProvidersForIocType(iocType, options = {}) {
+  return getDirectApplicableProviders(iocType, options);
+}
+
+/** Direct IOC enrichment providers (excludes URL extracted-host providers). */
+export function getDirectApplicableProviders(iocType, options = {}) {
   return PROVIDER_KEYS.filter((key) => isProviderApplicable(key, iocType, options));
+}
+
+/**
+ * Providers for infrastructure extracted from a URL host.
+ * @param {'ip'|'domain'} derivedEntityType
+ */
+export function getDerivedApplicableProviders(derivedEntityType, { rdapEligible = false } = {}) {
+  const kind = String(derivedEntityType || '').toLowerCase();
+  if (kind === 'ip') return ['ipinfo', 'abuseipdb'];
+  if (kind === 'domain' && rdapEligible) return ['rdap'];
+  return [];
 }
 
 /**
@@ -84,8 +100,13 @@ export function getApplicableProvidersForIocType(iocType, options = {}) {
  * @returns {string[]}
  */
 export function getDerivedInfrastructureProviders(iocValue, iocType, { rdapEligible = false } = {}) {
-  const ctx = getDerivedInfrastructureContext(iocValue, iocType, { rdapEligible });
+  const ctx = getDerivedInfrastructure(iocValue, iocType, { rdapEligible });
   return ctx?.providers ?? [];
+}
+
+/** @returns {{ host: string, hostKind: 'ip'|'domain', providers: string[] }|null} */
+export function getDerivedInfrastructure(iocValue, iocType, { rdapEligible = false } = {}) {
+  return getDerivedInfrastructureContext(iocValue, iocType, { rdapEligible });
 }
 
 /**
@@ -98,13 +119,7 @@ export function getDerivedInfrastructureContext(iocValue, iocType, { rdapEligibl
   if (!host) return null;
 
   const hostKind = isIpAddress(host) ? 'ip' : 'domain';
-  const providers = [];
-
-  if (hostKind === 'ip') {
-    providers.push('ipinfo', 'abuseipdb');
-  } else if (rdapEligible) {
-    providers.push('rdap');
-  }
+  const providers = getDerivedApplicableProviders(hostKind, { rdapEligible });
 
   if (!providers.length) return null;
 

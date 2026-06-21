@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import {
   extractHostFromIocValue,
   getApplicableProvidersForIocType,
+  getDerivedApplicableProviders,
+  getDerivedInfrastructure,
   getDerivedInfrastructureContext,
   getDerivedInfrastructureProviders,
+  getDirectApplicableProviders,
   isIpAddress,
   isProviderApplicable,
   normalizeIocType
 } from './iocProviderApplicability.js';
-import { computeProviderCoverage } from './intelligenceSummary.js';
+import { computeLayeredProviderCoverage, computeProviderCoverage } from './intelligenceSummary.js';
 
 test('normalizeIocType maps hash aliases to hash', () => {
   assert.equal(normalizeIocType('sha256'), 'hash');
@@ -120,4 +123,44 @@ test('computeProviderCoverage supports explicit providerKeys for derived section
   assert.deepEqual(coverage.map((p) => p.key), ['ipinfo', 'abuseipdb']);
   assert.equal(coverage[0].state, 'available');
   assert.equal(coverage[1].state, 'not_run');
+});
+
+test('getDirectApplicableProviders matches direct IOC rules', () => {
+  assert.deepEqual(getDirectApplicableProviders('url'), ['virustotal']);
+  assert.deepEqual(getDirectApplicableProviders('ip'), ['virustotal', 'ipinfo', 'abuseipdb']);
+});
+
+test('getDerivedApplicableProviders returns IP providers for ip host kind', () => {
+  assert.deepEqual(getDerivedApplicableProviders('ip'), ['ipinfo', 'abuseipdb']);
+  assert.deepEqual(getDerivedApplicableProviders('domain', { rdapEligible: true }), ['rdap']);
+});
+
+test('computeLayeredProviderCoverage splits direct and derived for URL with IP host', () => {
+  const url = 'http://196.189.3.1:54492/i';
+  const derivedContext = getDerivedInfrastructure(url, 'url');
+  const layered = computeLayeredProviderCoverage({
+    directSnapshots: { virustotal: { status: 'success' } },
+    derivedSnapshots: {
+      ipinfo: { status: 'success' },
+      abuseipdb: { status: 'not_found' }
+    },
+    iocType: 'url',
+    derivedContext
+  });
+  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal']);
+  assert.equal(layered.direct[0].state, 'available');
+  assert.equal(layered.derivedHost, '196.189.3.1');
+  assert.deepEqual(layered.derived.map((p) => p.key), ['ipinfo', 'abuseipdb']);
+  assert.equal(layered.derived[0].state, 'available');
+  assert.equal(layered.derived[1].state, 'not_run');
+});
+
+test('computeLayeredProviderCoverage returns direct-only for IP IOC', () => {
+  const layered = computeLayeredProviderCoverage({
+    directSnapshots: { virustotal: { status: 'success' }, ipinfo: { status: 'success' } },
+    iocType: 'ip',
+    derivedContext: null
+  });
+  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb']);
+  assert.equal(layered.derived, null);
 });
