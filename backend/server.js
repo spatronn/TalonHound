@@ -6414,7 +6414,7 @@ app.get('/api/ioc/hot', async (req, res) => {
         sup.sup_expires_at,
         sup.sup_created_by,
         sup.sup_created_at
-      FROM scoped g
+      FROM grouped g
       LEFT JOIN LATERAL (
         SELECT NULLIF(COUNT(DISTINCT rl.evidence_hash)::bigint, 0) AS evidence_logs
         FROM ioc_activity a
