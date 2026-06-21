@@ -3,27 +3,61 @@ import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import { findActiveRunningJobForSource } from '../lib/integrationQueueRecovery.js';
 import { syncSingleFeedSchedule } from '../lib/integrationFeedScheduleSync.js';
+import { formatExpirationSummary } from '../lib/iocExpiration.js';
 import {
   CUSTOM_FEED_JOB_NAME,
   CUSTOM_FEED_KEY_PREFIX,
-  CONFIDENCE_LEVELS,
   FEED_FORMATS,
   FIXED_IOC_TYPES,
   IOC_TYPE_MODES,
   extractUrlHost,
   generateCustomFeedKey,
-  normalizeConfidenceInput,
   sanitizeUrlForDisplay,
-  syncIntervalToCron,
   validateFeedUrl
 } from '../lib/customThreatFeedUtils.js';
 import { fetchFeedUrl } from '../lib/customThreatFeedFetch.js';
 import { parseFeedContent, buildParseSample } from '../lib/customThreatFeedParser.js';
 
-const FEED_AUDIT_FIELDS = [
-  'name', 'format', 'ioc_type_mode', 'fixed_ioc_type', 'default_confidence',
-  'sync_interval_minutes', 'expire_missing', 'enabled', 'timeout_ms', 'description'
-];
+const DEFAULT_SCHEDULE_CRON = '0 * * * *';
+const DEFAULT_CONFIDENCE = 'medium';
+
+const FEED_AUDIT_FIELDS = ['name', 'format', 'ioc_type_mode', 'fixed_ioc_type', 'description'];
+
+const FEED_ROW_SELECT = `
+  SELECT c.*,
+         f.key AS integration_key,
+         f.name AS feed_name,
+         f.schedule_cron AS schedule,
+         f.default_confidence,
+         f.active AS integration_active,
+         f.archived_at,
+         p.enabled AS exp_enabled,
+         p.expiration_mode,
+         p.ttl_days AS exp_ttl_days,
+         p.grace_days AS exp_grace_days,
+         lr.status AS last_run_status,
+         lr.finished_at AS last_run_finished_at,
+         lr.error_message AS last_run_error,
+         ls.finished_at AS last_success_at
+  FROM custom_threat_feeds c
+  JOIN integration_feeds f ON f.integration_id = c.feed_id
+  LEFT JOIN threat_feed_expiration_policies p
+    ON p.feed_id = f.integration_id AND p.observable_type = 'all'
+  LEFT JOIN LATERAL (
+    SELECT status, finished_at, error_message
+    FROM custom_threat_feed_runs r
+    WHERE r.feed_id = c.id
+    ORDER BY started_at DESC
+    LIMIT 1
+  ) lr ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT finished_at
+    FROM custom_threat_feed_runs r
+    WHERE r.feed_id = c.id AND r.status IN ('success', 'partial_success')
+    ORDER BY finished_at DESC NULLS LAST
+    LIMIT 1
+  ) ls ON TRUE
+`;
 
 function actorFromReq(req) {
   return {
@@ -53,53 +87,22 @@ function validateFeedPayload(body, partial = false) {
   if (body?.ioc_type_mode === 'fixed' && !partial && !FIXED_IOC_TYPES.includes(body?.fixed_ioc_type)) {
     errors.push('fixed_ioc_type is required when ioc_type_mode is fixed');
   }
-  if (body?.default_confidence !== undefined && !CONFIDENCE_LEVELS.includes(normalizeConfidenceInput(body.default_confidence, ''))) {
-    errors.push('default_confidence must be low, medium, or high');
-  }
-  const interval = body?.sync_interval_minutes;
-  if (interval !== undefined) {
-    const n = Number(interval);
-    if (!Number.isInteger(n) || n < 5 || n > 10080) {
-      errors.push('sync_interval_minutes must be between 5 and 10080');
-    }
-  }
-  const timeout = body?.timeout_ms;
-  if (timeout !== undefined) {
-    const n = Number(timeout);
-    if (!Number.isInteger(n) || n < 1000 || n > 300000) {
-      errors.push('timeout_ms must be between 1000 and 300000');
-    }
-  }
   return errors;
+}
+
+function buildExpirationPolicy(row) {
+  if (row.expiration_mode == null && row.exp_enabled == null) return null;
+  return {
+    enabled: Boolean(row.exp_enabled),
+    expiration_mode: row.expiration_mode || 'never',
+    ttl_days: row.exp_ttl_days ?? null,
+    grace_days: row.exp_grace_days ?? null
+  };
 }
 
 async function fetchFeedRow(pool, id) {
   const { rows } = await pool.query(
-    `SELECT c.*,
-            f.key AS integration_key,
-            f.name AS feed_name,
-            f.active AS integration_active,
-            f.archived_at,
-            lr.status AS last_run_status,
-            lr.finished_at AS last_run_finished_at,
-            lr.error_message AS last_run_error,
-            ls.finished_at AS last_success_at
-     FROM custom_threat_feeds c
-     JOIN integration_feeds f ON f.integration_id = c.feed_id
-     LEFT JOIN LATERAL (
-       SELECT status, finished_at, error_message
-       FROM custom_threat_feed_runs r
-       WHERE r.feed_id = c.id
-       ORDER BY started_at DESC
-       LIMIT 1
-     ) lr ON TRUE
-     LEFT JOIN LATERAL (
-       SELECT finished_at
-       FROM custom_threat_feed_runs r
-       WHERE r.feed_id = c.id AND r.status IN ('success', 'partial_success')
-       ORDER BY finished_at DESC NULLS LAST
-       LIMIT 1
-     ) ls ON TRUE
+    `${FEED_ROW_SELECT}
      WHERE c.id = $1::uuid
      LIMIT 1`,
     [id]
@@ -109,20 +112,23 @@ async function fetchFeedRow(pool, id) {
 
 function serializeFeedRow(row) {
   if (!row) return null;
+  const expirationPolicy = buildExpirationPolicy(row);
   return {
     id: row.id,
     feed_id: row.feed_id,
     integration_key: row.integration_key,
+    key: row.integration_key,
     name: row.feed_name,
     url_host: row.url_host,
     url_display: sanitizeUrlForDisplay(row.url),
     format: row.format,
     ioc_type_mode: row.ioc_type_mode,
     fixed_ioc_type: row.fixed_ioc_type,
-    default_confidence: row.default_confidence,
-    sync_interval_minutes: row.sync_interval_minutes,
-    expire_missing: row.expire_missing,
-    enabled: row.enabled && !row.deactivated_at,
+    schedule: row.schedule || DEFAULT_SCHEDULE_CRON,
+    default_confidence: row.default_confidence || DEFAULT_CONFIDENCE,
+    active: row.integration_active !== false,
+    expiration_policy: expirationPolicy,
+    expiration_summary: expirationPolicy ? formatExpirationSummary(expirationPolicy) : 'Never',
     timeout_ms: row.timeout_ms,
     description: row.description,
     deactivated_at: row.deactivated_at,
@@ -132,8 +138,9 @@ function serializeFeedRow(row) {
     last_run_status: row.last_run_status || null,
     last_run_finished_at: row.last_run_finished_at || null,
     last_error: row.last_run_error || null,
-    integration_active: row.integration_active !== false,
-    archived_at: row.archived_at || null
+    archived_at: row.archived_at || null,
+    feed_kind: 'custom',
+    feed_update_mode: 'snapshot'
   };
 }
 
@@ -188,31 +195,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
   app.get('/api/custom-threat-feeds', async (_req, res) => {
     try {
       const { rows } = await pool.query(
-        `SELECT c.*,
-                f.key AS integration_key,
-                f.name AS feed_name,
-                f.active AS integration_active,
-                f.archived_at,
-                lr.status AS last_run_status,
-                lr.finished_at AS last_run_finished_at,
-                lr.error_message AS last_run_error,
-                ls.finished_at AS last_success_at
-         FROM custom_threat_feeds c
-         JOIN integration_feeds f ON f.integration_id = c.feed_id
-         LEFT JOIN LATERAL (
-           SELECT status, finished_at, error_message
-           FROM custom_threat_feed_runs r
-           WHERE r.feed_id = c.id
-           ORDER BY started_at DESC
-           LIMIT 1
-         ) lr ON TRUE
-         LEFT JOIN LATERAL (
-           SELECT finished_at
-           FROM custom_threat_feed_runs r
-           WHERE r.feed_id = c.id AND r.status IN ('success', 'partial_success')
-           ORDER BY finished_at DESC NULLS LAST
-           LIMIT 1
-         ) ls ON TRUE
+        `${FEED_ROW_SELECT}
          WHERE c.deactivated_at IS NULL
          ORDER BY c.created_at DESC`
       );
@@ -229,8 +212,6 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
 
     const urlCheck = validateFeedUrl(body.url);
     const feedKey = generateCustomFeedKey();
-    const cron = syncIntervalToCron(body.sync_interval_minutes ?? 60);
-    const defaultConfidence = normalizeConfidenceInput(body.default_confidence);
     const { actor, actor_id: actorId } = actorFromReq(req);
 
     const client = await pool.connect();
@@ -241,15 +222,14 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
         `INSERT INTO integration_feeds (
            key, name, source_url, schedule_cron, trust_level, active,
            feed_kind, feed_update_mode, default_confidence
-         ) VALUES ($1, $2, $3, $4, 'not_categorized', $5, 'custom', 'snapshot', $6)
+         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5)
          RETURNING integration_id, key, name`,
         [
           feedKey,
           String(body.name).trim(),
           sanitizeUrlForDisplay(body.url),
-          cron,
-          body.enabled !== false,
-          defaultConfidence
+          DEFAULT_SCHEDULE_CRON,
+          DEFAULT_CONFIDENCE
         ]
       );
       const integration = integrationInsert.rows[0];
@@ -257,12 +237,10 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       const customInsert = await client.query(
         `INSERT INTO custom_threat_feeds (
            feed_id, url, url_host, format, ioc_type_mode, fixed_ioc_type,
-           default_confidence, sync_interval_minutes, expire_missing, enabled,
            timeout_ms, description, created_by, created_by_username
          ) VALUES (
            $1::uuid, $2, $3, $4, $5, $6,
-           $7, $8, $9, $10,
-           $11, $12, $13::uuid, $14
+           $7, $8, $9::uuid, $10
          )
          RETURNING id`,
         [
@@ -272,11 +250,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
           body.format || 'auto',
           body.ioc_type_mode || 'auto',
           body.ioc_type_mode === 'fixed' ? body.fixed_ioc_type : null,
-          defaultConfidence,
-          Number(body.sync_interval_minutes ?? 60),
-          body.expire_missing !== false,
-          body.enabled !== false,
-          Number(body.timeout_ms ?? 30000),
+          30000,
           body.description ? String(body.description).trim() : null,
           actorId,
           actor
@@ -284,10 +258,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       );
 
       await client.query('COMMIT');
-
-      if (body.enabled !== false) {
-        await syncSingleFeedSchedule(pool, importQueue, feedKey, { logPrefix: '[custom-feeds]' });
-      }
+      await syncSingleFeedSchedule(pool, importQueue, feedKey, { logPrefix: '[custom-feeds]' });
 
       const row = await fetchFeedRow(pool, customInsert.rows[0].id);
       await audit.auditSuccess({
@@ -335,11 +306,6 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     const urlCheck = body.url !== undefined ? validateFeedUrl(body.url) : { ok: true, url: existing.url, url_host: existing.url_host };
     if (!urlCheck.ok) return res.status(400).json({ message: urlCheck.error });
 
-    const syncInterval = body.sync_interval_minutes !== undefined
-      ? Number(body.sync_interval_minutes)
-      : existing.sync_interval_minutes;
-    const cron = syncIntervalToCron(syncInterval);
-    const enabled = body.enabled !== undefined ? Boolean(body.enabled) : existing.enabled;
     const { actor, actor_id: actorId } = actorFromReq(req);
 
     const client = await pool.connect();
@@ -353,22 +319,12 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
         );
       }
 
-      await client.query(
-        `UPDATE integration_feeds
-         SET schedule_cron = $2,
-             active = $3,
-             default_confidence = COALESCE($4, default_confidence),
-             source_url = COALESCE($5, source_url),
-             updated_at = NOW()
-         WHERE integration_id = $1::uuid`,
-        [
-          existing.feed_id,
-          cron,
-          enabled,
-          body.default_confidence ? normalizeConfidenceInput(body.default_confidence) : null,
-          body.url !== undefined ? sanitizeUrlForDisplay(body.url) : null
-        ]
-      );
+      if (body.url !== undefined) {
+        await client.query(
+          `UPDATE integration_feeds SET source_url = $2, updated_at = NOW() WHERE integration_id = $1::uuid`,
+          [existing.feed_id, sanitizeUrlForDisplay(body.url)]
+        );
+      }
 
       await client.query(
         `UPDATE custom_threat_feeds
@@ -377,14 +333,9 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
              format = COALESCE($4, format),
              ioc_type_mode = COALESCE($5, ioc_type_mode),
              fixed_ioc_type = CASE WHEN $5 = 'fixed' THEN $6 WHEN $5 = 'auto' THEN NULL ELSE fixed_ioc_type END,
-             default_confidence = COALESCE($7, default_confidence),
-             sync_interval_minutes = COALESCE($8, sync_interval_minutes),
-             expire_missing = COALESCE($9, expire_missing),
-             enabled = COALESCE($10, enabled),
-             timeout_ms = COALESCE($11, timeout_ms),
-             description = COALESCE($12, description),
-             updated_by = $13::uuid,
-             updated_by_username = $14,
+             description = COALESCE($7, description),
+             updated_by = $8::uuid,
+             updated_by_username = $9,
              updated_at = NOW()
          WHERE id = $1::uuid`,
         [
@@ -394,11 +345,6 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
           body.format ?? null,
           body.ioc_type_mode ?? null,
           body.fixed_ioc_type ?? null,
-          body.default_confidence ? normalizeConfidenceInput(body.default_confidence) : null,
-          body.sync_interval_minutes !== undefined ? Number(body.sync_interval_minutes) : null,
-          body.expire_missing !== undefined ? Boolean(body.expire_missing) : null,
-          body.enabled !== undefined ? Boolean(body.enabled) : null,
-          body.timeout_ms !== undefined ? Number(body.timeout_ms) : null,
           body.description !== undefined ? (body.description ? String(body.description).trim() : null) : null,
           actorId,
           actor
@@ -406,7 +352,6 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       );
 
       await client.query('COMMIT');
-      await syncSingleFeedSchedule(pool, importQueue, existing.integration_key, { logPrefix: '[custom-feeds]' });
 
       const row = await fetchFeedRow(pool, existing.id);
       await audit.auditSuccess({
@@ -440,7 +385,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
 
     await pool.query(
       `UPDATE custom_threat_feeds
-       SET enabled = FALSE, deactivated_at = NOW(), updated_at = NOW()
+       SET deactivated_at = NOW(), updated_at = NOW()
        WHERE id = $1::uuid`,
       [existing.id]
     );
@@ -498,7 +443,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     if (!row || row.deactivated_at) {
       return res.status(404).json({ message: 'Custom Threat Feed not found' });
     }
-    if (!row.enabled) {
+    if (row.integration_active === false) {
       return res.status(409).json({ message: 'Custom Threat Feed is disabled' });
     }
 

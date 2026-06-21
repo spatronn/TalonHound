@@ -9,6 +9,7 @@ import {
   resolveMembershipStatus
 } from '../lib/iocExpiration.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { assertCustomFeedSettingsAllowed } from '../lib/customThreatFeedAccess.js';
 import {
   buildIocExpirationAuditPayload,
   buildMembershipExpirationAuditPayload,
@@ -147,6 +148,7 @@ export function registerIocExpirationRoutes(app, pool, audit) {
   app.patch('/api/threat-feeds/:feedKey/expiration-policy', async (req, res) => {
     try {
       const feedKey = String(req.params.feedKey || '').trim();
+      if (!assertCustomFeedSettingsAllowed(req, feedKey, res)) return;
       const feedQ = await pool.query(
         'SELECT key, integration_id, feed_update_mode FROM integration_feeds WHERE key = $1',
         [feedKey]

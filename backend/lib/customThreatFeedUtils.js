@@ -65,18 +65,6 @@ export function validateFeedUrl(urlString) {
   return { ok: true, url: raw, url_host: extractUrlHost(raw) };
 }
 
-export function syncIntervalToCron(minutes) {
-  const m = Math.max(5, Math.min(Number(minutes) || 60, 10080));
-  if (m <= 5) return '*/5 * * * *';
-  if (m <= 15) return '*/15 * * * *';
-  if (m <= 30) return '*/30 * * * *';
-  if (m <= 60) return '0 * * * *';
-  if (m <= 120) return '0 */2 * * *';
-  if (m <= 360) return '0 */6 * * *';
-  if (m <= 720) return '0 */12 * * *';
-  return '0 0 * * *';
-}
-
 export function generateCustomFeedKey() {
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
   return `${CUSTOM_FEED_KEY_PREFIX}${id}`;

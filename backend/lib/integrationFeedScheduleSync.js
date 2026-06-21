@@ -56,8 +56,7 @@ export async function loadCustomThreatFeedSchedules(pool) {
     `SELECT f.key, f.schedule_cron
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id
-     WHERE c.enabled = TRUE
-       AND c.deactivated_at IS NULL
+     WHERE c.deactivated_at IS NULL
        AND f.active = TRUE
        AND f.archived_at IS NULL`
   );

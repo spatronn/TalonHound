@@ -60,6 +60,7 @@ import { IOC_MATCH_EVENT_STATS_SELECT } from './lib/incidentEventAggSql.js';
 import { buildIocEnvironmentImpact, computeIncidentRiskScore, emptyIocEnvironmentImpact } from './lib/iocEnvironmentImpact.js';
 import { buildRiskExplanation } from './lib/riskExplanation.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
+import { assertCustomFeedSettingsAllowed } from './lib/customThreatFeedAccess.js';
 import { createLlmRiskAdvisor } from './risk/llmRiskAdvisor.js';
 import { enrichIncidentContextWithRelatedIocs, summarizeRelatedIocSignals } from './risk/incidentAiInsightContext.js';
 import { normalizeRdapTarget } from './lib/domainRoot.js';
@@ -4456,6 +4457,7 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
 
 app.patch('/api/integrations/:key/active', async (req, res) => {
   const { key } = req.params;
+  if (!assertCustomFeedSettingsAllowed(req, key, res)) return;
   if (typeof req.body?.active !== 'boolean') {
     return res.status(400).json({ message: 'active must be a boolean' });
   }
@@ -4720,6 +4722,7 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
 
 app.put('/api/integrations/:key/schedule', async (req, res) => {
   const { key } = req.params;
+  if (!assertCustomFeedSettingsAllowed(req, key, res)) return;
   const scheduleCron = String(req.body?.schedule_cron || '').trim();
 
   if (!SCHEDULE_CRONS.has(scheduleCron)) {
@@ -4783,6 +4786,7 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
 
 app.patch('/api/integrations/:key/default-confidence', async (req, res) => {
   const { key } = req.params;
+  if (!assertCustomFeedSettingsAllowed(req, key, res)) return;
   const { AUDIT_ACTION, AUDIT_ENTITY } = await import('./lib/auditConstants.js');
 
   const confCheck = validateConfidenceInput(req.body?.default_confidence);

@@ -14,7 +14,7 @@ export async function runCustomThreatFeedImport(pool, options = {}) {
   if (!feed) {
     return { skipped: true, reason: 'feed_not_found' };
   }
-  if (!feed.enabled || feed.deactivated_at) {
+  if (feed.deactivated_at || feed.integration_active === false) {
     return { skipped: true, reason: 'feed_disabled' };
   }
 

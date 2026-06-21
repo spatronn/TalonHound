@@ -3,7 +3,8 @@ import { parseFeedContent } from './customThreatFeedParser.js';
 import { sanitizeUrlForDisplay } from './customThreatFeedUtils.js';
 import {
   upsertMembershipOnImport,
-  recomputeIocGlobalStatus
+  recomputeIocGlobalStatus,
+  finalizeSnapshotFeedRun
 } from './iocExpiration.js';
 import { normalizeConfidence, resolveImportConfidenceFields } from './iocConfidence.js';
 
@@ -130,33 +131,13 @@ async function upsertIocRow(client, {
   };
 }
 
-async function expireMissingMemberships(client, feedId, seenKeys, audit = null) {
-  const { rows } = await client.query(
-    `SELECT m.id, m.ioc_item_id, m.ioc_observable_type
-     FROM ioc_feed_memberships m
-     WHERE m.feed_id = $1::uuid AND m.status = 'active' AND m.purged_at IS NULL`,
-    [feedId]
-  );
-
-  let expired = 0;
-  const now = new Date();
-  for (const row of rows) {
-    const key = `${row.ioc_observable_type}|${row.ioc_item_id}`;
-    if (seenKeys.has(key)) continue;
-    await client.query(
-      `UPDATE ioc_feed_memberships
-       SET status = 'expired',
-           expired_at = COALESCE(expired_at, $2),
-           expiration_reason = 'missing_from_snapshot',
-           missing_since = COALESCE(missing_since, $2),
-           updated_at = NOW()
-       WHERE id = $1 AND status = 'active'`,
-      [row.id, now]
-    );
-    await recomputeIocGlobalStatus(client, row.ioc_item_id, row.ioc_observable_type, { audit });
-    expired += 1;
-  }
-  return expired;
+async function expireMissingFromSnapshot(client, integrationFeedId, seenKeys, audit = null) {
+  const { marked } = await finalizeSnapshotFeedRun(client, {
+    feedId: integrationFeedId,
+    seenKeys,
+    audit
+  });
+  return marked;
 }
 
 export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
@@ -241,9 +222,7 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
       seenKeys.add(`${result.observableType}|${result.iocItemId}`);
     }
 
-    if (feedRow.expire_missing) {
-      counters.expired_missing = await expireMissingMemberships(client, integrationFeedId, seenKeys);
-    }
+    counters.expired_missing = await expireMissingFromSnapshot(client, integrationFeedId, seenKeys);
 
     if (counters.invalid_rows > 0 && counters.valid_rows > 0) status = 'partial_success';
     else if (counters.valid_rows === 0 && counters.total_rows > 0) status = 'failed';
@@ -331,7 +310,9 @@ export async function loadCustomFeedForSync(client, customFeedId) {
     `SELECT c.*,
             f.integration_id AS integration_feed_id,
             f.key AS integration_key,
-            f.name AS feed_name
+            f.name AS feed_name,
+            f.default_confidence,
+            f.active AS integration_active
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id
      WHERE c.id = $1::uuid
@@ -346,7 +327,10 @@ export async function loadCustomFeedByIntegrationKey(client, integrationKey) {
     `SELECT c.*,
             f.integration_id AS integration_feed_id,
             f.key AS integration_key,
-            f.name AS feed_name
+            f.name AS feed_name,
+            f.schedule_cron AS schedule,
+            f.default_confidence,
+            f.active AS integration_active
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id
      WHERE f.key = $1

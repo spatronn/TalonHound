@@ -2,10 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateFeedUrl,
-  syncIntervalToCron,
   mapFixedIocTypeToObservableType,
   sanitizeUrlForDisplay
 } from './customThreatFeedUtils.js';
+import {
+  assertCustomFeedSettingsAllowed,
+  isCustomThreatFeedKey
+} from './customThreatFeedAccess.js';
+import { loadCustomThreatFeedSchedules } from './integrationFeedScheduleSync.js';
+import { BASE_SCHEDULE_CRONS } from './integrationSchedule.js';
 import {
   parseTxtFeedContent,
   parseCsvFeedContent,
@@ -27,9 +32,63 @@ test('sanitizeUrlForDisplay strips credentials', () => {
   assert.equal(display.includes('ti.example.com'), true);
 });
 
-test('syncIntervalToCron maps common intervals', () => {
-  assert.equal(syncIntervalToCron(5), '*/5 * * * *');
-  assert.equal(syncIntervalToCron(60), '0 * * * *');
+test('custom feed schedule uses integration_feeds schedule_cron model', async () => {
+  let capturedSql = '';
+  const pool = {
+    query: async (sql) => {
+      capturedSql = sql;
+      return { rows: [{ key: 'ctf-abc123', schedule_cron: '*/15 * * * *' }] };
+    }
+  };
+  const rows = await loadCustomThreatFeedSchedules(pool);
+  assert.match(capturedSql, /f\.schedule_cron/);
+  assert.match(capturedSql, /f\.active = TRUE/);
+  assert.match(capturedSql, /c\.deactivated_at IS NULL/);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].key, 'ctf-abc123');
+  assert.equal(rows[0].cron, '*/15 * * * *');
+});
+
+test('feed schedule crons align with standard feed options', () => {
+  const allowed = new Set(BASE_SCHEDULE_CRONS);
+  assert.equal(allowed.has('*/5 * * * *'), true);
+  assert.equal(allowed.has('*/15 * * * *'), true);
+  assert.equal(allowed.has('*/30 * * * *'), true);
+  assert.equal(allowed.has('0 * * * *'), true);
+  assert.equal(allowed.has('0 0 * * *'), true);
+  assert.equal(allowed.has('0 */2 * * *'), false);
+});
+
+test('assertCustomFeedSettingsAllowed blocks analyst on custom feed keys', () => {
+  let statusCode = null;
+  const res = {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json() {
+      return this;
+    }
+  };
+  const analystReq = { user: { role: ROLES.ANALYST } };
+  const allowedVendor = assertCustomFeedSettingsAllowed(analystReq, 'usom-trcert', res);
+  assert.equal(allowedVendor, true);
+  assert.equal(statusCode, null);
+
+  const blocked = assertCustomFeedSettingsAllowed(analystReq, 'ctf-abc123', res);
+  assert.equal(blocked, false);
+  assert.equal(statusCode, 403);
+});
+
+test('assertCustomFeedSettingsAllowed allows admin on custom feed keys', () => {
+  const res = { status() { return this; }, json() { return this; } };
+  const adminReq = { user: { role: ROLES.ADMIN } };
+  assert.equal(assertCustomFeedSettingsAllowed(adminReq, 'ctf-abc123', res), true);
+});
+
+test('isCustomThreatFeedKey detects ctf prefix', () => {
+  assert.equal(isCustomThreatFeedKey('ctf-abc'), true);
+  assert.equal(isCustomThreatFeedKey('usom-trcert'), false);
 });
 
 test('mapFixedIocTypeToObservableType maps file_hash to hash', () => {
