@@ -429,6 +429,7 @@ export async function upsertMembershipOnImport(client, {
     const row = existing.rows[0];
     membershipId = row.id;
     const wasExpired = row.status === 'expired';
+    const wasPurged = row.status === 'purged';
     const clearMissing = true;
 
     if (row.override_enabled) {
@@ -448,11 +449,15 @@ export async function upsertMembershipOnImport(client, {
              status = 'active',
              expired_at = NULL,
              expiration_reason = NULL,
+             purged_at = NULL,
+             purged_by = NULL,
+             purged_by_username = NULL,
+             purge_reason = NULL,
              updated_at = NOW()
          WHERE id = $1`,
         [membershipId, now]
       );
-      if (wasExpired) reactivated = true;
+      if (wasExpired || wasPurged) reactivated = true;
     }
   }
 

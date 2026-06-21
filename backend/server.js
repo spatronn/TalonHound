@@ -35,6 +35,12 @@ import {
 } from './routes/analystIntelligence.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { formatExpirationSummary } from './lib/iocExpiration.js';
+import {
+  archiveIntegrationFeed,
+  previewFeedDataPurge,
+  purgeFeedData,
+  restoreIntegrationFeed
+} from './lib/feedLifecycle.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
@@ -3893,6 +3899,8 @@ app.get('/api/integrations', async (req, res) => {
     const queueWindowSql = queueWindow === '7d' ? "NOW() - INTERVAL '7 days'" : "NOW() - INTERVAL '24 hours'";
     const loadQueue = wantsIntegrationsQueue(req);
 
+    const includeArchived = String(req.query?.include_archived || '').trim() === '1';
+
     const feedsQ = `
       SELECT
         f.key,
@@ -3902,11 +3910,14 @@ app.get('/api/integrations', async (req, res) => {
         f.schedule_cron AS schedule,
         f.trust_level,
         f.active,
+        f.feed_kind,
+        f.archived_at,
         f.default_confidence,
         f.credentials,
         f.created_at
       FROM integration_feeds f
-      ORDER BY f.active DESC, f.created_at ASC, f.name ASC
+      WHERE ($1::boolean OR f.archived_at IS NULL)
+      ORDER BY f.archived_at NULLS FIRST, f.active DESC, f.created_at ASC, f.name ASC
     `;
 
     const recentQ = `
@@ -3947,7 +3958,7 @@ app.get('/api/integrations', async (req, res) => {
         ON p.feed_id = f.integration_id AND p.observable_type = 'all'
     `;
     const [feedsRes, repeatableNextByKey, expirationPoliciesRes] = await Promise.all([
-      pool.query(feedsQ),
+      pool.query(feedsQ, [includeArchived]),
       importQueue.getRepeatableJobs()
         .then((rows) => buildRepeatableNextRunMap(rows))
         .catch(() => new Map()),
@@ -3964,7 +3975,10 @@ app.get('/api/integrations', async (req, res) => {
       const credentialsSummary = AUTH_KEY_FEED_KEYS.has(feed.key)
         ? formatFeedCredentialsSummary(feed.key, credentials)
         : null;
-      const base = { ...rest, credentials_summary: credentialsSummary };
+      const base = { ...rest, credentials_summary: credentialsSummary, feed_kind: feed.feed_kind || 'built_in' };
+      if (feed.archived_at) {
+        return { ...base, next_run_at: null };
+      }
       if (feed.active === false) {
         return { ...base, next_run_at: null };
       }
@@ -4221,18 +4235,35 @@ const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '
 async function loadActiveIntegrationFeedKeys() {
   const q = await pool.query(
     `SELECT key FROM integration_feeds
-     WHERE active = TRUE AND key = ANY($1::text[])`,
+     WHERE active = TRUE
+       AND archived_at IS NULL
+       AND key = ANY($1::text[])`,
     [Object.keys(INTEGRATION_JOBS)]
   );
   return q.rows.map((row) => String(row.key));
 }
 
+function integrationFeedActor(req) {
+  const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId)
+    ? req.user.publicId
+    : null;
+  return {
+    userId,
+    username: req.user?.username || req.user?.email || 'unknown',
+    actor_type: 'user',
+    source: 'api'
+  };
+}
+
 async function assertIntegrationFeedActive(key) {
   const q = await pool.query(
-    'SELECT active FROM integration_feeds WHERE key = $1 LIMIT 1',
+    'SELECT active, archived_at FROM integration_feeds WHERE key = $1 LIMIT 1',
     [key]
   );
   if (!q.rowCount) return { ok: false, status: 404, message: 'Integration not found' };
+  if (q.rows[0].archived_at) {
+    return { ok: false, status: 409, message: 'Feed is archived. Restore it before running.' };
+  }
   if (!q.rows[0].active) {
     return { ok: false, status: 409, message: 'Feed is disabled. Enable it before running.' };
   }
@@ -4382,11 +4413,14 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
 
   try {
     const prevQ = await pool.query(
-      'SELECT key, integration_id, name, active FROM integration_feeds WHERE key = $1 LIMIT 1',
+      'SELECT key, integration_id, name, active, archived_at FROM integration_feeds WHERE key = $1 LIMIT 1',
       [key]
     );
     if (!prevQ.rowCount) {
       return res.status(404).json({ message: 'Integration not found' });
+    }
+    if (prevQ.rows[0].archived_at) {
+      return res.status(409).json({ message: 'Archived feeds cannot be enabled or disabled. Restore the feed first.' });
     }
 
     const prev = prevQ.rows[0];
@@ -4425,6 +4459,125 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
     return res.json(after);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update integration active state', detail: err.message });
+  }
+});
+
+app.get('/api/integrations/:key/purge-preview', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const { key } = req.params;
+  try {
+    const previewResult = await previewFeedDataPurge(pool, key);
+    if (!previewResult.ok) {
+      return res.status(previewResult.status || 400).json({ message: previewResult.message || 'Preview failed' });
+    }
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.FEED_DATA_PURGE_PREVIEW,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(previewResult.preview.feed_id || key),
+      entityDisplay: previewResult.preview.feed_name || key,
+      metadata: previewResult.preview
+    }).catch(() => {});
+    return res.json(previewResult.preview);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to preview feed purge', detail: err.message });
+  }
+});
+
+app.post('/api/integrations/:key/purge', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const { key } = req.params;
+  const confirmName = String(req.body?.confirm_name || '').trim();
+  try {
+    const feedRow = await pool.query('SELECT name FROM integration_feeds WHERE key = $1 LIMIT 1', [key]);
+    if (!feedRow.rowCount) return res.status(404).json({ message: 'Integration not found' });
+    if (confirmName !== String(feedRow.rows[0].name || '').trim()) {
+      return res.status(400).json({ message: 'Confirmation name does not match feed name.' });
+    }
+
+    const client = await pool.connect();
+    let purgeResult;
+    try {
+      await client.query('BEGIN');
+      purgeResult = await purgeFeedData(client, key, {
+        actor: integrationFeedActor(req),
+        audit: null,
+        reason: String(req.body?.reason || 'feed_data_purge').trim() || 'feed_data_purge'
+      });
+      if (!purgeResult.ok) {
+        await client.query('ROLLBACK');
+        return res.status(purgeResult.status || 400).json({ message: purgeResult.message || 'Purge failed' });
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.FEED_DATA_PURGED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(purgeResult.result.feed_id || key),
+      entityDisplay: purgeResult.result.feed_name || key,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: {
+        ...purgeResult.result,
+        preserved_incidents: true,
+        preserved_events: true
+      }
+    }).catch(() => {});
+
+    return res.json(purgeResult.result);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to purge feed data', detail: err.message });
+  }
+});
+
+app.patch('/api/integrations/:key/archive', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const { key } = req.params;
+  try {
+    const result = await archiveIntegrationFeed(pool, key, { actor: integrationFeedActor(req) });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ message: result.message || 'Archive failed' });
+    }
+    try {
+      await syncSingleFeedSchedule(pool, importQueue, key, { logPrefix: '[integrations]' });
+    } catch (syncErr) {
+      console.warn('[integrations] archive schedule sync failed', syncErr?.message || syncErr);
+    }
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.FEED_ARCHIVED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(result.feed.integration_id || key),
+      entityDisplay: result.feed.name,
+      metadata: { feed_key: result.feed.key, feed_kind: result.feed.feed_kind }
+    }).catch(() => {});
+    return res.json(result.feed);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to archive feed', detail: err.message });
+  }
+});
+
+app.patch('/api/integrations/:key/restore', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const { key } = req.params;
+  try {
+    const result = await restoreIntegrationFeed(pool, key);
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ message: result.message || 'Restore failed' });
+    }
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.FEED_RESTORED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(result.feed.integration_id || key),
+      entityDisplay: result.feed.name,
+      metadata: { feed_key: result.feed.key, feed_kind: result.feed.feed_kind }
+    }).catch(() => {});
+    return res.json(result.feed);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to restore feed', detail: err.message });
   }
 });
 
