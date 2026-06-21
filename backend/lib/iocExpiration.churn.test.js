@@ -10,9 +10,9 @@ import {
   pickFeedPolicyFromRows,
   resolveFeedPolicyFromContext,
   isIocSuppressedFromIndex,
-  buildSuppressionIndex,
   scheduleDeferredIocRecompute
 } from './importOptimizationContext.js';
+import { buildSuppressionIndex } from './ioc-suppression.js';
 import { persistPublishedFeedSnapshot } from './feedPublisherService.js';
 import { fingerprintAggregateRows } from '../ioc-match-count-worker.js';
 
