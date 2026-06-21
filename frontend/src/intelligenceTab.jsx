@@ -25,6 +25,7 @@ import {
   EMPTY_ANALYST_REFERENCE_FORM,
   toAnalystReferenceForm
 } from './lib/analystIntelligenceForm.js';
+import { isProviderApplicable } from './lib/iocProviderApplicability.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -56,11 +57,15 @@ function badgeEl(label, style) {
   );
 }
 
-export function IntelligenceSummarySection({ providerSnapshots, analystSummary }) {
+export function IntelligenceSummarySection({ providerSnapshots, analystSummary, iocType, rdapEligible = false }) {
   const vtSnap = providerSnapshots?.virustotal || {};
   const abuseSnap = providerSnapshots?.abuseipdb || {};
   const ipinfoSnap = providerSnapshots?.ipinfo || {};
   const rdapSnap = providerSnapshots?.rdap || {};
+
+  const showAbuse = isProviderApplicable('abuseipdb', iocType);
+  const showIpinfo = isProviderApplicable('ipinfo', iocType);
+  const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible });
 
   const overall = computeOverallSignal({
     vt: vtSnap.status === 'success' ? {
@@ -70,18 +75,18 @@ export function IntelligenceSummarySection({ providerSnapshots, analystSummary }
       detected: vtSnap.detected,
       stats: vtSnap.stats
     } : null,
-    abuseipdb: abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
   });
   const reputation = computeReputationSummary({
     vt: vtSnap.status === 'success' ? { status: 'success', detected: vtSnap.detected, total: vtSnap.total } : null,
-    abuseipdb: abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
   });
   const infrastructure = computeInfrastructureSummary({
-    ipinfo: ipinfoSnap.status === 'success' ? ipinfoSnap : null,
-    abuseipdb: abuseSnap.status === 'success' ? abuseSnap : null,
-    rdap: rdapSnap.status === 'success' ? rdapSnap : null
+    ipinfo: showIpinfo && ipinfoSnap.status === 'success' ? ipinfoSnap : null,
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? abuseSnap : null,
+    rdap: showRdap && rdapSnap.status === 'success' ? rdapSnap : null
   });
-  const coverage = computeProviderCoverage(providerSnapshots);
+  const coverage = computeProviderCoverage(providerSnapshots, { iocType, rdapEligible });
   const analystRefs = computeAnalystRefsSummary(analystSummary);
   const tone = signalToneStyle(overall.tone);
 
@@ -405,6 +410,15 @@ export function IntelligenceTabPanel({
   const [providerSnapshots, setProviderSnapshots] = useState({});
   const [analystSummary, setAnalystSummary] = useState({ total_count: 0, supports_malicious_count: 0 });
 
+  useEffect(() => {
+    setProviderSnapshots({});
+  }, [iocId, iocType]);
+
+  const showVt = isProviderApplicable('virustotal', iocType);
+  const showAbuse = isProviderApplicable('abuseipdb', iocType);
+  const showIpinfo = isProviderApplicable('ipinfo', iocType);
+  const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
+
   const onProviderSnapshot = useCallback((provider, snapshot) => {
     setProviderSnapshots((prev) => {
       const next = { ...prev, [provider]: snapshot };
@@ -420,7 +434,12 @@ export function IntelligenceTabPanel({
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      <IntelligenceSummarySection providerSnapshots={providerSnapshots} analystSummary={analystSummary} />
+      <IntelligenceSummarySection
+        providerSnapshots={providerSnapshots}
+        analystSummary={analystSummary}
+        iocType={iocType}
+        rdapEligible={isRdapEligible}
+      />
 
       <div style={sectionShellStyle}>
         <div style={{ marginBottom: 12 }}>
@@ -428,10 +447,16 @@ export function IntelligenceTabPanel({
           <div style={sectionDescStyle}>Provider-backed enrichment and reputation checks.</div>
         </div>
         <div style={providerGridStyle}>
-          <VirusTotalEnrichmentCard iocId={iocId} active={active} compact onSnapshot={(snap) => onProviderSnapshot('virustotal', snap)} />
-          <AbuseIpdbEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)} />
-          <IpEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)} />
-          {isRdapEligible ? (
+          {showVt ? (
+            <VirusTotalEnrichmentCard iocId={iocId} active={active} compact onSnapshot={(snap) => onProviderSnapshot('virustotal', snap)} />
+          ) : null}
+          {showAbuse ? (
+            <AbuseIpdbEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)} />
+          ) : null}
+          {showIpinfo ? (
+            <IpEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)} />
+          ) : null}
+          {showRdap ? (
             <RdapEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('rdap', snap)} />
           ) : null}
         </div>

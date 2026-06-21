@@ -1,3 +1,5 @@
+import { isProviderApplicable } from './iocProviderApplicability.js';
+
 function providerCoverageStatus(snapshot) {
   const status = String(snapshot?.status || 'not_run').toLowerCase();
   if (['success', 'available', 'enriched', 'vt_not_indexed'].includes(status)) return 'available';
@@ -63,14 +65,17 @@ export function computeInfrastructureSummary({ ipinfo, abuseipdb, rdap }) {
   return parts.slice(0, 4).join(' · ');
 }
 
-export function computeProviderCoverage(snapshots) {
+export function computeProviderCoverage(snapshots, { iocType, rdapEligible = false } = {}) {
   const providers = [
     { key: 'virustotal', label: 'VT' },
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
     { key: 'rdap', label: 'RDAP' }
   ];
-  return providers.map((p) => ({
+  const applicable = iocType
+    ? providers.filter((p) => isProviderApplicable(p.key, iocType, { rdapEligible }))
+    : providers;
+  return applicable.map((p) => ({
     ...p,
     state: providerCoverageStatus(snapshots?.[p.key])
   }));

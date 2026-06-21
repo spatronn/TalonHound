@@ -10,7 +10,7 @@
     "test:ioc-status-card": "node --test src/lib/iocStatusCard.test.js",
     "test:ioc-confidence-card": "node --test src/lib/iocConfidenceCard.test.js",
     "test:ip-enrichment-target": "node --test src/lib/ipEnrichmentTarget.test.js",
-    "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js"
+    "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js"
   },
   "dependencies": {
     "axios": "^1.11.0",
