@@ -5,7 +5,7 @@
  */
 
 import { feedKeyForSourceName } from './iocExpiration.js';
-import { isActiveFeedMembership } from './iocActiveSources.js';
+import { isActiveFeedMembership, membershipDisplayStatus } from './iocActiveSources.js';
 
 export const CONFIDENCE_LEVELS = Object.freeze(['low', 'medium', 'high']);
 export const CONFIDENCE_SOURCES = Object.freeze({
@@ -293,7 +293,7 @@ export function buildIocInheritedConfidenceSummary({
     .map((m) => ({
       feed_key: m.feed_key || null,
       feed_name: m.feed_name || null,
-      status: m.purged_at ? 'purged' : String(m.status || 'historical')
+      status: membershipDisplayStatus(m)
     }));
 
   const baselineEffective = analystOverride

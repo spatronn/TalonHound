@@ -10,8 +10,62 @@ export function isActiveFeedMembership(m) {
 
 export function isHistoricalFeedMembership(m) {
   if (!m) return false;
+  if (m.purged_at || String(m.status || '').toLowerCase() === 'purged') return true;
   const status = String(m.status || '').toLowerCase();
-  return status === 'purged' || status === 'expired' || status === 'removed' || Boolean(m.purged_at);
+  return status === 'expired' || status === 'removed';
+}
+
+/** @param {object|null|undefined} m */
+export function membershipDisplayStatus(m) {
+  if (!m) return 'active';
+  if (m.purged_at || String(m.status || '').toLowerCase() === 'purged') return 'purged';
+  return String(m.status || 'active').toLowerCase();
+}
+
+/** @param {object} m */
+export function formatFeedMembershipSource(m) {
+  const displayStatus = membershipDisplayStatus(m);
+  const historical = !isActiveFeedMembership(m);
+  return {
+    id: `feed:${m.id}`,
+    source_type: 'feed',
+    membership_id: Number(m.id),
+    name: m.feed_name || m.feed_key || 'Unknown feed',
+    feed_key: m.feed_key || null,
+    feed_name: m.feed_name || null,
+    status: displayStatus,
+    first_seen_at: m.first_seen_in_feed || null,
+    last_seen_at: m.last_seen_in_feed || null,
+    policy_expires_at: m.policy_expires_at || null,
+    expires_at: m.expires_at || null,
+    override_enabled: Boolean(m.override_enabled),
+    purged_at: m.purged_at || null,
+    purge_reason: m.purge_reason || null,
+    actions_enabled: !historical && isActiveFeedMembership(m)
+  };
+}
+
+/** @param {object} row */
+export function formatManualIocSource(row) {
+  const sourceName = row.source_name || row.name || 'Manual source';
+  return {
+    id: `manual:${row.ioc_source_id || row.ioc_item_id}`,
+    source_type: 'manual',
+    ioc_item_id: row.ioc_item_id != null ? Number(row.ioc_item_id) : null,
+    ioc_source_id: row.ioc_source_id != null ? Number(row.ioc_source_id) : null,
+    name: sourceName,
+    feed_key: null,
+    feed_name: null,
+    status: 'active',
+    first_seen_at: row.created_at || null,
+    last_seen_at: row.last_seen_at || row.created_at || null,
+    policy_expires_at: null,
+    expires_at: row.expires_at || null,
+    override_enabled: false,
+    purged_at: null,
+    purge_reason: null,
+    actions_enabled: false
+  };
 }
 
 /**
@@ -92,7 +146,8 @@ export async function enrichItemsWithActiveSourceCounts(pool, items = []) {
       if (!historicalByKey.has(k)) historicalByKey.set(k, []);
       historicalByKey.get(k).push({
         feed_name: row.feed_name || row.feed_key || 'Unknown feed',
-        status: row.purged_at ? 'purged' : String(row.status || 'historical')
+        status: membershipDisplayStatus(row),
+        purge_reason: row.purge_reason || null
       });
     }
   }
@@ -156,31 +211,40 @@ export async function fetchObservableMembershipSummary(pool, { observable, obser
 
   const activeMemberships = membershipRows.filter(isActiveFeedMembership);
   const historicalMemberships = membershipRows.filter(isHistoricalFeedMembership);
-  const activeFeedNames = [...new Set(activeMemberships.map((m) => m.feed_name).filter(Boolean))].sort();
 
   const { rows: manualActive } = await pool.query(
-    `SELECT DISTINCT source_name
-     FROM ioc_items
-     WHERE observable = $1 AND observable_type = $2
-       AND COALESCE(status, 'active') = 'active'
-       AND ioc_source_id IS NOT NULL
-       AND source_name IS NOT NULL`,
+    `SELECT DISTINCT ON (i.ioc_source_id)
+            i.id AS ioc_item_id,
+            i.ioc_source_id,
+            COALESCE(s.name, i.source_name) AS source_name,
+            i.created_at,
+            i.last_seen_at,
+            i.expires_at
+     FROM ioc_items i
+     LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+     WHERE i.observable = $1 AND i.observable_type = $2
+       AND COALESCE(i.status, 'active') = 'active'
+       AND i.ioc_source_id IS NOT NULL
+     ORDER BY i.ioc_source_id, i.created_at DESC`,
     [observable, observableType]
   );
-  const manualNames = manualActive.map((r) => r.source_name).filter(Boolean);
-  const activeSourceNames = [...new Set([...activeFeedNames, ...manualNames])].sort();
+
+  const activeFeedSources = activeMemberships.map((m) => formatFeedMembershipSource(m));
+  const activeManualSources = manualActive.map((row) => formatManualIocSource(row));
+  const activeSources = [...activeManualSources, ...activeFeedSources];
+  const historicalSources = historicalMemberships.map((m) => formatFeedMembershipSource(m));
+
+  const activeSourceNames = [...new Set(activeSources.map((s) => s.name).filter(Boolean))].sort();
 
   return {
     membershipRows,
     activeMemberships,
     historicalMemberships,
+    activeSources,
+    historicalSources,
     activeSourceCount: activeSourceNames.length,
     activeSourceNames,
-    historicalSources: historicalMemberships.map((m) => ({
-      feed_name: m.feed_name || m.feed_key || 'Unknown feed',
-      status: m.purged_at ? 'purged' : String(m.status || 'historical'),
-      purge_reason: m.purge_reason || null
-    }))
+    historicalSourceCount: historicalSources.length
   };
 }
 

@@ -4538,6 +4538,8 @@ function iocStatusBadge(status) {
   const map = {
     active: { label: 'Active', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' },
     expired: { label: 'Expired', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' },
+    purged: { label: 'Purged', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#991b1b' },
+    removed: { label: 'Removed', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
     disabled: { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
     suppressed: { label: 'Suppressed', color: '#93c5fd', bg: 'rgba(30,58,138,0.25)', border: '#1d4ed8' },
     false_positive: { label: 'False Positive', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' },
@@ -4549,6 +4551,17 @@ function iocStatusBadge(status) {
       {hit.label}
     </span>
   );
+}
+
+function iocSourceStatusBadge(source) {
+  if (!source) return iocStatusBadge('active');
+  const status = source.purged_at ? 'purged' : String(source.status || 'active').toLowerCase();
+  return iocStatusBadge(status);
+}
+
+function iocSourceTypeLabel(source) {
+  if (!source) return 'Source';
+  return source.source_type === 'manual' ? 'Manual source' : 'Feed';
 }
 
 function defaultExpirationDraft(policy) {
@@ -12773,6 +12786,8 @@ function IOCDetailsPage() {
         label: `${summary?.threat_classifications?.find((x) => x.value === slug)?.label || threatClassLabelFor(slug)} (Inactive)`
       }));
   }, [summary, threatClassOptions, threatClassLabelFor]);
+  const activeSources = Array.isArray(data.active_sources) ? data.active_sources : [];
+  const historicalSources = Array.isArray(data.historical_sources) ? data.historical_sources : [];
   const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
   const suppression = data?.suppression || { active: false };
   const suppressionActive = isSuppressionActiveRow(suppression);
@@ -13218,64 +13233,91 @@ function IOCDetailsPage() {
                   </div>
                 ) : null}
 
-                {feedMemberships.length ? (
+                {activeSources.length || historicalSources.length ? (
+                  <div style={{ display: 'grid', gap: 14 }}>
+                    <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                      <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Active Sources</div>
+                      {activeSources.length ? (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
+                            <thead>
+                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                                <th>Source</th><th>Type</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Policy expires</th><th>Effective expires</th><th>Override</th><th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {activeSources.map((src) => (
+                                <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                                  <td>{src.name}</td>
+                                  <td>{iocSourceTypeLabel(src)}</td>
+                                  <td>{iocSourceStatusBadge(src)}</td>
+                                  <td>{formatUserDateTime(src.first_seen_at)}</td>
+                                  <td>{formatUserDateTime(src.last_seen_at)}</td>
+                                  <td>{src.source_type === 'feed' ? formatUserDateTime(src.policy_expires_at) : '—'}</td>
+                                  <td>{formatUserDateTime(src.expires_at)}</td>
+                                  <td>{src.source_type === 'feed' ? (src.override_enabled ? 'Yes' : 'No') : '—'}</td>
+                                  <td>
+                                    {isAdmin && src.actions_enabled && src.source_type === 'feed' ? (
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('reactivate_membership', src.membership_id)}>Reactivate source</button>
+                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('custom_expire_membership', src.membership_id)}>Custom expire</button>
+                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('expire_membership', src.membership_id)}>Expire source</button>
+                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('clear_membership_override', src.membership_id)}>Clear override</button>
+                                      </div>
+                                    ) : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 13, color: '#94a3b8' }}>No active sources.</div>
+                      )}
+                    </div>
+
+                    {historicalSources.length ? (
+                      <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                        <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Historical / Inactive Sources</div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
+                            <thead>
+                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                                <th>Source</th><th>Type</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Purged at</th><th>Reason</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {historicalSources.map((src) => (
+                                <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                                  <td>{src.name}</td>
+                                  <td>{iocSourceTypeLabel(src)}</td>
+                                  <td>{iocSourceStatusBadge(src)}</td>
+                                  <td>{formatUserDateTime(src.first_seen_at)}</td>
+                                  <td>{formatUserDateTime(src.last_seen_at)}</td>
+                                  <td>{formatUserDateTime(src.purged_at)}</td>
+                                  <td>{src.purge_reason || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : feedMemberships.length ? (
                   <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                     <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Feed Sources</div>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
-                        <thead>
-                          <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                            <th>Feed</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Policy expires</th><th>Effective expires</th><th>Override</th><th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {feedMemberships.map((m) => (
-                            <tr key={m.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                              <td>{m.feed_name || m.feed_key}</td>
-                              <td>{iocStatusBadge(m.status)}</td>
-                              <td>{formatUserDateTime(m.first_seen_in_feed)}</td>
-                              <td>{formatUserDateTime(m.last_seen_in_feed)}</td>
-                              <td>{formatUserDateTime(m.policy_expires_at)}</td>
-                              <td>{formatUserDateTime(m.expires_at)}</td>
-                              <td>{m.override_enabled ? 'Yes' : 'No'}</td>
-                              <td>
-                                {isAdmin ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('reactivate_membership', m.id)}>Reactivate source</button>
-                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('custom_expire_membership', m.id)}>Custom expire</button>
-                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('expire_membership', m.id)}>Expire source</button>
-                                    <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('clear_membership_override', m.id)}>Clear override</button>
-                                  </div>
-                                ) : '—'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Source details are loading or unavailable.</div>
                   </div>
                 ) : null}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.observable_type || '-'}</div></div>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Active Sources</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.active_source_count ?? summary.source_count ?? 0}</div>{Number(summary.historical_source_count || 0) > 0 ? <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{summary.historical_source_count} historical</div> : null}</div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Active Source Count</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.active_source_count ?? summary.source_count ?? 0}</div>{Number(summary.historical_source_count || 0) > 0 ? <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{summary.historical_source_count} historical</div> : null}</div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Evidence Logs</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{Number(data.summary?.evidence_logs_count || 0)}</div></div>
                 </div>
-
-                {Array.isArray(summary.historical_sources) && summary.historical_sources.length ? (
-                  <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                    <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Historical sources</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {summary.historical_sources.map((src, idx) => (
-                        <span key={`${src.feed_name}-${idx}`} style={{ padding: '4px 10px', borderRadius: 999, border: '1px solid #475569', color: '#cbd5e1', fontSize: 12 }}>
-                          {src.feed_name} ({src.status || 'historical'})
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>

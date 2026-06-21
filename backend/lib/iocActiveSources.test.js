@@ -4,12 +4,57 @@ import {
   isActiveFeedMembership,
   isHistoricalFeedMembership,
   parseIocListStatusFilter,
-  iocStatusSqlClause
+  iocStatusSqlClause,
+  membershipDisplayStatus,
+  formatFeedMembershipSource,
+  formatManualIocSource
 } from './iocActiveSources.js';
 import {
   buildIocInheritedConfidenceSummary,
   computeInheritedEffectiveConfidence
 } from './iocConfidence.js';
+
+test('membershipDisplayStatus distinguishes purged from expired', () => {
+  assert.equal(membershipDisplayStatus({ status: 'expired', purged_at: null }), 'expired');
+  assert.equal(membershipDisplayStatus({ status: 'purged', purged_at: new Date() }), 'purged');
+  assert.equal(membershipDisplayStatus({ status: 'expired', purged_at: new Date() }), 'purged');
+});
+
+test('formatFeedMembershipSource marks purged memberships as non-actionable', () => {
+  const purged = formatFeedMembershipSource({
+    id: 9,
+    feed_name: 'USOM TR-CERT',
+    feed_key: 'usom',
+    status: 'purged',
+    purged_at: new Date(),
+    purge_reason: 'feed_data_purge'
+  });
+  assert.equal(purged.status, 'purged');
+  assert.equal(purged.actions_enabled, false);
+
+  const active = formatFeedMembershipSource({
+    id: 10,
+    feed_name: 'Other Feed',
+    feed_key: 'other',
+    status: 'active',
+    purged_at: null
+  });
+  assert.equal(active.status, 'active');
+  assert.equal(active.actions_enabled, true);
+});
+
+test('formatManualIocSource exposes manual active source', () => {
+  const manual = formatManualIocSource({
+    ioc_item_id: 42,
+    ioc_source_id: 7,
+    source_name: 'manual-smoke',
+    created_at: '2026-01-01T00:00:00Z'
+  });
+  assert.equal(manual.source_type, 'manual');
+  assert.equal(manual.name, 'manual-smoke');
+  assert.equal(manual.status, 'active');
+  assert.equal(manual.actions_enabled, false);
+});
 
 test('isActiveFeedMembership excludes purged memberships', () => {
   assert.equal(isActiveFeedMembership({ status: 'active', purged_at: null }), true);
