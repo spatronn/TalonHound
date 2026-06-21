@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { parse as parseTld } from 'tldts';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -917,18 +918,66 @@ async function navigateToIocDetailsFromSuppression(item, navigate) {
   throw new Error(`no public_id for ${iocValue}`);
 }
 
-function ModalOverlay({ children, onClose }) {
-  return (
+let modalScrollLockCount = 0;
+
+function lockPageScroll() {
+  modalScrollLockCount += 1;
+  if (modalScrollLockCount === 1) {
+    document.documentElement.classList.add('modal-scroll-lock');
+    document.body.classList.add('modal-scroll-lock');
+  }
+}
+
+function unlockPageScroll() {
+  modalScrollLockCount = Math.max(0, modalScrollLockCount - 1);
+  if (modalScrollLockCount === 0) {
+    document.documentElement.classList.remove('modal-scroll-lock');
+    document.body.classList.remove('modal-scroll-lock');
+  }
+}
+
+function useBodyScrollLock(active) {
+  useEffect(() => {
+    if (!active) return undefined;
+    lockPageScroll();
+    return () => unlockPageScroll();
+  }, [active]);
+}
+
+function ModalOverlay({ children, onClose, title, footer, zIndex = 1000 }) {
+  useBodyScrollLock(true);
+
+  const modal = (
     <div
+      className="modal-overlay"
       role="presentation"
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+      style={{ zIndex }}
     >
-      <div role="dialog" onClick={(e) => e.stopPropagation()} style={PUBLISHED_FEEDS_UI.formModal}>
-        {children}
+      <div
+        className={`modal-dialog${footer || title ? '' : ' modal-dialog--legacy'}`}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {title ? (
+          <div className="modal-header">
+            <h3 className="modal-title">{title}</h3>
+          </div>
+        ) : null}
+        {footer || title ? (
+          <>
+            <div className="modal-body">{children}</div>
+            {footer ? <div className="modal-footer">{footer}</div> : null}
+          </>
+        ) : (
+          children
+        )}
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 const ReasonPromptContext = React.createContext(null);
@@ -1329,7 +1378,7 @@ function AppShell({ children }) {
   });
 
   return (
-    <div style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
+    <div className="app-shell" style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{userEmail || 'demo user'}</b> <span style={{ color: '#94a3b8' }}>({role})</span></div>
 
@@ -1383,7 +1432,7 @@ function AppShell({ children }) {
         <button onClick={logout} style={{ marginTop: 10, width: '100%', padding: 9 }}>Logout</button>
       </aside>
 
-      <main style={{ flex: 1, minWidth: 0 }}>
+      <main className="main-content" style={{ flex: 1, minWidth: 0 }}>
         {children}
       </main>
 
@@ -4493,12 +4542,8 @@ function defaultExpirationDraft(policy) {
 
 function FeedHealthModal({ title, children, onClose, actions }) {
   return (
-    <ModalOverlay onClose={onClose}>
-      <h3 style={{ margin: '0 0 10px', color: '#f1f5f9', fontSize: 18 }}>{title}</h3>
+    <ModalOverlay onClose={onClose} title={title} footer={actions}>
       {children}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-        {actions}
-      </div>
     </ModalOverlay>
   );
 }
@@ -5253,6 +5298,8 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
   const [purging, setPurging] = useState(false);
   const [error, setError] = useState('');
 
+  useBodyScrollLock(open && Boolean(feed?.key));
+
   useEffect(() => {
     if (!open || !feed?.key) {
       setConfirmName('');
@@ -5287,9 +5334,19 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
     return () => { cancelled = true; };
   }, [open, feed?.key]);
 
+  useEffect(() => {
+    if (!open || purging) return undefined;
+    function onKeyDown(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open, purging, onClose]);
+
   if (!open || !feed) return null;
 
   const nameMatches = String(confirmName || '').trim() === String(feed.name || '').trim();
+  const busy = purging || loadingPreview;
 
   async function runPurge() {
     if (!nameMatches || purging) return;
@@ -5306,28 +5363,42 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
     }
   }
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ width: 'min(560px, 100%)', background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 16 }}>
-        <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 8 }}>Purge feed data</div>
-        <p style={{ margin: '0 0 12px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
-          This will remove active IOC memberships imported from this feed. Existing incidents, match events, evidence logs and audit history will be preserved.
-        </p>
-        <FeedPurgePreviewSummary preview={preview} loading={loadingPreview} />
-        <label style={{ display: 'grid', gap: 4, marginTop: 12 }}>
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>Type feed name to confirm: <b>{feed.name}</b></span>
-          <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={feed.name} disabled={purging || loadingPreview} />
-        </label>
-        {error ? <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 10 }}>{error}</div> : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+  const modal = (
+    <div
+      className="modal-overlay modal-overlay--purge"
+      role="presentation"
+      onClick={busy ? undefined : onClose}
+    >
+      <div
+        className="modal-dialog modal-dialog--purge"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feed-purge-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-body">
+          <div id="feed-purge-modal-title" className="modal-title" style={{ marginBottom: 8 }}>Purge feed data</div>
+          <p style={{ margin: '0 0 12px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
+            This will remove active IOC memberships imported from this feed. Existing incidents, match events, evidence logs and audit history will be preserved.
+          </p>
+          <FeedPurgePreviewSummary preview={preview} loading={loadingPreview} />
+          <label style={{ display: 'grid', gap: 4, marginTop: 12 }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>Type feed name to confirm: <b>{feed.name}</b></span>
+            <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={feed.name} disabled={busy} />
+          </label>
+          {error ? <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 10 }}>{error}</div> : null}
+        </div>
+        <div className="modal-footer">
           <button type="button" onClick={onClose} disabled={purging}>Cancel</button>
-          <button type="button" onClick={() => runPurge().catch(() => {})} disabled={!nameMatches || purging || loadingPreview || !preview}>
+          <button type="button" onClick={() => runPurge().catch(() => {})} disabled={!nameMatches || busy || !preview}>
             {purging ? 'Purging…' : 'Purge'}
           </button>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, showRunAll = true } = {}) {
@@ -5340,7 +5411,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [runningNowAll, setRunningNowAll] = useState(false);
   const [runningKeys, setRunningKeys] = useState({});
   const [togglingKeys, setTogglingKeys] = useState({});
-  const [settingsModal, setSettingsModal] = useState(null);
+  const [editingFeed, setEditingFeed] = useState(null);
   const [settingsDraftCron, setSettingsDraftCron] = useState('0 * * * *');
   const [settingsDraftExpiration, setSettingsDraftExpiration] = useState(defaultExpirationDraft());
   const [settingsError, setSettingsError] = useState('');
@@ -5365,7 +5436,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
   const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
   const [savingConfidenceKey, setSavingConfidenceKey] = useState('');
-  const [purgeModalFeed, setPurgeModalFeed] = useState(null);
+  const [purgeFeed, setPurgeFeed] = useState(null);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [feedActionSuccess, setFeedActionSuccess] = useState('');
   const [showArchivedFeeds, setShowArchivedFeeds] = useState(false);
 
@@ -5388,10 +5460,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  function syncSettingsModal(list) {
-    const key = settingsModal?.key;
+  function syncEditingFeed(list) {
+    const key = editingFeed?.key;
     const feed = key ? (list || []).find((i) => i.key === key) : null;
-    setSettingsModal((prev) => {
+    setEditingFeed((prev) => {
       if (!prev) return prev;
       const f = (list || []).find((i) => i.key === prev.key);
       if (!f) return prev;
@@ -5451,6 +5523,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   async function openSettingsModal(feed) {
     if (!canWrite) return;
+    setShowPurgeModal(false);
+    setPurgeFeed(null);
     setSettingsError('');
     setSettingsExpirationError('');
     setSettingsExpirationSuccess('');
@@ -5469,7 +5543,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsMaskedAuthKey(credSummary?.masked_auth_key || null);
     setSettingsAuthKeyConfigured(Boolean(credSummary?.auth_key_configured));
     setSettingsDraftRecentDays(String(credSummary?.recent_days ?? 3));
-    setSettingsModal({
+    setEditingFeed({
       key: feed.key,
       name: feed.name,
       schedule: feed.schedule || '0 * * * *',
@@ -5499,13 +5573,13 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   function closeSettingsModal() {
     if (savingScheduleKey || savingCredentialsKey || savingConfidenceKey || testingCredentialsKey) return;
-    setSettingsModal(null);
+    setEditingFeed(null);
     setSettingsError('');
   }
 
   async function saveSettingsConfidence() {
-    if (!canWrite || !settingsModal || !settingsDraftConfidence) return;
-    const { key } = settingsModal;
+    if (!canWrite || !editingFeed || !settingsDraftConfidence) return;
+    const { key } = editingFeed;
     if (savingConfidenceKey) return;
 
     setSettingsConfidenceError('');
@@ -5517,7 +5591,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       });
       setSettingsConfidenceSuccess('Default confidence updated. Inherited IOC confidence will reflect this at read time.');
       const list = await load();
-      syncSettingsModal(list);
+      syncEditingFeed(list);
     } catch (err) {
       setSettingsConfidenceError(apiErrorMessage(err, 'Failed to update default confidence'));
     } finally {
@@ -5526,12 +5600,12 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function requestActiveChange() {
-    if (!canWrite || !settingsModal) return;
+    if (!canWrite || !editingFeed) return;
     setActiveConfirmError('');
     setActiveConfirm({
-      key: settingsModal.key,
-      name: settingsModal.name,
-      mode: settingsModal.active ? 'disable' : 'enable'
+      key: editingFeed.key,
+      name: editingFeed.name,
+      mode: editingFeed.active ? 'disable' : 'enable'
     });
   }
 
@@ -5553,7 +5627,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       await api.patch(`/integrations/${encodeURIComponent(key)}/active`, { active: nextActive });
       setActiveConfirm(null);
       const list = await load();
-      syncSettingsModal(list);
+      syncEditingFeed(list);
     } catch (err) {
       setActiveConfirmError(apiErrorMessage(err, 'Failed to update feed active state'));
     } finally {
@@ -5562,14 +5636,14 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   async function archiveFeedFromSettings() {
-    if (!canWrite || !settingsModal) return;
-    const feed = settingsModal;
+    if (!canWrite || !editingFeed) return;
+    const feed = editingFeed;
     const ok = window.confirm(`Archive feed "${feed.name}"? It will be hidden from the default list and scheduling will stop.`);
     if (!ok) return;
     try {
       await api.patch(`/integrations/${encodeURIComponent(feed.key)}/archive`);
       const list = await load();
-      syncSettingsModal(list);
+      syncEditingFeed(list);
       setFeedActionSuccess(`Feed "${feed.name}" archived.`);
     } catch (err) {
       alert(apiErrorMessage(err, 'Failed to archive feed'));
@@ -5577,26 +5651,38 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   async function restoreFeedFromSettings() {
-    if (!canWrite || !settingsModal) return;
-    const feed = settingsModal;
+    if (!canWrite || !editingFeed) return;
+    const feed = editingFeed;
     try {
       await api.patch(`/integrations/${encodeURIComponent(feed.key)}/restore`);
       const list = await load();
-      syncSettingsModal(list);
+      syncEditingFeed(list);
       setFeedActionSuccess(`Feed "${feed.name}" restored.`);
     } catch (err) {
       alert(apiErrorMessage(err, 'Failed to restore feed'));
     }
   }
 
+  function openPurgeFromEdit(feed) {
+    if (!canWrite || !feed?.key) return;
+    setPurgeFeed({ key: feed.key, name: feed.name });
+    setShowPurgeModal(true);
+    setEditingFeed(null);
+  }
+
+  function closePurgeModal() {
+    setShowPurgeModal(false);
+    setPurgeFeed(null);
+  }
+
   function handlePurgeCompleted(feedName) {
     setFeedActionSuccess(`Feed data purged for ${feedName}.`);
-    load().then((list) => syncSettingsModal(list)).catch(() => {});
+    load().catch(() => {});
   }
 
   async function saveSettingsCredentials() {
-    if (!canWrite || !settingsModal || !feedSupportsAuthKey(settingsModal.key)) return;
-    const { key } = settingsModal;
+    if (!canWrite || !editingFeed || !feedSupportsAuthKey(editingFeed.key)) return;
+    const { key } = editingFeed;
     if (savingCredentialsKey || !settingsDraftAuthKey.trim()) return;
 
     setSettingsCredentialsError('');
@@ -5626,8 +5712,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   async function testSettingsCredentials() {
-    if (!canWrite || !settingsModal || !feedSupportsAuthKey(settingsModal.key)) return;
-    const { key } = settingsModal;
+    if (!canWrite || !editingFeed || !feedSupportsAuthKey(editingFeed.key)) return;
+    const { key } = editingFeed;
     if (testingCredentialsKey || savingCredentialsKey) return;
     if (!settingsDraftAuthKey.trim() && !settingsAuthKeyConfigured) return;
 
@@ -5654,8 +5740,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   async function saveSettingsSchedule() {
-    if (!canWrite || !settingsModal) return;
-    const { key } = settingsModal;
+    if (!canWrite || !editingFeed) return;
+    const { key } = editingFeed;
     if (savingScheduleKey) return;
 
     setSettingsError('');
@@ -5663,7 +5749,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     try {
       await api.put(`/integrations/${encodeURIComponent(key)}/schedule`, { schedule_cron: settingsDraftCron });
       const list = await load();
-      syncSettingsModal(list);
+      syncEditingFeed(list);
       setSettingsDraftCron(settingsDraftCron);
     } catch (err) {
       setSettingsError(apiErrorMessage(err, 'Failed to update schedule'));
@@ -5673,8 +5759,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   async function saveSettingsExpiration() {
-    if (!canWrite || !settingsModal) return;
-    const { key } = settingsModal;
+    if (!canWrite || !editingFeed) return;
+    const { key } = editingFeed;
     if (savingExpirationKey) return;
     setSettingsExpirationError('');
     setSettingsExpirationSuccess('');
@@ -5715,7 +5801,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
     try {
       const list = await load();
-      syncSettingsModal(list);
+      syncEditingFeed(list);
     } catch {
       setSettingsExpirationRefreshWarn('Policy saved, but refreshing the feed list failed. Values in this dialog are up to date.');
     }
@@ -5763,6 +5849,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   return (
     <AppShell>
+      <div className="page-content">
       <section className="integrations-feeds-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div>
@@ -5908,10 +5995,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           </div>
         )}
       </section>
+      </div>
 
-      {settingsModal ? (
+      {editingFeed ? (
         <FeedSettingsModal
-          feed={settingsModal}
+          feed={editingFeed}
           draftCron={settingsDraftCron}
           onDraftChange={setSettingsDraftCron}
           draftExpiration={settingsDraftExpiration}
@@ -5946,7 +6034,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onSaveSchedule={() => saveSettingsSchedule().catch(() => {})}
           onSaveExpiration={() => saveSettingsExpiration().catch(() => {})}
           onSaveCredentials={() => saveSettingsCredentials().catch(() => {})}
-          onOpenPurge={() => setPurgeModalFeed(settingsModal)}
+          onOpenPurge={() => openPurgeFromEdit(editingFeed)}
           onArchive={() => archiveFeedFromSettings().catch(() => {})}
           onRestore={() => restoreFeedFromSettings().catch(() => {})}
           canWrite={canWrite}
@@ -5965,9 +6053,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       ) : null}
 
       <FeedPurgeModal
-        feed={purgeModalFeed}
-        open={Boolean(purgeModalFeed)}
-        onClose={() => setPurgeModalFeed(null)}
+        feed={purgeFeed}
+        open={showPurgeModal && Boolean(purgeFeed)}
+        onClose={closePurgeModal}
         onCompleted={handlePurgeCompleted}
       />
     </AppShell>
@@ -13982,6 +14070,88 @@ function App() {
     <>
       <style>{`
         :root { color-scheme: dark; }
+        html.modal-scroll-lock,
+        body.modal-scroll-lock {
+          overflow: hidden !important;
+        }
+        html.modal-scroll-lock .app-shell,
+        body.modal-scroll-lock .app-shell {
+          overflow: hidden;
+        }
+        .app-shell {
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .main-content {
+          flex: 1;
+          min-width: 0;
+        }
+        .page-content {
+          width: 100%;
+          min-width: 0;
+        }
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(2, 6, 23, 0.72);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+        }
+        .modal-overlay--purge {
+          z-index: 1100;
+        }
+        .modal-dialog {
+          width: min(720px, 96vw);
+          max-height: calc(100vh - 48px);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+          border-radius: 12px;
+          padding: 0;
+          border: 1px solid #334155;
+          color: #e2e8f0;
+          box-shadow: 0 24px 60px rgba(2, 6, 23, 0.55);
+        }
+        .modal-dialog--purge {
+          width: min(560px, 100%);
+        }
+        .modal-dialog--legacy {
+          padding: 24px;
+          overflow-y: auto;
+        }
+        .modal-header {
+          flex-shrink: 0;
+          padding: 20px 24px 0;
+        }
+        .modal-title {
+          margin: 0;
+          color: #f1f5f9;
+          font-size: 18px;
+          font-weight: 700;
+        }
+        .modal-body {
+          flex: 1 1 auto;
+          min-height: 0;
+          overflow-y: auto;
+          padding: 16px 24px;
+        }
+        .modal-header + .modal-body {
+          padding-top: 12px;
+        }
+        .modal-footer {
+          flex-shrink: 0;
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          flex-wrap: wrap;
+          padding: 12px 24px 20px;
+          border-top: 1px solid #334155;
+          background: #0f172a;
+        }
         html, body, #root {
           background: #0b1220 !important;
           color: #e2e8f0 !important;
