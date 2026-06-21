@@ -17,7 +17,7 @@ import {
   markJobDeferredSourceBusy,
   inferFailureTypeFromError
 } from './lib/integrationQueueJobState.js';
-import { resolveJobFailureType } from './lib/job-cancellation.js';
+import { runFeedDataPurgeJob } from './lib/feedLifecycle.js';
 
 const pool = createIntegrationPool();
 
@@ -36,6 +36,7 @@ let cleanupTimer = null;
 
 function resolveIntegrationKey(job) {
   if (job?.data?.integration_key) return job.data.integration_key;
+  if (job?.name === 'feed_data_purge') return job.data.integration_key || job.data.feed_key || 'unknown';
   if (job?.name === 'hourly-import') return 'et-blockrules';
   if (job?.name === 'usom-import') return 'usom-trcert';
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
@@ -62,6 +63,7 @@ function safeJobErrorMessage(job, err) {
 
 async function runImportForJob(job, { signal, triggeredBy } = {}) {
   const opts = { signal, triggeredBy: triggeredBy || job?.data?.triggeredBy || 'scheduler' };
+  if (job.name === 'feed_data_purge') return runFeedDataPurgeJob(pool, job, opts);
   if (job.name === 'hourly-import') return runHourlyImport(opts);
   if (job.name === 'usom-import') return runUsomImport(opts);
   if (job.name === 'urlhaus-import') return runUrlhausImport(opts);
@@ -71,7 +73,11 @@ async function runImportForJob(job, { signal, triggeredBy } = {}) {
   return { skipped: true, reason: 'unknown_job' };
 }
 
-function resolveJobTimeoutMs(integrationKey) {
+function resolveJobTimeoutMs(integrationKey, jobName) {
+  if (jobName === 'feed_data_purge') {
+    const n = Number(process.env.FEED_PURGE_JOB_TIMEOUT_MS || 86400000);
+    return { timeoutMs: Math.max(n, 600000), source: 'FEED_PURGE_JOB_TIMEOUT_MS' };
+  }
   const globalTimeout = QUEUE_HARDENING.jobTimeoutMs;
   const map = {
     'phishtank-opendnsrr': 'PHISHTANK_JOB_TIMEOUT_MS',
@@ -89,7 +95,7 @@ function resolveJobTimeoutMs(integrationKey) {
 }
 
 async function executeJobWithTimeout(job, integrationKey) {
-  const timeoutInfo = resolveJobTimeoutMs(integrationKey);
+  const timeoutInfo = resolveJobTimeoutMs(integrationKey, job?.name);
   const timeoutMs = timeoutInfo.timeoutMs;
   const controller = new AbortController();
   activeJobAbortController = controller;

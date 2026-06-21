@@ -190,7 +190,8 @@ function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
     'urlhaus-import': 'Recent malicious URLs import',
     'threatfox-import': 'Recent IOCs import',
     'malwarebazaar-import': 'Recent malware samples import',
-    'phishtank-import': 'Online-valid phishing import'
+    'phishtank-import': 'Online-valid phishing import',
+    'feed_data_purge': 'Feed data purge'
   };
   const key = String(integrationKey || '').trim();
   if (key && byKey[key]) return byKey[key];
@@ -321,9 +322,29 @@ function suppressionStatusBadgeStyle(status) {
 
 function apiErrorMessage(err, fallback = 'Request failed') {
   const d = err?.response?.data;
+  if (d?.error && d?.message) return String(d.message);
   if (d?.error) return String(d.error);
   if (Array.isArray(d?.errors) && d.errors.length) return d.errors.join('; ');
   return String(d?.message || err?.message || fallback);
+}
+
+function parseFeedPurgeError(err, fallback = 'Failed to start purge job. Please try again or check backend logs.') {
+  const d = err?.response?.data;
+  const code = String(d?.error || '').trim();
+  if (code === 'confirm_name_mismatch') {
+    return String(d?.message || 'Feed name confirmation does not match.');
+  }
+  if (code === 'purge_already_running') {
+    return String(d?.message || 'A purge job is already running for this feed.');
+  }
+  const raw = String(d?.message || err?.message || '');
+  if (err?.response?.status === 504 || /status code 504|gateway timeout|timeout of \d+ms exceeded/i.test(raw)) {
+    return fallback;
+  }
+  if (/^request failed with status code \d+/i.test(raw)) {
+    return fallback;
+  }
+  return apiErrorMessage(err, fallback);
 }
 
 function isApiMutationSuccess(data) {
@@ -4661,6 +4682,7 @@ function FeedSettingsModal({
   onOpenPurge,
   onArchive,
   onRestore,
+  purgeActive,
   canWrite
 }) {
   const isActive = feed?.active !== false;
@@ -4929,7 +4951,9 @@ function FeedSettingsModal({
                 <button
                   type="button"
                   onClick={onOpenPurge}
-                  style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', cursor: 'pointer' }}
+                  disabled={purgeActive}
+                  title={purgeActive ? 'A purge job is already running for this feed.' : undefined}
+                  style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
                 >
                   Purge feed data
                 </button>
@@ -4937,7 +4961,9 @@ function FeedSettingsModal({
                   <button
                     type="button"
                     onClick={onArchive}
-                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #854d0e', background: 'rgba(120,53,15,0.2)', color: '#fcd34d', cursor: 'pointer' }}
+                    disabled={purgeActive}
+                    title={purgeActive ? 'Wait for the purge job to finish before archiving.' : undefined}
+                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #854d0e', background: 'rgba(120,53,15,0.2)', color: '#fcd34d', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
                   >
                     Archive feed
                   </button>
@@ -5293,6 +5319,8 @@ function FeedPurgePreviewSummary({ preview, loading }) {
 
 function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
   const [confirmName, setConfirmName] = useState('');
+  const [confirmDirty, setConfirmDirty] = useState(false);
+  const [attemptedPurge, setAttemptedPurge] = useState(false);
   const [preview, setPreview] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [purging, setPurging] = useState(false);
@@ -5303,6 +5331,8 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
   useEffect(() => {
     if (!open || !feed?.key) {
       setConfirmName('');
+      setConfirmDirty(false);
+      setAttemptedPurge(false);
       setPreview(null);
       setError('');
       setLoadingPreview(false);
@@ -5312,6 +5342,8 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
 
     let cancelled = false;
     setConfirmName('');
+    setConfirmDirty(false);
+    setAttemptedPurge(false);
     setPreview(null);
     setError('');
     setPurging(false);
@@ -5345,19 +5377,27 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
 
   if (!open || !feed) return null;
 
-  const nameMatches = String(confirmName || '').trim() === String(feed.name || '').trim();
+  const trimmedConfirm = String(confirmName || '').trim();
+  const expectedName = String(feed.name || '').trim();
+  const nameMatches = trimmedConfirm === expectedName;
+  const showNameMismatch = (confirmDirty || attemptedPurge) && trimmedConfirm.length > 0 && !nameMatches;
   const busy = purging || loadingPreview;
 
   async function runPurge() {
+    setAttemptedPurge(true);
     if (!nameMatches || purging) return;
     setError('');
     setPurging(true);
     try {
-      await api.post(`/integrations/${encodeURIComponent(feed.key)}/purge`, { confirm_name: confirmName.trim() });
-      onCompleted?.(feed.name || feed.key);
-      onClose();
+      const response = await api.post(`/integrations/${encodeURIComponent(feed.key)}/purge`, { confirm_name: trimmedConfirm });
+      if (response.status === 202 || response.data?.accepted) {
+        onCompleted?.(feed.name || feed.key);
+        onClose();
+        return;
+      }
+      setError(parseFeedPurgeError({ response }));
     } catch (err) {
-      setError(apiErrorMessage(err, 'Purge failed'));
+      setError(parseFeedPurgeError(err));
     } finally {
       setPurging(false);
     }
@@ -5382,16 +5422,36 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
             This will remove active IOC memberships imported from this feed. Existing incidents, match events, evidence logs and audit history will be preserved.
           </p>
           <FeedPurgePreviewSummary preview={preview} loading={loadingPreview} />
+          <p style={{ margin: '12px 0 0', color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
+            This operation will run in the background. You can continue using the system.
+          </p>
           <label style={{ display: 'grid', gap: 4, marginTop: 12 }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>Type feed name to confirm: <b>{feed.name}</b></span>
-            <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={feed.name} disabled={busy} />
+            <span style={{ fontSize: 11, color: '#64748b' }}>Type the exact feed name to enable purge.</span>
+            <input
+              value={confirmName}
+              onChange={(e) => { setConfirmDirty(true); setConfirmName(e.target.value); }}
+              placeholder={feed.name}
+              disabled={busy}
+              aria-invalid={showNameMismatch ? 'true' : undefined}
+            />
+            {showNameMismatch ? (
+              <span style={{ fontSize: 12, color: '#fca5a5' }}>
+                Feed name does not match. Please type: {expectedName}
+              </span>
+            ) : null}
           </label>
           {error ? <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 10 }}>{error}</div> : null}
         </div>
         <div className="modal-footer">
           <button type="button" onClick={onClose} disabled={purging}>Cancel</button>
-          <button type="button" onClick={() => runPurge().catch(() => {})} disabled={!nameMatches || busy || !preview}>
-            {purging ? 'Purging…' : 'Purge'}
+          <button
+            type="button"
+            onClick={() => runPurge().catch(() => {})}
+            disabled={!nameMatches || busy || !preview}
+            style={(!nameMatches || busy || !preview) ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+          >
+            {purging ? 'Starting purge job…' : 'Purge'}
           </button>
         </div>
       </div>
@@ -5474,6 +5534,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         active: f.active !== false,
         feed_kind: f.feed_kind || 'built_in',
         archived_at: f.archived_at || null,
+        purge_active: Boolean(f.purge_active),
+        purge_status: f.purge_status || null,
+        purge_status_label: f.purge_status_label || null,
         expiration_policy: f.expiration_policy,
         expiration_summary: f.expiration_summary,
         default_confidence: f.default_confidence
@@ -5549,7 +5612,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       schedule: feed.schedule || '0 * * * *',
       active: feed.active !== false,
       feed_kind: feed.feed_kind || 'built_in',
-      archived_at: feed.archived_at || null
+      archived_at: feed.archived_at || null,
+      purge_active: Boolean(feed.purge_active),
+      purge_status: feed.purge_status || null,
+      purge_status_label: feed.purge_status_label || null
     });
     try {
       const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feed.key)}/expiration-policy`);
@@ -5676,7 +5742,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function handlePurgeCompleted(feedName) {
-    setFeedActionSuccess(`Feed data purged for ${feedName}.`);
+    setFeedActionSuccess(`Purge job started for ${feedName}. This may take a few minutes. You can continue using the system.`);
     load().catch(() => {});
   }
 
@@ -5938,7 +6004,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                 {visibleIntegrations.length ? visibleIntegrations.map((i) => {
                   const isActive = i.active !== false;
                   const isArchived = Boolean(i.archived_at);
-                  const canRunNow = isActive && !isArchived;
+                  const purgeActive = Boolean(i.purge_active);
+                  const canRunNow = isActive && !isArchived && !purgeActive;
                   const lastErr = String(i.last_error || '').trim();
                   const health = feedHealthPresentation(i);
                   const confidence = feedConfidencePresentation(i.default_confidence);
@@ -5952,7 +6019,16 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                           {state.label}
                         </span>
                       </td>
-                      <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>{i.name}</td>
+                      <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                        {i.name}
+                        {i.purge_status_label ? (
+                          <div style={{ marginTop: 4 }}>
+                            <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, color: i.purge_status === 'failed' ? '#fca5a5' : '#fcd34d', background: i.purge_status === 'failed' ? 'rgba(127,29,29,0.25)' : 'rgba(120,53,15,0.25)', border: `1px solid ${i.purge_status === 'failed' ? '#7f1d1d' : '#854d0e'}` }}>
+                              {i.purge_status_label}
+                            </span>
+                          </div>
+                        ) : null}
+                      </td>
                       <td>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
                           {health.label}
@@ -5975,7 +6051,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{canRunNow ? formatUserDateTime(i.next_run_at) : '-'}</td>
                       <td className="integrations-feeds-action-cell">
                         <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                          <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={!canRunNow ? 'Enable the feed before running manually.' : undefined}>
+                          <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
                             {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
                           </button>
                           {canWrite ? (
@@ -6037,6 +6113,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onOpenPurge={() => openPurgeFromEdit(editingFeed)}
           onArchive={() => archiveFeedFromSettings().catch(() => {})}
           onRestore={() => restoreFeedFromSettings().catch(() => {})}
+          purgeActive={Boolean(editingFeed?.purge_active)}
           canWrite={canWrite}
         />
       ) : null}

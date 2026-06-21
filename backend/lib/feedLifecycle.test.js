@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import {
   archiveIntegrationFeed,
   computeReimportPossible,
+  findActivePurgeJobForFeed,
   isBuiltInFeed,
   previewFeedDataPurge,
   purgeFeedData,
-  restoreIntegrationFeed
+  restoreIntegrationFeed,
+  validatePurgeConfirmName
 } from './feedLifecycle.js';
 
 function createMockClient(state) {
@@ -186,11 +188,37 @@ test('archiveIntegrationFeed archives custom feed', async () => {
   assert.equal(result.feed.active, false);
 });
 
+test('validatePurgeConfirmName requires exact trimmed match', () => {
+  assert.equal(validatePurgeConfirmName('USOM TR-CERT', 'USOM TR-CERT'), true);
+  assert.equal(validatePurgeConfirmName('USOM TR-CERT', ' USOM TR-CERT '), true);
+  assert.equal(validatePurgeConfirmName('USOM TR-CERT', 'usom tr-cert'), false);
+  assert.equal(validatePurgeConfirmName('USOM TR-CERT', 'USOM'), false);
+});
+
+test('findActivePurgeJobForFeed returns active purge job', async () => {
+  const state = {
+    queries: [],
+    handler: (sql) => {
+      if (sql.includes('integration_queue_jobs') && sql.includes('feed_data_purge')) {
+        return { rows: [{ job_id: 'job-1', status: 'running' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  };
+  const client = createMockClient(state);
+  const row = await findActivePurgeJobForFeed(client, 'usom-trcert');
+  assert.equal(row?.job_id, 'job-1');
+});
+
 test('purgeFeedData soft-purges memberships without deleting incidents', async () => {
   const feedId = '11111111-1111-4111-8111-111111111111';
+  let batchSelectCalls = 0;
   const state = {
     queries: [],
     handler: (sql, params) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+        return { rows: [], rowCount: 0 };
+      }
       if (sql.includes('FROM integration_feeds') && sql.includes('LIMIT 1')) {
         return {
           rows: [{
@@ -215,14 +243,18 @@ test('purgeFeedData soft-purges memberships without deleting incidents', async (
           rowCount: 1
         };
       }
-      if (sql.includes('FROM ioc_feed_memberships') && sql.includes("status = 'active'") && sql.includes('SELECT id')) {
-        return {
-          rows: [
-            { id: 1, ioc_item_id: 10, ioc_observable_type: 'ip' },
-            { id: 2, ioc_item_id: 11, ioc_observable_type: 'domain' }
-          ],
-          rowCount: 2
-        };
+      if (sql.includes('FROM ioc_feed_memberships') && sql.includes("status = 'active'") && sql.includes('LIMIT')) {
+        batchSelectCalls += 1;
+        if (batchSelectCalls === 1) {
+          return {
+            rows: [
+              { id: 1, ioc_item_id: 10, ioc_observable_type: 'ip' },
+              { id: 2, ioc_item_id: 11, ioc_observable_type: 'domain' }
+            ],
+            rowCount: 2
+          };
+        }
+        return { rows: [], rowCount: 0 };
       }
       if (sql.startsWith('UPDATE ioc_feed_memberships') && sql.includes("status = 'purged'")) {
         return {

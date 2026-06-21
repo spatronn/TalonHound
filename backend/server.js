@@ -37,9 +37,11 @@ import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes
 import { formatExpirationSummary } from './lib/iocExpiration.js';
 import {
   archiveIntegrationFeed,
+  findActivePurgeJobForFeed,
+  FEED_PURGE_JOB_NAME,
   previewFeedDataPurge,
-  purgeFeedData,
-  restoreIntegrationFeed
+  restoreIntegrationFeed,
+  validatePurgeConfirmName
 } from './lib/feedLifecycle.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
@@ -3809,10 +3811,31 @@ function buildIntegrationHealthSummary(integrations) {
   };
 }
 
-function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey) {
+function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey) {
   const jobType = feedJobType(feed.key);
   const lr = latestRunByJobType.get(jobType);
   const lq = latestQueueByKey.get(feed.key);
+  const purgeJob = latestPurgeByKey?.get(feed.key);
+  const purgeStatusRaw = purgeJob ? String(purgeJob.status || '').toLowerCase() : '';
+  const purgeActive = purgeStatusRaw === 'queued' || purgeStatusRaw === 'running';
+  const purgeStatus = purgeStatusRaw === 'queued'
+    ? 'queued'
+    : purgeStatusRaw === 'running'
+      ? 'running'
+      : purgeStatusRaw === 'success'
+        ? 'completed'
+        : purgeStatusRaw === 'failed'
+          ? 'failed'
+          : null;
+  const purgeStatusLabel = purgeStatus === 'queued'
+    ? 'Purge queued'
+    : purgeStatus === 'running'
+      ? 'Purge running'
+      : purgeStatus === 'completed'
+        ? 'Purge completed'
+        : purgeStatus === 'failed'
+          ? 'Purge failed'
+          : null;
   const metricsRow = pickMetricsSourceRow(lr, lq);
   const lastRunMetrics = buildLastRunMetrics(metricsRow);
   const runMetrics = flatMetricsFromLastRun(lastRunMetrics);
@@ -3855,6 +3878,10 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
     active: feedActive,
     expiration_policy,
     expiration_summary,
+    purge_status: purgeStatus,
+    purge_status_label: purgeStatusLabel,
+    purge_job_id: purgeJob?.job_id || null,
+    purge_active: purgeActive,
     status: lastStatus,
     last_status: lastStatus,
     health_state: resolveFeedHealthState(feedActive, lastStatus, consecutive, metricsHints),
@@ -4045,8 +4072,17 @@ app.get('/api/integrations', async (req, res) => {
 
     const asnQ = `SELECT MAX(updated_at) AS last_updated_at FROM asn_lookup`;
 
+    const latestPurgeQ = `
+      SELECT DISTINCT ON (integration_key)
+        integration_key, job_id, status, queued_at, started_at, finished_at, error_message, records_processed
+      FROM integration_queue_jobs
+      WHERE job_name = 'feed_data_purge'
+        AND integration_key = ANY($1::text[])
+      ORDER BY integration_key, COALESCE(started_at, queued_at) DESC
+    `;
+
     const latestRunStart = Date.now();
-    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, asnRes, recentRes] = await Promise.all([
+    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, recentRes] = await Promise.all([
       jobTypes.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
         : Promise.resolve({ rows: [] }),
@@ -4058,6 +4094,9 @@ app.get('/api/integrations', async (req, res) => {
         : Promise.resolve({ rows: [] }),
       feedKeys.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestQueueQ, [feedKeys]))
+        : Promise.resolve({ rows: [] }),
+      feedKeys.length
+        ? queryIntegrationsMetaWithTimeout(pool.query(latestPurgeQ, [feedKeys]))
         : Promise.resolve({ rows: [] }),
       feedKeys.includes('asn_enrichment')
         ? queryIntegrationsMetaWithTimeout(pool.query(asnQ))
@@ -4072,10 +4111,11 @@ app.get('/api/integrations', async (req, res) => {
       jobTypes.map((jt) => [jt, computeConsecutiveFailures(recentFailuresRes.rows, jt)])
     );
     const latestQueueByKey = new Map(latestQueueRes.rows.map((r) => [r.integration_key, r]));
+    const latestPurgeByKey = new Map(latestPurgeRes.rows.map((r) => [r.integration_key, r]));
     const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
 
     const integrations = feedsRes.rows.map((feed) =>
-      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey)
+      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey)
     );
     const healthSummary = buildIntegrationHealthSummary(integrations);
 
@@ -4487,50 +4527,91 @@ app.post('/api/integrations/:key/purge', requireRole(ROLES.ADMIN, ROLES.ANALYST)
   const { key } = req.params;
   const confirmName = String(req.body?.confirm_name || '').trim();
   try {
-    const feedRow = await pool.query('SELECT name FROM integration_feeds WHERE key = $1 LIMIT 1', [key]);
+    const feedRow = await pool.query(
+      'SELECT key, integration_id, name, archived_at FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
     if (!feedRow.rowCount) return res.status(404).json({ message: 'Integration not found' });
-    if (confirmName !== String(feedRow.rows[0].name || '').trim()) {
-      return res.status(400).json({ message: 'Confirmation name does not match feed name.' });
+    const feed = feedRow.rows[0];
+    if (!validatePurgeConfirmName(feed.name, confirmName)) {
+      return res.status(400).json({
+        error: 'confirm_name_mismatch',
+        message: 'Feed name confirmation does not match.'
+      });
+    }
+    if (feed.archived_at) {
+      return res.status(409).json({ message: 'Archived feeds cannot be purged.' });
     }
 
-    const client = await pool.connect();
-    let purgeResult;
-    try {
-      await client.query('BEGIN');
-      purgeResult = await purgeFeedData(client, key, {
-        actor: integrationFeedActor(req),
-        audit: null,
-        reason: String(req.body?.reason || 'feed_data_purge').trim() || 'feed_data_purge'
+    const activePurge = await findActivePurgeJobForFeed(pool, key);
+    if (activePurge) {
+      return res.status(409).json({
+        error: 'purge_already_running',
+        message: 'A purge job is already running for this feed.',
+        job_id: activePurge.job_id
       });
-      if (!purgeResult.ok) {
-        await client.query('ROLLBACK');
-        return res.status(purgeResult.status || 400).json({ message: purgeResult.message || 'Purge failed' });
-      }
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
     }
+
+    const previewResult = await previewFeedDataPurge(pool, key);
+    if (!previewResult.ok) {
+      return res.status(previewResult.status || 400).json({ message: previewResult.message || 'Preview failed' });
+    }
+
+    const actor = integrationFeedActor(req);
+    const job = await importQueue.add(
+      FEED_PURGE_JOB_NAME,
+      {
+        triggeredBy: 'feed-purge-api',
+        integration_key: key,
+        feed_id: feed.integration_id,
+        feed_key: key,
+        feed_name: feed.name,
+        requested_by: actor.username,
+        requested_by_user_id: actor.userId,
+        reason: String(req.body?.reason || 'manual purge from feed edit').trim() || 'manual purge from feed edit',
+        confirm_name: confirmName
+      },
+      { priority: MANUAL_JOB_PRIORITY }
+    );
+
+    await pool.query(
+      `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+       VALUES ($1, $2, $3, 'queued', $4, NOW(), NOW())
+       ON CONFLICT (job_id)
+       DO UPDATE SET status='queued', triggered_by=$4, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+      [String(job.id), key, FEED_PURGE_JOB_NAME, actor.username || 'feed-purge-api']
+    );
 
     await auditLogService.auditSuccess({
       req,
-      action: AUDIT_ACTION.FEED_DATA_PURGED,
+      action: AUDIT_ACTION.FEED_DATA_PURGE_REQUESTED,
       entityType: AUDIT_ENTITY.INTEGRATION,
-      entityId: String(purgeResult.result.feed_id || key),
-      entityDisplay: purgeResult.result.feed_name || key,
+      entityId: String(feed.integration_id || key),
+      entityDisplay: feed.name || key,
       severity: AUDIT_SEVERITY.WARNING,
       metadata: {
-        ...purgeResult.result,
-        preserved_incidents: true,
-        preserved_events: true
+        feed_id: feed.integration_id,
+        feed_name: feed.name,
+        feed_key: key,
+        job_id: String(job.id),
+        requested_by: actor.username,
+        active_memberships_to_purge: previewResult.preview.active_memberships,
+        iocs_to_expire_or_remove: previewResult.preview.iocs_only_from_this_feed,
+        iocs_shared_with_other_sources: previewResult.preview.iocs_shared_with_other_sources,
+        status: 'requested'
       }
     }).catch(() => {});
 
-    return res.json(purgeResult.result);
+    return res.status(202).json({
+      accepted: true,
+      job_id: String(job.id),
+      feed_key: key,
+      feed_name: feed.name,
+      status: 'queued',
+      message: 'Purge job started. This may take a few minutes for large feeds.'
+    });
   } catch (err) {
-    return res.status(500).json({ message: 'Failed to purge feed data', detail: err.message });
+    return res.status(500).json({ message: 'Failed to start purge job', detail: err.message });
   }
 });
 
