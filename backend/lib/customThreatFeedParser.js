@@ -1,6 +1,16 @@
-import { inferObservableType } from './manualIocCreate.js';
 import { normalizeObservable } from './observable-normalization.js';
 import { mapFixedIocTypeToObservableType } from './customThreatFeedUtils.js';
+
+function inferObservableType(value) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  const isUrl = /^https?:\/\//i.test(v);
+  const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(v);
+  if (isUrl || v.includes('/')) return 'url';
+  if (isIpv4) return 'ip';
+  if (/^[a-f0-9]{32,128}$/i.test(v)) return 'hash';
+  return 'domain';
+}
 
 const CSV_IOC_HEADERS = new Set(['value', 'ioc', 'indicator']);
 const CSV_META_HEADERS = new Set(['type', 'confidence', 'tags', 'threat_classification']);
