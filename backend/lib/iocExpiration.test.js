@@ -195,6 +195,9 @@ function buildExpirationWorkerMockClient({ membershipRows, membershipStatusesAft
   return {
     async query(sql) {
       const s = String(sql);
+      if (s.includes('FROM ioc_feed_memberships m') && s.includes('INNER JOIN ioc_items i')) {
+        return { rows: membershipStatusesAfter.map((status) => ({ status, purged_at: null })) };
+      }
       if (s.includes('FROM ioc_feed_memberships m') && s.includes('LIMIT')) {
         return { rows: membershipRows };
       }
@@ -206,9 +209,6 @@ function buildExpirationWorkerMockClient({ membershipRows, membershipStatusesAft
       }
       if (s.includes('FROM ioc_suppressions')) {
         return { rows: [] };
-      }
-      if (s.includes('SELECT status FROM ioc_feed_memberships')) {
-        return { rows: membershipStatusesAfter.map((status) => ({ status })) };
       }
       if (s.includes('MIN(expires_at)')) {
         return { rows: [{ min_exp: null }] };
