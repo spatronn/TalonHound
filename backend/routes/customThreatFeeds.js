@@ -60,9 +60,11 @@ const FEED_ROW_SELECT = `
 `;
 
 function actorFromReq(req) {
+  const publicId = req.user?.publicId;
+  const actorId = publicId && /^[0-9a-f-]{36}$/i.test(String(publicId)) ? String(publicId) : null;
   return {
     actor: req.user?.username || req.user?.email || 'unknown',
-    actor_id: req.user?.publicId || null
+    actor_id: actorId
   };
 }
 
@@ -221,8 +223,8 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       const integrationInsert = await client.query(
         `INSERT INTO integration_feeds (
            key, name, source_url, schedule_cron, trust_level, active,
-           feed_kind, feed_update_mode, default_confidence
-         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5)
+           feed_kind, feed_update_mode, default_confidence, integration_id
+         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5, gen_random_uuid())
          RETURNING integration_id, key, name`,
         [
           feedKey,
@@ -277,6 +279,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       return res.status(201).json({ feed: serializeFeedRow(row) });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
+      console.error('[custom-threat-feeds] create failed', err?.message || err);
       return res.status(500).json({ message: 'Failed to create Custom Threat Feed', detail: err.message });
     } finally {
       client.release();

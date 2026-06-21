@@ -325,6 +325,7 @@ function apiErrorMessage(err, fallback = 'Request failed') {
   if (d?.error && d?.message) return String(d.message);
   if (d?.error) return String(d.error);
   if (Array.isArray(d?.errors) && d.errors.length) return d.errors.join('; ');
+  if (d?.message && d?.detail) return `${d.message}: ${d.detail}`;
   return String(d?.message || err?.message || fallback);
 }
 
