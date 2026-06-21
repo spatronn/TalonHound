@@ -25,7 +25,7 @@ import {
   EMPTY_ANALYST_REFERENCE_FORM,
   toAnalystReferenceForm
 } from './lib/analystIntelligenceForm.js';
-import { isProviderApplicable } from './lib/iocProviderApplicability.js';
+import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -129,6 +129,95 @@ export function IntelligenceSummarySection({ providerSnapshots, analystSummary, 
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Analyst refs</div>
           <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{analystRefs}</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function DerivedInfrastructureSection({
+  context,
+  providerSnapshots,
+  active,
+  iocValue,
+  iocType,
+  canWrite,
+  isAdmin,
+  providerGridStyle,
+  onProviderSnapshot,
+  IpEnrichmentCard,
+  AbuseIpdbEnrichmentCard,
+  RdapEnrichmentCard
+}) {
+  if (!context) return null;
+
+  const coverage = computeProviderCoverage(providerSnapshots, { providerKeys: context.providers });
+  const hostKindLabel = context.hostKind === 'ip' ? 'IP address' : 'domain';
+
+  return (
+    <div style={{ ...sectionShellStyle, borderColor: '#1e3a5f' }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={sectionTitleStyle}>Derived Infrastructure</div>
+        <div style={sectionDescStyle}>
+          Enrichment for the host extracted from this URL IOC. Results apply to the extracted {hostKindLabel}, not the URL path or query.
+        </div>
+      </div>
+      <div style={{
+        marginBottom: 12,
+        padding: '10px 12px',
+        borderRadius: 8,
+        border: '1px solid #334155',
+        background: '#0b1220',
+        fontSize: 13
+      }}
+      >
+        <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 4 }}>Extracted host</div>
+        <div style={{ color: '#e2e8f0', fontWeight: 600, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", overflowWrap: 'anywhere' }}>
+          {context.host}
+        </div>
+        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {coverage.map((p) => {
+            const st = providerStateStyle(p.state);
+            return (
+              <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: st.color }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
+                {p.label}: {providerStateLabel(p.state)}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <div style={providerGridStyle}>
+        {isDerivedProviderApplicable('ipinfo', context) ? (
+          <IpEnrichmentCard
+            iocValue={iocValue}
+            iocType={iocType}
+            active={active}
+            isAdmin={isAdmin}
+            compact
+            onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)}
+          />
+        ) : null}
+        {isDerivedProviderApplicable('abuseipdb', context) ? (
+          <AbuseIpdbEnrichmentCard
+            iocValue={iocValue}
+            iocType={iocType}
+            active={active}
+            canRefresh={canWrite}
+            isAdmin={isAdmin}
+            compact
+            onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)}
+          />
+        ) : null}
+        {isDerivedProviderApplicable('rdap', context) ? (
+          <RdapEnrichmentCard
+            iocValue={iocValue}
+            iocType={iocType}
+            active={active}
+            isAdmin={isAdmin}
+            compact
+            onSnapshot={(snap) => onProviderSnapshot('rdap', snap)}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -408,11 +497,18 @@ export function IntelligenceTabPanel({
   RdapEnrichmentCard
 }) {
   const [providerSnapshots, setProviderSnapshots] = useState({});
+  const [derivedProviderSnapshots, setDerivedProviderSnapshots] = useState({});
   const [analystSummary, setAnalystSummary] = useState({ total_count: 0, supports_malicious_count: 0 });
+
+  const derivedContext = useMemo(
+    () => getDerivedInfrastructureContext(iocValue, iocType, { rdapEligible: isRdapEligible }),
+    [iocValue, iocType, isRdapEligible]
+  );
 
   useEffect(() => {
     setProviderSnapshots({});
-  }, [iocId, iocType]);
+    setDerivedProviderSnapshots({});
+  }, [iocId, iocType, iocValue]);
 
   const showVt = isProviderApplicable('virustotal', iocType);
   const showAbuse = isProviderApplicable('abuseipdb', iocType);
@@ -420,10 +516,11 @@ export function IntelligenceTabPanel({
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
 
   const onProviderSnapshot = useCallback((provider, snapshot) => {
-    setProviderSnapshots((prev) => {
-      const next = { ...prev, [provider]: snapshot };
-      return next;
-    });
+    setProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
+  }, []);
+
+  const onDerivedProviderSnapshot = useCallback((provider, snapshot) => {
+    setDerivedProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
   }, []);
 
   const providerGridStyle = useMemo(() => ({
@@ -461,6 +558,21 @@ export function IntelligenceTabPanel({
           ) : null}
         </div>
       </div>
+
+      <DerivedInfrastructureSection
+        context={derivedContext}
+        providerSnapshots={derivedProviderSnapshots}
+        active={active}
+        iocValue={iocValue}
+        iocType={iocType}
+        canWrite={canWrite}
+        isAdmin={isAdmin}
+        providerGridStyle={providerGridStyle}
+        onProviderSnapshot={onDerivedProviderSnapshot}
+        IpEnrichmentCard={IpEnrichmentCard}
+        AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
+        RdapEnrichmentCard={RdapEnrichmentCard}
+      />
 
       <AnalystIntelligenceSection
         iocId={iocId}

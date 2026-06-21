@@ -65,16 +65,21 @@ export function computeInfrastructureSummary({ ipinfo, abuseipdb, rdap }) {
   return parts.slice(0, 4).join(' · ');
 }
 
-export function computeProviderCoverage(snapshots, { iocType, rdapEligible = false } = {}) {
+export function computeProviderCoverage(snapshots, { iocType, rdapEligible = false, providerKeys } = {}) {
   const providers = [
     { key: 'virustotal', label: 'VT' },
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
     { key: 'rdap', label: 'RDAP' }
   ];
-  const applicable = iocType
-    ? providers.filter((p) => isProviderApplicable(p.key, iocType, { rdapEligible }))
-    : providers;
+  let applicable;
+  if (Array.isArray(providerKeys) && providerKeys.length) {
+    applicable = providers.filter((p) => providerKeys.includes(p.key));
+  } else if (iocType) {
+    applicable = providers.filter((p) => isProviderApplicable(p.key, iocType, { rdapEligible }));
+  } else {
+    applicable = providers;
+  }
   return applicable.map((p) => ({
     ...p,
     state: providerCoverageStatus(snapshots?.[p.key])

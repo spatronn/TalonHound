@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  extractHostFromIocValue,
   getApplicableProvidersForIocType,
+  getDerivedInfrastructureContext,
+  getDerivedInfrastructureProviders,
+  isIpAddress,
   isProviderApplicable,
   normalizeIocType
 } from './iocProviderApplicability.js';
@@ -69,4 +73,51 @@ test('computeProviderCoverage omits RDAP for hash even with stale snapshots', ()
   assert.equal(coverage.length, 1);
   assert.equal(coverage[0].key, 'virustotal');
   assert.equal(coverage[0].state, 'not_run');
+});
+
+test('extractHostFromIocValue parses IP host with port and path', () => {
+  assert.equal(
+    extractHostFromIocValue('http://222.138.182.107:48022/bin.sh', 'url'),
+    '222.138.182.107'
+  );
+});
+
+test('isIpAddress detects IPv4 literals', () => {
+  assert.equal(isIpAddress('222.138.182.107'), true);
+  assert.equal(isIpAddress('example.com'), false);
+});
+
+test('URL with IP host yields derived IP providers only', () => {
+  const url = 'http://222.138.182.107:48022/bin.sh';
+  assert.deepEqual(getDerivedInfrastructureProviders(url, 'url'), ['ipinfo', 'abuseipdb']);
+  const ctx = getDerivedInfrastructureContext(url, 'url');
+  assert.equal(ctx.host, '222.138.182.107');
+  assert.equal(ctx.hostKind, 'ip');
+});
+
+test('URL with domain host yields RDAP when eligible', () => {
+  const url = 'https://example.com/path';
+  assert.deepEqual(
+    getDerivedInfrastructureProviders(url, 'url', { rdapEligible: true }),
+    ['rdap']
+  );
+  assert.deepEqual(getDerivedInfrastructureProviders(url, 'url', { rdapEligible: false }), []);
+  const ctx = getDerivedInfrastructureContext(url, 'url', { rdapEligible: true });
+  assert.equal(ctx.host, 'example.com');
+  assert.equal(ctx.hostKind, 'domain');
+});
+
+test('extractHostFromIocValue returns null for malformed URLs', () => {
+  assert.equal(extractHostFromIocValue('not-a-url', 'url'), null);
+  assert.equal(extractHostFromIocValue('ftp://example.com/x', 'url'), null);
+});
+
+test('computeProviderCoverage supports explicit providerKeys for derived section', () => {
+  const coverage = computeProviderCoverage(
+    { ipinfo: { status: 'success' }, abuseipdb: { status: 'not_found' } },
+    { providerKeys: ['ipinfo', 'abuseipdb'] }
+  );
+  assert.deepEqual(coverage.map((p) => p.key), ['ipinfo', 'abuseipdb']);
+  assert.equal(coverage[0].state, 'available');
+  assert.equal(coverage[1].state, 'not_run');
 });
