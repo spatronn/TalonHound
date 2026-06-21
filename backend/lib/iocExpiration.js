@@ -6,6 +6,14 @@ import {
   buildIocExpirationAuditPayload,
   formatMembershipEntityDisplay
 } from './auditIocContext.js';
+import {
+  createImportOptimizationContext,
+  enterImportOptimizationContext,
+  getImportOptimizationContext,
+  isIocSuppressedFromIndex,
+  resolveFeedPolicyFromContext,
+  scheduleDeferredIocRecompute
+} from './importOptimizationContext.js';
 
 export const EXPIRATION_MODES = Object.freeze([
   'never',
@@ -187,7 +195,11 @@ export async function resolveFeedIdByKey(client, feedKey) {
   return row?.feed_id || null;
 }
 
-export async function getFeedPolicy(client, feedId, observableType = 'all') {
+export async function getFeedPolicy(client, feedId, observableType = 'all', opts = {}) {
+  const ctx = opts.importContext || getImportOptimizationContext();
+  if (ctx) {
+    return resolveFeedPolicyFromContext(ctx, feedId, observableType);
+  }
   const { rows } = await client.query(
     `SELECT * FROM threat_feed_expiration_policies
      WHERE feed_id = $1::uuid AND observable_type IN ($2, 'all')
@@ -198,7 +210,7 @@ export async function getFeedPolicy(client, feedId, observableType = 'all') {
   return rows[0] || null;
 }
 
-export async function isIocSuppressed(client, observable, observableType) {
+async function queryIocSuppressedFromDb(client, observable, observableType) {
   const { rows } = await client.query(
     `SELECT 1 FROM ioc_suppressions
      WHERE lower(ioc_value) = lower($1)
@@ -209,6 +221,46 @@ export async function isIocSuppressed(client, observable, observableType) {
     [observable, observableType]
   );
   return rows.length > 0;
+}
+
+export async function isIocSuppressed(client, observable, observableType, opts = {}) {
+  const ctx = opts.importContext || getImportOptimizationContext();
+  if (ctx?.suppressionIndex) {
+    return isIocSuppressedFromIndex(ctx.suppressionIndex, observable, observableType);
+  }
+  return queryIocSuppressedFromDb(client, observable, observableType);
+}
+
+export async function flushDeferredIocRecomputes(client, ctx = getImportOptimizationContext()) {
+  if (!ctx?.deferredRecomputes?.size) return { flushed: 0 };
+  const entries = [...ctx.deferredRecomputes.values()];
+  ctx.deferredRecomputes.clear();
+  for (const entry of entries) {
+    await recomputeIocGlobalStatus(client, entry.iocItemId, entry.observableType, {
+      audit: entry.audit,
+      actor: entry.actor,
+      importContext: ctx
+    });
+  }
+  return { flushed: entries.length };
+}
+
+export async function withImportOptimizationContext(client, fn) {
+  const active = getImportOptimizationContext();
+  if (active) {
+    return fn(active);
+  }
+  const ctx = await createImportOptimizationContext(client);
+  return enterImportOptimizationContext(ctx, async () => {
+    try {
+      const result = await fn(ctx);
+      await flushDeferredIocRecomputes(client, ctx);
+      return result;
+    } catch (err) {
+      ctx.deferredRecomputes.clear();
+      throw err;
+    }
+  });
 }
 
 export async function recomputeIocGlobalStatus(client, iocItemId, observableType, opts = {}) {
@@ -226,7 +278,7 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
   const audit = opts.audit;
   const actor = opts.actor || { actor_type: 'system', source: 'worker' };
 
-  if (await isIocSuppressed(client, ioc.observable, ioc.observable_type)) {
+  if (await isIocSuppressed(client, ioc.observable, ioc.observable_type, opts)) {
     if (ioc.status !== 'suppressed') {
       await client.query(
         `UPDATE ioc_items SET status = 'suppressed' WHERE id = $1 AND observable_type = $2`,
@@ -367,11 +419,7 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
   return { changed: true, status: nextStatus };
 }
 
-async function applyMembershipComputedFields(client, membershipId, policy, now = new Date()) {
-  const { rows } = await client.query('SELECT * FROM ioc_feed_memberships WHERE id = $1', [membershipId]);
-  const m = rows[0];
-  if (!m) return null;
-
+export function computeMembershipFieldPatch(m, policy, now = new Date()) {
   const policyExpiresAt = computePolicyExpiresAt(policy, {
     firstSeenInFeed: m.first_seen_in_feed,
     lastSeenInFeed: m.last_seen_in_feed,
@@ -391,15 +439,51 @@ async function applyMembershipComputedFields(client, membershipId, policy, now =
     ? (m.override_enabled && m.override_status === 'expired' ? 'manual_override' : (policy?.expiration_mode || 'policy'))
     : null;
 
-  await client.query(
+  return {
+    policyExpiresAt,
+    expiresAt,
+    status,
+    expiredAt,
+    expirationReason,
+    missingSince: m.missing_since
+  };
+}
+
+export function membershipComputedFieldsUnchanged(m, patch) {
+  return String(m.policy_expires_at || '') === String(patch.policyExpiresAt || '')
+    && String(m.expires_at || '') === String(patch.expiresAt || '')
+    && String(m.status || '') === String(patch.status || '')
+    && String(m.expired_at || '') === String(patch.expiredAt || '')
+    && String(m.expiration_reason || '') === String(patch.expirationReason || '')
+    && String(m.missing_since || '') === String(patch.missingSince || '');
+}
+
+async function applyMembershipComputedFields(client, membershipId, policy, now = new Date(), membershipRow = null) {
+  const m = membershipRow || (await client.query('SELECT * FROM ioc_feed_memberships WHERE id = $1', [membershipId])).rows[0];
+  if (!m) return null;
+
+  const patch = computeMembershipFieldPatch(m, policy, now);
+  if (membershipComputedFieldsUnchanged(m, patch)) {
+    return { membershipId, ...patch, skipped: true };
+  }
+
+  const upd = await client.query(
     `UPDATE ioc_feed_memberships
      SET policy_expires_at = $2, expires_at = $3, status = $4, expired_at = $5,
          expiration_reason = $6, missing_since = $7, updated_at = NOW()
-     WHERE id = $1`,
-    [membershipId, policyExpiresAt, expiresAt, status, expiredAt, expirationReason, m.missing_since]
+     WHERE id = $1
+       AND (
+         policy_expires_at IS DISTINCT FROM $2
+         OR expires_at IS DISTINCT FROM $3
+         OR status IS DISTINCT FROM $4
+         OR expired_at IS DISTINCT FROM $5
+         OR expiration_reason IS DISTINCT FROM $6
+         OR missing_since IS DISTINCT FROM $7
+       )`,
+    [membershipId, patch.policyExpiresAt, patch.expiresAt, patch.status, patch.expiredAt, patch.expirationReason, patch.missingSince]
   );
 
-  return { membershipId, status, policyExpiresAt, expiresAt };
+  return { membershipId, ...patch, updated: Number(upd.rowCount || 0) > 0 };
 }
 
 export async function upsertMembershipOnImport(client, {
@@ -413,7 +497,8 @@ export async function upsertMembershipOnImport(client, {
 }) {
   if (!iocItemId || !observableType || !feedId) return null;
 
-  const policy = await getFeedPolicy(client, feedId, observableType);
+  const importCtx = getImportOptimizationContext();
+  const policy = await getFeedPolicy(client, feedId, observableType, { importContext: importCtx });
   const now = seenAt instanceof Date ? seenAt : new Date(seenAt);
 
   const existing = await client.query(
@@ -424,6 +509,8 @@ export async function upsertMembershipOnImport(client, {
 
   let membershipId;
   let reactivated = false;
+  let membershipRow = null;
+  let membershipTouched = false;
 
   if (!existing.rowCount) {
     const ins = await client.query(
@@ -431,10 +518,12 @@ export async function upsertMembershipOnImport(client, {
          ioc_item_id, ioc_observable_type, feed_id,
          first_seen_in_feed, last_seen_in_feed, missing_since, status
        ) VALUES ($1, $2, $3::uuid, $4, $4, NULL, 'active')
-       RETURNING id`,
+       RETURNING *`,
       [iocItemId, observableType, feedId, now]
     );
-    membershipId = ins.rows[0].id;
+    membershipRow = ins.rows[0];
+    membershipId = membershipRow.id;
+    membershipTouched = true;
   } else {
     const row = existing.rows[0];
     membershipId = row.id;
@@ -443,16 +532,27 @@ export async function upsertMembershipOnImport(client, {
     const clearMissing = true;
 
     if (row.override_enabled) {
-      await client.query(
+      const upd = await client.query(
         `UPDATE ioc_feed_memberships
          SET last_seen_in_feed = $2,
              missing_since = CASE WHEN $3 THEN NULL ELSE missing_since END,
              updated_at = NOW()
-         WHERE id = $1`,
+         WHERE id = $1
+           AND (
+             last_seen_in_feed IS DISTINCT FROM $2
+             OR ($3 AND missing_since IS NOT NULL)
+           )
+         RETURNING *`,
         [membershipId, now, clearMissing]
       );
+      if (upd.rowCount) {
+        membershipRow = upd.rows[0];
+        membershipTouched = true;
+      } else {
+        membershipRow = row;
+      }
     } else {
-      await client.query(
+      const upd = await client.query(
         `UPDATE ioc_feed_memberships
          SET last_seen_in_feed = $2,
              missing_since = NULL,
@@ -464,24 +564,45 @@ export async function upsertMembershipOnImport(client, {
              purged_by_username = NULL,
              purge_reason = NULL,
              updated_at = NOW()
-         WHERE id = $1`,
+         WHERE id = $1
+           AND (
+             last_seen_in_feed IS DISTINCT FROM $2
+             OR missing_since IS NOT NULL
+             OR status IS DISTINCT FROM 'active'
+             OR expired_at IS NOT NULL
+             OR expiration_reason IS NOT NULL
+             OR purged_at IS NOT NULL
+             OR purged_by IS NOT NULL
+             OR purged_by_username IS NOT NULL
+             OR purge_reason IS NOT NULL
+           )
+         RETURNING *`,
         [membershipId, now]
       );
-      if (wasExpired || wasPurged) reactivated = true;
+      if (upd.rowCount) {
+        membershipRow = upd.rows[0];
+        membershipTouched = true;
+        if (wasExpired || wasPurged) reactivated = true;
+      } else {
+        membershipRow = row;
+      }
     }
   }
 
-  await applyMembershipComputedFields(client, membershipId, policy, now);
+  const computed = await applyMembershipComputedFields(client, membershipId, policy, now, membershipRow);
+  if (computed?.updated) membershipTouched = true;
 
   const explicit = explicitConfidence != null ? String(explicitConfidence).trim().toLowerCase() : '';
   if (['low', 'medium', 'high'].includes(explicit)) {
     try {
-      await client.query(
+      const confUpd = await client.query(
         `UPDATE ioc_feed_memberships
          SET explicit_confidence = $2, updated_at = NOW()
-         WHERE id = $1`,
+         WHERE id = $1
+           AND explicit_confidence IS DISTINCT FROM $2`,
         [membershipId, explicit]
       );
+      if (confUpd.rowCount) membershipTouched = true;
     } catch (err) {
       if (err?.code !== '42703') throw err;
     }
@@ -497,7 +618,16 @@ export async function upsertMembershipOnImport(client, {
     });
   }
 
-  await recomputeIocGlobalStatus(client, iocItemId, observableType, { audit, actor });
+  if (reactivated || !importCtx) {
+    await recomputeIocGlobalStatus(client, iocItemId, observableType, {
+      audit,
+      actor,
+      importContext: importCtx
+    });
+  } else if (membershipTouched) {
+    scheduleDeferredIocRecompute(importCtx, { iocItemId, observableType, audit, actor });
+  }
+
   return membershipId;
 }
 
@@ -534,11 +664,21 @@ export async function finalizeSnapshotFeedRun(client, {
     await client.query(
       `UPDATE ioc_feed_memberships
        SET missing_since = COALESCE(missing_since, $2), updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND missing_since IS NULL`,
       [row.id, now]
     );
     await applyMembershipComputedFields(client, row.id, policy, now);
-    await recomputeIocGlobalStatus(client, row.ioc_item_id, row.ioc_observable_type, { audit });
+    const importCtx = getImportOptimizationContext();
+    if (importCtx) {
+      scheduleDeferredIocRecompute(importCtx, {
+        iocItemId: row.ioc_item_id,
+        observableType: row.ioc_observable_type,
+        audit
+      });
+    } else {
+      await recomputeIocGlobalStatus(client, row.ioc_item_id, row.ioc_observable_type, { audit });
+    }
     marked += 1;
   }
   return { marked };
@@ -620,46 +760,48 @@ export function activeIocSql(alias = 'i') {
 
 /** Called after import insert/duplicate to refresh feed membership. */
 export async function syncSnapshotFeedFromEntries(client, feedKey, entries, mapEntry, options = {}) {
-  const { signal } = options;
-  if (signal?.aborted) {
-    const err = new Error('Integration job aborted');
-    err.name = 'IntegrationJobAbortedError';
-    throw err;
-  }
-
-  const feedId = await resolveFeedIdByKey(client, feedKey);
-  if (!feedId || !entries?.length) return { synced: 0, markedMissing: 0 };
-
-  const seenKeys = new Set();
-  for (const raw of entries) {
+  return withImportOptimizationContext(client, async () => {
+    const { signal } = options;
     if (signal?.aborted) {
       const err = new Error('Integration job aborted');
       err.name = 'IntegrationJobAbortedError';
       throw err;
     }
-    const e = mapEntry(raw);
-    if (!e?.observable || !e?.observableType) continue;
-    const membershipId = await syncMembershipAfterIocImport(client, {
-      observable: e.observable,
-      observableType: e.observableType,
-      sourceName: e.sourceName,
-      sourceUrl: e.sourceUrl ?? null,
-      explicitConfidence: e.explicitConfidence ?? e.confidence ?? null,
-      category: e.category ?? null,
-      seenAt: e.seenAt
-    });
-    if (!membershipId) continue;
-    const { rows } = await client.query(
-      'SELECT ioc_item_id, ioc_observable_type FROM ioc_feed_memberships WHERE id = $1',
-      [membershipId]
-    );
-    if (rows[0]) {
-      seenKeys.add(`${rows[0].ioc_observable_type}|${rows[0].ioc_item_id}`);
-    }
-  }
 
-  const { marked } = await finalizeSnapshotFeedRun(client, { feedId, seenKeys });
-  return { synced: seenKeys.size, markedMissing: marked };
+    const feedId = await resolveFeedIdByKey(client, feedKey);
+    if (!feedId || !entries?.length) return { synced: 0, markedMissing: 0 };
+
+    const seenKeys = new Set();
+    for (const raw of entries) {
+      if (signal?.aborted) {
+        const err = new Error('Integration job aborted');
+        err.name = 'IntegrationJobAbortedError';
+        throw err;
+      }
+      const e = mapEntry(raw);
+      if (!e?.observable || !e?.observableType) continue;
+      const membershipId = await syncMembershipAfterIocImport(client, {
+        observable: e.observable,
+        observableType: e.observableType,
+        sourceName: e.sourceName,
+        sourceUrl: e.sourceUrl ?? null,
+        explicitConfidence: e.explicitConfidence ?? e.confidence ?? null,
+        category: e.category ?? null,
+        seenAt: e.seenAt
+      });
+      if (!membershipId) continue;
+      const { rows } = await client.query(
+        'SELECT ioc_item_id, ioc_observable_type FROM ioc_feed_memberships WHERE id = $1',
+        [membershipId]
+      );
+      if (rows[0]) {
+        seenKeys.add(`${rows[0].ioc_observable_type}|${rows[0].ioc_item_id}`);
+      }
+    }
+
+    const { marked } = await finalizeSnapshotFeedRun(client, { feedId, seenKeys });
+    return { synced: seenKeys.size, markedMissing: marked };
+  });
 }
 
 export async function syncMembershipAfterIocImport(client, {

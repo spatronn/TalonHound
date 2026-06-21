@@ -67,23 +67,19 @@ describe('persistPublishedFeedSnapshot', () => {
     assert.equal(calls.at(-1).sql, 'RELEASE');
   });
 
-  it('updates metadata only when content hash is unchanged', async () => {
+  it('skips DB update when content hash is unchanged', async () => {
     const { pool, calls } = createMockPool([
       { match: (sql) => sql.includes('pg_advisory_xact_lock'), result: () => ({ rows: [] }) },
       {
         match: (sql) => sql.includes('FOR UPDATE') && sql.includes("status = 'success'"),
         result: () => ({ rows: [{ id: 42, content_hash: 'abc123' }] })
-      },
-      { match: (sql) => sql.includes('UPDATE published_feed_snapshots'), result: () => ({ rows: [] }) }
+      }
     ]);
 
-    await persistPublishedFeedSnapshot(pool, { ...baseSnapshot, itemCount: 5 });
+    const result = await persistPublishedFeedSnapshot(pool, { ...baseSnapshot, itemCount: 5 });
 
-    const update = calls.find((c) => c.sql.startsWith('UPDATE published_feed_snapshots'));
-    assert.ok(update);
-    assert.equal(update.params.length, 4);
-    assert.deepEqual(update.params, [42, 5, 'abc123', JSON.stringify(baseSnapshot.paramsJson)]);
-    assert.ok(!update.sql.includes('content ='));
+    assert.equal(result.skipped, true);
+    assert.ok(!calls.some((c) => c.sql.startsWith('UPDATE published_feed_snapshots')));
   });
 
   it('updates content when content hash changes', async () => {

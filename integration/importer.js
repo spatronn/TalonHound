@@ -13,7 +13,8 @@ import {
 } from './lib/import-metrics.js';
 import {
   syncMembershipAfterIocImport,
-  syncSnapshotFeedFromEntries
+  syncSnapshotFeedFromEntries,
+  withImportOptimizationContext
 } from './lib/iocExpiration.js';
 import {
   resolveImportConfidenceFields,
@@ -876,6 +877,7 @@ export async function runHourlyImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
        VALUES ('hourly_import', 'running', clock_timestamp(), $1)
@@ -963,6 +965,7 @@ export async function runHourlyImport(options = {}) {
       `[integration-import] job=hourly_import runId=${runId} files=${files.length} processed=${metrics.recordsProcessed()} inserted=${metrics.records_inserted} duplicate=${metrics.records_duplicate} skipped=${metrics.records_skipped}`
     );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    });
   } catch (err) {
     if (runId) {
       await failIntegrationRun(client, runId, err.message, metrics);
@@ -995,6 +998,7 @@ export async function runUsomImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
        VALUES ('usom_import', 'running', clock_timestamp(), $1)
@@ -1105,6 +1109,7 @@ export async function runUsomImport(options = {}) {
     await finalizeIntegrationRun(client, runId, metrics);
     logImportSuppressionSummary('usom_import', runId, suppressionStats, metrics.toJSON());
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    });
   } catch (err) {
     if (runId) {
       await failIntegrationRun(client, runId, err.message, metrics);
@@ -1138,6 +1143,7 @@ export async function runUrlhausImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
        VALUES ('urlhaus_import', 'running', clock_timestamp(), $1)
@@ -1220,6 +1226,7 @@ export async function runUrlhausImport(options = {}) {
       `[integration-import] job=urlhaus_import runId=${runId} export=${URLHAUS_EXPORT_URL_MASKED} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
     );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    });
   } catch (err) {
     const safeMessage = sanitizeUrlhausErrorMessage(err?.message || err);
     if (runId) {
@@ -1254,6 +1261,7 @@ export async function runThreatfoxImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
        VALUES ('threatfox_import', 'running', clock_timestamp(), $1)
@@ -1330,6 +1338,7 @@ export async function runThreatfoxImport(options = {}) {
       `[integration-import] job=threatfox_import runId=${runId} api=${THREATFOX_SOURCE_URL_MASKED} days=${recentDays} query_status=${queryStatus || 'ok'} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
     );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    });
   } catch (err) {
     const safeMessage = sanitizeThreatFoxErrorMessage(err?.message || err);
     if (runId) {
@@ -1364,6 +1373,7 @@ export async function runMalwareBazaarImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
        VALUES ('malwarebazaar_import', 'running', clock_timestamp(), $1)
@@ -1446,6 +1456,7 @@ export async function runMalwareBazaarImport(options = {}) {
       `[integration-import] job=malwarebazaar_import runId=${runId} export=${MALWAREBAZAAR_EXPORT_URL_MASKED} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
     );
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    });
   } catch (err) {
     const safeMessage = sanitizeMalwareBazaarErrorMessage(err?.message || err);
     if (runId) {
@@ -1493,6 +1504,7 @@ export async function runPhishtankImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
        VALUES ('phishtank_import', 'running', clock_timestamp(), $1)
@@ -1626,6 +1638,7 @@ export async function runPhishtankImport(options = {}) {
     console.log(`[integration-import][phishtank][summary] run_id=${runId} source=phishtank-opendnsrr timeout_ms=${process.env.PHISHTANK_JOB_TIMEOUT_MS || process.env.INTEGRATION_JOB_TIMEOUT_MS || 600000} fetch_ms=${phase.fetch_ms} parse_ms=${phase.parse_ms} build_entries_ms=${phase.build_entries_ms} db_write_total_ms=${phase.db_write_total_ms} finalize_ms=${phase.finalize_ms} total_ms=${phase.total_ms} row_count=${rowCount} valid_count=${validCount} skipped_count=${m.records_skipped} inserted_count=${m.records_inserted} updated_count=${m.records_updated} batch_count=${batchStats.count} avg_batch_ms=${avgBatch} max_batch_ms=${batchStats.max_ms} slowest_batches='${JSON.stringify(batchStats.slowest)}' failure_phase=none`);
     logImportSuppressionSummary('phishtank_import', runId, suppressionStats, metrics.toJSON());
     return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    });
   } catch (err) {
     phase.total_ms = Date.now() - t0;
     const m = metrics.toJSON();

@@ -4,7 +4,8 @@ import { sanitizeUrlForDisplay } from './customThreatFeedUtils.js';
 import {
   upsertMembershipOnImport,
   recomputeIocGlobalStatus,
-  finalizeSnapshotFeedRun
+  finalizeSnapshotFeedRun,
+  withImportOptimizationContext
 } from './iocExpiration.js';
 import { normalizeConfidence, resolveImportConfidenceFields } from './iocConfidence.js';
 
@@ -202,27 +203,29 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     counters.invalid_rows = parsed.invalidRows.length;
     invalidSamples = parsed.invalidRows;
 
-    const seenKeys = new Set();
-    for (const row of parsed.valid) {
-      if (signal?.aborted) throw new Error('Sync aborted');
-      const result = await upsertIocRow(client, {
-        observable: row.observable,
-        observableType: row.observableType,
-        sourceName,
-        sourceUrl,
-        defaultConfidence: feedRow.default_confidence,
-        rowConfidence: row.confidence,
-        feedId: integrationFeedId,
-        seenAt
-      });
-      if (result.inserted) counters.inserted += 1;
-      else if (result.updated) counters.updated += 1;
-      else if (result.refreshed) counters.refreshed += 1;
-      else if (result.duplicate) counters.duplicate_rows += 1;
-      seenKeys.add(`${result.observableType}|${result.iocItemId}`);
-    }
+    await withImportOptimizationContext(client, async () => {
+      const seenKeys = new Set();
+      for (const row of parsed.valid) {
+        if (signal?.aborted) throw new Error('Sync aborted');
+        const result = await upsertIocRow(client, {
+          observable: row.observable,
+          observableType: row.observableType,
+          sourceName,
+          sourceUrl,
+          defaultConfidence: feedRow.default_confidence,
+          rowConfidence: row.confidence,
+          feedId: integrationFeedId,
+          seenAt
+        });
+        if (result.inserted) counters.inserted += 1;
+        else if (result.updated) counters.updated += 1;
+        else if (result.refreshed) counters.refreshed += 1;
+        else if (result.duplicate) counters.duplicate_rows += 1;
+        seenKeys.add(`${result.observableType}|${result.iocItemId}`);
+      }
 
-    counters.expired_missing = await expireMissingFromSnapshot(client, integrationFeedId, seenKeys);
+      counters.expired_missing = await expireMissingFromSnapshot(client, integrationFeedId, seenKeys);
+    });
 
     if (counters.invalid_rows > 0 && counters.valid_rows > 0) status = 'partial_success';
     else if (counters.valid_rows === 0 && counters.total_rows > 0) status = 'failed';

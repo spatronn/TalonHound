@@ -7454,7 +7454,7 @@ async function ensureSeedDemoUser() {
 }
 
 const RISK_SNAPSHOT_INTERVAL_MS = Math.max(Number(process.env.RISK_SNAPSHOT_INTERVAL_MS || 5 * 60 * 1000), 60 * 1000);
-const PUBLISHED_FEED_TICK_MS = Math.max(Number(process.env.PUBLISHED_FEED_TICK_MS || 60 * 1000), 15 * 1000);
+const PUBLISHED_FEED_TICK_MS = Math.max(Number(process.env.PUBLISHED_FEED_TICK_MS || 5 * 60 * 1000), 15 * 1000);
 let riskSnapshotInProgress = false;
 let publishedFeedTickInProgress = false;
 

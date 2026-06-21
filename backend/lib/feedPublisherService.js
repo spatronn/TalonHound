@@ -193,6 +193,108 @@ async function fetchIocRows(pool, feed, window) {
   return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
 }
 
+/** Conservative export fingerprint — same filters as fetchIocRows without DISTINCT ON sort cost. */
+export async function fetchIocExportFingerprint(pool, feed, window) {
+  const types = observableTypesForFeedIocType(feed.ioc_type);
+  if (!types.length) {
+    return { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) };
+  }
+
+  const params = [];
+  const typePlaceholders = types.map((t) => {
+    params.push(t);
+    return `$${params.length}`;
+  });
+
+  let sql = `
+    SELECT COUNT(DISTINCT lower(i.observable))::bigint AS item_count,
+           MAX(COALESCE(i.last_seen_log, i.last_seen_at, i.created_at)) AS max_recency
+    FROM ioc_items i
+    WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+  `;
+
+  const interval = WINDOW_INTERVALS[window];
+  if (interval) {
+    params.push(interval);
+    sql += ` AND COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) >= NOW() - $${params.length}::interval `;
+  }
+
+  if (feed.min_confidence != null && Number.isFinite(Number(feed.min_confidence))) {
+    sql += ` AND (
+      CASE LOWER(COALESCE(i.confidence, ''))
+        WHEN 'high' THEN 100
+        WHEN 'medium' THEN 50
+        WHEN 'low' THEN 25
+        ELSE 0
+      END
+    ) >= ${Number(feed.min_confidence)} `;
+  }
+
+  sql += buildFeedKeySourceSql(feed.include_feed_keys, params);
+
+  if (feed.exclude_false_positive) {
+    sql += `
+      AND NOT EXISTS (
+        SELECT 1 FROM ioc_activity a
+        WHERE lower(a.ioc_value) = lower(i.observable)
+          AND lower(a.ioc_type) = lower(i.observable_type)
+          AND a.verdict = 'FP'
+      )
+      AND COALESCE(i.category, '') NOT ILIKE '%false%positive%'
+      AND lower(COALESCE(i.category, '')) <> 'fp'
+    `;
+  }
+
+  if (feed.exclude_expired !== false) {
+    sql += ` AND COALESCE(i.status, 'active') = 'active' `;
+  }
+
+  if (feed.include_tags?.length) {
+    params.push(feed.include_tags.map((t) => t.toLowerCase()));
+    sql += `
+      AND EXISTS (
+        SELECT 1
+        FROM ioc_tags it
+        JOIN tags tg ON tg.id = it.tag_id
+        WHERE it.ioc_id = i.id
+          AND it.ioc_observable_type = i.observable_type
+          AND tg.enabled = TRUE
+          AND lower(tg.name) = ANY($${params.length}::text[])
+      )
+    `;
+  }
+
+  if (feed.exclude_tags?.length) {
+    params.push(feed.exclude_tags.map((t) => t.toLowerCase()));
+    sql += `
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ioc_tags it
+        JOIN tags tg ON tg.id = it.tag_id
+        WHERE it.ioc_id = i.id
+          AND it.ioc_observable_type = i.observable_type
+          AND lower(tg.name) = ANY($${params.length}::text[])
+      )
+    `;
+  }
+
+  const { rows } = await pool.query(sql, params);
+  const maxRecency = rows[0]?.max_recency;
+  return {
+    itemCount: Number(rows[0]?.item_count || 0),
+    maxRecency: maxRecency instanceof Date ? maxRecency.toISOString() : (maxRecency ? String(maxRecency) : null),
+    filtersHash: filtersHash(feed, window)
+  };
+}
+
+function exportFingerprintKey(fingerprint) {
+  return JSON.stringify({
+    itemCount: fingerprint?.itemCount ?? 0,
+    maxRecency: fingerprint?.maxRecency ?? null,
+    filtersHash: fingerprint?.filtersHash ?? null
+  });
+}
+
 async function withTransaction(pool, fn) {
   if (typeof pool.connect !== 'function') {
     return fn(pool);
@@ -293,18 +395,7 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
     }
 
     if (rows[0].content_hash === snapshot.contentHash) {
-      await client.query(
-        `UPDATE published_feed_snapshots
-         SET generated_at = NOW(),
-             item_count = $2,
-             content_hash = $3,
-             status = 'success',
-             error_message = NULL,
-             params = $4::jsonb
-         WHERE id = $1`,
-        [rows[0].id, snapshot.itemCount, snapshot.contentHash, paramsText]
-      );
-      return;
+      return { skipped: true, reason: 'unchanged_hash' };
     }
 
     await client.query(
@@ -337,13 +428,27 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
 
   for (const window of windows) {
     try {
+      const filters_hash = filtersHash(feed, window);
+      const fingerprint = await fetchIocExportFingerprint(pool, feed, window);
+      const fingerprintKey = exportFingerprintKey(fingerprint);
+
+      if (!options.force) {
+        const latest = await getLatestSnapshot(pool, id, feed.ioc_type, window);
+        const prevKey = latest?.params?.export_fingerprint;
+        if (latest?.content_hash && latest.params?.filters_hash === filters_hash && prevKey === fingerprintKey) {
+          results.push({ window, status: 'success', item_count: latest.item_count, skipped: true });
+          continue;
+        }
+      }
+
       const iocRows = await fetchIocRows(pool, feed, window);
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
       const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, feed.ioc_type, genMax);
       const paramsJson = {
         ioc_type: feed.ioc_type,
         window,
-        filters_hash: filtersHash(feed, window)
+        filters_hash,
+        export_fingerprint: fingerprintKey
       };
 
       await persistPublishedFeedSnapshot(pool, {
@@ -375,16 +480,28 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
   const failed = results.filter((r) => r.status === 'failed');
   const lastStatus = failed.length === results.length ? 'failed' : failed.length ? 'partial' : 'success';
   const lastError = failed.length ? failed.map((f) => `${f.window}: ${f.error}`).join('; ') : null;
+  const allSkipped = results.length > 0 && results.every((r) => r.skipped);
 
-  await pool.query(
-    `UPDATE published_feeds
-     SET last_generated_at = NOW(),
-         last_status = $2,
-         last_error = $3,
-         updated_at = NOW()
-     WHERE id = $1`,
-    [id, lastStatus, lastError]
-  );
+  if (!allSkipped) {
+    await pool.query(
+      `UPDATE published_feeds
+       SET last_generated_at = NOW(),
+           last_status = $2,
+           last_error = $3,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [id, lastStatus, lastError]
+    );
+  } else {
+    await pool.query(
+      `UPDATE published_feeds
+       SET last_generated_at = NOW(),
+           last_status = COALESCE(last_status, 'success'),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [id]
+    );
+  }
 
   return { feed_id: id, results, last_status: lastStatus, last_error: lastError };
 }

@@ -1,5 +1,6 @@
 import './lib/ensure-db-password.js';
 import './lib/ensure-clickhouse-password.js';
+import { createHash } from 'node:crypto';
 import pg from 'pg';
 import { query as clickhouseQuery } from './lib/clickhouse.js';
 
@@ -15,12 +16,28 @@ const pool = new Pool({
 
 const LOOP_INTERVAL_MS = Math.max(Number(process.env.IOC_MATCH_COUNT_INTERVAL_MS || 60000), 10000);
 const UPSERT_BATCH_SIZE = Math.max(Number(process.env.IOC_MATCH_COUNT_BATCH_SIZE || 2000), 500);
+const FULL_REFRESH_EVERY_TICKS = Math.max(Number(process.env.IOC_MATCH_COUNT_FULL_REFRESH_TICKS || 60), 1);
+
+let lastAggregateFingerprint = null;
+let ticksSinceFullRefresh = 0;
 
 function toPgTs(v) {
   if (!v) return null;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+function fingerprintAggregateRows(rows) {
+  const payload = (rows || [])
+    .map((r) => [
+      r.observable_value,
+      r.match_count,
+      r.first_seen_log,
+      r.last_seen_log
+    ])
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
 async function fetchAggregatesFromClickHouse() {
@@ -55,8 +72,9 @@ async function fetchAggregatesFromClickHouse() {
 }
 
 async function upsertSnapshot(client, rows) {
-  if (!rows.length) return;
+  if (!rows.length) return { updated: 0 };
 
+  let updated = 0;
   for (let i = 0; i < rows.length; i += UPSERT_BATCH_SIZE) {
     const chunk = rows.slice(i, i + UPSERT_BATCH_SIZE);
     const values = [];
@@ -69,7 +87,7 @@ async function upsertSnapshot(client, rows) {
       params.push(r.observable_value, r.match_count, r.first_seen_log, r.last_seen_log);
     }
 
-    await client.query(
+    const res = await client.query(
       `INSERT INTO ioc_match_count_snapshot (observable_value, match_count, first_seen_log, last_seen_log, updated_at)
        VALUES ${values.join(',')}
        ON CONFLICT (observable_value)
@@ -77,10 +95,18 @@ async function upsertSnapshot(client, rows) {
          match_count = EXCLUDED.match_count,
          first_seen_log = EXCLUDED.first_seen_log,
          last_seen_log = EXCLUDED.last_seen_log,
-         updated_at = NOW()`,
+         updated_at = CASE
+           WHEN ioc_match_count_snapshot.match_count IS DISTINCT FROM EXCLUDED.match_count
+             OR ioc_match_count_snapshot.first_seen_log IS DISTINCT FROM EXCLUDED.first_seen_log
+             OR ioc_match_count_snapshot.last_seen_log IS DISTINCT FROM EXCLUDED.last_seen_log
+           THEN NOW()
+           ELSE ioc_match_count_snapshot.updated_at
+         END`,
       params
     );
+    updated += Number(res.rowCount || 0);
   }
+  return { updated };
 }
 
 async function applySnapshotToIocItems(client) {
@@ -121,16 +147,28 @@ async function applySnapshotToIocItems(client) {
 async function tick() {
   const start = Date.now();
   const rows = await fetchAggregatesFromClickHouse();
+  const fingerprint = fingerprintAggregateRows(rows);
+  ticksSinceFullRefresh += 1;
+
+  const forceRefresh = ticksSinceFullRefresh >= FULL_REFRESH_EVERY_TICKS;
+  if (!forceRefresh && fingerprint === lastAggregateFingerprint) {
+    console.log(`[ioc-match-count-worker] skipped unchanged aggregate observables=${rows.length}`);
+    return { skipped: true, observables: rows.length };
+  }
+
+  lastAggregateFingerprint = fingerprint;
+  if (forceRefresh) ticksSinceFullRefresh = 0;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await upsertSnapshot(client, rows);
+    const snap = await upsertSnapshot(client, rows);
     const result = await applySnapshotToIocItems(client);
     await client.query('COMMIT');
 
     const ms = Date.now() - start;
-    console.log(`[ioc-match-count-worker] synced observables=${rows.length} updated_ioc_items=${result.updatedItems} reset_ioc_items=${result.resetItems} duration_ms=${ms}`);
+    console.log(`[ioc-match-count-worker] synced observables=${rows.length} snapshot_writes=${snap.updated} updated_ioc_items=${result.updatedItems} reset_ioc_items=${result.resetItems} duration_ms=${ms}`);
+    return { skipped: false, ...result, observables: rows.length };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -139,8 +177,10 @@ async function tick() {
   }
 }
 
+import { pathToFileURL } from 'node:url';
+
 async function main() {
-  console.log(`[ioc-match-count-worker] started interval_ms=${LOOP_INTERVAL_MS} batch_size=${UPSERT_BATCH_SIZE}`);
+  console.log(`[ioc-match-count-worker] started interval_ms=${LOOP_INTERVAL_MS} batch_size=${UPSERT_BATCH_SIZE} full_refresh_ticks=${FULL_REFRESH_EVERY_TICKS}`);
 
   while (true) {
     try {
@@ -153,7 +193,14 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[ioc-match-count-worker] fatal', err?.message || err);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error('[ioc-match-count-worker] fatal', err?.message || err);
+    process.exit(1);
+  });
+}
+
+export { fingerprintAggregateRows };
