@@ -408,6 +408,8 @@ async function fetchItemRowTopSources(pool, statusClause, limit = 20) {
 }
 
 /**
+ * Run a query with parallel workers disabled inside a short transaction.
+ * SET LOCAL requires a transaction block; without it parallel hash aggregates can exhaust /dev/shm.
  * @param {import('pg').Pool|import('pg').PoolClient} db
  * @param {string} sql
  * @param {unknown[]} [params]
@@ -415,11 +417,19 @@ async function fetchItemRowTopSources(pool, statusClause, limit = 20) {
 async function queryWithoutParallelWorkers(db, sql, params = []) {
   const client = typeof db.connect === 'function' ? await db.connect() : null;
   const runner = client || db;
+  const ownClient = Boolean(client);
   try {
+    await runner.query('BEGIN');
     await runner.query('SET LOCAL max_parallel_workers_per_gather = 0');
-    return await runner.query(sql, params);
+    await runner.query("SET LOCAL work_mem = '4MB'");
+    const result = await runner.query(sql, params);
+    await runner.query('COMMIT');
+    return result;
+  } catch (err) {
+    await runner.query('ROLLBACK').catch(() => {});
+    throw err;
   } finally {
-    if (client) client.release();
+    if (ownClient) client.release();
   }
 }
 
@@ -543,7 +553,34 @@ export async function fetchIocListStats(pool, statusFilter = 'active') {
 
   let bySource;
   if (mode === 'active') {
-    bySource = await fetchActiveTopSources(pool, 20);
+    bySource = await queryWithoutParallelWorkers(
+      pool,
+      `SELECT source_name, SUM(c)::bigint AS count
+       FROM (
+         SELECT f.name AS source_name,
+                COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+         FROM ioc_feed_memberships m
+         INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+         INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+         WHERE m.status = 'active'
+           AND m.purged_at IS NULL
+           AND f.archived_at IS NULL
+           AND COALESCE(i.status, 'active') = 'active'
+         GROUP BY f.name
+         UNION ALL
+         SELECT COALESCE(s.name, i.source_name) AS source_name,
+                COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+         FROM ioc_items i
+         LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+         WHERE COALESCE(i.status, 'active') = 'active'
+           AND i.ioc_source_id IS NOT NULL
+         GROUP BY COALESCE(s.name, i.source_name)
+       ) src
+       GROUP BY source_name
+       ORDER BY count DESC, source_name ASC
+       LIMIT $1`,
+      [20]
+    ).then((res) => res.rows);
   } else if (mode === 'all') {
     bySource = await fetchItemRowTopSources(pool, 'TRUE', 20);
   } else {

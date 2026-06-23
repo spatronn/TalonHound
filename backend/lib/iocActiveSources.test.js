@@ -52,7 +52,7 @@ test('fetchIocListStats active mode uses membership-indexed scoped observables',
     }),
     async query(sql) {
       queries.push(String(sql));
-      if (sql.includes('SET LOCAL max_parallel_workers_per_gather')) {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
         return { rows: [] };
       }
       if (sql.includes('COUNT(*)::bigint AS count FROM scoped_obs')) {
@@ -91,7 +91,7 @@ test('fetchActiveIocListPage paginates via membership index path', async () => {
     }),
     async query(sql, params) {
       queries.push(String(sql));
-      if (sql.includes('SET LOCAL max_parallel_workers_per_gather')) {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
         return { rows: [] };
       }
       if (sql.includes('LIMIT $1 OFFSET $2')) {
