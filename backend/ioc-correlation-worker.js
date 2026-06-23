@@ -883,9 +883,18 @@ async function maybeSyncIocLookup(force = false) {
   if (!IOC_LOOKUP_SYNC_ENABLED) return false;
   const now = Date.now();
   if (!force && (now - lastIocLookupSyncAtMs) < (IOC_LOOKUP_SYNC_INTERVAL_SECONDS * 1000)) return false;
-  const syncRes = await syncIocLookupFromPostgres({ workerName: 'ioc-correlation-sync-v1', batchSize: IOC_LOOKUP_SYNC_BATCH_SIZE });
+  const syncRes = await syncIocLookupFromPostgres({
+    workerName: 'ioc-correlation-sync-v1',
+    batchSize: IOC_LOOKUP_SYNC_BATCH_SIZE,
+    pgPool: pool,
+    force
+  });
   lastIocLookupSyncAtMs = now;
-  console.log(`[ioc-correlation] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS} changed=${Boolean(syncRes?.changed)}`);
+  const skipped = syncRes?.skipped ? ` skipped=${syncRes.reason || 'true'}` : '';
+  console.log(
+    `[ioc-correlation] ioc_lookup sync completed interval_s=${IOC_LOOKUP_SYNC_INTERVAL_SECONDS}`
+    + ` changed=${Boolean(syncRes?.changed)} fetched=${Number(syncRes?.fetched || 0)}${skipped}`
+  );
   return true;
 }
 

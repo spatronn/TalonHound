@@ -54,7 +54,7 @@ export function normalizeFeedConfig(row) {
   };
 }
 
-function filtersHash(feed, window) {
+export function filtersHash(feed, window) {
   const payload = {
     ioc_type: feed.ioc_type,
     window,
@@ -295,6 +295,117 @@ function exportFingerprintKey(fingerprint) {
   });
 }
 
+const FEED_IOC_PARTITION_TABLE = {
+  ip: 'ioc_ip',
+  domain: 'ioc_domain',
+  url: 'ioc_url',
+  hash: 'ioc_file_hash'
+};
+
+function feedHasSourceFilters(feed) {
+  return Boolean(
+    feed.include_feed_keys?.length
+    || feed.include_tags?.length
+    || feed.exclude_tags?.length
+    || (feed.min_confidence != null && Number.isFinite(Number(feed.min_confidence)))
+  );
+}
+
+function normalizeWatermarkTs(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+export function watermarkKey(watermark) {
+  if (!watermark) return null;
+  return JSON.stringify({
+    max_id: Number(watermark.max_id || 0),
+    max_ts: normalizeWatermarkTs(watermark.max_ts),
+    active_count: Number(watermark.active_count || 0)
+  });
+}
+
+/** Cheap partition-level watermark — one partition table, no parent ioc_items scan. */
+export async function fetchCheapIocWatermark(pool, feed) {
+  const table = FEED_IOC_PARTITION_TABLE[String(feed?.ioc_type || '').toLowerCase()];
+  if (!table) {
+    return { max_id: 0, max_ts: null, active_count: 0 };
+  }
+
+  const types = observableTypesForFeedIocType(feed.ioc_type);
+  const params = [];
+  let typeClause = '';
+  if (types.length === 1) {
+    params.push(types[0]);
+    typeClause = `AND observable_type = $${params.length}`;
+  } else if (types.length > 1) {
+    params.push(types);
+    typeClause = `AND observable_type = ANY($${params.length}::text[])`;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT COALESCE(MAX(id), 0)::bigint AS max_id,
+            MAX(COALESCE(last_seen_log, last_seen_at, created_at)) AS max_ts,
+            COUNT(*)::bigint AS active_count
+     FROM ${table}
+     WHERE COALESCE(status, 'active') = 'active'
+       ${typeClause}`,
+    params
+  );
+
+  return {
+    max_id: Number(rows[0]?.max_id || 0),
+    max_ts: normalizeWatermarkTs(rows[0]?.max_ts),
+    active_count: Number(rows[0]?.active_count || 0)
+  };
+}
+
+async function fetchLatestIntegrationFinishedAt(pool) {
+  const { rows } = await pool.query(
+    `SELECT MAX(finished_at) AS latest_finished_at
+     FROM integration_runs
+     WHERE status = 'success' AND finished_at IS NOT NULL`
+  );
+  const ts = rows[0]?.latest_finished_at;
+  return ts instanceof Date ? ts.toISOString() : (ts ? String(ts) : null);
+}
+
+export function canSkipPublishedFeedRegeneration({
+  feed,
+  window,
+  latestSnapshot,
+  watermark,
+  latestIntegrationFinishedAt,
+  force = false
+}) {
+  if (force || !latestSnapshot?.content_hash) return { skip: false };
+
+  const filters_hash = filtersHash(feed, window);
+  if (latestSnapshot.params?.filters_hash !== filters_hash) return { skip: false };
+
+  const feedUpdatedAt = feed.updated_at instanceof Date
+    ? feed.updated_at.toISOString()
+    : (feed.updated_at ? String(feed.updated_at) : null);
+  if (latestSnapshot.params?.feed_updated_at !== feedUpdatedAt) return { skip: false };
+
+  if (feedHasSourceFilters(feed)) return { skip: false };
+
+  if (watermarkKey(latestSnapshot.params?.ioc_watermark) !== watermarkKey(watermark)) {
+    return { skip: false };
+  }
+
+  const snapshotGeneratedAt = latestSnapshot.generated_at instanceof Date
+    ? latestSnapshot.generated_at.toISOString()
+    : (latestSnapshot.generated_at ? String(latestSnapshot.generated_at) : null);
+  if (latestIntegrationFinishedAt && snapshotGeneratedAt
+    && latestIntegrationFinishedAt > snapshotGeneratedAt) {
+    return { skip: false };
+  }
+
+  return { skip: true, reason: 'unchanged_watermark' };
+}
+
 async function withTransaction(pool, fn) {
   if (typeof pool.connect !== 'function') {
     return fn(pool);
@@ -425,10 +536,40 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
 
   const windows = options.window ? [normalizeTimeWindow(options.window)].filter(Boolean) : FEED_WINDOWS;
   const results = [];
+  const latestIntegrationFinishedAt = options.force
+    ? null
+    : await fetchLatestIntegrationFinishedAt(pool);
+  const cheapWatermark = options.force ? null : await fetchCheapIocWatermark(pool, feed);
+  const feedUpdatedAt = feed.updated_at instanceof Date
+    ? feed.updated_at.toISOString()
+    : (feed.updated_at ? String(feed.updated_at) : null);
 
   for (const window of windows) {
     try {
       const filters_hash = filtersHash(feed, window);
+
+      if (!options.force) {
+        const latest = await getLatestSnapshot(pool, id, feed.ioc_type, window);
+        const skipCheck = canSkipPublishedFeedRegeneration({
+          feed,
+          window,
+          latestSnapshot: latest,
+          watermark: cheapWatermark,
+          latestIntegrationFinishedAt,
+          force: options.force
+        });
+        if (skipCheck.skip) {
+          results.push({
+            window,
+            status: 'success',
+            item_count: latest?.item_count ?? 0,
+            skipped: true,
+            reason: skipCheck.reason
+          });
+          continue;
+        }
+      }
+
       const fingerprint = await fetchIocExportFingerprint(pool, feed, window);
       const fingerprintKey = exportFingerprintKey(fingerprint);
 
@@ -436,7 +577,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         const latest = await getLatestSnapshot(pool, id, feed.ioc_type, window);
         const prevKey = latest?.params?.export_fingerprint;
         if (latest?.content_hash && latest.params?.filters_hash === filters_hash && prevKey === fingerprintKey) {
-          results.push({ window, status: 'success', item_count: latest.item_count, skipped: true });
+          results.push({ window, status: 'success', item_count: latest.item_count, skipped: true, reason: 'unchanged_fingerprint' });
           continue;
         }
       }
@@ -448,7 +589,9 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         ioc_type: feed.ioc_type,
         window,
         filters_hash,
-        export_fingerprint: fingerprintKey
+        export_fingerprint: fingerprintKey,
+        feed_updated_at: feedUpdatedAt,
+        ioc_watermark: cheapWatermark || await fetchCheapIocWatermark(pool, feed)
       };
 
       await persistPublishedFeedSnapshot(pool, {
@@ -521,7 +664,12 @@ export async function regenerateAllEnabledFeeds(pool) {
 
   for (const row of due) {
     try {
-      await generatePublishedFeedSnapshot(pool, row.id);
+      const result = await generatePublishedFeedSnapshot(pool, row.id);
+      const skipped = result.results?.filter((r) => r.skipped)?.length ?? 0;
+      const total = result.results?.length ?? 0;
+      if (skipped === total && total > 0) {
+        console.log(`[published-feeds] feed=${row.id} skipped all windows (${skipped}/${total})`);
+      }
     } catch (err) {
       console.error('[published-feeds] scheduled regenerate failed', row.id, err?.message || err);
     }

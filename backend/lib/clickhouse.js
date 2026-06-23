@@ -209,11 +209,14 @@ export async function ensureIocCorrelationAssets() {
       worker_name String,
       last_sync_ts DateTime64(3),
       last_sync_id UInt64,
+      sync_cursors String DEFAULT '',
       updated_at DateTime64(3) DEFAULT now64(3)
     )
     ENGINE = ReplacingMergeTree(updated_at)
     ORDER BY worker_name
   `);
+
+  await command(`ALTER TABLE ioc_lookup_sync_state ADD COLUMN IF NOT EXISTS sync_cursors String DEFAULT ''`);
 
   await command(`
     CREATE TABLE IF NOT EXISTS ioc_retro_state (
@@ -290,92 +293,7 @@ export async function pushIocLookupTombstones(rows = []) {
   return { deleted: normalized.length };
 }
 
-export async function syncIocLookupFromPostgres(opts = {}) {
-  const workerName = opts.workerName || 'ioc-correlation-sync-v1';
-  const batchSize = Math.max(Number(opts.batchSize || 20000), 1000);
-  const pgHostPort = `${process.env.DB_HOST || 'db'}:${String(process.env.DB_PORT || '5432')}`;
-  const pgDbName = process.env.DB_NAME || 'demo';
-  const pgUser = process.env.DB_USER || 'demo';
-  const pgPassword = process.env.DB_PASSWORD;
-
-  const st = await query(`
-    SELECT last_sync_ts, last_sync_id
-    FROM ioc_lookup_sync_state
-    WHERE worker_name = '${workerName.replace(/'/g, "''")}'
-    ORDER BY updated_at DESC
-    LIMIT 1
-  `);
-
-  const lastId = Number(st?.[0]?.last_sync_id || 0);
-
-  // IMPORTANT: Cursor by monotonic id only.
-  // Using (created_at, id) can miss rows committed later with older created_at
-  // (e.g. long-running transactions/imports with clock_timestamp() semantics).
-  const delta = await query(`
-    SELECT
-      toUInt64(id) AS id,
-      lower(observable) AS observable,
-      if(observable_type = 'hostname', 'domain', observable_type) AS observable_type,
-      source_name,
-      confidence,
-      toDateTime64(created_at, 3) AS created_at
-    FROM postgresql('${pgLiteralForPostgresqlEngine(pgHostPort)}', '${pgLiteralForPostgresqlEngine(pgDbName)}', 'ioc_items', '${pgLiteralForPostgresqlEngine(pgUser)}', '${pgLiteralForPostgresqlEngine(pgPassword)}')
-    WHERE observable IS NOT NULL
-      AND observable != ''
-      AND observable_type IN ('domain', 'hostname', 'url', 'ip', 'sha256')
-      AND COALESCE(status, 'active') = 'active'
-      AND toUInt64(id) > ${lastId}
-    ORDER BY id
-    LIMIT ${batchSize}
-  `, { logTag: 'ioc-lookup.sync-incremental' });
-
-  if (!delta.length) {
-    return { changed: false, fetched: 0 };
-  }
-
-  const agg = new Map();
-  for (const r of delta) {
-    const observableType = String(r.observable_type || '').toLowerCase();
-    const observable = observableType === 'url'
-      ? normalizeObservable('url', String(r.observable || ''))
-      : String(r.observable || '').toLowerCase();
-    const key = `${observable}|${observableType}`;
-    const conf = confidenceToInt(r.confidence);
-    const created = String(r.created_at || '1970-01-01 00:00:00.000');
-    const prev = agg.get(key);
-    if (!prev || conf > prev.confidence || created > prev.updated_at) {
-      agg.set(key, {
-        observable,
-        observable_type: observableType,
-        confidence: conf,
-        source_name: r.source_name || 'unknown',
-        updated_at: created
-      });
-    }
-  }
-
-  await clickhouse.insert({ table: 'ioc_lookup', values: Array.from(agg.values()), format: 'JSONEachRow' });
-
-  const last = delta[delta.length - 1];
-  await clickhouse.insert({
-    table: 'ioc_lookup_sync_state',
-    values: [{
-      worker_name: workerName,
-      last_sync_ts: String(last.created_at),
-      last_sync_id: String(last.id),
-      updated_at: new Date().toISOString().replace('T', ' ').replace('Z', '')
-    }],
-    format: 'JSONEachRow'
-  });
-
-  return {
-    changed: true,
-    fetched: delta.length,
-    written: agg.size,
-    last_sync_ts: String(last.created_at),
-    last_sync_id: Number(last.id)
-  };
-}
+export { syncIocLookupFromPostgres } from './iocLookupSync.js';
 
 /** Re-insert expired IOCs into ClickHouse lookup (reverse legacy tombstones). */
 export async function backfillExpiredIocsToLookup(pgPool, opts = {}) {

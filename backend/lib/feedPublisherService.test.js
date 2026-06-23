@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { persistPublishedFeedSnapshot } from './feedPublisherService.js';
+import {
+  persistPublishedFeedSnapshot,
+  canSkipPublishedFeedRegeneration,
+  watermarkKey,
+  filtersHash
+} from './feedPublisherService.js';
 
 function createMockPool(handlers) {
   const calls = [];
@@ -145,5 +150,95 @@ describe('persistPublishedFeedSnapshot', () => {
 
     assert.ok(calls.some((c) => c.sql === 'ROLLBACK'));
     assert.equal(calls.at(-1).sql, 'RELEASE');
+  });
+});
+
+describe('canSkipPublishedFeedRegeneration', () => {
+  const feed = {
+    id: 1,
+    ioc_type: 'ip',
+    min_confidence: null,
+    include_feed_keys: null,
+    include_tags: null,
+    exclude_tags: null,
+    exclude_false_positive: true,
+    exclude_expired: true,
+    max_items: null,
+    updated_at: '2026-06-23T10:00:00.000Z'
+  };
+
+  const watermark = { max_id: 100, max_ts: '2026-06-23T09:00:00.000Z', active_count: 50 };
+  const filters_hash = filtersHash(feed, 'all');
+
+  it('skips when watermark and feed config unchanged and no imports since snapshot', () => {
+    const result = canSkipPublishedFeedRegeneration({
+      feed,
+      window: 'all',
+      latestSnapshot: {
+        content_hash: 'abc',
+        generated_at: '2026-06-23T10:05:00.000Z',
+        params: {
+          filters_hash,
+          feed_updated_at: '2026-06-23T10:00:00.000Z',
+          ioc_watermark: watermark
+        }
+      },
+      watermark,
+      latestIntegrationFinishedAt: '2026-06-23T10:04:00.000Z'
+    });
+    assert.equal(result.skip, true);
+    assert.equal(result.reason, 'unchanged_watermark');
+  });
+
+  it('does not skip when import finished after snapshot', () => {
+    const result = canSkipPublishedFeedRegeneration({
+      feed,
+      window: 'all',
+      latestSnapshot: {
+        content_hash: 'abc',
+        generated_at: '2026-06-23T10:05:00.000Z',
+        params: {
+          filters_hash,
+          feed_updated_at: '2026-06-23T10:00:00.000Z',
+          ioc_watermark: watermark
+        }
+      },
+      watermark,
+      latestIntegrationFinishedAt: '2026-06-23T10:06:00.000Z'
+    });
+    assert.equal(result.skip, false);
+  });
+
+  it('does not skip when force=true', () => {
+    const result = canSkipPublishedFeedRegeneration({
+      feed,
+      window: 'all',
+      latestSnapshot: { content_hash: 'abc', params: {} },
+      watermark,
+      force: true
+    });
+    assert.equal(result.skip, false);
+  });
+
+  it('does not skip when feed has source filters', () => {
+    const result = canSkipPublishedFeedRegeneration({
+      feed: { ...feed, include_feed_keys: ['usom-trcert'] },
+      window: 'all',
+      latestSnapshot: {
+        content_hash: 'abc',
+        params: {
+          filters_hash: 'x',
+          feed_updated_at: feed.updated_at,
+          ioc_watermark: watermark
+        }
+      },
+      watermark,
+      latestIntegrationFinishedAt: null
+    });
+    assert.equal(result.skip, false);
+  });
+
+  it('watermarkKey stable for identical values', () => {
+    assert.equal(watermarkKey(watermark), watermarkKey({ ...watermark }));
   });
 });
