@@ -10,7 +10,9 @@ import {
   formatManualIocSource,
   applyActiveListScope,
   activeObservableHasActiveSourceSql,
-  fetchIocListStats
+  fetchIocListStats,
+  fetchActiveIocListPage,
+  activeScopedObservablesSql
 } from './iocActiveSources.js';
 import {
   buildIocInheritedConfidenceSummary,
@@ -41,11 +43,18 @@ test('activeObservableHasActiveSourceSql requires active membership filters', ()
   assert.match(sql, /ioc_source_id IS NOT NULL/);
 });
 
-test('fetchIocListStats active mode uses membership-based top sources query', async () => {
+test('fetchIocListStats active mode uses membership-indexed scoped observables', async () => {
   const queries = [];
   const pool = {
+    connect: async () => ({
+      query: async (sql, params) => pool.query(sql, params),
+      release: () => {}
+    }),
     async query(sql) {
       queries.push(String(sql));
+      if (sql.includes('SET LOCAL max_parallel_workers_per_gather')) {
+        return { rows: [] };
+      }
       if (sql.includes('COUNT(*)::bigint AS count FROM scoped_obs')) {
         return { rows: [{ count: '2' }] };
       }
@@ -62,6 +71,52 @@ test('fetchIocListStats active mode uses membership-based top sources query', as
   assert.equal(stats.total, 2);
   assert.equal(stats.by_source[0].source_name, 'manual-smoke');
   assert.ok(queries.some((q) => q.includes('m.purged_at IS NULL')));
+  assert.ok(queries.some((q) => q.includes('ioc_source_id IS NOT NULL')));
+  assert.ok(!queries.some((q) => q.includes('COUNT(*)::bigint AS count FROM scoped_obs') && q.includes('EXISTS (')));
+});
+
+test('activeScopedObservablesSql uses feed membership union not correlated exists', () => {
+  const sql = activeScopedObservablesSql();
+  assert.match(sql, /FROM ioc_feed_memberships m/);
+  assert.match(sql, /ioc_source_id IS NOT NULL/);
+  assert.doesNotMatch(sql, /EXISTS/);
+});
+
+test('fetchActiveIocListPage paginates via membership index path', async () => {
+  const queries = [];
+  const pool = {
+    connect: async () => ({
+      query: async (sql, params) => pool.query(sql, params),
+      release: () => {}
+    }),
+    async query(sql, params) {
+      queries.push(String(sql));
+      if (sql.includes('SET LOCAL max_parallel_workers_per_gather')) {
+        return { rows: [] };
+      }
+      if (sql.includes('LIMIT $1 OFFSET $2')) {
+        assert.deepEqual(params, [5, 10]);
+        return {
+          rows: [{
+            id: 1,
+            public_id: '11111111-1111-1111-1111-111111111111',
+            observable: 'evil.example',
+            observable_type: 'domain',
+            ip: 'evil.example',
+            first_seen_at: '2026-01-01T00:00:00Z',
+            last_seen_at: '2026-01-02T00:00:00Z',
+            asn: null,
+            country_code: null,
+            as_name: null
+          }]
+        };
+      }
+      return { rows: [] };
+    }
+  };
+  const rows = await fetchActiveIocListPage(pool, { limit: 5, offset: 10 });
+  assert.equal(rows.length, 1);
+  assert.ok(queries.some((q) => q.includes('feed_obs AS')));
 });
 
 test('membershipDisplayStatus distinguishes purged from expired', () => {

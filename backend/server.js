@@ -80,6 +80,8 @@ import {
   enrichItemsWithActiveSourceCounts,
   fetchObservableMembershipSummary,
   fetchIocListStats,
+  fetchActiveIocListPage,
+  fetchIocStatsLastUpdate,
   iocStatusSqlClause,
   parseIocListStatusFilter,
   activeObservableHasActiveSourceSql,
@@ -5759,6 +5761,87 @@ async function handleIocList(req, res) {
   const countryValueEarly = country ? `%${country}%` : null;
   const useHashFastPathEarly = prefixedHashSearch && asnValueEarly == null && countryValueEarly == null;
   const useObservableOnlyPath = prefixedObservableSearch && asnValueEarly == null && countryValueEarly == null;
+  const isDefaultActiveBrowse = statusFilter === 'active'
+    && !fullScan
+    && classificationFilter.length === 0;
+
+  if (isDefaultActiveBrowse) {
+    if (t) t.searchStringParse = Date.now();
+    try {
+      if (t) t.dbQueryStart = Date.now();
+      const browseRows = await fetchActiveIocListPage(pool, { limit, offset });
+      if (t) t.dbQueryEnd = Date.now();
+
+      const lastUpdate = await fetchIocStatsLastUpdate(pool);
+      const cacheKey = buildIocStatsCacheKey('active', lastUpdate);
+      let statsCached = readIocStatsCache(cacheKey);
+      if (!statsCached || statsCached.total == null) {
+        const stats = await fetchIocListStats(pool, 'active');
+        statsCached = {
+          last_update: lastUpdate,
+          total: stats.total,
+          by_type: stats.by_type,
+          by_source: stats.by_source
+        };
+        writeIocStatsCache(cacheKey, {
+          ...statsCached,
+          unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
+          by_confidence: []
+        });
+      }
+      const total = Number(statsCached.total || 0);
+
+      if (t) t.beforeResultMapping = Date.now();
+      const pageItems = browseRows.map((row) => ({
+        ...row,
+        source_count: 0,
+        source_names: [],
+        confidence_set: [],
+        category_set: []
+      }));
+      const items = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
+      if (t) t.afterResultMapping = Date.now();
+
+      const payload = {
+        items,
+        pagination: {
+          page: currentPage,
+          page_size: limit,
+          total,
+          total_pages: Math.max(Math.ceil(total / limit), 1),
+          total_source: 'stats'
+        }
+      };
+      if (t) {
+        t.beforeJsonStringify = Date.now();
+        const payloadStr = JSON.stringify(payload);
+        t.afterJsonStringify = Date.now();
+        t.responseBytes = Buffer.byteLength(payloadStr, 'utf8');
+        t.beforeSend = Date.now();
+        res.on('finish', () => {
+          t.responseSent = Date.now();
+          const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+          const parts = [
+            d('dbQuery', t.dbQueryStart, t.dbQueryEnd),
+            d('resultMapping', t.beforeResultMapping, t.afterResultMapping),
+            d('jsonStringify', t.beforeJsonStringify, t.afterJsonStringify),
+            d('responseSent', t.beforeSend, t.responseSent),
+            `total=${t.responseSent - t.requestReceived}ms`,
+            'queries=2',
+            `rows=${browseRows.length}`,
+            `responseBytes=${t.responseBytes}`,
+            'path=browse'
+          ].filter(Boolean);
+          console.log('[ioc/list timing]', parts.join(' '), 'q=' + (req.query?.q ?? ''));
+        });
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(payloadStr);
+      }
+      return res.json(payload);
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to fetch IOC list', detail: err.message });
+    }
+  }
 
   let client = null;
   if (t) {
@@ -6183,6 +6266,10 @@ async function handleIocList(req, res) {
         total_pages: Math.max(Math.ceil(total / limit), 1)
       }
     };
+    if (!fullScan) {
+      payload.pagination.total_is_capped = true;
+      payload.pagination.total_cap = 2000;
+    }
     if (fullScan && recentParam) {
       payload.note = `Filtered list limited to last ${recentParam} days (IOC_LIST_MAX_AGE_DAYS).`;
     }
@@ -7368,8 +7455,7 @@ app.get('/api/ioc/map/countries', async (_req, res) => {
 app.get('/api/ioc/summary/today', async (req, res) => {
   try {
     const statusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
-    const lastUpdateQ = await pool.query('SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1');
-    const lastUpdate = lastUpdateQ.rows[0]?.last_update || null;
+    const lastUpdate = await fetchIocStatsLastUpdate(pool);
     const cacheKey = buildIocStatsCacheKey(statusFilter, lastUpdate);
 
     const cached = readIocStatsCache(cacheKey);
@@ -7397,8 +7483,7 @@ app.get('/api/ioc/summary/today', async (req, res) => {
 app.get('/api/ioc/stats', async (req, res) => {
   try {
     const statusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
-    const lastUpdateQ = await pool.query('SELECT created_at AS last_update FROM ioc_items ORDER BY created_at DESC LIMIT 1');
-    const lastUpdate = lastUpdateQ.rows[0]?.last_update || null;
+    const lastUpdate = await fetchIocStatsLastUpdate(pool);
     const cacheKey = buildIocStatsCacheKey(statusFilter, lastUpdate);
 
     const cached = readIocStatsCache(cacheKey);

@@ -11687,7 +11687,13 @@ function IOCListPage() {
 
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
-          Listed Items <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
+          Listed Items{' '}
+          <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
+          {pagination.total_source === 'stats' ? (
+            <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500, color: '#64748b' }}>(active total)</span>
+          ) : pagination.total_is_capped ? (
+            <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500, color: '#64748b' }}>(recent sample cap)</span>
+          ) : null}
           <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
           Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
         </div>
