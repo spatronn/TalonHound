@@ -553,14 +553,6 @@ export async function fetchActiveIocListPage(pool, { limit, offset }) {
   const pageSlice = ranked.slice(offset, offset + limit);
   const out = [];
   for (const item of pageSlice) {
-    const table = IOC_LIST_PARTITION_BY_TYPE[item.observable_type];
-    const tsRes = await pool.query(
-      `SELECT MIN(created_at) AS first_seen_at, MAX(created_at) AS last_seen_at
-       FROM ${table}
-       WHERE observable = $1
-         AND COALESCE(status, 'active') = 'active'`,
-      [item.observable]
-    );
     let asn = null;
     let country_code = null;
     let as_name = null;
@@ -582,8 +574,8 @@ export async function fetchActiveIocListPage(pool, { limit, offset }) {
       observable: item.observable,
       observable_type: item.observable_type,
       ip: item.observable,
-      first_seen_at: tsRes.rows[0]?.first_seen_at || item.created_at,
-      last_seen_at: tsRes.rows[0]?.last_seen_at || item.sort_ts || item.created_at,
+      first_seen_at: item.created_at,
+      last_seen_at: item.sort_ts || item.created_at,
       asn,
       country_code,
       as_name

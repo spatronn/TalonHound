@@ -117,14 +117,6 @@ test('fetchActiveIocListPage paginates via membership index path', async () => {
           }]
         };
       }
-      if (sql.includes('MIN(created_at) AS first_seen_at')) {
-        return {
-          rows: [{
-            first_seen_at: '2026-01-01T00:00:00Z',
-            last_seen_at: '2026-01-02T00:00:00Z'
-          }]
-        };
-      }
       return { rows: [] };
     }
   };
