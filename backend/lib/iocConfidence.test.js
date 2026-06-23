@@ -8,6 +8,7 @@ import {
   normalizeConfidence,
   resolveImportConfidenceFields,
   resolveParsedSourceConfidence,
+  resolveIocConfidenceFromMemberships,
   validateConfidenceInput
 } from './iocConfidence.js';
 import { resolveManualIocConfidenceProvenance } from './manualIocCreate.js';
@@ -55,6 +56,95 @@ test('multi-feed aggregation picks highest feed default', () => {
 test('resolveParsedSourceConfidence honors explicit null entry confidence', () => {
   assert.equal(resolveParsedSourceConfidence(null, 'high'), null);
   assert.equal(resolveParsedSourceConfidence(undefined, 'high'), 'high');
+});
+
+test('buildIocInheritedConfidenceSummary resolves historical feed default for expired IOC', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: { id: 1, public_id: '11111111-1111-1111-1111-111111111111', analyst_confidence_override: null, status: 'expired' },
+    membershipRows: [{
+      status: 'expired',
+      purged_at: null,
+      explicit_confidence: null,
+      feed_default_confidence: 'high',
+      feed_name: 'URLHaus abuse.ch',
+      feed_key: 'urlhaus-abusech'
+    }],
+    iocRows: [{ status: 'expired', source_name: 'URLHaus abuse.ch' }]
+  });
+  assert.equal(summary.effective, 'high');
+  assert.equal(summary.confidence_source, 'feed_default');
+  assert.equal(summary.confidence_source_scope, 'historical');
+  assert.match(summary.source_description, /URLHaus abuse\.ch \(historical\)/);
+  assert.equal(summary.has_active_source, false);
+});
+
+test('buildIocInheritedConfidenceSummary expired IOC uses explicit historical feed entry confidence', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: { id: 1, status: 'expired', analyst_confidence_override: null },
+    membershipRows: [{
+      status: 'expired',
+      explicit_confidence: 'high',
+      feed_default_confidence: 'low',
+      feed_name: 'URLHaus abuse.ch',
+      feed_key: 'urlhaus-abusech'
+    }],
+    iocRows: [{ status: 'expired' }]
+  });
+  assert.equal(summary.effective, 'high');
+  assert.equal(summary.confidence_source, 'feed_entry');
+  assert.equal(summary.confidence_source_scope, 'historical');
+});
+
+test('buildIocInheritedConfidenceSummary expired IOC keeps analyst override', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: {
+      id: 1,
+      status: 'expired',
+      analyst_confidence_override: 'high',
+      overridden_by_email: 'analyst@demo.local'
+    },
+    membershipRows: [{
+      status: 'expired',
+      feed_default_confidence: 'low',
+      feed_name: 'URLHaus abuse.ch'
+    }],
+    iocRows: [{ status: 'expired' }]
+  });
+  assert.equal(summary.effective, 'high');
+  assert.equal(summary.confidence_source, 'analyst_override');
+  assert.equal(summary.analyst_override, 'high');
+});
+
+test('buildIocInheritedConfidenceSummary reactivated IOC uses active membership confidence', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: { id: 1, status: 'active', analyst_confidence_override: null },
+    membershipRows: [
+      {
+        status: 'expired',
+        feed_default_confidence: 'low',
+        feed_name: 'Old Feed'
+      },
+      {
+        status: 'active',
+        feed_default_confidence: 'high',
+        feed_name: 'URLHaus abuse.ch'
+      }
+    ],
+    iocRows: [{ status: 'active' }]
+  });
+  assert.equal(summary.effective, 'high');
+  assert.equal(summary.confidence_source_scope, 'active');
+  assert.equal(summary.confidence_feed_name, 'URLHaus abuse.ch');
+});
+
+test('buildIocInheritedConfidenceSummary expired IOC without source evidence stays unknown', () => {
+  const summary = buildIocInheritedConfidenceSummary({
+    seedRow: { id: 1, status: 'expired', analyst_confidence_override: null, confidence: null },
+    membershipRows: [],
+    iocRows: [{ status: 'expired' }]
+  });
+  assert.equal(summary.effective, null);
+  assert.equal(summary.confidence_source, 'unknown');
 });
 
 test('resolveImportConfidenceFields does not copy feed default to ioc row', () => {

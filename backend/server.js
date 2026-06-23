@@ -7417,36 +7417,41 @@ app.get('/api/ioc/details', async (req, res) => {
         feedNamesByKey: new Map()
       });
     }
-    if (!confidenceDetail?.effective && seedRow?.confidence && membershipSummary.activeSourceCount > 0) {
-      const itemStored = computeItemStoredConfidence(seedRow);
-      if (itemStored) {
-        confidenceDetail = {
-          ...(confidenceDetail || {}),
-          ...itemStored,
-          confidence: itemStored.effective,
-          confidence_level: itemStored.effective,
-          source: itemStored.confidence_source,
-          source_description: buildConfidenceSourceDescription(
-            itemStored.confidence_source,
-            itemStored.confidence_source_name
-          )
-        };
-      } else {
-        confidenceDetail = {
-          ...(confidenceDetail || {}),
-          effective: String(seedRow.confidence).toLowerCase(),
-          confidence: String(seedRow.confidence).toLowerCase(),
-          confidence_level: String(seedRow.confidence).toLowerCase(),
-          confidence_source: 'manual_entry',
-          source: 'manual_entry',
-          source_description: buildConfidenceSourceDescription('manual_entry', null)
-        };
+    if (!confidenceDetail?.effective && seedRow?.confidence) {
+      const hasSourceEvidence = membershipSummary.activeSourceCount > 0
+        || membershipSummary.historicalSourceCount > 0;
+      if (hasSourceEvidence) {
+        const itemStored = computeItemStoredConfidence(seedRow);
+        if (itemStored) {
+          confidenceDetail = {
+            ...(confidenceDetail || {}),
+            ...itemStored,
+            confidence: itemStored.effective,
+            confidence_level: itemStored.effective,
+            source: itemStored.confidence_source,
+            source_description: buildConfidenceSourceDescription(
+              itemStored.confidence_source,
+              itemStored.confidence_source_name,
+              { scope: confidenceDetail?.confidence_source_scope || 'active' }
+            )
+          };
+        } else {
+          confidenceDetail = {
+            ...(confidenceDetail || {}),
+            effective: String(seedRow.confidence).toLowerCase(),
+            confidence: String(seedRow.confidence).toLowerCase(),
+            confidence_level: String(seedRow.confidence).toLowerCase(),
+            confidence_source: 'manual_entry',
+            source: 'manual_entry',
+            source_description: buildConfidenceSourceDescription('manual_entry', null)
+          };
+        }
       }
     } else if (
       confidenceDetail
       && (confidenceDetail.source === 'unknown' || confidenceDetail.confidence_source === 'unknown')
       && seedRow?.confidence
-      && membershipSummary.activeSourceCount > 0
+      && (membershipSummary.activeSourceCount > 0 || membershipSummary.historicalSourceCount > 0)
     ) {
       const itemStored = computeItemStoredConfidence(seedRow);
       if (itemStored?.effective) {
@@ -7461,25 +7466,11 @@ app.get('/api/ioc/details', async (req, res) => {
           source: itemStored.confidence_source,
           source_description: buildConfidenceSourceDescription(
             itemStored.confidence_source,
-            itemStored.confidence_source_name
+            itemStored.confidence_source_name,
+            { scope: confidenceDetail?.confidence_source_scope || 'active' }
           )
         };
       }
-    }
-    if (confidenceDetail && !membershipSummary.activeSourceCount && !confidenceDetail.analyst_override) {
-      confidenceDetail = {
-        ...confidenceDetail,
-        effective: null,
-        confidence: null,
-        confidence_level: null,
-        confidence_source: 'unknown',
-        source: 'unknown',
-        source_description: 'No active source',
-        confidence_provenance: buildConfidenceProvenance({
-          confidence_source: 'unknown',
-          source_description: 'No active source'
-        })
-      };
     }
     if (confidenceDetail && !confidenceDetail.confidence_provenance) {
       confidenceDetail.confidence_provenance = buildConfidenceProvenance(confidenceDetail);

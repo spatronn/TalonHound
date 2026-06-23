@@ -65,11 +65,20 @@ export function getIocConfidencePresentation(detail) {
       const baselineLabel = confidenceLabel(baseline);
       sourceLine = `Originally ${baselineLabel}. Changed by ${who}${whenRaw ? ` on ${new Date(whenRaw).toLocaleString()}` : ''}.`;
     }
-  } else if (detail.source === 'feed_provided' || detail.source === 'feed_entry') {
-    sourceLine = 'Source: Feed entry confidence';
   } else if (detail.source === 'feed_default') {
-    const feed = detail.feed_name || detail.confidence_feed_name || 'feed';
-    sourceLine = `Source: Feed default from ${feed}`;
+    const feed = detail.feed_name || detail.confidence_feed_name || detail.confidence_source_name || 'feed';
+    if (detail.confidence_source_scope === 'historical') {
+      sourceLine = `Source: ${feed} (historical)`;
+    } else {
+      sourceLine = `Source: Feed default from ${feed}`;
+    }
+  } else if (detail.source === 'feed_entry' || detail.confidence_source === 'feed_entry') {
+    const feed = detail.confidence_source_name || detail.confidence_feed_name || detail.feed_name;
+    if (detail.confidence_source_scope === 'historical' && feed) {
+      sourceLine = `Source: ${feed} (historical)`;
+    } else {
+      sourceLine = 'Source: Feed entry confidence';
+    }
   } else if (detail.source === 'ioc_source_default') {
     const srcName = detail.confidence_source_name
       || detail.confidence_provenance?.source_name

@@ -6,6 +6,28 @@ import {
   formatConfidenceAuditMetadata
 } from './iocConfidenceCard.js';
 
+test('getIocConfidencePresentation historical feed default', () => {
+  const p = getIocConfidencePresentation({
+    effective: 'high',
+    source: 'feed_default',
+    confidence_source_scope: 'historical',
+    confidence_feed_name: 'URLHaus abuse.ch',
+    source_description: 'URLHaus abuse.ch (historical)'
+  });
+  assert.equal(p.effectiveLabel, 'High');
+  assert.match(p.sourceLine, /URLHaus abuse\.ch \(historical\)/);
+});
+
+test('getIocConfidencePresentation unknown without effective shows no active source', () => {
+  const p = getIocConfidencePresentation({
+    source: 'unknown',
+    confidence_source: 'unknown',
+    effective: null
+  });
+  assert.equal(p.effectiveLabel, '—');
+  assert.match(p.sourceLine, /No active source/);
+});
+
 test('getIocConfidencePresentation feed default', () => {
   const p = getIocConfidencePresentation({
     effective: 'high',
