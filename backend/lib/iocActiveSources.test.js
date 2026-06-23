@@ -94,29 +94,44 @@ test('fetchActiveIocListPage paginates via membership index path', async () => {
       if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
         return { rows: [] };
       }
-      if (sql.includes('LIMIT $1 OFFSET $2')) {
-        assert.deepEqual(params, [5, 10]);
+      if (sql.includes('FROM ioc_feed_memberships m') && sql.includes('ORDER BY m.last_seen_in_feed')) {
         return {
           rows: [{
-            id: 1,
+            ioc_item_id: 42,
+            ioc_observable_type: 'domain',
+            sort_ts: '2026-01-02T00:00:00Z'
+          }]
+        };
+      }
+      if (sql.includes('ioc_source_id IS NOT NULL')) {
+        return { rows: [] };
+      }
+      if (sql.includes('FROM ioc_domain') && sql.includes('id = ANY')) {
+        return {
+          rows: [{
+            id: 42,
             public_id: '11111111-1111-1111-1111-111111111111',
             observable: 'evil.example',
             observable_type: 'domain',
-            ip: 'evil.example',
+            created_at: '2026-01-01T00:00:00Z'
+          }]
+        };
+      }
+      if (sql.includes('MIN(created_at) AS first_seen_at')) {
+        return {
+          rows: [{
             first_seen_at: '2026-01-01T00:00:00Z',
-            last_seen_at: '2026-01-02T00:00:00Z',
-            asn: null,
-            country_code: null,
-            as_name: null
+            last_seen_at: '2026-01-02T00:00:00Z'
           }]
         };
       }
       return { rows: [] };
     }
   };
-  const rows = await fetchActiveIocListPage(pool, { limit: 5, offset: 10 });
+  const rows = await fetchActiveIocListPage(pool, { limit: 5, offset: 0 });
   assert.equal(rows.length, 1);
-  assert.ok(queries.some((q) => q.includes('feed_obs AS')));
+  assert.equal(rows[0].observable, 'evil.example');
+  assert.ok(queries.some((q) => q.includes('last_seen_in_feed DESC')));
 });
 
 test('membershipDisplayStatus distinguishes purged from expired', () => {

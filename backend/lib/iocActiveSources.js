@@ -323,6 +323,52 @@ export function activeScopedObservablesSql() {
       AND i.ioc_source_id IS NOT NULL`;
 }
 
+const IOC_LIST_PARTITION_BY_TYPE = {
+  ip: 'ioc_ip',
+  ip6: 'ioc_ip6',
+  domain: 'ioc_domain',
+  url: 'ioc_url',
+  md5: 'ioc_file_hash',
+  sha1: 'ioc_file_hash',
+  sha256: 'ioc_file_hash',
+  ssdeep: 'ioc_file_hash',
+  imphash: 'ioc_file_hash',
+  tlsh: 'ioc_file_hash'
+};
+
+/**
+ * @param {import('pg').Pool|import('pg').PoolClient} pool
+ * @param {Array<{ ioc_item_id: number|string, ioc_observable_type: string }>} candidates
+ */
+async function resolveIocPartitionRows(pool, candidates = []) {
+  const byType = new Map();
+  for (const c of candidates) {
+    const type = String(c.ioc_observable_type || '');
+    if (!IOC_LIST_PARTITION_BY_TYPE[type]) continue;
+    if (!byType.has(type)) byType.set(type, new Set());
+    byType.get(type).add(Number(c.ioc_item_id));
+  }
+
+  /** @type {Map<string, { id: number, public_id: string, observable: string, observable_type: string, created_at: string }>} */
+  const resolved = new Map();
+  for (const [type, idSet] of byType.entries()) {
+    const table = IOC_LIST_PARTITION_BY_TYPE[type];
+    const ids = [...idSet];
+    if (!ids.length) continue;
+    const { rows } = await pool.query(
+      `SELECT id, public_id, observable, observable_type, created_at
+       FROM ${table}
+       WHERE id = ANY($1::bigint[])
+         AND COALESCE(status, 'active') = 'active'`,
+      [ids]
+    );
+    for (const row of rows) {
+      resolved.set(`${row.id}:${row.observable_type}`, row);
+    }
+  }
+  return resolved;
+}
+
 function statusObservablesCte(mode) {
   if (mode === 'active') {
     return `
@@ -454,84 +500,96 @@ export async function fetchIocStatsLastUpdate(pool) {
 }
 
 /**
- * Paginated active IOC browse without scanning ioc_items parent (LIMIT 2000 CTE).
+ * Paginated active IOC browse via recent membership index + typed partition lookups.
  * @param {import('pg').Pool} pool
  * @param {{ limit: number, offset: number }} opts
  */
 export async function fetchActiveIocListPage(pool, { limit, offset }) {
-  const sql = `
-    WITH feed_obs AS (
-      SELECT i.observable,
-             i.observable_type,
-             MAX(GREATEST(COALESCE(m.last_seen_in_feed, i.created_at), i.created_at)) AS last_seen_at
-      FROM ioc_feed_memberships m
-      INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
-      INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
-      WHERE m.status = 'active'
-        AND m.purged_at IS NULL
-        AND f.archived_at IS NULL
-        AND COALESCE(i.status, 'active') = 'active'
-      GROUP BY i.observable, i.observable_type
-    ),
-    manual_obs AS (
-      SELECT i.observable,
-             i.observable_type,
-             MAX(i.created_at) AS last_seen_at
-      FROM ioc_items i
-      WHERE COALESCE(i.status, 'active') = 'active'
-        AND i.ioc_source_id IS NOT NULL
-      GROUP BY i.observable, i.observable_type
-    ),
-    combined AS (
-      SELECT observable, observable_type, last_seen_at FROM feed_obs
-      UNION ALL
-      SELECT observable, observable_type, last_seen_at FROM manual_obs
-    ),
-    ranked AS (
-      SELECT observable, observable_type, MAX(last_seen_at) AS last_seen_at
-      FROM combined
-      GROUP BY observable, observable_type
-    ),
-    page AS (
-      SELECT observable, observable_type, last_seen_at
-      FROM ranked
-      ORDER BY last_seen_at DESC NULLS LAST
-      LIMIT $1 OFFSET $2
-    )
-    SELECT
-      i.id,
-      i.public_id,
-      i.observable,
-      i.observable_type,
-      i.observable AS ip,
-      ts.first_seen_at,
-      ts.last_seen_at,
-      c.asn,
-      c.country_code,
-      c.as_name
-    FROM page pg
-    JOIN LATERAL (
-      SELECT MIN(ii.created_at) AS first_seen_at, MAX(ii.created_at) AS last_seen_at
-      FROM ioc_items ii
-      WHERE ii.observable = pg.observable
-        AND ii.observable_type = pg.observable_type
-        AND COALESCE(ii.status, 'active') = 'active'
-    ) ts ON true
-    JOIN LATERAL (
-      SELECT ii.id, ii.public_id, ii.observable, ii.observable_type
-      FROM ioc_items ii
-      WHERE ii.observable = pg.observable
-        AND ii.observable_type = pg.observable_type
-        AND COALESCE(ii.status, 'active') = 'active'
-      ORDER BY ii.created_at DESC
-      LIMIT 1
-    ) i ON true
-    LEFT JOIN ioc_ip_geo_cache c
-      ON c.ip = CASE WHEN i.observable_type = 'ip' THEN i.observable::inet ELSE NULL END
-    ORDER BY pg.last_seen_at DESC NULLS LAST`;
+  const need = offset + limit;
+  const scanLimit = Math.min(Math.max(need * 20, 150), 8000);
 
-  const { rows } = await queryWithoutParallelWorkers(pool, sql, [limit, offset]);
-  return rows;
+  const memRes = await queryWithoutParallelWorkers(
+    pool,
+    `SELECT m.ioc_item_id, m.ioc_observable_type, m.last_seen_in_feed AS sort_ts
+     FROM ioc_feed_memberships m
+     INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+     WHERE m.status = 'active'
+       AND m.purged_at IS NULL
+       AND f.archived_at IS NULL
+     ORDER BY m.last_seen_in_feed DESC NULLS LAST
+     LIMIT $1`,
+    [scanLimit]
+  );
+
+  const manualRes = await queryWithoutParallelWorkers(
+    pool,
+    `SELECT i.id AS ioc_item_id, i.observable_type AS ioc_observable_type, i.created_at AS sort_ts
+     FROM ioc_items i
+     WHERE COALESCE(i.status, 'active') = 'active'
+       AND i.ioc_source_id IS NOT NULL
+     ORDER BY i.created_at DESC NULLS LAST
+     LIMIT $1`,
+    [Math.min(scanLimit, 300)]
+  );
+
+  const combined = [...memRes.rows, ...manualRes.rows].sort(
+    (a, b) => new Date(b.sort_ts).getTime() - new Date(a.sort_ts).getTime()
+  );
+  const resolved = await resolveIocPartitionRows(pool, combined);
+
+  const seenObs = new Set();
+  /** @type {Array<{ id: number, public_id: string, observable: string, observable_type: string, created_at: string, sort_ts: string }>} */
+  const ranked = [];
+  for (const c of combined) {
+    const row = resolved.get(`${c.ioc_item_id}:${c.ioc_observable_type}`);
+    if (!row) continue;
+    const key = `${row.observable_type}|${row.observable}`;
+    if (seenObs.has(key)) continue;
+    seenObs.add(key);
+    ranked.push({ ...row, sort_ts: c.sort_ts });
+    if (ranked.length >= need) break;
+  }
+
+  const pageSlice = ranked.slice(offset, offset + limit);
+  const out = [];
+  for (const item of pageSlice) {
+    const table = IOC_LIST_PARTITION_BY_TYPE[item.observable_type];
+    const tsRes = await pool.query(
+      `SELECT MIN(created_at) AS first_seen_at, MAX(created_at) AS last_seen_at
+       FROM ${table}
+       WHERE observable = $1
+         AND COALESCE(status, 'active') = 'active'`,
+      [item.observable]
+    );
+    let asn = null;
+    let country_code = null;
+    let as_name = null;
+    if (item.observable_type === 'ip') {
+      const geoRes = await pool.query(
+        `SELECT asn, country_code, as_name
+         FROM ioc_ip_geo_cache
+         WHERE ip = $1::inet
+         LIMIT 1`,
+        [item.observable]
+      );
+      asn = geoRes.rows[0]?.asn ?? null;
+      country_code = geoRes.rows[0]?.country_code ?? null;
+      as_name = geoRes.rows[0]?.as_name ?? null;
+    }
+    out.push({
+      id: item.id,
+      public_id: item.public_id,
+      observable: item.observable,
+      observable_type: item.observable_type,
+      ip: item.observable,
+      first_seen_at: tsRes.rows[0]?.first_seen_at || item.created_at,
+      last_seen_at: tsRes.rows[0]?.last_seen_at || item.sort_ts || item.created_at,
+      asn,
+      country_code,
+      as_name
+    });
+  }
+  return out;
 }
 
 /**
