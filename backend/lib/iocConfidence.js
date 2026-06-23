@@ -233,7 +233,8 @@ export function resolveIocConfidenceFromMemberships({
       const historicalIocRows = (iocRows || []).filter((r) => String(r?.status || 'active') !== 'active');
       const historicalInherited = computeInheritedEffectiveConfidence({
         memberships: historicalMemberships,
-        legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(historicalIocRows, { activeOnly: false })
+        legacyExplicitByFeedKey: buildLegacyExplicitMapFromIocRows(historicalIocRows, { activeOnly: false }),
+        includeInactiveMemberships: true
       });
       if (historicalInherited.effective) {
         inherited = historicalInherited;
