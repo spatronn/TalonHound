@@ -102,35 +102,60 @@ function observableKey(observableType, observable) {
 
 /**
  * @param {import('pg').Pool} pool
- * @param {Array<{ observable: string, observable_type: string }>} items
+ * @param {Array<{ id?: number|string, observable: string, observable_type: string }>} items
+ * @param {{ byItemIds?: boolean }} [opts]
  */
-export async function enrichItemsWithActiveSourceCounts(pool, items = []) {
+export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts = {}) {
   const keyed = (items || []).filter((x) => x?.observable && x?.observable_type);
   if (!keyed.length) return items;
 
-  const observables = [...new Set(keyed.map((x) => String(x.observable)))];
+  const byItemIds = Boolean(opts.byItemIds);
+  const itemIds = keyed.map((x) => Number(x.id)).filter((id) => Number.isFinite(id));
   const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
 
-  const { rows: membershipRows } = await pool.query(
-    `SELECT i.observable, i.observable_type, m.status, m.purged_at,
-            f.name AS feed_name, f.key AS feed_key
-     FROM ioc_feed_memberships m
-     JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
-     JOIN integration_feeds f ON f.integration_id = m.feed_id
-     WHERE i.observable = ANY($1::text[])
-       AND i.observable_type = ANY($2::text[])`,
-    [observables, types]
-  );
+  let membershipRows;
+  let manualRows;
 
-  const { rows: manualRows } = await pool.query(
-    `SELECT observable, observable_type, source_name, ioc_source_id
-     FROM ioc_items
-     WHERE observable = ANY($1::text[])
-       AND observable_type = ANY($2::text[])
-       AND COALESCE(status, 'active') = 'active'
-       AND ioc_source_id IS NOT NULL`,
-    [observables, types]
-  );
+  if (byItemIds && itemIds.length) {
+    const membershipRes = await pool.query(
+      `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.purged_at,
+              f.name AS feed_name, f.key AS feed_key
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = ANY($1::bigint[])
+         AND m.ioc_observable_type = ANY($2::text[])`,
+      [itemIds, types]
+    );
+    membershipRows = membershipRes.rows.map((row) => ({
+      ...row,
+      observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.ioc_observable_type)?.observable,
+      observable_type: row.ioc_observable_type
+    }));
+    manualRows = [];
+  } else {
+    const observables = [...new Set(keyed.map((x) => String(x.observable)))];
+    const membershipRes = await pool.query(
+      `SELECT i.observable, i.observable_type, m.status, m.purged_at,
+              f.name AS feed_name, f.key AS feed_key
+       FROM ioc_feed_memberships m
+       JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE i.observable = ANY($1::text[])
+         AND i.observable_type = ANY($2::text[])`,
+      [observables, types]
+    );
+    membershipRows = membershipRes.rows;
+    const manualRes = await pool.query(
+      `SELECT observable, observable_type, source_name, ioc_source_id
+       FROM ioc_items
+       WHERE observable = ANY($1::text[])
+         AND observable_type = ANY($2::text[])
+         AND COALESCE(status, 'active') = 'active'
+         AND ioc_source_id IS NOT NULL`,
+      [observables, types]
+    );
+    manualRows = manualRes.rows;
+  }
 
   const activeByKey = new Map();
   const historicalByKey = new Map();
@@ -521,16 +546,7 @@ export async function fetchActiveIocListPage(pool, { limit, offset }) {
     [scanLimit]
   );
 
-  const manualRes = await queryWithoutParallelWorkers(
-    pool,
-    `SELECT i.id AS ioc_item_id, i.observable_type AS ioc_observable_type, i.created_at AS sort_ts
-     FROM ioc_items i
-     WHERE COALESCE(i.status, 'active') = 'active'
-       AND i.ioc_source_id IS NOT NULL
-     ORDER BY i.created_at DESC NULLS LAST
-     LIMIT $1`,
-    [Math.min(scanLimit, 300)]
-  );
+  const manualRes = { rows: [] };
 
   const combined = [...memRes.rows, ...manualRes.rows].sort(
     (a, b) => new Date(b.sort_ts).getTime() - new Date(a.sort_ts).getTime()

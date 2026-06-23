@@ -5596,8 +5596,8 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
   }
 });
 
-async function finalizeIocListPageItems(pool, pageItems) {
-  const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems);
+async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
+  const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
   const confMap = await buildDisplayConfidenceForItems(pool, enriched, { includeInactiveMemberships: false });
   const threatMetaMap = await enrichItemsWithThreatMetadata(pool, enriched);
   const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, enriched);
@@ -5799,7 +5799,10 @@ async function handleIocList(req, res) {
         confidence_set: [],
         category_set: []
       }));
-      const items = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
+      const items = applyActiveListScope(
+        await finalizeIocListPageItems(pool, pageItems, { byItemIds: true }),
+        statusFilter
+      );
       if (t) t.afterResultMapping = Date.now();
 
       const payload = {
