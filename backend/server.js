@@ -5810,10 +5810,6 @@ async function handleIocList(req, res) {
     && !fullScan
     && classificationFilter.length === 0;
 
-  const isDefaultActiveBrowse = statusFilter === 'active'
-    && !fullScan
-    && classificationFilter.length === 0;
-
   if (isDefaultActiveBrowse) {
     if (t) t.searchStringParse = Date.now();
     try {
