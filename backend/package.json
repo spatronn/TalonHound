@@ -25,7 +25,7 @@
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/iocExpiration.churn.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/iocLookupSync.test.js",
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
-    "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js",
+    "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js lib/iocListPagination.test.js",
     "test:custom-threat-feeds": "node --test lib/customThreatFeed.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",

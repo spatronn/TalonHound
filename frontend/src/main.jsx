@@ -11319,7 +11319,7 @@ function IOCListPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_confidence: [] });
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -11336,7 +11336,7 @@ function IOCListPage() {
   });
   const [sortState, setSortState] = useState({ key: null, dir: null });
   const [resizeState, setResizeState] = useState(null);
-  const [pagination, setPagination] = useState({ page: 1, page_size: 5, total: 0, total_pages: 1 });
+  const [pagination, setPagination] = useState({ page: 1, page_size: 25, listed_items: 0, page_count: 1, mode: 'browse' });
   const [detailObservable, setDetailObservable] = useState('');
   const [detailType, setDetailType] = useState('');
   const [detailSources, setDetailSources] = useState([]);
@@ -11378,7 +11378,7 @@ function IOCListPage() {
       });
       const items = listRes.data.items || [];
       setRows(items);
-      setPagination(listRes.data.pagination || { page: 1, page_size: 5, total: 0, total_pages: 1 });
+      setPagination(listRes.data.pagination || { page: 1, page_size: 25, listed_items: 0, page_count: 1, mode: 'browse' });
       setListStatusText('');
     } catch {
       setRows([]);
@@ -11501,6 +11501,40 @@ function IOCListPage() {
     }
   }
 
+  function formatIocListPaginationText(pag, summaryTotal, searchQuery, status) {
+    const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+    const page = pag.page ?? 1;
+    const pageCount = pag.page_count ?? pag.total_pages ?? 1;
+    const listed = pag.listed_items ?? pag.total ?? 0;
+    const global = pag.global_total ?? summaryTotal ?? listed;
+    const mode = pag.mode ?? (searchQuery ? 'search' : 'browse');
+    const statusLabel = ({
+      active: 'active',
+      expired: 'expired',
+      suppressed: 'suppressed',
+      all: 'historical',
+      disabled: 'disabled'
+    })[String(status || 'active').toLowerCase()] || 'active';
+
+    let scope;
+    if (mode === 'search' || searchQuery) {
+      if (!pag.is_capped && listed < 2000) {
+        scope = `Showing ${fmt(listed)} matching IOC${listed === 1 ? '' : 's'}`;
+      } else {
+        scope = `Showing first ${fmt(listed)} matches`;
+      }
+    } else if (mode === 'filter') {
+      scope = pag.is_capped
+        ? `Showing latest ${fmt(listed)} ${statusLabel} IOCs`
+        : `Showing ${fmt(listed)} ${statusLabel} IOC${listed === 1 ? '' : 's'}`;
+    } else if (pag.is_capped) {
+      scope = `Showing latest ${fmt(listed)} of ${fmt(global)} ${statusLabel} IOCs`;
+    } else {
+      scope = `Showing ${fmt(listed)} ${statusLabel} IOC${listed === 1 ? '' : 's'}`;
+    }
+    return `${scope} | Page ${page} / ${pageCount}`;
+  }
+
   const typeCounts = {
     ip: summary.by_type?.find((x) => x.observable_type === 'ip')?.count || 0,
     url: summary.by_type?.find((x) => x.observable_type === 'url')?.count || 0,
@@ -11556,6 +11590,8 @@ function IOCListPage() {
     setPage(1);
     setSearch(parsed.value);
   }
+
+  const paginationLabel = formatIocListPaginationText(pagination, summary.total, search, statusFilter);
 
   return (
     <AppShell>
@@ -11651,7 +11687,7 @@ function IOCListPage() {
             }}
             style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0' }}
           >
-            {[5, 10, 25, 100].map((n) => (
+            {[25, 50, 100].map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
@@ -11687,15 +11723,7 @@ function IOCListPage() {
 
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
-          Listed Items{' '}
-          <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: 0.2 }}>{pagination.total}</span>
-          {pagination.total_source === 'stats' ? (
-            <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500, color: '#64748b' }}>(active total)</span>
-          ) : pagination.total_is_capped ? (
-            <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500, color: '#64748b' }}>(recent sample cap)</span>
-          ) : null}
-          <span style={{ margin: '0 8px', color: '#94a3b8' }}>|</span>
-          Page <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.page}</span> / <span style={{ fontSize: 18, fontWeight: 800 }}>{pagination.total_pages}</span>
+          {paginationLabel}
         </div>
       </div>
 
@@ -11800,8 +11828,8 @@ function IOCListPage() {
         <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
         <button
           style={{ minWidth: 92, fontWeight: 600 }}
-          disabled={pagination.page >= pagination.total_pages}
-          onClick={() => setPage((p) => Math.min(p + 1, pagination.total_pages))}
+          disabled={pagination.page >= (pagination.page_count ?? pagination.total_pages ?? 1)}
+          onClick={() => setPage((p) => Math.min(p + 1, pagination.page_count ?? pagination.total_pages ?? 1))}
         >
           Next
         </button>

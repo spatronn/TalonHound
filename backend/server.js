@@ -93,6 +93,11 @@ import {
   writeIocStatsCache
 } from './lib/iocStatsCache.js';
 import {
+  IOC_LIST_BROWSE_CAP,
+  normalizeIocListPageSize,
+  buildIocListPagination
+} from './lib/iocListPagination.js';
+import {
   hasIocConfidenceColumns,
   hasConfidenceProvenanceColumns,
   iocConfidenceJoinSql,
@@ -5608,20 +5613,42 @@ async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   });
 }
 
+async function getCachedIocListGlobalTotal(pool, statusFilter = 'active') {
+  const sf = parseIocListStatusFilter(statusFilter);
+  const lastUpdate = await fetchIocStatsLastUpdate(pool);
+  const cacheKey = buildIocStatsCacheKey(sf, lastUpdate);
+  const cached = readIocStatsCache(cacheKey);
+  if (cached?.total != null) return Number(cached.total);
+  const stats = await fetchIocListStats(pool, sf);
+  writeIocStatsCache(cacheKey, {
+    last_update: lastUpdate,
+    total: stats.total,
+    by_type: stats.by_type,
+    by_source: stats.by_source,
+    unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
+    by_confidence: []
+  });
+  return Number(stats.total);
+}
+
+function resolveIocListMode({ q, fullScan, classificationFilter, source_name, confidence, asn, country }) {
+  if (q) return 'search';
+  if (fullScan || classificationFilter.length || source_name || confidence || asn || country) return 'filter';
+  return 'browse';
+}
+
 async function handleIocList(req, res) {
   const timingEnabled = IOC_LIST_TIMING || req.query.timing === '1';
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
 
-  const { source_name, confidence, q, asn, country, page = '1', page_size = '5' } = req.query;
+  const { source_name, confidence, q, asn, country, page = '1', page_size = '25' } = req.query;
   const statusFilter = parseIocListStatusFilter(req.query.status);
   const statusClause = iocStatusSqlClause(statusFilter);
   const classificationFilter = parseThreatClassificationFilterParam(
     req.query.threat_classification ?? req.query.threat_classifications
   );
-  const allowedSizes = [5, 10, 25, 100];
-  const size = Number(page_size);
   const currentPage = Math.max(Number(page) || 1, 1);
-  const limit = allowedSizes.includes(size) ? size : 5;
+  const limit = normalizeIocListPageSize(page_size);
   const offset = (currentPage - 1) * limit;
 
   const filters = [];
@@ -5658,7 +5685,13 @@ async function handleIocList(req, res) {
     if (qv.length < 3) {
       return res.json({
         items: [],
-        pagination: { page: currentPage, page_size: limit, total: 0, total_pages: 1 },
+        pagination: buildIocListPagination({
+          mode: 'search',
+          matchCount: 0,
+          page: currentPage,
+          pageSize: limit,
+          statusFilter
+        }),
         note: 'Search term must be at least 3 characters'
       });
     }
@@ -5670,7 +5703,13 @@ async function handleIocList(req, res) {
       if (hashValue.length < 3) {
         return res.json({
           items: [],
-          pagination: { page: currentPage, page_size: limit, total: 0, total_pages: 1 },
+          pagination: buildIocListPagination({
+            mode: 'search',
+            matchCount: 0,
+            page: currentPage,
+            pageSize: limit,
+            statusFilter
+          }),
           note: 'Hash value must be at least 3 characters'
         });
       }
@@ -5704,7 +5743,13 @@ async function handleIocList(req, res) {
         if (obsValue.length < 2) {
           return res.json({
             items: [],
-            pagination: { page: currentPage, page_size: limit, total: 0, total_pages: 1 },
+            pagination: buildIocListPagination({
+              mode: 'search',
+              matchCount: 0,
+              page: currentPage,
+              pageSize: limit,
+              statusFilter
+            }),
             note: 'Observable value must be at least 2 characters'
           });
         }
@@ -5765,31 +5810,30 @@ async function handleIocList(req, res) {
     && !fullScan
     && classificationFilter.length === 0;
 
+  const isDefaultActiveBrowse = statusFilter === 'active'
+    && !fullScan
+    && classificationFilter.length === 0;
+
   if (isDefaultActiveBrowse) {
     if (t) t.searchStringParse = Date.now();
     try {
-      if (t) t.dbQueryStart = Date.now();
-      const browseRows = await fetchActiveIocListPage(pool, { limit, offset });
-      if (t) t.dbQueryEnd = Date.now();
+      const listMode = resolveIocListMode({
+        q, fullScan, classificationFilter, source_name, confidence, asn, country
+      });
+      const globalTotal = await getCachedIocListGlobalTotal(pool, statusFilter);
+      const paginationMeta = buildIocListPagination({
+        mode: listMode,
+        globalTotal,
+        page: currentPage,
+        pageSize: limit,
+        statusFilter
+      });
 
-      const lastUpdate = await fetchIocStatsLastUpdate(pool);
-      const cacheKey = buildIocStatsCacheKey('active', lastUpdate);
-      let statsCached = readIocStatsCache(cacheKey);
-      if (!statsCached || statsCached.total == null) {
-        const stats = await fetchIocListStats(pool, 'active');
-        statsCached = {
-          last_update: lastUpdate,
-          total: stats.total,
-          by_type: stats.by_type,
-          by_source: stats.by_source
-        };
-        writeIocStatsCache(cacheKey, {
-          ...statsCached,
-          unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
-          by_confidence: []
-        });
-      }
-      const total = Number(statsCached.total || 0);
+      if (t) t.dbQueryStart = Date.now();
+      const browseRows = currentPage > paginationMeta.page_count
+        ? []
+        : await fetchActiveIocListPage(pool, { limit, offset, browseCap: IOC_LIST_BROWSE_CAP });
+      if (t) t.dbQueryEnd = Date.now();
 
       if (t) t.beforeResultMapping = Date.now();
       const pageItems = browseRows.map((row) => ({
@@ -5807,13 +5851,7 @@ async function handleIocList(req, res) {
 
       const payload = {
         items,
-        pagination: {
-          page: currentPage,
-          page_size: limit,
-          total,
-          total_pages: Math.max(Math.ceil(total / limit), 1),
-          total_source: 'stats'
-        }
+        pagination: paginationMeta
       };
       if (t) {
         t.beforeJsonStringify = Date.now();
@@ -5928,7 +5966,16 @@ async function handleIocList(req, res) {
           as_name: null
         }));
         const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
-        const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: 1 } };
+        const payload = {
+          items: finalItems,
+          pagination: buildIocListPagination({
+            mode: 'search',
+            matchCount: finalItems.length,
+            page: 1,
+            pageSize: limit,
+            statusFilter
+          })
+        };
         if (t) {
           t.beforeJsonStringify = Date.now();
           const payloadStr = JSON.stringify(payload);
@@ -6019,7 +6066,16 @@ async function handleIocList(req, res) {
         t.beforeJsonSerialize = Date.now();
       }
       const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
-      const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: totalExact, total_pages: totalExact ? 1 : 0 } };
+      const payload = {
+        items: finalItems,
+        pagination: buildIocListPagination({
+          mode: 'search',
+          matchCount: totalExact,
+          page: 1,
+          pageSize: limit,
+          statusFilter
+        })
+      };
       if (t) {
         t.beforeJsonStringify = Date.now();
         const payloadStr = JSON.stringify(payload);
@@ -6112,7 +6168,16 @@ async function handleIocList(req, res) {
         }));
       })();
       const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
-      const payload = { items: finalItems, pagination: { page: 1, page_size: limit, total: finalItems.length, total_pages: finalItems.length ? 1 : 0 } };
+      const payload = {
+        items: finalItems,
+        pagination: buildIocListPagination({
+          mode: 'search',
+          matchCount: finalItems.length,
+          page: 1,
+          pageSize: limit,
+          statusFilter
+        })
+      };
       if (t) {
         t.beforeJsonStringify = Date.now();
         const payloadStr = JSON.stringify(payload);
@@ -6152,11 +6217,11 @@ async function handleIocList(req, res) {
            OR (${prefixedHashSearch.noteExpr} = $${prefixedHashSearch.exactIdx})
          )`
       : fullScan
-        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status FROM ioc_items${recentClause}`
+        ? `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status FROM ioc_items${recentClause} ORDER BY created_at DESC LIMIT ${IOC_LIST_BROWSE_CAP}`
         : `SELECT id, public_id, observable, observable_type, source_name, confidence, category, threat_classification, threat_actor_id, note, created_at, status
            FROM ioc_items
            ORDER BY created_at DESC
-           LIMIT 2000`;
+           LIMIT ${IOC_LIST_BROWSE_CAP}`;
 
     const scopedGroupSql = statusFilter === 'active'
       ? `, scoped AS (
@@ -6262,17 +6327,29 @@ async function handleIocList(req, res) {
 
     const payload = {
       items,
-      pagination: {
-        page: currentPage,
-        page_size: limit,
-        total,
-        total_pages: Math.max(Math.ceil(total / limit), 1)
-      }
+      pagination: await (async () => {
+        const listMode = resolveIocListMode({
+          q, fullScan, classificationFilter, source_name, confidence, asn, country
+        });
+        if (listMode === 'search') {
+          return buildIocListPagination({
+            mode: 'search',
+            matchCount: total,
+            page: currentPage,
+            pageSize: limit,
+            statusFilter
+          });
+        }
+        const globalTotal = await getCachedIocListGlobalTotal(pool, statusFilter);
+        return buildIocListPagination({
+          mode: listMode,
+          globalTotal,
+          page: currentPage,
+          pageSize: limit,
+          statusFilter
+        });
+      })()
     };
-    if (!fullScan) {
-      payload.pagination.total_is_capped = true;
-      payload.pagination.total_cap = 2000;
-    }
     if (fullScan && recentParam) {
       payload.note = `Filtered list limited to last ${recentParam} days (IOC_LIST_MAX_AGE_DAYS).`;
     }

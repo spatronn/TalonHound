@@ -527,11 +527,15 @@ export async function fetchIocStatsLastUpdate(pool) {
 /**
  * Paginated active IOC browse via recent membership index + typed partition lookups.
  * @param {import('pg').Pool} pool
- * @param {{ limit: number, offset: number }} opts
+ * @param {{ limit: number, offset: number, browseCap?: number }} opts
  */
-export async function fetchActiveIocListPage(pool, { limit, offset }) {
-  const need = offset + limit;
-  const scanLimit = Math.min(Math.max(need * 20, 150), 8000);
+export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 2000 }) {
+  const cap = Math.max(Number(browseCap) || 2000, 1);
+  if (offset >= cap) return [];
+
+  const cappedLimit = Math.min(limit, cap - offset);
+  const need = Math.min(offset + cappedLimit, cap);
+  const scanLimit = Math.min(Math.max(need * 20, 150), cap * 4);
 
   const memRes = await queryWithoutParallelWorkers(
     pool,
@@ -563,10 +567,10 @@ export async function fetchActiveIocListPage(pool, { limit, offset }) {
     if (seenObs.has(key)) continue;
     seenObs.add(key);
     ranked.push({ ...row, sort_ts: c.sort_ts });
-    if (ranked.length >= need) break;
+    if (ranked.length >= cap) break;
   }
 
-  const pageSlice = ranked.slice(offset, offset + limit);
+  const pageSlice = ranked.slice(offset, offset + cappedLimit);
   const out = [];
   for (const item of pageSlice) {
     let asn = null;
