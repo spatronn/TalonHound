@@ -95,29 +95,48 @@ test('formatIocListPaginationLabel filter capped', () => {
   assert.match(label, /Showing latest 2,000 expired IOCs/);
 });
 
-test('formatIocListPaginationLabel browse capped', () => {
+test('formatIocListPaginationLabel browse capped active uses simplified label', () => {
   const label = formatIocListPaginationLabel(
     buildIocListPagination({ mode: 'browse', globalTotal: 1672730, page: 2, pageSize: 25, statusFilter: 'active' }),
     { total: 1672730 }
   );
-  assert.match(label, /Showing latest 2,000 of 1,672,730 active IOCs/);
+  assert.match(label, /Showing latest 2,000 active IOCs/);
+  assert.doesNotMatch(label, /of 1,672,730/);
   assert.match(label, /Page 2 \/ 80/);
 });
 
-test('formatIocListPaginationLabel search first matches', () => {
+test('formatIocListPaginationLabel search includes across all statuses', () => {
   const label = formatIocListPaginationLabel(
-    buildIocListPagination({ mode: 'search', matchCount: 5000, page: 1, pageSize: 25 })
+    buildIocListPagination({ mode: 'search', matchCount: 2, page: 1, pageSize: 25, statusFilter: 'all' }),
+    {},
+    'evil.example'
   );
-  assert.match(label, /Showing first 2,000 matches/);
+  assert.match(label, /Showing 2 matching IOCs across all statuses/);
 });
 
-test('formatIocListPaginationLabel search exact small result', () => {
+test('formatIocListPaginationLabel search empty result message', () => {
+  const label = formatIocListPaginationLabel(
+    buildIocListPagination({ mode: 'search', matchCount: 0, page: 1, pageSize: 25, statusFilter: 'all' }),
+    {},
+    'missing.example'
+  );
+  assert.match(label, /No matching IOC found across active, expired, and suppressed records/);
+});
+
+test('formatIocListPaginationLabel search first matches capped', () => {
+  const label = formatIocListPaginationLabel(
+    buildIocListPagination({ mode: 'search', matchCount: 5000, page: 1, pageSize: 25, statusFilter: 'all' })
+  );
+  assert.match(label, /Showing first 2,000 matches across all statuses/);
+});
+
+test('formatIocListPaginationLabel search exact small result legacy', () => {
   const label = formatIocListPaginationLabel(
     buildIocListPagination({ mode: 'search', matchCount: 2, page: 1, pageSize: 25 }),
     {},
     'evil.example'
   );
-  assert.match(label, /Showing 2 matching IOCs/);
+  assert.match(label, /across all statuses/);
 });
 
 test('iocListPageCount edge cases', () => {

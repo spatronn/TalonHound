@@ -4543,6 +4543,7 @@ function iocStatusBadge(status) {
     purged: { label: 'Purged', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#991b1b' },
     removed: { label: 'Removed', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
     disabled: { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
+    inactive: { label: 'Inactive', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' },
     suppressed: { label: 'Suppressed', color: '#93c5fd', bg: 'rgba(30,58,138,0.25)', border: '#1d4ed8' },
     false_positive: { label: 'False Positive', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' },
     fp: { label: 'False Positive', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' }
@@ -11328,6 +11329,7 @@ function IOCListPage() {
     ip: 360,
     asn: 84,
     country: 90,
+    status: 110,
     source: 260,
     confidence: 120,
     category: 120,
@@ -11347,14 +11349,12 @@ function IOCListPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
-  const [suppressionFilter, setSuppressionFilter] = useState('include');
-  const [statusFilter, setStatusFilter] = useState('active');
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
       const { data } = await api.get('/ioc/stats', {
-        params: { status: statusFilter || 'active' }
+        params: { status: 'active' }
       });
       setSummary(data || { total: 0, by_source: [], by_type: [] });
     } catch {
@@ -11362,20 +11362,18 @@ function IOCListPage() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [statusFilter]);
+  }, []);
 
   const loadData = useCallback(async (targetPage, targetSize) => {
     setListLoading(true);
     setListStatusText('Query is running. Please wait while IOC results are being processed...');
     try {
-      const listRes = await api.get('/ioc/list', {
-        params: {
-          page: targetPage,
-          page_size: targetSize,
-          q: search || undefined,
-          status: statusFilter || 'active',
-        }
-      });
+      const params = {
+        page: targetPage,
+        page_size: targetSize,
+      };
+      if (search) params.q = search;
+      const listRes = await api.get('/ioc/list', { params });
       const items = listRes.data.items || [];
       setRows(items);
       setPagination(listRes.data.pagination || { page: 1, page_size: 25, listed_items: 0, page_count: 1, mode: 'browse' });
@@ -11386,7 +11384,7 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [search]);
 
   useEffect(() => {
     loadSummary().catch(() => {});
@@ -11455,7 +11453,8 @@ function IOCListPage() {
 
     const val = (r) => {
       if (sortState.key === 'ip') return String(r.ip || '');
-      if (sortState.key === 'source') return String((r.source_names && r.source_names[0]) || '');
+      if (sortState.key === 'source') return String(r.display_source || (r.source_names && r.source_names[0]) || '');
+      if (sortState.key === 'status') return String(r.lifecycle_status || r.status || '');
       if (sortState.key === 'confidence') return String(r.confidence_effective || (r.confidence_set && r.confidence_set[0]) || '');
       if (sortState.key === 'category') return String(r.observable_type || 'ip');
       if (sortState.key === 'timestamp') return new Date(r.last_seen_at || 0).getTime();
@@ -11474,16 +11473,6 @@ function IOCListPage() {
     return copy;
   }, [rows, sortState]);
 
-  const filteredRows = useMemo(() => {
-    if (suppressionFilter === 'include') return sortedRows;
-    return sortedRows.filter((r) => {
-      const key = suppressionKey(r.observable || r.ip, r.observable_type || 'ip');
-      const suppressed = suppressionIndex.has(key);
-      if (suppressionFilter === 'only') return suppressed;
-      return !suppressed;
-    });
-  }, [sortedRows, suppressionFilter, suppressionIndex]);
-
   async function openSourceDetails(row) {
     const obs = row.observable || row.ip;
     const obsType = row.observable_type || 'ip';
@@ -11501,36 +11490,35 @@ function IOCListPage() {
     }
   }
 
-  function formatIocListPaginationText(pag, summaryTotal, searchQuery, status) {
+  function iocListSourceLabel(row) {
+    return row.display_source || (row.source_names && row.source_names[0]) || 'No active source';
+  }
+
+  function formatIocListPaginationText(pag, summaryTotal, searchQuery) {
     const fmt = (n) => Number(n || 0).toLocaleString('en-US');
     const page = pag.page ?? 1;
     const pageCount = pag.page_count ?? pag.total_pages ?? 1;
     const listed = pag.listed_items ?? pag.total ?? 0;
     const global = pag.global_total ?? summaryTotal ?? listed;
     const mode = pag.mode ?? (searchQuery ? 'search' : 'browse');
-    const statusLabel = ({
-      active: 'active',
-      expired: 'expired',
-      suppressed: 'suppressed',
-      all: 'historical',
-      disabled: 'disabled'
-    })[String(status || 'active').toLowerCase()] || 'active';
 
     let scope;
     if (mode === 'search' || searchQuery) {
-      if (!pag.is_capped && listed < 2000) {
-        scope = `Showing ${fmt(listed)} matching IOC${listed === 1 ? '' : 's'}`;
+      if (listed === 0) {
+        scope = 'No matching IOC found across active, expired, and suppressed records';
+      } else if (!pag.is_capped && listed < 2000) {
+        scope = `Showing ${fmt(listed)} matching IOC${listed === 1 ? '' : 's'} across all statuses`;
       } else {
-        scope = `Showing first ${fmt(listed)} matches`;
+        scope = `Showing first ${fmt(listed)} matches across all statuses`;
       }
     } else if (mode === 'filter') {
       scope = pag.is_capped
-        ? `Showing latest ${fmt(listed)} ${statusLabel} IOCs`
-        : `Showing ${fmt(listed)} ${statusLabel} IOC${listed === 1 ? '' : 's'}`;
+        ? `Showing latest ${fmt(listed)} filtered IOCs`
+        : `Showing ${fmt(listed)} filtered IOC${listed === 1 ? '' : 's'}`;
     } else if (pag.is_capped) {
-      scope = `Showing latest ${fmt(listed)} of ${fmt(global)} ${statusLabel} IOCs`;
+      scope = `Showing latest ${fmt(listed)} active IOCs`;
     } else {
-      scope = `Showing ${fmt(listed)} ${statusLabel} IOC${listed === 1 ? '' : 's'}`;
+      scope = `Showing ${fmt(listed)} active IOC${listed === 1 ? '' : 's'}`;
     }
     return `${scope} | Page ${page} / ${pageCount}`;
   }
@@ -11591,7 +11579,8 @@ function IOCListPage() {
     setSearch(parsed.value);
   }
 
-  const paginationLabel = formatIocListPaginationText(pagination, summary.total, search, statusFilter);
+  const paginationLabel = formatIocListPaginationText(pagination, summary.total, search);
+  const isSearchMode = Boolean(search);
 
   return (
     <AppShell>
@@ -11691,36 +11680,6 @@ function IOCListPage() {
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
-
-          <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Status:</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(1);
-            }}
-            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0' }}
-            title="Default list shows active IOCs only"
-          >
-            <option value="active">Active</option>
-            <option value="expired">Expired</option>
-            <option value="suppressed">Suppressed</option>
-            <option value="all">All (historical)</option>
-          </select>
-
-          <label style={{ fontSize: 14, color: '#cbd5e1', marginLeft: 8 }}>Suppressed:</label>
-          <select
-            value={suppressionFilter}
-            onChange={(e) => setSuppressionFilter(e.target.value)}
-            style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', fontWeight: 600, background: '#111827', color: '#e2e8f0' }}
-            title="Client-side filter on the current page only"
-          >
-            <option value="include">Include suppressed</option>
-            <option value="exclude">Hide suppressed</option>
-            <option value="only">Only suppressed</option>
-          </select>
-          {suppressionIndexLoading ? <span style={{ fontSize: 12, color: '#64748b' }}>Loading suppression index…</span> : null}
-
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
           {paginationLabel}
@@ -11735,15 +11694,11 @@ function IOCListPage() {
 
       {!listLoading && !listStatusText && rows.length === 0 && (
         <div style={{ marginBottom: 10, padding: 10, background: '#0f172a', border: '1px solid #334155', borderRadius: 6, color: '#94a3b8' }}>
-          No IOC records found.
+          {isSearchMode
+            ? 'No matching IOC found across active, expired, and suppressed records.'
+            : 'No IOC records found.'}
         </div>
       )}
-
-      {suppressionFilter !== 'include' ? (
-        <div style={{ marginBottom: 10, padding: 10, border: '1px solid #334155', borderRadius: 8, background: '#111827', color: '#94a3b8', fontSize: 12 }}>
-          Suppression filter applies to the current page only (backend list API does not expose suppression fields). For full suppressed IOC management use Operations → IOC Suppressions.
-        </div>
-      ) : null}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
         <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
@@ -11752,6 +11707,7 @@ function IOCListPage() {
             <col style={{ width: columnWidths.ip }} />
             <col style={{ width: columnWidths.category }} />
             <col style={{ width: columnWidths.classifications }} />
+            <col style={{ width: columnWidths.status }} />
             <col style={{ width: columnWidths.source }} />
             <col style={{ width: columnWidths.confidence }} />
             <col style={{ width: columnWidths.timestamp }} />
@@ -11765,16 +11721,20 @@ function IOCListPage() {
               <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th style={{ position: 'relative' }}>Classifications<div onMouseDown={(e) => startResize('classifications', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('status')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Status{sortIndicator('status')}<div onMouseDown={(e) => startResize('status', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((r, idx) => {
+            {sortedRows.map((r, idx) => {
               const obs = r.observable || r.ip;
               const obsType = r.observable_type || 'ip';
               const isSuppressed = suppressionIndex.has(suppressionKey(obs, obsType));
+              const lifecycleStatus = String(r.lifecycle_status || r.status || 'active').toLowerCase();
+              const sourceLabel = iocListSourceLabel(r);
+              const sourceExtra = Number(r.display_source_extra || 0) || Math.max(0, Number(r.source_count || 0) - 1);
               return (
               <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
@@ -11807,13 +11767,16 @@ function IOCListPage() {
                 <td title={formatThreatClassificationsText(r.threat_classifications)} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
                   {formatThreatClassificationsText(r.threat_classifications)}
                 </td>
-                <td title={(r.source_names && r.source_names[0]) || '-'} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                  {r.source_count > 1 ? (
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {iocStatusBadge(isSuppressed ? 'suppressed' : lifecycleStatus)}
+                </td>
+                <td title={sourceLabel} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                  {sourceExtra > 0 ? (
                     <button onClick={() => openSourceDetails(r)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
-                      {(r.source_names && r.source_names[0]) || '-'}{r.source_count > 1 ? ` +${r.source_count - 1}` : ''}
+                      {sourceLabel}{sourceExtra > 0 ? ` +${sourceExtra}` : ''}
                     </button>
                   ) : (
-                    <span>{(r.source_names && r.source_names[0]) || '-'}</span>
+                    <span style={{ color: r.display_source_kind === 'none' ? '#64748b' : '#0f172a' }}>{sourceLabel}</span>
                   )}
                 </td>
                 <td><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>

@@ -98,6 +98,10 @@ import {
   buildIocListPagination
 } from './lib/iocListPagination.js';
 import {
+  decorateIocListItems,
+  resolveIocListStatusScope
+} from './lib/iocListDisplay.js';
+import {
   hasIocConfidenceColumns,
   hasConfidenceProvenanceColumns,
   iocConfidenceJoinSql,
@@ -5603,7 +5607,9 @@ app.delete('/api/ioc/:publicId', async (req, res) => {
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
-  const confMap = await buildDisplayConfidenceForItems(pool, enriched, { includeInactiveMemberships: false });
+  const confMap = await buildDisplayConfidenceForItems(pool, enriched, {
+    includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
+  });
   const threatMetaMap = await enrichItemsWithThreatMetadata(pool, enriched);
   const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, enriched);
   return enriched.map((it) => {
@@ -5611,6 +5617,15 @@ async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
     const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
     return mergeAnalystIntelligenceItem(merged, analystMap);
   });
+}
+
+async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, byItemIds = false } = {}) {
+  const finalized = await finalizeIocListPageItems(pool, pageItems, {
+    byItemIds,
+    includeInactiveMemberships: hasSearch
+  });
+  const scoped = hasSearch ? finalized : applyActiveListScope(finalized, statusFilter);
+  return decorateIocListItems(scoped);
 }
 
 async function getCachedIocListGlobalTotal(pool, statusFilter = 'active') {
@@ -5642,8 +5657,11 @@ async function handleIocList(req, res) {
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
 
   const { source_name, confidence, q, asn, country, page = '1', page_size = '25' } = req.query;
-  const statusFilter = parseIocListStatusFilter(req.query.status);
-  const statusClause = iocStatusSqlClause(statusFilter);
+  const qTrimmed = String(q || '').trim();
+  const hasSearch = qTrimmed.length > 0;
+  const browseStatusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
+  const statusFilter = resolveIocListStatusScope(hasSearch, browseStatusFilter);
+  const statusClause = hasSearch ? null : iocStatusSqlClause(statusFilter);
   const classificationFilter = parseThreatClassificationFilterParam(
     req.query.threat_classification ?? req.query.threat_classifications
   );
@@ -5806,7 +5824,8 @@ async function handleIocList(req, res) {
   const countryValueEarly = country ? `%${country}%` : null;
   const useHashFastPathEarly = prefixedHashSearch && asnValueEarly == null && countryValueEarly == null;
   const useObservableOnlyPath = prefixedObservableSearch && asnValueEarly == null && countryValueEarly == null;
-  const isDefaultActiveBrowse = statusFilter === 'active'
+  const isDefaultActiveBrowse = !hasSearch
+    && browseStatusFilter === 'active'
     && !fullScan
     && classificationFilter.length === 0;
 
@@ -5816,13 +5835,13 @@ async function handleIocList(req, res) {
       const listMode = resolveIocListMode({
         q, fullScan, classificationFilter, source_name, confidence, asn, country
       });
-      const globalTotal = await getCachedIocListGlobalTotal(pool, statusFilter);
+      const globalTotal = await getCachedIocListGlobalTotal(pool, browseStatusFilter);
       const paginationMeta = buildIocListPagination({
-        mode: listMode,
+        mode: 'browse',
         globalTotal,
         page: currentPage,
         pageSize: limit,
-        statusFilter
+        statusFilter: browseStatusFilter
       });
 
       if (t) t.dbQueryStart = Date.now();
@@ -5839,10 +5858,11 @@ async function handleIocList(req, res) {
         confidence_set: [],
         category_set: []
       }));
-      const items = applyActiveListScope(
-        await finalizeIocListPageItems(pool, pageItems, { byItemIds: true }),
-        statusFilter
-      );
+      const items = await mapIocListPageItems(pool, pageItems, {
+        statusFilter: browseStatusFilter,
+        hasSearch: false,
+        byItemIds: true
+      });
       if (t) t.afterResultMapping = Date.now();
 
       const payload = {
@@ -5932,6 +5952,7 @@ async function handleIocList(req, res) {
               ip: r.observable,
               first_seen_at: r.created_at,
               last_seen_at: r.created_at,
+              status: r.status || 'active',
               _sources: new Set(),
               _conf: new Set(),
               _cat: new Set()
@@ -5939,7 +5960,10 @@ async function handleIocList(req, res) {
           }
           const g = grouped.get(key);
           if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
-          if (r.created_at > g.last_seen_at) g.last_seen_at = r.created_at;
+          if (r.created_at > g.last_seen_at) {
+            g.last_seen_at = r.created_at;
+            g.status = r.status || g.status || 'active';
+          }
           if (r.source_name) g._sources.add(r.source_name);
           if (r.confidence) g._conf.add(r.confidence);
           if (r.category) g._cat.add(r.category);
@@ -5951,6 +5975,7 @@ async function handleIocList(req, res) {
           observable: g.observable,
           observable_type: g.observable_type,
           ip: g.ip,
+          status: g.status || 'active',
           first_seen_at: g.first_seen_at,
           last_seen_at: g.last_seen_at,
           source_count: g._sources.size,
@@ -5961,7 +5986,7 @@ async function handleIocList(req, res) {
           country_code: null,
           as_name: null
         }));
-        const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
+        const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
         const payload = {
           items: finalItems,
           pagination: buildIocListPagination({
@@ -6026,6 +6051,7 @@ async function handleIocList(req, res) {
               ip: r.observable,
               first_seen_at: r.created_at,
               last_seen_at: r.created_at,
+              status: r.status || 'active',
               _sources: new Set(),
               _conf: new Set(),
               _cat: new Set()
@@ -6033,7 +6059,10 @@ async function handleIocList(req, res) {
           }
           const g = grouped.get(key);
           if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
-          if (r.created_at > g.last_seen_at) g.last_seen_at = r.created_at;
+          if (r.created_at > g.last_seen_at) {
+            g.last_seen_at = r.created_at;
+            g.status = r.status || g.status || 'active';
+          }
           if (r.source_name) g._sources.add(r.source_name);
           if (r.confidence) g._conf.add(r.confidence);
           if (r.category) g._cat.add(r.category);
@@ -6044,6 +6073,7 @@ async function handleIocList(req, res) {
           observable: g.observable,
           observable_type: g.observable_type,
           ip: g.ip,
+          status: g.status || 'active',
           first_seen_at: g.first_seen_at,
           last_seen_at: g.last_seen_at,
           source_count: g._sources.size,
@@ -6061,7 +6091,7 @@ async function handleIocList(req, res) {
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
-      const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
+      const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
       const payload = {
         items: finalItems,
         pagination: buildIocListPagination({
@@ -6134,6 +6164,7 @@ async function handleIocList(req, res) {
               ip: r.observable,
               first_seen_at: r.created_at,
               last_seen_at: r.created_at,
+              status: r.status || 'active',
               _sources: new Set(),
               _conf: new Set(),
               _cat: new Set()
@@ -6141,7 +6172,10 @@ async function handleIocList(req, res) {
           }
           const g = grouped.get(key);
           if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
-          if (r.created_at > g.last_seen_at) g.last_seen_at = r.created_at;
+          if (r.created_at > g.last_seen_at) {
+            g.last_seen_at = r.created_at;
+            g.status = r.status || g.status || 'active';
+          }
           if (r.source_name) g._sources.add(r.source_name);
           if (r.confidence) g._conf.add(r.confidence);
           if (r.category) g._cat.add(r.category);
@@ -6152,6 +6186,7 @@ async function handleIocList(req, res) {
           observable: g.observable,
           observable_type: g.observable_type,
           ip: g.ip,
+          status: g.status || 'active',
           first_seen_at: g.first_seen_at,
           last_seen_at: g.last_seen_at,
           source_count: g._sources.size,
@@ -6163,7 +6198,7 @@ async function handleIocList(req, res) {
           as_name: null
         }));
       })();
-      const finalItems = applyActiveListScope(await finalizeIocListPageItems(pool, pageItems), statusFilter);
+      const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
       const payload = {
         items: finalItems,
         pagination: buildIocListPagination({
@@ -6219,7 +6254,7 @@ async function handleIocList(req, res) {
            ORDER BY created_at DESC
            LIMIT ${IOC_LIST_BROWSE_CAP}`;
 
-    const scopedGroupSql = statusFilter === 'active'
+    const scopedGroupSql = !hasSearch && browseStatusFilter === 'active'
       ? `, scoped AS (
           SELECT * FROM grouped g
           WHERE ${activeObservableHasActiveSourceSql('g.observable', 'g.observable_type')}
@@ -6240,6 +6275,7 @@ async function handleIocList(req, res) {
           observable_type,
           MIN(created_at) AS first_seen_at,
           MAX(created_at) AS last_seen_at,
+          (ARRAY_AGG(COALESCE(status, 'active') ORDER BY created_at DESC))[1] AS status,
           COUNT(*)::int AS source_count,
           ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
           ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
@@ -6263,7 +6299,8 @@ async function handleIocList(req, res) {
     const listQ = useHashFastPath
       ? `
       ${base}
-      SELECT g.id, g.public_id, g.observable, g.observable_type, g.observable AS ip, g.first_seen_at, g.last_seen_at, g.source_count,
+      SELECT g.id, g.public_id, g.observable, g.observable_type, g.observable AS ip, g.first_seen_at, g.last_seen_at, g.status,
+             g.source_count,
              g.source_names, g.confidence_set, g.category_set, g.threat_classification, g.threat_actor_id,
              NULL::bigint AS asn, NULL::text AS country_code, NULL::text AS as_name,
              COUNT(*) OVER()::int AS total
@@ -6281,7 +6318,7 @@ async function handleIocList(req, res) {
         ${geoJoin}
         WHERE ${geoWhere}
       )
-      SELECT id, public_id, observable, observable_type, ip, first_seen_at, last_seen_at, source_count,
+      SELECT id, public_id, observable, observable_type, ip, first_seen_at, last_seen_at, status, source_count,
              source_names, confidence_set, category_set, threat_classification, threat_actor_id,
              asn, country_code, as_name, total
       FROM with_geo
@@ -6317,7 +6354,7 @@ async function handleIocList(req, res) {
     }
     if (t) t.beforeResultMapping = Date.now();
     const itemsRaw = listRes.rows.map(({ total: _drop, ...row }) => row);
-    const items = applyActiveListScope(await finalizeIocListPageItems(pool, itemsRaw), statusFilter);
+    const items = await mapIocListPageItems(pool, itemsRaw, { statusFilter, hasSearch });
     if (t) t.afterResultMapping = Date.now();
     if (t) t.beforeJsonSerialize = Date.now();
 
@@ -6336,13 +6373,13 @@ async function handleIocList(req, res) {
             statusFilter
           });
         }
-        const globalTotal = await getCachedIocListGlobalTotal(pool, statusFilter);
+        const globalTotal = await getCachedIocListGlobalTotal(pool, browseStatusFilter);
         return buildIocListPagination({
           mode: listMode,
           globalTotal,
           page: currentPage,
           pageSize: limit,
-          statusFilter
+          statusFilter: browseStatusFilter
         });
       })()
     };

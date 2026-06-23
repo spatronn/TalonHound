@@ -146,11 +146,10 @@ export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts =
     );
     membershipRows = membershipRes.rows;
     const manualRes = await pool.query(
-      `SELECT observable, observable_type, source_name, ioc_source_id
+      `SELECT observable, observable_type, source_name, ioc_source_id, status
        FROM ioc_items
        WHERE observable = ANY($1::text[])
          AND observable_type = ANY($2::text[])
-         AND COALESCE(status, 'active') = 'active'
          AND ioc_source_id IS NOT NULL`,
       [observables, types]
     );
@@ -188,12 +187,16 @@ export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts =
     const active = activeByKey.get(k) || { names: new Set(), feeds: new Set() };
     const historical = historicalByKey.get(k) || [];
     const activeNames = [...active.names].sort();
+    const historicalNames = [...new Set(historical.map((h) => h.feed_name).filter(Boolean))].sort();
+    const sourceNames = activeNames.length ? activeNames : historicalNames;
+    const displaySource = sourceNames[0] || it.source_name || 'No active source';
     return {
       ...it,
-      source_count: activeNames.length,
-      source_names: activeNames,
+      source_count: sourceNames.length,
+      source_names: sourceNames,
       active_source_count: activeNames.length,
-      historical_sources: historical
+      historical_sources: historical,
+      display_source: displaySource
     };
   });
 }

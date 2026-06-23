@@ -99,10 +99,12 @@ export function formatIocListPaginationLabel(pagination, summary = {}, search = 
 
   let scope;
   if (mode === 'search' || search) {
-    if (!pagination.is_capped && listed < IOC_LIST_BROWSE_CAP) {
-      scope = `Showing ${fmt(listed)} matching IOC${listed === 1 ? '' : 's'}`;
+    if (listed === 0) {
+      scope = 'No matching IOC found across active, expired, and suppressed records';
+    } else if (!pagination.is_capped && listed < IOC_LIST_BROWSE_CAP) {
+      scope = `Showing ${fmt(listed)} matching IOC${listed === 1 ? '' : 's'} across all statuses`;
     } else {
-      scope = `Showing first ${fmt(listed)} matches`;
+      scope = `Showing first ${fmt(listed)} matches across all statuses`;
     }
   } else if (mode === 'filter') {
     if (pagination.is_capped) {
@@ -110,6 +112,8 @@ export function formatIocListPaginationLabel(pagination, summary = {}, search = 
     } else {
       scope = `Showing ${fmt(listed)} ${statusLabel} IOC${listed === 1 ? '' : 's'}`;
     }
+  } else if (pagination.is_capped && statusLabel === 'active') {
+    scope = `Showing latest ${fmt(listed)} active IOCs`;
   } else if (pagination.is_capped) {
     scope = `Showing latest ${fmt(listed)} of ${fmt(global)} ${statusLabel} IOCs`;
   } else {
