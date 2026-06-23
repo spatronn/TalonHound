@@ -5,7 +5,9 @@ import {
   confidenceToScore,
   observableTypesForFeedIocType
 } from './feedFormatter.js';
-import { FEED_SOURCE_RULES } from './iocExpiration.js';
+import { buildFeedKeySourceSql, isCustomFeedKey } from './publishedFeedSources.js';
+
+export { buildFeedKeySourceSql };
 
 const FEED_IOC_EXPIRY_DAYS = Math.max(Number(process.env.FEED_IOC_EXPIRY_DAYS || 90), 1);
 const FEED_EXPORT_MAX_LIMIT = Math.max(Number(process.env.FEED_EXPORT_MAX_LIMIT || 100000), 1);
@@ -69,30 +71,31 @@ export function filtersHash(feed, window) {
   return crypto.createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex').slice(0, 16);
 }
 
-function buildFeedKeySourceSql(feedKeys, params) {
-  if (!feedKeys?.length) return '';
-  const keys = feedKeys.map((k) => String(k).trim()).filter(Boolean);
-  if (!keys.length) return '';
-
-  const parts = [];
-  for (const key of keys) {
-    const rule = FEED_SOURCE_RULES.find((r) => r.key === key);
-    if (!rule) continue;
-    if (rule.exact) {
-      params.push(rule.exact);
-      parts.push(`i.source_name = $${params.length}`);
-    } else if (rule.prefix) {
-      params.push(`${rule.prefix}%`);
-      parts.push(`i.source_name LIKE $${params.length}`);
-    } else if (rule.includes) {
-      for (const fragment of rule.includes) {
-        params.push(`%${fragment}%`);
-        parts.push(`i.source_name ILIKE $${params.length}`);
-      }
-    }
+async function fetchLatestIntegrationFinishedAt(pool, feed = null) {
+  const includeCustom = (feed?.include_feed_keys || []).some((k) => isCustomFeedKey(k));
+  const queries = [
+    pool.query(
+      `SELECT MAX(finished_at) AS latest_finished_at
+       FROM integration_runs
+       WHERE status = 'success' AND finished_at IS NOT NULL`
+    )
+  ];
+  if (includeCustom) {
+    queries.push(
+      pool.query(
+        `SELECT MAX(finished_at) AS latest_finished_at
+         FROM custom_threat_feed_runs
+         WHERE status = 'success' AND finished_at IS NOT NULL`
+      )
+    );
   }
-  if (!parts.length) return '';
-  return ` AND (${parts.join(' OR ')}) `;
+  const results = await Promise.all(queries);
+  const timestamps = results
+    .map((r) => r.rows[0]?.latest_finished_at)
+    .filter(Boolean)
+    .map((ts) => (ts instanceof Date ? ts.toISOString() : String(ts)));
+  if (!timestamps.length) return null;
+  return timestamps.sort().at(-1) || null;
 }
 
 async function fetchIocRows(pool, feed, window) {
@@ -361,16 +364,6 @@ export async function fetchCheapIocWatermark(pool, feed) {
   };
 }
 
-async function fetchLatestIntegrationFinishedAt(pool) {
-  const { rows } = await pool.query(
-    `SELECT MAX(finished_at) AS latest_finished_at
-     FROM integration_runs
-     WHERE status = 'success' AND finished_at IS NOT NULL`
-  );
-  const ts = rows[0]?.latest_finished_at;
-  return ts instanceof Date ? ts.toISOString() : (ts ? String(ts) : null);
-}
-
 export function canSkipPublishedFeedRegeneration({
   feed,
   window,
@@ -538,7 +531,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
   const results = [];
   const latestIntegrationFinishedAt = options.force
     ? null
-    : await fetchLatestIntegrationFinishedAt(pool);
+    : await fetchLatestIntegrationFinishedAt(pool, feed);
   const cheapWatermark = options.force ? null : await fetchCheapIocWatermark(pool, feed);
   const feedUpdatedAt = feed.updated_at instanceof Date
     ? feed.updated_at.toISOString()

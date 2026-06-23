@@ -2,11 +2,12 @@ import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
 import { generatePublishedFeedSnapshot, normalizeFeedConfig } from '../lib/feedPublisherService.js';
 import { FEED_IOC_TYPES } from '../lib/feedFormatter.js';
-import { FEED_SOURCE_RULES } from '../lib/iocExpiration.js';
+import {
+  fetchPublishedFeedSourceOptions,
+  normalizeIncludeFeedKeys
+} from '../lib/publishedFeedSources.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
-
-const VALID_PUBLISHABLE_FEED_KEYS = new Set(FEED_SOURCE_RULES.map((r) => r.key));
 
 function toPublicFeed(row, extra = {}) {
   if (!row) return null;
@@ -65,15 +66,15 @@ function parseBodyArrays(body) {
   return out;
 }
 
-function normalizeIncludeFeedKeys(raw) {
-  if (raw == null) return [];
-  const arr = Array.isArray(raw) ? raw : [];
-  const normalized = arr.map((k) => String(k).trim()).filter(Boolean);
-  const unknown = normalized.filter((k) => !VALID_PUBLISHABLE_FEED_KEYS.has(k));
-  if (unknown.length) {
-    return { error: `Unknown feed keys: ${unknown.join(', ')}` };
-  }
-  return { value: normalized };
+async function resolveIncludeFeedKeys(pool, raw, existingRow = null) {
+  const existingKeys = existingRow?.include_feed_keys
+    ? (Array.isArray(existingRow.include_feed_keys)
+      ? existingRow.include_feed_keys
+      : (typeof existingRow.include_feed_keys === 'string'
+        ? JSON.parse(existingRow.include_feed_keys)
+        : []))
+    : [];
+  return normalizeIncludeFeedKeys(pool, raw, { existingKeys });
 }
 
 function validateFeedPayload(body, partial = false) {
@@ -131,6 +132,15 @@ function accessKeyAuditSnapshot(row) {
  * @param {{ auditSuccess: Function }} audit
  */
 export function registerPublishedFeedRoutes(app, pool, audit) {
+  app.get('/api/published-feeds/source-options', async (_req, res) => {
+    try {
+      const { sources } = await fetchPublishedFeedSourceOptions(pool);
+      return res.json({ sources });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to list publishable source feeds', detail: err.message });
+    }
+  });
+
   app.get('/api/published-feeds', async (_req, res) => {
     try {
       const { rows } = await pool.query(
@@ -153,7 +163,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     const errors = validateFeedPayload(body, false);
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
-    const feedKeys = normalizeIncludeFeedKeys(body.include_feed_keys);
+    const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys);
     if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
 
     const tw = String(body.time_window || 'all').toLowerCase();
@@ -228,7 +238,9 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
     if (body.include_feed_keys !== undefined) {
-      const feedKeys = normalizeIncludeFeedKeys(body.include_feed_keys);
+      const existingQ = await pool.query('SELECT include_feed_keys FROM published_feeds WHERE id = $1', [id]);
+      if (!existingQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
+      const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys, existingQ.rows[0]);
       if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
       body.include_feed_keys = feedKeys.value;
     }

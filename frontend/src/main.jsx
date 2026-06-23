@@ -7190,11 +7190,43 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
     fontWeight: 600
   };
 
+  const integrationOptions = options.filter((o) => o.type !== 'custom');
+  const customOptions = options.filter((o) => o.type === 'custom');
+  const selectableKeys = options.filter((o) => o.selectable !== false).map((o) => o.key);
+
+  function renderOption(o) {
+    const disabled = o.selectable === false;
+    const label = o.display_name || o.name || o.key;
+    return (
+      <label key={o.key} style={{ ...ui.checkLabel, display: 'flex', opacity: disabled ? 0.65 : 1 }}>
+        <input
+          type="checkbox"
+          checked={selected.includes(o.key)}
+          disabled={disabled}
+          onChange={(e) => {
+            const next = e.target.checked
+              ? [...selected, o.key]
+              : selected.filter((k) => k !== o.key);
+            onChange(next);
+          }}
+        />
+        <span>
+          {label}
+          {o.active === false || o.missing ? (
+            <span style={{ color: '#64748b', marginLeft: 6 }}>
+              ({o.missing ? 'missing' : 'inactive'})
+            </span>
+          ) : null}
+        </span>
+      </label>
+    );
+  }
+
   return (
     <div>
       {options.length ? (
         <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
-          <button type="button" style={linkBtn} onClick={() => onChange(options.map((o) => o.key))}>
+          <button type="button" style={linkBtn} onClick={() => onChange(selectableKeys)}>
             Select all
           </button>
           <button type="button" style={linkBtn} onClick={() => onChange([])}>
@@ -7205,32 +7237,35 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
       <div style={{
         ...ui.input,
         padding: '8px 10px',
-        maxHeight: 176,
+        maxHeight: 220,
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8
+        gap: 10
       }}>
-        {options.length ? options.map((o) => (
-          <label key={o.key} style={{ ...ui.checkLabel, display: 'flex' }}>
-            <input
-              type="checkbox"
-              checked={selected.includes(o.key)}
-              onChange={(e) => {
-                const next = e.target.checked
-                  ? [...selected, o.key]
-                  : selected.filter((k) => k !== o.key);
-                onChange(next);
-              }}
-            />
-            <span>
-              {o.name}
-              {o.active === false ? <span style={{ color: '#64748b', marginLeft: 6 }}>(inactive)</span> : null}
-            </span>
-          </label>
-        )) : (
-          <span style={{ fontSize: 13, color: '#64748b' }}>No integration feeds available</span>
-        )}
+        {!options.length ? (
+          <span style={{ fontSize: 13, color: '#64748b' }}>No source feeds available</span>
+        ) : null}
+        {integrationOptions.length ? (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Integration Feeds
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {integrationOptions.map(renderOption)}
+            </div>
+          </div>
+        ) : null}
+        {customOptions.length ? (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Custom Threat Feeds
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {customOptions.map(renderOption)}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -7476,12 +7511,24 @@ function PublishedFeedsPage() {
     }
   }
 
-  async function loadSourceFeeds() {
+  async function loadSourceFeeds(selectedKeys = []) {
     try {
-      const { data } = await api.get('/integrations');
-      const list = (data?.integrations || [])
-        .filter((f) => !NON_IOC_INTEGRATION_KEYS.has(f.key))
-        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const { data } = await api.get('/published-feeds/source-options');
+      const list = (data?.sources || []).slice();
+      const known = new Set(list.map((o) => o.key));
+      for (const key of selectedKeys) {
+        if (known.has(key)) continue;
+        const custom = String(key).startsWith('ctf-');
+        list.push({
+          key,
+          name: key,
+          type: custom ? 'custom' : 'integration',
+          active: false,
+          selectable: false,
+          missing: true,
+          display_name: custom ? `${key} (missing custom feed)` : `${key} (inactive)`
+        });
+      }
       setSourceFeeds(list);
     } catch {
       setSourceFeeds([]);
@@ -7514,10 +7561,12 @@ function PublishedFeedsPage() {
       max_items: '',
       refresh_interval_minutes: 15
     });
+    loadSourceFeeds([]).catch(() => {});
     setShowFormModal(true);
   }
 
   function openEditForm(feed) {
+    const selectedKeys = Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : [];
     setEditing(feed);
     setForm({
       name: feed.name || '',
@@ -7526,13 +7575,14 @@ function PublishedFeedsPage() {
       ioc_type: feed.ioc_type || 'ip',
       exclude_false_positive: feed.exclude_false_positive !== false,
       exclude_expired: feed.exclude_expired !== false,
-      include_feed_keys: Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : [],
+      include_feed_keys: selectedKeys,
       include_tags: (feed.include_tags || []).join(', '),
       exclude_tags: (feed.exclude_tags || []).join(', '),
       time_window: feed.time_window || 'all',
       max_items: feed.max_items ?? '',
       refresh_interval_minutes: feed.refresh_interval_minutes || 15
     });
+    loadSourceFeeds(selectedKeys).catch(() => {});
     setShowFormModal(true);
   }
 
@@ -7770,7 +7820,7 @@ function PublishedFeedsPage() {
                 <FeedFormField
                   ui={ui}
                   label="Threat Feeds"
-                  helper="Optional. Leave empty to include all feeds, or select one or more integration feeds to limit IOC sources."
+                  helper="Optional. Leave empty to include all feeds, or select integration and custom threat feeds to limit IOC sources."
                   fullWidth
                 >
                   <FeedIntegrationMultiSelect
