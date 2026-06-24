@@ -147,11 +147,18 @@ test('buildIocInheritedConfidenceSummary expired IOC without source evidence sta
   assert.equal(summary.confidence_source, 'unknown');
 });
 
-test('resolveImportConfidenceFields does not copy feed default to ioc row', () => {
-  const fields = resolveImportConfidenceFields({ parsedSourceConfidence: null });
-  assert.equal(fields.source_confidence, null);
-  assert.equal(fields.feed_default_confidence, null);
-  assert.equal(fields.confidence, null);
+test('resolveImportConfidenceFields uses feed default then medium fallback', () => {
+  const withFeedDefault = resolveImportConfidenceFields({
+    parsedSourceConfidence: null,
+    feedDefaultConfidence: 'high'
+  });
+  assert.equal(withFeedDefault.source_confidence, null);
+  assert.equal(withFeedDefault.feed_default_confidence, 'high');
+  assert.equal(withFeedDefault.confidence, 'high');
+
+  const bare = resolveImportConfidenceFields({ parsedSourceConfidence: null });
+  assert.equal(bare.feed_default_confidence, null);
+  assert.equal(bare.confidence, 'medium');
 });
 
 test('buildIocInheritedConfidenceSummary uses membership inheritance', () => {

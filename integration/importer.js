@@ -19,10 +19,11 @@ import {
 import {
   resolveImportConfidenceFields,
   applyIocImportConfidence,
-  resolveParsedSourceConfidence
+  resolveParsedSourceConfidence,
+  fetchFeedDefaultConfidence
 } from './lib/iocConfidence.js';
 import {
-  URLHAUS_EXPORT_URL_MASKED,
+  URLHAUS_FEED_KEY,
   URLHAUS_AUTH_REQUIRED_MSG,
   assertUrlhausMinFetchInterval,
   buildUrlhausCanonicalIocHash,
@@ -350,7 +351,7 @@ async function updateUrlhausObservableBySource(client, entry, sourceName, note, 
   return true;
 }
 
-async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics) {
+async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence = null) {
   const note = buildUrlhausNote(entry);
   const category = entry.threat || 'malware-url';
   const sourceUrl = URLHAUS_EXPORT_URL_MASKED;
@@ -367,6 +368,7 @@ async function upsertUrlhausObservable(client, entry, sourceName, suppressionSta
     sourceName,
     sourceUrl,
     sourceConfidence: null,
+    feedDefaultConfidence,
     category,
     note
   }, suppressionStats);
@@ -780,7 +782,7 @@ async function updateObservableBySourceOnImport(client, {
   return publicId;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null }, suppressionStats = null, signal = null) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null }, suppressionStats = null, signal = null) {
   throwIfAborted(signal);
   const index = await fetchActiveSuppressionIndex(
     client,
@@ -794,7 +796,8 @@ async function insertObservable(client, { observable, observableType, sourceName
   }
 
   const confFields = resolveImportConfidenceFields({
-    parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
+    parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence),
+    feedDefaultConfidence
   });
 
   const ins = await client.query(
@@ -1238,6 +1241,7 @@ export async function runUrlhausImport(options = {}) {
 
     metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
 
+    const urlhausFeedDefault = await fetchFeedDefaultConfidence(client, URLHAUS_FEED_KEY);
     const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
 
     for (let i = 0; i < entries.length; i += batchSize) {
@@ -1246,7 +1250,14 @@ export async function runUrlhausImport(options = {}) {
       await withPgTransaction(client, 'urlhaus_import_batch', async (tx) => {
         for (const entry of batch) {
           throwIfAborted(signal);
-          await upsertUrlhausObservable(tx, entry, config.urlhausSourceName, suppressionStats, metrics);
+          await upsertUrlhausObservable(
+            tx,
+            entry,
+            config.urlhausSourceName,
+            suppressionStats,
+            metrics,
+            urlhausFeedDefault
+          );
         }
       }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
     }

@@ -182,3 +182,41 @@ describe('fetchUrlhausExport', () => {
     assert.equal(res.text, null);
   });
 });
+
+describe('URLHaus import confidence', () => {
+  it('uses feed default high when row confidence is absent', async () => {
+    const { resolveImportConfidenceFields } = await import('../lib/iocConfidence.js');
+    const fields = resolveImportConfidenceFields({
+      parsedSourceConfidence: null,
+      feedDefaultConfidence: 'high'
+    });
+    assert.equal(fields.confidence, 'high');
+    assert.equal(fields.feed_default_confidence, 'high');
+    assert.equal(fields.source_confidence, null);
+  });
+
+  it('prefers explicit row confidence over feed default', async () => {
+    const { resolveImportConfidenceFields } = await import('../lib/iocConfidence.js');
+    const fields = resolveImportConfidenceFields({
+      parsedSourceConfidence: 'low',
+      feedDefaultConfidence: 'high'
+    });
+    assert.equal(fields.confidence, 'low');
+    assert.equal(fields.source_confidence, 'low');
+  });
+
+  it('falls back to medium when confidence and feed default are missing', async () => {
+    const { resolveImportConfidenceFields } = await import('../lib/iocConfidence.js');
+    const fields = resolveImportConfidenceFields({ parsedSourceConfidence: null });
+    assert.equal(fields.confidence, 'medium');
+  });
+
+  it('normalizes invalid confidence to medium via fallback chain', async () => {
+    const { resolveImportConfidenceFields } = await import('../lib/iocConfidence.js');
+    const fields = resolveImportConfidenceFields({
+      parsedSourceConfidence: 'very_high',
+      feedDefaultConfidence: 'high'
+    });
+    assert.equal(fields.confidence, 'high');
+  });
+});

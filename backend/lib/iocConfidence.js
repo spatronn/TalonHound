@@ -522,16 +522,17 @@ export function resolveParsedSourceConfidence(sourceConfidence, legacyConfidence
 
 export function resolveImportConfidenceFields({
   parsedSourceConfidence = null,
+  feedDefaultConfidence = null,
   existingRow = null
 } = {}) {
   const sourceConfidence = normalizeConfidence(parsedSourceConfidence);
   const analystOverride = normalizeConfidence(existingRow?.analyst_confidence_override);
+  const feedDefault = normalizeConfidence(feedDefaultConfidence);
 
-  const fallbackConfidence = null;
   return {
     source_confidence: sourceConfidence,
-    feed_default_confidence: null,
-    confidence: analystOverride || sourceConfidence || fallbackConfidence,
+    feed_default_confidence: feedDefault,
+    confidence: analystOverride || sourceConfidence || feedDefault || 'medium',
     analyst_confidence_override: analystOverride
   };
 }
