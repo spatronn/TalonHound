@@ -137,6 +137,12 @@ export function parseManualExpirationInput(body, opts = {}) {
 
 export function serializeIocSourceRow(row) {
   if (!row) return null;
+  const archivedAt = row.archived_at || null;
+  const active = row.active !== false && !archivedAt;
+  let state = 'active';
+  if (archivedAt) state = 'archived';
+  else if (row.active === false) state = 'disabled';
+
   return {
     id: Number(row.id),
     name: row.name,
@@ -145,7 +151,10 @@ export function serializeIocSourceRow(row) {
     default_threat_classification: row.default_threat_classification || null,
     default_expire_policy: row.default_expire_policy || null,
     default_expire_days: row.default_expire_days != null ? Number(row.default_expire_days) : null,
-    active: Boolean(row.active),
+    active,
+    state,
+    archived_at: archivedAt,
+    usage_count: row.usage_count != null ? Number(row.usage_count) : undefined,
     created_by: row.created_by || null,
     created_at: row.created_at,
     updated_at: row.updated_at

@@ -46,6 +46,32 @@ export function formatFeedMembershipSource(m) {
 }
 
 /** @param {object} row */
+export function formatManualHistoricalIocSource(row) {
+  const movedTo = row.moved_to_source_name || null;
+  return {
+    id: `manual-history:${row.id}`,
+    source_type: 'manual',
+    ioc_source_id: row.ioc_source_id != null ? Number(row.ioc_source_id) : null,
+    name: row.source_name || row.name || 'Manual source',
+    feed_key: null,
+    feed_name: null,
+    status: String(row.status || 'moved').toLowerCase(),
+    first_seen_at: row.first_seen_at || row.created_at || null,
+    last_seen_at: row.last_seen_at || null,
+    policy_expires_at: null,
+    expires_at: row.manual_expires_at || null,
+    override_enabled: false,
+    purged_at: null,
+    purge_reason: null,
+    moved_to_source_id: row.moved_to_source_id != null ? Number(row.moved_to_source_id) : null,
+    moved_to_source_name: movedTo,
+    moved_at: row.moved_at || null,
+    description: movedTo ? `Moved to ${movedTo}` : null,
+    actions_enabled: false
+  };
+}
+
+/** @param {object} row */
 export function formatManualIocSource(row) {
   const sourceName = row.source_name || row.name || 'Manual source';
   return {
@@ -260,7 +286,45 @@ export async function fetchObservableMembershipSummary(pool, { observable, obser
   const activeFeedSources = activeMemberships.map((m) => formatFeedMembershipSource(m));
   const activeManualSources = manualActive.map((row) => formatManualIocSource(row));
   const activeSources = [...activeManualSources, ...activeFeedSources];
-  const historicalSources = historicalMemberships.map((m) => formatFeedMembershipSource(m));
+
+  let historicalManualRows = [];
+  if (ids.length) {
+    const histRes = await pool.query(
+      `SELECT h.*,
+              COALESCE(s.name, h.source_name) AS source_name,
+              ts.name AS moved_to_source_name
+       FROM ioc_manual_source_memberships h
+       LEFT JOIN ioc_sources s ON s.id = h.ioc_source_id
+       LEFT JOIN ioc_sources ts ON ts.id = h.moved_to_source_id
+       WHERE h.ioc_item_id = ANY($1::bigint[])
+         AND h.ioc_observable_type = $2
+         AND h.status IN ('moved', 'superseded', 'inactive')
+       ORDER BY h.moved_at DESC NULLS LAST, h.created_at DESC`,
+      [ids, observableType]
+    );
+    historicalManualRows = histRes.rows;
+  } else {
+    const histRes = await pool.query(
+      `SELECT h.*,
+              COALESCE(s.name, h.source_name) AS source_name,
+              ts.name AS moved_to_source_name
+       FROM ioc_manual_source_memberships h
+       INNER JOIN ioc_items i ON i.id = h.ioc_item_id AND i.observable_type = h.ioc_observable_type
+       LEFT JOIN ioc_sources s ON s.id = h.ioc_source_id
+       LEFT JOIN ioc_sources ts ON ts.id = h.moved_to_source_id
+       WHERE i.observable = $1 AND i.observable_type = $2
+         AND h.status IN ('moved', 'superseded', 'inactive')
+       ORDER BY h.moved_at DESC NULLS LAST, h.created_at DESC`,
+      [observable, observableType]
+    );
+    historicalManualRows = histRes.rows;
+  }
+
+  const historicalManualSources = historicalManualRows.map((row) => formatManualHistoricalIocSource(row));
+  const historicalSources = [
+    ...historicalManualSources,
+    ...historicalMemberships.map((m) => formatFeedMembershipSource(m))
+  ];
 
   const activeSourceNames = [...new Set(activeSources.map((s) => s.name).filter(Boolean))].sort();
 

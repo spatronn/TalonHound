@@ -9349,6 +9349,13 @@ function ThreatActorManagerPage() {
   );
 }
 
+function formatIocSourceStateLabel(source) {
+  const state = source?.state || (source?.archived_at ? 'archived' : source?.active === false ? 'disabled' : 'active');
+  if (state === 'archived') return 'Archived';
+  if (state === 'disabled') return 'Disabled';
+  return 'Active';
+}
+
 function IocSourcesPage() {
   const { isAdmin } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
@@ -9360,6 +9367,22 @@ function IocSourcesPage() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [disableTarget, setDisableTarget] = useState(null);
   const [disableBusy, setDisableBusy] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [moveTarget, setMoveTarget] = useState(null);
+  const [moveForm, setMoveForm] = useState({
+    target_source_id: '',
+    scope: 'active_only',
+    apply_target_defaults: false,
+    archive_source_after_move: false
+  });
+  const [movePreview, setMovePreview] = useState(null);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [movePreviewBusy, setMovePreviewBusy] = useState(false);
+  const [moveError, setMoveError] = useState('');
+  const [moveSuccess, setMoveSuccess] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_IOC_SOURCE_FORM);
   const [saving, setSaving] = useState(false);
@@ -9463,7 +9486,7 @@ function IocSourcesPage() {
     if (!source?.id || !isAdmin) return;
     setError('');
     try {
-      await api.patch(`/ioc-sources/${source.id}`, { active: true });
+      await api.post(`/admin/ioc-sources/${source.id}/enable`);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, 'Enable failed'));
@@ -9475,13 +9498,109 @@ function IocSourcesPage() {
     setDisableBusy(true);
     setError('');
     try {
-      await api.patch(`/ioc-sources/${disableTarget.id}`, { active: false });
+      await api.post(`/admin/ioc-sources/${disableTarget.id}/disable`);
       setDisableTarget(null);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, 'Disable failed'));
     } finally {
       setDisableBusy(false);
+    }
+  }
+
+  async function confirmArchiveSource() {
+    if (!archiveTarget?.id || !isAdmin) return;
+    setArchiveBusy(true);
+    setError('');
+    try {
+      await api.post(`/admin/ioc-sources/${archiveTarget.id}/archive`);
+      setArchiveTarget(null);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Archive failed'));
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
+  async function confirmDeleteSource() {
+    if (!deleteTarget?.id || !isAdmin) return;
+    setDeleteBusy(true);
+    setError('');
+    try {
+      await api.delete(`/admin/ioc-sources/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Delete failed'));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
+  function openMoveModal(source) {
+    setMoveTarget(source);
+    setMoveForm({
+      target_source_id: '',
+      scope: 'active_only',
+      apply_target_defaults: false,
+      archive_source_after_move: false
+    });
+    setMovePreview(null);
+    setMoveError('');
+    setMoveSuccess(null);
+  }
+
+  function closeMoveModal() {
+    if (moveBusy || movePreviewBusy) return;
+    setMoveTarget(null);
+    setMovePreview(null);
+    setMoveError('');
+    setMoveSuccess(null);
+  }
+
+  const moveTargetOptions = useMemo(
+    () => sources.filter((s) => {
+      if (!moveTarget?.id) return false;
+      if (String(s.id) === String(moveTarget.id)) return false;
+      const state = s.state || (s.archived_at ? 'archived' : s.active === false ? 'disabled' : 'active');
+      return state === 'active';
+    }),
+    [sources, moveTarget]
+  );
+
+  async function runMovePreview() {
+    if (!moveTarget?.id || !moveForm.target_source_id) {
+      setMoveError('Select a target source.');
+      return;
+    }
+    setMovePreviewBusy(true);
+    setMoveError('');
+    setMoveSuccess(null);
+    try {
+      const { data } = await api.post(`/admin/ioc-sources/${moveTarget.id}/move-preview`, moveForm);
+      setMovePreview(data);
+    } catch (err) {
+      setMovePreview(null);
+      setMoveError(apiErrorMessage(err, 'Preview failed'));
+    } finally {
+      setMovePreviewBusy(false);
+    }
+  }
+
+  async function confirmMoveSource() {
+    if (!moveTarget?.id || !moveForm.target_source_id || !isAdmin) return;
+    setMoveBusy(true);
+    setMoveError('');
+    try {
+      const { data } = await api.post(`/admin/ioc-sources/${moveTarget.id}/move`, moveForm);
+      setMoveSuccess(data);
+      setMovePreview(null);
+      await load();
+    } catch (err) {
+      setMoveError(apiErrorMessage(err, 'Move failed'));
+    } finally {
+      setMoveBusy(false);
     }
   }
 
@@ -9502,7 +9621,7 @@ function IocSourcesPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
           <div style={{ minWidth: 0, flex: '1 1 280px' }}>
             <h1 style={ui.pageTitle}>IOC Sources</h1>
-            <p style={ui.pageSub}>Provenance labels for manual IOC entries. Disabling a source hides it from Add IOC only — existing IOCs are unchanged.</p>
+            <p style={ui.pageSub}>Provenance labels for manual IOC entries. Archive or disable sources to hide them from Add IOC while preserving existing evidence.</p>
           </div>
           <button type="button" style={{ ...ui.btnPrimary, flexShrink: 0 }} onClick={openCreateModal}>Add Source</button>
         </div>
@@ -9510,7 +9629,7 @@ function IocSourcesPage() {
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
           <label style={{ ...ui.checkLabel, display: 'inline-flex', margin: 0 }}>
             <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-            Show inactive sources
+            Show inactive and archived sources
           </label>
         </div>
 
@@ -9524,31 +9643,56 @@ function IocSourcesPage() {
 	                  <th style={ui.th}>Default Confidence</th>
 	                  <th style={ui.th}>Default Threat Class</th>
 	                  <th style={ui.th}>Default Expire</th>
-                <th style={ui.th}>Active</th>
+                <th style={ui.th}>IOCs</th>
+                <th style={ui.th}>State</th>
                 <th style={{ ...ui.th, textAlign: 'right', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-	                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
-              ) : sources.length ? sources.map((s) => (
-                <tr key={s.id} style={{ ...ui.tr, opacity: s.active ? 1 : 0.62 }}>
+	                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+              ) : sources.length ? sources.map((s) => {
+                const usageCount = Number(s.usage_count || 0);
+                const state = s.state || (s.archived_at ? 'archived' : s.active === false ? 'disabled' : 'active');
+                const isArchived = state === 'archived';
+                return (
+                <tr key={s.id} style={{ ...ui.tr, opacity: state === 'active' ? 1 : 0.72 }}>
 	                  <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', monospace" }}>{s.name}</td>
 	                  <td style={ui.td}>{s.default_confidence || '—'}</td>
 	                  <td style={ui.td}>{String(s.default_threat_classification || '—').replaceAll('_', ' ')}</td>
 	                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
-                  <td style={ui.td}>{s.active ? 'Yes' : 'No'}</td>
+                  <td style={ui.td}>{usageCount.toLocaleString('en-US')}</td>
+                  <td style={ui.td}>{formatIocSourceStateLabel(s)}</td>
                   <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(s)}>Edit</button>
-                    {s.active ? (
+                    {!isArchived && s.active !== false ? (
                       <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setDisableTarget(s)}>Disable</button>
-                    ) : (
+                    ) : null}
+                    {!isArchived && s.active === false ? (
                       <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableSource(s).catch(() => {})}>Enable</button>
+                    ) : null}
+                    {!isArchived ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setArchiveTarget(s)}>Archive</button>
+                    ) : null}
+                    {usageCount > 0 ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => openMoveModal(s)}>Move IOCs</button>
+                    ) : null}
+                    {usageCount === 0 ? (
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => setDeleteTarget(s)}>Delete</button>
+                    ) : (
+                      <button
+                        type="button"
+                        title="Source is used by existing IOCs. Archive it instead."
+                        style={{ ...ui.btn, marginLeft: 6, opacity: 0.45, cursor: 'not-allowed' }}
+                        disabled
+                      >
+                        Delete
+                      </button>
                     )}
                   </td>
                 </tr>
-              )) : (
-	                <tr><td colSpan={6} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
+              );}) : (
+	                <tr><td colSpan={7} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -9645,6 +9789,149 @@ function IocSourcesPage() {
               <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => setDisableTarget(null)}>Cancel</button>
               <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
                 {disableBusy ? 'Disabling…' : 'Disable Source'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {archiveTarget ? (
+        <div
+          role="presentation"
+          onClick={() => !archiveBusy && setArchiveTarget(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Archive IOC Source?</h3>
+            <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+              Archive this source? Existing IOC evidence will be preserved, but the source will no longer be available when adding new IOCs.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => setArchiveTarget(null)}>Cancel</button>
+              <button type="button" style={{ ...ui.btn, borderColor: '#92400e', color: '#fde68a' }} disabled={archiveBusy} onClick={() => confirmArchiveSource().catch(() => {})}>
+                {archiveBusy ? 'Archiving…' : 'Archive Source'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div
+          role="presentation"
+          onClick={() => !deleteBusy && setDeleteTarget(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete Unused IOC Source?</h3>
+            <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+              Delete this unused source? This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" style={ui.btn} disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy} onClick={() => confirmDeleteSource().catch(() => {})}>
+                {deleteBusy ? 'Deleting…' : 'Delete Source'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {moveTarget ? (
+        <div
+          role="presentation"
+          onClick={closeMoveModal}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(680px, 96vw)' }}>
+            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 8 }}>Move IOCs</h3>
+            <p style={{ margin: '0 0 16px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
+              Move IOCs from this source to another source. Existing evidence will be preserved as historical provenance.
+            </p>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <FeedFormField ui={ui} label="Source from" fullWidth>
+                <input readOnly value={moveTarget.name} style={{ ...ui.input, opacity: 0.85, cursor: 'not-allowed' }} />
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Target source" fullWidth>
+                <select
+                  value={moveForm.target_source_id}
+                  onChange={(e) => {
+                    setMoveForm((f) => ({ ...f, target_source_id: e.target.value }));
+                    setMovePreview(null);
+                    setMoveSuccess(null);
+                  }}
+                  style={ui.select}
+                >
+                  <option value="">Select target source…</option>
+                  {moveTargetOptions.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Scope" fullWidth>
+                <select
+                  value={moveForm.scope}
+                  onChange={(e) => {
+                    setMoveForm((f) => ({ ...f, scope: e.target.value }));
+                    setMovePreview(null);
+                    setMoveSuccess(null);
+                  }}
+                  style={ui.select}
+                >
+                  <option value="active_only">Active memberships only</option>
+                  <option value="all">All memberships</option>
+                </select>
+              </FeedFormField>
+              <label style={{ ...ui.checkLabel, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={moveForm.apply_target_defaults}
+                  onChange={(e) => {
+                    setMoveForm((f) => ({ ...f, apply_target_defaults: e.target.checked }));
+                    setMovePreview(null);
+                    setMoveSuccess(null);
+                  }}
+                />
+                <span>Apply target source defaults (confidence, threat class, expiration)</span>
+              </label>
+              <label style={{ ...ui.checkLabel, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <input
+                  type="checkbox"
+                  checked={moveForm.archive_source_after_move}
+                  onChange={(e) => {
+                    setMoveForm((f) => ({ ...f, archive_source_after_move: e.target.checked }));
+                    setMovePreview(null);
+                  }}
+                />
+                <span>Archive source after move</span>
+              </label>
+              {movePreview ? (
+                <div style={{ padding: 12, borderRadius: 8, border: '1px solid #334155', background: '#0f172a', fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
+                  <div><strong>Preview</strong></div>
+                  <div>Matched: {movePreview.total_memberships_matched ?? movePreview.matched ?? 0}</div>
+                  <div>Will move: {movePreview.will_move ?? 0}</div>
+                  <div>Will merge: {movePreview.will_merge ?? 0}</div>
+                  <div>Will skip: {movePreview.will_skip ?? 0}</div>
+                  {movePreview.possible_conflicts?.length ? (
+                    <div style={{ marginTop: 8, color: '#fde68a' }}>{movePreview.possible_conflicts.join(' · ')}</div>
+                  ) : null}
+                </div>
+              ) : null}
+              {moveSuccess ? (
+                <div style={{ padding: 12, borderRadius: 8, border: '1px solid #166534', background: 'rgba(22,163,74,0.12)', color: '#86efac', fontSize: 13 }}>
+                  Move complete — moved {moveSuccess.moved ?? 0}, merged {moveSuccess.merged ?? 0}, skipped {moveSuccess.skipped ?? 0}.
+                  {moveSuccess.archived_source ? ' Source archived.' : ''}
+                </div>
+              ) : null}
+              {moveError ? <div style={{ ...ui.banner, borderColor: '#991b1b', color: '#fca5a5' }}>{moveError}</div> : null}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+              <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy} onClick={closeMoveModal}>Close</button>
+              <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy || !moveForm.target_source_id} onClick={() => runMovePreview().catch(() => {})}>
+                {movePreviewBusy ? 'Previewing…' : 'Preview'}
+              </button>
+              <button type="button" style={ui.btnPrimary} disabled={moveBusy || movePreviewBusy || !moveForm.target_source_id} onClick={() => confirmMoveSource().catch(() => {})}>
+                {moveBusy ? 'Moving…' : 'Confirm Move'}
               </button>
             </div>
           </div>
@@ -14012,7 +14299,7 @@ function IOCDetailsPage() {
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
                                   <td>{formatUserDateTime(src.last_seen_at)}</td>
                                   <td>{formatUserDateTime(src.purged_at)}</td>
-                                  <td>{src.purge_reason || '—'}</td>
+                                  <td>{src.description || src.purge_reason || '—'}</td>
                                 </tr>
                               ))}
                             </tbody>

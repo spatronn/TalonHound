@@ -8,6 +8,13 @@ import {
   validateExpireDays,
   serializeIocSourceRow
 } from '../lib/iocSourceValidation.js';
+import {
+  archiveIocSource,
+  deleteIocSource,
+  serializeSourceWithUsage,
+  setIocSourceActive
+} from '../lib/iocSourceLifecycle.js';
+import { executeIocSourceMove, previewIocSourceMove } from '../lib/iocSourceMove.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 
@@ -85,10 +92,11 @@ export function registerIocSourceRoutes(app, pool, audit) {
       }
 
       const { rows } = await pool.query(
-        `SELECT *
-         FROM ioc_sources
-         ${includeInactive ? '' : 'WHERE active = TRUE'}
-         ORDER BY active DESC, name ASC`
+        `SELECT s.*,
+                (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = s.id) AS usage_count
+         FROM ioc_sources s
+         ${includeInactive ? '' : 'WHERE s.active = TRUE AND s.archived_at IS NULL'}
+         ORDER BY s.archived_at NULLS FIRST, s.active DESC, s.name ASC`
       );
       return res.json({ sources: rows.map(serializeIocSourceRow) });
     } catch (err) {
@@ -236,6 +244,90 @@ export function registerIocSourceRoutes(app, pool, audit) {
       return res.status(500).json({ message: 'Failed to update IOC source', detail: err.message });
     }
   });
+
+  async function handleDisable(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await setIocSourceActive(pool, id, false, { req, audit, user: req.user });
+    return res.status(result.status).json(result.body);
+  }
+
+  async function handleEnable(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await setIocSourceActive(pool, id, true, { req, audit, user: req.user });
+    return res.status(result.status).json(result.body);
+  }
+
+  async function handleArchive(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await archiveIocSource(pool, id, { req, audit, user: req.user });
+    return res.status(result.status).json(result.body);
+  }
+
+  async function handleDelete(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await deleteIocSource(pool, id, { req, audit, user: req.user });
+    return res.status(result.status).json(result.body);
+  }
+
+  async function handleMovePreview(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await previewIocSourceMove(pool, id, req.body || {});
+    if (result.status === 200 && audit?.auditSuccess) {
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_SOURCE_MOVE_PREVIEW,
+        entityType: AUDIT_ENTITY.IOC_SOURCE,
+        entityId: String(id),
+        entityDisplay: result.body.source_name,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          source_from_id: result.body.source_id,
+          source_from_name: result.body.source_name,
+          source_to_id: result.body.target_source_id,
+          source_to_name: result.body.target_source_name,
+          scope: result.body.scope,
+          apply_target_defaults: Boolean(req.body?.apply_target_defaults),
+          archive_source_after_move: Boolean(req.body?.archive_source_after_move),
+          matched: result.body.total_memberships_matched,
+          moved: result.body.will_move,
+          merged: result.body.will_merge,
+          skipped: result.body.will_skip
+        }
+      });
+    }
+    return res.status(result.status).json(result.body);
+  }
+
+  async function handleMove(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await executeIocSourceMove(pool, id, req.body || {}, { req, audit, user: req.user });
+    return res.status(result.status).json(result.body);
+  }
+
+  app.post('/api/admin/ioc-sources/:id/disable', requireRole(ROLES.ADMIN), handleDisable);
+  app.post('/api/admin/ioc-sources/:id/enable', requireRole(ROLES.ADMIN), handleEnable);
+  app.post('/api/admin/ioc-sources/:id/archive', requireRole(ROLES.ADMIN), handleArchive);
+  app.delete('/api/admin/ioc-sources/:id', requireRole(ROLES.ADMIN), handleDelete);
+  app.post('/api/admin/ioc-sources/:id/move-preview', requireRole(ROLES.ADMIN), handleMovePreview);
+  app.post('/api/admin/ioc-sources/:id/move', requireRole(ROLES.ADMIN), handleMove);
 }
 
 export { normalizeSourceNameInput };

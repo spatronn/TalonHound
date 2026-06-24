@@ -107,7 +107,7 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
 
   const { rows: sourceRows } = await pool.query(
-    `SELECT id, name, default_confidence, default_threat_classification, default_expire_policy, default_expire_days, active
+    `SELECT id, name, default_confidence, default_threat_classification, default_expire_policy, default_expire_days, active, archived_at
      FROM ioc_sources WHERE id = $1`,
     [sourceId]
   );
@@ -117,6 +117,9 @@ export async function createManualIoc(pool, body, opts = {}) {
   }
   if (sourceRow.active === false) {
     return { status: 400, body: { message: 'Selected IOC source is inactive.' } };
+  }
+  if (sourceRow.archived_at) {
+    return { status: 400, body: { message: 'Selected IOC source is archived.' } };
   }
 
   const observableType = inferObservableType(value);
