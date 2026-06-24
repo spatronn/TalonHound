@@ -11634,7 +11634,7 @@ function IOCListPage() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+      <section className="ioc-list-page" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
@@ -11751,7 +11751,7 @@ function IOCListPage() {
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+        <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
             <col style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
@@ -11820,13 +11820,14 @@ function IOCListPage() {
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {iocStatusBadge(isSuppressed ? 'suppressed' : lifecycleStatus)}
                 </td>
-                <td title={sourceLabel} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                <td title={sourceLabel} className="ioc-list-source-cell" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   {sourceExtra > 0 ? (
-                    <button onClick={() => openSourceDetails(r)} style={{ background: 'transparent', border: 'none', color: '#0f172a', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}>
-                      {sourceLabel}{sourceExtra > 0 ? ` +${sourceExtra}` : ''}
+                    <button type="button" className="ioc-list-source-link" onClick={() => openSourceDetails(r)}>
+                      <span className="ioc-list-source-badge-text">{sourceLabel}</span>
+                      <span className="ioc-list-source-extra"> +{sourceExtra}</span>
                     </button>
                   ) : (
-                    <span style={{ color: r.display_source_kind === 'none' ? '#64748b' : '#0f172a' }}>{sourceLabel}</span>
+                    <span className={r.display_source_kind === 'none' ? 'ioc-list-source-muted' : 'ioc-list-source-badge'}>{sourceLabel}</span>
                   )}
                 </td>
                 <td><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>
@@ -15049,6 +15050,67 @@ function App() {
         table th:last-child, table td:last-child { border-right: none !important; }
         .ioc-table th, .ioc-table td { border-right: 1px solid #334155 !important; }
         .ioc-table th:last-child, .ioc-table td:last-child { border-right: none !important; }
+        .ioc-list-page .ioc-list-table {
+          background: #0f172a !important;
+        }
+        .ioc-list-page .ioc-list-table thead tr {
+          background: #1f2937 !important;
+        }
+        .ioc-list-page .ioc-list-table th {
+          color: #94a3b8;
+        }
+        .ioc-list-page .ioc-list-table td {
+          color: #e2e8f0;
+        }
+        .ioc-list-page .ioc-list-table tbody tr {
+          border-bottom: 1px solid #334155 !important;
+        }
+        .ioc-list-source-badge {
+          display: inline;
+          padding: 2px 8px;
+          border-radius: 6px;
+          background: rgba(148, 163, 184, 0.12);
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          color: #e2e8f0;
+          line-height: 1.35;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        .ioc-list-source-muted {
+          display: inline;
+          color: #94a3b8;
+          font-style: italic;
+          line-height: 1.35;
+        }
+        .ioc-list-page button.ioc-list-source-link {
+          display: inline;
+          max-width: 100%;
+          background: rgba(148, 163, 184, 0.12) !important;
+          border: 1px solid rgba(148, 163, 184, 0.25) !important;
+          color: #e2e8f0 !important;
+          border-radius: 6px;
+          padding: 2px 8px !important;
+          font: inherit;
+          text-align: left;
+          cursor: pointer;
+          text-decoration: none;
+          line-height: 1.35;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        .ioc-list-page button.ioc-list-source-link:hover {
+          background: rgba(148, 163, 184, 0.2) !important;
+          border-color: rgba(148, 163, 184, 0.4) !important;
+          color: #f8fafc !important;
+        }
+        .ioc-list-page button.ioc-list-source-link:focus-visible {
+          outline: 2px solid #93c5fd;
+          outline-offset: 2px;
+        }
+        .ioc-list-page button.ioc-list-source-link .ioc-list-source-extra {
+          color: #94a3b8;
+          font-weight: 600;
+        }
         .integrations-feeds-table-scroll {
           overflow-x: auto;
           max-width: 100%;
