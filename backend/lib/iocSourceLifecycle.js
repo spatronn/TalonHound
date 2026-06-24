@@ -1,6 +1,7 @@
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
+import { fetchPublishedFeedDependenciesForManualSource } from './publishedFeedSources.js';
 
 const SOURCE_AUDIT_FIELDS = [
   'name', 'description', 'default_confidence', 'default_threat_classification',
@@ -57,21 +58,44 @@ function serializeSourceWithUsage(row) {
 }
 
 const DELETE_BLOCKED_MESSAGE = 'This source contains IOC records. Move them to another source before deleting.';
+const DELETE_BLOCKED_PUBLISHED_FEEDS_MESSAGE = 'This source is used by Published Feeds. Remove it from those Published Feed filters before deleting.';
+
+export const DELETE_BLOCK_REASON = Object.freeze({
+  HAS_IOCS: 'has_iocs',
+  PUBLISHED_FEED_DEPENDENCY: 'published_feed_dependency'
+});
 
 export function isIocSourceDeleteAllowed(iocCount) {
   return Number(iocCount || 0) === 0;
 }
 
-export function buildIocSourceDeletePreview(sourceRow) {
+export function buildIocSourceDeletePreview(sourceRow, publishedFeedDependencies = []) {
   const iocCount = Number(sourceRow?.ioc_count || 0);
-  const canDelete = isIocSourceDeleteAllowed(iocCount);
+  const deps = Array.isArray(publishedFeedDependencies) ? publishedFeedDependencies : [];
+  let canDelete = true;
+  let blocked_reason = null;
+
+  if (!isIocSourceDeleteAllowed(iocCount)) {
+    canDelete = false;
+    blocked_reason = DELETE_BLOCK_REASON.HAS_IOCS;
+  } else if (deps.length > 0) {
+    canDelete = false;
+    blocked_reason = DELETE_BLOCK_REASON.PUBLISHED_FEED_DEPENDENCY;
+  }
+
   return {
     source_id: Number(sourceRow.id),
     source_name: sourceRow.name,
     ioc_count: iocCount,
     usage_count: iocCount,
+    published_feed_dependencies: deps,
     can_delete: canDelete,
-    blocked_reason: canDelete ? null : DELETE_BLOCKED_MESSAGE
+    blocked_reason,
+    blocked_message: blocked_reason === DELETE_BLOCK_REASON.HAS_IOCS
+      ? DELETE_BLOCKED_MESSAGE
+      : blocked_reason === DELETE_BLOCK_REASON.PUBLISHED_FEED_DEPENDENCY
+        ? DELETE_BLOCKED_PUBLISHED_FEEDS_MESSAGE
+        : null
   };
 }
 
@@ -83,12 +107,11 @@ export async function previewIocSourceDelete(pool, sourceId) {
   const row = await fetchIocSourceById(pool, sourceId);
   if (!row) return { status: 404, body: { message: 'IOC source not found' } };
 
-  const iocCount = Number(row.ioc_count || 0);
-  const canDelete = isIocSourceDeleteAllowed(iocCount);
+  const publishedFeedDependencies = await fetchPublishedFeedDependenciesForManualSource(pool, sourceId);
 
   return {
     status: 200,
-    body: buildIocSourceDeletePreview(row)
+    body: buildIocSourceDeletePreview(row, publishedFeedDependencies)
   };
 }
 
@@ -210,9 +233,40 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
     return {
       status: 409,
       body: {
+        error: 'source_has_iocs',
         message: DELETE_BLOCKED_MESSAGE,
         ioc_count: iocCount,
-        usage_count: iocCount
+        usage_count: iocCount,
+        blocked_reason: DELETE_BLOCK_REASON.HAS_IOCS
+      }
+    };
+  }
+
+  const publishedFeedDependencies = await fetchPublishedFeedDependenciesForManualSource(pool, sourceId);
+  if (publishedFeedDependencies.length > 0) {
+    await auditSourceAction(
+      opts.audit,
+      opts.req,
+      AUDIT_ACTION.IOC_SOURCE_DELETE_BLOCKED_PUBLISHED_FEED_DEPENDENCY,
+      serializeSourceWithUsage(row),
+      serializeSourceWithUsage(row),
+      {
+        source_id: row.id,
+        source_name: row.name,
+        dependency_count: publishedFeedDependencies.length,
+        published_feed_dependencies: publishedFeedDependencies,
+        previous_state: resolveIocSourceState(row),
+        new_state: resolveIocSourceState(row)
+      },
+      AUDIT_SEVERITY.WARNING
+    );
+    return {
+      status: 409,
+      body: {
+        error: 'source_used_by_published_feeds',
+        message: DELETE_BLOCKED_PUBLISHED_FEEDS_MESSAGE,
+        published_feed_dependencies: publishedFeedDependencies,
+        blocked_reason: DELETE_BLOCK_REASON.PUBLISHED_FEED_DEPENDENCY
       }
     };
   }
@@ -260,4 +314,10 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
   }
 }
 
-export { serializeSourceWithUsage, SOURCE_AUDIT_FIELDS, DELETE_BLOCKED_MESSAGE };
+export {
+  serializeSourceWithUsage,
+  SOURCE_AUDIT_FIELDS,
+  DELETE_BLOCKED_MESSAGE,
+  DELETE_BLOCKED_PUBLISHED_FEEDS_MESSAGE,
+  DELETE_BLOCK_REASON
+};

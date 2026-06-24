@@ -1,6 +1,5 @@
 import { FEED_SOURCE_RULES } from './iocExpiration.js';
 import { CUSTOM_FEED_KEY_PREFIX } from './customThreatFeedUtils.js';
-import { resolveIocSourceState } from './iocSourceLifecycle.js';
 
 export const BUILTIN_PUBLISHABLE_FEED_KEYS = new Set(FEED_SOURCE_RULES.map((r) => r.key));
 
@@ -139,11 +138,71 @@ export async function normalizeIncludeFeedKeys(pool, raw, opts = {}) {
   if (invalid.length) {
     return { error: `Unknown feed keys: ${invalid.join(', ')}` };
   }
-  return { value: normalized };
+
+  const value = normalized.filter((k) => known.has(k));
+  const stripped_keys = normalized.filter((k) => !known.has(k));
+  if (stripped_keys.length) {
+    console.warn('[published-feeds] stripped missing source keys from include_feed_keys', { stripped_keys });
+  }
+  return { value, stripped_keys };
+}
+
+/**
+ * Published feeds that reference manual:<source_id> in include_feed_keys.
+ * @param {import('pg').Pool} pool
+ * @param {number} sourceId
+ */
+export async function fetchPublishedFeedDependenciesForManualSource(pool, sourceId) {
+  const key = formatManualFeedKey(sourceId);
+  const { rows } = await pool.query(
+    `SELECT id, name
+     FROM published_feeds
+     WHERE include_feed_keys IS NOT NULL
+       AND include_feed_keys @> $1::jsonb`,
+    [JSON.stringify([key])]
+  );
+  return rows.map((row) => ({
+    id: Number(row.id),
+    name: row.name,
+    published_feed_id: Number(row.id),
+    published_feed_name: row.name,
+    key
+  }));
+}
+
+/**
+ * Drop stale keys from a feed's include_feed_keys before snapshot generation.
+ * @param {string[]|null|undefined} feedKeys
+ * @param {Set<string>} knownKeys
+ */
+export function filterKnownFeedKeys(feedKeys, knownKeys) {
+  const keys = (feedKeys || []).map((k) => String(k).trim()).filter(Boolean);
+  const valid = keys.filter((k) => knownKeys.has(k));
+  const missing = keys.filter((k) => !knownKeys.has(k));
+  return { valid, missing };
+}
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {string[]|null|undefined} feedKeys
+ */
+export async function resolveKnownFeedKeysForSnapshot(pool, feedKeys) {
+  const known = await loadKnownPublishableFeedKeys(pool);
+  const { valid, missing } = filterKnownFeedKeys(feedKeys, known);
+  if (missing.length) {
+    console.warn('[published-feeds] ignoring missing source keys during snapshot generation', { missing });
+  }
+  return valid;
+}
+
+function resolveManualSourceState(row) {
+  if (row?.archived_at) return 'archived';
+  if (row?.active === false) return 'disabled';
+  return 'active';
 }
 
 function serializeManualSourceOption(row, { selectable = true } = {}) {
-  const state = resolveIocSourceState(row);
+  const state = resolveManualSourceState(row);
   const active = state === 'active';
   const name = row.name || formatManualFeedKey(row.id);
   return {
@@ -258,7 +317,7 @@ export async function fetchPublishedFeedSourceOptions(pool, opts = {}) {
         [missingIds]
       );
       for (const row of inactiveManualRows) {
-        const state = resolveIocSourceState(row);
+        const state = resolveManualSourceState(row);
         const active = state === 'active';
         sources.push({
           ...serializeManualSourceOption(row, { selectable: false }),

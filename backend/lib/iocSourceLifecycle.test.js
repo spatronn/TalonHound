@@ -4,6 +4,8 @@ import {
   resolveIocSourceState,
   isIocSourceSelectable,
   DELETE_BLOCKED_MESSAGE,
+  DELETE_BLOCKED_PUBLISHED_FEEDS_MESSAGE,
+  DELETE_BLOCK_REASON,
   isIocSourceDeleteAllowed,
   buildIocSourceDeletePreview
 } from './iocSourceLifecycle.js';
@@ -77,15 +79,26 @@ test('buildIocSourceDeletePreview matches list and delete gate logic', () => {
   assert.equal(empty.blocked_reason, null);
   assert.equal(empty.ioc_count, 0);
   assert.equal(empty.usage_count, 0);
+  assert.deepEqual(empty.published_feed_dependencies, []);
 
   const used = buildIocSourceDeletePreview({ id: 4, name: 'manual-used', ioc_count: 7 });
   assert.equal(used.can_delete, false);
-  assert.equal(used.blocked_reason, DELETE_BLOCKED_MESSAGE);
+  assert.equal(used.blocked_reason, DELETE_BLOCK_REASON.HAS_IOCS);
+  assert.equal(used.blocked_message, DELETE_BLOCKED_MESSAGE);
   assert.equal(used.ioc_count, 7);
   assert.equal(used.usage_count, 7);
+
+  const feedBlocked = buildIocSourceDeletePreview(
+    { id: 5, name: 'manual-smoke', ioc_count: 0 },
+    [{ id: 2, name: 'test_2', key: 'manual:5' }]
+  );
+  assert.equal(feedBlocked.can_delete, false);
+  assert.equal(feedBlocked.blocked_reason, DELETE_BLOCK_REASON.PUBLISHED_FEED_DEPENDENCY);
+  assert.equal(feedBlocked.blocked_message, DELETE_BLOCKED_PUBLISHED_FEEDS_MESSAGE);
+  assert.equal(feedBlocked.published_feed_dependencies.length, 1);
 });
 
-test('archived unused source preview allows delete', () => {
+test('archived unused source preview allows delete when no feed dependencies', () => {
   const preview = buildIocSourceDeletePreview({
     id: 5,
     name: 'manual-archived-empty',

@@ -7,6 +7,7 @@ import {
   formatManualFeedKey,
   parseManualFeedKey,
   extractManualFeedSourceIds,
+  filterKnownFeedKeys,
   mergeOrphanPublishedFeedSources,
   BUILTIN_PUBLISHABLE_FEED_KEYS
 } from './publishedFeedSources.js';
@@ -121,6 +122,13 @@ test('mergeOrphanPublishedFeedSources adds missing manual source keys', () => {
   assert.equal(merged[1].key, 'manual:999');
   assert.equal(merged[1].type, 'manual_source');
   assert.equal(merged[1].missing, true);
+});
+
+test('filterKnownFeedKeys separates valid and missing keys', () => {
+  const known = new Set(['manual:1', 'urlhaus-abusech']);
+  const { valid, missing } = filterKnownFeedKeys(['manual:1', 'manual:5', 'urlhaus-abusech'], known);
+  assert.deepEqual(valid, ['manual:1', 'urlhaus-abusech']);
+  assert.deepEqual(missing, ['manual:5']);
 });
 
 test('BUILTIN_PUBLISHABLE_FEED_KEYS includes known integration feeds', () => {

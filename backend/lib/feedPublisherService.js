@@ -9,7 +9,8 @@ import {
   buildFeedKeySourceSql,
   extractManualFeedSourceIds,
   isCustomFeedKey,
-  isManualFeedKey
+  isManualFeedKey,
+  resolveKnownFeedKeysForSnapshot
 } from './publishedFeedSources.js';
 
 export { buildFeedKeySourceSql };
@@ -541,7 +542,14 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
 
   const { rows: feedRows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
   if (!feedRows.length) throw new Error('Feed not found');
-  const feed = normalizeFeedConfig(feedRows[0]);
+  const feedBase = normalizeFeedConfig(feedRows[0]);
+  const configuredKeys = feedBase.include_feed_keys || [];
+  const resolvedFeedKeys = await resolveKnownFeedKeysForSnapshot(pool, configuredKeys);
+  const allKeysStale = configuredKeys.length > 0 && resolvedFeedKeys.length === 0;
+  const feed = {
+    ...feedBase,
+    include_feed_keys: resolvedFeedKeys.length ? resolvedFeedKeys : (configuredKeys.length ? [] : null)
+  };
 
   const windows = options.window ? [normalizeTimeWindow(options.window)].filter(Boolean) : FEED_WINDOWS;
   const results = [];
@@ -579,7 +587,9 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         }
       }
 
-      const fingerprint = await fetchIocExportFingerprint(pool, feed, window);
+      const fingerprint = allKeysStale
+        ? { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) }
+        : await fetchIocExportFingerprint(pool, feed, window);
       const fingerprintKey = exportFingerprintKey(fingerprint);
 
       if (!options.force) {
@@ -591,7 +601,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         }
       }
 
-      const iocRows = await fetchIocRows(pool, feed, window);
+      const iocRows = allKeysStale ? [] : await fetchIocRows(pool, feed, window);
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
       const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, feed.ioc_type, genMax);
       const paramsJson = {

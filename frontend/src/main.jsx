@@ -331,18 +331,39 @@ function apiErrorMessage(err, fallback = 'Request failed') {
 
 function parseIocSourceDeleteError(err) {
   const status = err?.response?.status;
-  const message = String(err?.response?.data?.message || '').trim();
+  const data = err?.response?.data || {};
+  const message = String(data.message || '').trim();
+  const errorCode = String(data.error || '').trim();
   if (status === 409) {
+    if (errorCode === 'source_used_by_published_feeds') {
+      return {
+        blocked: true,
+        mode: 'published_feeds',
+        message: message || 'This source is used by Published Feeds. Remove it from those Published Feed filters before deleting.',
+        published_feed_dependencies: Array.isArray(data.published_feed_dependencies) ? data.published_feed_dependencies : []
+      };
+    }
     return {
       blocked: true,
-      message: message || 'This source contains IOC records. Move them to another source before deleting.'
+      mode: 'blocked',
+      message: message || 'This source contains IOC records. Move them to another source before deleting.',
+      published_feed_dependencies: []
     };
   }
   const raw = String(err?.message || '');
   if (!status || status >= 500 || /^request failed with status code 502/i.test(raw)) {
-    return { blocked: false, message: 'Delete failed. Please check server logs.' };
+    return { blocked: false, mode: 'empty', message: 'Delete failed. Please check server logs.', published_feed_dependencies: [] };
   }
-  return { blocked: false, message: apiErrorMessage(err, 'Delete failed') };
+  return { blocked: false, mode: 'empty', message: apiErrorMessage(err, 'Delete failed'), published_feed_dependencies: [] };
+}
+
+function resolveDeleteModalMode(preview) {
+  if (!preview) return 'empty';
+  if (Number(preview.ioc_count || 0) > 0 || preview.blocked_reason === 'has_iocs') return 'blocked';
+  if (preview.blocked_reason === 'published_feed_dependency' || (preview.published_feed_dependencies || []).length > 0) {
+    return 'published_feeds';
+  }
+  return preview.can_delete === false ? 'empty' : 'empty';
 }
 
 function parseFeedPurgeError(err, fallback = 'Failed to start purge job. Please try again or check backend logs.') {
@@ -7215,27 +7236,41 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
     const disabled = o.selectable === false;
     const label = o.display_name || o.name || o.key;
     return (
-      <label key={o.key} style={{ ...ui.checkLabel, display: 'flex', opacity: disabled ? 0.65 : 1 }}>
-        <input
-          type="checkbox"
-          checked={selected.includes(o.key)}
-          disabled={disabled}
-          onChange={(e) => {
-            const next = e.target.checked
-              ? [...selected, o.key]
-              : selected.filter((k) => k !== o.key);
-            onChange(next);
-          }}
-        />
-        <span>
-          {label}
-          {o.active === false || o.missing ? (
-            <span style={{ color: '#64748b', marginLeft: 6 }}>
-              ({o.missing ? 'missing' : 'inactive'})
+      <div key={o.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <label style={{ ...ui.checkLabel, display: 'flex', opacity: disabled ? 0.65 : 1 }}>
+          <input
+            type="checkbox"
+            checked={selected.includes(o.key)}
+            disabled={disabled}
+            onChange={(e) => {
+              const next = e.target.checked
+                ? [...selected, o.key]
+                : selected.filter((k) => k !== o.key);
+              onChange(next);
+            }}
+          />
+          <span>
+            {label}
+            {!o.missing && o.active === false ? (
+              <span style={{ color: '#64748b', marginLeft: 6 }}>(inactive)</span>
+            ) : null}
+          </span>
+        </label>
+        {o.missing ? (
+          <div style={{ marginLeft: 26, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#fbbf24', lineHeight: 1.45 }}>
+              This source no longer exists. Save to remove it from this Published Feed.
             </span>
-          ) : null}
-        </span>
-      </label>
+            <button
+              type="button"
+              style={{ ...linkBtn, fontSize: 10 }}
+              onClick={() => onChange(selected.filter((k) => k !== o.key))}
+            >
+              Remove missing
+            </button>
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -9388,6 +9423,7 @@ function IocSourcesPage() {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deletePreviewBusy, setDeletePreviewBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [pageSuccess, setPageSuccess] = useState('');
   const [moveTarget, setMoveTarget] = useState(null);
@@ -9543,6 +9579,7 @@ function IocSourcesPage() {
 
   async function confirmDeleteSource() {
     if (!deleteTarget?.id || !isAdmin) return;
+    if (deleteTarget.deleteMode === 'blocked' || deleteTarget.deleteMode === 'published_feeds') return;
     setDeleteBusy(true);
     setDeleteError('');
     try {
@@ -9553,24 +9590,43 @@ function IocSourcesPage() {
       await load();
     } catch (err) {
       const parsed = parseIocSourceDeleteError(err);
-      if (parsed.blocked) {
-        setDeleteTarget((prev) => (prev ? { ...prev, deleteMode: 'blocked' } : prev));
-      }
+      setDeleteTarget((prev) => (prev ? {
+        ...prev,
+        deleteMode: parsed.mode || prev.deleteMode,
+        deletePreview: {
+          ...(prev.deletePreview || {}),
+          published_feed_dependencies: parsed.published_feed_dependencies || prev.deletePreview?.published_feed_dependencies || []
+        }
+      } : prev));
       setDeleteError(parsed.message);
     } finally {
       setDeleteBusy(false);
     }
   }
 
-  function handleDeleteClick(source) {
-    const iocCount = sourceIocCount(source);
+  async function handleDeleteClick(source) {
+    if (!source?.id || !isAdmin) return;
     setDeleteError('');
     setPageSuccess('');
-    setDeleteTarget({ ...source, deleteMode: iocCount > 0 ? 'blocked' : 'empty' });
+    setDeletePreviewBusy(true);
+    setDeleteTarget({ ...source, deleteMode: 'loading' });
+    try {
+      const { data } = await api.get(`/admin/ioc-sources/${source.id}/delete-preview`);
+      setDeleteTarget({
+        ...source,
+        deleteMode: resolveDeleteModalMode(data),
+        deletePreview: data
+      });
+    } catch (err) {
+      setDeleteTarget({ ...source, deleteMode: 'empty', deletePreview: null });
+      setDeleteError(apiErrorMessage(err, 'Failed to load delete preview'));
+    } finally {
+      setDeletePreviewBusy(false);
+    }
   }
 
   function closeDeleteModal() {
-    if (deleteBusy) return;
+    if (deleteBusy || deletePreviewBusy) return;
     setDeleteTarget(null);
     setDeleteError('');
   }
@@ -9860,11 +9916,16 @@ function IocSourcesPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
         >
           <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
-            {deleteTarget.deleteMode === 'blocked' ? (
+            {deleteTarget.deleteMode === 'loading' || deletePreviewBusy ? (
+              <>
+                <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete source</h3>
+                <p style={{ margin: 0, color: '#94a3b8', lineHeight: 1.55, fontSize: 14 }}>Checking whether this source can be deleted…</p>
+              </>
+            ) : deleteTarget.deleteMode === 'blocked' ? (
               <>
                 <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Source contains IOCs</h3>
                 <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
-                  {deleteError || 'This source contains IOC records and cannot be deleted directly. Move the IOCs to another source first.'}
+                  {deleteTarget.deletePreview?.blocked_message || deleteError || 'This source contains IOC records and cannot be deleted directly. Move the IOCs to another source first.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" style={ui.btn} onClick={closeDeleteModal}>Cancel</button>
@@ -9882,6 +9943,29 @@ function IocSourcesPage() {
                   </button>
                 </div>
               </>
+            ) : deleteTarget.deleteMode === 'published_feeds' ? (
+              <>
+                <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Source used by Published Feeds</h3>
+                <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+                  {deleteTarget.deletePreview?.blocked_message || deleteError || 'This source is used by Published Feeds and cannot be deleted.'}
+                </p>
+                {(deleteTarget.deletePreview?.published_feed_dependencies || []).length ? (
+                  <ul style={{ margin: '0 0 16px', paddingLeft: 20, color: '#e2e8f0', lineHeight: 1.6, fontSize: 14 }}>
+                    {(deleteTarget.deletePreview?.published_feed_dependencies || []).map((dep) => (
+                      <li key={dep.id || dep.published_feed_id || dep.name}>{dep.name || dep.published_feed_name}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p style={{ margin: '0 0 16px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
+                  Remove this source from those Published Feed filters first.
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button type="button" style={ui.btn} onClick={closeDeleteModal}>Cancel</button>
+                  <Link to="/threat-intelligence/published-feeds" style={{ ...ui.btnPrimary, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }} onClick={closeDeleteModal}>
+                    Open Published Feeds
+                  </Link>
+                </div>
+              </>
             ) : (
               <>
                 <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete source</h3>
@@ -9893,7 +9977,7 @@ function IocSourcesPage() {
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal}>Cancel</button>
-                  <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy} onClick={() => confirmDeleteSource().catch(() => {})}>
+                  <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
                     {deleteBusy ? 'Deleting…' : 'Delete source'}
                   </button>
                 </div>
