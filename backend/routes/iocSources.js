@@ -301,8 +301,16 @@ export function registerIocSourceRoutes(app, pool, audit) {
     if (!Number.isFinite(id) || id <= 0) {
       return res.status(400).json({ message: 'Invalid id' });
     }
-    const result = await deleteIocSource(pool, id, { req, audit, user: req.user });
-    return res.status(result.status).json(result.body);
+    try {
+      const result = await deleteIocSource(pool, id, { req, audit, user: req.user });
+      return res.status(result.status).json(result.body);
+    } catch (err) {
+      console.error('[ioc-source] delete handler error', { id, message: err.message });
+      return res.status(500).json({
+        message: 'Failed to delete IOC source',
+        detail: err.message
+      });
+    }
   }
 
   async function handleMovePreview(req, res) {

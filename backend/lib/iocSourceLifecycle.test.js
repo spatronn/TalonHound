@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   resolveIocSourceState,
   isIocSourceSelectable,
-  DELETE_BLOCKED_MESSAGE
+  DELETE_BLOCKED_MESSAGE,
+  isIocSourceDeleteAllowed,
+  buildIocSourceDeletePreview
 } from './iocSourceLifecycle.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
 import { summarizeMovePreview, resolveApplyTargetDefaults } from './iocSourceMove.js';
@@ -60,4 +62,35 @@ test('summarizeMovePreview counts move vs merge candidates', () => {
 
 test('delete blocked message matches product copy', () => {
   assert.match(DELETE_BLOCKED_MESSAGE, /Move them to another source before deleting/);
+});
+
+test('isIocSourceDeleteAllowed only allows zero IOC count', () => {
+  assert.equal(isIocSourceDeleteAllowed(0), true);
+  assert.equal(isIocSourceDeleteAllowed('0'), true);
+  assert.equal(isIocSourceDeleteAllowed(1), false);
+  assert.equal(isIocSourceDeleteAllowed(null), true);
+});
+
+test('buildIocSourceDeletePreview matches list and delete gate logic', () => {
+  const empty = buildIocSourceDeletePreview({ id: 3, name: 'manual-test', ioc_count: 0 });
+  assert.equal(empty.can_delete, true);
+  assert.equal(empty.blocked_reason, null);
+  assert.equal(empty.ioc_count, 0);
+  assert.equal(empty.usage_count, 0);
+
+  const used = buildIocSourceDeletePreview({ id: 4, name: 'manual-used', ioc_count: 7 });
+  assert.equal(used.can_delete, false);
+  assert.equal(used.blocked_reason, DELETE_BLOCKED_MESSAGE);
+  assert.equal(used.ioc_count, 7);
+  assert.equal(used.usage_count, 7);
+});
+
+test('archived unused source preview allows delete', () => {
+  const preview = buildIocSourceDeletePreview({
+    id: 5,
+    name: 'manual-archived-empty',
+    ioc_count: 0,
+    archived_at: '2026-06-01T00:00:00.000Z'
+  });
+  assert.equal(preview.can_delete, true);
 });

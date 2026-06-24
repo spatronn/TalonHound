@@ -58,6 +58,23 @@ function serializeSourceWithUsage(row) {
 
 const DELETE_BLOCKED_MESSAGE = 'This source contains IOC records. Move them to another source before deleting.';
 
+export function isIocSourceDeleteAllowed(iocCount) {
+  return Number(iocCount || 0) === 0;
+}
+
+export function buildIocSourceDeletePreview(sourceRow) {
+  const iocCount = Number(sourceRow?.ioc_count || 0);
+  const canDelete = isIocSourceDeleteAllowed(iocCount);
+  return {
+    source_id: Number(sourceRow.id),
+    source_name: sourceRow.name,
+    ioc_count: iocCount,
+    usage_count: iocCount,
+    can_delete: canDelete,
+    blocked_reason: canDelete ? null : DELETE_BLOCKED_MESSAGE
+  };
+}
+
 /**
  * @param {import('pg').Pool} pool
  * @param {number} sourceId
@@ -67,17 +84,11 @@ export async function previewIocSourceDelete(pool, sourceId) {
   if (!row) return { status: 404, body: { message: 'IOC source not found' } };
 
   const iocCount = Number(row.ioc_count || 0);
-  const canDelete = iocCount === 0;
+  const canDelete = isIocSourceDeleteAllowed(iocCount);
 
   return {
     status: 200,
-    body: {
-      source_id: Number(row.id),
-      source_name: row.name,
-      ioc_count: iocCount,
-      can_delete: canDelete,
-      blocked_reason: canDelete ? null : DELETE_BLOCKED_MESSAGE
-    }
+    body: buildIocSourceDeletePreview(row)
   };
 }
 
@@ -179,7 +190,7 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
   if (!row) return { status: 404, body: { message: 'IOC source not found' } };
 
   const iocCount = Number(row.ioc_count || 0);
-  if (iocCount > 0) {
+  if (!isIocSourceDeleteAllowed(iocCount)) {
     await auditSourceAction(
       opts.audit,
       opts.req,
@@ -207,18 +218,46 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
   }
 
   const before = serializeSourceWithUsage(row);
-  await pool.query('DELETE FROM ioc_sources WHERE id = $1', [sourceId]);
-
-  await auditSourceAction(opts.audit, opts.req, AUDIT_ACTION.IOC_SOURCE_DELETED, before, null, {
-    source_id: before.id,
-    source_name: before.name,
-    ioc_count: 0,
-    usage_count: 0,
-    previous_state: before.state,
-    new_state: 'deleted'
-  }, AUDIT_SEVERITY.WARNING);
-
-  return { status: 200, body: { deleted: true, source_id: sourceId } };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const del = await client.query('DELETE FROM ioc_sources WHERE id = $1 RETURNING id', [sourceId]);
+    if (!del.rowCount) {
+      await client.query('ROLLBACK');
+      return { status: 404, body: { message: 'IOC source not found' } };
+    }
+    await auditSourceAction(opts.audit, opts.req, AUDIT_ACTION.IOC_SOURCE_DELETED, before, null, {
+      source_id: before.id,
+      source_name: before.name,
+      ioc_count: 0,
+      usage_count: 0,
+      previous_state: before.state,
+      new_state: 'deleted'
+    }, AUDIT_SEVERITY.WARNING);
+    await client.query('COMMIT');
+    return { status: 200, body: { deleted: true, source_id: sourceId } };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[ioc-source] delete failed', { sourceId, code: err.code, message: err.message });
+    if (err.code === '23503') {
+      return {
+        status: 409,
+        body: {
+          message: DELETE_BLOCKED_MESSAGE,
+          detail: err.message
+        }
+      };
+    }
+    return {
+      status: 500,
+      body: {
+        message: 'Failed to delete IOC source',
+        detail: err.message
+      }
+    };
+  } finally {
+    client.release();
+  }
 }
 
 export { serializeSourceWithUsage, SOURCE_AUDIT_FIELDS, DELETE_BLOCKED_MESSAGE };

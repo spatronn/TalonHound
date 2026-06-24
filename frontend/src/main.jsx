@@ -329,6 +329,22 @@ function apiErrorMessage(err, fallback = 'Request failed') {
   return String(d?.message || err?.message || fallback);
 }
 
+function parseIocSourceDeleteError(err) {
+  const status = err?.response?.status;
+  const message = String(err?.response?.data?.message || '').trim();
+  if (status === 409) {
+    return {
+      blocked: true,
+      message: message || 'This source contains IOC records. Move them to another source before deleting.'
+    };
+  }
+  const raw = String(err?.message || '');
+  if (!status || status >= 500 || /^request failed with status code 502/i.test(raw)) {
+    return { blocked: false, message: 'Delete failed. Please check server logs.' };
+  }
+  return { blocked: false, message: apiErrorMessage(err, 'Delete failed') };
+}
+
 function parseFeedPurgeError(err, fallback = 'Failed to start purge job. Please try again or check backend logs.') {
   const d = err?.response?.data;
   const code = String(d?.error || '').trim();
@@ -9375,6 +9391,8 @@ function IocSourcesPage() {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [pageSuccess, setPageSuccess] = useState('');
   const [moveTarget, setMoveTarget] = useState(null);
   const [moveForm, setMoveForm] = useState({
     target_source_id: '',
@@ -9529,13 +9547,19 @@ function IocSourcesPage() {
   async function confirmDeleteSource() {
     if (!deleteTarget?.id || !isAdmin) return;
     setDeleteBusy(true);
-    setError('');
+    setDeleteError('');
     try {
       await api.delete(`/admin/ioc-sources/${deleteTarget.id}`);
+      const deletedName = deleteTarget.name;
       setDeleteTarget(null);
+      setPageSuccess(`Source "${deletedName}" deleted.`);
       await load();
     } catch (err) {
-      setError(apiErrorMessage(err, 'Delete failed'));
+      const parsed = parseIocSourceDeleteError(err);
+      if (parsed.blocked) {
+        setDeleteTarget((prev) => (prev ? { ...prev, deleteMode: 'blocked' } : prev));
+      }
+      setDeleteError(parsed.message);
     } finally {
       setDeleteBusy(false);
     }
@@ -9543,7 +9567,15 @@ function IocSourcesPage() {
 
   function handleDeleteClick(source) {
     const iocCount = sourceIocCount(source);
+    setDeleteError('');
+    setPageSuccess('');
     setDeleteTarget({ ...source, deleteMode: iocCount > 0 ? 'blocked' : 'empty' });
+  }
+
+  function closeDeleteModal() {
+    if (deleteBusy) return;
+    setDeleteTarget(null);
+    setDeleteError('');
   }
 
   function openMoveModal(source) {
@@ -9640,6 +9672,7 @@ function IocSourcesPage() {
           </label>
         </div>
 
+        {pageSuccess ? <div style={{ ...ui.banner, marginBottom: 12, borderColor: '#166534', color: '#86efac' }}>{pageSuccess}</div> : null}
         {error ? <div style={{ ...ui.banner, marginBottom: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
 
         <div style={{ overflowX: 'auto' }}>
@@ -9826,24 +9859,25 @@ function IocSourcesPage() {
       {deleteTarget ? (
         <div
           role="presentation"
-          onClick={() => !deleteBusy && setDeleteTarget(null)}
+          onClick={closeDeleteModal}
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
         >
           <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
             {deleteTarget.deleteMode === 'blocked' ? (
               <>
                 <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Source contains IOCs</h3>
-                <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
-                  This source contains IOC records and cannot be deleted directly. Move the IOCs to another source first.
+                <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+                  {deleteError || 'This source contains IOC records and cannot be deleted directly. Move the IOCs to another source first.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" style={ui.btn} onClick={() => setDeleteTarget(null)}>Cancel</button>
+                  <button type="button" style={ui.btn} onClick={closeDeleteModal}>Cancel</button>
                   <button
                     type="button"
                     style={ui.btnPrimary}
                     onClick={() => {
                       const src = deleteTarget;
                       setDeleteTarget(null);
+                      setDeleteError('');
                       openMoveModal(src);
                     }}
                   >
@@ -9854,11 +9888,14 @@ function IocSourcesPage() {
             ) : (
               <>
                 <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete source</h3>
-                <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+                <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
                   Delete this unused source? This cannot be undone.
                 </p>
+                {deleteError ? (
+                  <div style={{ ...ui.banner, marginBottom: 16, borderColor: '#991b1b', color: '#fca5a5' }}>{deleteError}</div>
+                ) : null}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" style={ui.btn} disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Cancel</button>
+                  <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal}>Cancel</button>
                   <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy} onClick={() => confirmDeleteSource().catch(() => {})}>
                     {deleteBusy ? 'Deleting…' : 'Delete source'}
                   </button>
