@@ -3,7 +3,7 @@
  * Verify URLHaus unchanged-export skip: seed checkpoint from live export, re-run import.
  */
 import pg from 'pg';
-import { fetchUrlhausExport, buildUrlhausCanonicalIocHash, parseUrlhausRecentCsv, resolveUrlhausAuthKey, saveUrlhausCheckpoint } from './lib/urlhaus.js';
+import { fetchUrlhausExport, buildUrlhausCanonicalIocHash, parseUrlhausRecentCsv, resolveUrlhausAuthKey, saveUrlhausCheckpoint } from '../lib/urlhaus.js';
 
 const sourceName = process.env.URLHAUS_SOURCE_NAME || 'URLhaus:abuse.ch';
 const pool = new pg.Pool({
