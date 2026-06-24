@@ -5,7 +5,7 @@ import {
   validateSourceName,
   parseManualExpirationInput
 } from './iocSourceValidation.js';
-import { inferObservableType } from './manualIocCreate.js';
+import { inferObservableType, resolveManualExpirationFromSource } from './manualIocCreate.js';
 
 test('normalizeSourceNameInput replaces spaces and strips invalid chars', () => {
   assert.equal(normalizeSourceNameInput('Internal Hunting'), 'Internal_Hunting');
@@ -45,6 +45,32 @@ test('parseManualExpirationInput rejects past custom date', () => {
     { now }
   );
   assert.equal(r.ok, false);
+});
+
+test('resolveManualExpirationFromSource uses source default expire after days', () => {
+  const now = new Date('2026-05-30T12:00:00.000Z');
+  const r = resolveManualExpirationFromSource(
+    { default_expire_policy: 'expire_after_days', default_expire_days: 30 },
+    { now }
+  );
+  assert.equal(r.ok, true);
+  assert.equal(r.policy, 'expire_after_days');
+  assert.equal(r.expire_days, 30);
+  assert.equal(new Date(r.manual_expires_at).toISOString(), '2026-06-29T12:00:00.000Z');
+});
+
+test('resolveManualExpirationFromSource uses source default never expire', () => {
+  const r = resolveManualExpirationFromSource({ default_expire_policy: 'never' });
+  assert.equal(r.ok, true);
+  assert.equal(r.policy, 'never');
+  assert.equal(r.manual_expires_at, null);
+});
+
+test('resolveManualExpirationFromSource ignores null policy and falls back to never', () => {
+  const r = resolveManualExpirationFromSource({ default_expire_policy: null, default_expire_days: null });
+  assert.equal(r.ok, true);
+  assert.equal(r.policy, 'never');
+  assert.equal(r.manual_expires_at, null);
 });
 
 test('inferObservableType detects ip domain url hash', () => {

@@ -14437,6 +14437,26 @@ function IOCDetailsPage() {
   );
 }
 
+function formatIocSourceDefaultExpiration(source) {
+  const pol = source?.default_expire_policy || 'never';
+  if (pol === 'never') return 'Never expires';
+  if (pol === 'expire_after_days') {
+    return `Expires after ${source?.default_expire_days || '?'} days`;
+  }
+  if (pol === 'custom_date') return 'Custom expire date';
+  return formatExpirationPolicyLabel(pol);
+}
+
+function formatIocSourceDefaultsHelper(source, threatClassOptions) {
+  if (!source) return null;
+  const conf = confidenceLabel(source.default_confidence || 'medium');
+  const threatSlug = source.default_threat_classification || 'unknown';
+  const threatOption = threatClassOptions.find((o) => o.value === threatSlug);
+  const threatLabel = threatOption?.label
+    || String(threatSlug).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return `Source defaults: Confidence ${conf} · Threat class ${threatLabel} · ${formatIocSourceDefaultExpiration(source)}`;
+}
+
 function IOCAddPage() {
   const navigate = useNavigate();
   const { canWrite } = useSession();
@@ -14453,13 +14473,9 @@ function IOCAddPage() {
   const [confidenceValue, setConfidenceValue] = useState('medium');
   const [sourceId, setSourceId] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [category, setCategory] = useState('');
   const [primaryThreatClass, setPrimaryThreatClass] = useState([]);
   const [threatActorId, setThreatActorId] = useState('');
   const [note, setNote] = useState('');
-  const [expirationPolicy, setExpirationPolicy] = useState('never');
-  const [expireDays, setExpireDays] = useState('30');
-  const [customExpiresAt, setCustomExpiresAt] = useState('');
   const [sources, setSources] = useState([]);
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const iocFormRef = useRef(null);
@@ -14507,11 +14523,6 @@ function IOCAddPage() {
     if (src.default_threat_classification && src.default_threat_classification !== 'unknown') {
       setPrimaryThreatClass([src.default_threat_classification]);
     } else setPrimaryThreatClass([]);
-    const pol = src.default_expire_policy || 'never';
-    setExpirationPolicy(pol);
-    if (pol === 'expire_after_days' && src.default_expire_days) {
-      setExpireDays(String(src.default_expire_days));
-    }
   }
 
   function handleSourceChange(e) {
@@ -14525,13 +14536,9 @@ function IOCAddPage() {
     setConfidenceValue('medium');
     setSourceId('');
     setSourceUrl('');
-    setCategory('');
     setPrimaryThreatClass([]);
     setThreatActorId('');
     setNote('');
-    setExpirationPolicy('never');
-    setExpireDays('30');
-    setCustomExpiresAt('');
   }
 
 
@@ -14658,6 +14665,15 @@ function IOCAddPage() {
     return copy;
   }, [recentRows, recentSort]);
 
+  const selectedSource = useMemo(
+    () => sources.find((s) => String(s.id) === String(sourceId)) || null,
+    [sources, sourceId]
+  );
+  const sourceDefaultsHelper = useMemo(
+    () => formatIocSourceDefaultsHelper(selectedSource, threatClassOptions),
+    [selectedSource, threatClassOptions]
+  );
+
   async function onSubmit(e) {
     e.preventDefault();
     if (!canWrite || submitting) return;
@@ -14673,21 +14689,13 @@ function IOCAddPage() {
       source_id: Number(sourceId),
       source_url: sourceUrl.trim() || undefined,
       confidence: confidenceValue,
-      category: category.trim() || undefined,
       threat_classifications: selectedClasses,
       threat_classification: selectedClasses[0] || 'unknown',
       primary_threat_classification: selectedClasses[0] || 'unknown',
-      note: note.trim() || undefined,
-      expiration_policy: expirationPolicy
+      note: note.trim() || undefined
     };
     if (threatActorId) {
       payload.threat_actor_id = threatActorId;
-    }
-    if (expirationPolicy === 'expire_after_days') {
-      payload.expire_days = Number(expireDays);
-    }
-    if (expirationPolicy === 'custom_date' && customExpiresAt) {
-      payload.expires_at = new Date(customExpiresAt).toISOString();
     }
 
     try {
@@ -14790,26 +14798,11 @@ function IOCAddPage() {
               </div>
             </div>
 
-            <div style={twoColRowStyle}>
-              <div>
-                <label htmlFor="expiration-policy" style={fieldLabelStyle}>Expiration Policy</label>
-                <select id="expiration-policy" value={expirationPolicy} onChange={(e) => setExpirationPolicy(e.target.value)} disabled={!canWrite} style={inputStyle}>
-                  {IOC_EXPIRE_POLICY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              {expirationPolicy === 'expire_after_days' ? (
-                <div>
-                  <label htmlFor="expire-days" style={fieldLabelStyle}>Expire After (days)</label>
-                  <input id="expire-days" type="number" min={1} max={3650} required value={expireDays} onChange={(e) => setExpireDays(e.target.value)} disabled={!canWrite} style={inputStyle} />
-                </div>
-              ) : null}
-              {expirationPolicy === 'custom_date' ? (
-                <div>
-                  <label htmlFor="custom-expires-at" style={fieldLabelStyle}>Custom Expire Date/Time</label>
-                  <input id="custom-expires-at" type="datetime-local" required value={customExpiresAt} onChange={(e) => setCustomExpiresAt(e.target.value)} disabled={!canWrite} style={inputStyle} />
-                </div>
-              ) : null}
-            </div>
+            {sourceDefaultsHelper ? (
+              <p className="ioc-add-source-defaults" style={{ margin: 0, fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>
+                {sourceDefaultsHelper}
+              </p>
+            ) : null}
 
             <div style={twoColRowStyle}>
               <div>
@@ -14820,11 +14813,7 @@ function IOCAddPage() {
                   <option value="high">High</option>
                 </select>
               </div>
-	              <div>
-	                <label htmlFor="category" style={fieldLabelStyle}>Category</label>
-	                <input id="category" value={category} onChange={(e) => setCategory(e.target.value)} disabled={!canWrite} style={inputStyle} />
-	              </div>
-	            </div>
+            </div>
 	            <div>
 	              <label style={fieldLabelStyle}>Threat Classifications</label>
 	              <ThreatClassificationMultiSelect

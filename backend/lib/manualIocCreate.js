@@ -20,6 +20,16 @@ export function inferObservableType(value) {
   return 'domain';
 }
 
+export function resolveManualExpirationFromSource(sourceRow, opts = {}) {
+  return parseManualExpirationInput(
+    {
+      expiration_policy: sourceRow?.default_expire_policy ?? 'never',
+      expire_days: sourceRow?.default_expire_days
+    },
+    opts
+  );
+}
+
 export function resolveManualIocConfidenceProvenance(body, sourceRow, confidence) {
   const sourceDefault = sourceRow?.default_confidence
     ? String(sourceRow.default_confidence).trim().toLowerCase()
@@ -114,12 +124,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     return { status: 400, body: { message: 'Could not infer IOC type from value' } };
   }
 
-  const expirationInput = {
-    expiration_policy: body?.expiration_policy ?? sourceRow.default_expire_policy ?? 'never',
-    expire_days: body?.expire_days ?? sourceRow.default_expire_days,
-    expires_at: body?.expires_at ?? body?.custom_expires_at
-  };
-  const expiration = parseManualExpirationInput(expirationInput);
+  const expiration = resolveManualExpirationFromSource(sourceRow);
   if (!expiration.ok) {
     return { status: 400, body: { message: expiration.error } };
   }
