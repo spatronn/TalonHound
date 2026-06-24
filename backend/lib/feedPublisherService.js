@@ -5,7 +5,12 @@ import {
   confidenceToScore,
   observableTypesForFeedIocType
 } from './feedFormatter.js';
-import { buildFeedKeySourceSql, isCustomFeedKey } from './publishedFeedSources.js';
+import {
+  buildFeedKeySourceSql,
+  extractManualFeedSourceIds,
+  isCustomFeedKey,
+  isManualFeedKey
+} from './publishedFeedSources.js';
 
 export { buildFeedKeySourceSql };
 
@@ -73,6 +78,7 @@ export function filtersHash(feed, window) {
 
 async function fetchLatestIntegrationFinishedAt(pool, feed = null) {
   const includeCustom = (feed?.include_feed_keys || []).some((k) => isCustomFeedKey(k));
+  const manualSourceIds = extractManualFeedSourceIds(feed?.include_feed_keys);
   const queries = [
     pool.query(
       `SELECT MAX(finished_at) AS latest_finished_at
@@ -86,6 +92,16 @@ async function fetchLatestIntegrationFinishedAt(pool, feed = null) {
         `SELECT MAX(finished_at) AS latest_finished_at
          FROM custom_threat_feed_runs
          WHERE status = 'success' AND finished_at IS NOT NULL`
+      )
+    );
+  }
+  if (manualSourceIds.length) {
+    queries.push(
+      pool.query(
+        `SELECT MAX(GREATEST(updated_at, created_at)) AS latest_finished_at
+         FROM ioc_items
+         WHERE ioc_source_id = ANY($1::bigint[])`,
+        [manualSourceIds]
       )
     );
   }

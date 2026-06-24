@@ -132,9 +132,13 @@ function accessKeyAuditSnapshot(row) {
  * @param {{ auditSuccess: Function }} audit
  */
 export function registerPublishedFeedRoutes(app, pool, audit) {
-  app.get('/api/published-feeds/source-options', async (_req, res) => {
+  app.get('/api/published-feeds/source-options', async (req, res) => {
     try {
-      const { sources } = await fetchPublishedFeedSourceOptions(pool);
+      const selectedRaw = req.query?.selected_keys;
+      const selectedKeys = selectedRaw
+        ? String(selectedRaw).split(',').map((k) => k.trim()).filter(Boolean)
+        : [];
+      const { sources } = await fetchPublishedFeedSourceOptions(pool, { selectedKeys });
       return res.json({ sources });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to list publishable source feeds', detail: err.message });

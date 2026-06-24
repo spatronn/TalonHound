@@ -7206,8 +7206,9 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
     fontWeight: 600
   };
 
-  const integrationOptions = options.filter((o) => o.type !== 'custom');
+  const integrationOptions = options.filter((o) => o.type === 'integration');
   const customOptions = options.filter((o) => o.type === 'custom');
+  const manualOptions = options.filter((o) => o.type === 'manual_source');
   const selectableKeys = options.filter((o) => o.selectable !== false).map((o) => o.key);
 
   function renderOption(o) {
@@ -7279,6 +7280,16 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {customOptions.map(renderOption)}
+            </div>
+          </div>
+        ) : null}
+        {manualOptions.length ? (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Manual IOC Sources
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {manualOptions.map(renderOption)}
             </div>
           </div>
         ) : null}
@@ -7529,23 +7540,9 @@ function PublishedFeedsPage() {
 
   async function loadSourceFeeds(selectedKeys = []) {
     try {
-      const { data } = await api.get('/published-feeds/source-options');
-      const list = (data?.sources || []).slice();
-      const known = new Set(list.map((o) => o.key));
-      for (const key of selectedKeys) {
-        if (known.has(key)) continue;
-        const custom = String(key).startsWith('ctf-');
-        list.push({
-          key,
-          name: key,
-          type: custom ? 'custom' : 'integration',
-          active: false,
-          selectable: false,
-          missing: true,
-          display_name: custom ? `${key} (missing custom feed)` : `${key} (inactive)`
-        });
-      }
-      setSourceFeeds(list);
+      const params = selectedKeys.length ? { selected_keys: selectedKeys.join(',') } : {};
+      const { data } = await api.get('/published-feeds/source-options', { params });
+      setSourceFeeds(Array.isArray(data?.sources) ? data.sources : []);
     } catch {
       setSourceFeeds([]);
     }
@@ -7836,7 +7833,7 @@ function PublishedFeedsPage() {
                 <FeedFormField
                   ui={ui}
                   label="Threat Feeds"
-                  helper="Optional. Leave empty to include all feeds, or select integration and custom threat feeds to limit IOC sources."
+                  helper="Optional. Leave empty to include all feeds, or select integration feeds, custom threat feeds, and manual IOC sources to limit IOC provenance."
                   fullWidth
                 >
                   <FeedIntegrationMultiSelect
