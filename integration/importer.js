@@ -24,6 +24,7 @@ import {
 } from './lib/iocConfidence.js';
 import {
   URLHAUS_FEED_KEY,
+  URLHAUS_EXPORT_URL_MASKED,
   URLHAUS_AUTH_REQUIRED_MSG,
   assertUrlhausMinFetchInterval,
   buildUrlhausCanonicalIocHash,
