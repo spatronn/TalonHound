@@ -142,6 +142,9 @@ export function serializeIocSourceRow(row) {
   let state = 'active';
   if (archivedAt) state = 'archived';
   else if (row.active === false) state = 'disabled';
+  const iocCount = row.ioc_count != null
+    ? Number(row.ioc_count)
+    : (row.usage_count != null ? Number(row.usage_count) : undefined);
 
   return {
     id: Number(row.id),
@@ -154,7 +157,8 @@ export function serializeIocSourceRow(row) {
     active,
     state,
     archived_at: archivedAt,
-    usage_count: row.usage_count != null ? Number(row.usage_count) : undefined,
+    ioc_count: iocCount,
+    usage_count: iocCount,
     created_by: row.created_by || null,
     created_at: row.created_at,
     updated_at: row.updated_at

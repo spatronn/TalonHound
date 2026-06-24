@@ -24,10 +24,10 @@ export function isIocSourceSelectable(row) {
  */
 export async function fetchIocSourceUsageCount(db, sourceId) {
   const { rows } = await db.query(
-    `SELECT COUNT(*)::int AS usage_count FROM ioc_items WHERE ioc_source_id = $1`,
+    `SELECT COUNT(*)::int AS ioc_count FROM ioc_items WHERE ioc_source_id = $1`,
     [sourceId]
   );
-  return Number(rows[0]?.usage_count || 0);
+  return Number(rows[0]?.ioc_count || 0);
 }
 
 /**
@@ -37,7 +37,7 @@ export async function fetchIocSourceUsageCount(db, sourceId) {
 export async function fetchIocSourceById(db, sourceId) {
   const { rows } = await db.query(
     `SELECT s.*,
-            (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = s.id) AS usage_count
+            (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = s.id) AS ioc_count
      FROM ioc_sources s
      WHERE s.id = $1`,
     [sourceId]
@@ -47,10 +47,37 @@ export async function fetchIocSourceById(db, sourceId) {
 
 function serializeSourceWithUsage(row) {
   if (!row) return null;
+  const serialized = serializeIocSourceRow(row);
   return {
-    ...serializeIocSourceRow(row),
-    usage_count: Number(row.usage_count || 0),
+    ...serialized,
+    ioc_count: Number(row.ioc_count ?? serialized.ioc_count ?? 0),
+    usage_count: Number(row.ioc_count ?? serialized.ioc_count ?? 0),
     state: resolveIocSourceState(row)
+  };
+}
+
+const DELETE_BLOCKED_MESSAGE = 'This source contains IOC records. Move them to another source before deleting.';
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {number} sourceId
+ */
+export async function previewIocSourceDelete(pool, sourceId) {
+  const row = await fetchIocSourceById(pool, sourceId);
+  if (!row) return { status: 404, body: { message: 'IOC source not found' } };
+
+  const iocCount = Number(row.ioc_count || 0);
+  const canDelete = iocCount === 0;
+
+  return {
+    status: 200,
+    body: {
+      source_id: Number(row.id),
+      source_name: row.name,
+      ioc_count: iocCount,
+      can_delete: canDelete,
+      blocked_reason: canDelete ? null : DELETE_BLOCKED_MESSAGE
+    }
   };
 }
 
@@ -85,7 +112,7 @@ export async function setIocSourceActive(pool, sourceId, active, opts = {}) {
   const before = serializeSourceWithUsage(row);
   const { rows } = await pool.query(
     `UPDATE ioc_sources SET active = $2, updated_at = NOW() WHERE id = $1 RETURNING *,
-      (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = ioc_sources.id) AS usage_count`,
+      (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = ioc_sources.id) AS ioc_count`,
     [sourceId, Boolean(active)]
   );
   const after = serializeSourceWithUsage(rows[0]);
@@ -96,6 +123,7 @@ export async function setIocSourceActive(pool, sourceId, active, opts = {}) {
     source_id: after.id,
     source_name: after.name,
     usage_count: after.usage_count,
+    ioc_count: after.ioc_count,
     previous_state: before.state,
     new_state: after.state
   }, severity);
@@ -124,7 +152,7 @@ export async function archiveIocSource(pool, sourceId, opts = {}) {
      SET active = FALSE, archived_at = NOW(), archived_by = $2::uuid, updated_at = NOW()
      WHERE id = $1
      RETURNING *,
-       (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = ioc_sources.id) AS usage_count`,
+       (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = ioc_sources.id) AS ioc_count`,
     [sourceId, userId]
   );
   const after = serializeSourceWithUsage(rows[0]);
@@ -133,6 +161,7 @@ export async function archiveIocSource(pool, sourceId, opts = {}) {
     source_id: after.id,
     source_name: after.name,
     usage_count: after.usage_count,
+    ioc_count: after.ioc_count,
     previous_state: before.state,
     new_state: after.state
   }, AUDIT_SEVERITY.WARNING);
@@ -149,18 +178,19 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
   const row = await fetchIocSourceById(pool, sourceId);
   if (!row) return { status: 404, body: { message: 'IOC source not found' } };
 
-  const usageCount = Number(row.usage_count || 0);
-  if (usageCount > 0) {
+  const iocCount = Number(row.ioc_count || 0);
+  if (iocCount > 0) {
     await auditSourceAction(
       opts.audit,
       opts.req,
-      AUDIT_ACTION.IOC_SOURCE_DELETE_BLOCKED_USED,
+      AUDIT_ACTION.IOC_SOURCE_DELETE_BLOCKED_HAS_IOCS,
       serializeSourceWithUsage(row),
       serializeSourceWithUsage(row),
       {
         source_id: row.id,
         source_name: row.name,
-        usage_count: usageCount,
+        ioc_count: iocCount,
+        usage_count: iocCount,
         previous_state: resolveIocSourceState(row),
         new_state: resolveIocSourceState(row)
       },
@@ -169,22 +199,9 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
     return {
       status: 409,
       body: {
-        message: 'This source is used by existing IOCs. Archive it instead.',
-        usage_count: usageCount
-      }
-    };
-  }
-
-  const historyCountQ = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM ioc_manual_source_memberships WHERE ioc_source_id = $1`,
-    [sourceId]
-  );
-  if (Number(historyCountQ.rows[0]?.c || 0) > 0) {
-    return {
-      status: 409,
-      body: {
-        message: 'This source has historical IOC provenance and cannot be deleted. Archive it instead.',
-        usage_count: 0
+        message: DELETE_BLOCKED_MESSAGE,
+        ioc_count: iocCount,
+        usage_count: iocCount
       }
     };
   }
@@ -195,6 +212,7 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
   await auditSourceAction(opts.audit, opts.req, AUDIT_ACTION.IOC_SOURCE_DELETED, before, null, {
     source_id: before.id,
     source_name: before.name,
+    ioc_count: 0,
     usage_count: 0,
     previous_state: before.state,
     new_state: 'deleted'
@@ -203,4 +221,4 @@ export async function deleteIocSource(pool, sourceId, opts = {}) {
   return { status: 200, body: { deleted: true, source_id: sourceId } };
 }
 
-export { serializeSourceWithUsage, SOURCE_AUDIT_FIELDS };
+export { serializeSourceWithUsage, SOURCE_AUDIT_FIELDS, DELETE_BLOCKED_MESSAGE };

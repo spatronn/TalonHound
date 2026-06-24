@@ -11,10 +11,11 @@ import {
 import {
   archiveIocSource,
   deleteIocSource,
+  previewIocSourceDelete,
   serializeSourceWithUsage,
   setIocSourceActive
 } from '../lib/iocSourceLifecycle.js';
-import { executeIocSourceMove, previewIocSourceMove } from '../lib/iocSourceMove.js';
+import { executeIocSourceMove, previewIocSourceMove, resolveApplyTargetDefaults } from '../lib/iocSourceMove.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 
@@ -83,6 +84,27 @@ function resolveSourceAuditAction(before, after) {
  * @param {{ auditSuccess: Function }} audit
  */
 export function registerIocSourceRoutes(app, pool, audit) {
+  async function listSources(includeInactive) {
+    const { rows } = await pool.query(
+      `SELECT s.*,
+              (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = s.id) AS ioc_count
+       FROM ioc_sources s
+       ${includeInactive ? '' : 'WHERE s.active = TRUE AND s.archived_at IS NULL'}
+       ORDER BY s.archived_at NULLS FIRST, s.active DESC, s.name ASC`
+    );
+    return rows.map(serializeIocSourceRow);
+  }
+
+  app.get('/api/admin/ioc-sources', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const includeInactive = String(req.query?.include_inactive || '').toLowerCase() === 'true'
+        || String(req.query?.include_inactive || '') === '1';
+      return res.json({ sources: await listSources(includeInactive) });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to list IOC sources', detail: err.message });
+    }
+  });
+
   app.get('/api/ioc-sources', async (req, res) => {
     try {
       const includeInactive = String(req.query?.include_inactive || '').toLowerCase() === 'true'
@@ -91,14 +113,7 @@ export function registerIocSourceRoutes(app, pool, audit) {
         return res.status(403).json({ message: 'Forbidden' });
       }
 
-      const { rows } = await pool.query(
-        `SELECT s.*,
-                (SELECT COUNT(*)::int FROM ioc_items i WHERE i.ioc_source_id = s.id) AS usage_count
-         FROM ioc_sources s
-         ${includeInactive ? '' : 'WHERE s.active = TRUE AND s.archived_at IS NULL'}
-         ORDER BY s.archived_at NULLS FIRST, s.active DESC, s.name ASC`
-      );
-      return res.json({ sources: rows.map(serializeIocSourceRow) });
+      return res.json({ sources: await listSources(includeInactive) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to list IOC sources', detail: err.message });
     }
@@ -272,6 +287,15 @@ export function registerIocSourceRoutes(app, pool, audit) {
     return res.status(result.status).json(result.body);
   }
 
+  async function handleDeletePreview(req, res) {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ message: 'Invalid id' });
+    }
+    const result = await previewIocSourceDelete(pool, id);
+    return res.status(result.status).json(result.body);
+  }
+
   async function handleDelete(req, res) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id) || id <= 0) {
@@ -300,10 +324,9 @@ export function registerIocSourceRoutes(app, pool, audit) {
           source_from_name: result.body.source_name,
           source_to_id: result.body.target_source_id,
           source_to_name: result.body.target_source_name,
-          scope: result.body.scope,
-          apply_target_defaults: Boolean(req.body?.apply_target_defaults),
+          ioc_count: result.body.ioc_count,
+          apply_target_defaults: resolveApplyTargetDefaults(req.body || {}),
           archive_source_after_move: Boolean(req.body?.archive_source_after_move),
-          matched: result.body.total_memberships_matched,
           moved: result.body.will_move,
           merged: result.body.will_merge,
           skipped: result.body.will_skip
@@ -322,6 +345,7 @@ export function registerIocSourceRoutes(app, pool, audit) {
     return res.status(result.status).json(result.body);
   }
 
+  app.get('/api/admin/ioc-sources/:id/delete-preview', requireRole(ROLES.ADMIN), handleDeletePreview);
   app.post('/api/admin/ioc-sources/:id/disable', requireRole(ROLES.ADMIN), handleDisable);
   app.post('/api/admin/ioc-sources/:id/enable', requireRole(ROLES.ADMIN), handleEnable);
   app.post('/api/admin/ioc-sources/:id/archive', requireRole(ROLES.ADMIN), handleArchive);

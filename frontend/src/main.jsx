@@ -9356,6 +9356,10 @@ function formatIocSourceStateLabel(source) {
   return 'Active';
 }
 
+function sourceIocCount(source) {
+  return Number(source?.ioc_count ?? source?.usage_count ?? 0);
+}
+
 function IocSourcesPage() {
   const { isAdmin } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
@@ -9374,8 +9378,7 @@ function IocSourcesPage() {
   const [moveTarget, setMoveTarget] = useState(null);
   const [moveForm, setMoveForm] = useState({
     target_source_id: '',
-    scope: 'active_only',
-    apply_target_defaults: false,
+    apply_target_defaults: true,
     archive_source_after_move: false
   });
   const [movePreview, setMovePreview] = useState(null);
@@ -9538,12 +9541,16 @@ function IocSourcesPage() {
     }
   }
 
+  function handleDeleteClick(source) {
+    const iocCount = sourceIocCount(source);
+    setDeleteTarget({ ...source, deleteMode: iocCount > 0 ? 'blocked' : 'empty' });
+  }
+
   function openMoveModal(source) {
     setMoveTarget(source);
     setMoveForm({
       target_source_id: '',
-      scope: 'active_only',
-      apply_target_defaults: false,
+      apply_target_defaults: true,
       archive_source_after_move: false
     });
     setMovePreview(null);
@@ -9652,7 +9659,7 @@ function IocSourcesPage() {
               {loading ? (
 	                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
               ) : sources.length ? sources.map((s) => {
-                const usageCount = Number(s.usage_count || 0);
+                const iocCount = sourceIocCount(s);
                 const state = s.state || (s.archived_at ? 'archived' : s.active === false ? 'disabled' : 'active');
                 const isArchived = state === 'archived';
                 return (
@@ -9661,7 +9668,7 @@ function IocSourcesPage() {
 	                  <td style={ui.td}>{s.default_confidence || '—'}</td>
 	                  <td style={ui.td}>{String(s.default_threat_classification || '—').replaceAll('_', ' ')}</td>
 	                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
-                  <td style={ui.td}>{usageCount.toLocaleString('en-US')}</td>
+                  <td style={ui.td}>{iocCount.toLocaleString('en-US')}</td>
                   <td style={ui.td}>{formatIocSourceStateLabel(s)}</td>
                   <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(s)}>Edit</button>
@@ -9674,21 +9681,21 @@ function IocSourcesPage() {
                     {!isArchived ? (
                       <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setArchiveTarget(s)}>Archive</button>
                     ) : null}
-                    {usageCount > 0 ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => openMoveModal(s)}>Move IOCs</button>
-                    ) : null}
-                    {usageCount === 0 ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => setDeleteTarget(s)}>Delete</button>
-                    ) : (
-                      <button
-                        type="button"
-                        title="Source is used by existing IOCs. Archive it instead."
-                        style={{ ...ui.btn, marginLeft: 6, opacity: 0.45, cursor: 'not-allowed' }}
-                        disabled
-                      >
-                        Delete
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      style={{ ...ui.btn, marginLeft: 6, opacity: iocCount > 0 ? 1 : 0.45 }}
+                      disabled={iocCount <= 0}
+                      onClick={() => openMoveModal(s)}
+                    >
+                      Move IOCs
+                    </button>
+                    <button
+                      type="button"
+                      style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }}
+                      onClick={() => handleDeleteClick(s)}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               );}) : (
@@ -9823,16 +9830,41 @@ function IocSourcesPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
         >
           <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
-            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete Unused IOC Source?</h3>
-            <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
-              Delete this unused source? This cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" style={ui.btn} disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy} onClick={() => confirmDeleteSource().catch(() => {})}>
-                {deleteBusy ? 'Deleting…' : 'Delete Source'}
-              </button>
-            </div>
+            {deleteTarget.deleteMode === 'blocked' ? (
+              <>
+                <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Source contains IOCs</h3>
+                <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+                  This source contains IOC records and cannot be deleted directly. Move the IOCs to another source first.
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" style={ui.btn} onClick={() => setDeleteTarget(null)}>Cancel</button>
+                  <button
+                    type="button"
+                    style={ui.btnPrimary}
+                    onClick={() => {
+                      const src = deleteTarget;
+                      setDeleteTarget(null);
+                      openMoveModal(src);
+                    }}
+                  >
+                    Move IOCs
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete source</h3>
+                <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+                  Delete this unused source? This cannot be undone.
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button type="button" style={ui.btn} disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Cancel</button>
+                  <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy} onClick={() => confirmDeleteSource().catch(() => {})}>
+                    {deleteBusy ? 'Deleting…' : 'Delete source'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}
@@ -9846,7 +9878,7 @@ function IocSourcesPage() {
           <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(680px, 96vw)' }}>
             <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 8 }}>Move IOCs</h3>
             <p style={{ margin: '0 0 16px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
-              Move IOCs from this source to another source. Existing evidence will be preserved as historical provenance.
+              All IOC records linked to this source will be moved to the target source. Move history is preserved in audit logs and IOC details.
             </p>
             <div style={{ display: 'grid', gap: 12 }}>
               <FeedFormField ui={ui} label="Source from" fullWidth>
@@ -9866,20 +9898,6 @@ function IocSourcesPage() {
                   {moveTargetOptions.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
-                </select>
-              </FeedFormField>
-              <FeedFormField ui={ui} label="Scope" fullWidth>
-                <select
-                  value={moveForm.scope}
-                  onChange={(e) => {
-                    setMoveForm((f) => ({ ...f, scope: e.target.value }));
-                    setMovePreview(null);
-                    setMoveSuccess(null);
-                  }}
-                  style={ui.select}
-                >
-                  <option value="active_only">Active memberships only</option>
-                  <option value="all">All memberships</option>
                 </select>
               </FeedFormField>
               <label style={{ ...ui.checkLabel, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -9908,18 +9926,20 @@ function IocSourcesPage() {
               {movePreview ? (
                 <div style={{ padding: 12, borderRadius: 8, border: '1px solid #334155', background: '#0f172a', fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
                   <div><strong>Preview</strong></div>
-                  <div>Matched: {movePreview.total_memberships_matched ?? movePreview.matched ?? 0}</div>
+                  <div>IOCs: {movePreview.ioc_count ?? 0}</div>
                   <div>Will move: {movePreview.will_move ?? 0}</div>
                   <div>Will merge: {movePreview.will_merge ?? 0}</div>
                   <div>Will skip: {movePreview.will_skip ?? 0}</div>
-                  {movePreview.possible_conflicts?.length ? (
-                    <div style={{ marginTop: 8, color: '#fde68a' }}>{movePreview.possible_conflicts.join(' · ')}</div>
+                  {movePreview.source_will_be_empty_after_move ? (
+                    <div style={{ marginTop: 8, color: '#86efac' }}>Source will be empty after move — you can delete it.</div>
                   ) : null}
                 </div>
               ) : null}
               {moveSuccess ? (
                 <div style={{ padding: 12, borderRadius: 8, border: '1px solid #166534', background: 'rgba(22,163,74,0.12)', color: '#86efac', fontSize: 13 }}>
                   Move complete — moved {moveSuccess.moved ?? 0}, merged {moveSuccess.merged ?? 0}, skipped {moveSuccess.skipped ?? 0}.
+                  Source IOC count: {moveSuccess.source_ioc_count_after ?? 0}. Target IOC count: {moveSuccess.target_ioc_count_after ?? 0}.
+                  {moveSuccess.source_ioc_count_after === 0 ? ' You can now delete this source.' : ''}
                   {moveSuccess.archived_source ? ' Source archived.' : ''}
                 </div>
               ) : null}
