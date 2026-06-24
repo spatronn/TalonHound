@@ -2,6 +2,8 @@
  * URLhaus recent CSV export (abuse.ch) — auth, parsing, and safe logging.
  */
 
+import { createHash } from 'node:crypto';
+
 export const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 export const URLHAUS_EXPORT_BASE = 'https://urlhaus-api.abuse.ch/v2/files/exports';
 export const URLHAUS_EXPORT_URL_MASKED = `${URLHAUS_EXPORT_BASE}/***/recent.csv`;
@@ -231,4 +233,202 @@ export async function assertUrlhausMinFetchInterval(client, sourceName) {
     };
   }
   return { ok: true };
+}
+
+/** Trim observable for stable canonical IOC identity (URL path case preserved). */
+export function normalizeUrlhausObservable(value) {
+  return String(value ?? '').trim();
+}
+
+/** Stable sha256 over sorted unique type|observable keys (ignores CSV comments/order/metadata). */
+export function buildUrlhausCanonicalIocHash(entries = []) {
+  const keys = new Set();
+  for (const entry of entries) {
+    const observable = normalizeUrlhausObservable(entry?.observable);
+    const type = String(entry?.observableType || 'url').trim() || 'url';
+    if (!observable) continue;
+    keys.add(`${type}|${observable}`);
+  }
+  const sorted = [...keys].sort((a, b) => a.localeCompare(b));
+  return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
+}
+
+export function hashUrlhausRawContent(text) {
+  return createHash('sha256').update(String(text ?? '')).digest('hex');
+}
+
+/** @typedef {{ v?: number, etag?: string|null, last_modified?: string|null, raw_content_hash?: string|null, canonical_ioc_hash?: string|null, last_success_at?: string|null }} UrlhausCheckpoint */
+
+/** @returns {UrlhausCheckpoint|null} */
+export function parseUrlhausCheckpoint(lastCursor, contentHash = null) {
+  if (lastCursor) {
+    const raw = String(lastCursor).trim();
+    if (raw.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        // fall through
+      }
+    }
+    if (raw.startsWith('hash:')) {
+      return { v: 0, canonical_ioc_hash: raw.slice(5) };
+    }
+  }
+  if (contentHash) {
+    return { v: 0, canonical_ioc_hash: String(contentHash) };
+  }
+  return null;
+}
+
+/** @param {UrlhausCheckpoint} checkpoint */
+export function serializeUrlhausCheckpoint(checkpoint) {
+  return JSON.stringify({
+    v: 1,
+    etag: checkpoint.etag ?? null,
+    last_modified: checkpoint.last_modified ?? null,
+    raw_content_hash: checkpoint.raw_content_hash ?? null,
+    canonical_ioc_hash: checkpoint.canonical_ioc_hash ?? null,
+    last_success_at: checkpoint.last_success_at ?? new Date().toISOString()
+  });
+}
+
+/**
+ * Decide whether URLHaus export can skip DB import.
+ * @param {{ checkpoint: UrlhausCheckpoint|null, statusCode: number, responseEtag?: string|null, responseLastModified?: string|null, canonicalIocHash?: string|null }} input
+ */
+export function evaluateUrlhausExportSkip(input) {
+  const {
+    checkpoint,
+    statusCode,
+    responseEtag = null,
+    responseLastModified = null,
+    canonicalIocHash = null
+  } = input || {};
+
+  if (Number(statusCode) === 304) {
+    return { skip: true, reason: 'not_modified' };
+  }
+  if (checkpoint?.etag && responseEtag && checkpoint.etag === responseEtag) {
+    return { skip: true, reason: 'etag_unchanged' };
+  }
+  if (checkpoint?.last_modified && responseLastModified && checkpoint.last_modified === responseLastModified) {
+    return { skip: true, reason: 'last_modified_unchanged' };
+  }
+  if (checkpoint?.canonical_ioc_hash && canonicalIocHash && checkpoint.canonical_ioc_hash === canonicalIocHash) {
+    return { skip: true, reason: 'canonical_unchanged' };
+  }
+  return { skip: false, reason: null };
+}
+
+/**
+ * Fetch URLHaus export with optional conditional headers.
+ * @param {string} authKey
+ * @param {{ signal?: AbortSignal, checkpoint?: UrlhausCheckpoint|null, fetchImpl?: typeof fetch }} [options]
+ */
+export async function fetchUrlhausExport(authKey, options = {}) {
+  const { signal, checkpoint = null, fetchImpl } = options;
+  const url = buildUrlhausRecentCsvUrl(authKey);
+  const headers = {};
+  if (checkpoint?.etag) headers['If-None-Match'] = String(checkpoint.etag);
+  if (checkpoint?.last_modified) headers['If-Modified-Since'] = String(checkpoint.last_modified);
+
+  const fetchFn = fetchImpl || globalThis.fetch;
+  const res = await fetchFn(url, { method: 'GET', headers, signal });
+  const etag = res.headers?.get?.('etag') ?? null;
+  const lastModified = res.headers?.get?.('last-modified') ?? null;
+
+  if (res.status === 304) {
+    return {
+      status: 304,
+      text: null,
+      etag: etag || checkpoint?.etag || null,
+      lastModified: lastModified || checkpoint?.last_modified || null,
+      rawContentHash: checkpoint?.raw_content_hash || null
+    };
+  }
+
+  if (!res.ok) {
+    throw new Error(`URLhaus CSV export request failed: ${res.status}`);
+  }
+
+  const text = await res.text();
+  return {
+    status: res.status,
+    text,
+    etag,
+    lastModified,
+    rawContentHash: hashUrlhausRawContent(text)
+  };
+}
+
+/** @param {import('pg').PoolClient} client @param {string} sourceName */
+export async function loadUrlhausCheckpoint(client, sourceName) {
+  const { rows } = await client.query(
+    `SELECT s.content_hash, s.updated_at, c.last_cursor
+     FROM integration_source_state s
+     FULL OUTER JOIN integration_checkpoints c ON c.source_name = s.source_name
+     WHERE COALESCE(s.source_name, c.source_name) = $1
+     LIMIT 1`,
+    [sourceName]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const parsed = parseUrlhausCheckpoint(row.last_cursor, row.content_hash);
+  if (!parsed) return null;
+  if (!parsed.last_success_at && row.updated_at) {
+    parsed.last_success_at = row.updated_at instanceof Date
+      ? row.updated_at.toISOString()
+      : String(row.updated_at);
+  }
+  return parsed;
+}
+
+/**
+ * @param {import('pg').PoolClient} client
+ * @param {string} sourceName
+ * @param {UrlhausCheckpoint} checkpoint
+ * @param {{ entries?: Array<{ observable: string, observableType: string }>|null }} [opts]
+ */
+export async function saveUrlhausCheckpoint(client, sourceName, checkpoint, opts = {}) {
+  const { entries = null } = opts;
+  const payload = {
+    ...checkpoint,
+    last_success_at: new Date().toISOString()
+  };
+  const lastCursor = serializeUrlhausCheckpoint(payload);
+  const canonical = payload.canonical_ioc_hash || null;
+
+  await client.query(
+    `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (source_name)
+     DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+    [sourceName, lastCursor]
+  );
+
+  if (entries) {
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = EXCLUDED.content_hash,
+                     items_json = EXCLUDED.items_json,
+                     updated_at = NOW()`,
+      [
+        sourceName,
+        canonical,
+        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
+      ]
+    );
+  } else {
+    await client.query(
+      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+       VALUES ($1, $2, '[]'::jsonb, NOW())
+       ON CONFLICT (source_name)
+       DO UPDATE SET content_hash = COALESCE(EXCLUDED.content_hash, integration_source_state.content_hash),
+                     updated_at = NOW()`,
+      [sourceName, canonical]
+    );
+  }
 }

@@ -25,11 +25,15 @@ import {
   URLHAUS_EXPORT_URL_MASKED,
   URLHAUS_AUTH_REQUIRED_MSG,
   assertUrlhausMinFetchInterval,
+  buildUrlhausCanonicalIocHash,
   buildUrlhausNote,
-  buildUrlhausRecentCsvUrl,
+  evaluateUrlhausExportSkip,
+  fetchUrlhausExport,
+  loadUrlhausCheckpoint,
   parseUrlhausRecentCsv,
   resolveUrlhausAuthKey,
-  sanitizeUrlhausErrorMessage
+  sanitizeUrlhausErrorMessage,
+  saveUrlhausCheckpoint
 } from './lib/urlhaus.js';
 import {
   MALWAREBAZAAR_EXPORT_URL_MASKED,
@@ -1168,22 +1172,71 @@ export async function runUrlhausImport(options = {}) {
       );
     }
 
-    const exportUrl = buildUrlhausRecentCsvUrl(authKey);
-    const res = await fetchWithSignal(exportUrl, {}, signal);
-    if (!res.ok) {
-      throw new Error(`URLhaus CSV export request failed: ${res.status}`);
+    const priorCheckpoint = await loadUrlhausCheckpoint(client, config.urlhausSourceName);
+    const exportFetch = await fetchUrlhausExport(authKey, {
+      signal,
+      checkpoint: priorCheckpoint,
+      fetchImpl: (url, init) => fetchWithSignal(url, init, signal)
+    });
+
+    const etagSkip = evaluateUrlhausExportSkip({
+      checkpoint: priorCheckpoint,
+      statusCode: exportFetch.status,
+      responseEtag: exportFetch.etag,
+      responseLastModified: exportFetch.lastModified,
+      canonicalIocHash: null
+    });
+
+    if (etagSkip.skip) {
+      await saveUrlhausCheckpoint(client, config.urlhausSourceName, {
+        etag: exportFetch.etag ?? priorCheckpoint?.etag ?? null,
+        last_modified: exportFetch.lastModified ?? priorCheckpoint?.last_modified ?? null,
+        raw_content_hash: priorCheckpoint?.raw_content_hash ?? exportFetch.rawContentHash ?? null,
+        canonical_ioc_hash: priorCheckpoint?.canonical_ioc_hash ?? null
+      });
+      await finalizeIntegrationRun(client, runId, metrics, 'skipped_unchanged');
+      console.log(
+        `[integration-import] job=urlhaus_import runId=${runId} skipped unchanged reason=${etagSkip.reason} export=${URLHAUS_EXPORT_URL_MASKED}`
+      );
+      return withSuppressionStats(
+        { ok: true, runId, skipped: true, reason: 'unchanged', skipReason: etagSkip.reason },
+        suppressionStats,
+        metrics
+      );
     }
-    const txt = await res.text();
 
+    const txt = exportFetch.text;
     const { entries, fetched, parsed, skipped } = parseUrlhausRecentCsv(txt);
-    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
+    const canonicalIocHash = buildUrlhausCanonicalIocHash(entries);
 
-    const currentHash = hashEntries(entries.map((e) => ({
-      o: e.observable,
-      t: e.observableType,
-      id: e.externalId,
-      status: e.urlStatus
-    })));
+    const canonicalSkip = evaluateUrlhausExportSkip({
+      checkpoint: priorCheckpoint,
+      statusCode: exportFetch.status,
+      responseEtag: exportFetch.etag,
+      responseLastModified: exportFetch.lastModified,
+      canonicalIocHash
+    });
+
+    if (canonicalSkip.skip) {
+      await saveUrlhausCheckpoint(client, config.urlhausSourceName, {
+        etag: exportFetch.etag ?? null,
+        last_modified: exportFetch.lastModified ?? null,
+        raw_content_hash: exportFetch.rawContentHash ?? null,
+        canonical_ioc_hash: canonicalIocHash
+      });
+      metrics.noteSkipped(parsed);
+      await finalizeIntegrationRun(client, runId, metrics, 'skipped_unchanged');
+      console.log(
+        `[integration-import] job=urlhaus_import runId=${runId} skipped unchanged reason=${canonicalSkip.reason} export=${URLHAUS_EXPORT_URL_MASKED} parsed=${parsed}`
+      );
+      return withSuppressionStats(
+        { ok: true, runId, skipped: true, reason: 'unchanged', skipReason: canonicalSkip.reason },
+        suppressionStats,
+        metrics
+      );
+    }
+
+    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
 
     const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
 
@@ -1199,24 +1252,16 @@ export async function runUrlhausImport(options = {}) {
     }
 
     throwIfAborted(signal);
-    await client.query(
-      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [
-        config.urlhausSourceName,
-        currentHash,
-        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
-      ]
-    );
-
-    await client.query(
-      `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-      [config.urlhausSourceName, `hash:${currentHash}`]
+    await saveUrlhausCheckpoint(
+      client,
+      config.urlhausSourceName,
+      {
+        etag: exportFetch.etag ?? null,
+        last_modified: exportFetch.lastModified ?? null,
+        raw_content_hash: exportFetch.rawContentHash ?? null,
+        canonical_ioc_hash: canonicalIocHash
+      },
+      { entries }
     );
 
     throwIfAborted(signal);
