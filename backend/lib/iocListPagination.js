@@ -48,9 +48,14 @@ export function buildIocListPagination(opts = {}) {
     listedItems = Math.min(matches, browseCap);
     isCapped = matches > browseCap;
   } else {
-    const globalTotal = Math.max(Number(opts.globalTotal) || 0, 0);
-    listedItems = Math.min(globalTotal, browseCap);
-    isCapped = globalTotal > browseCap;
+    if (opts.globalTotal == null && opts.globalTotalUnknown) {
+      listedItems = browseCap;
+      isCapped = true;
+    } else {
+      const globalTotal = Math.max(Number(opts.globalTotal) || 0, 0);
+      listedItems = Math.min(globalTotal, browseCap);
+      isCapped = globalTotal > browseCap;
+    }
   }
 
   const pageCount = iocListPageCount(listedItems, pageSize);

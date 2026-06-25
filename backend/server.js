@@ -93,6 +93,14 @@ import {
   writeIocStatsCache
 } from './lib/iocStatsCache.js';
 import {
+  formatIocListStatsApiResponse,
+  getIocListStatsSnapshot,
+  isIocListStatsRefreshInProgress,
+  queueIocListStatsRefresh,
+  readIocListBrowseGlobalTotal,
+  IOC_LIST_STATS_CACHE_TTL_MS
+} from './lib/iocListStatsSnapshot.js';
+import {
   IOC_LIST_BROWSE_CAP,
   normalizeIocListPageSize,
   buildIocListPagination
@@ -5629,21 +5637,17 @@ async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, b
 }
 
 async function getCachedIocListGlobalTotal(pool, statusFilter = 'active') {
+  if (statusFilter === 'active') {
+    const snapTotal = await readIocListBrowseGlobalTotal(pool);
+    if (snapTotal != null) return snapTotal;
+    return null;
+  }
   const sf = parseIocListStatusFilter(statusFilter);
   const lastUpdate = await fetchIocStatsLastUpdate(pool);
   const cacheKey = buildIocStatsCacheKey(sf, lastUpdate);
   const cached = readIocStatsCache(cacheKey);
   if (cached?.total != null) return Number(cached.total);
-  const stats = await fetchIocListStats(pool, sf);
-  writeIocStatsCache(cacheKey, {
-    last_update: lastUpdate,
-    total: stats.total,
-    by_type: stats.by_type,
-    by_source: stats.by_source,
-    unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
-    by_confidence: []
-  });
-  return Number(stats.total);
+  return null;
 }
 
 function resolveIocListMode({ q, fullScan, classificationFilter, source_name, confidence, asn, country }) {
@@ -5838,7 +5842,8 @@ async function handleIocList(req, res) {
       const globalTotal = await getCachedIocListGlobalTotal(pool, browseStatusFilter);
       const paginationMeta = buildIocListPagination({
         mode: 'browse',
-        globalTotal,
+        globalTotal: globalTotal ?? undefined,
+        globalTotalUnknown: globalTotal == null,
         page: currentPage,
         pageSize: limit,
         statusFilter: browseStatusFilter
@@ -7584,40 +7589,51 @@ app.get('/api/ioc/summary/today', async (req, res) => {
   }
 });
 
-app.get('/api/ioc/stats', async (req, res) => {
+async function handleIocListStatsGet(_req, res) {
   try {
-    const statusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
-    const lastUpdate = await fetchIocStatsLastUpdate(pool);
-    const cacheKey = buildIocStatsCacheKey(statusFilter, lastUpdate);
-
-    const cached = readIocStatsCache(cacheKey);
-    if (cached) {
-      return res.json({
-        last_update: cached.last_update ?? lastUpdate,
-        total: cached.total ?? 0,
-        by_type: cached.by_type ?? [],
-        by_source: cached.by_source ?? []
+    const snapshot = await getIocListStatsSnapshot(pool);
+    if (!snapshot) {
+      queueIocListStatsRefresh(pool).catch((err) => {
+        console.error('[ioc/stats] background refresh failed', err?.message || err);
+      });
+      return res.json(formatIocListStatsApiResponse(null));
+    }
+    if (snapshot.stale && !isIocListStatsRefreshInProgress()) {
+      queueIocListStatsRefresh(pool).catch((err) => {
+        console.error('[ioc/stats] stale refresh failed', err?.message || err);
       });
     }
-
-    const stats = await fetchIocListStats(pool, statusFilter);
-    const payload = {
-      last_update: lastUpdate,
-      total: stats.total,
-      by_type: stats.by_type,
-      by_source: stats.by_source
-    };
-
-    writeIocStatsCache(cacheKey, {
-      ...payload,
-      unique_ips: Number(stats.by_type.find((r) => r.observable_type === 'ip')?.count || 0),
-      by_confidence: []
-    });
-
-    return res.json(payload);
+    return res.json(formatIocListStatsApiResponse(snapshot));
   } catch (err) {
     console.error('[ioc/stats] failed', err);
     return res.status(500).json({ message: 'Failed to fetch IOC stats', detail: err.message });
+  }
+}
+
+app.get('/api/ioc/stats', handleIocListStatsGet);
+app.get('/api/iocs/stats', handleIocListStatsGet);
+
+app.post('/api/ioc/stats/refresh', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  try {
+    if (isIocListStatsRefreshInProgress()) {
+      return res.status(202).json({
+        ok: true,
+        queued: false,
+        in_progress: true,
+        message: 'IOC stats refresh is already running.'
+      });
+    }
+    queueIocListStatsRefresh(pool, { force: false }).catch((err) => {
+      console.error('[ioc/stats] manual refresh failed', err?.message || err);
+    });
+    return res.status(202).json({
+      ok: true,
+      queued: true,
+      in_progress: true,
+      message: 'IOC stats refresh started. This may take a few minutes.'
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to queue IOC stats refresh', detail: err.message });
   }
 });
 
@@ -7644,8 +7660,24 @@ async function ensureSeedDemoUser() {
 
 const RISK_SNAPSHOT_INTERVAL_MS = Math.max(Number(process.env.RISK_SNAPSHOT_INTERVAL_MS || 5 * 60 * 1000), 60 * 1000);
 const PUBLISHED_FEED_TICK_MS = Math.max(Number(process.env.PUBLISHED_FEED_TICK_MS || 5 * 60 * 1000), 15 * 1000);
+const IOC_LIST_STATS_REFRESH_MS = Math.max(Number(process.env.IOC_LIST_STATS_REFRESH_MS || IOC_LIST_STATS_CACHE_TTL_MS), 60 * 60 * 1000);
 let riskSnapshotInProgress = false;
 let publishedFeedTickInProgress = false;
+let iocListStatsRefreshScheduled = false;
+
+async function runIocListStatsRefreshTick() {
+  if (iocListStatsRefreshScheduled || isIocListStatsRefreshInProgress()) return;
+  iocListStatsRefreshScheduled = true;
+  try {
+    const snap = await getIocListStatsSnapshot(pool);
+    if (snap && !snap.stale) return;
+    await queueIocListStatsRefresh(pool);
+  } catch (err) {
+    console.error('[ioc-list-stats] scheduled refresh failed', err?.message || err);
+  } finally {
+    iocListStatsRefreshScheduled = false;
+  }
+}
 
 async function saveRiskSnapshot() {
   if (riskSnapshotInProgress) return;
@@ -8087,9 +8119,13 @@ app.listen(port, async () => {
   }
   await ensureSeedDemoUser();
   saveRiskSnapshot().catch(() => {});
+  runIocListStatsRefreshTick().catch(() => {});
   setInterval(() => {
     saveRiskSnapshot().catch(() => {});
   }, RISK_SNAPSHOT_INTERVAL_MS);
+  setInterval(() => {
+    runIocListStatsRefreshTick().catch(() => {});
+  }, IOC_LIST_STATS_REFRESH_MS);
   regenerateAllEnabledFeeds(pool).catch(() => {});
   setInterval(() => {
     if (publishedFeedTickInProgress) return;
