@@ -13,7 +13,11 @@ import {
   extractUrlHost,
   generateCustomFeedKey,
   sanitizeUrlForDisplay,
-  validateFeedUrl
+  validateFeedUrl,
+  normalizeCustomFeedName,
+  findCustomFeedNameConflict,
+  DUPLICATE_CUSTOM_FEED_NAME_ERROR,
+  isCustomFeedNameUniqueViolation
 } from '../lib/customThreatFeedUtils.js';
 import { fetchFeedUrl } from '../lib/customThreatFeedFetch.js';
 import { parseFeedContent, buildParseSample } from '../lib/customThreatFeedParser.js';
@@ -71,7 +75,9 @@ function actorFromReq(req) {
 
 function validateFeedPayload(body, partial = false) {
   const errors = [];
-  if (!partial && !String(body?.name || '').trim()) errors.push('name is required');
+  const name = body?.name !== undefined ? normalizeCustomFeedName(body.name) : '';
+  if (!partial && !name) errors.push('name is required');
+  if (partial && body?.name !== undefined && !name) errors.push('name is required');
   if (body?.url !== undefined || !partial) {
     const urlCheck = validateFeedUrl(body?.url);
     if (!urlCheck.ok) errors.push(urlCheck.error);
@@ -219,6 +225,13 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     const errors = validateFeedPayload(body, false);
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
+    const feedName = normalizeCustomFeedName(body.name);
+    const nameConflict = await findCustomFeedNameConflict(pool, feedName);
+    if (nameConflict) {
+      console.warn('[custom-threat-feeds] duplicate name rejected on create', { name: feedName });
+      return res.status(409).json({ error: DUPLICATE_CUSTOM_FEED_NAME_ERROR });
+    }
+
     const urlCheck = validateFeedUrl(body.url);
     const feedKey = generateCustomFeedKey();
     const scheduleCron = isAllowedScheduleCron(body.schedule_cron)
@@ -238,7 +251,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
          RETURNING integration_id, key, name`,
         [
           feedKey,
-          String(body.name).trim(),
+          feedName,
           sanitizeUrlForDisplay(body.url),
           scheduleCron,
           DEFAULT_CONFIDENCE
@@ -292,6 +305,10 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       return res.status(201).json({ feed: serializeFeedRow(row) });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
+      if (isCustomFeedNameUniqueViolation(err)) {
+        console.warn('[custom-threat-feeds] duplicate name rejected on create (db)', { name: feedName });
+        return res.status(409).json({ error: DUPLICATE_CUSTOM_FEED_NAME_ERROR });
+      }
       console.error('[custom-threat-feeds] create failed', err?.message || err);
       return res.status(500).json({ message: 'Failed to create Custom Threat Feed', detail: err.message });
     } finally {
@@ -322,6 +339,18 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     const urlCheck = body.url !== undefined ? validateFeedUrl(body.url) : { ok: true, url: existing.url, url_host: existing.url_host };
     if (!urlCheck.ok) return res.status(400).json({ message: urlCheck.error });
 
+    if (body.name !== undefined) {
+      const feedName = normalizeCustomFeedName(body.name);
+      const nameConflict = await findCustomFeedNameConflict(pool, feedName, existing.id);
+      if (nameConflict) {
+        console.warn('[custom-threat-feeds] duplicate name rejected on update', {
+          name: feedName,
+          feed_id: existing.id
+        });
+        return res.status(409).json({ error: DUPLICATE_CUSTOM_FEED_NAME_ERROR });
+      }
+    }
+
     const { actor, actor_id: actorId } = actorFromReq(req);
 
     const client = await pool.connect();
@@ -331,7 +360,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       if (body.name !== undefined) {
         await client.query(
           `UPDATE integration_feeds SET name = $2, updated_at = NOW() WHERE integration_id = $1::uuid`,
-          [existing.feed_id, String(body.name).trim()]
+          [existing.feed_id, normalizeCustomFeedName(body.name)]
         );
       }
 
@@ -386,6 +415,10 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       return res.json({ feed: serializeFeedRow(row) });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
+      if (isCustomFeedNameUniqueViolation(err)) {
+        console.warn('[custom-threat-feeds] duplicate name rejected on update (db)', { feed_id: existing.id });
+        return res.status(409).json({ error: DUPLICATE_CUSTOM_FEED_NAME_ERROR });
+      }
       return res.status(500).json({ message: 'Failed to update Custom Threat Feed', detail: err.message });
     } finally {
       client.release();

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {
   validateFeedUrl,
   mapFixedIocTypeToObservableType,
-  sanitizeUrlForDisplay
+  sanitizeUrlForDisplay,
+  normalizeCustomFeedName,
+  customFeedNameComparisonKey,
+  DUPLICATE_CUSTOM_FEED_NAME_ERROR
 } from './customThreatFeedUtils.js';
 import {
   assertCustomFeedSettingsAllowed,
@@ -30,6 +33,13 @@ test('sanitizeUrlForDisplay strips credentials', () => {
   const display = sanitizeUrlForDisplay('https://user:secret@ti.example.com/path/feed.txt');
   assert.equal(display.includes('secret'), false);
   assert.equal(display.includes('ti.example.com'), true);
+});
+
+test('custom feed name normalization is trim + case-insensitive key', () => {
+  assert.equal(normalizeCustomFeedName(' validin-phish-feed-1 '), 'validin-phish-feed-1');
+  assert.equal(customFeedNameComparisonKey('VALIDIN-PHISH-FEED-1'), 'validin-phish-feed-1');
+  assert.equal(customFeedNameComparisonKey('Validin-Phish-Feed-1'), 'validin-phish-feed-1');
+  assert.equal(DUPLICATE_CUSTOM_FEED_NAME_ERROR, 'A custom threat feed with this name already exists.');
 });
 
 test('custom feed schedule uses integration_feeds schedule_cron model', async () => {

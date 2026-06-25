@@ -6676,6 +6676,12 @@ function CustomThreatFeedsPage() {
     setSaving(true);
     setFormError('');
     try {
+      const name = String(form.name || '').trim();
+      if (!name) {
+        setFormError('Name is required');
+        setSaving(false);
+        return;
+      }
       if (editingFeed) {
         const url = String(form.url || '').trim();
         if (!url) {
@@ -6683,7 +6689,7 @@ function CustomThreatFeedsPage() {
           setSaving(false);
           return;
         }
-        const payload = { ...form, url };
+        const payload = { ...form, name, url };
         await api.put(`/custom-threat-feeds/${encodeURIComponent(editingFeed.id)}`, payload);
 
         const feedKey = editingFeed.integration_key || editingFeed.key;
@@ -6705,7 +6711,13 @@ function CustomThreatFeedsPage() {
         setEditingFeed(null);
         setToast('Custom Threat Feed updated');
       } else {
-        await api.post('/custom-threat-feeds', { ...form, schedule_cron: draftCron });
+        const url = String(form.url || '').trim();
+        if (!url) {
+          setFormError('Feed URL is required');
+          setSaving(false);
+          return;
+        }
+        await api.post('/custom-threat-feeds', { ...form, name, url, schedule_cron: draftCron });
         setShowModal(false);
         setToast('Custom Threat Feed created');
       }
