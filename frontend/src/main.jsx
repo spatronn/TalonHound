@@ -11807,11 +11807,12 @@ function IOCListPage() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [statsRefreshBusy, setStatsRefreshBusy] = useState(false);
   const [statsToast, setStatsToast] = useState('');
+  const statsPollRef = useRef(null);
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
 
-  const loadSummary = useCallback(async () => {
-    setSummaryLoading(true);
+  const loadSummary = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setSummaryLoading(true);
     try {
       const { data } = await api.get('/ioc/stats', {
         params: { status: 'active' }
@@ -11823,22 +11824,60 @@ function IOCListPage() {
         missing: Boolean(data?.missing),
         refresh_in_progress: Boolean(data?.refresh_in_progress)
       });
+      return data;
     } catch {
       setSummary({ total: 0, by_source: [], by_type: [] });
       setStatsMeta({ calculated_at: null, stale: true, missing: true, refresh_in_progress: false });
+      return null;
     } finally {
-      setSummaryLoading(false);
+      if (!silent) setSummaryLoading(false);
     }
   }, []);
 
+  function stopStatsPoll() {
+    if (statsPollRef.current) {
+      clearInterval(statsPollRef.current);
+      statsPollRef.current = null;
+    }
+  }
+
+  function startStatsPoll() {
+    stopStatsPoll();
+    let attempts = 0;
+    statsPollRef.current = setInterval(async () => {
+      attempts += 1;
+      if (attempts > 60) {
+        stopStatsPoll();
+        return;
+      }
+      try {
+        const data = await loadSummary({ silent: true });
+        if (!data?.refresh_in_progress) {
+          stopStatsPoll();
+          if (data?.calculated_at && !data?.missing) {
+            setStatsToast('IOC stats refreshed.');
+          }
+        }
+      } catch {
+        /* keep polling until timeout */
+      }
+    }, 5000);
+  }
+
   async function refreshStatsSnapshot() {
-    if (!canWrite) return;
+    if (!canWrite || statsRefreshBusy) return;
     setStatsRefreshBusy(true);
     setStatsToast('');
+    stopStatsPoll();
     try {
-      await api.post('/ioc/stats/refresh');
-      setStatsToast('IOC stats refresh started. This may take a few minutes.');
-      setStatsMeta((m) => ({ ...m, refresh_in_progress: true }));
+      const { data } = await api.post('/ioc/stats/refresh');
+      setStatsToast(data?.message || 'IOC stats refresh started. Updated stats will appear shortly.');
+      await loadSummary({ silent: true });
+      if (data?.queued || data?.in_progress || data?.status === 'queued' || data?.status === 'in_progress') {
+        startStatsPoll();
+      } else {
+        setStatsToast('IOC stats refreshed.');
+      }
     } catch (err) {
       setStatsToast(apiErrorMessage(err, 'Failed to start IOC stats refresh'));
     } finally {
@@ -11877,6 +11916,7 @@ function IOCListPage() {
 
   useEffect(() => {
     loadSummary().catch(() => {});
+    return () => { stopStatsPoll(); };
   }, [loadSummary]);
 
   useEffect(() => {
@@ -12081,70 +12121,71 @@ function IOCListPage() {
       <section className="ioc-list-page" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
       <h2 style={{ marginTop: 0 }}>IOC List</h2>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
-        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a', opacity: summaryLoading ? 0.72 : 1 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Records</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(summary.total)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a', opacity: summaryLoading ? 0.72 : 1 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>IP</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.ip)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a', opacity: summaryLoading ? 0.72 : 1 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>URL</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.url)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a', opacity: summaryLoading ? 0.72 : 1 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>Hash (MD5/SHA*)</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.hash)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a', opacity: summaryLoading ? 0.72 : 1 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>Domain</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.domain)}</div>
-        </div>
-        <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a', opacity: summaryLoading ? 0.72 : 1 }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>IPv6</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.ip6)}</div>
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+      <div style={{ marginBottom: 14, padding: '12px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 13, color: '#94a3b8' }}>
-              {summaryLoading ? 'Loading stats…' : 'Top 5 sources'}
-            </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0' }}>IOC Stats</div>
+            <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.45 }}>
               Stats are calculated every 6 hours
               {statsCalculatedLabel ? ` · Last calculated: ${statsCalculatedLabel}` : ''}
+              {statsMeta.refresh_in_progress ? ' · Stats refresh is running…' : ''}
               {statsMeta.missing || statsMeta.stale ? ' · Stats are being prepared' : ''}
             </div>
           </div>
           {canWrite ? (
             <button
               type="button"
-              disabled={statsRefreshBusy || statsMeta.refresh_in_progress}
+              disabled={statsRefreshBusy}
               onClick={() => refreshStatsSnapshot().catch(() => {})}
-              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', fontSize: 12, fontWeight: 600, cursor: statsRefreshBusy ? 'not-allowed' : 'pointer', opacity: statsRefreshBusy ? 0.72 : 1 }}
             >
-              {statsRefreshBusy || statsMeta.refresh_in_progress ? 'Refreshing…' : 'Refresh stats'}
+              {statsRefreshBusy ? 'Refreshing…' : 'Refresh stats'}
             </button>
           ) : null}
         </div>
         {statsToast ? (
-          <div style={{ marginBottom: 8, fontSize: 12, color: '#93c5fd' }}>{statsToast}</div>
+          <div style={{ marginBottom: 10, fontSize: 12, color: '#93c5fd' }}>{statsToast}</div>
         ) : null}
-        <div style={{ marginTop: 6, fontSize: 14, display: 'grid', gap: 6 }}>
-          {summaryLoading ? (
-            <span style={{ color: '#64748b' }}>Preparing cached stats…</span>
-          ) : summary.by_source.length ? summary.by_source.slice(0, 5).map((s, idx) => (
-            <div key={s.source_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>
-              <span style={{ color: '#cbd5e1' }}>{idx + 1}. {s.source_name}</span>
-              <b style={{ color: '#e2e8f0' }}>{Number(s.count || 0).toLocaleString('en-US')}</b>
-            </div>
-          )) : (
-            <span style={{ color: '#94a3b8' }}>{statsMeta.missing ? 'Stats are being prepared' : 'No data'}</span>
-          )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Total Records</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(summary.total)}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>IP</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.ip)}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>URL</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.url)}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Hash (MD5/SHA*)</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.hash)}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Domain</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.domain)}</div>
+          </div>
+          <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>IPv6</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.ip6)}</div>
+          </div>
+        </div>
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 12 }}>
+          <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Top 5 sources</div>
+          <div style={{ fontSize: 14, display: 'grid', gap: 6 }}>
+            {summaryLoading ? (
+              <span style={{ color: '#64748b' }}>Preparing cached stats…</span>
+            ) : summary.by_source.length ? summary.by_source.slice(0, 5).map((s, idx) => (
+              <div key={s.source_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>
+                <span style={{ color: '#cbd5e1' }}>{idx + 1}. {s.source_name}</span>
+                <b style={{ color: '#e2e8f0' }}>{Number(s.count || 0).toLocaleString('en-US')}</b>
+              </div>
+            )) : (
+              <span style={{ color: '#94a3b8' }}>{statsMeta.missing ? 'Stats are being prepared' : 'No data'}</span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -7624,6 +7624,7 @@ app.post('/api/ioc/stats/refresh', requireRole(ROLES.ADMIN, ROLES.ANALYST), asyn
     if (isIocListStatsRefreshInProgress()) {
       return res.status(202).json({
         ok: true,
+        status: 'in_progress',
         queued: false,
         in_progress: true,
         message: 'IOC stats refresh is already running.'
@@ -7634,9 +7635,10 @@ app.post('/api/ioc/stats/refresh', requireRole(ROLES.ADMIN, ROLES.ANALYST), asyn
     });
     return res.status(202).json({
       ok: true,
+      status: 'queued',
       queued: true,
       in_progress: true,
-      message: 'IOC stats refresh started. This may take a few minutes.'
+      message: 'IOC stats refresh started. Updated stats will appear shortly.'
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue IOC stats refresh', detail: err.message });
