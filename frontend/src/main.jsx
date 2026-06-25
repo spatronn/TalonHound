@@ -6608,6 +6608,7 @@ function CustomThreatFeedsPage() {
   const [activeConfirmError, setActiveConfirmError] = useState('');
   const [purgeFeed, setPurgeFeed] = useState(null);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [editUrlMissing, setEditUrlMissing] = useState(false);
 
   const emptyForm = {
     name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: ''
@@ -6635,20 +6636,24 @@ function CustomThreatFeedsPage() {
     setForm(emptyForm);
     setFormError('');
     setDraftCron('0 * * * *');
+    setEditUrlMissing(false);
     setShowModal(true);
   }
 
   async function openEdit(feed) {
     if (!isAdmin) return;
     setEditingFeed(feed);
+    const currentUrl = String(feed.url_display || feed.url || '').trim();
+    const urlMissing = !currentUrl || currentUrl === '[invalid-url]';
     setForm({
       name: feed.name || '',
-      url: '',
+      url: urlMissing ? '' : currentUrl,
       format: feed.format || 'auto',
       ioc_type_mode: feed.ioc_type_mode || 'auto',
       fixed_ioc_type: feed.fixed_ioc_type || 'domain',
       description: feed.description || ''
     });
+    setEditUrlMissing(urlMissing);
     setDraftCron(feed.schedule || '0 * * * *');
     setDraftConfidence(String(feed.default_confidence || 'medium').trim().toLowerCase());
     setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
@@ -6672,8 +6677,13 @@ function CustomThreatFeedsPage() {
     setFormError('');
     try {
       if (editingFeed) {
-        const payload = { ...form };
-        if (!payload.url) delete payload.url;
+        const url = String(form.url || '').trim();
+        if (!url) {
+          setFormError(editUrlMissing ? 'Current URL is not available. Enter a valid feed URL.' : 'Feed URL is required');
+          setSaving(false);
+          return;
+        }
+        const payload = { ...form, url };
         await api.put(`/custom-threat-feeds/${encodeURIComponent(editingFeed.id)}`, payload);
 
         const feedKey = editingFeed.integration_key || editingFeed.key;
@@ -6896,8 +6906,26 @@ function CustomThreatFeedsPage() {
                     <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={CTF_INPUT_STYLE} />
                   </label>
                   <label style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>URL{editingFeed ? ' (leave blank to keep current)' : ''}</span>
-                    <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} style={CTF_INPUT_STYLE} placeholder="https://ti.example.com/feed.txt" />
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Feed URL</span>
+                    <input
+                      value={form.url}
+                      onChange={(e) => {
+                        setEditUrlMissing(false);
+                        setForm({ ...form, url: e.target.value });
+                      }}
+                      style={{ ...CTF_INPUT_STYLE, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', overflowX: 'auto' }}
+                      placeholder={editingFeed ? undefined : 'https://ti.example.com/feed.txt'}
+                      required
+                    />
+                    {editingFeed ? (
+                      editUrlMissing ? (
+                        <span style={{ color: '#fcd34d', fontSize: 11 }}>Current URL is not available</span>
+                      ) : (
+                        <span style={{ color: '#64748b', fontSize: 11, lineHeight: 1.45 }}>
+                          This is the full source URL used for this custom threat feed.
+                        </span>
+                      )
+                    ) : null}
                   </label>
                   <label style={CTF_FIELD_LABEL}>
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>Format</span>
