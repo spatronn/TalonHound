@@ -17,6 +17,7 @@ import {
 } from '../lib/customThreatFeedUtils.js';
 import { fetchFeedUrl } from '../lib/customThreatFeedFetch.js';
 import { parseFeedContent, buildParseSample } from '../lib/customThreatFeedParser.js';
+import { isAllowedScheduleCron, isRunOnceSchedule } from '../lib/integrationSchedule.js';
 
 const DEFAULT_SCHEDULE_CRON = '0 * * * *';
 const DEFAULT_CONFIDENCE = 'medium';
@@ -88,6 +89,12 @@ function validateFeedPayload(body, partial = false) {
   }
   if (body?.ioc_type_mode === 'fixed' && !partial && !FIXED_IOC_TYPES.includes(body?.fixed_ioc_type)) {
     errors.push('fixed_ioc_type is required when ioc_type_mode is fixed');
+  }
+  if (body?.schedule_cron !== undefined) {
+    const scheduleCron = String(body.schedule_cron || '').trim();
+    if (!isAllowedScheduleCron(scheduleCron)) {
+      errors.push('schedule_cron is invalid');
+    }
   }
   return errors;
 }
@@ -214,6 +221,9 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
 
     const urlCheck = validateFeedUrl(body.url);
     const feedKey = generateCustomFeedKey();
+    const scheduleCron = isAllowedScheduleCron(body.schedule_cron)
+      ? String(body.schedule_cron).trim()
+      : DEFAULT_SCHEDULE_CRON;
     const { actor, actor_id: actorId } = actorFromReq(req);
 
     const client = await pool.connect();
@@ -230,7 +240,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
           feedKey,
           String(body.name).trim(),
           sanitizeUrlForDisplay(body.url),
-          DEFAULT_SCHEDULE_CRON,
+          scheduleCron,
           DEFAULT_CONFIDENCE
         ]
       );
@@ -261,6 +271,9 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
 
       await client.query('COMMIT');
       await syncSingleFeedSchedule(pool, importQueue, feedKey, { logPrefix: '[custom-feeds]' });
+      if (isRunOnceSchedule(scheduleCron)) {
+        console.log('[custom-feeds] custom feed schedule set to run_once', { feed_key: feedKey });
+      }
 
       const row = await fetchFeedRow(pool, customInsert.rows[0].id);
       await audit.auditSuccess({
@@ -473,7 +486,7 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       return res.status(202).json({
         ok: true,
         queued: true,
-        message: 'Sync queued',
+        message: 'Custom threat feed run queued',
         job_id: queued.job_id
       });
     } catch (err) {

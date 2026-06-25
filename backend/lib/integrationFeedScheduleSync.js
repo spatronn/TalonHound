@@ -3,7 +3,8 @@ import {
   effectiveCronForFeed,
   sanitizeScheduleCron,
   isDailyScheduleCron,
-  buildRepeatJobConfig
+  buildRepeatJobConfig,
+  isRunOnceSchedule
 } from './integrationSchedule.js';
 
 /** BullMQ job names keyed by integration_feeds.key */
@@ -58,14 +59,15 @@ export async function loadCustomThreatFeedSchedules(pool) {
      JOIN integration_feeds f ON f.integration_id = c.feed_id
      WHERE c.deactivated_at IS NULL
        AND f.active = TRUE
-       AND f.archived_at IS NULL`
+       AND f.archived_at IS NULL
+       AND f.schedule_cron <> 'run_once'`
   );
   return (q.rows || [])
     .map((r) => ({
       key: String(r.key || '').trim(),
       cron: sanitizeScheduleCron(r.schedule_cron)
     }))
-    .filter((r) => r.key && r.key.startsWith('ctf-'));
+    .filter((r) => r.key && r.key.startsWith('ctf-') && !isRunOnceSchedule(r.cron));
 }
 
 async function ensureCustomFeedSchedule(importQueue, feed, slotMap) {
@@ -139,7 +141,8 @@ export async function loadActiveFeedSchedules(pool) {
     `SELECT key, schedule_cron
      FROM integration_feeds
      WHERE active = TRUE
-       AND archived_at IS NULL`
+       AND archived_at IS NULL
+       AND schedule_cron <> 'run_once'`
   );
 
   return (q.rows || [])
@@ -147,7 +150,7 @@ export async function loadActiveFeedSchedules(pool) {
       key: String(r.key || '').trim(),
       cron: sanitizeScheduleCron(r.schedule_cron)
     }))
-    .filter((r) => r.key && INTEGRATION_FEED_JOBS[r.key]);
+    .filter((r) => r.key && INTEGRATION_FEED_JOBS[r.key] && !isRunOnceSchedule(r.cron));
 }
 
 async function ensureFeedSchedule(importQueue, feed, slotMap) {

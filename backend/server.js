@@ -126,7 +126,7 @@ import { parseThreatClassificationFilterParam } from './lib/iocThreatClassificat
 import { createManualIoc } from './lib/manualIocCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
-import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone } from './lib/integrationSchedule.js';
+import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule } from './lib/integrationSchedule.js';
 import { syncSingleFeedSchedule } from './lib/integrationFeedScheduleSync.js';
 import {
   AUTH_KEY_FEED_KEYS,
@@ -4039,8 +4039,9 @@ app.get('/api/integrations', async (req, res) => {
         return { ...base, next_run_at: null };
       }
       const bullNext = repeatableNextByKey.get(feed.key);
-      const nextRunAt = bullNext || computeNextRunAt(feed.schedule, feed.key, now, slotMap);
-      return { ...base, next_run_at: nextRunAt.toISOString() };
+      const computedNext = computeNextRunAt(feed.schedule, feed.key, now, slotMap);
+      const nextRunAt = isRunOnceSchedule(feed.schedule) ? null : (bullNext || computedNext);
+      return { ...base, next_run_at: nextRunAt ? nextRunAt.toISOString() : null };
     });
     integrationsTimingLog(timingEnabled, 'integration base query', baseStart);
 
@@ -4299,13 +4300,14 @@ const INTEGRATION_JOBS = {
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
-const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *', '0 0 * * *']);
+const SCHEDULE_CRONS = new Set(['*/5 * * * *', '*/15 * * * *', '*/30 * * * *', '0 * * * *', '0 0 * * *', 'run_once']);
 
 async function loadActiveIntegrationFeedKeys() {
   const q = await pool.query(
     `SELECT key FROM integration_feeds
      WHERE active = TRUE
        AND archived_at IS NULL
+       AND schedule_cron <> 'run_once'
        AND key = ANY($1::text[])`,
     [Object.keys(INTEGRATION_JOBS)]
   );
@@ -4744,7 +4746,7 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
   if (!assertCustomFeedSettingsAllowed(req, key, res)) return;
   const scheduleCron = String(req.body?.schedule_cron || '').trim();
 
-  if (!SCHEDULE_CRONS.has(scheduleCron)) {
+  if (!isAllowedScheduleCron(scheduleCron)) {
     return res.status(400).json({ message: 'Invalid schedule_cron' });
   }
 
@@ -4787,8 +4789,12 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
       console.warn('[integrations] schedule saved but BullMQ sync failed', syncErr?.message || syncErr);
     }
 
+    if (isRunOnceSchedule(scheduleCron)) {
+      console.log('[integrations] feed schedule updated to run_once', { feed_key: key });
+    }
+
     const slotMap = buildHourlySlotMap(
-      (await pool.query(`SELECT key, schedule_cron AS schedule FROM integration_feeds WHERE active = TRUE`)).rows
+      (await pool.query(`SELECT key, schedule_cron AS schedule FROM integration_feeds WHERE active = TRUE AND schedule_cron <> 'run_once'`)).rows
     );
     const row = result.rows[0];
     const nextRunAt = computeNextRunAt(row.schedule_cron, key, new Date(), slotMap);
@@ -4796,7 +4802,7 @@ app.put('/api/integrations/:key/schedule', async (req, res) => {
     return res.json({
       ...row,
       schedule_reference_timezone: getSystemScheduleTimezone(),
-      next_run_at: nextRunAt.toISOString()
+      next_run_at: nextRunAt ? nextRunAt.toISOString() : null
     });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update schedule', detail: err.message });

@@ -4535,8 +4535,11 @@ const FEED_SCHEDULE_OPTIONS = [
   { cron: '*/15 * * * *', label: 'Every 15 min' },
   { cron: '*/30 * * * *', label: 'Every 30 min' },
   { cron: '0 * * * *', label: 'Every hour' },
-  { cron: '0 0 * * *', label: 'Every day' }
+  { cron: '0 0 * * *', label: 'Every day' },
+  { cron: 'run_once', label: 'Run once' }
 ];
+
+const RUN_ONCE_SCHEDULE_HELPER = 'Run once feeds are not executed by the recurring scheduler. Use Run now to execute them manually.';
 
 const FEED_METRIC_TOOLTIPS = {
   processed: 'Total records/items processed during the last run.',
@@ -4831,6 +4834,7 @@ function FeedSettingsModal({
                 ))}
               </select>
             </label>
+            <FeedRunOnceScheduleHint cron={draftCron} />
             {canWrite ? (
               <button type="button" onClick={onSaveSchedule} disabled={savingSchedule || scheduleUnchanged}>
                 {savingSchedule ? 'Saving...' : 'Save Schedule'}
@@ -5093,9 +5097,19 @@ function formatFeedScheduleLabel(cron) {
     '*/15 * * * *': 'Every 15 min',
     '*/30 * * * *': 'Every 30 min',
     '0 * * * *': 'Every hour',
-    '0 0 * * *': 'Every day'
+    '0 0 * * *': 'Every day',
+    run_once: 'Run once'
   };
   return map[String(cron || '').trim()] || String(cron || '-');
+}
+
+function FeedRunOnceScheduleHint({ cron }) {
+  if (String(cron || '').trim() !== 'run_once') return null;
+  return (
+    <div style={{ color: '#64748b', fontSize: 11, lineHeight: 1.45, marginTop: 4 }}>
+      {RUN_ONCE_SCHEDULE_HELPER}
+    </div>
+  );
 }
 
 function truncateFeedError(text, max = 48) {
@@ -6450,7 +6464,9 @@ function CustomFeedLifecycleFields({
 
   return (
     <div style={{ display: 'grid', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div>
+        <div style={{ color: '#94a3b8', marginBottom: 6, fontSize: 12 }}>Current state</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{
           display: 'inline-block',
           padding: '2px 8px',
@@ -6480,6 +6496,7 @@ function CustomFeedLifecycleFields({
             {feedActive !== false ? 'Disable feed' : 'Enable feed'}
           </button>
         ) : null}
+        </div>
       </div>
 
       <label style={CTF_FIELD_LABEL}>
@@ -6494,6 +6511,7 @@ function CustomFeedLifecycleFields({
             <option key={opt.cron} value={opt.cron}>{opt.label}</option>
           ))}
         </select>
+        <FeedRunOnceScheduleHint cron={draftCron} />
       </label>
 
       <label style={CTF_FIELD_LABEL}>
@@ -6580,10 +6598,6 @@ function CustomThreatFeedsPage() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [actionFeedId, setActionFeedId] = useState('');
-  const [testResult, setTestResult] = useState(null);
-  const [runsFeed, setRunsFeed] = useState(null);
-  const [runs, setRuns] = useState([]);
-  const [runsLoading, setRunsLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [draftCron, setDraftCron] = useState('0 * * * *');
   const [draftConfidence, setDraftConfidence] = useState('medium');
@@ -6620,7 +6634,7 @@ function CustomThreatFeedsPage() {
     setEditingFeed(null);
     setForm(emptyForm);
     setFormError('');
-    setTestResult(null);
+    setDraftCron('0 * * * *');
     setShowModal(true);
   }
 
@@ -6640,7 +6654,6 @@ function CustomThreatFeedsPage() {
     setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     setEditActive(feed.active !== false);
     setFormError('');
-    setTestResult(null);
     setShowModal(true);
     const feedKey = feed.integration_key || feed.key;
     if (feedKey) {
@@ -6682,7 +6695,7 @@ function CustomThreatFeedsPage() {
         setEditingFeed(null);
         setToast('Custom Threat Feed updated');
       } else {
-        await api.post('/custom-threat-feeds', { ...form });
+        await api.post('/custom-threat-feeds', { ...form, schedule_cron: draftCron });
         setShowModal(false);
         setToast('Custom Threat Feed created');
       }
@@ -6692,38 +6705,6 @@ function CustomThreatFeedsPage() {
     } finally {
       setSaving(false);
     }
-  }
-
-  async function deactivateFeed(feed) {
-    if (!isAdmin) return;
-    const ok = window.confirm(`Deactivate Custom Threat Feed "${feed.name}"?`);
-    if (!ok) return;
-    setActionFeedId(feed.id);
-    try {
-      await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/deactivate`);
-      setToast('Custom Threat Feed deactivated');
-      await loadFeeds();
-    } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to deactivate feed'));
-    } finally {
-      setActionFeedId('');
-    }
-  }
-
-  function requestActiveChange() {
-    if (!isAdmin || !editingFeed) return;
-    setActiveConfirmError('');
-    setActiveConfirm({
-      key: editingFeed.integration_key || editingFeed.key,
-      name: editingFeed.name,
-      mode: editActive ? 'disable' : 'enable'
-    });
-  }
-
-  function closeActiveConfirm() {
-    if (togglingKeys[activeConfirm?.key]) return;
-    setActiveConfirm(null);
-    setActiveConfirmError('');
   }
 
   async function confirmActiveChange() {
@@ -6738,6 +6719,7 @@ function CustomThreatFeedsPage() {
       setActiveConfirm(null);
       setEditActive(nextActive);
       setEditingFeed((prev) => (prev ? { ...prev, active: nextActive } : null));
+      setToast(nextActive ? 'Feed enabled' : 'Feed disabled');
       await loadFeeds();
     } catch (err) {
       setActiveConfirmError(apiErrorMessage(err, 'Failed to update feed active state'));
@@ -6756,43 +6738,32 @@ function CustomThreatFeedsPage() {
     setShowModal(false);
   }
 
-  async function testFetch(feed) {
-    if (!canRunActions) return;
-    setActionFeedId(feed.id);
-    setTestResult(null);
-    try {
-      const { data } = await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/test-fetch`);
-      setTestResult({ feedId: feed.id, ...data });
-    } catch (err) {
-      setTestResult({ feedId: feed.id, error: apiErrorMessage(err, 'Test fetch failed') });
-    } finally {
-      setActionFeedId('');
-    }
+  function requestActiveChange() {
+    if (!isAdmin || !editingFeed) return;
+    setActiveConfirmError('');
+    setActiveConfirm({
+      key: editingFeed.integration_key || editingFeed.key,
+      name: editingFeed.name,
+      mode: editActive ? 'disable' : 'enable'
+    });
   }
 
-  async function syncNow(feed) {
+  function closeActiveConfirm() {
+    if (togglingKeys[activeConfirm?.key]) return;
+    setActiveConfirm(null);
+    setActiveConfirmError('');
+  }
+
+  async function runNowFeed(feed) {
     if (!canRunActions) return;
     setActionFeedId(feed.id);
     try {
       const { data } = await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/sync`);
-      setToast(data?.message || 'Sync queued');
+      setToast(data?.message || 'Custom threat feed run queued');
     } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to queue sync'));
+      alert(apiErrorMessage(err, 'Failed to queue feed run'));
     } finally {
       setActionFeedId('');
-    }
-  }
-
-  async function openRuns(feed) {
-    setRunsFeed(feed);
-    setRunsLoading(true);
-    try {
-      const { data } = await api.get(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/runs`);
-      setRuns(data?.runs || []);
-    } catch {
-      setRuns([]);
-    } finally {
-      setRunsLoading(false);
     }
   }
 
@@ -6872,34 +6843,30 @@ function CustomThreatFeedsPage() {
                       <td style={{ padding: 8 }}>{statusLabel(feed.last_run_status)}</td>
                       <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '—'}</td>
                       <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
-                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})} style={{ marginRight: 6 }}>Edit</button> : null}
-                        {canRunActions ? (
-                          <>
-                            <button type="button" disabled={actionFeedId === feed.id} onClick={() => testFetch(feed)} style={{ marginRight: 6 }}>Test fetch</button>
-                            <button type="button" disabled={actionFeedId === feed.id || !feed.active} onClick={() => syncNow(feed)} style={{ marginRight: 6 }}>Sync now</button>
-                          </>
-                        ) : null}
-                        <button type="button" onClick={() => openRuns(feed)} style={{ marginRight: 6 }}>Runs</button>
-                        {isAdmin ? <button type="button" disabled={actionFeedId === feed.id} onClick={() => deactivateFeed(feed)}>Deactivate</button> : null}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          {isAdmin ? (
+                            <button type="button" disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})} style={{ fontSize: 11, padding: '4px 8px' }}>
+                              Edit
+                            </button>
+                          ) : null}
+                          {canRunActions ? (
+                            <button
+                              type="button"
+                              disabled={actionFeedId === feed.id || !feed.active}
+                              onClick={() => runNowFeed(feed)}
+                              style={{ fontSize: 11, padding: '4px 8px' }}
+                              title={!feed.active ? 'Enable the feed before running manually.' : undefined}
+                            >
+                              {actionFeedId === feed.id ? 'Queueing...' : 'Run now'}
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          ) : null}
-
-          {testResult ? (
-            <section style={{ marginTop: 16, padding: 12, border: '1px solid #334155', borderRadius: 8, background: '#0f172a' }}>
-              <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Test fetch result</h3>
-              {testResult.error ? <p style={{ color: '#fca5a5' }}>{testResult.error}</p> : (
-                <>
-                  <p style={{ color: '#cbd5e1' }}>HTTP status: {testResult.http_status}; Format: {testResult.detected_format}; Rows: {testResult.detected_rows}</p>
-                  <p style={{ color: '#cbd5e1' }}>Valid sample: {testResult.valid_sample_count}; Invalid sample: {testResult.invalid_sample_count}</p>
-                  <pre style={{ color: '#e2e8f0', fontSize: 12, overflow: 'auto' }}>{JSON.stringify(testResult.sample_parsed_iocs || [], null, 2)}</pre>
-                </>
-              )}
-            </section>
           ) : null}
         </section>
 
@@ -6964,25 +6931,37 @@ function CustomThreatFeedsPage() {
                   </label>
                 </CustomFeedModalSection>
 
-                {editingFeed ? (
-                  <CustomFeedModalSection title="Schedule & Lifecycle">
-                    <CustomFeedLifecycleFields
-                      feedActive={editActive}
-                      draftCron={draftCron}
-                      onCronChange={setDraftCron}
-                      draftConfidence={draftConfidence}
-                      onConfidenceChange={setDraftConfidence}
-                      draftExpiration={draftExpiration}
-                      onExpirationChange={setDraftExpiration}
-                      onRequestActiveChange={requestActiveChange}
-                    />
-                    <div style={{ marginTop: 12 }}>
-                      <button type="button" onClick={openPurgeFromEdit} style={{ fontSize: 12, color: '#fca5a5', background: 'transparent', border: '1px solid #7f1d1d', borderRadius: 6, padding: '4px 10px' }}>
-                        Purge feed data
-                      </button>
-                    </div>
-                  </CustomFeedModalSection>
-                ) : null}
+                <CustomFeedModalSection title={editingFeed ? 'Schedule & Lifecycle' : 'Schedule'}>
+                  {editingFeed ? (
+                    <>
+                      <CustomFeedLifecycleFields
+                        feedActive={editActive}
+                        draftCron={draftCron}
+                        onCronChange={setDraftCron}
+                        draftConfidence={draftConfidence}
+                        onConfidenceChange={setDraftConfidence}
+                        draftExpiration={draftExpiration}
+                        onExpirationChange={setDraftExpiration}
+                        onRequestActiveChange={requestActiveChange}
+                      />
+                      <div style={{ marginTop: 12 }}>
+                        <button type="button" onClick={openPurgeFromEdit} style={{ fontSize: 12, color: '#fca5a5', background: 'transparent', border: '1px solid #7f1d1d', borderRadius: 6, padding: '4px 10px' }}>
+                          Purge feed data
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <label style={CTF_FIELD_LABEL}>
+                      <span style={{ color: '#94a3b8', fontSize: 12 }}>Schedule</span>
+                      <select value={draftCron} onChange={(e) => setDraftCron(e.target.value)} style={CTF_INPUT_STYLE}>
+                        {FEED_SCHEDULE_OPTIONS.map((opt) => (
+                          <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <FeedRunOnceScheduleHint cron={draftCron} />
+                    </label>
+                  )}
+                </CustomFeedModalSection>
               </div>
               <div style={{
                 padding: '12px 20px',
@@ -7020,44 +6999,6 @@ function CustomThreatFeedsPage() {
           }}
         />
 
-        {runsFeed ? (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div style={{ background: '#111827', color: '#e2e8f0', padding: 20, borderRadius: 12, width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', border: '1px solid #334155' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ marginTop: 0 }}>Runs — {runsFeed.name}</h3>
-                <button type="button" onClick={() => { setRunsFeed(null); setRuns([]); }}>Close</button>
-              </div>
-              {runsLoading ? <p>Loading…</p> : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead><tr style={{ color: '#cbd5e1' }}>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Status</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Started</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Duration</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Valid</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Invalid</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Inserted</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Expired missing</th>
-                    <th style={{ padding: 6, textAlign: 'left' }}>Error</th>
-                  </tr></thead>
-                  <tbody>
-                    {runs.map((r) => (
-                      <tr key={r.id} style={{ borderTop: '1px solid #334155' }}>
-                        <td style={{ padding: 6 }}>{statusLabel(r.status)}</td>
-                        <td style={{ padding: 6 }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</td>
-                        <td style={{ padding: 6 }}>{r.duration_ms != null ? `${r.duration_ms} ms` : '—'}</td>
-                        <td style={{ padding: 6 }}>{r.valid_rows}</td>
-                        <td style={{ padding: 6 }}>{r.invalid_rows}</td>
-                        <td style={{ padding: 6 }}>{r.inserted}</td>
-                        <td style={{ padding: 6 }}>{r.expired_missing}</td>
-                        <td style={{ padding: 6, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.error_message || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-        ) : null}
       </div>
     </AppShell>
   );

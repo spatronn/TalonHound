@@ -10,7 +10,7 @@ import {
   isCustomThreatFeedKey
 } from './customThreatFeedAccess.js';
 import { loadCustomThreatFeedSchedules } from './integrationFeedScheduleSync.js';
-import { BASE_SCHEDULE_CRONS } from './integrationSchedule.js';
+import { BASE_SCHEDULE_CRONS, ALLOWED_SCHEDULE_CRONS, RUN_ONCE_SCHEDULE } from './integrationSchedule.js';
 import {
   parseTxtFeedContent,
   parseCsvFeedContent,
@@ -49,14 +49,28 @@ test('custom feed schedule uses integration_feeds schedule_cron model', async ()
   assert.equal(rows[0].cron, '*/15 * * * *');
 });
 
+test('custom feed schedule loader excludes run_once feeds', async () => {
+  let capturedSql = '';
+  const pool = {
+    query: async (sql) => {
+      capturedSql = sql;
+      return { rows: [] };
+    }
+  };
+  await loadCustomThreatFeedSchedules(pool);
+  assert.match(capturedSql, /schedule_cron <> 'run_once'/);
+});
+
 test('feed schedule crons align with standard feed options', () => {
-  const allowed = new Set(BASE_SCHEDULE_CRONS);
+  const allowed = new Set(ALLOWED_SCHEDULE_CRONS);
   assert.equal(allowed.has('*/5 * * * *'), true);
   assert.equal(allowed.has('*/15 * * * *'), true);
   assert.equal(allowed.has('*/30 * * * *'), true);
   assert.equal(allowed.has('0 * * * *'), true);
   assert.equal(allowed.has('0 0 * * *'), true);
+  assert.equal(allowed.has(RUN_ONCE_SCHEDULE), true);
   assert.equal(allowed.has('0 */2 * * *'), false);
+  assert.equal(BASE_SCHEDULE_CRONS.length, 5);
 });
 
 test('assertCustomFeedSettingsAllowed blocks analyst on custom feed keys', () => {

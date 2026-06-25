@@ -6,6 +6,26 @@ export const BASE_SCHEDULE_CRONS = Object.freeze([
   '0 0 * * *'
 ]);
 
+/** Manual-only schedule — excluded from recurring BullMQ repeatables. */
+export const RUN_ONCE_SCHEDULE = 'run_once';
+
+export const ALLOWED_SCHEDULE_CRONS = Object.freeze([
+  ...BASE_SCHEDULE_CRONS,
+  RUN_ONCE_SCHEDULE
+]);
+
+export function isRunOnceSchedule(value) {
+  return String(value || '').trim() === RUN_ONCE_SCHEDULE;
+}
+
+export function isAllowedScheduleCron(value) {
+  return ALLOWED_SCHEDULE_CRONS.includes(String(value || '').trim());
+}
+
+export function isRecurringScheduleCron(value) {
+  return isAllowedScheduleCron(value) && !isRunOnceSchedule(value);
+}
+
 const DEFAULT_SYSTEM_SCHEDULE_TIMEZONE = 'UTC';
 const HOURLY_AT_MINUTE = /^([0-5]?\d) \* \* \* \*$/;
 
@@ -88,6 +108,7 @@ export function isHourlyAtMinuteCron(value) {
 
 export function sanitizeScheduleCron(value) {
   const v = String(value || '').trim();
+  if (isRunOnceSchedule(v)) return RUN_ONCE_SCHEDULE;
   if (BASE_SCHEDULE_CRONS.includes(v)) return v;
   if (isHourlyAtMinuteCron(v)) return v;
   return '0 * * * *';
@@ -110,7 +131,7 @@ export function buildHourlySlotMap(activeFeeds = []) {
     .filter((feed) => {
       const key = String(feed?.key || feed || '').trim();
       const schedule = feed?.schedule ?? feed?.schedule_cron ?? feed?.cron ?? '0 * * * *';
-      return key && isHourlyScheduleCron(schedule);
+      return key && isHourlyScheduleCron(schedule) && !isRunOnceSchedule(schedule);
     })
     .map((feed) => String(feed.key || feed).trim())
     .sort();
@@ -153,6 +174,7 @@ function alignToIntervalMinutes(date, intervalMinutes) {
 }
 
 export function computeNextRunAt(scheduleCron, feedKey, now = new Date(), slotMap = null) {
+  if (isRunOnceSchedule(scheduleCron)) return null;
   const cron = effectiveCronForFeed(feedKey, scheduleCron, slotMap);
   const ts = now.getTime();
 
