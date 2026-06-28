@@ -371,6 +371,15 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
         );
       }
 
+      const scheduleChanged = body.schedule_cron !== undefined;
+      const scheduleCron = scheduleChanged ? String(body.schedule_cron || '').trim() : null;
+      if (scheduleChanged) {
+        await client.query(
+          `UPDATE integration_feeds SET schedule_cron = $2, updated_at = NOW() WHERE integration_id = $1::uuid`,
+          [existing.feed_id, scheduleCron]
+        );
+      }
+
       await client.query(
         `UPDATE custom_threat_feeds
          SET url = COALESCE($2, url),
@@ -397,6 +406,13 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       );
 
       await client.query('COMMIT');
+
+      if (scheduleChanged) {
+        await syncSingleFeedSchedule(pool, importQueue, existing.integration_key, { logPrefix: '[custom-feeds]' });
+        if (isRunOnceSchedule(scheduleCron)) {
+          console.log('[custom-feeds] custom feed schedule set to run_once', { feed_key: existing.integration_key });
+        }
+      }
 
       const row = await fetchFeedRow(pool, existing.id);
       await audit.auditSuccess({

@@ -315,9 +315,17 @@ export async function loadCustomFeedForSync(client, customFeedId) {
             f.key AS integration_key,
             f.name AS feed_name,
             f.default_confidence,
-            f.active AS integration_active
+            f.active AS integration_active,
+            ls.finished_at AS last_success_at
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id
+     LEFT JOIN LATERAL (
+       SELECT finished_at
+       FROM custom_threat_feed_runs r
+       WHERE r.feed_id = c.id AND r.status IN ('success', 'partial_success')
+       ORDER BY finished_at DESC NULLS LAST
+       LIMIT 1
+     ) ls ON TRUE
      WHERE c.id = $1::uuid
      LIMIT 1`,
     [customFeedId]
@@ -333,9 +341,17 @@ export async function loadCustomFeedByIntegrationKey(client, integrationKey) {
             f.name AS feed_name,
             f.schedule_cron AS schedule,
             f.default_confidence,
-            f.active AS integration_active
+            f.active AS integration_active,
+            ls.finished_at AS last_success_at
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id
+     LEFT JOIN LATERAL (
+       SELECT finished_at
+       FROM custom_threat_feed_runs r
+       WHERE r.feed_id = c.id AND r.status IN ('success', 'partial_success')
+       ORDER BY finished_at DESC NULLS LAST
+       LIMIT 1
+     ) ls ON TRUE
      WHERE f.key = $1
      LIMIT 1`,
     [integrationKey]

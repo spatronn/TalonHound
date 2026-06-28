@@ -1,6 +1,22 @@
 import { runCustomThreatFeedSync, loadCustomFeedByIntegrationKey } from './customThreatFeedSync.js';
+import { isRunOnceSchedule } from './integrationSchedule.js';
 import { insertCustomFeedSyncAudit } from './customThreatFeedWorkerAudit.js';
 import { createImportMetrics } from './import-metrics.js';
+
+function isAutomaticCustomFeedTrigger(triggeredBy) {
+  const source = String(triggeredBy || 'scheduler').trim().toLowerCase();
+  return source === '' || source === 'scheduler' || source === 'scheduled' || source === 'repeatable';
+}
+
+function buildSkippedMetrics(reason) {
+  const metrics = createImportMetrics();
+  metrics.noteSkipped(1);
+  return {
+    skipped: true,
+    reason,
+    metrics: metrics.toJSON()
+  };
+}
 
 export async function runCustomThreatFeedImport(pool, options = {}) {
   const integrationKey = options.integrationKey
@@ -12,10 +28,17 @@ export async function runCustomThreatFeedImport(pool, options = {}) {
 
   const feed = await loadCustomFeedByIntegrationKey(pool, integrationKey);
   if (!feed) {
-    return { skipped: true, reason: 'feed_not_found' };
+    return buildSkippedMetrics('feed_not_found');
   }
   if (feed.deactivated_at || feed.integration_active === false) {
-    return { skipped: true, reason: 'feed_disabled' };
+    return buildSkippedMetrics('feed_disabled');
+  }
+  if (
+    isAutomaticCustomFeedTrigger(triggeredBy)
+    && isRunOnceSchedule(feed.schedule)
+    && feed.last_success_at
+  ) {
+    return buildSkippedMetrics('run_once_already_completed');
   }
 
   const client = await pool.connect();

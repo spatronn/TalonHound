@@ -21,6 +21,7 @@ import {
   detectFormatFromContent
 } from './customThreatFeedParser.js';
 import { requireRole, ROLES, rbacHttpPolicy } from './rbac.js';
+import { registerCustomThreatFeedRoutes } from '../routes/customThreatFeeds.js';
 
 test('validateFeedUrl rejects file and localhost', () => {
   assert.equal(validateFeedUrl('file:///etc/passwd').ok, false);
@@ -69,6 +70,106 @@ test('custom feed schedule loader excludes run_once feeds', async () => {
   };
   await loadCustomThreatFeedSchedules(pool);
   assert.match(capturedSql, /schedule_cron <> 'run_once'/);
+});
+
+test('custom feed update persists run_once schedule and removes repeatable scheduler job', async () => {
+  const routeHandlers = {};
+  const app = {
+    get() {},
+    post() {},
+    put(path, ...handlers) {
+      routeHandlers[path] = handlers.at(-1);
+    }
+  };
+
+  const executedSql = [];
+  let fetchCount = 0;
+  const feedRow = {
+    id: '11111111-1111-1111-1111-111111111111',
+    feed_id: '22222222-2222-2222-2222-222222222222',
+    integration_key: 'ctf-abc123',
+    feed_name: 'Run Once Feed',
+    url: 'https://ti.example.com/feed.txt',
+    url_host: 'ti.example.com',
+    format: 'txt',
+    ioc_type_mode: 'auto',
+    fixed_ioc_type: null,
+    description: null,
+    timeout_ms: 30000,
+    default_confidence: 'medium',
+    integration_active: true,
+    deactivated_at: null,
+    archived_at: null,
+    schedule: '0 * * * *'
+  };
+  const client = {
+    query: async (sql, params = []) => {
+      executedSql.push({ sql, params });
+      return { rows: [], rowCount: 1 };
+    },
+    release() {}
+  };
+  const pool = {
+    connect: async () => client,
+    query: async (sql) => {
+      if (String(sql).includes('FROM custom_threat_feeds c')) {
+        fetchCount += 1;
+        return {
+          rows: [{
+            ...feedRow,
+            schedule: fetchCount > 1 ? RUN_ONCE_SCHEDULE : feedRow.schedule
+          }],
+          rowCount: 1
+        };
+      }
+      if (String(sql).includes('SELECT f.key, f.schedule_cron')) {
+        return { rows: [], rowCount: 0 };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  };
+  const removedRepeatableKeys = [];
+  const importQueue = {
+    getRepeatableJobs: async () => [{
+      id: 'ctf-abc123-scheduled',
+      key: 'repeat-key-1',
+      name: 'custom-threat-feed-sync',
+      pattern: '0 * * * *'
+    }],
+    removeRepeatableByKey: async (key) => {
+      removedRepeatableKeys.push(key);
+    }
+  };
+  const audit = { auditSuccess: async () => {} };
+  registerCustomThreatFeedRoutes(app, pool, audit, { importQueue, manualJobPriority: 1 });
+
+  let statusCode = 200;
+  let jsonBody = null;
+  const res = {
+    status(code) { statusCode = code; return this; },
+    json(body) { jsonBody = body; return this; }
+  };
+
+  await routeHandlers['/api/custom-threat-feeds/:id'](
+    {
+      params: { id: feedRow.id },
+      body: { schedule_cron: RUN_ONCE_SCHEDULE },
+      user: { role: ROLES.ADMIN, username: 'admin' }
+    },
+    res
+  );
+
+  assert.equal(statusCode, 200);
+  assert.equal(jsonBody.feed.schedule, RUN_ONCE_SCHEDULE);
+  assert.ok(
+    executedSql.some(({ sql, params }) => (
+      /UPDATE integration_feeds\s+SET schedule_cron = \$2/i.test(String(sql))
+      && params[0] === feedRow.feed_id
+      && params[1] === RUN_ONCE_SCHEDULE
+    )),
+    'expected custom feed update to persist schedule_cron on integration_feeds'
+  );
+  assert.deepEqual(removedRepeatableKeys, ['repeat-key-1']);
 });
 
 test('feed schedule crons align with standard feed options', () => {
