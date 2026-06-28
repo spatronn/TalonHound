@@ -293,6 +293,10 @@ function trackInsertResult(metrics, result) {
     metrics.noteSuppressed(1);
     return;
   }
+  if (result === 'unchanged') {
+    metrics.noteSkipped(1);
+    return;
+  }
   if (result === true || result === 'inserted') {
     metrics.noteInsert();
     return;
@@ -300,6 +304,78 @@ function trackInsertResult(metrics, result) {
   if (result === 'duplicate' || result === false) {
     metrics.noteDuplicate();
   }
+}
+
+async function updateExistingIocBySourceIfChanged(client, {
+  observable,
+  observableType,
+  sourceName,
+  sourceUrl = null,
+  note = null,
+  category = null,
+  firstSeenAt = null,
+  lastSeenAt = null,
+  matchSourceUrl = false
+}) {
+  const sourceUrlPredicate = matchSourceUrl ? "AND COALESCE(source_url, '') = COALESCE($4, '')" : '';
+  const res = await client.query(
+    `WITH existing AS (
+       SELECT public_id,
+              first_seen_at,
+              last_seen_at,
+              CASE
+                WHEN $7::timestamptz IS NULL THEN first_seen_at
+                WHEN first_seen_at IS NULL THEN $7::timestamptz
+                ELSE LEAST(first_seen_at, $7::timestamptz)
+              END AS next_first_seen_at,
+              CASE
+                WHEN $8::timestamptz IS NULL THEN last_seen_at
+                ELSE GREATEST(COALESCE(last_seen_at, $8::timestamptz), $8::timestamptz)
+              END AS next_last_seen_at
+       FROM ioc_items
+       WHERE observable = $1
+         AND observable_type = $2
+         AND source_name = $3
+         ${sourceUrlPredicate}
+       ORDER BY created_at ASC
+       LIMIT 1
+     ), updated AS (
+       UPDATE ioc_items i
+       SET source_url = CASE WHEN $9::boolean THEN $4 ELSE i.source_url END,
+           category = $5,
+           note = $6,
+           first_seen_at = existing.next_first_seen_at,
+           last_seen_at = existing.next_last_seen_at
+       FROM existing
+       WHERE i.public_id = existing.public_id
+         AND (
+           (CASE WHEN $9::boolean THEN i.source_url IS DISTINCT FROM $4 ELSE FALSE END)
+           OR i.category IS DISTINCT FROM $5
+           OR i.note IS DISTINCT FROM $6
+           OR i.first_seen_at IS DISTINCT FROM existing.next_first_seen_at
+           OR i.last_seen_at IS DISTINCT FROM existing.next_last_seen_at
+         )
+       RETURNING i.public_id
+     )
+     SELECT 'updated' AS status, public_id FROM updated
+     UNION ALL
+     SELECT 'unchanged' AS status, public_id FROM existing
+     WHERE NOT EXISTS (SELECT 1 FROM updated)`,
+    [
+      observable,
+      observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      note,
+      firstSeenAt,
+      lastSeenAt,
+      Boolean(matchSourceUrl)
+    ]
+  );
+  if (!res.rowCount) return { status: 'not_found' };
+  const row = res.rows[0];
+  return { status: row.status, publicId: row.public_id };
 }
 
 export async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
@@ -433,36 +509,20 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
   metrics.noteDuplicate();
 }
 
-async function updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category) {
-  const res = await client.query(
-    `UPDATE ioc_items
-     SET note = $4,
-         category = $5,
-         last_seen_at = CASE
-           WHEN $6::timestamptz IS NULL THEN last_seen_at
-           ELSE GREATEST(COALESCE(last_seen_at, $6::timestamptz), $6::timestamptz)
-         END,
-         first_seen_at = CASE
-           WHEN $6::timestamptz IS NULL THEN first_seen_at
-           ELSE LEAST(first_seen_at, $6::timestamptz)
-         END
-     WHERE observable = $1
-       AND observable_type = $2
-       AND source_name = $3
-     RETURNING public_id`,
-    [
-      entry.observable,
-      entry.observableType,
-      sourceName,
-      note,
-      category,
-      entry.firstSeenUtc
-    ]
-  );
+export async function updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category) {
+  const existing = await updateExistingIocBySourceIfChanged(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    note,
+    category,
+    firstSeenAt: entry.firstSeenUtc,
+    lastSeenAt: entry.firstSeenUtc
+  });
 
-  if (!res.rowCount) return false;
+  if (existing.status !== 'updated') return existing;
 
-  const publicId = res.rows[0].public_id;
+  const publicId = existing.publicId;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
   await importSideEffect('malwarebazaar_confidence', null, () => applyIocImportConfidence(client, {
@@ -479,7 +539,7 @@ async function updateMalwareBazaarObservableBySource(client, entry, sourceName, 
     explicitConfidence: entry.confidence,
     category
   }));
-  return true;
+  return existing;
 }
 
 async function upsertMalwareBazaarObservable(client, entry, sourceName, suppressionStats, metrics) {
@@ -487,9 +547,13 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
   const category = entry.category || 'malware';
   const sourceUrl = MALWAREBAZAAR_EXPORT_URL_MASKED;
 
-  const updated = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
-  if (updated) {
+  const existing = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
+  if (existing.status === 'updated') {
     metrics.noteUpdated();
+    return;
+  }
+  if (existing.status === 'unchanged') {
+    metrics.noteSkipped();
     return;
   }
 
@@ -517,8 +581,11 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
   }
 
   if (insertResult === 'duplicate') {
-    if (await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category)) {
+    const existingAfterDuplicate = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
+    if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
+    } else if (existingAfterDuplicate.status === 'unchanged') {
+      metrics.noteSkipped();
     } else {
       metrics.noteDuplicate();
     }
@@ -528,37 +595,20 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
   metrics.noteDuplicate();
 }
 
-async function updateThreatFoxObservableBySource(client, entry, sourceName, note, category) {
-  const res = await client.query(
-    `UPDATE ioc_items
-     SET note = $4,
-         category = $5,
-         last_seen_at = CASE
-           WHEN $7::timestamptz IS NULL THEN last_seen_at
-           ELSE GREATEST(COALESCE(last_seen_at, $7::timestamptz), $7::timestamptz)
-         END,
-         first_seen_at = CASE
-           WHEN $6::timestamptz IS NULL THEN first_seen_at
-           ELSE LEAST(first_seen_at, $6::timestamptz)
-         END
-     WHERE observable = $1
-       AND observable_type = $2
-       AND source_name = $3
-     RETURNING public_id`,
-    [
-      entry.observable,
-      entry.observableType,
-      sourceName,
-      note,
-      category,
-      entry.firstSeen,
-      entry.lastSeen || entry.firstSeen
-    ]
-  );
+export async function updateThreatFoxObservableBySource(client, entry, sourceName, note, category) {
+  const existing = await updateExistingIocBySourceIfChanged(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    note,
+    category,
+    firstSeenAt: entry.firstSeen,
+    lastSeenAt: entry.lastSeen || entry.firstSeen
+  });
 
-  if (!res.rowCount) return false;
+  if (existing.status !== 'updated') return existing;
 
-  const publicId = res.rows[0].public_id;
+  const publicId = existing.publicId;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
   await importSideEffect('threatfox_confidence', null, () => applyIocImportConfidence(client, {
@@ -575,7 +625,7 @@ async function updateThreatFoxObservableBySource(client, entry, sourceName, note
     explicitConfidence: entry.confidence,
     category
   }));
-  return true;
+  return existing;
 }
 
 async function upsertThreatFoxObservable(client, entry, sourceName, suppressionStats, metrics) {
@@ -583,9 +633,13 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
   const category = entry.threatType || 'threat-intel';
   const sourceUrl = THREATFOX_SOURCE_URL_MASKED;
 
-  const updated = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
-  if (updated) {
+  const existing = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
+  if (existing.status === 'updated') {
     metrics.noteUpdated();
+    return;
+  }
+  if (existing.status === 'unchanged') {
+    metrics.noteSkipped();
     return;
   }
 
@@ -613,8 +667,11 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
   }
 
   if (insertResult === 'duplicate') {
-    if (await updateThreatFoxObservableBySource(client, entry, sourceName, note, category)) {
+    const existingAfterDuplicate = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
+    if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
+    } else if (existingAfterDuplicate.status === 'unchanged') {
+      metrics.noteSkipped();
     } else {
       metrics.noteDuplicate();
     }
@@ -626,8 +683,10 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
 
 function mergeBatchInsertMetrics(metrics, batchResult) {
   metrics.records_inserted += Number(batchResult?.inserted || 0);
+  metrics.records_updated += Number(batchResult?.updated || 0);
   metrics.records_duplicate += Number(batchResult?.duplicate || 0);
   metrics.records_suppressed += Number(batchResult?.suppressed || 0);
+  metrics.records_skipped += Number(batchResult?.skipped || 0);
 }
 
 function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {}) {
@@ -642,9 +701,9 @@ function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {
  * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
  * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
  */
-async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null, options = {}) {
+export async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null, options = {}) {
   const duplicateHandling = String(options.duplicateHandling || 'full').trim();
-  const out = { inserted: 0, duplicate: 0, suppressed: 0 };
+  const out = { inserted: 0, updated: 0, duplicate: 0, suppressed: 0, skipped: 0 };
   if (!entries.length) return out;
   const now = new Date();
 
@@ -718,43 +777,73 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
     );
     const rows = ins.rows ?? [];
     out.inserted += rows.length;
-    out.duplicate += resolvedKept.length - rows.length;
+    const duplicateCount = resolvedKept.length - rows.length;
+    if (duplicateHandling !== 'count_only') {
+      out.duplicate += duplicateCount;
+    }
     const insertedObs = new Set(rows.map((r) => r.observable));
 
     if (duplicateHandling === 'count_only') {
       const duplicateEntries = resolvedKept.filter((e) => !insertedObs.has(e.observable ?? e.ip));
-      if (duplicateEntries.length) {
-        const sourceName = duplicateEntries[0]?.sourceName ?? null;
-        const obsList = duplicateEntries.map((e) => e.observable ?? e.ip);
-        if (sourceName && obsList.length) {
-          await client.query(
-            `UPDATE ioc_items
-             SET last_seen_at = GREATEST(COALESCE(last_seen_at, NOW()), NOW())
-             WHERE observable_type = $1
-               AND source_name = $2
-               AND observable = ANY($3::text[])`,
-            [observableType, sourceName, obsList]
-          );
-        }
-      }
-    } else for (const e of resolvedKept) {
-      throwIfAborted(signal);
-      const obs = e.observable ?? e.ip;
-      if (!insertedObs.has(obs)) {
-        await updateObservableBySourceOnImport(client, {
+      for (const e of duplicateEntries) {
+        throwIfAborted(signal);
+        const obs = e.observable ?? e.ip;
+        const existing = await updateObservableBySourceOnImport(client, {
           observable: obs,
           observableType,
           sourceName: e.sourceName,
           sourceUrl: e.sourceUrl ?? null,
           category: e.category ?? null,
           note: e.note ?? null
-        }).catch(() => {});
-        await importSideEffect('batch_duplicate_confidence', null, () => applyIocImportConfidence(client, {
+        }).catch(() => ({ status: 'not_found' }));
+        if (existing.status === 'unchanged') {
+          out.skipped += 1;
+        } else if (existing.status === 'updated') {
+          out.updated += 1;
+          await importSideEffect('batch_count_only_membership', null, () => syncMembershipAfterIocImport(client, {
+            observable: obs,
+            observableType,
+            sourceName: e.sourceName,
+            sourceUrl: e.sourceUrl ?? null,
+            explicitConfidence: e.confFields?.source_confidence ?? null,
+            category: e.category ?? null
+          }));
+        } else {
+          out.duplicate += 1;
+          await importSideEffect('batch_count_only_cross_source_membership', null, () => syncMembershipAfterIocImport(client, {
+            observable: obs,
+            observableType,
+            sourceName: e.sourceName,
+            sourceUrl: e.sourceUrl ?? null,
+            explicitConfidence: e.confFields?.source_confidence ?? null,
+            category: e.category ?? null
+          }));
+        }
+      }
+    } else for (const e of resolvedKept) {
+      throwIfAborted(signal);
+      const obs = e.observable ?? e.ip;
+      if (!insertedObs.has(obs)) {
+        const existing = await updateObservableBySourceOnImport(client, {
           observable: obs,
           observableType,
           sourceName: e.sourceName,
-          parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence)
-        }));
+          sourceUrl: e.sourceUrl ?? null,
+          category: e.category ?? null,
+          note: e.note ?? null
+        }).catch(() => ({ status: 'not_found' }));
+        if (existing.status === 'unchanged') {
+          out.skipped += 1;
+          continue;
+        }
+        if (existing.status === 'updated') {
+          await importSideEffect('batch_duplicate_confidence', null, () => applyIocImportConfidence(client, {
+            observable: obs,
+            observableType,
+            sourceName: e.sourceName,
+            parsedSourceConfidence: resolveParsedSourceConfidence(e.sourceConfidence, e.confidence)
+          }));
+        }
         await importSideEffect('batch_duplicate_membership', null, () => syncMembershipAfterIocImport(client, {
           observable: obs,
           observableType,
@@ -785,7 +874,7 @@ async function batchInsertIocs(client, entries, observableType = 'ip', suppressi
   return out;
 }
 
-async function updateObservableBySourceOnImport(client, {
+export async function updateObservableBySourceOnImport(client, {
   observable,
   observableType,
   sourceName,
@@ -793,29 +882,21 @@ async function updateObservableBySourceOnImport(client, {
   category,
   note
 }) {
-  const res = await client.query(
-    `UPDATE ioc_items i
-     SET category = $5,
-         note = $6,
-         last_seen_at = GREATEST(COALESCE(i.last_seen_at, NOW()), NOW())
-     WHERE i.id = (
-       SELECT id FROM ioc_items
-       WHERE observable = $1
-         AND observable_type = $2
-         AND source_name = $3
-         AND COALESCE(source_url, '') = COALESCE($4, '')
-       ORDER BY id ASC
-       LIMIT 1
-     )
-     RETURNING public_id`,
-    [observable, observableType, sourceName, sourceUrl, category, note]
-  );
-  if (!res.rowCount) return null;
+  const existing = await updateExistingIocBySourceIfChanged(client, {
+    observable,
+    observableType,
+    sourceName,
+    sourceUrl,
+    category,
+    note,
+    matchSourceUrl: true
+  });
+  if (existing.status !== 'updated') return existing;
 
-  const publicId = res.rows[0].public_id;
+  const publicId = existing.publicId;
   const observables = extractObservablesFromNote(observableType, observable, note);
   await insertObservablesIndex(client, publicId, observables);
-  return publicId;
+  return existing;
 }
 
 async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null }, suppressionStats = null, signal = null) {
@@ -864,20 +945,25 @@ async function insertObservable(client, { observable, observableType, sourceName
   );
 
   if (!ins.rowCount) {
-    await updateObservableBySourceOnImport(client, {
+    const existing = await updateObservableBySourceOnImport(client, {
       observable,
       observableType,
       sourceName,
       sourceUrl,
       category,
       note
-    }).catch(() => {});
-    await importSideEffect('duplicate_confidence', null, () => applyIocImportConfidence(client, {
-      observable,
-      observableType,
-      sourceName,
-      parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
-    }));
+    }).catch(() => ({ status: 'not_found' }));
+    if (existing.status === 'unchanged') {
+      return 'unchanged';
+    }
+    if (existing.status === 'updated') {
+      await importSideEffect('duplicate_confidence', null, () => applyIocImportConfidence(client, {
+        observable,
+        observableType,
+        sourceName,
+        parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
+      }));
+    }
     await importSideEffect('duplicate_membership', null, () => syncMembershipAfterIocImport(client, {
       observable,
       observableType,
@@ -1088,7 +1174,6 @@ export async function runUsomImport(options = {}) {
 
     if (previousHash === currentHash) {
       metrics.noteSkipped(entries.length);
-      await runSnapshotSync(client, 'usom-trcert', entries, mapUsomSnapshotEntry, { signal });
       throwIfAborted(signal);
 
       await client.query(

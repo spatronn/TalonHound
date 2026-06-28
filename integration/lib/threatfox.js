@@ -163,6 +163,7 @@ export function buildThreatFoxNote(entry) {
     entry.threatType ? `threat_type=${entry.threatType}` : null,
     entry.malwarePrintable ? `malware=${entry.malwarePrintable}` : (entry.malware ? `malware=${entry.malware}` : null),
     entry.malwareAlias ? `malware_alias=${entry.malwareAlias}` : null,
+    entry.confidence ? `confidence=${entry.confidence}` : null,
     entry.reporter ? `reporter=${entry.reporter}` : null,
     entry.reference ? `reference=${entry.reference}` : null,
     entry.tags?.length ? `tags=${entry.tags.join(',')}` : null,
