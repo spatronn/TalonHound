@@ -302,24 +302,47 @@ function trackInsertResult(metrics, result) {
   }
 }
 
-async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
+export async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
   const lastSeen = entry.lastOnline || entry.dateAdded || null;
   const res = await client.query(
-    `UPDATE ioc_items
-     SET note = $4,
-         category = $5,
-         last_seen_at = CASE
-           WHEN $7::timestamptz IS NULL THEN last_seen_at
-           ELSE GREATEST(COALESCE(last_seen_at, $7::timestamptz), $7::timestamptz)
-         END,
-         first_seen_at = CASE
-           WHEN $6::timestamptz IS NULL THEN first_seen_at
-           ELSE LEAST(first_seen_at, $6::timestamptz)
-         END
-     WHERE observable = $1
-       AND observable_type = $2
-       AND source_name = $3
-     RETURNING public_id`,
+    `WITH existing AS (
+       SELECT public_id,
+              first_seen_at,
+              last_seen_at,
+              CASE
+                WHEN $6::timestamptz IS NULL THEN first_seen_at
+                ELSE LEAST(first_seen_at, $6::timestamptz)
+              END AS next_first_seen_at,
+              CASE
+                WHEN $7::timestamptz IS NULL THEN last_seen_at
+                ELSE GREATEST(COALESCE(last_seen_at, $7::timestamptz), $7::timestamptz)
+              END AS next_last_seen_at
+       FROM ioc_items
+       WHERE observable = $1
+         AND observable_type = $2
+         AND source_name = $3
+       ORDER BY created_at ASC
+       LIMIT 1
+     ), updated AS (
+       UPDATE ioc_items i
+       SET note = $4,
+           category = $5,
+           first_seen_at = existing.next_first_seen_at,
+           last_seen_at = existing.next_last_seen_at
+       FROM existing
+       WHERE i.public_id = existing.public_id
+         AND (
+           i.note IS DISTINCT FROM $4
+           OR i.category IS DISTINCT FROM $5
+           OR i.first_seen_at IS DISTINCT FROM existing.next_first_seen_at
+           OR i.last_seen_at IS DISTINCT FROM existing.next_last_seen_at
+         )
+       RETURNING i.public_id
+     )
+     SELECT 'updated' AS status, public_id FROM updated
+     UNION ALL
+     SELECT 'unchanged' AS status, public_id FROM existing
+     WHERE NOT EXISTS (SELECT 1 FROM updated)`,
     [
       entry.observable,
       entry.observableType,
@@ -331,9 +354,14 @@ async function updateUrlhausObservableBySource(client, entry, sourceName, note, 
     ]
   );
 
-  if (!res.rowCount) return false;
+  if (!res.rowCount) return { status: 'not_found' };
 
-  const publicId = res.rows[0].public_id;
+  const row = res.rows[0];
+  if (row.status === 'unchanged') {
+    return { status: 'unchanged', publicId: row.public_id };
+  }
+
+  const publicId = row.public_id;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
   await importSideEffect('urlhaus_confidence', null, () => applyIocImportConfidence(client, {
@@ -349,17 +377,21 @@ async function updateUrlhausObservableBySource(client, entry, sourceName, note, 
     sourceUrl: URLHAUS_EXPORT_URL_MASKED,
     category
   }));
-  return true;
+  return { status: 'updated', publicId };
 }
 
-async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence = null) {
+export async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence = null) {
   const note = buildUrlhausNote(entry);
   const category = entry.threat || 'malware-url';
   const sourceUrl = URLHAUS_EXPORT_URL_MASKED;
 
-  const updated = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
-  if (updated) {
+  const existing = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+  if (existing.status === 'updated') {
     metrics.noteUpdated();
+    return;
+  }
+  if (existing.status === 'unchanged') {
+    metrics.noteSkipped();
     return;
   }
 
@@ -387,8 +419,11 @@ async function upsertUrlhausObservable(client, entry, sourceName, suppressionSta
   }
 
   if (insertResult === 'duplicate') {
-    if (await updateUrlhausObservableBySource(client, entry, sourceName, note, category)) {
+    const existingAfterDuplicate = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+    if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
+    } else if (existingAfterDuplicate.status === 'unchanged') {
+      metrics.noteSkipped();
     } else {
       metrics.noteDuplicate();
     }
