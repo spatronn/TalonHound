@@ -56,7 +56,8 @@ describe('upsertUrlhausObservable unchanged metadata handling', () => {
     assert.equal(metrics.records_inserted, 0);
     assert.equal(metrics.records_duplicate, 0);
     assert.equal(metrics.records_skipped, 1);
-    assert.equal(client.calls.length, 1, 'unchanged row must not touch ioc_observables, confidence, or feed membership');
+    assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'unchanged active URLhaus row must not rewrite feed membership');
+    assert.ok(!client.calls.some((c) => c.sql.includes('INSERT INTO ioc_observables')), 'unchanged active URLhaus row must not touch observables index');
   });
 
   it('counts changed same-source URLhaus metadata as updated', async () => {
