@@ -46,6 +46,15 @@ test('deep subdomain resolves to registrable domain', () => {
   assert.equal(r.rdap_domain, 'example.com');
 });
 
+
+
+test('com.tr public suffix subdomain resolves to example.com.tr', () => {
+  const r = normalizeRdapTarget('sub.example.com.tr');
+  assert.equal(r.ok, true);
+  assert.equal(r.normalized_host, 'sub.example.com.tr');
+  assert.equal(r.rdap_domain, 'example.com.tr');
+});
+
 test('IP is unsupported', () => {
   const r = normalizeRdapTarget('1.2.3.4');
   assert.equal(r.ok, false);

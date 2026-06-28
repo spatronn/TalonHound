@@ -268,22 +268,32 @@ export function rowToApiPayload(row, {
   original_value = null,
   normalized_host = null,
   rdap_domain = null,
-  input_type = null
+  input_type = null,
+  data_source = null,
+  message = null
 } = {}) {
-  const rdapDomain = rdap_domain || rootDomain;
+  const rdapDomain = (rdap_domain || rootDomain || '').toLowerCase();
   const normHost = normalized_host || observableValue;
+  const isSubdomain = Boolean(normHost && rdapDomain && String(normHost).toLowerCase() !== String(rdapDomain).toLowerCase());
 
   if (!row) {
     return {
       enriched: false,
       cached: false,
       observable_value: observableValue,
+      observed_host: normHost,
       root_domain: rdapDomain,
       rdap_domain: rdapDomain,
       normalized_host: normHost,
       original_value: original_value || observableValue,
       input_type,
-      ioc_type: iocType
+      ioc_type: iocType,
+      is_subdomain: isSubdomain,
+      data_source: data_source || 'none',
+      last_success_at: null,
+      last_attempt_at: null,
+      last_error: null,
+      message: message || 'No stored RDAP data found.'
     };
   }
 
@@ -295,23 +305,33 @@ export function rowToApiPayload(row, {
     enriched: enriched && row.rdap_status === 'success',
     cached,
     observable_value: row.observable_value || observableValue,
+    observed_host: normHost || row.observable_value || observableValue,
     root_domain: row.root_domain || rdapDomain,
     rdap_domain: row.root_domain || rdapDomain,
     normalized_host: normHost || row.observable_value || observableValue,
     original_value: original_value || null,
     input_type: input_type || row.ioc_type || iocType,
     ioc_type: row.ioc_type || iocType,
+    is_subdomain: isSubdomain,
+    data_source: data_source || (cached ? 'db' : 'provider'),
     rdap_status: row.rdap_status,
     registrar: row.registrar,
     registration_date: row.registration_date,
     expiration_date: row.expiration_date,
     last_changed_date: row.last_changed_date,
+    last_changed_at: row.last_changed_date,
     domain_age_days: row.domain_age_days,
     nameservers: Array.isArray(row.nameservers) ? row.nameservers : [],
     statuses: Array.isArray(row.statuses) ? row.statuses : [],
     derived_signals: signals,
     error_message: row.error_message,
-    last_enriched_at: row.last_enriched_at
+    last_enriched_at: row.last_enriched_at,
+    last_fetched_at: row.last_success_at || row.last_enriched_at || null,
+    last_success_at: row.last_success_at || (row.rdap_status === 'success' ? row.last_enriched_at : null),
+    last_attempt_at: row.last_attempt_at || row.last_enriched_at || null,
+    last_error: row.last_error || row.error_message || null,
+    updated_at: row.updated_at || null,
+    message
   };
 }
 
@@ -356,11 +376,13 @@ export async function upsertEnrichment(pool, {
     `INSERT INTO ioc_domain_enrichment (
       observable_value, root_domain, ioc_type,
       rdap_status, registrar, registration_date, expiration_date, last_changed_date, domain_age_days,
-      nameservers, statuses, derived_signals, rdap_raw_json, error_message, last_enriched_at, updated_at
+      nameservers, statuses, derived_signals, rdap_raw_json, error_message, last_enriched_at,
+      last_success_at, last_attempt_at, last_error, updated_at
     ) VALUES (
       $1, $2, $3,
       $4, $5, $6, $7, $8, $9,
-      $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15::timestamptz, NOW()
+      $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15::timestamptz,
+      $16::timestamptz, $17::timestamptz, $18, NOW()
     )
     ON CONFLICT (root_domain) DO UPDATE SET
       observable_value = EXCLUDED.observable_value,
@@ -377,6 +399,9 @@ export async function upsertEnrichment(pool, {
       rdap_raw_json = EXCLUDED.rdap_raw_json,
       error_message = EXCLUDED.error_message,
       last_enriched_at = EXCLUDED.last_enriched_at,
+      last_success_at = EXCLUDED.last_success_at,
+      last_attempt_at = EXCLUDED.last_attempt_at,
+      last_error = EXCLUDED.last_error,
       updated_at = NOW()
     RETURNING *`,
     [
@@ -394,37 +419,68 @@ export async function upsertEnrichment(pool, {
       JSON.stringify(record.derived_signals || {}),
       record.rdap_raw_json ? JSON.stringify(record.rdap_raw_json) : null,
       record.error_message,
-      now
+      now,
+      record.rdap_status === 'success' ? now : null,
+      now,
+      record.rdap_status === 'success' ? null : record.error_message
     ]
   );
   return rows[0];
 }
 
-export async function refreshRdapEnrichment(pool, parsed, { force = false } = {}) {
+export async function recordRdapAttemptFailure(pool, { rootDomain, errorMessage, derivedSignals = {} }) {
+  const now = new Date().toISOString();
+  const { rows } = await pool.query(
+    `UPDATE ioc_domain_enrichment
+     SET last_attempt_at = $1::timestamptz,
+         last_error = $2,
+         error_message = $2,
+         derived_signals = COALESCE(derived_signals, '{}'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+     WHERE root_domain = $4
+     RETURNING *`,
+    [now, errorMessage, JSON.stringify(derivedSignals || {}), rootDomain]
+  );
+  return rows[0] || null;
+}
+
+export async function refreshRdapEnrichment(pool, parsed, { force = false, fetchRdapDomainFn = fetchRdapDomain } = {}) {
   const observableValue = parsed.observable_value || parsed.normalized_host;
-  const rootDomain = parsed.rdap_domain || parsed.root_domain;
+  const rootDomain = String(parsed.rdap_domain || parsed.root_domain || '').toLowerCase().replace(/\.$/, '');
   const iocType = parsed.ioc_type;
   const existing = await getEnrichmentByRootDomain(pool, rootDomain);
 
-  // POST refresh is user-initiated: retry after failures; only short-circuit fresh successes.
-  if (existing?.rdap_status === 'success' && isCacheFresh(existing, { force })) {
+  // Normal Refresh is DB-first and persistent-store backed: any stored row wins.
+  if (existing && !force) {
     return {
       row: existing,
       cached: true,
-      fromLookup: false
+      fromLookup: false,
+      dataSource: 'db'
     };
   }
 
   try {
-    const raw = await fetchRdapDomain(rootDomain);
+    const raw = await fetchRdapDomainFn(rootDomain);
     const record = parseRdapDomainResponse(raw, rootDomain);
     record.derived_signals = {
       ...record.derived_signals,
       ...(force ? { last_force_refresh_at: new Date().toISOString() } : {})
     };
     const row = await upsertEnrichment(pool, { observableValue, rootDomain, iocType, record });
-    return { row, cached: false, fromLookup: true };
+    return { row, cached: false, fromLookup: true, dataSource: force ? 'forced_provider' : 'provider' };
   } catch (err) {
+    const errorMessage = String(err?.message || 'RDAP lookup failed').slice(0, 2000);
+    const derivedSignals = {
+      latest_refresh_failed_at: new Date().toISOString(),
+      ...(force ? { last_force_refresh_at: new Date().toISOString() } : {})
+    };
+
+    if (existing?.rdap_status === 'success') {
+      const row = await recordRdapAttemptFailure(pool, { rootDomain, errorMessage, derivedSignals });
+      return { row: row || existing, cached: true, fromLookup: true, dataSource: 'error', error: err };
+    }
+
     const failedRecord = {
       rdap_status: err.code === 'not_found' ? 'unavailable' : 'failed',
       registrar: null,
@@ -435,19 +491,19 @@ export async function refreshRdapEnrichment(pool, parsed, { force = false } = {}
       nameservers: [],
       statuses: [],
       rdap_raw_json: null,
-      error_message: String(err?.message || 'RDAP lookup failed').slice(0, 2000),
-      derived_signals: buildDerivedSignals({ rdap_status: 'failed' }, rootDomain)
+      error_message: errorMessage,
+      derived_signals: {
+        ...buildDerivedSignals({ rdap_status: 'failed' }, rootDomain),
+        ...derivedSignals
+      }
     };
-    if (force) {
-      failedRecord.derived_signals.last_force_refresh_at = new Date().toISOString();
-    }
     const row = await upsertEnrichment(pool, {
       observableValue,
       rootDomain,
       iocType,
       record: failedRecord
     });
-    return { row, cached: false, fromLookup: true, error: err };
+    return { row, cached: false, fromLookup: true, dataSource: 'error', error: err };
   }
 }
 

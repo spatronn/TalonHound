@@ -13246,9 +13246,9 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
     try {
       const { data } = await api.get('/enrichment/rdap', { params: { value, ioc_type: type } });
       setHasLoaded(true);
-      if (data?.enriched) {
-        setState({ status: 'success', data, message: '' });
-      } else if (data?.last_enriched_at && data?.rdap_status && data.rdap_status !== 'success') {
+      if (data?.enriched || data?.rdap_status === 'success') {
+        setState({ status: 'success', data, message: data?.message || '' });
+      } else if (data?.last_attempt_at && data?.rdap_status && data.rdap_status !== 'success') {
         setState({
           status: 'failed',
           data,
@@ -13282,7 +13282,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
       });
       const data = res.data;
       if (data?.enriched || data?.rdap_status === 'success') {
-        setState({ status: 'success', data, message: '' });
+        setState({ status: 'success', data, message: data?.message || '' });
       } else {
         const rawMsg = data?.error_message || data?.error || data?.message || 'RDAP lookup failed';
         const msg = /aborted/i.test(String(rawMsg))
@@ -13371,6 +13371,19 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
   const statusList = Array.isArray(d.statuses) ? d.statuses : [];
 
   const rdapDomainValue = d.rdap_domain || d.root_domain || '-';
+  const dataSourceLabel = d.data_source === 'db'
+    ? 'Database'
+    : d.data_source === 'provider'
+      ? 'Provider'
+      : d.data_source === 'forced_provider'
+        ? 'Forced Provider'
+        : d.data_source === 'error'
+          ? 'DB + refresh error'
+          : null;
+  const infoLine = d.message
+    || (d.data_source === 'db' && d.last_success_at ? `Stored RDAP data found. Last fetched: ${formatUserDateTime(d.last_success_at)}` : '')
+    || (d.data_source === 'provider' ? 'Fresh RDAP data fetched and stored.' : '')
+    || (d.data_source === 'forced_provider' ? 'Fresh RDAP data fetched and stored.' : '');
 
   return (
     <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #334155', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
@@ -13379,12 +13392,13 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
         <div>
           <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
             RDAP / WHOIS Enrichment
+            {dataSourceLabel ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#cbd5e1', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>{dataSourceLabel}</span> : null}
             {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
           </div>
           {!compact ? (
           <>
           <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
-            {d.last_enriched_at ? `Domain cache last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'Registration data from RDAP'}
+            {d.last_success_at ? `Last successful provider fetch: ${formatUserDateTime(d.last_success_at)}` : (d.last_enriched_at ? `Domain cache last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'Registration data from RDAP')}
           </div>
           {d.last_enriched_at ? (
             <div style={{ color: '#64748b', fontSize: 11, marginTop: 4, lineHeight: 1.45, maxWidth: 420 }}>
@@ -13402,6 +13416,17 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
 
       <RdapTargetNote data={d} />
 
+      {infoLine ? (
+        <div style={{ marginTop: 8, color: d.data_source === 'error' ? '#fcd34d' : '#93c5fd', fontSize: 12, lineHeight: 1.45 }}>
+          {infoLine}
+        </div>
+      ) : null}
+      {d.last_error ? (
+        <div style={{ marginTop: 6, color: '#fca5a5', fontSize: 12, lineHeight: 1.45 }}>
+          Latest refresh failed{d.last_attempt_at ? ` at ${formatUserDateTime(d.last_attempt_at)}` : ''}: {d.last_error}
+        </div>
+      ) : null}
+
       <div className="enrichment-summary-grid">
         <EnrichmentFieldCard label="RDAP Domain" value={rdapDomainValue} variant="compact" wide />
         <EnrichmentFieldCard label="Registrar" value={d.registrar} variant="wrap" />
@@ -13413,6 +13438,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
         <EnrichmentFieldCard label="Last Changed" value={formatUserDateTime(d.last_changed_date)} />
         <EnrichmentFieldCard label="Expiration Date" value={formatUserDateTime(d.expiration_date)} />
         <EnrichmentFieldCard label="RDAP Status" value={d.rdap_status} />
+        <EnrichmentFieldCard label="Data Source" value={dataSourceLabel || d.data_source} />
       </div>
 
       {!compact ? (

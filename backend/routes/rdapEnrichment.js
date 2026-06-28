@@ -60,15 +60,18 @@ async function handleRdapGet(pool, parsed) {
       observableValue: parsed.observable_value,
       rootDomain: parsed.rdap_domain,
       iocType: parsed.ioc_type,
+      data_source: 'none',
       ...extra
     });
   }
   return rowToApiPayload(row, {
     enriched: row.rdap_status === 'success',
-    cached: false,
+    cached: true,
     observableValue: parsed.observable_value,
     rootDomain: parsed.rdap_domain,
     iocType: parsed.ioc_type,
+    data_source: 'db',
+    message: `RDAP data found in database. Last fetched at ${row.last_success_at || row.last_enriched_at || row.updated_at || 'unknown'}.`,
     ...extra
   });
 }
@@ -102,6 +105,14 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
     observableValue: parsed.observable_value,
     rootDomain: parsed.rdap_domain,
     iocType: parsed.ioc_type,
+    data_source: result.dataSource || (result.cached ? 'db' : 'provider'),
+    message: result.dataSource === 'db'
+      ? `RDAP data found in database. Last fetched at ${row.last_success_at || row.last_enriched_at || row.updated_at || 'unknown'}.`
+      : result.dataSource === 'forced_provider'
+        ? 'RDAP data refreshed from provider and database updated.'
+        : result.dataSource === 'error' && row.rdap_status === 'success'
+          ? `Last successful RDAP data from ${row.last_success_at || row.last_enriched_at || 'unknown'}. Latest refresh failed at ${row.last_attempt_at || row.updated_at || 'unknown'}.`
+          : 'RDAP data fetched from provider and stored.',
     ...extra
   });
 
