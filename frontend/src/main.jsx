@@ -1361,6 +1361,11 @@ function AppShell({ children }) {
   const { userEmail, role, canWrite, isAdmin, refreshSession } = useSession();
   const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
   const [needsTimezoneSelection, setNeedsTimezoneSelection] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     let mounted = true;
@@ -1438,7 +1443,14 @@ function AppShell({ children }) {
 
   return (
     <div className="app-shell" style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
-      <aside style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
+      <div className="mobile-topbar">
+        <button className="mobile-menu-btn" onClick={() => setIsMobileNavOpen((v) => !v)} aria-label="Toggle navigation menu">☰</button>
+        <span className="mobile-topbar-title">demo-runbook</span>
+        <span className="mobile-topbar-user">{userEmail ? userEmail.split('@')[0] : 'user'}</span>
+      </div>
+      {isMobileNavOpen && <div className="mobile-backdrop" onClick={() => setIsMobileNavOpen(false)} />}
+      <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
+        <div className="mobile-sidebar-close"><button onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu">✕</button></div>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{userEmail || 'demo user'}</b> <span style={{ color: '#94a3b8' }}>({role})</span></div>
 
         <nav>
@@ -16091,6 +16103,139 @@ function App() {
         }
         .queue-recover-error {
           color: #fca5a5 !important;
+        }
+
+        /* ─── Responsive layout ─────────────────────────────── */
+
+        .mobile-topbar {
+          display: none;
+          align-items: center;
+          gap: 12px;
+          padding: 0 14px;
+          height: 52px;
+          border-bottom: 1px solid #334155;
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          box-sizing: border-box;
+          flex-shrink: 0;
+          background: #111827 !important;
+          width: 100%;
+        }
+        button.mobile-menu-btn {
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+          color: #e2e8f0 !important;
+          font-size: 22px;
+          padding: 4px 8px !important;
+          cursor: pointer;
+          line-height: 1;
+          flex-shrink: 0;
+        }
+        .mobile-topbar-title {
+          flex: 1;
+          font-weight: 700;
+          font-size: 16px;
+          color: #f1f5f9 !important;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .mobile-topbar-user {
+          font-size: 12px;
+          color: #94a3b8 !important;
+          white-space: nowrap;
+          max-width: 120px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          flex-shrink: 0;
+        }
+        .mobile-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(2, 6, 23, 0.6) !important;
+          z-index: 198;
+          border: none !important;
+        }
+        .mobile-sidebar-close {
+          display: none;
+          padding: 8px 4px 4px;
+          text-align: right;
+        }
+        .mobile-sidebar-close button {
+          background: transparent !important;
+          border: none !important;
+          color: #94a3b8 !important;
+          font-size: 18px;
+          padding: 4px 8px !important;
+          cursor: pointer;
+          line-height: 1;
+        }
+
+        @media (max-width: 1023px) {
+          html, body {
+            overflow-x: hidden;
+          }
+          .app-shell {
+            flex-direction: column !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            gap: 0 !important;
+            align-items: stretch !important;
+          }
+          .mobile-topbar {
+            display: flex !important;
+          }
+          .sidebar {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            height: 100vh !important;
+            width: min(85vw, 300px) !important;
+            overflow-y: auto !important;
+            border-radius: 0 !important;
+            border-top: none !important;
+            border-bottom: none !important;
+            border-left: none !important;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            z-index: 200 !important;
+            box-sizing: border-box !important;
+            flex: none !important;
+          }
+          .sidebar--open {
+            transform: translateX(0) !important;
+          }
+          .mobile-sidebar-close {
+            display: block;
+          }
+          .main-content {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+            padding: 16px 14px !important;
+          }
+        }
+
+        @media (max-width: 767px) {
+          .main-content {
+            padding: 12px 10px !important;
+          }
+          .hot-ioc-summary-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .hot-ioc-search-input {
+            width: 100% !important;
+            min-width: 0 !important;
+          }
+          .modal-footer {
+            flex-direction: column-reverse;
+          }
+          .modal-footer button {
+            width: 100%;
+          }
         }
       `}</style>
       <BrowserRouter>
