@@ -16,6 +16,7 @@ import {
   syncSnapshotFeedFromEntries,
   withImportOptimizationContext
 } from './lib/iocExpiration.js';
+import { upsertFeedSourceEvidenceForObservable } from './lib/iocFeedSourceEvidence.js';
 import {
   resolveImportConfidenceFields,
   applyIocImportConfidence,
@@ -81,6 +82,26 @@ async function importSideEffect(label, metrics, fn) {
     console.error(`${IMPORT_LOG} side_effect_failed label=${label} message=${err?.message || err}`);
     metrics?.noteFailed(1);
   }
+}
+
+async function storeFeedSourceEvidence(client, {
+  observable,
+  observableType,
+  sourceName,
+  sourceUrl = null,
+  category = null,
+  note = null,
+  confidence = null
+}) {
+  await importSideEffect('feed_source_evidence', null, () => upsertFeedSourceEvidenceForObservable(client, {
+    observable,
+    observableType,
+    sourceName,
+    sourceUrl,
+    category,
+    note,
+    confidence
+  }));
 }
 
 function parseLinks(html) {
@@ -521,9 +542,29 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
   const existing = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
   if (existing.status === 'updated') {
     metrics.noteUpdated();
+    await storeFeedSourceEvidence(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      note,
+      confidence: null
+    });
     return;
   }
   if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
+    if (existing.status === 'observation_updated') {
+      await storeFeedSourceEvidence(client, {
+        observable: entry.observable,
+        observableType: entry.observableType,
+        sourceName,
+        sourceUrl,
+        category,
+        note,
+        confidence: null
+      });
+    }
     metrics.noteSkipped();
     return;
   }
@@ -622,6 +663,15 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
   const existing = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
   if (existing.status === 'updated') {
     metrics.noteUpdated();
+    await storeFeedSourceEvidence(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      note,
+      confidence: entry.confidence
+    });
     return;
   }
   if (existing.status === 'unchanged') {
@@ -815,9 +865,29 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
   const existing = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
   if (existing.status === 'updated') {
     metrics.noteUpdated();
+    await storeFeedSourceEvidence(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      note,
+      confidence: entry.confidence
+    });
     return;
   }
   if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
+    if (existing.status === 'observation_updated') {
+      await storeFeedSourceEvidence(client, {
+        observable: entry.observable,
+        observableType: entry.observableType,
+        sourceName,
+        sourceUrl,
+        category,
+        note,
+        confidence: entry.confidence
+      });
+    }
     metrics.noteSkipped();
     return;
   }
@@ -1133,6 +1203,15 @@ async function insertObservable(client, { observable, observableType, sourceName
       note
     }).catch(() => ({ status: 'not_found' }));
     if (existing.status === 'unchanged') {
+      await storeFeedSourceEvidence(client, {
+        observable,
+        observableType,
+        sourceName,
+        sourceUrl,
+        category,
+        note,
+        confidence: confFields.confidence
+      });
       return 'unchanged';
     }
     if (existing.status === 'updated') {
@@ -1143,6 +1222,15 @@ async function insertObservable(client, { observable, observableType, sourceName
         parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence)
       }));
     }
+    await storeFeedSourceEvidence(client, {
+      observable,
+      observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      note,
+      confidence: confFields.confidence
+    });
     await importSideEffect('duplicate_membership', null, () => syncMembershipAfterIocImport(client, {
       observable,
       observableType,
@@ -1157,6 +1245,15 @@ async function insertObservable(client, { observable, observableType, sourceName
   const publicId = ins.rows[0].public_id;
   const observables = extractObservablesFromNote(observableType, observable, note);
   await insertObservablesIndex(client, publicId, observables);
+  await storeFeedSourceEvidence(client, {
+    observable,
+    observableType,
+    sourceName,
+    sourceUrl,
+    category,
+    note,
+    confidence: confFields.confidence
+  });
   await importSideEffect('insert_membership', null, () => syncMembershipAfterIocImport(client, {
     observable,
     observableType,

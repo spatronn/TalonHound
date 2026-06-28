@@ -9,6 +9,7 @@ COPY integration/ ./
 COPY backend/lib/ioc-suppression.js ./lib/ioc-suppression.js
 COPY backend/lib/importOptimizationContext.js ./lib/importOptimizationContext.js
 COPY backend/lib/iocExpiration.js ./lib/iocExpiration.js
+COPY backend/lib/iocFeedSourceEvidence.js ./lib/iocFeedSourceEvidence.js
 COPY backend/lib/feedLifecycle.js ./lib/feedLifecycle.js
 COPY backend/lib/iocActiveSources.js ./lib/iocActiveSources.js
 COPY backend/lib/iocStatsCache.js ./lib/iocStatsCache.js

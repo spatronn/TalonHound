@@ -88,6 +88,10 @@ import {
   applyActiveListScope
 } from './lib/iocActiveSources.js';
 import {
+  buildIocDetailsSourceEvidence,
+  fetchFeedSourceEvidenceForItems
+} from './lib/iocFeedSourceEvidence.js';
+import {
   buildIocStatsCacheKey,
   readIocStatsCache,
   writeIocStatsCache
@@ -6786,26 +6790,39 @@ app.get('/api/ioc/observable/sources', async (req, res) => {
       typeFilter = ' AND observable_type = $2 ';
     }
 
-    const detailsQ = `
-      SELECT
-        MIN(id)::int AS id,
-        observable,
-        observable_type,
-        source_name,
-        MIN(source_url) AS source_url,
-        MIN(confidence) AS confidence,
-        MIN(category) AS category,
-        STRING_AGG(DISTINCT note, ' | ') FILTER (WHERE note IS NOT NULL AND note <> '') AS note,
-        MAX(created_at) AS created_at,
-        COUNT(*)::int AS total_rows
-      FROM ioc_items
-      WHERE observable = $1
-      ${typeFilter}
-      GROUP BY observable, observable_type, source_name
-      ORDER BY created_at DESC
-    `;
-    const { rows } = await pool.query(detailsQ, params);
-    return res.json({ observable, observable_type: observableType || null, sources: rows });
+    const itemRes = await pool.query(
+      `SELECT id, public_id, observable, observable_type, source_name, source_url,
+              confidence, category, note, created_at, status, ioc_source_id
+       FROM ioc_items
+       WHERE observable = $1
+       ${typeFilter}
+       ORDER BY created_at DESC
+       LIMIT 500`,
+      params
+    );
+    const rows = itemRes.rows || [];
+    if (!rows.length) {
+      return res.json({ observable, observable_type: observableType || null, sources: [] });
+    }
+
+    const seedRow = rows[0];
+    const iocItemIds = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+    const membershipSummary = await fetchObservableMembershipSummary(pool, {
+      observable: seedRow.observable,
+      observableType: seedRow.observable_type,
+      iocItemIds
+    });
+    const evidenceRows = await fetchFeedSourceEvidenceForItems(pool, {
+      iocItemIds,
+      observableType: seedRow.observable_type
+    });
+    const sources = buildIocDetailsSourceEvidence({
+      iocRows: rows,
+      membershipSummary,
+      evidenceRows
+    });
+
+    return res.json({ observable, observable_type: observableType || seedRow.observable_type || null, sources });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch observable source details', detail: err.message });
   }
@@ -7386,6 +7403,15 @@ app.get('/api/ioc/details', async (req, res) => {
       observableType,
       iocItemIds
     });
+    const evidenceRows = await fetchFeedSourceEvidenceForItems(pool, {
+      iocItemIds,
+      observableType
+    });
+    const sourceEvidence = buildIocDetailsSourceEvidence({
+      iocRows: rows,
+      membershipSummary,
+      evidenceRows
+    });
 
     const summary = {
       id: seedRow.id,
@@ -7510,7 +7536,7 @@ app.get('/api/ioc/details', async (req, res) => {
       summary,
       confidence: confidenceDetail,
       match_count: Number(summary.match_count || 0),
-      sources: rows.filter((r) => String(r.status || 'active') === 'active'),
+      sources: sourceEvidence,
       historical_ioc_rows: rows.filter((r) => String(r.status || 'active') !== 'active'),
       active_sources: membershipSummary.activeSources,
       historical_sources: membershipSummary.historicalSources,
