@@ -182,7 +182,7 @@ export async function createManualIoc(pool, body, opts = {}) {
         AND COALESCE(category, '') = COALESCE($6, '')
         AND COALESCE(source_url, '') = COALESCE($4, '')
         AND COALESCE(threat_classification, 'unknown') = COALESCE($7, 'unknown')
-        AND COALESCE(threat_actor_id::text, '') = COALESCE($8::text, '')
+        AND threat_actor_id IS NOT DISTINCT FROM $8::uuid
     )
     RETURNING *
   `;

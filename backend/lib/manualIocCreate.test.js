@@ -5,7 +5,179 @@ import {
   validateSourceName,
   parseManualExpirationInput
 } from './iocSourceValidation.js';
-import { inferObservableType, resolveManualExpirationFromSource } from './manualIocCreate.js';
+import { createManualIoc, inferObservableType, resolveManualExpirationFromSource } from './manualIocCreate.js';
+
+const THREAT_HUNTING_SOURCE = {
+  id: 7,
+  name: 'Threat-Hunting',
+  default_confidence: 'high',
+  default_threat_classification: 'unknown',
+  default_expire_policy: 'expire_after_days',
+  default_expire_days: 30,
+  active: true,
+  archived_at: null
+};
+
+function makeInsertRow(overrides = {}) {
+  const now = new Date('2026-06-28T12:00:00.000Z');
+  return {
+    id: 9001,
+    public_id: '11111111-1111-4111-8111-111111111111',
+    observable: 'deneme.ekhtelalattabrizi.xyz',
+    observable_type: 'domain',
+    source_name: 'Threat-Hunting',
+    source_url: 'manuel hunting',
+    confidence: 'high',
+    category: null,
+    threat_classification: 'unknown',
+    threat_actor_id: null,
+    note: null,
+    ioc_source_id: 7,
+    status: 'active',
+    expires_at: '2026-07-28T12:00:00.000Z',
+    expired_at: null,
+    expiration_reason: 'manual_custom_expire',
+    manual_status_override: true,
+    manual_status: 'active',
+    manual_expires_at: '2026-07-28T12:00:00.000Z',
+    created_at: now
+  };
+}
+
+function createManualIocPoolMock({ sourceRow = THREAT_HUNTING_SOURCE, insertRow = makeInsertRow() } = {}) {
+  const queries = [];
+  const query = async (sql, params = []) => {
+    queries.push({ sql: String(sql), params: [...params] });
+    const normalized = String(sql).replace(/\s+/g, ' ').trim();
+
+    if (normalized.includes('FROM ioc_sources WHERE id = $1')) {
+      return { rows: sourceRow ? [sourceRow] : [] };
+    }
+    if (normalized.includes('SELECT slug, name, active, system_default, sort_order FROM threat_classifications')) {
+      return {
+        rows: [
+          { slug: 'unknown', name: 'Unknown', active: true, system_default: true, sort_order: 0 },
+          { slug: 'phishing', name: 'Phishing', active: true, system_default: true, sort_order: 10 },
+          { slug: 'credential_theft', name: 'Credential Theft', active: true, system_default: true, sort_order: 20 }
+        ]
+      };
+    }
+    if (normalized.includes('INSERT INTO ioc_items')) {
+      assert.match(normalized, /threat_actor_id IS NOT DISTINCT FROM \$8::uuid/);
+      assert.doesNotMatch(normalized, /\$8::text/);
+      return { rows: [insertRow] };
+    }
+    if (normalized.includes('FROM ioc_items WHERE id = $1 AND observable_type = $2')) {
+      return { rows: [insertRow] };
+    }
+    if (normalized.includes('DELETE FROM ioc_threat_classifications')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('INSERT INTO ioc_threat_classifications')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('UPDATE ioc_items SET threat_classification = $3')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('INSERT INTO ioc_observables')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('FROM ioc_items') && normalized.includes('manual_status_override')) {
+      return { rows: [{ ...insertRow, status: 'active' }] };
+    }
+    if (normalized.includes('FROM ioc_suppressions')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('FROM ioc_feed_memberships')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('UPDATE ioc_items') && normalized.includes('SET status = $3')) {
+      return { rows: [] };
+    }
+    if (normalized.startsWith('BEGIN') || normalized.startsWith('COMMIT') || normalized.startsWith('ROLLBACK')) {
+      return { rows: [] };
+    }
+    throw new Error(`Unexpected query: ${normalized.slice(0, 160)}`);
+  };
+
+  return {
+    queries,
+    query,
+    connect: async () => ({
+      query,
+      release: () => {}
+    })
+  };
+}
+
+test('createManualIoc succeeds for domain with free-text source reference and no classifications', async () => {
+  const pool = createManualIocPoolMock();
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    source_url: 'manuel hunting',
+    confidence: 'high',
+    threat_classifications: [],
+    threat_classification: 'unknown'
+  });
+
+  assert.equal(result.status, 201);
+  assert.equal(result.body.observable, 'deneme.ekhtelalattabrizi.xyz');
+  assert.equal(result.body.source_url, 'manuel hunting');
+  assert.equal(result.body.threat_classification, 'unknown');
+  assert.deepEqual(result.body.threat_classifications.map((x) => x.value), ['unknown']);
+});
+
+test('createManualIoc accepts missing threat_classifications field', async () => {
+  const pool = createManualIocPoolMock();
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    source_url: 'manuel hunting',
+    confidence: 'high'
+  });
+
+  assert.equal(result.status, 201);
+  assert.equal(result.body.threat_classification, 'unknown');
+});
+
+test('createManualIoc stores multiple threat classifications', async () => {
+  const pool = createManualIocPoolMock({
+    insertRow: makeInsertRow({ threat_classification: 'phishing' })
+  });
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    source_url: 'manuel hunting',
+    confidence: 'high',
+    threat_classifications: ['phishing', 'credential_theft']
+  });
+
+  assert.equal(result.status, 201);
+  assert.equal(result.body.threat_classification, 'phishing');
+  assert.deepEqual(
+    result.body.threat_classifications.map((x) => x.value),
+    ['phishing', 'credential_theft']
+  );
+});
+
+test('createManualIoc rejects invalid source', async () => {
+  const pool = createManualIocPoolMock({ sourceRow: null });
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 99999,
+    confidence: 'high'
+  });
+  assert.equal(result.status, 400);
+  assert.match(result.body.message, /Invalid IOC source/);
+});
+
+test('createManualIoc rejects missing IOC value', async () => {
+  const pool = createManualIocPoolMock();
+  const result = await createManualIoc(pool, { source_id: 7, confidence: 'high' });
+  assert.equal(result.status, 400);
+  assert.match(result.body.message, /required/i);
+});
 
 test('normalizeSourceNameInput replaces spaces and strips invalid chars', () => {
   assert.equal(normalizeSourceNameInput('Internal Hunting'), 'Internal_Hunting');

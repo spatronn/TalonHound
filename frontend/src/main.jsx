@@ -15249,7 +15249,7 @@ function IOCAddPage() {
         setMessage({ type: 'success', text: `IOC saved — source: ${srcLabel}, ${expLabel}.` });
       }
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.response?.data?.detail || err?.message || 'Failed to save record';
+      const msg = apiErrorMessage(err, 'Failed to save record');
       setMessage({ type: 'error', text: msg });
     } finally {
       setSubmitting(false);
