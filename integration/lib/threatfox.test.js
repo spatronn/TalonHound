@@ -9,6 +9,7 @@ import {
   mapThreatFoxApiRow,
   parseThreatFoxApiResponse,
   sanitizeThreatFoxErrorMessage,
+  stripThreatFoxVolatileNoteParts,
   validateThreatFoxRecentDays
 } from './threatfox.js';
 
@@ -139,5 +140,24 @@ describe('buildThreatFoxNote', () => {
     });
     assert.match(note, /ioc_id=1/);
     assert.match(note, /malware=Dridex/);
+  });
+});
+
+describe('stripThreatFoxVolatileNoteParts', () => {
+  it('removes last_seen from note comparison key', () => {
+    const older = buildThreatFoxNote({
+      iocId: '1',
+      threatType: 'botnet_cc',
+      firstSeen: new Date('2026-06-26T12:25:15.000Z'),
+      lastSeen: new Date('2026-06-26T12:25:15.000Z')
+    });
+    const newer = buildThreatFoxNote({
+      iocId: '1',
+      threatType: 'botnet_cc',
+      firstSeen: new Date('2026-06-26T12:25:15.000Z'),
+      lastSeen: new Date('2026-06-28T19:25:13.000Z')
+    });
+    assert.notEqual(older, newer);
+    assert.equal(stripThreatFoxVolatileNoteParts(older), stripThreatFoxVolatileNoteParts(newer));
   });
 });

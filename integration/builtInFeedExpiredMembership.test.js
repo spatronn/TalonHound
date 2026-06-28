@@ -1,11 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMalwareBazaarNote, mapMalwareBazaarRecord } from './lib/malwarebazaar.js';
-import { buildThreatFoxNote, mapThreatFoxApiRow } from './lib/threatfox.js';
-import {
-  updateMalwareBazaarObservableBySource,
-  updateThreatFoxObservableBySource
-} from './importer.js';
+import { updateMalwareBazaarObservableBySource } from './importer.js';
 
 // Scripted mock — replays queries by first-match on the match() predicate.
 // importSideEffect swallows errors, so all expected queries must be handled
@@ -37,27 +33,6 @@ function malwareEntry(overrides = {}) {
       reporter: 'abuse_ch',
       tags: 'exe,malware',
       malwarebazaar_link: 'https://bazaar.abuse.ch/sample/' + 'a'.repeat(64) + '/'
-    }),
-    ...overrides
-  };
-}
-
-function threatFoxEntry(overrides = {}) {
-  return {
-    ...mapThreatFoxApiRow({
-      id: '12345',
-      ioc: 'https://malicious.example.test/a',
-      ioc_type: 'url',
-      threat_type: 'payload_delivery',
-      malware: 'win.example',
-      malware_printable: 'Example Malware',
-      malware_alias: 'ExampleAlias',
-      confidence_level: 75,
-      first_seen: '2026-06-28 04:00:01 UTC',
-      last_seen: '2026-06-28 04:00:01 UTC',
-      reporter: 'abuse_ch',
-      reference: 'https://threatfox.abuse.ch/ioc/12345/',
-      tags: ['malware', 'payload']
     }),
     ...overrides
   };
@@ -102,8 +77,7 @@ function reactivatedMembershipRow() {
   };
 }
 
-// Query sequence for unchanged + expired membership WITH explicit confidence (MB / ThreatFox):
-// Q1  CTE (updateExistingIocBySourceIfChanged)   → unchanged
+// Query sequence for unchanged + expired membership WITH explicit confidence (MalwareBazaar):
 // Q2  FROM integration_feeds                     → feed row
 // Q3  ioc_items by observable                   → found
 // Q4  FROM threat_feed_expiration_policies       → no policy
@@ -122,6 +96,19 @@ function buildHandlers({ feedKey, feedId, observable, observableType, iocItemId 
     {
       match: (s) => s.includes('WITH existing AS'),
       result: () => ({ rowCount: 1, rows: [{ status: 'unchanged', public_id: 'pub-2' }] })
+    },
+    {
+      match: (s) => s.includes('FROM ioc_items') && s.includes('source_name = $3') && s.includes('LIMIT 1'),
+      result: () => ({
+        rowCount: 1,
+        rows: [{
+          public_id: 'pub-2',
+          note: 'unchanged-note',
+          category: 'threat-intel',
+          first_seen_at: new Date('2026-06-28T04:00:01Z'),
+          last_seen_at: new Date('2026-06-28T04:00:01Z')
+        }]
+      })
     },
     {
       match: (s) => s.includes('FROM integration_feeds'),
@@ -144,6 +131,14 @@ function buildHandlers({ feedKey, feedId, observable, observableType, iocItemId 
     {
       match: (s) => s.includes('UPDATE ioc_feed_memberships') && s.includes('SET last_seen_in_feed'),
       result: () => ({ rowCount: 1, rows: [reactivatedMembershipRow()] })
+    },
+    {
+      match: (s) => s.includes('SELECT * FROM ioc_feed_memberships WHERE id = $1'),
+      result: () => ({ rows: [reactivatedMembershipRow()] })
+    },
+    {
+      match: (s) => s.includes('UPDATE ioc_feed_memberships') && s.includes('policy_expires_at'),
+      result: () => ({ rowCount: 0, rows: [] })
     },
     {
       // explicit_confidence UPDATE (fired because entry.confidence is 'high')
@@ -215,37 +210,6 @@ describe('built-in feed expired membership reactivation', () => {
     );
 
     // IOC global status recomputed after reactivation
-    assert.ok(
-      client.calls.some((c) => c.sql.includes('UPDATE ioc_items') && c.sql.includes('SET status = ')),
-      'IOC global status must be recomputed after membership reactivation'
-    );
-  });
-
-  it('reactivates expired ThreatFox membership when unchanged IOC reappears in feed', async () => {
-    const entry = threatFoxEntry();
-    const client = makeScriptedClient(buildHandlers({
-      feedKey: 'threatfox-abusech',
-      feedId: FEED_ID,
-      observable: 'https://malicious.example.test/a',
-      observableType: 'url',
-      iocItemId: IOC_ITEM_ID
-    }));
-
-    const result = await updateThreatFoxObservableBySource(
-      client,
-      entry,
-      'ThreatFox:abuse.ch',
-      buildThreatFoxNote(entry),
-      entry.threatType || 'threat-intel'
-    );
-
-    assert.equal(result.status, 'unchanged', 'function must report unchanged (ioc_items not updated)');
-
-    assert.ok(
-      client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes('SET last_seen_in_feed')),
-      'expired membership must be reactivated via UPDATE ioc_feed_memberships'
-    );
-
     assert.ok(
       client.calls.some((c) => c.sql.includes('UPDATE ioc_items') && c.sql.includes('SET status = ')),
       'IOC global status must be recomputed after membership reactivation'

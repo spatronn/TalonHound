@@ -173,6 +173,23 @@ export function buildThreatFoxNote(entry) {
   return parts.join(' | ');
 }
 
+/** Note key for semantic metadata comparison — excludes volatile provider last_seen. */
+export function stripThreatFoxVolatileNoteParts(note) {
+  return String(note || '')
+    .split(' | ')
+    .map((part) => part.trim())
+    .filter((part) => part && !/^last_seen=/i.test(part))
+    .join(' | ');
+}
+
+export function buildThreatFoxSemanticNote(entry) {
+  return buildThreatFoxNote({ ...entry, lastSeen: null });
+}
+
+export function threatFoxNotesSemanticallyEqual(storedNote, incomingNote) {
+  return stripThreatFoxVolatileNoteParts(storedNote) === stripThreatFoxVolatileNoteParts(incomingNote);
+}
+
 export function parseThreatFoxApiResponse(json) {
   const payload = json && typeof json === 'object' ? json : {};
   const status = String(payload.query_status || '').trim().toLowerCase();

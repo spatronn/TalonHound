@@ -51,6 +51,7 @@ import {
   THREATFOX_AUTH_REQUIRED_MSG,
   THREATFOX_SOURCE_URL_MASKED,
   buildThreatFoxNote,
+  threatFoxNotesSemanticallyEqual,
   fetchThreatFoxRecentIocs,
   resolveThreatFoxAuthKey,
   resolveThreatFoxRecentDays,
@@ -621,30 +622,122 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
   metrics.noteDuplicate();
 }
 
-export async function updateThreatFoxObservableBySource(client, entry, sourceName, note, category) {
-  const existing = await updateExistingIocBySourceIfChanged(client, {
+function mergeThreatFoxFirstSeenAt(stored, incoming) {
+  if (!incoming) return stored ?? null;
+  if (!stored) return incoming;
+  return new Date(incoming) < new Date(stored) ? incoming : stored;
+}
+
+function mergeThreatFoxLastSeenAt(stored, incoming) {
+  if (!incoming) return stored ?? null;
+  if (!stored) return incoming;
+  return new Date(incoming) > new Date(stored) ? incoming : stored;
+}
+
+function threatFoxObservationChanged(row, { fullNote, nextFirstSeenAt, nextLastSeenAt }) {
+  const storedFirst = row.first_seen_at ? new Date(row.first_seen_at).toISOString() : null;
+  const storedLast = row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null;
+  const nextFirst = nextFirstSeenAt ? new Date(nextFirstSeenAt).toISOString() : null;
+  const nextLast = nextLastSeenAt ? new Date(nextLastSeenAt).toISOString() : null;
+  return storedFirst !== nextFirst
+    || storedLast !== nextLast
+    || String(row.note || '') !== String(fullNote || '');
+}
+
+/**
+ * ThreatFox update: separates volatile provider last_seen from semantic metadata.
+ * Returns status: not_found | unchanged | observation_updated | updated
+ */
+export async function updateThreatFoxExistingIocBySource(client, {
+  observable,
+  observableType,
+  sourceName,
+  fullNote,
+  category,
+  firstSeenAt = null,
+  lastSeenAt = null
+}) {
+  const { rows } = await client.query(
+    `SELECT public_id, note, category, first_seen_at, last_seen_at
+     FROM ioc_items
+     WHERE observable = $1
+       AND observable_type = $2
+       AND source_name = $3
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [observable, observableType, sourceName]
+  );
+  const row = rows[0];
+  if (!row) return { status: 'not_found' };
+
+  const nextFirstSeenAt = mergeThreatFoxFirstSeenAt(row.first_seen_at, firstSeenAt);
+  const nextLastSeenAt = mergeThreatFoxLastSeenAt(row.last_seen_at, lastSeenAt);
+  const semanticChanged = String(row.category || '') !== String(category || '')
+    || !threatFoxNotesSemanticallyEqual(row.note, fullNote);
+  const observationChanged = threatFoxObservationChanged(row, {
+    fullNote,
+    nextFirstSeenAt,
+    nextLastSeenAt
+  });
+
+  if (!semanticChanged && !observationChanged) {
+    return { status: 'unchanged', publicId: row.public_id };
+  }
+
+  if (semanticChanged) {
+    const upd = await client.query(
+      `UPDATE ioc_items
+       SET category = $2,
+           note = $3,
+           first_seen_at = $4,
+           last_seen_at = $5
+       WHERE public_id = $1
+       RETURNING public_id`,
+      [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt]
+    );
+    return { status: 'updated', publicId: upd.rows[0]?.public_id || row.public_id };
+  }
+
+  const upd = await client.query(
+    `UPDATE ioc_items
+     SET note = $2,
+         first_seen_at = $3,
+         last_seen_at = $4
+     WHERE public_id = $1
+     RETURNING public_id`,
+    [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt]
+  );
+  return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
+}
+
+async function maybeReactivateThreatFoxMembership(client, entry, sourceName, category) {
+  await importSideEffect('threatfox_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
     observable: entry.observable,
     observableType: entry.observableType,
     sourceName,
-    note,
+    sourceUrl: THREATFOX_SOURCE_URL_MASKED,
+    explicitConfidence: entry.confidence,
+    category,
+    reactivateOnly: true
+  }));
+}
+
+export async function updateThreatFoxObservableBySource(client, entry, sourceName, note, category) {
+  const fullNote = note || buildThreatFoxNote(entry);
+  const existing = await updateThreatFoxExistingIocBySource(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    fullNote,
     category,
     firstSeenAt: entry.firstSeen,
     lastSeenAt: entry.lastSeen || entry.firstSeen
   });
 
-  if (existing.status === 'unchanged') {
-    // Active membership: intentional no-op — skip all DB writes.
-    // Inactive/expired membership: reactivate without updating ioc_items metadata,
-    // because feed re-appearance is semantically meaningful regardless of metadata change.
-    await importSideEffect('threatfox_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName,
-      sourceUrl: THREATFOX_SOURCE_URL_MASKED,
-      explicitConfidence: entry.confidence,
-      category,
-      reactivateOnly: true
-    }));
+  if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
+    // Active membership: skip last_seen_in_feed refresh on unchanged/observation-only rows.
+    // Inactive/expired membership: reactivate (updates last_seen_in_feed by design).
+    await maybeReactivateThreatFoxMembership(client, entry, sourceName, category);
     return existing;
   }
   if (existing.status !== 'updated') return existing;
@@ -679,7 +772,7 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
     metrics.noteUpdated();
     return;
   }
-  if (existing.status === 'unchanged') {
+  if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
     metrics.noteSkipped();
     return;
   }
@@ -711,7 +804,7 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
     const existingAfterDuplicate = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
     if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
-    } else if (existingAfterDuplicate.status === 'unchanged') {
+    } else if (existingAfterDuplicate.status === 'unchanged' || existingAfterDuplicate.status === 'observation_updated') {
       metrics.noteSkipped();
     } else {
       metrics.noteDuplicate();
