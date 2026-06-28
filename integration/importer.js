@@ -29,6 +29,7 @@ import {
   assertUrlhausMinFetchInterval,
   buildUrlhausCanonicalIocHash,
   buildUrlhausNote,
+  urlhausNotesSemanticallyEqual,
   evaluateUrlhausExportSkip,
   fetchUrlhausExport,
   loadUrlhausCheckpoint,
@@ -379,66 +380,99 @@ async function updateExistingIocBySourceIfChanged(client, {
   return { status: row.status, publicId: row.public_id };
 }
 
-export async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
-  const lastSeen = entry.lastOnline || entry.dateAdded || null;
-  const res = await client.query(
-    `WITH existing AS (
-       SELECT public_id,
-              first_seen_at,
-              last_seen_at,
-              CASE
-                WHEN $6::timestamptz IS NULL THEN first_seen_at
-                ELSE LEAST(first_seen_at, $6::timestamptz)
-              END AS next_first_seen_at,
-              CASE
-                WHEN $7::timestamptz IS NULL THEN last_seen_at
-                ELSE GREATEST(COALESCE(last_seen_at, $7::timestamptz), $7::timestamptz)
-              END AS next_last_seen_at
-       FROM ioc_items
-       WHERE observable = $1
-         AND observable_type = $2
-         AND source_name = $3
-       ORDER BY created_at ASC
-       LIMIT 1
-     ), updated AS (
-       UPDATE ioc_items i
-       SET note = $4,
-           category = $5,
-           first_seen_at = existing.next_first_seen_at,
-           last_seen_at = existing.next_last_seen_at
-       FROM existing
-       WHERE i.public_id = existing.public_id
-         AND (
-           i.note IS DISTINCT FROM $4
-           OR i.category IS DISTINCT FROM $5
-           OR i.first_seen_at IS DISTINCT FROM existing.next_first_seen_at
-           OR i.last_seen_at IS DISTINCT FROM existing.next_last_seen_at
-         )
-       RETURNING i.public_id
-     )
-     SELECT 'updated' AS status, public_id FROM updated
-     UNION ALL
-     SELECT 'unchanged' AS status, public_id FROM existing
-     WHERE NOT EXISTS (SELECT 1 FROM updated)`,
-    [
-      entry.observable,
-      entry.observableType,
-      sourceName,
-      note,
-      category,
-      entry.dateAdded,
-      lastSeen
-    ]
+export async function updateUrlhausExistingIocBySource(client, {
+  observable,
+  observableType,
+  sourceName,
+  fullNote,
+  category,
+  dateAddedAt = null,
+  lastOnlineAt = null
+}) {
+  const { rows } = await client.query(
+    `SELECT public_id, note, category, first_seen_at, last_seen_at
+     FROM ioc_items
+     WHERE observable = $1
+       AND observable_type = $2
+       AND source_name = $3
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [observable, observableType, sourceName]
   );
+  const row = rows[0];
+  if (!row) return { status: 'not_found' };
 
-  if (!res.rowCount) return { status: 'not_found' };
+  const nextFirstSeenAt = mergeUrlhausFirstSeenAt(row.first_seen_at, dateAddedAt);
+  const nextLastSeenAt = mergeUrlhausLastSeenAt(row.last_seen_at, lastOnlineAt);
+  const semanticChanged = String(row.category || '') !== String(category || '')
+    || !urlhausNotesSemanticallyEqual(row.note, fullNote);
+  const observationChanged = urlhausObservationChanged(row, {
+    fullNote,
+    nextFirstSeenAt,
+    nextLastSeenAt
+  });
 
-  const row = res.rows[0];
-  if (row.status === 'unchanged') {
+  if (!semanticChanged && !observationChanged) {
     return { status: 'unchanged', publicId: row.public_id };
   }
 
-  const publicId = row.public_id;
+  if (semanticChanged) {
+    const upd = await client.query(
+      `UPDATE ioc_items
+       SET category = $2,
+           note = $3,
+           first_seen_at = $4,
+           last_seen_at = $5
+       WHERE public_id = $1
+       RETURNING public_id`,
+      [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt]
+    );
+    return { status: 'updated', publicId: upd.rows[0]?.public_id || row.public_id };
+  }
+
+  const upd = await client.query(
+    `UPDATE ioc_items
+     SET note = $2,
+         first_seen_at = $3,
+         last_seen_at = $4
+     WHERE public_id = $1
+     RETURNING public_id`,
+    [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt]
+  );
+  return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
+}
+
+async function maybeReactivateUrlhausMembership(client, entry, sourceName, category) {
+  await importSideEffect('urlhaus_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl: URLHAUS_EXPORT_URL_MASKED,
+    category,
+    reactivateOnly: true
+  }));
+}
+
+export async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
+  const fullNote = note || buildUrlhausNote(entry);
+  const lastOnlineAt = entry.lastOnline || null;
+  const existing = await updateUrlhausExistingIocBySource(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    fullNote,
+    category,
+    dateAddedAt: entry.dateAdded,
+    lastOnlineAt
+  });
+
+  if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
+    await maybeReactivateUrlhausMembership(client, entry, sourceName, category);
+    return existing;
+  }
+  if (existing.status !== 'updated') return existing;
+
+  const publicId = existing.publicId;
   const observables = extractObservablesFromNote(entry.observableType, entry.observable, note);
   await insertObservablesIndex(client, publicId, observables);
   await importSideEffect('urlhaus_confidence', null, () => applyIocImportConfidence(client, {
@@ -454,7 +488,29 @@ export async function updateUrlhausObservableBySource(client, entry, sourceName,
     sourceUrl: URLHAUS_EXPORT_URL_MASKED,
     category
   }));
-  return { status: 'updated', publicId };
+  return existing;
+}
+
+function mergeUrlhausFirstSeenAt(stored, incoming) {
+  if (!incoming) return stored ?? null;
+  if (!stored) return incoming;
+  return new Date(incoming) < new Date(stored) ? incoming : stored;
+}
+
+function mergeUrlhausLastSeenAt(stored, incoming) {
+  if (!incoming) return stored ?? null;
+  if (!stored) return incoming;
+  return new Date(incoming) > new Date(stored) ? incoming : stored;
+}
+
+function urlhausObservationChanged(row, { fullNote, nextFirstSeenAt, nextLastSeenAt }) {
+  const storedFirst = row.first_seen_at ? new Date(row.first_seen_at).toISOString() : null;
+  const storedLast = row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null;
+  const nextFirst = nextFirstSeenAt ? new Date(nextFirstSeenAt).toISOString() : null;
+  const nextLast = nextLastSeenAt ? new Date(nextLastSeenAt).toISOString() : null;
+  return storedFirst !== nextFirst
+    || storedLast !== nextLast
+    || String(row.note || '') !== String(fullNote || '');
 }
 
 export async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence = null) {
@@ -467,18 +523,7 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
     metrics.noteUpdated();
     return;
   }
-  if (existing.status === 'unchanged') {
-    // Active membership: intentional no-op — skip all DB writes.
-    // Inactive/expired membership: reactivate without updating ioc_items metadata,
-    // because feed re-appearance is semantically meaningful regardless of metadata change.
-    await importSideEffect('urlhaus_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName,
-      sourceUrl,
-      category,
-      reactivateOnly: true
-    }));
+  if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
     metrics.noteSkipped();
     return;
   }
@@ -510,7 +555,7 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
     const existingAfterDuplicate = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
     if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
-    } else if (existingAfterDuplicate.status === 'unchanged') {
+    } else if (existingAfterDuplicate.status === 'unchanged' || existingAfterDuplicate.status === 'observation_updated') {
       metrics.noteSkipped();
     } else {
       metrics.noteDuplicate();

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createImportMetrics } from './lib/import-metrics.js';
-import { mapUrlhausRow, splitCsvLine } from './lib/urlhaus.js';
+import { buildUrlhausNote, mapUrlhausRow, splitCsvLine } from './lib/urlhaus.js';
 import { upsertUrlhausObservable } from './importer.js';
 
 // Scripted mock that replays queries in a defined sequence.
@@ -35,7 +35,7 @@ const FEED_ID = 'cccccccc-0000-0000-0000-000000000001';
 const OBSERVABLE = 'https://zkenezc.baccaratbazi.com/1cd153b6-68f9-451b-bb81-b8d7f4f263cb';
 
 // Query sequence for URLhaus unchanged + expired membership (no explicit confidence):
-// Q1  CTE (updateUrlhausObservableBySource)      → unchanged
+// Q1  SELECT ioc_items (updateUrlhausExistingIocBySource) → unchanged
 // Q2  FROM integration_feeds                     → urlhaus feed
 // Q3  ioc_items by observable                   → found
 // Q4  FROM threat_feed_expiration_policies       → no policy
@@ -51,8 +51,21 @@ const OBSERVABLE = 'https://zkenezc.baccaratbazi.com/1cd153b6-68f9-451b-bb81-b8d
 // Q11 UPDATE ioc_items SET status='active'       → recomputed
 const HANDLERS = [
   {
-    match: (s) => s.includes('WITH existing AS'),
-    result: () => ({ rowCount: 1, rows: [{ status: 'unchanged', public_id: 'pub-1' }] })
+    match: (s) => s.includes('FROM ioc_items') && s.includes('source_name = $3') && s.includes('LIMIT 1'),
+    result: () => {
+      const entry = sampleEntry();
+      const note = buildUrlhausNote(entry);
+      return {
+        rowCount: 1,
+        rows: [{
+          public_id: 'pub-1',
+          note,
+          category: entry.threat || 'malware-url',
+          first_seen_at: entry.dateAdded,
+          last_seen_at: null
+        }]
+      };
+    }
   },
   {
     match: (s) => s.includes('FROM integration_feeds'),
@@ -168,8 +181,9 @@ describe('upsertUrlhausObservable expired membership reactivation', () => {
       'IOC global status must be recomputed after membership reactivation'
     );
 
-    // ioc_items metadata CTE did not produce an update (returned unchanged, rowCount=1 with status='unchanged')
-    const ctaCall = client.calls.find((c) => c.sql.includes('WITH existing AS'));
-    assert.ok(ctaCall, 'CTE query must have been issued');
+    assert.ok(
+      !client.calls.some((c) => c.sql.startsWith('UPDATE ioc_items') && c.sql.includes('SET note = ')),
+      'unchanged metadata must not rewrite ioc_items note/category'
+    );
   });
 });

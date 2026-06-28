@@ -151,6 +151,19 @@ export function buildUrlhausNote(entry) {
   return parts.join(' | ');
 }
 
+/** Note key for semantic metadata comparison — excludes volatile provider last_online. */
+export function stripUrlhausVolatileNoteParts(note) {
+  return String(note || '')
+    .split(' | ')
+    .map((part) => part.trim())
+    .filter((part) => part && !/^last_online=/i.test(part))
+    .join(' | ');
+}
+
+export function urlhausNotesSemanticallyEqual(storedNote, incomingNote) {
+  return stripUrlhausVolatileNoteParts(storedNote) === stripUrlhausVolatileNoteParts(incomingNote);
+}
+
 /**
  * Parse URLhaus recent.csv text. Returns entries and line stats.
  */

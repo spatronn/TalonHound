@@ -10,7 +10,8 @@ import {
   parseUrlhausRecentCsv,
   resolveUrlhausAuthKey,
   sanitizeUrlhausErrorMessage,
-  splitCsvLine
+  splitCsvLine,
+  stripUrlhausVolatileNoteParts
 } from './urlhaus.js';
 
 const SAMPLE_CSV = `################################################################
@@ -134,5 +135,25 @@ describe('buildUrlhausNote', () => {
     assert.match(note, /reference_url=https:\/\/urlhaus\.abuse\.ch\/url\/1\//);
     assert.match(note, /url_status=online/);
     assert.doesNotMatch(note, /<URLHAUS_AUTH_KEY>/);
+  });
+});
+
+describe('stripUrlhausVolatileNoteParts', () => {
+  it('removes last_online from note comparison key', () => {
+    const older = buildUrlhausNote({
+      externalId: '1',
+      urlStatus: 'online',
+      tags: ['malware_download'],
+      dateAdded: new Date('2026-05-27T11:52:06.000Z'),
+      lastOnline: new Date('2026-05-27T11:52:06.000Z')
+    });
+    const newer = buildUrlhausNote({
+      externalId: '1',
+      urlStatus: 'online',
+      tags: ['malware_download'],
+      dateAdded: new Date('2026-05-27T11:52:06.000Z'),
+      lastOnline: new Date('2026-06-28T17:40:00.000Z')
+    });
+    assert.equal(stripUrlhausVolatileNoteParts(older), stripUrlhausVolatileNoteParts(newer));
   });
 });
