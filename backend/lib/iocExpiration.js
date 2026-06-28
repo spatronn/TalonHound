@@ -493,7 +493,8 @@ export async function upsertMembershipOnImport(client, {
   seenAt = new Date(),
   explicitConfidence = null,
   audit = null,
-  actor = { actor_type: 'feed_import', source: 'integration' }
+  actor = { actor_type: 'feed_import', source: 'integration' },
+  reactivateOnly = false
 }) {
   if (!iocItemId || !observableType || !feedId) return null;
 
@@ -530,6 +531,13 @@ export async function upsertMembershipOnImport(client, {
     const wasExpired = row.status === 'expired';
     const wasPurged = row.status === 'purged';
     const clearMissing = true;
+
+    // reactivateOnly: membership is healthy — skip all DB writes, return early.
+    // For inactive/expired memberships the condition below does NOT hold, so we fall through
+    // to the normal reactivation path (because feed re-appearance is semantically meaningful).
+    if (reactivateOnly && row.status === 'active' && !row.missing_since && !row.expired_at && !row.purged_at) {
+      return row.id;
+    }
 
     if (row.override_enabled) {
       const upd = await client.query(
@@ -812,7 +820,8 @@ export async function syncMembershipAfterIocImport(client, {
   explicitConfidence = null,
   confidence = null,
   category = null,
-  seenAt = new Date()
+  seenAt = new Date(),
+  reactivateOnly = false
 }) {
   const feedId = await resolveFeedIdBySourceName(client, sourceName);
   if (!feedId) return null;
@@ -836,7 +845,8 @@ export async function syncMembershipAfterIocImport(client, {
     observableType: row.observable_type,
     feedId,
     seenAt,
-    explicitConfidence: resolvedConfidence
+    explicitConfidence: resolvedConfidence,
+    reactivateOnly
   });
   return membershipId;
 }

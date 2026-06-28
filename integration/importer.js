@@ -467,6 +467,17 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
     return;
   }
   if (existing.status === 'unchanged') {
+    // Active membership: intentional no-op — skip all DB writes.
+    // Inactive/expired membership: reactivate without updating ioc_items metadata,
+    // because feed re-appearance is semantically meaningful regardless of metadata change.
+    await importSideEffect('urlhaus_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      sourceUrl,
+      category,
+      reactivateOnly: true
+    }));
     metrics.noteSkipped();
     return;
   }
@@ -520,6 +531,21 @@ export async function updateMalwareBazaarObservableBySource(client, entry, sourc
     lastSeenAt: entry.firstSeenUtc
   });
 
+  if (existing.status === 'unchanged') {
+    // Active membership: intentional no-op — skip all DB writes.
+    // Inactive/expired membership: reactivate without updating ioc_items metadata,
+    // because feed re-appearance is semantically meaningful regardless of metadata change.
+    await importSideEffect('malwarebazaar_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      sourceUrl: MALWAREBAZAAR_EXPORT_URL_MASKED,
+      explicitConfidence: entry.confidence,
+      category,
+      reactivateOnly: true
+    }));
+    return existing;
+  }
   if (existing.status !== 'updated') return existing;
 
   const publicId = existing.publicId;
@@ -606,6 +632,21 @@ export async function updateThreatFoxObservableBySource(client, entry, sourceNam
     lastSeenAt: entry.lastSeen || entry.firstSeen
   });
 
+  if (existing.status === 'unchanged') {
+    // Active membership: intentional no-op — skip all DB writes.
+    // Inactive/expired membership: reactivate without updating ioc_items metadata,
+    // because feed re-appearance is semantically meaningful regardless of metadata change.
+    await importSideEffect('threatfox_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      sourceUrl: THREATFOX_SOURCE_URL_MASKED,
+      explicitConfidence: entry.confidence,
+      category,
+      reactivateOnly: true
+    }));
+    return existing;
+  }
   if (existing.status !== 'updated') return existing;
 
   const publicId = existing.publicId;

@@ -97,7 +97,8 @@ describe('built-in feed unchanged metadata no-op handling', () => {
     );
 
     assert.equal(result.status, 'unchanged');
-    assert.equal(client.calls.length, 1, 'unchanged MalwareBazaar row must not touch indexes/confidence/membership');
+    assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'unchanged active MB row must not rewrite feed membership');
+    assert.ok(!client.calls.some((c) => c.sql.includes('INSERT INTO ioc_observables')), 'unchanged active MB row must not touch observables index');
   });
 
   it('updates MalwareBazaar same-source rows when semantic metadata changes', async () => {
@@ -133,7 +134,8 @@ describe('built-in feed unchanged metadata no-op handling', () => {
     );
 
     assert.equal(result.status, 'unchanged');
-    assert.equal(client.calls.length, 1, 'unchanged ThreatFox row must not touch indexes/confidence/membership');
+    assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'unchanged active ThreatFox row must not rewrite feed membership');
+    assert.ok(!client.calls.some((c) => c.sql.includes('INSERT INTO ioc_observables')), 'unchanged active ThreatFox row must not touch observables index');
   });
 
   it('counts unchanged count_only batch duplicates as skipped without updating last_seen_at', async () => {
