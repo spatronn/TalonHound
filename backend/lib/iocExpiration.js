@@ -72,6 +72,40 @@ export function formatExpirationSummary(policy) {
   return mode;
 }
 
+/**
+ * Build the IOC-level expiration summary object for the detail API response.
+ * @param {{ activeSources: object[], historicalMemberships: object[], globalExpiresAt: string|null }} opts
+ */
+export function buildIocExpirationSummary({ activeSources = [], historicalMemberships = [], globalExpiresAt = null } = {}) {
+  const activeCnt = activeSources.length;
+  const totalCnt = activeCnt + historicalMemberships.length;
+
+  if (activeCnt === 0) {
+    return { status: 'expired', label: 'All sources expired', global_expires_at: globalExpiresAt, next_expiration_at: null };
+  }
+
+  // next_expiration_at = earliest expires_at among active sources that have one
+  const datedSources = activeSources.map((s) => s.expires_at).filter(Boolean);
+  const nextExpirationAt = datedSources.length
+    ? datedSources.reduce((min, d) => !min || new Date(d) < new Date(min) ? d : min, null)
+    : null;
+
+  if (!globalExpiresAt) {
+    return {
+      status: 'active_indefinite',
+      label: `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · No expiration`,
+      global_expires_at: null,
+      next_expiration_at: nextExpirationAt
+    };
+  }
+
+  const label = nextExpirationAt && nextExpirationAt !== globalExpiresAt
+    ? `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · Next source expires ${nextExpirationAt.slice(0, 10)}`
+    : `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · Expires ${globalExpiresAt.slice(0, 10)}`;
+
+  return { status: 'active_expiring', label, global_expires_at: globalExpiresAt, next_expiration_at: nextExpirationAt };
+}
+
 export function validateExpirationPolicyInput(body, feedUpdateMode = 'incremental') {
   const errors = [];
   const enabled = Boolean(body?.enabled);

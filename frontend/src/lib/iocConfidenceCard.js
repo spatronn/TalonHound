@@ -103,6 +103,9 @@ export function getIocConfidencePresentation(detail) {
     ? `Reason: ${detail.override_reason}`
     : null;
 
+  const highestActiveSourceConfidence = detail.highest_active_source_confidence || null;
+  const highestActiveLabel = highestActiveSourceConfidence ? confidenceLabel(highestActiveSourceConfidence) : null;
+
   return {
     effective,
     effectiveLabel: confidenceLabel(effective),
@@ -111,7 +114,10 @@ export function getIocConfidencePresentation(detail) {
     overrideLine: hasOverride ? sourceLine : null,
     reasonLine,
     badgeStyle,
-    sourceDescription: detail.source_description || detail.confidence_provenance?.label || null
+    sourceDescription: detail.source_description || detail.confidence_provenance?.label || null,
+    highestActiveSourceConfidence,
+    highestActiveLabel,
+    highestActiveBadgeStyle: highestActiveSourceConfidence ? confidenceBadgeStyle(highestActiveSourceConfidence) : null
   };
 }
 

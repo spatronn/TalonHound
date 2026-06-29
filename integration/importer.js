@@ -17,6 +17,7 @@ import {
   withImportOptimizationContext
 } from './lib/iocExpiration.js';
 import { upsertFeedSourceEvidenceForObservable } from './lib/iocFeedSourceEvidence.js';
+import { resolveClassificationFromFeed } from './lib/iocClassificationMapping.js';
 import {
   resolveImportConfidenceFields,
   applyIocImportConfidence,
@@ -538,6 +539,7 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
   const note = buildUrlhausNote(entry);
   const category = entry.threat || 'malware-url';
   const sourceUrl = URLHAUS_EXPORT_URL_MASKED;
+  const threatClassification = resolveClassificationFromFeed('urlhaus-abusech', entry.threat);
 
   const existing = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
   if (existing.status === 'updated') {
@@ -577,7 +579,8 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
     sourceConfidence: null,
     feedDefaultConfidence,
     category,
-    note
+    note,
+    threatClassification
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {
@@ -861,6 +864,7 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
   const note = buildThreatFoxNote(entry);
   const category = entry.threatType || 'threat-intel';
   const sourceUrl = THREATFOX_SOURCE_URL_MASKED;
+  const threatClassification = resolveClassificationFromFeed('threatfox-abusech', entry.threatType);
 
   const existing = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
   if (existing.status === 'updated') {
@@ -900,7 +904,8 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
     confidence: entry.confidence,
     sourceConfidence: entry.confidence,
     category,
-    note
+    note,
+    threatClassification
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {
@@ -1148,7 +1153,7 @@ export async function updateObservableBySourceOnImport(client, {
   return existing;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null }, suppressionStats = null, signal = null) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null, threatClassification = null }, suppressionStats = null, signal = null) {
   throwIfAborted(signal);
   const index = await fetchActiveSuppressionIndex(
     client,
@@ -1170,9 +1175,9 @@ async function insertObservable(client, { observable, observableType, sourceName
     `INSERT INTO ioc_items (
        observable, observable_type, source_name, source_url,
        confidence, source_confidence, feed_default_confidence,
-       category, note
+       category, note, threat_classification
      )
-     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
      WHERE NOT EXISTS (
        SELECT 1
        FROM ioc_items
@@ -1189,7 +1194,8 @@ async function insertObservable(client, { observable, observableType, sourceName
       confFields.source_confidence,
       confFields.feed_default_confidence,
       category,
-      note
+      note,
+      threatClassification || null
     ]
   );
 

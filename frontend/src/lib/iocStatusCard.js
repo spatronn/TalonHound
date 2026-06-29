@@ -23,9 +23,18 @@ export function getIocStatusCardPresentation(summary, { suppressionActive } = {}
   fields.push({ key: 'status', label: 'Current status:', kind: 'badge', status: statusForBadge });
 
   if (lifecycle === 'active' && summary?.expires_at) {
-    fields.push({ key: 'expires_at', label: 'Expires at:', kind: 'datetime', raw: summary.expires_at });
+    fields.push({ key: 'expires_at', label: 'Global expires at:', kind: 'datetime', raw: summary.expires_at });
+    if (summary?.next_expiration_at && summary.next_expiration_at !== summary.expires_at) {
+      fields.push({ key: 'next_expiration_at', label: 'Next source expires:', kind: 'datetime', raw: summary.next_expiration_at });
+    }
+  } else if (lifecycle === 'active' && !summary?.expires_at) {
+    fields.push({ key: 'expires_at', label: 'Global expires at:', kind: 'text', value: 'No expiration' });
   } else if (lifecycle === 'expired' && summary?.expired_at) {
     fields.push({ key: 'expired_at', label: 'Expired at:', kind: 'datetime', raw: summary.expired_at });
+  }
+
+  if (summary?.expiration_summary?.label && lifecycle === 'active') {
+    fields.push({ key: 'expiration_summary', label: 'Expiration summary:', kind: 'text', value: summary.expiration_summary.label });
   }
 
   if (summary?.reactivated_by_match_at) {

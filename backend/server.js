@@ -34,7 +34,7 @@ import {
   mergeAnalystIntelligenceItem
 } from './routes/analystIntelligence.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
-import { formatExpirationSummary } from './lib/iocExpiration.js';
+import { formatExpirationSummary, buildIocExpirationSummary } from './lib/iocExpiration.js';
 import {
   archiveIntegrationFeed,
   findActivePurgeJobForFeed,
@@ -75,7 +75,7 @@ import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
-import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence } from './lib/iocConfidence.js';
+import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence, computeInheritedEffectiveConfidence } from './lib/iocConfidence.js';
 import {
   enrichItemsWithActiveSourceCounts,
   fetchObservableMembershipSummary,
@@ -7429,6 +7429,53 @@ app.get('/api/ioc/details', async (req, res) => {
       }
     }
 
+    // next_expiration_at = earliest expires_at among active sources (for analyst awareness).
+    // Unlike global expires_at (MAX), this shows when the FIRST source will drop off.
+    const datedActiveSources = membershipSummary.activeSources.map((s) => s.expires_at).filter(Boolean);
+    const nextExpirationAt = datedActiveSources.length
+      ? datedActiveSources.reduce((min, d) => !min || new Date(d) < new Date(min) ? d : min, null)
+      : null;
+
+    // expired_source_count = memberships whose status is exactly 'expired' (not purged/removed).
+    const expiredSourceCount = membershipSummary.historicalMemberships
+      .filter((m) => String(m.status || '').toLowerCase() === 'expired').length;
+
+    // highest_active_source_confidence = best feed/entry confidence ignoring analyst override.
+    // Computed from active memberships so expired sources never inflate this value.
+    const highestActiveSourceConfidence = (() => {
+      const activeMems = membershipSummary.membershipRows.filter(
+        (m) => String(m.status || 'active').toLowerCase() === 'active' && !m.purged_at
+      );
+      if (!activeMems.length) return null;
+      const result = computeInheritedEffectiveConfidence({ memberships: activeMems });
+      return result?.effective || null;
+    })();
+
+    // analyst_intelligence_summary: impact counts for IOC detail overview badge.
+    let analystIntelligenceSummary = { total_count: 0, supports_malicious_count: 0, supports_benign_count: 0, needs_review_count: 0, context_only_count: 0 };
+    try {
+      const iocIds = [...new Set(rows.map((r) => r.id).filter((id) => Number.isFinite(Number(id))))];
+      if (iocIds.length) {
+        const aiQ = await pool.query(
+          `SELECT
+             COUNT(*)::int AS total_count,
+             COUNT(*) FILTER (WHERE assessment_impact = 'supports_malicious')::int AS supports_malicious_count,
+             COUNT(*) FILTER (WHERE assessment_impact = 'supports_benign')::int AS supports_benign_count,
+             COUNT(*) FILTER (WHERE assessment_impact = 'needs_review')::int AS needs_review_count,
+             COUNT(*) FILTER (WHERE assessment_impact = 'context_only')::int AS context_only_count
+           FROM ioc_analyst_intelligence
+           WHERE ioc_id = ANY($1::bigint[])
+             AND deleted_at IS NULL`,
+          [iocIds]
+        );
+        if (aiQ.rows[0]) analystIntelligenceSummary = aiQ.rows[0];
+      }
+    } catch (_e) {
+      // Non-fatal — analyst intelligence table may not exist in older migrations
+    }
+
+    const totalSourceMembershipCount = membershipSummary.activeSourceCount + membershipSummary.historicalSourceCount;
+
     const summary = {
       id: seedRow.id,
       public_id: seedRow.public_id,
@@ -7436,6 +7483,12 @@ app.get('/api/ioc/details', async (req, res) => {
       observable_type: seedRow.observable_type,
       status: lifecycleRow.status || null,
       expires_at: globalExpiresAt,
+      next_expiration_at: nextExpirationAt,
+      expiration_summary: buildIocExpirationSummary({
+        activeSources: membershipSummary.activeSources,
+        historicalMemberships: membershipSummary.historicalMemberships,
+        globalExpiresAt
+      }),
       expired_at: lifecycleRow.expired_at || null,
       expiration_reason: lifecycleRow.expiration_reason || null,
       reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
@@ -7448,9 +7501,14 @@ app.get('/api/ioc/details', async (req, res) => {
       evidence_logs_count: totalEvidenceLogsCount,
       first_seen_log: firstSeenLog,
       last_seen_log: lastSeenLog,
-      source_count: membershipSummary.activeSourceCount,
+      // source_count kept for backward compat but now equals total_source_membership_count
+      source_count: totalSourceMembershipCount,
+      total_source_membership_count: totalSourceMembershipCount,
       active_source_count: membershipSummary.activeSourceCount,
+      expired_source_count: expiredSourceCount,
       historical_source_count: membershipSummary.historicalSourceCount,
+      highest_active_source_confidence: highestActiveSourceConfidence,
+      analyst_confidence_override: normalizeIocConfidence(seedRow.analyst_confidence_override) || null,
       source_names: membershipSummary.activeSourceNames,
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
@@ -7548,9 +7606,15 @@ app.get('/api/ioc/details', async (req, res) => {
     );
     const activeSuppression = suppressionQ.rowCount ? suppressionQ.rows[0] : null;
 
+    // Augment confidence detail with highest_active_source_confidence so the UI
+    // can show provenance separately from the effective value when analyst override is active.
+    const enrichedConfidenceDetail = confidenceDetail
+      ? { ...confidenceDetail, highest_active_source_confidence: highestActiveSourceConfidence }
+      : null;
+
     const payload = {
       summary,
-      confidence: confidenceDetail,
+      confidence: enrichedConfidenceDetail,
       match_count: Number(summary.match_count || 0),
       sources: sourceEvidence,
       historical_ioc_rows: rows.filter((r) => String(r.status || 'active') !== 'active'),
@@ -7560,6 +7624,7 @@ app.get('/api/ioc/details', async (req, res) => {
       matches: [],
       incidents,
       impact,
+      analyst_intelligence_summary: analystIntelligenceSummary,
       suppression: activeSuppression ? { ...activeSuppression, active: true } : { active: false }
     };
 
@@ -8158,6 +8223,37 @@ app.post('/api/admin/enrichment-providers/virustotal/test', async (req, res) => 
     const msg = String(err?.name) === 'AbortError' ? 'VirusTotal test timeout' : 'VirusTotal test failed';
     await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, msg]).catch(() => {});
     return res.status(500).json({ message: msg });
+  }
+});
+
+// Read-only diagnostic: source evidence coverage per feed.
+// Useful for identifying feeds where membership_fallback evidence is common.
+app.get('/api/admin/ioc-evidence-coverage', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         f.key AS feed_key,
+         f.name AS feed_name,
+         COUNT(DISTINCT m.ioc_item_id)::int AS total_memberships,
+         COUNT(DISTINCT e.ioc_item_id)::int AS with_evidence,
+         (COUNT(DISTINCT m.ioc_item_id) - COUNT(DISTINCT e.ioc_item_id))::int AS missing_evidence,
+         ROUND(
+           100.0 * COUNT(DISTINCT e.ioc_item_id) / NULLIF(COUNT(DISTINCT m.ioc_item_id), 0), 1
+         ) AS evidence_pct
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       LEFT JOIN ioc_feed_source_evidence e
+         ON e.ioc_item_id = m.ioc_item_id
+         AND e.ioc_observable_type = m.ioc_observable_type
+         AND e.feed_id = m.feed_id
+       WHERE m.status = 'active' AND m.purged_at IS NULL
+       GROUP BY f.key, f.name
+       ORDER BY missing_evidence DESC`
+    );
+    return res.json({ coverage: rows });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to compute evidence coverage', detail: err.message });
   }
 });
 

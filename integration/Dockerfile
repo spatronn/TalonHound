@@ -34,5 +34,6 @@ COPY backend/lib/integrationQueueBullmqReconciliation.js ./lib/integrationQueueB
 COPY backend/lib/integrationQueueHealth.js ./lib/integrationQueueHealth.js
 COPY backend/lib/integrationSchedule.js ./lib/integrationSchedule.js
 COPY backend/lib/integrationFeedScheduleSync.js ./lib/integrationFeedScheduleSync.js
+COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 
 CMD ["npm", "run", "worker"]

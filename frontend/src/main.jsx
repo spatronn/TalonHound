@@ -14579,7 +14579,23 @@ function IOCDetailsPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.observable_type || '-'}</div></div>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Active Source Count</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.active_source_count ?? summary.source_count ?? 0}</div>{Number(summary.historical_source_count || 0) > 0 ? <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{summary.historical_source_count} historical</div> : null}</div>
+                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>Sources</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>
+                      {summary.active_source_count ?? 0}
+                      <span style={{ fontSize: 12, fontWeight: 400, color: '#64748b' }}>
+                        {' '}/ {summary.total_source_membership_count ?? summary.source_count ?? summary.active_source_count ?? 0} total
+                      </span>
+                    </div>
+                    {Number(summary.expired_source_count || 0) > 0 ? (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                        {summary.expired_source_count} expired
+                      </div>
+                    ) : null}
+                    {Number(summary.historical_source_count || 0) > 0 && !summary.expired_source_count ? (
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{summary.historical_source_count} historical</div>
+                    ) : null}
+                  </div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
                   <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Evidence Logs</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{Number(data.summary?.evidence_logs_count || 0)}</div></div>
@@ -14619,6 +14635,24 @@ function IOCDetailsPage() {
                   </div>
                   {confidenceCard.reasonLine ? (
                     <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6 }}>{confidenceCard.reasonLine}</div>
+                  ) : null}
+                  {confidenceCard.hasOverride && confidenceCard.highestActiveSourceConfidence ? (
+                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>Feeds independently:</span>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: confidenceCard.highestActiveBadgeStyle.bg,
+                        color: confidenceCard.highestActiveBadgeStyle.color,
+                        border: `1px solid ${confidenceCard.highestActiveBadgeStyle.border}`
+                      }}>
+                        {confidenceCard.highestActiveLabel}
+                      </span>
+                    </div>
                   ) : null}
                   {(summary.confidence_set || []).length > 1 ? (
                     <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -14743,6 +14777,43 @@ function IOCDetailsPage() {
                     </div>
                   </div>
                 </div>
+
+                {(() => {
+                  const ai = data?.analyst_intelligence_summary;
+                  if (!ai || !ai.total_count) return null;
+                  const maliciousCnt = ai.supports_malicious_count || 0;
+                  const benignCnt = ai.supports_benign_count || 0;
+                  const reviewCnt = ai.needs_review_count || 0;
+                  const contextCnt = ai.context_only_count || 0;
+                  return (
+                    <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
+                      <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Analyst Intelligence</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: '#94a3b8' }}>{ai.total_count} entr{ai.total_count !== 1 ? 'ies' : 'y'}</span>
+                        {maliciousCnt > 0 && (
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#450a0a', color: '#fca5a5', border: '1px solid #7f1d1d' }}>
+                            {maliciousCnt} malicious
+                          </span>
+                        )}
+                        {benignCnt > 0 && (
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#052e16', color: '#86efac', border: '1px solid #166534' }}>
+                            {benignCnt} benign
+                          </span>
+                        )}
+                        {reviewCnt > 0 && (
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#422006', color: '#fbbf24', border: '1px solid #92400e' }}>
+                            {reviewCnt} needs review
+                          </span>
+                        )}
+                        {contextCnt > 0 && (
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, background: '#1e293b', color: '#94a3b8', border: '1px solid #334155' }}>
+                            {contextCnt} context only
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <IocEnvironmentMiniSummary impact={data.impact} />
               </div>
