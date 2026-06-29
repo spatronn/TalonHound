@@ -82,64 +82,53 @@ export function computeInheritedEffectiveConfidence(input = {}) {
     ? input.legacyExplicitByFeedKey
     : new Map(Object.entries(input.legacyExplicitByFeedKey || {}));
 
-  const explicitCandidates = [];
-  const explicitContexts = [];
+  // Per-membership effective = explicit_confidence ?? feed_default_confidence.
+  // Global = MAX across all eligible memberships so a high feed default is never
+  // beaten by a lower explicit entry confidence from a different source.
+  let bestRank = 0;
+  let bestCtx = null;
 
   for (const membership of eligibleMemberships) {
     const explicit = normalizeConfidence(membership.explicit_confidence);
-    if (explicit) {
-      explicitCandidates.push(explicit);
-      explicitContexts.push({
-        value: explicit,
+    const feedDefault = normalizeConfidence(membership.feed_default_confidence);
+    const value = explicit || feedDefault;
+    if (!value) continue;
+    const rank = confidenceRank(value);
+    if (rank >= bestRank) {
+      bestRank = rank;
+      bestCtx = {
+        value,
+        inherited: !explicit,
+        source: explicit ? CONFIDENCE_SOURCES.FEED_ENTRY : CONFIDENCE_SOURCES.FEED_DEFAULT,
         feed_name: membership.feed_name || null,
         feed_key: membership.feed_key || null
-      });
+      };
     }
   }
 
   for (const [feedKey, value] of legacyMap.entries()) {
     const explicit = normalizeConfidence(value);
-    if (explicit) {
-      explicitCandidates.push(explicit);
-      explicitContexts.push({ value: explicit, feed_key: feedKey, feed_name: null });
+    if (!explicit) continue;
+    const rank = confidenceRank(explicit);
+    if (rank >= bestRank) {
+      bestRank = rank;
+      bestCtx = {
+        value: explicit,
+        inherited: false,
+        source: CONFIDENCE_SOURCES.FEED_ENTRY,
+        feed_name: null,
+        feed_key: feedKey
+      };
     }
   }
 
-  const bestExplicit = pickHighestConfidenceValue(explicitCandidates);
-  if (bestExplicit) {
-    const ctx = explicitContexts.find((c) => c.value === bestExplicit) || explicitContexts[0];
+  if (bestCtx) {
     return {
-      effective: bestExplicit,
-      confidence_source: CONFIDENCE_SOURCES.FEED_ENTRY,
-      confidence_inherited_from_feed: false,
-      confidence_feed_name: ctx?.feed_name || null,
-      confidence_feed_key: ctx?.feed_key || null
-    };
-  }
-
-  const defaultCandidates = [];
-  const defaultContexts = [];
-  for (const membership of eligibleMemberships) {
-    const feedDefault = normalizeConfidence(membership.feed_default_confidence);
-    if (feedDefault) {
-      defaultCandidates.push(feedDefault);
-      defaultContexts.push({
-        value: feedDefault,
-        feed_name: membership.feed_name || null,
-        feed_key: membership.feed_key || null
-      });
-    }
-  }
-
-  const bestDefault = pickHighestConfidenceValue(defaultCandidates);
-  if (bestDefault) {
-    const ctx = defaultContexts.find((c) => c.value === bestDefault) || defaultContexts[0];
-    return {
-      effective: bestDefault,
-      confidence_source: CONFIDENCE_SOURCES.FEED_DEFAULT,
-      confidence_inherited_from_feed: true,
-      confidence_feed_name: ctx?.feed_name || null,
-      confidence_feed_key: ctx?.feed_key || null
+      effective: bestCtx.value,
+      confidence_source: bestCtx.source,
+      confidence_inherited_from_feed: bestCtx.inherited,
+      confidence_feed_name: bestCtx.feed_name,
+      confidence_feed_key: bestCtx.feed_key
     };
   }
 

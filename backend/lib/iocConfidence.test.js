@@ -53,6 +53,21 @@ test('multi-feed aggregation picks highest feed default', () => {
   assert.equal(result.confidence_feed_name, 'Feed B');
 });
 
+test('multi-feed: feed default beats lower explicit from different source', () => {
+  // URLhaus scenario: no explicit but high feed default; ThreatFox has explicit medium.
+  // Per-membership effective: URLhaus=high, ThreatFox=medium → global must be high.
+  const result = computeInheritedEffectiveConfidence({
+    memberships: [
+      { status: 'active', explicit_confidence: null, feed_default_confidence: 'high', feed_name: 'URLhaus abuse.ch' },
+      { status: 'active', explicit_confidence: 'medium', feed_default_confidence: 'medium', feed_name: 'ThreatFox abuse.ch' }
+    ]
+  });
+  assert.equal(result.effective, 'high');
+  assert.equal(result.confidence_source, 'feed_default');
+  assert.equal(result.confidence_inherited_from_feed, true);
+  assert.equal(result.confidence_feed_name, 'URLhaus abuse.ch');
+});
+
 test('resolveParsedSourceConfidence honors explicit null entry confidence', () => {
   assert.equal(resolveParsedSourceConfidence(null, 'high'), null);
   assert.equal(resolveParsedSourceConfidence(undefined, 'high'), 'high');

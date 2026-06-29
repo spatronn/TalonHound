@@ -7413,13 +7413,29 @@ app.get('/api/ioc/details', async (req, res) => {
       evidenceRows
     });
 
+    // Global expiration = MAX effective expires_at across active sources.
+    // Each active source's expires_at is already the effective value (policy or custom override,
+    // set by computeMembershipFieldPatch). If any active source has no expiration (null), the IOC
+    // is indefinitely active on that source so the global is also null. Falls back to
+    // lifecycleRow when there are no active sources (e.g. all-expired or manual-only IOC).
+    let globalExpiresAt = lifecycleRow.expires_at || null;
+    if (membershipSummary.activeSources.length > 0) {
+      if (membershipSummary.activeSources.some((s) => !s.expires_at)) {
+        globalExpiresAt = null;
+      } else {
+        globalExpiresAt = membershipSummary.activeSources
+          .map((s) => s.expires_at)
+          .reduce((max, d) => !max || new Date(d) > new Date(max) ? d : max, null);
+      }
+    }
+
     const summary = {
       id: seedRow.id,
       public_id: seedRow.public_id,
       observable,
       observable_type: seedRow.observable_type,
       status: lifecycleRow.status || null,
-      expires_at: lifecycleRow.expires_at || null,
+      expires_at: globalExpiresAt,
       expired_at: lifecycleRow.expired_at || null,
       expiration_reason: lifecycleRow.expiration_reason || null,
       reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
