@@ -4357,6 +4357,8 @@ app.post('/api/integrations/queue/recover', requireRole(ROLES.ADMIN), async (req
         queue_health: preview?.health || null,
         dry_run_reconcile: preview?.dry_run_reconcile || null,
         dry_run_locks: preview?.dry_run_locks || null,
+        stale_queued_jobs: preview?.stale_queued_jobs || [],
+        stale_queued_count: preview?.stale_queued_count || 0,
         recovery_needed: Boolean(preview?.health?.recovery_needed)
       });
     }
