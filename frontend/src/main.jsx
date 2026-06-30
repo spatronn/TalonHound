@@ -6332,6 +6332,9 @@ function IntegrationsQueueStatusPage() {
               <span><b>BullMQ stalled:</b> {qh.bullmq_stalled ?? '-'}</span>
               <span><b>DB running:</b> {qh.db_running ?? '-'}</span>
               <span><b>Recovery needed:</b> {qh.recovery_needed ? 'yes' : 'no'}</span>
+              {qh.queued_recovery_needed ? (
+                <span style={{ color: '#f59e0b' }}><b>Stale queued:</b> {qh.stale_queued_count}</span>
+              ) : null}
             </div>
             {(qh.warnings || []).length ? (
               <ul className="queue-health-warnings">
@@ -6344,6 +6347,18 @@ function IntegrationsQueueStatusPage() {
         {recoverPreview ? (
           <div className="queue-recover-preview" style={{ marginBottom: 12, padding: 12, borderRadius: 8, fontSize: 13 }}>
             <div><b>Dry-run:</b> would reconcile <b>{recoverPreview.reconciled_count || 0}</b> item(s).</div>
+            {(recoverPreview.stale_queued_jobs || []).length > 0 ? (
+              <div style={{ marginTop: 6 }}>
+                <b>Stale queued jobs ({recoverPreview.stale_queued_jobs.length}):</b>
+                <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+                  {recoverPreview.stale_queued_jobs.map((j) => (
+                    <li key={j.job_id} style={{ color: '#fcd34d' }}>
+                      #{j.job_id} · {j.integration_key} · queued {Math.round((j.age_seconds || 0) / 60)}m ago
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
               <button type="button" onClick={() => applyRecover().catch(() => {})} disabled={recoverLoading}>Confirm recover</button>
               <button type="button" onClick={() => setRecoverPreview(null)}>Cancel</button>

@@ -185,20 +185,23 @@ export async function runQueueRecovery(pool, {
 
   let bullReconcile = { reconciled_count: 0, actions_taken: [], skipped: [] };
   let lockRelease = { released_count: 0, orphan_locks: [], actions_taken: [] };
+  let staleQueued = { stale_queued_jobs: [], stale_queued_count: 0, actions_taken: [] };
 
   if (queue) {
     const {
       reconcileBullmqWithDb,
-      releaseOrphanDbSourceLocks
+      releaseOrphanDbSourceLocks,
+      detectOrphanDbQueuedJobs
     } = await import('./integrationQueueBullmqReconciliation.js');
     bullReconcile = await reconcileBullmqWithDb({ pool, queue, dryRun, logPrefix });
     lockRelease = await releaseOrphanDbSourceLocks({ pool, queue, dryRun, logPrefix });
+    staleQueued = await detectOrphanDbQueuedJobs({ pool, queue, dryRun, logPrefix });
   }
 
   const totalReconciled = result.staleCount + bullReconcile.reconciled_count + lockRelease.released_count;
 
   console.log(
-    `${logPrefix} Queue recovery completed stale_db=${result.staleCount} reconciled_bull=${bullReconcile.reconciled_count} released_locks=${lockRelease.released_count} fixed_finished=${result.fixedFinishedCount} fixed_runs=${result.fixedRunsCount}`
+    `${logPrefix} Queue recovery completed stale_db=${result.staleCount} reconciled_bull=${bullReconcile.reconciled_count} released_locks=${lockRelease.released_count} stale_queued=${staleQueued.stale_queued_count} fixed_finished=${result.fixedFinishedCount} fixed_runs=${result.fixedRunsCount}`
   );
 
   const concurrency = workerConcurrency != null ? workerConcurrency : '-';
@@ -208,6 +211,7 @@ export async function runQueueRecovery(pool, {
     ...result,
     bullReconcile,
     lockRelease,
+    staleQueued,
     totalReconciled,
     bullActive,
     bullStalled,

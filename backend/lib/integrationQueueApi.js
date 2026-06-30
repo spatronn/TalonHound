@@ -1,4 +1,4 @@
-import { reconcileBullmqWithDb, releaseOrphanDbSourceLocks } from './integrationQueueBullmqReconciliation.js';
+import { reconcileBullmqWithDb, releaseOrphanDbSourceLocks, detectOrphanDbQueuedJobs } from './integrationQueueBullmqReconciliation.js';
 import { computeQueueHealth } from './integrationQueueHealth.js';
 import { runQueueRecovery } from './integrationQueueRecovery.js';
 
@@ -39,6 +39,7 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
   const dryBull = await reconcileBullmqWithDb({ pool, queue, dryRun: true, logPrefix: '[queue-health]' });
   // use full counts including stalled for health presentation
   const dryLocks = await releaseOrphanDbSourceLocks({ pool, queue, dryRun: true, logPrefix: '[queue-health]' });
+  const dryStaleQueued = await detectOrphanDbQueuedJobs({ pool, queue, dryRun: true, logPrefix: '[queue-health]' });
 
   const workerConsuming = Array.isArray(workers) && workers.length > 0;
   const recoveryNeeded = dryBull.reconciled_count > 0 || dryLocks.released_count > 0;
@@ -49,6 +50,7 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
     dbRunningCount: dbRunningRes.rowCount,
     staleActiveJobs: dryBull.stale_active_jobs,
     staleStalledJobs: dryBull.stale_stalled_jobs,
+    staleQueuedJobs: dryStaleQueued.stale_queued_jobs,
     workerConsuming,
     recoveryNeeded,
     warnings: []
@@ -68,6 +70,8 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
     db_counts: dbCounts,
     source_locks: sourceLocks,
     oldest_waiting_age_seconds: Number(oldestQueuedRes.rows[0]?.age_seconds || 0) || null,
+    stale_queued_jobs: dryStaleQueued.stale_queued_jobs,
+    stale_queued_count: dryStaleQueued.stale_queued_count,
     dry_run_reconcile: dryBull,
     dry_run_locks: dryLocks,
     worker_count: workers?.length || 0
@@ -76,16 +80,21 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
 
 export async function runIntegrationQueueRecover(pool, queue, { dryRun = false, logPrefix = '[queue-recover]' } = {}) {
   const recovery = await runQueueRecovery(pool, { logPrefix, queue, dryRun });
+  const staleQueuedJobs = recovery.staleQueued?.stale_queued_jobs || [];
+  const staleQueuedCount = recovery.staleQueued?.stale_queued_count || 0;
   return {
     stale_active_jobs: recovery.bullReconcile?.stale_active_jobs || [],
     stale_stalled_jobs: recovery.bullReconcile?.stale_stalled_jobs || [],
+    stale_queued_jobs: staleQueuedJobs,
+    stale_queued_count: staleQueuedCount,
     orphan_locks: recovery.lockRelease?.orphan_locks || [],
     actions_taken: [
       ...(recovery.bullReconcile?.actions_taken || []),
-      ...(recovery.lockRelease?.actions_taken || [])
+      ...(recovery.lockRelease?.actions_taken || []),
+      ...(recovery.staleQueued?.actions_taken || [])
     ],
     skipped: recovery.bullReconcile?.skipped || [],
-    reconciled_count: recovery.totalReconciled || 0,
+    reconciled_count: (recovery.totalReconciled || 0) + staleQueuedCount,
     dry_run: dryRun,
     recovery
   };

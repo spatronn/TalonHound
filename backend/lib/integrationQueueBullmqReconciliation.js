@@ -1,4 +1,4 @@
-import { FAILURE_MESSAGES, FAILURE_TYPES } from './integrationQueueConfig.js';
+import { FAILURE_MESSAGES, FAILURE_TYPES, STALE_QUEUED_THRESHOLD_MINUTES } from './integrationQueueConfig.js';
 import {
   classifyRunningJobForRecovery,
   markQueueJobFailed
@@ -424,6 +424,81 @@ export async function releaseOrphanDbSourceLocks({
   }
 
   return { orphan_locks: orphanLocks, released_count: actionsTaken.length, actions_taken: actionsTaken };
+}
+
+/**
+ * Detect DB-queued jobs that have no corresponding BullMQ entry (waiting/active/delayed)
+ * and have been queued longer than the configured threshold.
+ * In confirm mode (dryRun=false), marks them as failed.
+ */
+export async function detectOrphanDbQueuedJobs({
+  pool,
+  queue,
+  dryRun = false,
+  logPrefix = '[queue-health]',
+  thresholdMinutes = null
+} = {}) {
+  const threshold = thresholdMinutes ?? STALE_QUEUED_THRESHOLD_MINUTES;
+
+  const queuedRes = await pool.query(
+    `SELECT job_id, integration_key, job_name, queued_at,
+            EXTRACT(EPOCH FROM (NOW() - queued_at))::int AS age_seconds
+     FROM integration_queue_jobs
+     WHERE status = 'queued'
+       AND queued_at < NOW() - ($1::text || ' minutes')::interval
+     ORDER BY queued_at ASC`,
+    [String(threshold)]
+  );
+
+  if (!queuedRes.rows.length) {
+    return { stale_queued_jobs: [], stale_queued_count: 0, actions_taken: [] };
+  }
+
+  const [waitingJobs, activeJobs, delayedJobs] = await Promise.all([
+    queue.getJobs(['waiting'], 0, 500),
+    queue.getJobs(['active'], 0, 500),
+    queue.getJobs(['delayed'], 0, 500)
+  ]);
+
+  const liveBullIds = new Set([
+    ...waitingJobs.map((j) => String(j.id)),
+    ...activeJobs.map((j) => String(j.id)),
+    ...delayedJobs.map((j) => String(j.id))
+  ]);
+
+  const orphans = queuedRes.rows.filter((row) => !liveBullIds.has(String(row.job_id)));
+  const actionsTaken = [];
+
+  for (const row of orphans) {
+    console.log(
+      `${logPrefix} ${dryRun ? '[dry-run] ' : ''}Stale queued job detected job_id=${row.job_id} source=${row.integration_key} age_seconds=${row.age_seconds} threshold_minutes=${threshold}`
+    );
+    if (!dryRun) {
+      await markQueueJobFailed(pool, row.job_id, {
+        message: FAILURE_MESSAGES.stale_queued,
+        failureType: FAILURE_TYPES.STALE_QUEUED
+      });
+      console.log(`${logPrefix} Marked stale queued job as failed job_id=${row.job_id} source=${row.integration_key}`);
+      actionsTaken.push({
+        kind: 'stale_queued_failed',
+        job_id: row.job_id,
+        integration_key: row.integration_key,
+        age_seconds: row.age_seconds
+      });
+    }
+  }
+
+  return {
+    stale_queued_jobs: orphans.map((r) => ({
+      job_id: r.job_id,
+      integration_key: r.integration_key,
+      job_name: r.job_name,
+      queued_at: r.queued_at,
+      age_seconds: r.age_seconds
+    })),
+    stale_queued_count: orphans.length,
+    actions_taken: actionsTaken
+  };
 }
 
 export async function failBullmqJobsForDbRecovered(pool, queue, recoveredRows, { dryRun = false, logPrefix } = {}) {

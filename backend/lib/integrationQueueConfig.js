@@ -23,7 +23,8 @@ export const FAILURE_MESSAGES = {
   worker_shutdown: 'Worker shut down before job completed; marked for recovery.',
   source_busy: 'Deferred because another job for this integration is already running.',
   reconciled: 'Reconciled stale BullMQ state with DB terminal state.',
-  bullmq_orphan: 'BullMQ job was active/stalled without a valid DB running record; closed during queue recovery.'
+  bullmq_orphan: 'BullMQ job was active/stalled without a valid DB running record; closed during queue recovery.',
+  stale_queued: 'Queued timeout exceeded before worker consumed the job.'
 };
 
 export const FAILURE_TYPES = {
@@ -35,5 +36,11 @@ export const FAILURE_TYPES = {
   FETCH_ERROR: 'fetch_error',
   PARSE_ERROR: 'parse_error',
   RECONCILED: 'reconciled',
-  BULLMQ_ORPHAN: 'bullmq_orphan'
+  BULLMQ_ORPHAN: 'bullmq_orphan',
+  STALE_QUEUED: 'stale_queued'
 };
+
+export const STALE_QUEUED_THRESHOLD_MINUTES = Math.max(
+  Number(process.env.INTEGRATION_QUEUE_STALE_QUEUED_MINUTES || 30),
+  5
+);

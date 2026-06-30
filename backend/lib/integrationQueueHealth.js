@@ -4,6 +4,7 @@ export function computeQueueHealth({
   dbRunningCount = 0,
   staleActiveJobs = [],
   staleStalledJobs = [],
+  staleQueuedJobs = [],
   workerConsuming = null,
   recoveryNeeded = false,
   warnings = []
@@ -18,12 +19,17 @@ export function computeQueueHealth({
   let workerStatus = workerConsuming === false ? 'Not consuming' : (workerConsuming ? 'Running' : 'Unknown');
 
   const blockingStale = [...staleActiveJobs, ...staleStalledJobs];
+  const queuedRecoveryNeeded = staleQueuedJobs.length > 0;
 
   if (blockingStale.length > 0) {
     queueHealth = 'Blocked';
     w.push('Stale active job is blocking queue.');
-  } else if (recoveryNeeded || stalledBull > 0) {
+  } else if (recoveryNeeded || stalledBull > 0 || queuedRecoveryNeeded) {
     queueHealth = 'Degraded';
+  }
+
+  if (queuedRecoveryNeeded) {
+    w.push(`${staleQueuedJobs.length} job(s) stuck in queued state with no BullMQ entry. Queue recovery required.`);
   }
 
   if (waiting > 0 && activeBull === 0 && activeDb === 0 && workerConsuming) {
@@ -45,7 +51,9 @@ export function computeQueueHealth({
     bullmq_delayed: Number(bullCounts.delayed || 0),
     db_running: activeDb,
     db_waiting: Number(dbCounts.waiting || 0),
-    recovery_needed: Boolean(recoveryNeeded || blockingStale.length > 0),
+    recovery_needed: Boolean(recoveryNeeded || blockingStale.length > 0 || queuedRecoveryNeeded),
+    queued_recovery_needed: queuedRecoveryNeeded,
+    stale_queued_count: staleQueuedJobs.length,
     warnings: w,
     blocking_stale_jobs: blockingStale.map((e) => ({
       job_id: e.job_id,
