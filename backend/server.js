@@ -5263,8 +5263,13 @@ function isReadOnlyUser(req) {
   return role === ROLES.READONLY;
 }
 
+function isAnalystUser(req) {
+  const role = String(req.user?.role || '').trim().toLowerCase();
+  return role === ROLES.ANALYST;
+}
+
 function canReadSuppression(req) {
-  return isAdminUser(req) || isReadOnlyUser(req);
+  return isAdminUser(req) || isAnalystUser(req) || isReadOnlyUser(req);
 }
 
 function isSuppressionActiveRow(row) {

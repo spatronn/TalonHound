@@ -27,7 +27,7 @@ api.interceptors.response.use(
   (err) => {
     const url = String(err.config?.url || '');
     const st = err.response?.status;
-    if ((st === 401 || st === 403) && !url.includes('/auth/login')) {
+    if (st === 401 && !url.includes('/auth/login')) {
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login');
       }
