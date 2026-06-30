@@ -198,6 +198,88 @@ async function queueCustomFeedSync(pool, importQueue, feedRow, triggeredBy, manu
   return { ok: true, job_id: String(job.id) };
 }
 
+async function computeDeleteCheck(pool, feedRow) {
+  const feedId = feedRow.feed_id;
+  const ctfId = feedRow.id;
+  const integrationKey = feedRow.integration_key;
+  const enabled = feedRow.active !== false;
+
+  const [runsRes, activeMemberRes, historicalMemberRes, jobsRes, publishedRes] = await Promise.all([
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM custom_threat_feed_runs
+       WHERE feed_id = $1::uuid AND status IN ('success', 'partial_success')`,
+      [ctfId]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM ioc_feed_memberships
+       WHERE feed_id = $1::uuid AND status = 'active' AND purged_at IS NULL`,
+      [feedId]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM ioc_feed_memberships
+       WHERE feed_id = $1::uuid AND (status != 'active' OR purged_at IS NOT NULL)`,
+      [feedId]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM integration_queue_jobs
+       WHERE integration_key = $1 AND status IN ('queued', 'running')`,
+      [integrationKey]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM published_feeds
+       WHERE include_feed_keys IS NOT NULL
+         AND include_feed_keys @> to_jsonb(ARRAY[$1::text])`,
+      [integrationKey]
+    )
+  ]);
+
+  const successfulRunCount = Number(runsRes.rows[0]?.cnt || 0);
+  const activeMemberCount = Number(activeMemberRes.rows[0]?.cnt || 0);
+  const historicalMemberCount = Number(historicalMemberRes.rows[0]?.cnt || 0);
+  const queuedOrRunningCount = Number(jobsRes.rows[0]?.cnt || 0);
+  const publishedDepCount = Number(publishedRes.rows[0]?.cnt || 0);
+
+  let canDelete = false;
+  let deleteMode = null;
+  let reason = null;
+  let requiresPurge = false;
+  let requiresDisable = false;
+
+  if (queuedOrRunningCount > 0) {
+    reason = 'job_running_or_queued';
+  } else if (publishedDepCount > 0) {
+    reason = 'published_feed_dependency';
+  } else if (activeMemberCount > 0) {
+    reason = 'requires_purge';
+    requiresPurge = true;
+    requiresDisable = true;
+  } else if (successfulRunCount === 0 && historicalMemberCount === 0) {
+    canDelete = true;
+    deleteMode = 'direct_delete';
+  } else if (!enabled) {
+    canDelete = true;
+    deleteMode = 'soft_delete';
+  } else {
+    reason = 'requires_disable';
+    requiresDisable = true;
+  }
+
+  return {
+    feed_id: feedRow.id,
+    name: feedRow.feed_name,
+    can_delete: canDelete,
+    delete_mode: deleteMode,
+    reason,
+    successful_run_count: successfulRunCount,
+    active_membership_count: activeMemberCount,
+    historical_membership_count: historicalMemberCount,
+    queued_or_running_job_count: queuedOrRunningCount,
+    published_feed_dependency_count: publishedDepCount,
+    requires_purge: requiresPurge,
+    requires_disable: requiresDisable
+  };
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
@@ -563,6 +645,68 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       return res.json({ runs: rows, feed: serializeFeedRow(row) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to load run history', detail: err.message });
+    }
+  });
+
+  app.get('/api/custom-threat-feeds/:id/delete-check', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const feedRow = await fetchFeedRow(pool, req.params.id);
+      if (!feedRow || feedRow.deactivated_at) {
+        return res.status(404).json({ message: 'Custom Threat Feed not found' });
+      }
+      const check = await computeDeleteCheck(pool, feedRow);
+      return res.json(check);
+    } catch (err) {
+      console.error('[custom-threat-feeds] delete-check failed', err?.message || err);
+      return res.status(500).json({ message: 'Failed to check delete eligibility', detail: err.message });
+    }
+  });
+
+  app.delete('/api/custom-threat-feeds/:id', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const feedRow = await fetchFeedRow(pool, req.params.id);
+      if (!feedRow || feedRow.deactivated_at) {
+        return res.status(404).json({ message: 'Custom Threat Feed not found' });
+      }
+
+      const check = await computeDeleteCheck(pool, feedRow);
+      if (!check.can_delete) {
+        return res.status(409).json({ message: 'Cannot delete this Custom Threat Feed', ...check });
+      }
+
+      const { actor } = actorFromReq(req);
+
+      if (check.delete_mode === 'direct_delete') {
+        await pool.query(`UPDATE integration_feeds SET active = FALSE WHERE integration_id = $1::uuid`, [feedRow.feed_id]);
+        await syncSingleFeedSchedule(pool, importQueue, feedRow.integration_key, { logPrefix: '[custom-feeds-delete]' });
+        await pool.query(`DELETE FROM integration_feeds WHERE integration_id = $1::uuid`, [feedRow.feed_id]);
+      } else {
+        await pool.query(
+          `UPDATE custom_threat_feeds SET deactivated_at = NOW(), updated_at = NOW() WHERE id = $1::uuid`,
+          [feedRow.id]
+        );
+      }
+
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.CUSTOM_FEED_DELETED,
+        entityType: AUDIT_ENTITY.CUSTOM_THREAT_FEED,
+        entityId: feedRow.id,
+        entityDisplay: feedRow.feed_name,
+        metadata: {
+          ...auditFeedMeta(feedRow),
+          delete_mode: check.delete_mode,
+          successful_run_count: check.successful_run_count,
+          active_membership_count: check.active_membership_count,
+          historical_membership_count: check.historical_membership_count,
+          actor
+        }
+      }).catch(() => {});
+
+      return res.json({ ok: true, message: 'Custom Threat Feed deleted', delete_mode: check.delete_mode });
+    } catch (err) {
+      console.error('[custom-threat-feeds] delete failed', err?.message || err);
+      return res.status(500).json({ message: 'Failed to delete Custom Threat Feed', detail: err.message });
     }
   });
 }

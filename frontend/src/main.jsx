@@ -6636,6 +6636,8 @@ function CustomThreatFeedsPage() {
   const [purgeFeed, setPurgeFeed] = useState(null);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [editUrlMissing, setEditUrlMissing] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const emptyForm = {
     name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: ''
@@ -6816,6 +6818,35 @@ function CustomThreatFeedsPage() {
     }
   }
 
+  async function openDeleteCheck(feed) {
+    if (!isAdmin) return;
+    setDeleteLoading(true);
+    try {
+      const { data: check } = await api.get(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/delete-check`);
+      setDeleteModal({ feed, check });
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Failed to check delete eligibility'));
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!isAdmin || !deleteModal) return;
+    setDeleteLoading(true);
+    try {
+      await api.delete(`/custom-threat-feeds/${encodeURIComponent(deleteModal.feed.id)}`);
+      setDeleteModal(null);
+      setToast('Custom Threat Feed deleted');
+      await loadFeeds();
+    } catch (err) {
+      const msg = err?.response?.data?.message || apiErrorMessage(err, 'Failed to delete Custom Threat Feed');
+      alert(msg);
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
   const statusLabel = (status) => {
     if (status === 'partial_success') return 'Partial success';
     if (status === 'success') return 'Sync completed';
@@ -6907,6 +6938,16 @@ function CustomThreatFeedsPage() {
                               title={!feed.active ? 'Enable the feed before running manually.' : undefined}
                             >
                               {actionFeedId === feed.id ? 'Queueing...' : 'Run now'}
+                            </button>
+                          ) : null}
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              disabled={deleteLoading && deleteModal?.feed?.id === feed.id}
+                              onClick={() => openDeleteCheck(feed).catch(() => {})}
+                              style={{ fontSize: 11, padding: '4px 8px', background: 'transparent', color: '#f87171', border: '1px solid #7f1d1d' }}
+                            >
+                              {deleteLoading && deleteModal?.feed?.id === feed.id ? '...' : 'Delete'}
                             </button>
                           ) : null}
                         </div>
@@ -7065,6 +7106,68 @@ function CustomThreatFeedsPage() {
             loadFeeds().catch(() => {});
           }}
         />
+
+        {deleteModal ? (() => {
+          const { feed, check } = deleteModal;
+          const canDel = check.can_delete;
+          const reason = check.reason;
+          let title, body;
+          if (!canDel) {
+            if (reason === 'job_running_or_queued') {
+              title = 'Cannot modify feed — jobs are active';
+              body = 'Cannot modify this feed while jobs are queued or running. Please wait for the job to finish or clear the queued/running job before deleting or purging this feed.';
+            } else if (reason === 'published_feed_dependency') {
+              title = 'Feed is used by published feeds';
+              body = 'Cannot delete this feed because it is used by published feeds. Unlink or disable the dependent published feed first.';
+            } else if (reason === 'requires_purge') {
+              title = 'Cannot delete — feed has imported IOC data';
+              body = 'This feed has imported IOC data. Please purge imported IOC memberships first, then disable the feed before deleting it.';
+            } else if (reason === 'requires_disable') {
+              title = 'Cannot delete enabled feed';
+              body = 'This feed has no active imported IOC data, but it is still enabled. Disable it before deleting.';
+            } else {
+              title = 'Cannot delete this feed';
+              body = reason || 'Delete is not allowed for this feed.';
+            }
+          } else if (check.delete_mode === 'direct_delete') {
+            title = 'Delete custom threat feed?';
+            body = 'This feed has no successful runs and no imported IOC data. It will be permanently removed from the custom feed list.';
+          } else {
+            title = 'Delete custom threat feed?';
+            body = 'This feed is disabled and has no active imported IOC memberships. It will be removed from the custom feed list. Audit and historical job records may remain.';
+          }
+          return (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }}>
+              <div style={{ background: '#111827', color: '#e2e8f0', borderRadius: 12, width: 'min(500px, 94vw)', border: '1px solid #334155', padding: 24 }}>
+                <h3 style={{ margin: '0 0 10px', color: '#f1f5f9', fontSize: 16 }}>{title}</h3>
+                <p style={{ margin: '0 0 6px', fontSize: 13, color: '#94a3b8' }}><b style={{ color: '#e2e8f0' }}>{feed.name}</b></p>
+                <p style={{ margin: '0 0 16px', fontSize: 13, color: canDel ? '#e2e8f0' : '#fca5a5' }}>{body}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: 12, color: '#94a3b8', marginBottom: 18 }}>
+                  <span>Successful runs: <b style={{ color: '#e2e8f0' }}>{check.successful_run_count}</b></span>
+                  <span>Active IOC memberships: <b style={{ color: check.active_membership_count > 0 ? '#fca5a5' : '#86efac' }}>{check.active_membership_count}</b></span>
+                  <span>Historical memberships: <b style={{ color: '#e2e8f0' }}>{check.historical_membership_count}</b></span>
+                  <span>Queued/running jobs: <b style={{ color: check.queued_or_running_job_count > 0 ? '#fca5a5' : '#e2e8f0' }}>{check.queued_or_running_job_count}</b></span>
+                  <span>Published feed deps: <b style={{ color: check.published_feed_dependency_count > 0 ? '#fca5a5' : '#e2e8f0' }}>{check.published_feed_dependency_count}</b></span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {canDel ? (
+                    <button
+                      type="button"
+                      disabled={deleteLoading}
+                      onClick={() => confirmDelete().catch(() => {})}
+                      style={{ padding: '6px 14px', background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', borderRadius: 6, cursor: deleteLoading ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                    >
+                      {deleteLoading ? 'Deleting…' : 'Confirm delete'}
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => setDeleteModal(null)} disabled={deleteLoading}>
+                    {canDel ? 'Cancel' : 'Close'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })() : null}
 
       </div>
     </AppShell>

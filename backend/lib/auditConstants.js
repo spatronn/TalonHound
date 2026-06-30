@@ -132,7 +132,8 @@ export const AUDIT_ACTION = Object.freeze({
   CUSTOM_FEED_DEACTIVATED: 'custom_feed.deactivated',
   CUSTOM_FEED_SYNC_QUEUED: 'custom_feed.sync_queued',
   CUSTOM_FEED_SYNC_COMPLETED: 'custom_feed.sync_completed',
-  CUSTOM_FEED_SYNC_FAILED: 'custom_feed.sync_failed'
+  CUSTOM_FEED_SYNC_FAILED: 'custom_feed.sync_failed',
+  CUSTOM_FEED_DELETED: 'custom_feed.deleted'
 });
 
 export const AUDIT_ENTITY = Object.freeze({
