@@ -4,6 +4,7 @@ import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
 import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
 import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
+import { sanitizeMalwareBazaarErrorMessage } from './lib/malwarebazaar.js';
 import { sanitizeThreatFoxErrorMessage } from './lib/threatfox.js';
 import { QUEUE_HARDENING, FAILURE_MESSAGES, FAILURE_TYPES } from './lib/integrationQueueConfig.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs, runQueueRecovery } from './lib/integrationQueueRecovery.js';

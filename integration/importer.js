@@ -1195,7 +1195,7 @@ async function insertObservable(client, { observable, observableType, sourceName
       confFields.feed_default_confidence,
       category,
       note,
-      threatClassification || null
+      threatClassification || 'unknown'
     ]
   );
 
