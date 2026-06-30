@@ -7633,7 +7633,6 @@ app.get('/api/ioc/details', async (req, res) => {
 
     return res.json(payload);
   } catch (err) {
-    console.error('[ioc-details] ERROR:', err.message, err.stack?.split('\n').slice(0,4).join(' | '));
     return res.status(500).json({ message: 'Failed to fetch IOC details', detail: err.message });
   }
 });

@@ -80,30 +80,40 @@ export function buildIocExpirationSummary({ activeSources = [], historicalMember
   const activeCnt = activeSources.length;
   const totalCnt = activeCnt + historicalMemberships.length;
 
+  // Normalize a date value (Date object or ISO string) to an ISO string, or null.
+  const toIso = (v) => {
+    if (!v) return null;
+    if (v instanceof Date) return v.toISOString();
+    return String(v);
+  };
+
+  const globalIso = toIso(globalExpiresAt);
+
   if (activeCnt === 0) {
-    return { status: 'expired', label: 'All sources expired', global_expires_at: globalExpiresAt, next_expiration_at: null };
+    return { status: 'expired', label: 'All sources expired', global_expires_at: globalIso, next_expiration_at: null };
   }
 
   // next_expiration_at = earliest expires_at among active sources that have one
   const datedSources = activeSources.map((s) => s.expires_at).filter(Boolean);
-  const nextExpirationAt = datedSources.length
+  const nextRaw = datedSources.length
     ? datedSources.reduce((min, d) => !min || new Date(d) < new Date(min) ? d : min, null)
     : null;
+  const nextIso = toIso(nextRaw);
 
-  if (!globalExpiresAt) {
+  if (!globalIso) {
     return {
       status: 'active_indefinite',
       label: `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · No expiration`,
       global_expires_at: null,
-      next_expiration_at: nextExpirationAt
+      next_expiration_at: nextIso
     };
   }
 
-  const label = nextExpirationAt && nextExpirationAt !== globalExpiresAt
-    ? `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · Next source expires ${nextExpirationAt.slice(0, 10)}`
-    : `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · Expires ${globalExpiresAt.slice(0, 10)}`;
+  const label = nextIso && nextIso !== globalIso
+    ? `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · Next source expires ${nextIso.slice(0, 10)}`
+    : `Active on ${activeCnt}/${totalCnt} source${totalCnt !== 1 ? 's' : ''} · Expires ${globalIso.slice(0, 10)}`;
 
-  return { status: 'active_expiring', label, global_expires_at: globalExpiresAt, next_expiration_at: nextExpirationAt };
+  return { status: 'active_expiring', label, global_expires_at: globalIso, next_expiration_at: nextIso };
 }
 
 export function validateExpirationPolicyInput(body, feedUpdateMode = 'incremental') {
