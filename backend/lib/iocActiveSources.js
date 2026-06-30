@@ -450,9 +450,10 @@ async function resolveIocPartitionRows(pool, candidates = []) {
     const { rows } = await pool.query(
       `SELECT id, public_id, observable, observable_type, created_at
        FROM ${table}
-       WHERE id = ANY($1::bigint[])
-         AND COALESCE(status, 'active') = 'active'`,
-      [ids]
+       WHERE observable_type = $2
+         AND id = ANY($1::bigint[])
+         AND (status = 'active' OR status IS NULL)`,
+      [ids, type]
     );
     for (const row of rows) {
       resolved.set(`${row.id}:${row.observable_type}`, row);
@@ -638,23 +639,22 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   }
 
   const pageSlice = ranked.slice(offset, offset + cappedLimit);
+
+  const ipObservables = pageSlice.filter((i) => i.observable_type === 'ip').map((i) => i.observable);
+  const geoMap = new Map();
+  if (ipObservables.length > 0) {
+    const geoRes = await pool.query(
+      `SELECT ip::text AS ip, asn, country_code, as_name
+       FROM ioc_ip_geo_cache
+       WHERE ip = ANY($1::inet[])`,
+      [ipObservables]
+    );
+    for (const row of geoRes.rows) geoMap.set(row.ip, row);
+  }
+
   const out = [];
   for (const item of pageSlice) {
-    let asn = null;
-    let country_code = null;
-    let as_name = null;
-    if (item.observable_type === 'ip') {
-      const geoRes = await pool.query(
-        `SELECT asn, country_code, as_name
-         FROM ioc_ip_geo_cache
-         WHERE ip = $1::inet
-         LIMIT 1`,
-        [item.observable]
-      );
-      asn = geoRes.rows[0]?.asn ?? null;
-      country_code = geoRes.rows[0]?.country_code ?? null;
-      as_name = geoRes.rows[0]?.as_name ?? null;
-    }
+    const geo = item.observable_type === 'ip' ? geoMap.get(item.observable) : null;
     out.push({
       id: item.id,
       public_id: item.public_id,
@@ -663,9 +663,9 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
       ip: item.observable,
       first_seen_at: item.created_at,
       last_seen_at: item.sort_ts || item.created_at,
-      asn,
-      country_code,
-      as_name
+      asn: geo?.asn ?? null,
+      country_code: geo?.country_code ?? null,
+      as_name: geo?.as_name ?? null
     });
   }
   return out;
