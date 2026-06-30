@@ -12,7 +12,6 @@ import {
 } from './lib/analystIntelligenceLabels.js';
 import {
   computeAnalystRefsSummary,
-  computeInfrastructureSummary,
   computeOverallSignal,
   computeLayeredProviderCoverage,
   computeProviderCoverage,
@@ -108,11 +107,6 @@ export function IntelligenceSummarySection({
     vt: vtSnap.status === 'success' ? { status: 'success', detected: vtSnap.detected, total: vtSnap.total } : null,
     abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
   });
-  const infrastructure = computeInfrastructureSummary({
-    ipinfo: showIpinfo && ipinfoSnap.status === 'success' ? ipinfoSnap : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? abuseSnap : null,
-    rdap: showRdap && rdapSnap.status === 'success' ? rdapSnap : null
-  });
   const layeredCoverage = computeLayeredProviderCoverage({
     directSnapshots: providerSnapshots,
     derivedSnapshots: derivedProviderSnapshots,
@@ -140,10 +134,6 @@ export function IntelligenceSummarySection({
           {reputation.length ? reputation.map((r) => (
             <div key={r.label} style={{ fontSize: 13, color: '#e2e8f0' }}>{r.label}: <b>{r.value}</b></div>
           )) : <div style={{ color: '#94a3b8', fontSize: 13 }}>No reputation data</div>}
-        </div>
-        <div style={summaryCardStyle}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Infrastructure</div>
-          <div style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{infrastructure}</div>
         </div>
         <div style={{ ...summaryCardStyle, gridColumn: hasDerivedCoverage ? 'span 2' : undefined }}>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Provider coverage</div>
