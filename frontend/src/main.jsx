@@ -7116,12 +7116,9 @@ function CustomThreatFeedsPage() {
             if (reason === 'job_running_or_queued') {
               title = 'Cannot modify feed — jobs are active';
               body = 'Cannot modify this feed while jobs are queued or running. Please wait for the job to finish or clear the queued/running job before deleting or purging this feed.';
-            } else if (reason === 'published_feed_dependency') {
-              title = 'Feed is used by published feeds';
-              body = 'Cannot delete this feed because it is used by published feeds. Unlink or disable the dependent published feed first.';
             } else if (reason === 'requires_purge') {
-              title = 'Cannot delete — feed has imported IOC data';
-              body = 'This feed has imported IOC data. Please purge imported IOC memberships first, then disable the feed before deleting it.';
+              title = 'Cannot delete — feed has active IOC data';
+              body = `This feed has ${check.active_membership_count} active IOC membership(s). Purge the imported IOC data first, then delete the feed.${check.published_feed_dependency_count > 0 ? ` It is also linked to ${check.published_feed_dependency_count} published feed(s) — those links will be automatically cleaned up when you delete.` : ''}`;
             } else if (reason === 'requires_disable') {
               title = 'Cannot delete enabled feed';
               body = 'This feed has no active imported IOC data, but it is still enabled. Disable it before deleting.';
@@ -7129,6 +7126,9 @@ function CustomThreatFeedsPage() {
               title = 'Cannot delete this feed';
               body = reason || 'Delete is not allowed for this feed.';
             }
+          } else if (check.delete_mode === 'cleanup_delete') {
+            title = 'Delete feed and remove from Published Feeds?';
+            body = `This feed is linked to ${check.published_feed_dependency_count} published feed(s). Deleting will automatically remove this feed from those published feeds. This action cannot be undone.`;
           } else if (check.delete_mode === 'direct_delete') {
             title = 'Delete custom threat feed?';
             body = 'This feed has no successful runs and no imported IOC data. It will be permanently removed from the custom feed list.';
@@ -7157,7 +7157,11 @@ function CustomThreatFeedsPage() {
                       onClick={() => confirmDelete().catch(() => {})}
                       style={{ padding: '6px 14px', background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', borderRadius: 6, cursor: deleteLoading ? 'not-allowed' : 'pointer', fontWeight: 600 }}
                     >
-                      {deleteLoading ? 'Deleting…' : 'Confirm delete'}
+                      {deleteLoading
+                        ? 'Deleting…'
+                        : check.delete_mode === 'cleanup_delete'
+                          ? 'Delete and remove from Published Feeds'
+                          : 'Confirm delete'}
                     </button>
                   ) : null}
                   <button type="button" onClick={() => setDeleteModal(null)} disabled={deleteLoading}>
@@ -7344,14 +7348,18 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
   const selectableKeys = options.filter((o) => o.selectable !== false).map((o) => o.key);
 
   function renderOption(o) {
-    const disabled = o.selectable === false;
+    const alreadySelected = selected.includes(o.key);
+    // Non-selectable items can still be unchecked if already selected (allow cleanup without re-enabling).
+    const disabled = o.selectable === false && !alreadySelected;
     const label = o.display_name || o.name || o.key;
+    const isDisabledCustom = !o.missing && o.selectable === false && o.feed_kind === 'custom';
+    const isInactiveSelected = alreadySelected && o.selectable === false && !o.missing;
     return (
       <div key={o.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <label style={{ ...ui.checkLabel, display: 'flex', opacity: disabled ? 0.65 : 1 }}>
+        <label style={{ ...ui.checkLabel, display: 'flex', opacity: disabled ? 0.6 : (o.selectable === false ? 0.8 : 1) }}>
           <input
             type="checkbox"
-            checked={selected.includes(o.key)}
+            checked={alreadySelected}
             disabled={disabled}
             onChange={(e) => {
               const next = e.target.checked
@@ -7362,11 +7370,27 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
           />
           <span>
             {label}
-            {!o.missing && o.active === false ? (
+            {isDisabledCustom ? (
+              <span style={{ color: '#64748b', marginLeft: 6 }}>(custom, disabled)</span>
+            ) : !o.missing && o.active === false ? (
               <span style={{ color: '#64748b', marginLeft: 6 }}>(inactive)</span>
             ) : null}
           </span>
         </label>
+        {isInactiveSelected ? (
+          <div style={{ marginLeft: 26, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: '#fbbf24', lineHeight: 1.45 }}>
+              This source is disabled. Uncheck to remove this reference, then save.
+            </span>
+            <button
+              type="button"
+              style={{ ...linkBtn, fontSize: 10 }}
+              onClick={() => onChange(selected.filter((k) => k !== o.key))}
+            >
+              Remove reference
+            </button>
+          </div>
+        ) : null}
         {o.missing ? (
           <div style={{ marginLeft: 26, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: '#fbbf24', lineHeight: 1.45 }}>

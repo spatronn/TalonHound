@@ -79,7 +79,8 @@ test('custom feed update persists run_once schedule and removes repeatable sched
     post() {},
     put(path, ...handlers) {
       routeHandlers[path] = handlers.at(-1);
-    }
+    },
+    delete() {}
   };
 
   const executedSql = [];
@@ -311,4 +312,145 @@ test('invalid rows do not prevent valid parse batch', () => {
   const parsed = parseFeedContent(text, { format: 'txt', iocTypeMode: 'auto' });
   assert.equal(parsed.valid.length, 1);
   assert.equal(parsed.invalidRows.length, 1);
+});
+
+// delete-check logic tests
+// These tests verify computeDeleteCheck behaviour via the GET /delete-check route.
+
+function makeDeleteCheckPool(overrides = {}) {
+  const defaults = {
+    successfulRunCount: 1,
+    activeMemberCount: 0,
+    historicalMemberCount: 0,
+    queuedOrRunningCount: 0,
+    publishedDepCount: 0,
+    integration_active: true
+  };
+  const cfg = { ...defaults, ...overrides };
+  const feedRow = {
+    id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    feed_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    integration_key: 'ctf-testkey',
+    feed_name: 'Test Feed',
+    url: 'https://ti.example.com/feed.txt',
+    url_host: 'ti.example.com',
+    format: 'txt',
+    ioc_type_mode: 'auto',
+    fixed_ioc_type: null,
+    description: null,
+    timeout_ms: 30000,
+    default_confidence: 'medium',
+    integration_active: cfg.integration_active,
+    deactivated_at: null,
+    archived_at: null,
+    schedule: '0 * * * *'
+  };
+  return {
+    feedRow,
+    pool: {
+      query: async (sql, _params) => {
+        const s = String(sql);
+        if (s.includes('FROM custom_threat_feeds c')) return { rows: [feedRow] };
+        if (s.includes("status IN ('success', 'partial_success')") && s.includes('custom_threat_feed_runs')) return { rows: [{ cnt: cfg.successfulRunCount }] };
+        if (s.includes("status = 'active'") && s.includes('ioc_feed_memberships')) return { rows: [{ cnt: cfg.activeMemberCount }] };
+        if (s.includes("status != 'active'") && s.includes('ioc_feed_memberships')) return { rows: [{ cnt: cfg.historicalMemberCount }] };
+        if (s.includes('integration_queue_jobs')) return { rows: [{ cnt: cfg.queuedOrRunningCount }] };
+        if (s.includes('published_feeds')) return { rows: [{ cnt: cfg.publishedDepCount }] };
+        return { rows: [] };
+      }
+    }
+  };
+}
+
+function makeDeleteCheckRoute(pool) {
+  const routeHandlers = {};
+  const app = {
+    get(path, ...handlers) { routeHandlers[path] = handlers.at(-1); },
+    post() {}, put() {}, delete() {}
+  };
+  const audit = { auditSuccess: async () => {} };
+  const importQueue = { getRepeatableJobs: async () => [], removeRepeatableByKey: async () => {} };
+  registerCustomThreatFeedRoutes(app, pool, audit, { importQueue, manualJobPriority: 1 });
+  return routeHandlers['/api/custom-threat-feeds/:id/delete-check'];
+}
+
+test('delete-check: disabled feed + published dep + 0 active IOC → cleanup_delete', async () => {
+  const { pool, feedRow } = makeDeleteCheckPool({
+    successfulRunCount: 3,
+    activeMemberCount: 0,
+    historicalMemberCount: 10,
+    publishedDepCount: 2,
+    integration_active: false
+  });
+  const handler = makeDeleteCheckRoute(pool);
+  let body = null;
+  const res = { json(b) { body = b; return this; }, status(c) { return this; } };
+  await handler({ params: { id: feedRow.id }, user: { role: ROLES.ADMIN } }, res);
+  assert.equal(body.can_delete, true, 'disabled feed with published dep and 0 active IOC should allow cleanup_delete');
+  assert.equal(body.delete_mode, 'cleanup_delete');
+  assert.equal(body.published_feed_dependency_count, 2);
+});
+
+test('delete-check: enabled feed + published dep + 0 active IOC → cleanup_delete', async () => {
+  const { pool, feedRow } = makeDeleteCheckPool({
+    successfulRunCount: 1,
+    activeMemberCount: 0,
+    historicalMemberCount: 0,
+    publishedDepCount: 1,
+    integration_active: true
+  });
+  const handler = makeDeleteCheckRoute(pool);
+  let body = null;
+  const res = { json(b) { body = b; return this; }, status(c) { return this; } };
+  await handler({ params: { id: feedRow.id }, user: { role: ROLES.ADMIN } }, res);
+  assert.equal(body.can_delete, true, 'enabled feed with published dep and 0 active IOC should allow cleanup_delete');
+  assert.equal(body.delete_mode, 'cleanup_delete');
+});
+
+test('delete-check: active IOC > 0 + published dep → requires_purge, not cleanup_delete', async () => {
+  const { pool, feedRow } = makeDeleteCheckPool({
+    successfulRunCount: 5,
+    activeMemberCount: 42,
+    publishedDepCount: 1,
+    integration_active: false
+  });
+  const handler = makeDeleteCheckRoute(pool);
+  let body = null;
+  const res = { json(b) { body = b; return this; }, status(c) { return this; } };
+  await handler({ params: { id: feedRow.id }, user: { role: ROLES.ADMIN } }, res);
+  assert.equal(body.can_delete, false, 'active IOC memberships should block delete regardless of published dep');
+  assert.equal(body.reason, 'requires_purge');
+  assert.equal(body.published_feed_dependency_count, 1, 'published dep count should still be visible');
+});
+
+test('delete-check: disabled feed + no published dep + historical members → soft_delete', async () => {
+  const { pool, feedRow } = makeDeleteCheckPool({
+    successfulRunCount: 2,
+    activeMemberCount: 0,
+    historicalMemberCount: 5,
+    publishedDepCount: 0,
+    integration_active: false
+  });
+  const handler = makeDeleteCheckRoute(pool);
+  let body = null;
+  const res = { json(b) { body = b; return this; }, status(c) { return this; } };
+  await handler({ params: { id: feedRow.id }, user: { role: ROLES.ADMIN } }, res);
+  assert.equal(body.can_delete, true, 'disabled feed with no active IOC and no published dep should allow soft_delete');
+  assert.equal(body.delete_mode, 'soft_delete');
+});
+
+test('delete-check: enabled feed + no deps + no runs → direct_delete', async () => {
+  const { pool, feedRow } = makeDeleteCheckPool({
+    successfulRunCount: 0,
+    activeMemberCount: 0,
+    historicalMemberCount: 0,
+    publishedDepCount: 0,
+    integration_active: true
+  });
+  const handler = makeDeleteCheckRoute(pool);
+  let body = null;
+  const res = { json(b) { body = b; return this; }, status(c) { return this; } };
+  await handler({ params: { id: feedRow.id }, user: { role: ROLES.ADMIN } }, res);
+  assert.equal(body.can_delete, true);
+  assert.equal(body.delete_mode, 'direct_delete');
 });

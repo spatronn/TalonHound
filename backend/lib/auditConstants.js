@@ -133,7 +133,9 @@ export const AUDIT_ACTION = Object.freeze({
   CUSTOM_FEED_SYNC_QUEUED: 'custom_feed.sync_queued',
   CUSTOM_FEED_SYNC_COMPLETED: 'custom_feed.sync_completed',
   CUSTOM_FEED_SYNC_FAILED: 'custom_feed.sync_failed',
-  CUSTOM_FEED_DELETED: 'custom_feed.deleted'
+  CUSTOM_FEED_DELETED: 'custom_feed.deleted',
+  CUSTOM_FEED_UNLINKED_FROM_PUBLISHED: 'custom_feed.unlinked_from_published',
+  CUSTOM_FEED_CLEANUP_DELETED: 'custom_feed.cleanup_delete'
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -273,7 +275,10 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.CUSTOM_FEED_DEACTIVATED]: 'Custom Threat Feed Deactivated',
   [AUDIT_ACTION.CUSTOM_FEED_SYNC_QUEUED]: 'Custom Threat Feed Sync Queued',
   [AUDIT_ACTION.CUSTOM_FEED_SYNC_COMPLETED]: 'Custom Threat Feed Sync Completed',
-  [AUDIT_ACTION.CUSTOM_FEED_SYNC_FAILED]: 'Custom Threat Feed Sync Failed'
+  [AUDIT_ACTION.CUSTOM_FEED_SYNC_FAILED]: 'Custom Threat Feed Sync Failed',
+  [AUDIT_ACTION.CUSTOM_FEED_DELETED]: 'Custom Threat Feed Deleted',
+  [AUDIT_ACTION.CUSTOM_FEED_UNLINKED_FROM_PUBLISHED]: 'Custom Threat Feed Unlinked from Published Feeds',
+  [AUDIT_ACTION.CUSTOM_FEED_CLEANUP_DELETED]: 'Custom Threat Feed Deleted (with Published Feed Cleanup)'
 });
 
 export function auditActionLabel(action) {

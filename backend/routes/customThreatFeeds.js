@@ -247,16 +247,20 @@ async function computeDeleteCheck(pool, feedRow) {
 
   if (queuedOrRunningCount > 0) {
     reason = 'job_running_or_queued';
-  } else if (publishedDepCount > 0) {
-    reason = 'published_feed_dependency';
   } else if (activeMemberCount > 0) {
+    // Active IOCs always block delete regardless of published deps.
     reason = 'requires_purge';
     requiresPurge = true;
     requiresDisable = true;
+  } else if (publishedDepCount > 0) {
+    // No active IOCs but still linked to published feeds.
+    // Allow a cleanup delete that atomically unlinks then removes the feed.
+    canDelete = true;
+    deleteMode = 'cleanup_delete';
   } else if (successfulRunCount === 0 && historicalMemberCount === 0) {
     canDelete = true;
     deleteMode = 'direct_delete';
-  } else if (!enabled) {
+  } else if (feedRow.integration_active === false) {
     canDelete = true;
     deleteMode = 'soft_delete';
   } else {
@@ -554,6 +558,53 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     return res.json({ ok: true, message: 'Custom Threat Feed deactivated' });
   });
 
+  app.post('/api/custom-threat-feeds/:id/unlink-from-published', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const feedRow = await fetchFeedRow(pool, req.params.id);
+      if (!feedRow || feedRow.deactivated_at) {
+        return res.status(404).json({ message: 'Custom Threat Feed not found' });
+      }
+
+      const { actor } = actorFromReq(req);
+
+      const { rows: unlinkedRows } = await pool.query(
+        `UPDATE published_feeds
+         SET include_feed_keys = (
+           SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+           FROM jsonb_array_elements_text(include_feed_keys) AS elem
+           WHERE elem != $1
+         ), updated_at = NOW()
+         WHERE include_feed_keys IS NOT NULL
+           AND include_feed_keys @> to_jsonb(ARRAY[$1::text])
+         RETURNING id, name`,
+        [feedRow.integration_key]
+      );
+
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.CUSTOM_FEED_UNLINKED_FROM_PUBLISHED,
+        entityType: AUDIT_ENTITY.CUSTOM_THREAT_FEED,
+        entityId: feedRow.id,
+        entityDisplay: feedRow.feed_name,
+        metadata: {
+          ...auditFeedMeta(feedRow),
+          unlinked_published_feed_ids: unlinkedRows.map((r) => Number(r.id)),
+          unlinked_published_feed_count: unlinkedRows.length,
+          actor
+        }
+      }).catch(() => {});
+
+      return res.json({
+        ok: true,
+        unlinked_count: unlinkedRows.length,
+        unlinked_published_feeds: unlinkedRows.map((r) => ({ id: Number(r.id), name: r.name }))
+      });
+    } catch (err) {
+      console.error('[custom-threat-feeds] unlink-from-published failed', err?.message || err);
+      return res.status(500).json({ message: 'Failed to unlink from published feeds', detail: err.message });
+    }
+  });
+
   app.post('/api/custom-threat-feeds/:id/test-fetch', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
     const row = await fetchFeedRow(pool, req.params.id);
     if (!row || row.deactivated_at) {
@@ -675,6 +726,89 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       }
 
       const { actor } = actorFromReq(req);
+
+      if (check.delete_mode === 'cleanup_delete') {
+        // Determine inner deletion mode based on run history (same logic as direct/soft paths).
+        const innerMode = (check.successful_run_count === 0 && check.historical_membership_count === 0)
+          ? 'direct_delete'
+          : 'soft_delete';
+
+        const client = await pool.connect();
+        let unlinkedRows = [];
+        try {
+          await client.query('BEGIN');
+
+          // Atomically remove this feed's integration key from all published_feeds.include_feed_keys.
+          const unlinkRes = await client.query(
+            `UPDATE published_feeds
+             SET include_feed_keys = (
+               SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+               FROM jsonb_array_elements_text(include_feed_keys) AS elem
+               WHERE elem != $1
+             ), updated_at = NOW()
+             WHERE include_feed_keys IS NOT NULL
+               AND include_feed_keys @> to_jsonb(ARRAY[$1::text])
+             RETURNING id, name`,
+            [feedRow.integration_key]
+          );
+          unlinkedRows = unlinkRes.rows;
+
+          if (innerMode === 'direct_delete') {
+            await client.query(
+              `UPDATE integration_feeds SET active = FALSE WHERE integration_id = $1::uuid`,
+              [feedRow.feed_id]
+            );
+          } else {
+            await client.query(
+              `UPDATE custom_threat_feeds SET deactivated_at = NOW(), updated_at = NOW() WHERE id = $1::uuid`,
+              [feedRow.id]
+            );
+            await client.query(
+              `UPDATE integration_feeds SET active = FALSE WHERE integration_id = $1::uuid`,
+              [feedRow.feed_id]
+            );
+          }
+
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw err;
+        } finally {
+          client.release();
+        }
+
+        // Outside the transaction: remove the scheduled job, then hard-delete if applicable.
+        await syncSingleFeedSchedule(pool, importQueue, feedRow.integration_key, { logPrefix: '[custom-feeds-delete]' });
+        if (innerMode === 'direct_delete') {
+          await pool.query(`DELETE FROM integration_feeds WHERE integration_id = $1::uuid`, [feedRow.feed_id]);
+        }
+
+        const unlinkedIds = unlinkedRows.map((r) => Number(r.id));
+        await audit.auditSuccess({
+          req,
+          action: AUDIT_ACTION.CUSTOM_FEED_CLEANUP_DELETED,
+          entityType: AUDIT_ENTITY.CUSTOM_THREAT_FEED,
+          entityId: feedRow.id,
+          entityDisplay: feedRow.feed_name,
+          metadata: {
+            ...auditFeedMeta(feedRow),
+            delete_mode: check.delete_mode,
+            inner_delete_mode: innerMode,
+            linked_published_feed_count: check.published_feed_dependency_count,
+            unlinked_published_feed_ids: unlinkedIds,
+            active_membership_count: check.active_membership_count,
+            historical_membership_count: check.historical_membership_count,
+            actor
+          }
+        }).catch(() => {});
+
+        return res.json({
+          ok: true,
+          message: 'Custom Threat Feed deleted and unlinked from Published Feeds',
+          delete_mode: check.delete_mode,
+          unlinked_published_feed_count: unlinkedRows.length
+        });
+      }
 
       if (check.delete_mode === 'direct_delete') {
         await pool.query(`UPDATE integration_feeds SET active = FALSE WHERE integration_id = $1::uuid`, [feedRow.feed_id]);
