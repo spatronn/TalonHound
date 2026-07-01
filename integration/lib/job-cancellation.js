@@ -1,4 +1,5 @@
 import { FAILURE_MESSAGES, FAILURE_TYPES } from './integrationQueueConfig.js';
+import { inferFailureTypeFromError } from './integrationQueueJobState.js';
 
 export class IntegrationJobAbortedError extends Error {
   constructor(message = FAILURE_MESSAGES.aborted, failureType = FAILURE_TYPES.ABORTED) {
@@ -37,6 +38,17 @@ export function resolveJobFailureType(err) {
   if (err?.failureType) return err.failureType;
   if (isJobAbortedError(err)) return err.failureType || FAILURE_TYPES.ABORTED;
   return null;
+}
+
+/**
+ * Full failure-type resolution for the worker 'failed' event handler:
+ * explicit/abort classification first, then message-based inference.
+ * Extracted (and imported by worker.js) so the resolution is unit-tested and
+ * can never reintroduce the missing-import ReferenceError that crashed the
+ * worker on every failed job (see commit 38832d6).
+ */
+export function resolveWorkerJobFailureType(err) {
+  return resolveJobFailureType(err) || inferFailureTypeFromError(err);
 }
 
 /** Merge fetch init with an optional AbortSignal (native fetch cancellation). */

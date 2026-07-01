@@ -16,11 +16,11 @@ import {
   markJobSuccess,
   markJobSkipped,
   markJobFailed,
-  markJobDeferredSourceBusy,
-  inferFailureTypeFromError
+  markJobDeferredSourceBusy
 } from './lib/integrationQueueJobState.js';
 import { runFeedDataPurgeJob } from './lib/feedLifecycle.js';
 import { runCustomThreatFeedImport } from './lib/customThreatFeedImport.js';
+import { resolveWorkerJobFailureType } from './lib/job-cancellation.js';
 
 const pool = createIntegrationPool();
 
@@ -239,7 +239,7 @@ const worker = new Worker(
 worker.on('failed', async (job, err) => {
   if (err?.name === 'DelayedError') return;
   const safeMsg = safeJobErrorMessage(job, err);
-  const failureType = resolveJobFailureType(err) || err?.failureType || inferFailureTypeFromError(err);
+  const failureType = resolveWorkerJobFailureType(err);
   console.error(
     `${LOG_PREFIX} Job failed job_id=${job?.id} source=${job ? resolveIntegrationKey(job) : 'unknown'} attemptsMade=${job?.attemptsMade} failure_type=${failureType || '-'} message=${safeMsg}`
   );
