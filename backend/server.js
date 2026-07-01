@@ -146,6 +146,10 @@ import {
   validateThreatFoxRecentDays
 } from './lib/threatfoxIntegration.js';
 import {
+  ALIENVAULT_OTX_FEED_KEY,
+  testOtxConnection
+} from './lib/alienvaultOtxIntegration.js';
+import {
   formatIntegrationJobDisplayName,
   withIntegrationJobDisplayName
 } from './lib/integrationJobLabels.js';
@@ -4300,7 +4304,8 @@ const INTEGRATION_JOBS = {
   'urlhaus-abusech': 'urlhaus-import',
   'threatfox-abusech': 'threatfox-import',
   'malwarebazaar-abusech': 'malwarebazaar-import',
-  'phishtank-opendnsrr': 'phishtank-import'
+  'phishtank-opendnsrr': 'phishtank-import',
+  'alienvault-otx': 'alienvault-otx-import'
 };
 
 const TRUST_LEVELS = new Set(['guvenilir', 'orta', 'not_categorized']);
@@ -5018,6 +5023,8 @@ app.post('/api/integrations/:key/credentials/test', async (req, res) => {
         authKey,
         days: validateThreatFoxRecentDays(req.body?.recent_days, 1)
       });
+    } else if (key === ALIENVAULT_OTX_FEED_KEY) {
+      result = await testOtxConnection({ authKey });
     } else {
       return res.status(404).json({ message: 'Integration does not support credentials test' });
     }

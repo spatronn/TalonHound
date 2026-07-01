@@ -60,6 +60,15 @@ import {
   resolveThreatFoxRecentDays,
   sanitizeThreatFoxErrorMessage
 } from './lib/threatfox.js';
+import {
+  ALIENVAULT_OTX_AUTH_REQUIRED_MSG,
+  ALIENVAULT_OTX_SOURCE_NAME,
+  buildOtxNote,
+  collectOtxEntries,
+  resolveOtxApiKey,
+  sanitizeOtxErrorMessage,
+  walkOtxSubscribedPulses
+} from './lib/alienvaultOtx.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { withPgTransaction } from './lib/pg-transaction.js';
 import { throwIfAborted, fetchWithSignal, isJobAbortedError } from './lib/job-cancellation.js';
@@ -2109,6 +2118,175 @@ export async function runPhishtankImport(options = {}) {
     throw err;
   } finally {
     try { await client.query('SELECT pg_advisory_unlock(942006)'); } catch {}
+    client.release();
+  }
+}
+
+const OTX_ADVISORY_LOCK = 942007;
+const OTX_CHECKPOINT_SOURCE = ALIENVAULT_OTX_SOURCE_NAME;
+
+async function upsertOtxObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence) {
+  const note = buildOtxNote(entry);
+  const category = 'threat-intel';
+  const sourceUrl = entry.referenceUrl || null;
+
+  const insertResult = await insertObservable(client, {
+    observable: entry.observable,
+    observableType: entry.observableType,
+    sourceName,
+    sourceUrl,
+    sourceConfidence: null,
+    feedDefaultConfidence,
+    category,
+    note
+  }, suppressionStats);
+
+  if (insertResult === 'suppressed') {
+    metrics.noteSuppressed(1);
+    return;
+  }
+  if (insertResult === true || insertResult === 'inserted') {
+    metrics.noteInsert();
+    return;
+  }
+  if (insertResult === 'unchanged') {
+    metrics.noteSkipped();
+    return;
+  }
+  // 'duplicate' — existing IOC from same/other source; membership + evidence already synced.
+  metrics.noteDuplicate();
+}
+
+export async function runAlienvaultOtxImport(options = {}) {
+  const { signal } = options;
+  const triggeredBy = resolveTriggeredBy(options);
+  const client = await pool.connect();
+  const startedAt = new Date();
+  let runId = null;
+  const suppressionStats = createSuppressionStats();
+  const metrics = createImportMetrics();
+  const txMeta = { source_key: 'alienvault-otx', signal };
+
+  try {
+    throwIfAborted(signal);
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [OTX_ADVISORY_LOCK]);
+    if (!lockResult.rows[0]?.acquired) {
+      return { skipped: true, reason: 'lock_not_acquired' };
+    }
+
+    return await withImportOptimizationContext(client, async () => {
+      const runInsert = await client.query(
+        `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
+         VALUES ('alienvault_otx_import', 'running', clock_timestamp(), $1)
+         RETURNING id`,
+        [triggeredBy]
+      );
+      runId = runInsert.rows[0].id;
+      txMeta.job_id = runId;
+
+      const apiKey = await resolveOtxApiKey(client, config.alienvaultOtxApiKey);
+      if (!apiKey) {
+        await finalizeIntegrationRun(client, runId, metrics);
+        return withSuppressionStats(
+          { ok: true, runId, skipped: true, reason: ALIENVAULT_OTX_AUTH_REQUIRED_MSG },
+          suppressionStats,
+          metrics
+        );
+      }
+
+      // Cursor: only pull pulses modified strictly after the last successful run.
+      const cpQ = await client.query(
+        `SELECT last_cursor FROM integration_checkpoints WHERE source_name = $1`,
+        [OTX_CHECKPOINT_SOURCE]
+      );
+      const cursorBefore = String(cpQ.rows[0]?.last_cursor || '').trim() || null;
+
+      // Collect all pulses (bounded pagination), then dedupe indicators.
+      const pulses = [];
+      const walkStats = await walkOtxSubscribedPulses({
+        apiKey,
+        apiBase: config.alienvaultOtxApiBase,
+        modifiedSince: cursorBefore,
+        limit: config.alienvaultOtxPageLimit,
+        signal,
+        fetchFn: (url, init) => fetchWithSignal(url, init, signal),
+        onPulse: (pulse) => { pulses.push(pulse); }
+      });
+
+      const { entries, fetchedIndicators, unsupportedIndicators, unsupportedBreakdown } =
+        collectOtxEntries(pulses);
+      metrics.noteSkipped(unsupportedIndicators);
+
+      const feedDefaultConfidence = await fetchFeedDefaultConfidence(client, ALIENVAULT_OTX_SOURCE_NAME);
+
+      const batchSize = Number(process.env.ALIENVAULT_OTX_BATCH_SIZE || 500);
+      for (let i = 0; i < entries.length; i += batchSize) {
+        throwIfAborted(signal);
+        const batch = entries.slice(i, i + batchSize);
+        await withPgTransaction(client, 'alienvault_otx_import_batch', async (tx) => {
+          for (const entry of batch) {
+            throwIfAborted(signal);
+            await upsertOtxObservable(tx, entry, ALIENVAULT_OTX_SOURCE_NAME, suppressionStats, metrics, feedDefaultConfidence);
+          }
+        }, { ...txMeta, batch: Math.floor(i / batchSize) + 1 });
+      }
+
+      // Advance cursor to run start (strictly-greater semantics on next run).
+      const cursorAfter = startedAt.toISOString();
+      const summary = {
+        fetched_pulses: walkStats.fetchedPulses,
+        processed_pulses: pulses.length,
+        pages: walkStats.pages,
+        truncated: walkStats.truncated,
+        fetched_indicators: fetchedIndicators,
+        imported_iocs: metrics.records_inserted,
+        updated_iocs: metrics.records_updated,
+        duplicate_iocs: metrics.records_duplicate,
+        skipped_iocs: metrics.records_skipped,
+        unsupported_indicators: unsupportedIndicators,
+        unsupported_type_breakdown: unsupportedBreakdown,
+        cursor_before: cursorBefore,
+        cursor_after: cursorAfter
+      };
+
+      throwIfAborted(signal);
+      await client.query(
+        `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
+         VALUES ($1, $2, $3::jsonb, NOW())
+         ON CONFLICT (source_name)
+         DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
+        [OTX_CHECKPOINT_SOURCE, cursorAfter, JSON.stringify(summary)]
+      );
+      await client.query(
+        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (source_name)
+         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
+        [OTX_CHECKPOINT_SOURCE, cursorAfter]
+      );
+
+      throwIfAborted(signal);
+      await finalizeIntegrationRun(client, runId, metrics);
+      logImportSuppressionSummary('alienvault_otx_import', runId, suppressionStats, metrics.toJSON());
+      console.log(
+        `[integration-import] job=alienvault_otx_import runId=${runId} pages=${walkStats.pages} pulses=${walkStats.fetchedPulses} fetched_indicators=${fetchedIndicators} inserted=${metrics.records_inserted} updated=${metrics.records_updated} duplicate=${metrics.records_duplicate} unsupported=${unsupportedIndicators} truncated=${walkStats.truncated} cursor_before=${cursorBefore || '-'} cursor_after=${cursorAfter}`
+      );
+      return withSuppressionStats({ ok: true, runId, summary }, suppressionStats, metrics);
+    });
+  } catch (err) {
+    const safeMessage = sanitizeOtxErrorMessage(err?.message || err);
+    if (runId) {
+      await failIntegrationRun(client, runId, safeMessage, metrics);
+    }
+    const wrapped = new Error(safeMessage);
+    wrapped.cause = err;
+    throw wrapped;
+  } finally {
+    try {
+      await client.query('SELECT pg_advisory_unlock($1)', [OTX_ADVISORY_LOCK]);
+    } catch {
+      // ignore
+    }
     client.release();
   }
 }

@@ -14,7 +14,8 @@ export const INTEGRATION_FEED_JOBS = Object.freeze({
   'urlhaus-abusech': 'urlhaus-import',
   'threatfox-abusech': 'threatfox-import',
   'malwarebazaar-abusech': 'malwarebazaar-import',
-  'phishtank-opendnsrr': 'phishtank-import'
+  'phishtank-opendnsrr': 'phishtank-import',
+  'alienvault-otx': 'alienvault-otx-import'
 });
 
 export const CUSTOM_THREAT_FEED_JOB = 'custom-threat-feed-sync';

@@ -8,6 +8,11 @@ import {
   formatThreatFoxCredentialsSummary,
   sanitizeThreatFoxErrorMessage
 } from './threatfoxIntegration.js';
+import {
+  ALIENVAULT_OTX_FEED_KEY,
+  formatOtxCredentialsSummary,
+  sanitizeOtxErrorMessage
+} from './alienvaultOtxIntegration.js';
 
 export const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 export const URLHAUS_EXPORT_URL_MASKED = 'https://urlhaus-api.abuse.ch/v2/files/exports/***/recent.csv';
@@ -18,7 +23,10 @@ export {
   sanitizeMalwareBazaarErrorMessage,
   THREATFOX_FEED_KEY,
   formatThreatFoxCredentialsSummary,
-  sanitizeThreatFoxErrorMessage
+  sanitizeThreatFoxErrorMessage,
+  ALIENVAULT_OTX_FEED_KEY,
+  formatOtxCredentialsSummary,
+  sanitizeOtxErrorMessage
 };
 
 export function maskUrlhausAuthKey(key) {
@@ -75,6 +83,7 @@ export function formatFeedCredentialsSummary(feedKey, credentials) {
   if (feedKey === URLHAUS_FEED_KEY) return formatUrlhausCredentialsSummary(credentials);
   if (feedKey === MALWAREBAZAAR_FEED_KEY) return formatMalwareBazaarCredentialsSummary(credentials);
   if (feedKey === THREATFOX_FEED_KEY) return formatThreatFoxCredentialsSummary(credentials);
+  if (feedKey === ALIENVAULT_OTX_FEED_KEY) return formatOtxCredentialsSummary(credentials);
   return null;
 }
 
@@ -88,11 +97,15 @@ export function sanitizeFeedErrorMessage(feedKey, message) {
   if (feedKey === THREATFOX_FEED_KEY) {
     return sanitizeThreatFoxErrorMessage(message);
   }
+  if (feedKey === ALIENVAULT_OTX_FEED_KEY) {
+    return sanitizeOtxErrorMessage(message);
+  }
   return String(message || '');
 }
 
 export const AUTH_KEY_FEED_KEYS = new Set([
   URLHAUS_FEED_KEY,
   MALWAREBAZAAR_FEED_KEY,
-  THREATFOX_FEED_KEY
+  THREATFOX_FEED_KEY,
+  ALIENVAULT_OTX_FEED_KEY
 ]);

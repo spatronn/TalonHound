@@ -4678,6 +4678,7 @@ function FeedActiveConfirmModal({ feed, mode, loading, error, onCancel, onConfir
 const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 const MALWAREBAZAAR_FEED_KEY = 'malwarebazaar-abusech';
 const THREATFOX_FEED_KEY = 'threatfox-abusech';
+const ALIENVAULT_OTX_FEED_KEY = 'alienvault-otx';
 
 const AUTH_KEY_FEED_CONFIG = {
   [URLHAUS_FEED_KEY]: {
@@ -4704,6 +4705,14 @@ const AUTH_KEY_FEED_CONFIG = {
     saveError: 'Failed to save ThreatFox Auth-Key',
     supportsTest: true,
     supportsRecentDays: true
+  },
+  [ALIENVAULT_OTX_FEED_KEY]: {
+    title: 'AlienVault OTX API Key',
+    placeholder: 'Enter OTX API Key',
+    helpText: 'Required for the OTX DirectConnect API. Imports IOCs from your subscribed pulses (X-OTX-API-KEY). Find it under your OTX account settings.',
+    saveSuccess: 'AlienVault OTX API Key saved.',
+    saveError: 'Failed to save AlienVault OTX API Key',
+    supportsTest: true
   }
 };
 

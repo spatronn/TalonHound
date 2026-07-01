@@ -32,7 +32,8 @@ export const FEED_SOURCE_RULES = Object.freeze([
   { key: 'threatfox-abusech', exact: 'ThreatFox:abuse.ch' },
   { key: 'malwarebazaar-abusech', exact: 'MalwareBazaar:abuse.ch' },
   { key: 'et-blockrules', prefix: 'EmergingThreats:' },
-  { key: 'phishtank-opendnsrr', includes: ['phishtank', 'PhishTank'] }
+  { key: 'phishtank-opendnsrr', includes: ['phishtank', 'PhishTank'] },
+  { key: 'alienvault-otx', exact: 'AlienVault OTX' }
 ]);
 
 const feedMetaCache = { at: 0, rows: [] };

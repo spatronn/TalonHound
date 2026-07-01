@@ -29,5 +29,9 @@ export const config = {
   malwareBazaarSourceName: process.env.MALWARE_BAZAAR_SOURCE_NAME || 'MalwareBazaar:abuse.ch',
   malwareBazaarAuthKey: process.env.MALWAREBAZAAR_AUTH_KEY || '',
   phishTankSourceName: process.env.PHISHTANK_SOURCE_NAME || 'PhishTank:open_dnsrr',
-  phishTankCsvUrl: process.env.PHISHTANK_CSV_URL || 'https://data.phishtank.com/data/online-valid.csv'
+  phishTankCsvUrl: process.env.PHISHTANK_CSV_URL || 'https://data.phishtank.com/data/online-valid.csv',
+  alienvaultOtxSourceName: process.env.ALIENVAULT_OTX_SOURCE_NAME || 'AlienVault OTX',
+  alienvaultOtxApiBase: process.env.ALIENVAULT_OTX_API_BASE || 'https://otx.alienvault.com',
+  alienvaultOtxApiKey: process.env.ALIENVAULT_OTX_API_KEY || '',
+  alienvaultOtxPageLimit: Number(process.env.ALIENVAULT_OTX_PAGE_LIMIT || 50)
 };

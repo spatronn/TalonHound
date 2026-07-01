@@ -2,10 +2,11 @@ import { Worker, DelayedError } from 'bullmq';
 import { config } from './config.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
-import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport } from './importer.js';
+import { runHourlyImport, runUsomImport, runUrlhausImport, runThreatfoxImport, runMalwareBazaarImport, runPhishtankImport, runAlienvaultOtxImport } from './importer.js';
 import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
 import { sanitizeMalwareBazaarErrorMessage } from './lib/malwarebazaar.js';
 import { sanitizeThreatFoxErrorMessage } from './lib/threatfox.js';
+import { sanitizeOtxErrorMessage } from './lib/alienvaultOtx.js';
 import { QUEUE_HARDENING, FAILURE_MESSAGES, FAILURE_TYPES } from './lib/integrationQueueConfig.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs, runQueueRecovery } from './lib/integrationQueueRecovery.js';
 import {
@@ -46,6 +47,7 @@ function resolveIntegrationKey(job) {
   if (job?.name === 'threatfox-import') return 'threatfox-abusech';
   if (job?.name === 'malwarebazaar-import') return 'malwarebazaar-abusech';
   if (job?.name === 'phishtank-import') return 'phishtank-opendnsrr';
+  if (job?.name === 'alienvault-otx-import') return 'alienvault-otx';
   return 'unknown';
 }
 
@@ -60,6 +62,9 @@ function safeJobErrorMessage(job, err) {
   }
   if (integrationKey === 'threatfox-abusech') {
     return sanitizeThreatFoxErrorMessage(raw).slice(0, 4000);
+  }
+  if (integrationKey === 'alienvault-otx') {
+    return sanitizeOtxErrorMessage(raw).slice(0, 4000);
   }
   return raw.slice(0, 4000);
 }
@@ -80,6 +85,7 @@ async function runImportForJob(job, { signal, triggeredBy } = {}) {
   if (job.name === 'threatfox-import') return runThreatfoxImport(opts);
   if (job.name === 'malwarebazaar-import') return runMalwareBazaarImport(opts);
   if (job.name === 'phishtank-import') return runPhishtankImport(opts);
+  if (job.name === 'alienvault-otx-import') return runAlienvaultOtxImport(opts);
   return { skipped: true, reason: 'unknown_job' };
 }
 
@@ -95,7 +101,8 @@ function resolveJobTimeoutMs(integrationKey, jobName) {
     'usom-trcert': 'USOM_JOB_TIMEOUT_MS',
     'urlhaus-abusech': 'URLHAUS_JOB_TIMEOUT_MS',
     'malwarebazaar-abusech': 'MALWAREBAZAAR_JOB_TIMEOUT_MS',
-    'et-blockrules': 'EMERGINGTHREATS_JOB_TIMEOUT_MS'
+    'et-blockrules': 'EMERGINGTHREATS_JOB_TIMEOUT_MS',
+    'alienvault-otx': 'ALIENVAULT_OTX_JOB_TIMEOUT_MS'
   };
   if (jobName === 'custom-threat-feed-sync') {
     const n = Number(process.env.CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS || 600000);
