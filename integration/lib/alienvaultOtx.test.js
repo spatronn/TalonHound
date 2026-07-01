@@ -315,3 +315,45 @@ test('collectOtxEntries handles empty/missing indicators safely', () => {
   assert.equal(fetchedIndicators, 0);
   assert.equal(unsupportedIndicators, 0);
 });
+
+// --- Initial lookback / cursor behavior ---
+// Regression guard for the doom loop where no checkpoint meant every run fetched
+// the entire OTX subscription history, always timing out before saving a cursor.
+
+test('buildOtxSubscribedUrl omits modified_since when cursor is null (used for first-run before lookback)', () => {
+  const url = buildOtxSubscribedUrl({ modifiedSince: null });
+  assert.equal(new URL(url).searchParams.has('modified_since'), false);
+});
+
+test('buildOtxSubscribedUrl includes modified_since when cursor is provided', () => {
+  const cursor = '2026-06-01T00:00:00.000Z';
+  const url = buildOtxSubscribedUrl({ modifiedSince: cursor });
+  assert.equal(new URL(url).searchParams.get('modified_since'), cursor);
+});
+
+test('buildOtxSubscribedUrl includes modified_since when initial lookback cursor is applied', () => {
+  // Simulate the initial-lookback cursor (now - 30 days)
+  const lookbackCursor = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const url = buildOtxSubscribedUrl({ modifiedSince: lookbackCursor });
+  assert.ok(new URL(url).searchParams.has('modified_since'), 'modified_since must be set to bound first run');
+});
+
+test('walkOtxSubscribedPulses sends modified_since when cursor supplied', async () => {
+  let capturedUrl = null;
+  const fetchFn = async (url) => {
+    capturedUrl = url;
+    return { ok: true, status: 200, text: async () => JSON.stringify({ count: 1, next: null, results: [] }) };
+  };
+  await walkOtxSubscribedPulses({ apiKey: 'k', modifiedSince: '2026-06-01T00:00:00.000Z', fetchFn, maxPages: 1 });
+  assert.ok(capturedUrl.includes('modified_since='), 'URL must include modified_since');
+});
+
+test('walkOtxSubscribedPulses without cursor sends no modified_since (before lookback applied)', async () => {
+  let capturedUrl = null;
+  const fetchFn = async (url) => {
+    capturedUrl = url;
+    return { ok: true, status: 200, text: async () => JSON.stringify({ count: 1, next: null, results: [] }) };
+  };
+  await walkOtxSubscribedPulses({ apiKey: 'k', modifiedSince: null, fetchFn, maxPages: 1 });
+  assert.equal(new URL(capturedUrl).searchParams.has('modified_since'), false);
+});

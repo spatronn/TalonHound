@@ -33,5 +33,7 @@ export const config = {
   alienvaultOtxSourceName: process.env.ALIENVAULT_OTX_SOURCE_NAME || 'AlienVault OTX',
   alienvaultOtxApiBase: process.env.ALIENVAULT_OTX_API_BASE || 'https://otx.alienvault.com',
   alienvaultOtxApiKey: process.env.ALIENVAULT_OTX_API_KEY || '',
-  alienvaultOtxPageLimit: Number(process.env.ALIENVAULT_OTX_PAGE_LIMIT || 50)
+  alienvaultOtxPageLimit: Number(process.env.ALIENVAULT_OTX_PAGE_LIMIT || 50),
+  alienvaultOtxInitialLookbackDays: Number(process.env.OTX_INITIAL_LOOKBACK_DAYS || 30),
+  alienvaultOtxMaxPagesPerRun: Number(process.env.OTX_MAX_PAGES_PER_RUN || 200)
 };

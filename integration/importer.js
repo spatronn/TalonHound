@@ -2199,7 +2199,16 @@ export async function runAlienvaultOtxImport(options = {}) {
         `SELECT last_cursor FROM integration_checkpoints WHERE source_name = $1`,
         [OTX_CHECKPOINT_SOURCE]
       );
-      const cursorBefore = String(cpQ.rows[0]?.last_cursor || '').trim() || null;
+      const savedCursor = String(cpQ.rows[0]?.last_cursor || '').trim() || null;
+
+      // First-run guard: if no cursor exists, default to OTX_INITIAL_LOOKBACK_DAYS ago
+      // to avoid fetching the entire subscribed-pulse history (potentially thousands of
+      // pages). After the first successful run the cursor is persisted, so subsequent
+      // runs only fetch incremental deltas.
+      const lookbackDays = config.alienvaultOtxInitialLookbackDays;
+      const initialCursor = new Date(startedAt.getTime() - lookbackDays * 86_400_000).toISOString();
+      const cursorBefore = savedCursor ?? initialCursor;
+      const isInitialRun = savedCursor === null;
 
       // Collect all pulses (bounded pagination), then dedupe indicators.
       const pulses = [];
@@ -2208,6 +2217,7 @@ export async function runAlienvaultOtxImport(options = {}) {
         apiBase: config.alienvaultOtxApiBase,
         modifiedSince: cursorBefore,
         limit: config.alienvaultOtxPageLimit,
+        maxPages: config.alienvaultOtxMaxPagesPerRun,
         signal,
         fetchFn: (url, init) => fetchWithSignal(url, init, signal),
         onPulse: (pulse) => { pulses.push(pulse); }
@@ -2245,6 +2255,8 @@ export async function runAlienvaultOtxImport(options = {}) {
         skipped_iocs: metrics.records_skipped,
         unsupported_indicators: unsupportedIndicators,
         unsupported_type_breakdown: unsupportedBreakdown,
+        is_initial_run: isInitialRun,
+        initial_lookback_days: isInitialRun ? lookbackDays : null,
         cursor_before: cursorBefore,
         cursor_after: cursorAfter
       };
@@ -2269,7 +2281,7 @@ export async function runAlienvaultOtxImport(options = {}) {
       await finalizeIntegrationRun(client, runId, metrics);
       logImportSuppressionSummary('alienvault_otx_import', runId, suppressionStats, metrics.toJSON());
       console.log(
-        `[integration-import] job=alienvault_otx_import runId=${runId} pages=${walkStats.pages} pulses=${walkStats.fetchedPulses} fetched_indicators=${fetchedIndicators} inserted=${metrics.records_inserted} updated=${metrics.records_updated} duplicate=${metrics.records_duplicate} unsupported=${unsupportedIndicators} truncated=${walkStats.truncated} cursor_before=${cursorBefore || '-'} cursor_after=${cursorAfter}`
+        `[integration-import] job=alienvault_otx_import runId=${runId} pages=${walkStats.pages} pulses=${walkStats.fetchedPulses} fetched_indicators=${fetchedIndicators} inserted=${metrics.records_inserted} updated=${metrics.records_updated} duplicate=${metrics.records_duplicate} unsupported=${unsupportedIndicators} truncated=${walkStats.truncated} is_initial_run=${isInitialRun} cursor_before=${cursorBefore || '-'} cursor_after=${cursorAfter}`
       );
       return withSuppressionStats({ ok: true, runId, summary }, suppressionStats, metrics);
     });
