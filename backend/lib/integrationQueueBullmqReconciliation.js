@@ -1,6 +1,7 @@
-import { FAILURE_MESSAGES, FAILURE_TYPES, STALE_QUEUED_THRESHOLD_MINUTES } from './integrationQueueConfig.js';
+import { FAILURE_MESSAGES, FAILURE_TYPES, STALE_QUEUED_THRESHOLD_MINUTES, QUEUE_HARDENING } from './integrationQueueConfig.js';
 import {
   classifyRunningJobForRecovery,
+  getJobLastSeenMs,
   markQueueJobFailed
 } from './integrationQueueRecovery.js';
 
@@ -360,7 +361,71 @@ export async function reconcileBullmqWithDb({
 }
 
 /**
- * Release orphan DB "source locks" (running rows that are stale or not backed by BullMQ).
+ * Grace period before a DB "running" row that is missing from BullMQ (active/
+ * waiting/delayed) is treated as an orphaned source lock. A live job heartbeats
+ * every QUEUE_HARDENING.heartbeatIntervalMs; a heartbeat quiet beyond this grace
+ * means the owning worker is gone. Kept well above one heartbeat interval so we
+ * never race a worker-startup or graceful-shutdown window.
+ */
+export function orphanSourceLockGraceMs(config = QUEUE_HARDENING) {
+  return Math.max((config.heartbeatIntervalMs || 30_000) * 3, 90_000);
+}
+
+/**
+ * Decide whether a DB `running` row should be reclaimed as an orphan source lock.
+ *
+ * The authoritative liveness signal is heartbeat/age staleness
+ * (classifyRunningJobForRecovery): a job with a fresh heartbeat is LIVE and must
+ * never be reclaimed — even if this worker's BullMQ active/waiting/delayed
+ * snapshot does not list it. That snapshot is unreliable during a worker-startup
+ * race, a graceful-shutdown window, or when another worker owns the job. The old
+ * code force-failed such live jobs purely because they were "not in BullMQ",
+ * producing a misleading reason=reconciled failure (see OTX run-now during deploy).
+ *
+ * A "not in BullMQ" row is only reclaimed once its heartbeat has been quiet beyond
+ * the grace period (worker genuinely gone). Reason is then the accurate `stale`,
+ * never `reconciled`.
+ *
+ * @returns {{ release: boolean, failureType?: string, message?: string, reason: string }}
+ */
+export function classifyOrphanSourceLock(row, { inLiveBullmq = false, nowMs = Date.now(), config = QUEUE_HARDENING } = {}) {
+  if (String(row?.status || '').toLowerCase() !== 'running') {
+    return { release: false, reason: 'not_running' };
+  }
+
+  const classification = classifyRunningJobForRecovery(row, nowMs, config);
+  if (classification) {
+    return {
+      release: true,
+      failureType: classification.failureType,
+      message: classification.message,
+      reason: classification.failureType
+    };
+  }
+
+  // No classification => heartbeat is fresh within staleAfterMs => the job is live.
+  // Never reclaim a live job, regardless of BullMQ list visibility.
+  if (inLiveBullmq) {
+    return { release: false, reason: 'live_in_bullmq' };
+  }
+
+  const lastSeenMs = getJobLastSeenMs(row);
+  const quietMs = lastSeenMs == null ? null : nowMs - lastSeenMs;
+  const graceMs = orphanSourceLockGraceMs(config);
+  if (quietMs != null && quietMs > graceMs) {
+    return {
+      release: true,
+      failureType: FAILURE_TYPES.STALE,
+      message: FAILURE_MESSAGES.stale,
+      reason: 'orphan_absent_bullmq'
+    };
+  }
+
+  return { release: false, reason: 'live_fresh_heartbeat' };
+}
+
+/**
+ * Release orphan DB "source locks" (running rows whose owning worker is gone).
  */
 export async function releaseOrphanDbSourceLocks({
   pool,
@@ -391,36 +456,41 @@ export async function releaseOrphanDbSourceLocks({
 
   for (const row of runningRes.rows) {
     const jobId = String(row.job_id);
-    const classification = classifyRunningJobForRecovery(row, nowMs);
-    const notInBullmq = !liveBullIds.has(jobId);
+    const inLiveBullmq = liveBullIds.has(jobId);
+    const decision = classifyOrphanSourceLock(row, { inLiveBullmq, nowMs });
 
-    if (!classification && !notInBullmq) continue;
+    if (!decision.release) continue;
 
     orphanLocks.push({
       job_id: jobId,
       integration_key: row.integration_key,
-      reason: classification ? classification.failureType : 'not_in_bullmq',
-      worker_id: row.worker_id
+      reason: decision.failureType,
+      detail: decision.reason,
+      worker_id: row.worker_id,
+      not_in_bullmq: !inLiveBullmq
     });
 
-    const message = classification?.message
-      || FAILURE_MESSAGES.reconciled;
-    const failureType = classification?.failureType || FAILURE_TYPES.RECONCILED;
+    const { message, failureType } = decision;
 
     if (!dryRun) {
       await markQueueJobFailed(pool, jobId, { message, failureType });
       const bullJob = await queue.getJob(jobId);
       if (bullJob) {
         await moveBullJobToFailedAndPurge(bullJob, message, { dryRun: false, queue });
-      } else if (!dryRun) {
+      } else {
         await purgeJobFromBullmqLists(queue, jobId);
       }
     }
 
     console.log(
-      `${logPrefix} Released orphan source lock job_id=${jobId} source=${row.integration_key} reason=${failureType}`
+      `${logPrefix} Released orphan source lock job_id=${jobId} source=${row.integration_key} reason=${failureType} detail=${decision.reason}`
     );
-    actionsTaken.push({ job_id: jobId, integration_key: row.integration_key, failure_type: failureType });
+    actionsTaken.push({
+      job_id: jobId,
+      integration_key: row.integration_key,
+      failure_type: failureType,
+      reason: decision.reason
+    });
   }
 
   return { orphan_locks: orphanLocks, released_count: actionsTaken.length, actions_taken: actionsTaken };
