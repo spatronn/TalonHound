@@ -9,7 +9,9 @@ import {
   extractManualFeedSourceIds,
   filterKnownFeedKeys,
   mergeOrphanPublishedFeedSources,
-  BUILTIN_PUBLISHABLE_FEED_KEYS
+  BUILTIN_PUBLISHABLE_FEED_KEYS,
+  fetchPublishedFeedSourceOptions,
+  loadKnownPublishableFeedKeys
 } from './publishedFeedSources.js';
 import { filtersHash } from './feedPublisherService.js';
 
@@ -134,4 +136,86 @@ test('filterKnownFeedKeys separates valid and missing keys', () => {
 test('BUILTIN_PUBLISHABLE_FEED_KEYS includes known integration feeds', () => {
   assert.equal(BUILTIN_PUBLISHABLE_FEED_KEYS.has('urlhaus-abusech'), true);
   assert.equal(BUILTIN_PUBLISHABLE_FEED_KEYS.has('ctf-abc'), false);
+});
+
+// fetchPublishedFeedSourceOptions and loadKnownPublishableFeedKeys tests
+
+function makeSourceOptionsPool({ activeCustomFeeds = [], deactivatedCustomFeeds = [], manualSources = [], builtInFeeds = [] } = {}) {
+  return {
+    query: async (sql) => {
+      const s = String(sql);
+      // Custom feed source options query (must filter deactivated)
+      if (s.includes('INNER JOIN custom_threat_feeds c') && s.includes('c.deactivated_at IS NULL')) {
+        return { rows: activeCustomFeeds };
+      }
+      // loadKnownPublishableFeedKeys custom query (must filter deactivated)
+      if (s.includes('JOIN custom_threat_feeds c') && s.includes('c.deactivated_at IS NULL')) {
+        return { rows: activeCustomFeeds };
+      }
+      // built-in integration feeds
+      if (s.includes("COALESCE(f.feed_kind, 'built_in') <> 'custom'")) {
+        return { rows: builtInFeeds };
+      }
+      // manual ioc sources
+      if (s.includes('FROM ioc_sources') && s.includes('active = TRUE')) {
+        return { rows: manualSources };
+      }
+      return { rows: [] };
+    }
+  };
+}
+
+test('fetchPublishedFeedSourceOptions excludes deactivated custom feeds', async () => {
+  const pool = makeSourceOptionsPool({
+    activeCustomFeeds: [{ key: 'ctf-active123', name: 'Active Feed', integration_active: true, deactivated_at: null }],
+    // deactivatedCustomFeeds: excluded by SQL WHERE c.deactivated_at IS NULL — won't be returned by mock
+  });
+  const { sources } = await fetchPublishedFeedSourceOptions(pool);
+  const customSources = sources.filter((s) => s.type === 'custom');
+  assert.equal(customSources.length, 1);
+  assert.equal(customSources[0].key, 'ctf-active123');
+});
+
+test('fetchPublishedFeedSourceOptions active custom feed has (custom) display suffix', async () => {
+  const pool = makeSourceOptionsPool({
+    activeCustomFeeds: [{ key: 'ctf-active123', name: 'Active Feed', integration_active: true, deactivated_at: null }]
+  });
+  const { sources } = await fetchPublishedFeedSourceOptions(pool);
+  const src = sources.find((s) => s.key === 'ctf-active123');
+  assert.ok(src, 'active custom feed should appear in sources');
+  assert.equal(src.display_name, 'Active Feed (custom)');
+  assert.equal(src.selectable, true);
+});
+
+test('fetchPublishedFeedSourceOptions disabled (not deactivated) custom feed has (custom, disabled) display suffix', async () => {
+  const pool = makeSourceOptionsPool({
+    activeCustomFeeds: [{ key: 'ctf-disabled123', name: 'Disabled Feed', integration_active: false, deactivated_at: null }]
+  });
+  const { sources } = await fetchPublishedFeedSourceOptions(pool);
+  const src = sources.find((s) => s.key === 'ctf-disabled123');
+  assert.ok(src, 'disabled (not deactivated) custom feed should appear in sources');
+  assert.equal(src.display_name, 'Disabled Feed (custom, disabled)');
+  assert.equal(src.selectable, false);
+  assert.equal(src.active, false);
+});
+
+test('loadKnownPublishableFeedKeys excludes deactivated custom feeds', async () => {
+  const pool = makeSourceOptionsPool({
+    activeCustomFeeds: [{ key: 'ctf-active123' }]
+    // deactivated feed is NOT returned by the SQL (c.deactivated_at IS NULL filter)
+  });
+  const known = await loadKnownPublishableFeedKeys(pool);
+  assert.equal(known.has('ctf-active123'), true, 'active custom feed key should be known');
+  assert.equal(known.has('ctf-deactivated456'), false, 'deactivated custom feed key should not be known');
+});
+
+test('display_name does not double-suffix: no (custom) (custom, disabled) pattern', async () => {
+  const pool = makeSourceOptionsPool({
+    activeCustomFeeds: [{ key: 'ctf-disabled123', name: 'validin-phish-feed-7', integration_active: false, deactivated_at: null }]
+  });
+  const { sources } = await fetchPublishedFeedSourceOptions(pool);
+  const src = sources.find((s) => s.key === 'ctf-disabled123');
+  assert.ok(src);
+  assert.equal(src.display_name.includes('(custom) (custom'), false, 'display_name must not contain double suffix');
+  assert.equal(src.display_name, 'validin-phish-feed-7 (custom, disabled)');
 });

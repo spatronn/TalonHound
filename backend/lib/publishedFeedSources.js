@@ -101,7 +101,9 @@ export async function loadKnownPublishableFeedKeys(pool) {
   const { rows: integrationRows } = await pool.query(
     `SELECT f.key
      FROM integration_feeds f
-     WHERE COALESCE(f.feed_kind, 'built_in') = 'custom'`
+     JOIN custom_threat_feeds c ON c.feed_id = f.integration_id
+     WHERE COALESCE(f.feed_kind, 'built_in') = 'custom'
+       AND c.deactivated_at IS NULL`
   );
   for (const row of integrationRows) {
     if (row?.key) keys.add(String(row.key));
@@ -246,7 +248,8 @@ export async function fetchPublishedFeedSourceOptions(pool, opts = {}) {
      INNER JOIN custom_threat_feeds c ON c.feed_id = f.integration_id
      WHERE f.feed_kind = 'custom'
        AND f.archived_at IS NULL
-     ORDER BY c.deactivated_at NULLS FIRST, f.active DESC, f.name ASC`
+       AND c.deactivated_at IS NULL
+     ORDER BY f.active DESC, f.name ASC`
   );
 
   const { rows: manualRows } = await pool.query(
@@ -278,18 +281,20 @@ export async function fetchPublishedFeedSourceOptions(pool, opts = {}) {
   }
 
   for (const row of customRows) {
-    const active = row.integration_active !== false && row.deactivated_at == null;
+    // c.deactivated_at IS NULL is guaranteed by the query; active reflects integration_feeds.active.
+    const active = row.integration_active !== false;
     const name = row.name || row.key;
+    const displaySuffix = active ? '(custom)' : '(custom, disabled)';
     sources.push({
       key: row.key,
       name,
       type: 'custom',
       group: 'Custom Threat Feeds',
       feed_kind: 'custom',
-      enabled: row.deactivated_at == null,
+      enabled: true,
       active,
       selectable: active,
-      display_name: `${name} (custom)`,
+      display_name: `${name} ${displaySuffix}`,
       source_name: name
     });
   }

@@ -6835,9 +6835,14 @@ function CustomThreatFeedsPage() {
     if (!isAdmin || !deleteModal) return;
     setDeleteLoading(true);
     try {
-      await api.delete(`/custom-threat-feeds/${encodeURIComponent(deleteModal.feed.id)}`);
+      const { data } = await api.delete(`/custom-threat-feeds/${encodeURIComponent(deleteModal.feed.id)}`);
       setDeleteModal(null);
-      setToast('Custom Threat Feed deleted');
+      const unlinkCount = data?.unlinked_published_feed_count;
+      setToast(
+        unlinkCount > 0
+          ? `Custom threat feed deleted. Removed ${unlinkCount} Published Feed reference(s).`
+          : 'Custom Threat Feed deleted'
+      );
       await loadFeeds();
     } catch (err) {
       const msg = err?.response?.data?.message || apiErrorMessage(err, 'Failed to delete Custom Threat Feed');
@@ -7351,8 +7356,8 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
     const alreadySelected = selected.includes(o.key);
     // Non-selectable items can still be unchecked if already selected (allow cleanup without re-enabling).
     const disabled = o.selectable === false && !alreadySelected;
+    // display_name from backend is fully normalized — includes state suffix, no frontend duplication needed.
     const label = o.display_name || o.name || o.key;
-    const isDisabledCustom = !o.missing && o.selectable === false && o.feed_kind === 'custom';
     const isInactiveSelected = alreadySelected && o.selectable === false && !o.missing;
     return (
       <div key={o.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -7368,14 +7373,7 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
               onChange(next);
             }}
           />
-          <span>
-            {label}
-            {isDisabledCustom ? (
-              <span style={{ color: '#64748b', marginLeft: 6 }}>(custom, disabled)</span>
-            ) : !o.missing && o.active === false ? (
-              <span style={{ color: '#64748b', marginLeft: 6 }}>(inactive)</span>
-            ) : null}
-          </span>
+          <span>{label}</span>
         </label>
         {isInactiveSelected ? (
           <div style={{ marginLeft: 26, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
