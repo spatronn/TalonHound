@@ -607,13 +607,14 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
 
   const memRes = await queryWithoutParallelWorkers(
     pool,
-    `SELECT m.ioc_item_id, m.ioc_observable_type, m.last_seen_in_feed AS sort_ts
+    `SELECT m.ioc_item_id, m.ioc_observable_type, MIN(m.first_seen_in_feed) AS sort_ts
      FROM ioc_feed_memberships m
      INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
      WHERE m.status = 'active'
        AND m.purged_at IS NULL
        AND f.archived_at IS NULL
-     ORDER BY m.last_seen_in_feed DESC NULLS LAST
+     GROUP BY m.ioc_item_id, m.ioc_observable_type
+     ORDER BY sort_ts DESC NULLS LAST
      LIMIT $1`,
     [scanLimit]
   );

@@ -1310,7 +1310,8 @@ async function insertObservable(client, { observable, observableType, sourceName
       sourceName,
       sourceUrl,
       explicitConfidence: confFields.source_confidence,
-      category
+      category,
+      reactivateOnly: true
     }));
     return 'duplicate';
   }
