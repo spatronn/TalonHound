@@ -31,6 +31,7 @@ import {
   assertUrlhausMinFetchInterval,
   buildUrlhausCanonicalIocHash,
   buildUrlhausNote,
+  computeUrlhausProviderFingerprint,
   urlhausNotesSemanticallyEqual,
   evaluateUrlhausExportSkip,
   fetchUrlhausExport,
@@ -54,6 +55,7 @@ import {
   THREATFOX_AUTH_REQUIRED_MSG,
   THREATFOX_SOURCE_URL_MASKED,
   buildThreatFoxNote,
+  computeThreatFoxProviderFingerprint,
   threatFoxNotesSemanticallyEqual,
   fetchThreatFoxRecentIocs,
   resolveThreatFoxAuthKey,
@@ -418,10 +420,11 @@ export async function updateUrlhausExistingIocBySource(client, {
   fullNote,
   category,
   dateAddedAt = null,
-  lastOnlineAt = null
+  lastOnlineAt = null,
+  incomingFingerprint = null
 }) {
   const { rows } = await client.query(
-    `SELECT public_id, note, category, first_seen_at, last_seen_at
+    `SELECT public_id, note, category, first_seen_at, last_seen_at, provider_fingerprint
      FROM ioc_items
      WHERE observable = $1
        AND observable_type = $2
@@ -433,6 +436,10 @@ export async function updateUrlhausExistingIocBySource(client, {
   const row = rows[0];
   if (!row) return { status: 'not_found' };
 
+  if (incomingFingerprint && row.provider_fingerprint === incomingFingerprint) {
+    return { status: 'fingerprint_unchanged', publicId: row.public_id };
+  }
+
   const nextFirstSeenAt = mergeUrlhausFirstSeenAt(row.first_seen_at, dateAddedAt);
   const nextLastSeenAt = mergeUrlhausLastSeenAt(row.last_seen_at, lastOnlineAt);
   const semanticChanged = String(row.category || '') !== String(category || '')
@@ -443,8 +450,18 @@ export async function updateUrlhausExistingIocBySource(client, {
     nextLastSeenAt
   });
 
-  if (!semanticChanged && !observationChanged) {
+  if (!semanticChanged && !observationChanged && !incomingFingerprint) {
     return { status: 'unchanged', publicId: row.public_id };
+  }
+  if (!semanticChanged && !observationChanged) {
+    const upd = await client.query(
+      `UPDATE ioc_items
+       SET provider_fingerprint = $2
+       WHERE public_id = $1
+       RETURNING public_id`,
+      [row.public_id, incomingFingerprint]
+    );
+    return { status: 'unchanged', publicId: upd.rows[0]?.public_id || row.public_id };
   }
 
   if (semanticChanged) {
@@ -453,10 +470,11 @@ export async function updateUrlhausExistingIocBySource(client, {
        SET category = $2,
            note = $3,
            first_seen_at = $4,
-           last_seen_at = $5
+           last_seen_at = $5,
+           provider_fingerprint = $6
        WHERE public_id = $1
        RETURNING public_id`,
-      [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt]
+      [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
     );
     return { status: 'updated', publicId: upd.rows[0]?.public_id || row.public_id };
   }
@@ -465,10 +483,11 @@ export async function updateUrlhausExistingIocBySource(client, {
     `UPDATE ioc_items
      SET note = $2,
          first_seen_at = $3,
-         last_seen_at = $4
+         last_seen_at = $4,
+         provider_fingerprint = $5
      WHERE public_id = $1
      RETURNING public_id`,
-    [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt]
+    [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
   );
   return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
 }
@@ -487,6 +506,7 @@ async function maybeReactivateUrlhausMembership(client, entry, sourceName, categ
 export async function updateUrlhausObservableBySource(client, entry, sourceName, note, category) {
   const fullNote = note || buildUrlhausNote(entry);
   const lastOnlineAt = entry.lastOnline || null;
+  const incomingFingerprint = computeUrlhausProviderFingerprint(entry);
   const existing = await updateUrlhausExistingIocBySource(client, {
     observable: entry.observable,
     observableType: entry.observableType,
@@ -494,9 +514,13 @@ export async function updateUrlhausObservableBySource(client, entry, sourceName,
     fullNote,
     category,
     dateAddedAt: entry.dateAdded,
-    lastOnlineAt
+    lastOnlineAt,
+    incomingFingerprint
   });
 
+  if (existing.status === 'fingerprint_unchanged') {
+    return existing;
+  }
   if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
     await maybeReactivateUrlhausMembership(client, entry, sourceName, category);
     return existing;
@@ -551,6 +575,10 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
   const threatClassification = resolveClassificationFromFeed('urlhaus-abusech', entry.threat);
 
   const existing = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
+  if (existing.status === 'fingerprint_unchanged') {
+    metrics.noteUnchanged();
+    return;
+  }
   if (existing.status === 'updated') {
     metrics.noteUpdated();
     await storeFeedSourceEvidence(client, {
@@ -606,7 +634,9 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
 
   if (insertResult === 'duplicate') {
     const existingAfterDuplicate = await updateUrlhausObservableBySource(client, entry, sourceName, note, category);
-    if (existingAfterDuplicate.status === 'updated') {
+    if (existingAfterDuplicate.status === 'fingerprint_unchanged') {
+      metrics.noteUnchanged();
+    } else if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
     } else if (existingAfterDuplicate.status === 'unchanged' || existingAfterDuplicate.status === 'observation_updated') {
       metrics.noteSkipped();
@@ -762,10 +792,11 @@ export async function updateThreatFoxExistingIocBySource(client, {
   fullNote,
   category,
   firstSeenAt = null,
-  lastSeenAt = null
+  lastSeenAt = null,
+  incomingFingerprint = null
 }) {
   const { rows } = await client.query(
-    `SELECT public_id, note, category, first_seen_at, last_seen_at
+    `SELECT public_id, note, category, first_seen_at, last_seen_at, provider_fingerprint
      FROM ioc_items
      WHERE observable = $1
        AND observable_type = $2
@@ -777,6 +808,10 @@ export async function updateThreatFoxExistingIocBySource(client, {
   const row = rows[0];
   if (!row) return { status: 'not_found' };
 
+  if (incomingFingerprint && row.provider_fingerprint === incomingFingerprint) {
+    return { status: 'fingerprint_unchanged', publicId: row.public_id };
+  }
+
   const nextFirstSeenAt = mergeThreatFoxFirstSeenAt(row.first_seen_at, firstSeenAt);
   const nextLastSeenAt = mergeThreatFoxLastSeenAt(row.last_seen_at, lastSeenAt);
   const semanticChanged = String(row.category || '') !== String(category || '')
@@ -787,8 +822,18 @@ export async function updateThreatFoxExistingIocBySource(client, {
     nextLastSeenAt
   });
 
-  if (!semanticChanged && !observationChanged) {
+  if (!semanticChanged && !observationChanged && !incomingFingerprint) {
     return { status: 'unchanged', publicId: row.public_id };
+  }
+  if (!semanticChanged && !observationChanged) {
+    const upd = await client.query(
+      `UPDATE ioc_items
+       SET provider_fingerprint = $2
+       WHERE public_id = $1
+       RETURNING public_id`,
+      [row.public_id, incomingFingerprint]
+    );
+    return { status: 'unchanged', publicId: upd.rows[0]?.public_id || row.public_id };
   }
 
   if (semanticChanged) {
@@ -797,10 +842,11 @@ export async function updateThreatFoxExistingIocBySource(client, {
        SET category = $2,
            note = $3,
            first_seen_at = $4,
-           last_seen_at = $5
+           last_seen_at = $5,
+           provider_fingerprint = $6
        WHERE public_id = $1
        RETURNING public_id`,
-      [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt]
+      [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
     );
     return { status: 'updated', publicId: upd.rows[0]?.public_id || row.public_id };
   }
@@ -809,10 +855,11 @@ export async function updateThreatFoxExistingIocBySource(client, {
     `UPDATE ioc_items
      SET note = $2,
          first_seen_at = $3,
-         last_seen_at = $4
+         last_seen_at = $4,
+         provider_fingerprint = $5
      WHERE public_id = $1
      RETURNING public_id`,
-    [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt]
+    [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
   );
   return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
 }
@@ -831,6 +878,7 @@ async function maybeReactivateThreatFoxMembership(client, entry, sourceName, cat
 
 export async function updateThreatFoxObservableBySource(client, entry, sourceName, note, category) {
   const fullNote = note || buildThreatFoxNote(entry);
+  const incomingFingerprint = computeThreatFoxProviderFingerprint(entry);
   const existing = await updateThreatFoxExistingIocBySource(client, {
     observable: entry.observable,
     observableType: entry.observableType,
@@ -838,9 +886,13 @@ export async function updateThreatFoxObservableBySource(client, entry, sourceNam
     fullNote,
     category,
     firstSeenAt: entry.firstSeen,
-    lastSeenAt: entry.lastSeen || entry.firstSeen
+    lastSeenAt: entry.lastSeen || entry.firstSeen,
+    incomingFingerprint
   });
 
+  if (existing.status === 'fingerprint_unchanged') {
+    return existing;
+  }
   if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
     // Active membership: skip last_seen_in_feed refresh on unchanged/observation-only rows.
     // Inactive/expired membership: reactivate (updates last_seen_in_feed by design).
@@ -876,6 +928,10 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
   const threatClassification = resolveClassificationFromFeed('threatfox-abusech', entry.threatType);
 
   const existing = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
+  if (existing.status === 'fingerprint_unchanged') {
+    metrics.noteUnchanged();
+    return;
+  }
   if (existing.status === 'updated') {
     metrics.noteUpdated();
     await storeFeedSourceEvidence(client, {
@@ -931,7 +987,9 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
 
   if (insertResult === 'duplicate') {
     const existingAfterDuplicate = await updateThreatFoxObservableBySource(client, entry, sourceName, note, category);
-    if (existingAfterDuplicate.status === 'updated') {
+    if (existingAfterDuplicate.status === 'fingerprint_unchanged') {
+      metrics.noteUnchanged();
+    } else if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
     } else if (existingAfterDuplicate.status === 'unchanged' || existingAfterDuplicate.status === 'observation_updated') {
       metrics.noteSkipped();

@@ -8,6 +8,7 @@ export function createImportMetrics() {
     records_updated: 0,
     records_duplicate: 0,
     records_skipped: 0,
+    records_unchanged: 0,
     records_suppressed: 0,
     records_failed: 0,
     noteInsert() {
@@ -22,6 +23,11 @@ export function createImportMetrics() {
     noteSkipped(n = 1) {
       this.records_skipped += Math.max(0, Number(n) || 0);
     },
+    noteUnchanged(n = 1) {
+      const count = Math.max(0, Number(n) || 0);
+      this.records_unchanged += count;
+      this.records_skipped += count;
+    },
     noteFailed(n = 1) {
       this.records_failed += Math.max(0, Number(n) || 0);
     },
@@ -34,6 +40,7 @@ export function createImportMetrics() {
       this.records_updated += Number(other.records_updated || 0);
       this.records_duplicate += Number(other.records_duplicate || 0);
       this.records_skipped += Number(other.records_skipped || 0);
+      this.records_unchanged += Number(other.records_unchanged || 0);
       this.records_suppressed += Number(other.records_suppressed || 0);
       this.records_failed += Number(other.records_failed || 0);
     },
@@ -55,6 +62,7 @@ export function createImportMetrics() {
         records_updated: this.records_updated,
         records_duplicate: this.records_duplicate,
         records_skipped: this.records_skipped,
+        records_unchanged: this.records_unchanged,
         records_suppressed: this.records_suppressed,
         records_failed: this.records_failed
       };

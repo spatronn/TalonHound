@@ -165,6 +165,26 @@ export function urlhausNotesSemanticallyEqual(storedNote, incomingNote) {
 }
 
 /**
+ * Stable SHA-256 fingerprint of provider-supplied metadata that is meaningful
+ * and unlikely to change unless the IOC record genuinely changed.
+ * Excludes last_online (volatile, updated on every poll by URLHaus).
+ */
+export function computeUrlhausProviderFingerprint(entry) {
+  const payload = JSON.stringify({
+    provider: 'urlhaus',
+    external_id: String(entry.externalId ?? ''),
+    observable: String(entry.observable ?? ''),
+    url_status: String(entry.urlStatus ?? ''),
+    threat: String(entry.threat ?? ''),
+    tags: [...(entry.tags ?? [])].sort(),
+    reporter: String(entry.reporter ?? ''),
+    reference_url: String(entry.referenceUrl ?? ''),
+    date_added: entry.dateAdded ? new Date(entry.dateAdded).toISOString() : null
+  });
+  return createHash('sha256').update(payload).digest('hex');
+}
+
+/**
  * Parse URLhaus recent.csv text. Returns entries and line stats.
  */
 export function parseUrlhausRecentCsv(text) {

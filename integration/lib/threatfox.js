@@ -2,6 +2,8 @@
  * ThreatFox recent IOC API (abuse.ch) — auth, parsing, and safe logging.
  */
 
+import { createHash } from 'node:crypto';
+
 export const THREATFOX_FEED_KEY = 'threatfox-abusech';
 export const THREATFOX_API_URL_DEFAULT = 'https://threatfox-api.abuse.ch/api/v1/';
 export const THREATFOX_SOURCE_URL_MASKED = THREATFOX_API_URL_DEFAULT;
@@ -188,6 +190,28 @@ export function buildThreatFoxSemanticNote(entry) {
 
 export function threatFoxNotesSemanticallyEqual(storedNote, incomingNote) {
   return stripThreatFoxVolatileNoteParts(storedNote) === stripThreatFoxVolatileNoteParts(incomingNote);
+}
+
+/**
+ * Stable SHA-256 fingerprint of provider-supplied metadata that is meaningful
+ * and unlikely to change unless the IOC record genuinely changed.
+ * Excludes last_seen (volatile, updated on every ThreatFox poll).
+ */
+export function computeThreatFoxProviderFingerprint(entry) {
+  const payload = JSON.stringify({
+    provider: 'threatfox',
+    ioc_id: String(entry.iocId ?? ''),
+    observable: String(entry.observable ?? ''),
+    threat_type: String(entry.threatType ?? ''),
+    malware: String(entry.malwarePrintable ?? entry.malware ?? ''),
+    malware_alias: String(entry.malwareAlias ?? ''),
+    reporter: String(entry.reporter ?? ''),
+    confidence: String(entry.confidence ?? ''),
+    reference: String(entry.reference ?? ''),
+    tags: [...(entry.tags ?? [])].sort(),
+    first_seen: entry.firstSeen ? new Date(entry.firstSeen).toISOString() : null
+  });
+  return createHash('sha256').update(payload).digest('hex');
 }
 
 export function parseThreatFoxApiResponse(json) {
