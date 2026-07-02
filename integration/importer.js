@@ -748,10 +748,10 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     const existingAfterDuplicate = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
     if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
-    } else if (existingAfterDuplicate.status === 'unchanged') {
-      metrics.noteSkipped();
     } else {
-      metrics.noteDuplicate();
+      // 'unchanged' or 'not_found' (different source owns the ioc_items row):
+      // source evidence and feed membership were already stored by insertObservable.
+      metrics.noteSkipped();
     }
     return;
   }

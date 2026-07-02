@@ -91,6 +91,7 @@ import {
   buildIocDetailsSourceEvidence,
   fetchFeedSourceEvidenceForItems
 } from './lib/iocFeedSourceEvidence.js';
+import { buildFileInformation } from './lib/iocFileInformation.js';
 import {
   buildIocStatsCacheKey,
   readIocStatsCache,
@@ -568,63 +569,6 @@ async function bulkRawSyslogEvidence(rows = []) {
   return byEventId;
 }
 
-function buildFileInformation(rows, observable, observableType) {
-  const type = String(observableType || '').toLowerCase();
-  const fileTypes = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
-  const looksLikeFileIoc = fileTypes.has(type);
-
-  let md5 = null;
-  let sha1 = null;
-  let sha256 = null;
-  let ssdeep = null;
-  let imphash = null;
-  let tlsh = null;
-  let fileName = null;
-  let fileType = null;
-  let mime = null;
-  let reporter = null;
-  let vtpercent = null;
-
-  for (const row of rows) {
-    const kv = parseNoteKeyValues(row.note);
-    md5 = md5 || kv.md5 || null;
-    sha1 = sha1 || kv.sha1 || null;
-    sha256 = sha256 || kv.sha256 || null;
-    ssdeep = ssdeep || kv.ssdeep || null;
-    imphash = imphash || kv.imphash || null;
-    tlsh = tlsh || kv.tlsh || null;
-    fileName = fileName || kv.file_name || null;
-    fileType = fileType || kv.file_type || null;
-    mime = mime || kv.mime || null;
-    reporter = reporter || kv.reporter || null;
-    vtpercent = vtpercent || kv.vtpercent || null;
-  }
-
-  if (type === 'sha256' && !sha256) sha256 = observable;
-  if (type === 'sha1' && !sha1) sha1 = observable;
-  if (type === 'md5' && !md5) md5 = observable;
-  if (type === 'ssdeep' && !ssdeep) ssdeep = observable;
-
-  const hasData = Boolean(
-    md5 || sha1 || sha256 || ssdeep || imphash || tlsh || fileName || fileType || mime || reporter || vtpercent
-  );
-
-  if (!hasData && !looksLikeFileIoc) return null;
-
-  return {
-    md5,
-    sha1,
-    sha256,
-    ssdeep,
-    imphash,
-    tlsh,
-    file_name: fileName,
-    file_type: fileType,
-    mime,
-    reporter,
-    vtpercent
-  };
-}
 
 async function refreshGeoCache(limit = 20000) {
   if (geoCacheRefreshInProgress) return;
@@ -7526,7 +7470,7 @@ app.get('/api/ioc/details', async (req, res) => {
       source_names: membershipSummary.activeSourceNames,
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
-      file_information: buildFileInformation(rows, observable, rows[0].observable_type)
+      file_information: buildFileInformation(rows, observable, rows[0].observable_type, evidenceRows)
     };
 
     let confidenceDetail = null;
