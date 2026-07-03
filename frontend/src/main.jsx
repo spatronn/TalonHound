@@ -14857,55 +14857,58 @@ function IOCDetailsPage() {
                       const hasTags = iocTags.length > 0 || feedOnlyTags.length > 0;
                       return (
                         <>
-                          {iocTags.map((tag) => (
-                            <span
-                              key={`tag-${tag.id}`}
-                              title={tag.is_active === false ? 'Inactive tag (no longer available for new assignments)' : undefined}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '4px 8px',
-                                borderRadius: 999,
-                                border: `1px solid ${tag.is_active === false ? '#64748b' : (tag.color || '#475569')}`,
-                                fontSize: 12,
-                                color: tag.is_active === false ? '#94a3b8' : '#e2e8f0',
-                                background: tag.color && tag.is_active !== false ? `${tag.color}22` : 'transparent',
-                                opacity: tag.is_active === false ? 0.85 : 1
-                              }}
-                            >
-                              {tag.name}
-                              <button
-                                type="button"
-                                onClick={() => removeIocTag(tag.id).catch(() => {})}
-                                title="Remove tag"
-                                aria-label={`Remove ${tag.name}`}
-                                style={{ padding: 0, border: 'none', background: 'transparent', color: '#94a3b8', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1 }}
-                                disabled={tagsSaving}
+                          {iocTags.map((tag) => {
+                            const inactive = tag.is_active === false;
+                            return (
+                              <span
+                                key={`tag-${tag.id}`}
+                                title={inactive ? 'Inactive tag (no longer available for new assignments)' : 'Added by analyst'}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  padding: '3px 8px',
+                                  borderRadius: 999,
+                                  border: `1px solid ${inactive ? '#44403c' : '#92400e'}`,
+                                  fontSize: 12,
+                                  color: inactive ? '#78716c' : '#fbbf24',
+                                  background: inactive ? 'transparent' : 'rgba(146,64,14,0.12)',
+                                  opacity: inactive ? 0.75 : 1
+                                }}
                               >
-                                ×
-                              </button>
-                            </span>
-                          ))}
+                                {tag.name}
+                                <button
+                                  type="button"
+                                  onClick={() => removeIocTag(tag.id).catch(() => {})}
+                                  title="Remove tag"
+                                  aria-label={`Remove ${tag.name}`}
+                                  style={{ padding: 0, border: 'none', background: 'transparent', color: inactive ? '#57534e' : '#a16207', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
+                                  disabled={tagsSaving}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            );
+                          })}
                           {feedOnlyTags.map((ft) => (
                             <span
                               key={`feedtag-${ft.normalized}`}
-                              title={`Source: ${ft.source_name}`}
+                              title={ft.source_name ? `Imported from ${ft.source_name}` : 'Imported from feed'}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
-                                padding: '4px 8px',
+                                padding: '3px 8px',
                                 borderRadius: 999,
                                 border: '1px solid #1e40af',
                                 fontSize: 12,
                                 color: '#93c5fd',
-                                background: 'rgba(30,64,175,0.15)'
+                                background: 'rgba(30,64,175,0.12)'
                               }}
                             >
                               {ft.tag}
                             </span>
                           ))}
-                          {!hasTags ? <span style={{ color: '#94a3b8', fontSize: 12 }}>No tags</span> : null}
+                          {!hasTags ? <span style={{ color: '#64748b', fontSize: 12 }}>No tags</span> : null}
                         </>
                       );
                     })()}
