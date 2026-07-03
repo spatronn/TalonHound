@@ -133,7 +133,8 @@ export function isCacheFresh(row, { force = false } = {}) {
   const ageMs = Date.now() - at;
 
   if (row.provider_status === 'failed') {
-    return ageMs < 60 * 60 * 1000;
+    // Don't cache transient failures — each manual retry should hit the API.
+    return false;
   }
 
   if (force) {
