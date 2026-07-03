@@ -14823,7 +14823,12 @@ function IOCDetailsPage() {
                     ) : null}
                   </div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <ThreatClassificationBadges classifications={summary.threat_classifications} />
+                    <ThreatClassificationBadges classifications={(() => {
+                      const analyst = summary.threat_classifications || [];
+                      const existing = new Set(analyst.map((c) => c.value));
+                      const feed = (summary.feed_intelligence?.classifications || []).filter((c) => !existing.has(c.value));
+                      return [...analyst, ...feed];
+                    })()} />
                   </div>
                 </div>
 
@@ -14844,36 +14849,66 @@ function IOCDetailsPage() {
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                   <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {iocTags.length ? iocTags.map((tag) => (
-                      <span
-                        key={`tag-${tag.id}`}
-                        title={tag.is_active === false ? 'Inactive tag (no longer available for new assignments)' : undefined}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '4px 8px',
-                          borderRadius: 999,
-                          border: `1px solid ${tag.is_active === false ? '#64748b' : (tag.color || '#475569')}`,
-                          fontSize: 12,
-                          color: tag.is_active === false ? '#94a3b8' : '#e2e8f0',
-                          background: tag.color && tag.is_active !== false ? `${tag.color}22` : 'transparent',
-                          opacity: tag.is_active === false ? 0.85 : 1
-                        }}
-                      >
-                        {tag.name}
-                        <button
-                          type="button"
-                          onClick={() => removeIocTag(tag.id).catch(() => {})}
-                          title="Remove tag"
-                          aria-label={`Remove ${tag.name}`}
-                          style={{ padding: 0, border: 'none', background: 'transparent', color: '#94a3b8', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1 }}
-                          disabled={tagsSaving}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    )) : <span style={{ color: '#94a3b8', fontSize: 12 }}>No tags</span>}
+                    {(() => {
+                      const analystTagNorms = new Set(iocTags.map((t) => (t.name || '').toLowerCase()));
+                      const feedOnlyTags = (summary?.feed_intelligence?.tags || []).filter(
+                        (ft) => !analystTagNorms.has(ft.normalized)
+                      );
+                      const hasTags = iocTags.length > 0 || feedOnlyTags.length > 0;
+                      return (
+                        <>
+                          {iocTags.map((tag) => (
+                            <span
+                              key={`tag-${tag.id}`}
+                              title={tag.is_active === false ? 'Inactive tag (no longer available for new assignments)' : undefined}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '4px 8px',
+                                borderRadius: 999,
+                                border: `1px solid ${tag.is_active === false ? '#64748b' : (tag.color || '#475569')}`,
+                                fontSize: 12,
+                                color: tag.is_active === false ? '#94a3b8' : '#e2e8f0',
+                                background: tag.color && tag.is_active !== false ? `${tag.color}22` : 'transparent',
+                                opacity: tag.is_active === false ? 0.85 : 1
+                              }}
+                            >
+                              {tag.name}
+                              <button
+                                type="button"
+                                onClick={() => removeIocTag(tag.id).catch(() => {})}
+                                title="Remove tag"
+                                aria-label={`Remove ${tag.name}`}
+                                style={{ padding: 0, border: 'none', background: 'transparent', color: '#94a3b8', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1 }}
+                                disabled={tagsSaving}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                          {feedOnlyTags.map((ft) => (
+                            <span
+                              key={`feedtag-${ft.normalized}`}
+                              title={`Source: ${ft.source_name}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '4px 8px',
+                                borderRadius: 999,
+                                border: '1px solid #1e40af',
+                                fontSize: 12,
+                                color: '#93c5fd',
+                                background: 'rgba(30,64,175,0.15)'
+                              }}
+                            >
+                              {ft.tag}
+                            </span>
+                          ))}
+                          {!hasTags ? <span style={{ color: '#94a3b8', fontSize: 12 }}>No tags</span> : null}
+                        </>
+                      );
+                    })()}
 
                     <div style={{ position: 'relative' }} ref={tagDropdownRef}>
                       <button type="button" onClick={() => setTagDropdownOpen((v) => !v)} disabled={tagsSaving}>

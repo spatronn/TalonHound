@@ -92,6 +92,7 @@ import {
   fetchFeedSourceEvidenceForItems
 } from './lib/iocFeedSourceEvidence.js';
 import { buildFileInformation } from './lib/iocFileInformation.js';
+import { buildFeedIntelligence } from './lib/feedTagNormalization.js';
 import {
   buildIocStatsCacheKey,
   readIocStatsCache,
@@ -7470,7 +7471,8 @@ app.get('/api/ioc/details', async (req, res) => {
       source_names: membershipSummary.activeSourceNames,
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
-      file_information: buildFileInformation(rows, observable, rows[0].observable_type, evidenceRows)
+      file_information: buildFileInformation(rows, observable, rows[0].observable_type, evidenceRows),
+      feed_intelligence: buildFeedIntelligence(evidenceRows)
     };
 
     let confidenceDetail = null;

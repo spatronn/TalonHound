@@ -474,6 +474,70 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
   );
 }
 
+const NOTE_SKIP_KEYS = new Set([
+  'file_name', 'file_type', 'mime', 'md5', 'sha1', 'sha256', 'imphash', 'tlsh', 'ssdeep'
+]);
+
+const NOTE_KEY_LABELS = {
+  external_id: 'External ID',
+  reference_url: 'Reference',
+  url_status: 'URL Status',
+  reporter: 'Reporter',
+  date_added: 'Date Added',
+  last_online: 'Last Online',
+  ioc_id: 'IOC ID',
+  threat_type: 'Threat Type',
+  malware: 'Malware',
+  malware_alias: 'Aliases',
+  confidence: 'Confidence',
+  reference: 'Reference',
+  first_seen: 'First Seen',
+  last_seen: 'Last Seen',
+  signature: 'Signature',
+  vtpercent: 'VT %',
+  pulse_id: 'Pulse ID',
+  pulse_name: 'Pulse',
+  adversary: 'Adversary',
+  tlp: 'TLP',
+  tags: 'Tags',
+};
+
+function SourceNoteDisplay({ note }) {
+  const raw = String(note || '').trim();
+  if (!raw) return <span style={{ color: '#64748b' }}>—</span>;
+
+  const parts = raw.split(' | ').map((p) => p.trim()).filter(Boolean);
+  const header = parts[0] && !parts[0].includes('=') ? parts[0] : null;
+  const pairs = parts
+    .slice(header ? 1 : 0)
+    .map((p) => {
+      const eq = p.indexOf('=');
+      if (eq <= 0) return null;
+      const key = p.slice(0, eq).trim().toLowerCase();
+      const val = p.slice(eq + 1).trim();
+      return NOTE_SKIP_KEYS.has(key) ? null : { key, val };
+    })
+    .filter(Boolean);
+
+  if (!header && !pairs.length) return <span style={{ color: '#64748b' }}>—</span>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {header ? <span style={{ color: '#94a3b8', fontSize: 11 }}>{header}</span> : null}
+      {pairs.map(({ key, val }) => (
+        <div key={key} style={{ display: 'flex', gap: 6, lineHeight: 1.4 }}>
+          <span style={{ color: '#64748b', flexShrink: 0, minWidth: 80 }}>{NOTE_KEY_LABELS[key] || key}:</span>
+          {key === 'reference_url' || key === 'reference' ? (
+            <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', overflowWrap: 'anywhere' }}>{val}</a>
+          ) : (
+            <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{val}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function SourceEvidenceSection({ sources, formatUserDateTime, sanitizeSourceNote }) {
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
@@ -491,7 +555,7 @@ export function SourceEvidenceSection({ sources, formatUserDateTime, sanitizeSou
               <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_url || '-'}</td>
               <td>{s.confidence || '-'}</td>
               <td>{s.category || '-'}</td>
-              <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{sanitizeSourceNote(s.note)}</td>
+              <td style={{ whiteSpace: 'normal' }}><SourceNoteDisplay note={s.note} /></td>
               <td>{formatUserDateTime(s.created_at)}</td>
             </tr>
           ))}
