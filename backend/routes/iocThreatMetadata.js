@@ -276,7 +276,11 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
   const detailMap = await loadIocThreatClassificationDetails(pool, pairs);
   for (const row of rows) {
     const key = `${Number(row.id)}|${String(row.observable_type)}`;
-    const fields = detailMap.get(key) || buildMultiThreatClassificationResponseFields([]);
+    let fields = detailMap.get(key);
+    if (!fields) {
+      const slugs = normalizeIocThreatClassificationSlugs(row.threat_classification);
+      fields = buildMultiThreatClassificationResponseFields(slugs.length ? slugs : []);
+    }
     map.set(key, {
       ...fields,
       threat_actor_id: row.threat_actor_id || null,
