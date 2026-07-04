@@ -13,6 +13,7 @@ import {
   confidenceLabel
 } from './lib/iocConfidenceCard.js';
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
+import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import './incidents.css';
@@ -12457,6 +12458,11 @@ function IOCListPage() {
               const lifecycleStatus = String(r.lifecycle_status || r.status || 'active').toLowerCase();
               const sourceLabel = iocListSourceLabel(r);
               const sourceExtra = Number(r.display_source_extra || 0) || Math.max(0, Number(r.source_count || 0) - 1);
+              const classVisible = normalizeVisibleClassifications(r.threat_classifications);
+              const classExtra = classVisible.length - 1;
+              const classTitle = classVisible.length
+                ? classVisible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ')
+                : 'Unknown';
               return (
               <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
@@ -12486,8 +12492,18 @@ function IOCListPage() {
                   ) : null}
                 </td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
-                <td title={formatThreatClassificationsText(r.threat_classifications)} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
-                  {formatThreatClassificationsText(r.threat_classifications)}
+                <td title={classTitle} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
+                  {classVisible.length === 0
+                    ? <span style={{ color: '#94a3b8' }}>Unknown</span>
+                    : <>
+                        <span>{classVisible[0].label || formatThreatClassificationLabel(classVisible[0].value)}</span>
+                        {classExtra > 0 && (
+                          <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', verticalAlign: 'middle', display: 'inline-block' }}>
+                            +{classExtra}
+                          </span>
+                        )}
+                      </>
+                  }
                 </td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   {iocStatusBadge(isSuppressed ? 'suppressed' : lifecycleStatus)}
