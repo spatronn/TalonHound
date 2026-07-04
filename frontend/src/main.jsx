@@ -631,6 +631,51 @@ function buildExpirationPatchPayload(exp) {
   return payload;
 }
 
+const EXPIRATION_OVERRIDE_IOC_TYPES = ['domain', 'ip', 'url', 'file_hash'];
+const EXPIRATION_OVERRIDE_MODES = ['inherit', 'no_expire', 'fixed_ttl'];
+
+function buildExpirationTypePoliciesPayload(overrides) {
+  const out = [];
+  const src = overrides || {};
+  for (const iocType of EXPIRATION_OVERRIDE_IOC_TYPES) {
+    const o = src[iocType] || {};
+    const mode = EXPIRATION_OVERRIDE_MODES.includes(o.mode) ? o.mode : 'inherit';
+    const entry = { ioc_type: iocType, mode, ttl_days: null };
+    if (mode === 'fixed_ttl') {
+      const raw = o.ttl_days;
+      const n = raw === '' || raw == null ? NaN : parseInt(String(raw), 10);
+      if (Number.isFinite(n) && n > 0) entry.ttl_days = n;
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
+function buildExpirationFullPatchPayload(exp) {
+  return {
+    ...buildExpirationPatchPayload(exp),
+    expiration_type_policies: buildExpirationTypePoliciesPayload(exp?.type_overrides)
+  };
+}
+
+/** Human-readable effective policy preview for one IOC type. */
+function formatTypeOverridePreview(label, override, feedExp) {
+  const mode = override?.mode || 'inherit';
+  if (mode === 'no_expire') return `${label}: No expire`;
+  if (mode === 'fixed_ttl') {
+    const n = parseInt(String(override?.ttl_days), 10);
+    return Number.isFinite(n) && n > 0 ? `${label}: Fixed TTL ${n} days` : `${label}: Fixed TTL (set days)`;
+  }
+  // inherit
+  if (!feedExp?.enabled || feedExp?.expiration_mode === 'never') {
+    return `${label}: Inherits default (no expiration)`;
+  }
+  const days = parseInt(String(feedExp?.ttl_days ?? feedExp?.grace_days), 10);
+  return Number.isFinite(days) && days > 0
+    ? `${label}: Inherits default ${days} days`
+    : `${label}: Inherits default`;
+}
+
 function auditSeverityBadgeStyle(severity) {
   const s = String(severity || 'info').toLowerCase();
   const base = { display: 'inline-block', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' };
@@ -4620,13 +4665,43 @@ function iocSourceTypeLabel(source) {
   return source.source_type === 'manual' ? 'Manual source' : 'Feed';
 }
 
-function defaultExpirationDraft(policy) {
+const EXPIRATION_TYPE_OVERRIDE_TYPES = [
+  { id: 'domain', label: 'Domain' },
+  { id: 'ip', label: 'IP' },
+  { id: 'url', label: 'URL' },
+  { id: 'file_hash', label: 'Hash' }
+];
+
+const EXPIRATION_TYPE_OVERRIDE_MODES = [
+  { id: 'inherit', label: 'Inherit' },
+  { id: 'no_expire', label: 'No expire' },
+  { id: 'fixed_ttl', label: 'Fixed TTL' }
+];
+
+function defaultTypeOverridesDraft(typePolicies) {
+  const byType = {};
+  for (const entry of Array.isArray(typePolicies) ? typePolicies : []) {
+    if (entry?.ioc_type) byType[entry.ioc_type] = entry;
+  }
+  const draft = {};
+  for (const t of EXPIRATION_TYPE_OVERRIDE_TYPES) {
+    const p = byType[t.id];
+    draft[t.id] = {
+      mode: p?.mode || 'inherit',
+      ttl_days: p?.ttl_days ?? ''
+    };
+  }
+  return draft;
+}
+
+function defaultExpirationDraft(policy, typePolicies) {
   const p = policy || {};
   return {
     enabled: Boolean(p.enabled),
     expiration_mode: p.expiration_mode || 'never',
     ttl_days: p.ttl_days ?? '',
-    grace_days: p.grace_days ?? ''
+    grace_days: p.grace_days ?? '',
+    type_overrides: defaultTypeOverridesDraft(typePolicies)
   };
 }
 
@@ -5011,6 +5086,57 @@ function FeedSettingsModal({
                 <li>It will remain in database with status=expired</li>
               </ul>
             </div>
+
+            <div style={{ borderTop: '1px solid #1e293b', paddingTop: 12, marginTop: 2 }}>
+              <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>IOC Type Overrides</div>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+                IOC type overrides take precedence over the feed default expiration policy.
+              </div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {EXPIRATION_TYPE_OVERRIDE_TYPES.map((t) => {
+                  const ovr = (exp.type_overrides && exp.type_overrides[t.id]) || { mode: 'inherit', ttl_days: '' };
+                  const isFixed = ovr.mode === 'fixed_ttl';
+                  const setOverride = (patch) => onExpirationChange({
+                    ...exp,
+                    type_overrides: {
+                      ...(exp.type_overrides || {}),
+                      [t.id]: { ...ovr, ...patch }
+                    }
+                  });
+                  return (
+                    <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 110px', gap: 8, alignItems: 'center' }}>
+                      <span style={{ color: '#e2e8f0' }}>{t.label}</span>
+                      <select
+                        value={ovr.mode}
+                        disabled={!canWrite || savingExpiration}
+                        onChange={(e) => setOverride({ mode: e.target.value })}
+                        style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
+                      >
+                        {EXPIRATION_TYPE_OVERRIDE_MODES.map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        required={isFixed}
+                        placeholder="TTL days"
+                        value={isFixed ? ovr.ttl_days : ''}
+                        disabled={!canWrite || savingExpiration || !isFixed}
+                        onChange={(e) => setOverride({ ttl_days: e.target.value })}
+                        style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13, opacity: isFixed ? 1 : 0.5 }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 10, padding: 10, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', color: '#cbd5e1', fontSize: 12, lineHeight: 1.6 }}>
+                {EXPIRATION_TYPE_OVERRIDE_TYPES.map((t) => (
+                  <div key={t.id}>{formatTypeOverridePreview(t.label, (exp.type_overrides || {})[t.id], exp)}</div>
+                ))}
+              </div>
+            </div>
+
             {canWrite ? (
               <button type="button" onClick={onSaveExpiration} disabled={savingExpiration}>
                 {savingExpiration ? 'Saving...' : 'Save Expiration Policy'}
@@ -5708,7 +5834,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     });
     try {
       const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feed.key)}/expiration-policy`);
-      setSettingsDraftExpiration(defaultExpirationDraft(data?.policy));
+      setSettingsDraftExpiration(defaultExpirationDraft(data?.policy, data?.expiration_type_policies));
     } catch {
       setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     }
@@ -5926,7 +6052,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     try {
       const { data } = await api.patch(
         `/threat-feeds/${encodeURIComponent(key)}/expiration-policy`,
-        buildExpirationPatchPayload(settingsDraftExpiration)
+        buildExpirationFullPatchPayload(settingsDraftExpiration)
       );
       patchData = data;
     } catch (err) {
@@ -5944,7 +6070,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     const policy = patchData?.policy;
     const summary = patchData?.summary;
     if (policy) {
-      setSettingsDraftExpiration(defaultExpirationDraft(policy));
+      setSettingsDraftExpiration(defaultExpirationDraft(policy, patchData?.expiration_type_policies));
       setIntegrations((prev) => prev.map((i) => (
         i.key === key
           ? { ...i, expiration_policy: policy, expiration_summary: summary || i.expiration_summary }
@@ -6703,7 +6829,7 @@ function CustomThreatFeedsPage() {
     if (feedKey) {
       try {
         const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feedKey)}/expiration-policy`);
-        setDraftExpiration(defaultExpirationDraft(data?.policy));
+        setDraftExpiration(defaultExpirationDraft(data?.policy, data?.expiration_type_policies));
       } catch {
         setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
       }

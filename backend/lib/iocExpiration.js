@@ -12,8 +12,14 @@ import {
   getImportOptimizationContext,
   isIocSuppressedFromIndex,
   resolveFeedPolicyFromContext,
+  resolveTypePolicyFromContext,
+  pickTypePolicyFromRows,
   scheduleDeferredIocRecompute
 } from './importOptimizationContext.js';
+import {
+  normalizeIocTypeForPolicy,
+  resolveExpirationPolicy
+} from './feedExpirationPolicy.js';
 
 export const EXPIRATION_MODES = Object.freeze([
   'never',
@@ -240,19 +246,75 @@ export async function resolveFeedIdByKey(client, feedKey) {
   return row?.feed_id || null;
 }
 
-export async function getFeedPolicy(client, feedId, observableType = 'all', opts = {}) {
+/**
+ * Apply an IOC-type override on top of the feed-level default policy.
+ * Returns a new policy object with enabled / expiration_mode / ttl_days
+ * adjusted so that downstream computePolicyExpiresAt honors the override.
+ * The base policy is never mutated.
+ */
+export function applyTypeOverrideToFeedPolicy(basePolicy, typeOverrideRow) {
+  if (!typeOverrideRow || typeOverrideRow.mode === 'inherit') return basePolicy;
+
+  const feedPolicy = {
+    enabled: Boolean(basePolicy?.enabled),
+    ttlDays: basePolicy?.ttl_days == null ? null : Number(basePolicy.ttl_days)
+  };
+  const resolved = resolveExpirationPolicy(feedPolicy, {
+    mode: typeOverrideRow.mode,
+    ttl_days: typeOverrideRow.ttl_days
+  });
+
+  if (resolved.source !== 'type_override') return basePolicy;
+
+  if (!resolved.enabled) {
+    return { ...(basePolicy || {}), enabled: false, expiration_mode: 'never', ttl_days: null };
+  }
+  // fixed_ttl override: expire N days after first_seen_in_feed.
+  return {
+    ...(basePolicy || {}),
+    enabled: true,
+    expiration_mode: 'fixed_ttl',
+    ttl_days: resolved.ttlDays
+  };
+}
+
+async function loadTypeOverrideRow(client, feedId, observableType, opts = {}) {
+  const policyType = normalizeIocTypeForPolicy(observableType);
+  if (!policyType) return null;
   const ctx = opts.importContext || getImportOptimizationContext();
   if (ctx) {
-    return resolveFeedPolicyFromContext(ctx, feedId, observableType);
+    return resolveTypePolicyFromContext(ctx, feedId, policyType);
   }
   const { rows } = await client.query(
-    `SELECT * FROM threat_feed_expiration_policies
-     WHERE feed_id = $1::uuid AND observable_type IN ($2, 'all')
-     ORDER BY CASE WHEN observable_type = $2 THEN 0 ELSE 1 END
+    `SELECT feed_id, ioc_type, mode, ttl_days
+     FROM integration_feed_expiration_type_policies
+     WHERE feed_id = $1::uuid AND ioc_type = $2
      LIMIT 1`,
-    [feedId, observableType]
+    [feedId, policyType]
   );
-  return rows[0] || null;
+  return pickTypePolicyFromRows(rows, feedId, policyType);
+}
+
+export async function getFeedPolicy(client, feedId, observableType = 'all', opts = {}) {
+  const ctx = opts.importContext || getImportOptimizationContext();
+  let basePolicy;
+  if (ctx) {
+    basePolicy = resolveFeedPolicyFromContext(ctx, feedId, observableType);
+  } else {
+    const { rows } = await client.query(
+      `SELECT * FROM threat_feed_expiration_policies
+       WHERE feed_id = $1::uuid AND observable_type IN ($2, 'all')
+       ORDER BY CASE WHEN observable_type = $2 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [feedId, observableType]
+    );
+    basePolicy = rows[0] || null;
+  }
+
+  // Type overrides only apply to concrete IOC types, never to the 'all' lookup.
+  if (!observableType || observableType === 'all') return basePolicy;
+  const typeOverrideRow = await loadTypeOverrideRow(client, feedId, observableType, { importContext: ctx });
+  return applyTypeOverrideToFeedPolicy(basePolicy, typeOverrideRow);
 }
 
 async function queryIocSuppressedFromDb(client, observable, observableType) {

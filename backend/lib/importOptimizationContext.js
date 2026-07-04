@@ -37,6 +37,22 @@ export async function loadAllFeedPolicies(client) {
   return rows || [];
 }
 
+export async function loadAllExpirationTypePolicies(client) {
+  const { rows } = await client.query(
+    'SELECT feed_id, ioc_type, mode, ttl_days FROM integration_feed_expiration_type_policies'
+  );
+  return rows || [];
+}
+
+/** Find the type override row for a feed + normalized policy IOC type. */
+export function pickTypePolicyFromRows(rows, feedId, policyType) {
+  if (!policyType) return null;
+  const feedIdStr = String(feedId);
+  return (rows || []).find(
+    (r) => String(r.feed_id) === feedIdStr && String(r.ioc_type) === policyType
+  ) || null;
+}
+
 export async function loadActiveSuppressionIndex(client) {
   const { rows } = await client.query(
     `SELECT lower(ioc_value) AS ioc_value,
@@ -57,16 +73,28 @@ export function isIocSuppressedFromIndex(index, observable, observableType) {
 }
 
 export async function createImportOptimizationContext(client) {
-  const [policyRows, suppressionIndex] = await Promise.all([
+  const [policyRows, typePolicyRows, suppressionIndex] = await Promise.all([
     loadAllFeedPolicies(client),
+    loadAllExpirationTypePolicies(client),
     loadActiveSuppressionIndex(client)
   ]);
 
   return {
     policyRows,
+    typePolicyRows,
     suppressionIndex,
     deferredRecomputes: new Map()
   };
+}
+
+export function resolveTypePolicyFromContext(ctx, feedId, policyType) {
+  if (!ctx || !policyType) return null;
+  if (!ctx._typePolicyByKey) ctx._typePolicyByKey = new Map();
+  const key = `${String(feedId)}:${policyType}`;
+  if (ctx._typePolicyByKey.has(key)) return ctx._typePolicyByKey.get(key);
+  const row = pickTypePolicyFromRows(ctx.typePolicyRows, feedId, policyType);
+  ctx._typePolicyByKey.set(key, row);
+  return row;
 }
 
 export function resolveFeedPolicyFromContext(ctx, feedId, observableType = 'all') {

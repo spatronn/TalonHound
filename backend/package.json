@@ -22,7 +22,7 @@
     "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js services/rdapEnrichmentService.test.js services/rdapPersistentStore.test.js",
     "test:abuseipdb": "node --test lib/abuseipdbEnrichment.test.js services/abuseipdbService.test.js routes/abuseipdbEnrichment.test.js",
     "test:analyst-intelligence": "node --test lib/analystIntelligence.test.js routes/analystIntelligence.test.js",
-    "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/iocExpiration.churn.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/publishedFeedSources.test.js lib/iocLookupSync.test.js",
+    "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/feedExpirationPolicy.test.js lib/iocExpiration.churn.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/publishedFeedSources.test.js lib/iocLookupSync.test.js",
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js lib/iocListPagination.test.js lib/iocListDisplay.test.js lib/iocListStatsSnapshot.test.js",

@@ -17,6 +17,7 @@ import {
 } from '../lib/auditIocContext.js';
 import { evaluateIocStatusOverrideRequest } from '../lib/iocStatusOverrideGuards.js';
 import { parseManualExpirationInput } from '../lib/iocSourceValidation.js';
+import { validateExpirationTypePolicies } from '../lib/feedExpirationPolicy.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
 const IOC_STATUS_AUDIT_FIELDS = [
@@ -103,6 +104,52 @@ export function serializeExpirationPolicy(row, feedId) {
   };
 }
 
+/** JSON-safe IOC-type override payload. */
+export function serializeExpirationTypePolicy(row) {
+  if (!row) return null;
+  return {
+    ioc_type: row.ioc_type,
+    mode: row.mode,
+    ttl_days: row.ttl_days == null ? null : Number(row.ttl_days)
+  };
+}
+
+async function fetchExpirationTypePolicies(db, feedId) {
+  const { rows } = await db.query(
+    `SELECT ioc_type, mode, ttl_days
+     FROM integration_feed_expiration_type_policies
+     WHERE feed_id = $1::uuid
+     ORDER BY ioc_type`,
+    [feedId]
+  );
+  return rows.map(serializeExpirationTypePolicy);
+}
+
+/**
+ * Upsert/delete IOC-type overrides for a feed. An entry with mode 'inherit'
+ * removes any stored override (inherit == "no override row"). Runs inside the
+ * caller-provided client/transaction.
+ */
+async function applyExpirationTypePolicies(client, feedId, normalizedEntries) {
+  for (const entry of normalizedEntries) {
+    if (entry.mode === 'inherit') {
+      await client.query(
+        `DELETE FROM integration_feed_expiration_type_policies
+         WHERE feed_id = $1::uuid AND ioc_type = $2`,
+        [feedId, entry.ioc_type]
+      );
+      continue;
+    }
+    await client.query(
+      `INSERT INTO integration_feed_expiration_type_policies (feed_id, ioc_type, mode, ttl_days, updated_at)
+       VALUES ($1::uuid, $2, $3, $4, NOW())
+       ON CONFLICT (feed_id, ioc_type)
+       DO UPDATE SET mode = EXCLUDED.mode, ttl_days = EXCLUDED.ttl_days, updated_at = NOW()`,
+      [feedId, entry.ioc_type, entry.mode, entry.ttl_days]
+    );
+  }
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
@@ -132,13 +179,15 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         grace_days: null,
         updated_at: null
       };
+      const expirationTypePolicies = await fetchExpirationTypePolicies(pool, feedId);
       return res.json({
         success: true,
         feed_key: feedKey,
         feed_id: String(feedId),
         feed_update_mode: feedQ.rows[0]?.feed_update_mode || 'incremental',
         policy: policyOut,
-        summary: formatExpirationSummary(policyOut)
+        summary: formatExpirationSummary(policyOut),
+        expiration_type_policies: expirationTypePolicies
       });
     } catch (err) {
       return res.status(500).json({ success: false, error: 'Failed to load expiration policy', detail: err.message });
@@ -162,23 +211,47 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         return res.status(400).json({ success: false, error: msg, errors: validation.errors });
       }
 
+      const hasTypePolicies = req.body?.expiration_type_policies !== undefined;
+      const typeValidation = validateExpirationTypePolicies(req.body?.expiration_type_policies);
+      if (!typeValidation.ok) {
+        const msg = typeValidation.errors[0] || 'Invalid IOC type override policy';
+        return res.status(400).json({ success: false, error: msg, errors: typeValidation.errors });
+      }
+
       const prev = await getFeedPolicy(pool, feedId, validation.normalized.observable_type);
       const n = validation.normalized;
 
-      const { rows } = await pool.query(
-        `INSERT INTO threat_feed_expiration_policies (
-           feed_id, observable_type, enabled, expiration_mode, ttl_days, grace_days, updated_at
-         ) VALUES ($1::uuid, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (feed_id, observable_type)
-         DO UPDATE SET
-           enabled = EXCLUDED.enabled,
-           expiration_mode = EXCLUDED.expiration_mode,
-           ttl_days = EXCLUDED.ttl_days,
-           grace_days = EXCLUDED.grace_days,
-           updated_at = NOW()
-         RETURNING *`,
-        [feedId, n.observable_type, n.enabled, n.expiration_mode, n.ttl_days, n.grace_days]
-      );
+      const client = await pool.connect();
+      let rows;
+      let expirationTypePolicies;
+      try {
+        await client.query('BEGIN');
+        ({ rows } = await client.query(
+          `INSERT INTO threat_feed_expiration_policies (
+             feed_id, observable_type, enabled, expiration_mode, ttl_days, grace_days, updated_at
+           ) VALUES ($1::uuid, $2, $3, $4, $5, $6, NOW())
+           ON CONFLICT (feed_id, observable_type)
+           DO UPDATE SET
+             enabled = EXCLUDED.enabled,
+             expiration_mode = EXCLUDED.expiration_mode,
+             ttl_days = EXCLUDED.ttl_days,
+             grace_days = EXCLUDED.grace_days,
+             updated_at = NOW()
+           RETURNING *`,
+          [feedId, n.observable_type, n.enabled, n.expiration_mode, n.ttl_days, n.grace_days]
+        ));
+
+        if (hasTypePolicies) {
+          await applyExpirationTypePolicies(client, feedId, typeValidation.normalized);
+        }
+        expirationTypePolicies = await fetchExpirationTypePolicies(client, feedId);
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
+      }
 
       const action = !prev
         ? 'threat_feed.expiration_policy.created'
@@ -194,13 +267,18 @@ export function registerIocExpirationRoutes(app, pool, audit) {
         entityDisplay: feedKey,
         before: pickSafeFields(prev, POLICY_AUDIT_FIELDS),
         after: pickSafeFields(rows[0], POLICY_AUDIT_FIELDS),
-        metadata: { feed_id: feedId, summary: formatExpirationSummary(policyOut) }
+        metadata: {
+          feed_id: feedId,
+          summary: formatExpirationSummary(policyOut),
+          ...(hasTypePolicies ? { type_overrides: expirationTypePolicies } : {})
+        }
       });
 
       return res.status(200).json({
         success: true,
         policy: policyOut,
-        summary: formatExpirationSummary(policyOut)
+        summary: formatExpirationSummary(policyOut),
+        expiration_type_policies: expirationTypePolicies
       });
     } catch (err) {
       console.error('[expiration-policy] PATCH failed', err?.message || err);
