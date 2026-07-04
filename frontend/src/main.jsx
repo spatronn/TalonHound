@@ -6742,6 +6742,48 @@ function CustomFeedLifecycleFields({
             />
           </label>
         ) : null}
+        {exp.enabled ? (
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10, marginTop: 2 }}>
+            <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>IOC Type Overrides</div>
+            <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>
+              Overrides take precedence over the feed default expiration policy.
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {EXPIRATION_TYPE_OVERRIDE_TYPES.map((t) => {
+                const ovr = (exp.type_overrides && exp.type_overrides[t.id]) || { mode: 'inherit', ttl_days: '' };
+                const isFixed = ovr.mode === 'fixed_ttl';
+                const setOverride = (patch) => onExpirationChange({
+                  ...exp,
+                  type_overrides: { ...(exp.type_overrides || {}), [t.id]: { ...ovr, ...patch } }
+                });
+                return (
+                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 100px', gap: 6, alignItems: 'center' }}>
+                    <span style={{ color: '#e2e8f0', fontSize: 13 }}>{t.label}</span>
+                    <select
+                      value={ovr.mode}
+                      disabled={disabled}
+                      onChange={(e) => setOverride({ mode: e.target.value })}
+                      style={CTF_INPUT_STYLE}
+                    >
+                      {EXPIRATION_TYPE_OVERRIDE_MODES.map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="TTL days"
+                      value={isFixed ? ovr.ttl_days : ''}
+                      disabled={disabled || !isFixed}
+                      onChange={(e) => setOverride({ ttl_days: e.target.value })}
+                      style={{ ...CTF_INPUT_STYLE, opacity: isFixed ? 1 : 0.4 }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -6869,7 +6911,7 @@ function CustomThreatFeedsPage() {
             default_confidence: draftConfidence
           });
         }
-        const expPayload = buildExpirationPatchPayload(draftExpiration);
+        const expPayload = buildExpirationFullPatchPayload(draftExpiration);
         await api.patch(`/threat-feeds/${encodeURIComponent(feedKey)}/expiration-policy`, expPayload);
 
         setShowModal(false);
@@ -9708,6 +9750,7 @@ function IocSourcesPage() {
   const [moveSuccess, setMoveSuccess] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_IOC_SOURCE_FORM);
+  const [typeOverridesDraft, setTypeOverridesDraft] = useState(defaultTypeOverridesDraft([]));
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -9733,11 +9776,13 @@ function IocSourcesPage() {
     setShowFormModal(false);
     setEditing(null);
     setFormError('');
+    setTypeOverridesDraft(defaultTypeOverridesDraft([]));
   }
 
   function openCreateModal() {
     setEditing(null);
     setForm(EMPTY_IOC_SOURCE_FORM);
+    setTypeOverridesDraft(defaultTypeOverridesDraft([]));
     setFormError('');
     setShowFormModal(true);
   }
@@ -9753,6 +9798,7 @@ function IocSourcesPage() {
       default_expire_days: source?.default_expire_days ?? '',
       active: source?.active !== false
     });
+    setTypeOverridesDraft(defaultTypeOverridesDraft(source?.expiration_type_policies || []));
     setFormError('');
     setShowFormModal(true);
   }
@@ -9783,7 +9829,8 @@ function IocSourcesPage() {
         default_expire_days: form.default_expire_policy === 'expire_after_days'
           ? Number(form.default_expire_days) || null
           : null,
-        active: form.active
+        active: form.active,
+        expiration_type_policies: buildExpirationTypePoliciesPayload(typeOverridesDraft)
       };
       if (editing?.id) {
         await api.patch(`/ioc-sources/${editing.id}`, payload);
@@ -10117,6 +10164,55 @@ function IocSourcesPage() {
                   <input type="number" min={1} max={3650} required value={form.default_expire_days} onChange={(e) => setForm((x) => ({ ...x, default_expire_days: e.target.value }))} style={ui.input} />
                 </FeedFormField>
               ) : null}
+              <div style={{ borderTop: '1px solid #1e293b', paddingTop: 10 }}>
+                <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>IOC Type Overrides</div>
+                <div style={{ color: '#64748b', fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+                  Per-type expiration overrides take precedence over the source default.
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {EXPIRATION_TYPE_OVERRIDE_TYPES.map((t) => {
+                    const ovr = (typeOverridesDraft && typeOverridesDraft[t.id]) || { mode: 'inherit', ttl_days: '' };
+                    const isFixed = ovr.mode === 'fixed_ttl';
+                    const setOverride = (patch) => setTypeOverridesDraft((prev) => ({
+                      ...prev,
+                      [t.id]: { ...ovr, ...patch }
+                    }));
+                    return (
+                      <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 110px', gap: 8, alignItems: 'center' }}>
+                        <span style={{ color: '#e2e8f0', fontSize: 13 }}>{t.label}</span>
+                        <select
+                          value={ovr.mode}
+                          onChange={(e) => setOverride({ mode: e.target.value })}
+                          style={ui.select}
+                        >
+                          {EXPIRATION_TYPE_OVERRIDE_MODES.map((m) => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          placeholder="TTL days"
+                          value={isFixed ? ovr.ttl_days : ''}
+                          disabled={!isFixed}
+                          onChange={(e) => setOverride({ ttl_days: e.target.value })}
+                          style={{ ...ui.input, opacity: isFixed ? 1 : 0.4 }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ marginTop: 10, padding: 8, borderRadius: 6, border: '1px solid #1e293b', background: '#0b1220', color: '#94a3b8', fontSize: 12, lineHeight: 1.6 }}>
+                  {EXPIRATION_TYPE_OVERRIDE_TYPES.map((t) => {
+                    const mockFeedExp = {
+                      enabled: form.default_expire_policy === 'expire_after_days',
+                      expiration_mode: form.default_expire_policy === 'expire_after_days' ? 'fixed_ttl' : 'never',
+                      ttl_days: form.default_expire_days
+                    };
+                    return <div key={t.id}>{formatTypeOverridePreview(t.label, (typeOverridesDraft || {})[t.id], mockFeedExp)}</div>;
+                  })}
+                </div>
+              </div>
               <FeedFormField ui={ui} label="Active" fullWidth>
                 <label style={ui.checkLabel}>
                   <input type="checkbox" checked={form.active} onChange={(e) => setForm((x) => ({ ...x, active: e.target.checked }))} />

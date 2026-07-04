@@ -28,6 +28,31 @@ function isAdmin(req) {
   return String(req.user?.role || 'admin').trim().toLowerCase() === ROLES.ADMIN;
 }
 
+const VALID_OVERRIDE_IOC_TYPES = ['domain', 'ip', 'url', 'file_hash'];
+const VALID_OVERRIDE_MODES = ['inherit', 'no_expire', 'fixed_ttl'];
+
+function validateExpirationTypePolicies(entries) {
+  if (!Array.isArray(entries)) return { ok: true, value: [] };
+  const seen = new Set();
+  const validated = [];
+  for (const entry of entries) {
+    const t = String(entry?.ioc_type || '').trim();
+    const m = String(entry?.mode || 'inherit').trim();
+    if (!VALID_OVERRIDE_IOC_TYPES.includes(t)) return { ok: false, error: `Invalid ioc_type: ${t}` };
+    if (!VALID_OVERRIDE_MODES.includes(m)) return { ok: false, error: `Invalid mode: ${m}` };
+    if (seen.has(t)) return { ok: false, error: `Duplicate ioc_type: ${t}` };
+    seen.add(t);
+    const ttl = entry.ttl_days != null ? Number(entry.ttl_days) : null;
+    if (m === 'fixed_ttl') {
+      if (!Number.isInteger(ttl) || ttl <= 0) {
+        return { ok: false, error: `ttl_days must be a positive integer for fixed_ttl mode (ioc_type: ${t})` };
+      }
+    }
+    validated.push({ ioc_type: t, mode: m, ttl_days: m === 'fixed_ttl' ? ttl : null });
+  }
+  return { ok: true, value: validated };
+}
+
 function resolveExpireDays(body, policyValue) {
   if (policyValue === 'expire_after_days') {
     return validateExpireDays(body.default_expire_days, true);
@@ -92,7 +117,21 @@ export function registerIocSourceRoutes(app, pool, audit) {
        ${includeInactive ? '' : 'WHERE s.active = TRUE AND s.archived_at IS NULL'}
        ORDER BY s.archived_at NULLS FIRST, s.active DESC, s.name ASC`
     );
-    return rows.map(serializeIocSourceRow);
+    const sources = rows.map(serializeIocSourceRow);
+    if (sources.length) {
+      const ids = sources.map((s) => s.id);
+      const { rows: tpRows } = await pool.query(
+        'SELECT source_id, ioc_type, mode, ttl_days FROM ioc_source_expiration_type_policies WHERE source_id = ANY($1::bigint[]) ORDER BY source_id, ioc_type',
+        [ids]
+      );
+      const tpMap = {};
+      for (const r of tpRows) {
+        if (!tpMap[r.source_id]) tpMap[r.source_id] = [];
+        tpMap[r.source_id].push({ ioc_type: r.ioc_type, mode: r.mode, ttl_days: r.ttl_days });
+      }
+      for (const s of sources) s.expiration_type_policies = tpMap[s.id] || [];
+    }
+    return sources;
   }
 
   app.get('/api/admin/ioc-sources', requireRole(ROLES.ADMIN), async (req, res) => {
@@ -132,6 +171,12 @@ export function registerIocSourceRoutes(app, pool, audit) {
     const daysCheck = resolveExpireDays(body, polCheck.value);
     if (!daysCheck.ok) return res.status(400).json({ message: daysCheck.error });
 
+    let createTypePoliciesCheck = { ok: true, value: [] };
+    if (Array.isArray(body.expiration_type_policies)) {
+      createTypePoliciesCheck = validateExpirationTypePolicies(body.expiration_type_policies);
+      if (!createTypePoliciesCheck.ok) return res.status(400).json({ message: createTypePoliciesCheck.error });
+    }
+
     const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId)
       ? req.user.publicId
       : null;
@@ -156,6 +201,17 @@ export function registerIocSourceRoutes(app, pool, audit) {
         ]
       );
       const source = serializeIocSourceRow(rows[0]);
+      for (const p of createTypePoliciesCheck.value.filter((x) => x.mode !== 'inherit')) {
+        await pool.query(
+          'INSERT INTO ioc_source_expiration_type_policies (source_id, ioc_type, mode, ttl_days) VALUES ($1, $2, $3, $4)',
+          [source.id, p.ioc_type, p.mode, p.ttl_days]
+        );
+      }
+      const { rows: tpRows } = await pool.query(
+        'SELECT ioc_type, mode, ttl_days FROM ioc_source_expiration_type_policies WHERE source_id = $1 ORDER BY ioc_type',
+        [source.id]
+      );
+      source.expiration_type_policies = tpRows;
       await audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.IOC_SOURCE_CREATED,
@@ -220,19 +276,54 @@ export function registerIocSourceRoutes(app, pool, audit) {
     }
     if (body.active !== undefined) setField('active', Boolean(body.active));
 
-    if (!fields.length) return res.status(400).json({ message: 'No fields to update' });
+    const hasTypePolicies = Array.isArray(body.expiration_type_policies);
+    if (!fields.length && !hasTypePolicies) return res.status(400).json({ message: 'No fields to update' });
 
+    let patchTypePoliciesCheck = { ok: true, value: [] };
+    if (hasTypePolicies) {
+      patchTypePoliciesCheck = validateExpirationTypePolicies(body.expiration_type_policies);
+      if (!patchTypePoliciesCheck.ok) return res.status(400).json({ message: patchTypePoliciesCheck.error });
+    }
+
+    const client = await pool.connect();
     try {
-      const beforeQ = await pool.query('SELECT * FROM ioc_sources WHERE id = $1', [id]);
-      if (!beforeQ.rows.length) return res.status(404).json({ message: 'IOC source not found' });
+      const beforeQ = await client.query('SELECT * FROM ioc_sources WHERE id = $1', [id]);
+      if (!beforeQ.rows.length) {
+        client.release();
+        return res.status(404).json({ message: 'IOC source not found' });
+      }
       const before = serializeIocSourceRow(beforeQ.rows[0]);
+      let updatedRow = beforeQ.rows[0];
 
-      fields.push('updated_at = NOW()');
-      const { rows } = await pool.query(
-        `UPDATE ioc_sources SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
-        params
+      await client.query('BEGIN');
+
+      if (fields.length) {
+        fields.push('updated_at = NOW()');
+        const { rows } = await client.query(
+          `UPDATE ioc_sources SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
+          params
+        );
+        updatedRow = rows[0];
+      }
+
+      if (hasTypePolicies) {
+        await client.query('DELETE FROM ioc_source_expiration_type_policies WHERE source_id = $1', [id]);
+        for (const p of patchTypePoliciesCheck.value.filter((x) => x.mode !== 'inherit')) {
+          await client.query(
+            'INSERT INTO ioc_source_expiration_type_policies (source_id, ioc_type, mode, ttl_days) VALUES ($1, $2, $3, $4)',
+            [id, p.ioc_type, p.mode, p.ttl_days]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+
+      const { rows: tpRows } = await client.query(
+        'SELECT ioc_type, mode, ttl_days FROM ioc_source_expiration_type_policies WHERE source_id = $1 ORDER BY ioc_type',
+        [id]
       );
-      const source = serializeIocSourceRow(rows[0]);
+
+      const source = { ...serializeIocSourceRow(updatedRow), expiration_type_policies: tpRows };
       const action = resolveSourceAuditAction(before, source);
       const severity = action === AUDIT_ACTION.IOC_SOURCE_DISABLED
         ? AUDIT_SEVERITY.WARNING
@@ -256,7 +347,10 @@ export function registerIocSourceRoutes(app, pool, audit) {
 
       return res.json({ source });
     } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
       return res.status(500).json({ message: 'Failed to update IOC source', detail: err.message });
+    } finally {
+      client.release();
     }
   });
 
