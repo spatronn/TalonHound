@@ -38,6 +38,22 @@ const CATEGORY_TO_CLASSIFICATION = new Map([
   ['spam', 'spam'],
 ]);
 
+// Known IoT/DDoS botnet malware families (MalwareBazaar signature values, lowercase)
+const BOTNET_SIGNATURES = new Set([
+  'mirai', 'gafgyt', 'bashlite', 'mozi', 'tsunami', 'hajime',
+  'iotreaper', 'iot_reaper', 'darknexus', 'dark_nexus', 'satori',
+  'brickerbot', 'torii', 'kaiten', 'demonbot', 'wicked', 'gcleaner',
+  'ircbot', 'botnet',
+]);
+
+// Common ransomware families (MalwareBazaar signature values, lowercase)
+const RANSOMWARE_SIGNATURES = new Set([
+  'wannacry', 'wannacrypt', 'ryuk', 'revil', 'sodinokibi', 'darkside',
+  'lockbit', 'conti', 'blackcat', 'alphv', 'hive', 'clop', 'cl0p',
+  'maze', 'ragnarlocker', 'ragnar_locker', 'netwalker', 'dharma',
+  'phobos', 'makop', 'stop', 'djvu',
+]);
+
 function slugToLabel(slug) {
   return slug.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
@@ -60,13 +76,16 @@ export function parseNoteFields(note) {
 }
 
 /**
- * Given a source name, raw tag list, and optional category, produce normalized
- * classification and tag arrays for display in IOC Detail Overview.
+ * Given a source name, raw tag list, optional category, and optional signature,
+ * produce normalized classification and tag arrays for display in IOC Detail Overview.
  *
- * Classifications: items matching TAG_TO_CLASSIFICATION or CATEGORY_TO_CLASSIFICATION.
+ * Classifications: items matching TAG_TO_CLASSIFICATION, CATEGORY_TO_CLASSIFICATION,
+ *                  or known botnet/ransomware signature families.
  * Tags: everything else (technical tags, family names, unknown tags).
+ *
+ * @param {{ sourceName: string, rawTags?: string[], category?: string|null, signature?: string|null }} opts
  */
-export function normalizeFeedTags({ sourceName, rawTags = [], category = null }) {
+export function normalizeFeedTags({ sourceName, rawTags = [], category = null, signature = null }) {
   const classifications = [];
   const tags = [];
   const seenSlugs = new Set();
@@ -97,6 +116,19 @@ export function normalizeFeedTags({ sourceName, rawTags = [], category = null })
     if (!seenNorm.has(normalized)) {
       tags.push({ tag: trimmed, normalized, origin: 'feed', source_name: sourceName });
       seenNorm.add(normalized);
+    }
+  }
+
+  // Signature-based family classification (MalwareBazaar: signature field in note).
+  // Only applies when a specific signature name is provided — not from raw tags.
+  if (signature) {
+    const sigNorm = String(signature).toLowerCase().trim();
+    let sigSlug = null;
+    if (BOTNET_SIGNATURES.has(sigNorm)) sigSlug = 'botnet';
+    else if (RANSOMWARE_SIGNATURES.has(sigNorm)) sigSlug = 'ransomware';
+    if (sigSlug && !seenSlugs.has(sigSlug)) {
+      classifications.push({ value: sigSlug, label: slugToLabel(sigSlug), active: true, origin: 'feed', source_name: sourceName });
+      seenSlugs.add(sigSlug);
     }
   }
 
@@ -134,7 +166,8 @@ export function buildFeedIntelligence(evidenceRows = []) {
     const { classifications, tags } = normalizeFeedTags({
       sourceName: row.source_name,
       rawTags,
-      category: row.category
+      category: row.category,
+      signature: noteFields.signature || null
     });
 
     for (const c of classifications) {

@@ -29,7 +29,7 @@ const THREATFOX_MAP = Object.freeze({
  * Resolve a threat_classification slug from a feed's raw category/type value.
  * Returns null when the mapping is unknown — caller must not overwrite in that case.
  *
- * @param {'urlhaus-abusech'|'threatfox-abusech'|string} feedKey
+ * @param {'urlhaus-abusech'|'threatfox-abusech'|'malwarebazaar-abusech'|string} feedKey
  * @param {string|null|undefined} rawValue
  * @returns {string|null}
  */
@@ -38,5 +38,7 @@ export function resolveClassificationFromFeed(feedKey, rawValue) {
   const v = String(rawValue).toLowerCase().trim().replace(/[- ]/g, '_');
   if (feedKey === 'urlhaus-abusech') return URLHAUS_MAP[v] || null;
   if (feedKey === 'threatfox-abusech') return THREATFOX_MAP[v] || null;
+  // All MalwareBazaar IOCs are malware samples by definition.
+  if (feedKey === 'malwarebazaar-abusech') return 'malware';
   return null;
 }

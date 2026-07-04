@@ -42,6 +42,7 @@ import {
   saveUrlhausCheckpoint
 } from './lib/urlhaus.js';
 import {
+  MALWAREBAZAAR_FEED_KEY,
   MALWAREBAZAAR_EXPORT_URL_MASKED,
   MALWAREBAZAAR_AUTH_REQUIRED_MSG,
   assertMalwareBazaarMinFetchInterval,
@@ -701,6 +702,7 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
   const note = buildMalwareBazaarNote(entry);
   const category = entry.category || 'malware';
   const sourceUrl = MALWAREBAZAAR_EXPORT_URL_MASKED;
+  const threatClassification = resolveClassificationFromFeed(MALWAREBAZAAR_FEED_KEY, entry.signature || 'malware');
 
   const existing = await updateMalwareBazaarObservableBySource(client, entry, sourceName, note, category);
   if (existing.status === 'updated') {
@@ -729,7 +731,8 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     confidence: entry.confidence,
     sourceConfidence: entry.confidence,
     category,
-    note
+    note,
+    threatClassification
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {

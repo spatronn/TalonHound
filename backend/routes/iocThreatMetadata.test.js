@@ -143,6 +143,28 @@ describe('batchLoadFeedClassifications', () => {
     assert.ok(slugs.includes('command_and_control'));
   });
 
+  it('derives botnet classification from MalwareBazaar signature=Mirai in note', async () => {
+    const pool = mockPool([
+      ['FROM ioc_feed_source_evidence', [
+        {
+          ioc_item_id: 20,
+          ioc_observable_type: 'sha256',
+          source_name: 'MalwareBazaar:abuse.ch',
+          category: 'Mirai',
+          note: 'Auto-imported from MalwareBazaar CSV | external_id=abc | signature=Mirai | tags=Mirai,elf',
+          feed_key: 'malwarebazaar-abusech'
+        }
+      ]]
+    ]);
+    const items = [{ id: 20, observable_type: 'sha256' }];
+    const map = await batchLoadFeedClassifications(pool, items);
+    const key = '20|sha256';
+    assert.ok(map.has(key));
+    const classes = map.get(key);
+    const slugs = classes.map((c) => c.value);
+    assert.ok(slugs.includes('botnet'), 'Mirai signature must yield botnet classification');
+  });
+
   it('deduplicates across multiple evidence rows', async () => {
     const pool = mockPool([
       ['FROM ioc_feed_source_evidence', [

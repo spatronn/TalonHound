@@ -81,6 +81,47 @@ describe('normalizeFeedTags', () => {
     expect(classifications).toHaveLength(0);
     expect(tags).toHaveLength(0);
   });
+
+  it('maps signature=Mirai to botnet classification', () => {
+    const { classifications, tags } = normalizeFeedTags({ sourceName: 'MalwareBazaar:abuse.ch', rawTags: [], signature: 'Mirai' });
+    expect(classifications).toHaveLength(1);
+    expect(classifications[0].value).toBe('botnet');
+    expect(classifications[0].origin).toBe('feed');
+    expect(tags).toHaveLength(0);
+  });
+
+  it('maps signature=Gafgyt to botnet classification', () => {
+    const { classifications } = normalizeFeedTags({ sourceName: 'MalwareBazaar:abuse.ch', rawTags: [], signature: 'Gafgyt' });
+    expect(classifications[0].value).toBe('botnet');
+  });
+
+  it('maps signature=WannaCry to ransomware classification', () => {
+    const { classifications } = normalizeFeedTags({ sourceName: 'MalwareBazaar:abuse.ch', rawTags: [], signature: 'WannaCry' });
+    expect(classifications).toHaveLength(1);
+    expect(classifications[0].value).toBe('ransomware');
+  });
+
+  it('unknown signature adds no extra classification', () => {
+    const { classifications, tags } = normalizeFeedTags({ sourceName: src, rawTags: [], signature: 'UnknownFamily42' });
+    expect(classifications).toHaveLength(0);
+    expect(tags).toHaveLength(0);
+  });
+
+  it('signature does not duplicate an already-present classification', () => {
+    // category=botnet_cc already produces command_and_control; Mirai signature adds botnet (different slug)
+    const { classifications } = normalizeFeedTags({ sourceName: src, rawTags: [], category: 'botnet_cc', signature: 'Mirai' });
+    const slugs = classifications.map((c) => c.value);
+    expect(slugs).toContain('command_and_control');
+    expect(slugs).toContain('botnet');
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it('tag Mozi stays in tags array (signature param drives classification, not raw tags)', () => {
+    const { classifications, tags } = normalizeFeedTags({ sourceName: src, rawTags: ['Mozi'] });
+    expect(classifications).toHaveLength(0);
+    expect(tags[0].tag).toBe('Mozi');
+    expect(tags[0].normalized).toBe('mozi');
+  });
 });
 
 describe('buildFeedIntelligence', () => {
@@ -117,6 +158,22 @@ describe('buildFeedIntelligence', () => {
     expect(fi.source_metadata[0].external_id).toBe('3880277');
     expect(fi.source_metadata[0].url_status).toBe('online');
     expect(fi.source_metadata[0].reporter).toBe('geenensp');
+  });
+
+  it('parses MalwareBazaar Mirai note into botnet + malware classifications', () => {
+    const evidenceRows = [{
+      source_name: 'MalwareBazaar:abuse.ch',
+      feed_key: 'malwarebazaar-abusech',
+      category: 'Mirai',
+      note: 'Auto-imported from MalwareBazaar CSV | external_id=abc123 | reporter=abuse_ch | signature=Mirai | tags=Mirai,elf | date_added=2026-07-04T12:00:00.000Z'
+    }];
+    const fi = buildFeedIntelligence(evidenceRows);
+    const classValues = fi.classifications.map((c) => c.value);
+    expect(classValues).toContain('botnet');
+    // Mirai tag stays as a tag (not mapped to classification from raw tags)
+    const tagNorms = fi.tags.map((t) => t.normalized);
+    expect(tagNorms).toContain('mirai');
+    expect(tagNorms).toContain('elf');
   });
 
   it('deduplicates tags and classifications across multiple evidence rows', () => {

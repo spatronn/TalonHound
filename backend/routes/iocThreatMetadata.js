@@ -339,7 +339,8 @@ export async function batchLoadFeedClassifications(pool, items) {
       const { classifications } = normalizeFeedTags({
         sourceName: evRow.source_name,
         rawTags,
-        category: evRow.category
+        category: evRow.category,
+        signature: noteFields.signature || null
       });
       for (const c of classifications) {
         if (!seenSlugs.has(c.value)) {
