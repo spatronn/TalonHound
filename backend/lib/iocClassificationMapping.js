@@ -25,11 +25,29 @@ const THREATFOX_MAP = Object.freeze({
   infostealer:      'malware',
 });
 
+// OTX pulse tags / categories that carry unambiguous classification signals.
+// Return null for anything not listed — OTX is heterogeneous; no blanket default.
+const OTX_MAP = Object.freeze({
+  phishing:             'phishing',
+  malware:              'malware',
+  ransomware:           'ransomware',
+  botnet_cc:            'command_and_control',
+  botnet:               'botnet',
+  c2:                   'command_and_control',
+  command_and_control:  'command_and_control',
+  exploit:              'exploit',
+  dropper:              'dropper_downloader',
+  cryptomining:         'cryptomining',
+  miner:                'cryptomining',
+  spam:                 'spam_abuse',
+  scanner:              'scanner_recon',
+});
+
 /**
  * Resolve a threat_classification slug from a feed's raw category/type value.
  * Returns null when the mapping is unknown — caller must not overwrite in that case.
  *
- * @param {'urlhaus-abusech'|'threatfox-abusech'|'malwarebazaar-abusech'|string} feedKey
+ * @param {'urlhaus-abusech'|'threatfox-abusech'|'malwarebazaar-abusech'|'phishtank-opendnsrr'|'alienvault-otx'|string} feedKey
  * @param {string|null|undefined} rawValue
  * @returns {string|null}
  */
@@ -40,5 +58,9 @@ export function resolveClassificationFromFeed(feedKey, rawValue) {
   if (feedKey === 'threatfox-abusech') return THREATFOX_MAP[v] || null;
   // All MalwareBazaar IOCs are malware samples by definition.
   if (feedKey === 'malwarebazaar-abusech') return 'malware';
+  // All PhishTank IOCs are verified phishing URLs by definition.
+  if (feedKey === 'phishtank-opendnsrr') return 'phishing';
+  // OTX: only classify when there is a clear signal; return null otherwise.
+  if (feedKey === 'alienvault-otx') return OTX_MAP[v] || null;
   return null;
 }

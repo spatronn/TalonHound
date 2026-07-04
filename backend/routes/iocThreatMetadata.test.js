@@ -217,3 +217,83 @@ describe('mergeFeedClassificationsIntoItem', () => {
     assert.equal(orig.length, 1, 'original array must not be mutated');
   });
 });
+
+describe('batchLoadFeedClassifications — new feeds', () => {
+  it('ThreatFox evidence with category=botnet_cc yields command_and_control', async () => {
+    const pool = mockPool([
+      ['FROM ioc_feed_source_evidence', [
+        {
+          ioc_item_id: 30,
+          ioc_observable_type: 'domain',
+          source_name: 'ThreatFox:abuse.ch',
+          category: 'botnet_cc',
+          note: 'Auto-imported from ThreatFox API | threat_type=botnet_cc | malware=Mirai | confidence=high',
+          feed_key: 'threatfox-abusech'
+        }
+      ]]
+    ]);
+    const map = await batchLoadFeedClassifications(pool, [{ id: 30, observable_type: 'domain' }]);
+    const key = '30|domain';
+    assert.ok(map.has(key), 'should have entry for ThreatFox IOC');
+    const slugs = map.get(key).map((c) => c.value);
+    assert.ok(slugs.includes('command_and_control'), 'botnet_cc category must yield command_and_control');
+  });
+
+  it('PhishTank evidence with category=phishing yields phishing classification', async () => {
+    const pool = mockPool([
+      ['FROM ioc_feed_source_evidence', [
+        {
+          ioc_item_id: 31,
+          ioc_observable_type: 'url',
+          source_name: 'PhishTank:opendns',
+          category: 'phishing',
+          note: 'Auto-imported from PhishTank online-valid.csv',
+          feed_key: 'phishtank-opendnsrr'
+        }
+      ]]
+    ]);
+    const map = await batchLoadFeedClassifications(pool, [{ id: 31, observable_type: 'url' }]);
+    const key = '31|url';
+    assert.ok(map.has(key), 'should have entry for PhishTank IOC');
+    const slugs = map.get(key).map((c) => c.value);
+    assert.ok(slugs.includes('phishing'), 'PhishTank phishing category must yield phishing classification');
+  });
+
+  it('OTX evidence with tags=phishing yields phishing classification', async () => {
+    const pool = mockPool([
+      ['FROM ioc_feed_source_evidence', [
+        {
+          ioc_item_id: 32,
+          ioc_observable_type: 'url',
+          source_name: 'AlienVault OTX',
+          category: 'threat-intel',
+          note: 'Auto-imported from AlienVault OTX (subscribed pulses) | pulse_id=xyz | tags=phishing,windows',
+          feed_key: 'alienvault-otx'
+        }
+      ]]
+    ]);
+    const map = await batchLoadFeedClassifications(pool, [{ id: 32, observable_type: 'url' }]);
+    const key = '32|url';
+    assert.ok(map.has(key), 'should have entry for OTX IOC');
+    const slugs = map.get(key).map((c) => c.value);
+    assert.ok(slugs.includes('phishing'), 'OTX phishing tag must yield phishing classification');
+  });
+
+  it('OTX evidence with only ambiguous tags yields no classifications', async () => {
+    const pool = mockPool([
+      ['FROM ioc_feed_source_evidence', [
+        {
+          ioc_item_id: 33,
+          ioc_observable_type: 'ip',
+          source_name: 'AlienVault OTX',
+          category: 'threat-intel',
+          note: 'Auto-imported from AlienVault OTX (subscribed pulses) | tags=APT28,russia',
+          feed_key: 'alienvault-otx'
+        }
+      ]]
+    ]);
+    const map = await batchLoadFeedClassifications(pool, [{ id: 33, observable_type: 'ip' }]);
+    // category=threat-intel and tags APT28/russia don't map to any classification slug
+    assert.equal(map.has('33|ip'), false, 'ambiguous OTX tags should not produce any feed classification');
+  });
+});

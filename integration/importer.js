@@ -65,6 +65,7 @@ import {
 } from './lib/threatfox.js';
 import {
   ALIENVAULT_OTX_AUTH_REQUIRED_MSG,
+  ALIENVAULT_OTX_FEED_KEY,
   ALIENVAULT_OTX_SOURCE_NAME,
   buildOtxNote,
   collectOtxEntries,
@@ -1059,9 +1060,9 @@ export async function batchInsertIocs(client, entries, observableType = 'ip', su
     const placeholders = [];
     const params = [];
     resolvedKept.forEach((e, idx) => {
-      const off = idx * 10;
+      const off = idx * 11;
       placeholders.push(
-        `($${off + 1}::text, $${off + 2}::text, $${off + 3}::text, $${off + 4}::text, $${off + 5}::text, $${off + 6}::text, $${off + 7}::text, $${off + 8}::text, $${off + 9}::timestamptz, $${off + 10}::timestamptz)`
+        `($${off + 1}::text, $${off + 2}::text, $${off + 3}::text, $${off + 4}::text, $${off + 5}::text, $${off + 6}::text, $${off + 7}::text, $${off + 8}::text, $${off + 9}::timestamptz, $${off + 10}::timestamptz, $${off + 11}::text)`
       );
       params.push(
         e.observable ?? e.ip,
@@ -1073,23 +1074,24 @@ export async function batchInsertIocs(client, entries, observableType = 'ip', su
         e.category ?? null,
         e.note ?? null,
         now,
-        now
+        now,
+        e.threatClassification || null
       );
     });
-    const typeParam = resolvedKept.length * 10 + 1;
+    const typeParam = resolvedKept.length * 11 + 1;
     const valuesList = placeholders.join(',\n');
     const ins = await client.query(
       `INSERT INTO ioc_items (
          observable, observable_type, source_name, source_url,
          confidence, source_confidence, feed_default_confidence,
-         category, note, first_seen_at, last_seen_at
+         category, note, first_seen_at, last_seen_at, threat_classification
        )
        SELECT v.observable, $${typeParam}::text, v.source_name, v.source_url,
               v.confidence, v.source_confidence, v.feed_default_confidence,
-              v.category, v.note, v.first_seen_at, v.last_seen_at
+              v.category, v.note, v.first_seen_at, v.last_seen_at, v.threat_classification
        FROM (VALUES ${valuesList}) AS v(
          observable, source_name, source_url, confidence, source_confidence,
-         feed_default_confidence, category, note, first_seen_at, last_seen_at
+         feed_default_confidence, category, note, first_seen_at, last_seen_at, threat_classification
        )
        WHERE NOT EXISTS (
          SELECT 1 FROM ioc_items i
@@ -2084,7 +2086,8 @@ export async function runPhishtankImport(options = {}) {
         sourceName,
         sourceUrl,
         category: 'phishing',
-        note: 'Auto-imported from PhishTank online-valid.csv'
+        note: 'Auto-imported from PhishTank online-valid.csv',
+        threatClassification: resolveClassificationFromFeed('phishtank-opendnsrr', 'phishing')
       });
     }
     phase.build_entries_ms = Date.now() - tbuild;
@@ -2192,6 +2195,14 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
   const category = 'threat-intel';
   const sourceUrl = entry.referenceUrl || null;
 
+  // Derive classification from pulse tags — take first tag that maps to a known slug.
+  // No blanket default: OTX is heterogeneous; null is correct for unrecognized pulses.
+  let threatClassification = null;
+  for (const tag of (entry.pulseTags || [])) {
+    const slug = resolveClassificationFromFeed(ALIENVAULT_OTX_FEED_KEY, tag);
+    if (slug) { threatClassification = slug; break; }
+  }
+
   const insertResult = await insertObservable(client, {
     observable: entry.observable,
     observableType: entry.observableType,
@@ -2200,7 +2211,8 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     sourceConfidence: null,
     feedDefaultConfidence,
     category,
-    note
+    note,
+    threatClassification
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {

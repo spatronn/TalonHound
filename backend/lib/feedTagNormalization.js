@@ -139,7 +139,7 @@ const KNOWN_METADATA_FIELDS = [
   'external_id', 'reference_url', 'url_status', 'reporter', 'date_added', 'last_online',
   'ioc_id', 'threat_type', 'malware', 'malware_alias', 'confidence', 'reference',
   'first_seen', 'last_seen', 'file_name', 'file_type', 'signature', 'vtpercent',
-  'pulse_id', 'pulse_name', 'adversary', 'tlp', 'pulse_author', 'indicator_id'
+  'pulse_id', 'pulse_name', 'adversary', 'tlp', 'pulse_author', 'indicator_id', 'pulse_modified'
 ];
 
 /**

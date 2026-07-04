@@ -190,4 +190,72 @@ describe('buildFeedIntelligence', () => {
     expect(classSlugs.filter((v) => v === 'command_and_control')).toHaveLength(1);
     expect(classSlugs.filter((v) => v === 'phishing')).toHaveLength(1);
   });
+
+  it('parses ThreatFox note tags into feed intelligence', () => {
+    const evidenceRows = [{
+      source_name: 'ThreatFox:abuse.ch',
+      feed_key: 'threatfox-abusech',
+      category: 'botnet_cc',
+      note: 'Auto-imported from ThreatFox API | ioc_id=123 | threat_type=botnet_cc | malware=Mirai | confidence=high | tags=mirai,c2,elf'
+    }];
+    const fi = buildFeedIntelligence(evidenceRows);
+    const classSlugs = fi.classifications.map((c) => c.value);
+    // category=botnet_cc → command_and_control; tag c2 → command_and_control (deduped)
+    expect(classSlugs).toContain('command_and_control');
+    // technical tags not mapped to classifications stay as tags
+    const tagNorms = fi.tags.map((t) => t.normalized);
+    expect(tagNorms).toContain('mirai');
+    expect(tagNorms).toContain('elf');
+    // metadata fields
+    expect(fi.source_metadata[0].threat_type).toBe('botnet_cc');
+    expect(fi.source_metadata[0].malware).toBe('Mirai');
+  });
+
+  it('parses PhishTank evidence — category phishing produces phishing classification', () => {
+    const evidenceRows = [{
+      source_name: 'PhishTank:opendns',
+      feed_key: 'phishtank-opendnsrr',
+      category: 'phishing',
+      note: 'Auto-imported from PhishTank online-valid.csv'
+    }];
+    const fi = buildFeedIntelligence(evidenceRows);
+    const classSlugs = fi.classifications.map((c) => c.value);
+    expect(classSlugs).toContain('phishing');
+    expect(fi.tags).toHaveLength(0);
+  });
+
+  it('parses OTX note with pulse tags into classifications and tags', () => {
+    const evidenceRows = [{
+      source_name: 'AlienVault OTX',
+      feed_key: 'alienvault-otx',
+      category: 'threat-intel',
+      note: 'Auto-imported from AlienVault OTX (subscribed pulses) | pulse_id=abc123 | pulse_name=Malware Campaign | pulse_author=analyst | adversary=APT28 | tlp=white | tags=phishing,windows,office | indicator_id=9999 | pulse_modified=2026-07-01T00:00:00.000Z | reference=https://otx.alienvault.com/pulse/abc123'
+    }];
+    const fi = buildFeedIntelligence(evidenceRows);
+    const classSlugs = fi.classifications.map((c) => c.value);
+    expect(classSlugs).toContain('phishing');
+    // windows and office are technical tags, not classifications
+    const tagNorms = fi.tags.map((t) => t.normalized);
+    expect(tagNorms).toContain('windows');
+    expect(tagNorms).toContain('office');
+    // metadata fields surfaced
+    const meta = fi.source_metadata[0];
+    expect(meta.pulse_id).toBe('abc123');
+    expect(meta.adversary).toBe('APT28');
+    expect(meta.pulse_modified).toBe('2026-07-01T00:00:00.000Z');
+  });
+
+  it('OTX note with unknown-only tags produces no classifications', () => {
+    const evidenceRows = [{
+      source_name: 'AlienVault OTX',
+      feed_key: 'alienvault-otx',
+      category: 'threat-intel',
+      note: 'Auto-imported from AlienVault OTX (subscribed pulses) | tags=APT28,russia,geopolitics'
+    }];
+    const fi = buildFeedIntelligence(evidenceRows);
+    expect(fi.classifications).toHaveLength(0);
+    const tagNorms = fi.tags.map((t) => t.normalized);
+    expect(tagNorms).toContain('apt28');
+    expect(tagNorms).toContain('russia');
+  });
 });
