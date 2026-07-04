@@ -10,6 +10,7 @@ import {
   validateIocThreatClassificationSlugs
 } from '../lib/iocThreatClassifications.js';
 import { normalizeClassificationSlug } from '../lib/threatClassification.js';
+import { parseNoteFields, normalizeFeedTags } from '../lib/feedTagNormalization.js';
 import { resolveThreatActorById } from './threatActors.js';
 
 async function fetchIocRow(pool, iocId, observableType) {
@@ -295,4 +296,75 @@ export function mergeThreatMetadataItem(item, metaMap) {
   const meta = metaMap?.get(key);
   if (meta) return { ...item, ...meta };
   return mergeIocThreatMetadataItem(item, null, null);
+}
+
+/**
+ * Batch-load feed-derived classifications from ioc_feed_source_evidence for list items.
+ * Returns a Map of "id|observable_type" → [{value, label, active, origin, source_name}].
+ * Single query for the whole page — no N+1.
+ */
+export async function batchLoadFeedClassifications(pool, items) {
+  const feedMap = new Map();
+  if (!items?.length) return feedMap;
+
+  const pairs = items
+    .map((it) => ({ id: Number(it?.id), observable_type: String(it?.observable_type || '').trim() }))
+    .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
+  if (!pairs.length) return feedMap;
+
+  const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
+  const params = pairs.flatMap((p) => [p.id, p.observable_type]);
+  const { rows } = await pool.query(
+    `SELECT e.ioc_item_id, e.ioc_observable_type, e.source_name, e.category, e.note, f.key AS feed_key
+     FROM ioc_feed_source_evidence e
+     JOIN integration_feeds f ON f.integration_id = e.feed_id
+     WHERE (e.ioc_item_id, e.ioc_observable_type) IN (VALUES ${values})`,
+    params
+  );
+
+  const evidenceByKey = new Map();
+  for (const row of rows) {
+    const key = `${Number(row.ioc_item_id)}|${String(row.ioc_observable_type)}`;
+    if (!evidenceByKey.has(key)) evidenceByKey.set(key, []);
+    evidenceByKey.get(key).push(row);
+  }
+
+  for (const [key, evRows] of evidenceByKey.entries()) {
+    const seenSlugs = new Set();
+    const feedClassifications = [];
+    for (const evRow of evRows) {
+      const noteFields = parseNoteFields(evRow.note);
+      const rawTagsStr = noteFields.tags || '';
+      const rawTags = rawTagsStr ? rawTagsStr.split(',').map((t) => t.trim()).filter(Boolean) : [];
+      const { classifications } = normalizeFeedTags({
+        sourceName: evRow.source_name,
+        rawTags,
+        category: evRow.category
+      });
+      for (const c of classifications) {
+        if (!seenSlugs.has(c.value)) {
+          feedClassifications.push(c);
+          seenSlugs.add(c.value);
+        }
+      }
+    }
+    if (feedClassifications.length) feedMap.set(key, feedClassifications);
+  }
+  return feedMap;
+}
+
+/**
+ * Merge feed-derived classifications into an item's threat_classifications array.
+ * Feed entries are appended after stored ones; duplicates by slug are skipped.
+ */
+export function mergeFeedClassificationsIntoItem(item, feedMap) {
+  const key = `${Number(item?.id)}|${String(item?.observable_type || '')}`;
+  const feedClasses = feedMap?.get(key);
+  if (!feedClasses?.length) return item;
+
+  const existing = new Set((item.threat_classifications || []).map((c) => c?.value).filter(Boolean));
+  const toAdd = feedClasses.filter((c) => !existing.has(c.value));
+  if (!toAdd.length) return item;
+
+  return { ...item, threat_classifications: [...(item.threat_classifications || []), ...toAdd] };
 }

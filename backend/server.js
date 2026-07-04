@@ -126,7 +126,7 @@ import { registerIocSourceRoutes } from './routes/iocSources.js';
 import { registerCustomThreatFeedRoutes } from './routes/customThreatFeeds.js';
 import { registerThreatActorRoutes } from './routes/threatActors.js';
 import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
-import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem } from './routes/iocThreatMetadata.js';
+import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem, batchLoadFeedClassifications, mergeFeedClassificationsIntoItem } from './routes/iocThreatMetadata.js';
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
 import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
@@ -5589,10 +5589,12 @@ async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   });
   const threatMetaMap = await enrichItemsWithThreatMetadata(pool, enriched);
   const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, enriched);
+  const feedClassMap = await batchLoadFeedClassifications(pool, enriched);
   return enriched.map((it) => {
     const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
     const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-    return mergeAnalystIntelligenceItem(merged, analystMap);
+    const withFeed = mergeFeedClassificationsIntoItem(merged, feedClassMap);
+    return mergeAnalystIntelligenceItem(withFeed, analystMap);
   });
 }
 
