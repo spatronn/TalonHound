@@ -600,7 +600,9 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
   const ids = keyed.map((x) => Number(x.id));
   const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
 
-  const _qt0 = Date.now();
+  const pairs = keyed.map((x, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
+  const pairParams = keyed.flatMap((x) => [Number(x.id), String(x.observable_type)]);
+
   const [{ rows: mRows }, { rows: iocItemRows }] = await Promise.all([
     pool.query(
       `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
@@ -612,13 +614,12 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
       [ids, types]
     ),
     pool.query(
-      `SELECT id, confidence, analyst_confidence_override, ioc_source_id, source_name
-       FROM ioc_items
-       WHERE id = ANY($1::bigint[])`,
-      [ids]
+      `SELECT i.id, i.observable_type, i.confidence, i.analyst_confidence_override, i.ioc_source_id, i.source_name
+       FROM ioc_items i
+       WHERE (i.id, i.observable_type) IN (VALUES ${pairs})`,
+      pairParams
     )
   ]);
-  console.log(`[confidence detail] dbQuery=${Date.now()-_qt0}ms mRows=${mRows.length} iocItemRows=${iocItemRows.length}`);
 
   const byKey = new Map();
   for (const m of mRows) {
