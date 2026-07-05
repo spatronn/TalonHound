@@ -143,21 +143,33 @@ export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts =
   let manualRows;
 
   if (byItemIds && itemIds.length) {
-    const membershipRes = await pool.query(
-      `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.purged_at,
-              f.name AS feed_name, f.key AS feed_key
-       FROM ioc_feed_memberships m
-       JOIN integration_feeds f ON f.integration_id = m.feed_id
-       WHERE m.ioc_item_id = ANY($1::bigint[])
-         AND m.ioc_observable_type = ANY($2::text[])`,
-      [itemIds, types]
-    );
+    const [membershipRes, manualRes] = await Promise.all([
+      pool.query(
+        `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.purged_at,
+                f.name AS feed_name, f.key AS feed_key
+         FROM ioc_feed_memberships m
+         JOIN integration_feeds f ON f.integration_id = m.feed_id
+         WHERE m.ioc_item_id = ANY($1::bigint[])
+           AND m.ioc_observable_type = ANY($2::text[])`,
+        [itemIds, types]
+      ),
+      pool.query(
+        `SELECT id AS ioc_item_id, observable_type, source_name
+         FROM ioc_items
+         WHERE id = ANY($1::bigint[])
+           AND ioc_source_id IS NOT NULL`,
+        [itemIds]
+      )
+    ]);
     membershipRows = membershipRes.rows.map((row) => ({
       ...row,
       observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.ioc_observable_type)?.observable,
       observable_type: row.ioc_observable_type
     }));
-    manualRows = [];
+    manualRows = manualRes.rows.map((row) => ({
+      ...row,
+      observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.observable_type)?.observable
+    }));
   } else {
     const observables = [...new Set(keyed.map((x) => String(x.observable)))];
     const membershipRes = await pool.query(

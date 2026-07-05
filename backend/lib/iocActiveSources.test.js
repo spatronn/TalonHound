@@ -10,6 +10,7 @@ import {
   formatManualIocSource,
   applyActiveListScope,
   activeObservableHasActiveSourceSql,
+  enrichItemsWithActiveSourceCounts,
   fetchIocListStats,
   fetchActiveIocListPage,
   activeScopedObservablesSql
@@ -217,6 +218,26 @@ test('fetchActiveIocListPage manual query uses COALESCE status active filter', a
   assert.ok(manualQuery, 'must query manual IOCs');
   assert.match(manualQuery, /COALESCE\(status, 'active'\) = 'active'/);
   assert.match(manualQuery, /ORDER BY created_at DESC/);
+});
+
+test('enrichItemsWithActiveSourceCounts byItemIds path counts manual IOC as active source', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push(String(sql));
+      if (sql.includes('FROM ioc_feed_memberships m')) return { rows: [] };
+      if (sql.includes('ioc_source_id IS NOT NULL')) {
+        return { rows: [{ ioc_item_id: 3015395, observable_type: 'ip', source_name: 'manual-smoke' }] };
+      }
+      return { rows: [] };
+    }
+  };
+  const items = [{ id: 3015395, observable: '31.76.32.249', observable_type: 'ip' }];
+  const result = await enrichItemsWithActiveSourceCounts(pool, items, { byItemIds: true });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].active_source_count, 1, 'manual IOC must count as active source');
+  assert.deepEqual(result[0].source_names, ['manual-smoke']);
+  assert.ok(queries.some((q) => q.includes('ioc_source_id IS NOT NULL')), 'must query manual sources in byItemIds path');
 });
 
 test('membershipDisplayStatus distinguishes purged from expired', () => {
