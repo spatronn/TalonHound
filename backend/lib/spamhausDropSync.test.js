@@ -92,8 +92,10 @@ test('parseDropJson: throws on invalid JSON', () => {
   assert.throws(() => parseDropJson('not json', 'drop_v4'), { code: 'parse_error' });
 });
 
-test('parseDropJson: throws on JSON object (not array)', () => {
-  assert.throws(() => parseDropJson('{"cidr":"1.2.0.0/16"}', 'drop_v4'), { code: 'parse_error' });
+test('parseDropJson: single JSON object line treated as one NDJSON entry', () => {
+  const result = parseDropJson('{"cidr":"1.2.0.0/16"}', 'drop_v4');
+  assert.equal(result.length, 1);
+  assert.equal(result[0].cidr, '1.2.0.0/16');
 });
 
 test('parseDropJson: throws on JSON null', () => {

@@ -170,20 +170,53 @@ function computeDatasetStatus(v4State, v6State) {
 // ---------------------------------------------------------------------------
 
 export function parseDropJson(text, listType) {
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (err) {
-    const e = new Error(`Invalid JSON from ${listType}: ${err.message}`);
+  const trimmed = String(text || '').trim();
+
+  // If the payload starts with '[', treat as a JSON array (legacy/future format).
+  if (trimmed.startsWith('[')) {
+    let data;
+    try {
+      data = JSON.parse(trimmed);
+    } catch (err) {
+      const e = new Error(`Invalid JSON from ${listType}: ${err.message}`);
+      e.code = 'parse_error';
+      throw e;
+    }
+    if (!Array.isArray(data)) {
+      const e = new Error(`Expected JSON array for ${listType}, got ${typeof data}`);
+      e.code = 'parse_error';
+      throw e;
+    }
+    return data;
+  }
+
+  // NDJSON: one JSON object per line (current Spamhaus format).
+  const lines = trimmed.split('\n');
+  const items = [];
+  let parseErrors = 0;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith(';') || line.startsWith('#')) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+        items.push(obj);
+      } else {
+        parseErrors++;
+      }
+    } catch {
+      parseErrors++;
+    }
+  }
+
+  if (items.length === 0) {
+    const detail = parseErrors > 0 ? `all ${parseErrors} lines failed to parse as JSON objects` : 'no data lines found';
+    const e = new Error(`Invalid JSON from ${listType}: ${detail}`);
     e.code = 'parse_error';
     throw e;
   }
-  if (!Array.isArray(data)) {
-    const e = new Error(`Expected JSON array for ${listType}, got ${typeof data}`);
-    e.code = 'parse_error';
-    throw e;
-  }
-  return data;
+
+  return items;
 }
 
 export function parseCidrItem(item) {
