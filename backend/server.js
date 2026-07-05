@@ -5563,15 +5563,18 @@ app.post('/api/ioc/ip', async (req, res) => {
 registerIocDeleteRoute(app, pool, auditLogService, { invalidateDetailsCache: invalidateIocDetailsCache });
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
-  const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
+  const _ft = (label, p) => { const s = Date.now(); return p.then((r) => { console.log(`[finalize step] ${label}=${Date.now()-s}ms`); return r; }); };
+  const t0 = Date.now();
+  const enriched = await _ft('activeSourceCounts', enrichItemsWithActiveSourceCounts(pool, pageItems, opts));
   const [confMap, threatMetaMap, analystMap, feedClassMap] = await Promise.all([
-    buildDisplayConfidenceForItems(pool, enriched, {
+    _ft('confidence', buildDisplayConfidenceForItems(pool, enriched, {
       includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
-    }),
-    enrichItemsWithThreatMetadata(pool, pageItems),
-    enrichItemsWithAnalystIntelligenceCounts(pool, pageItems),
-    batchLoadFeedClassifications(pool, pageItems)
+    })),
+    _ft('threatMeta', enrichItemsWithThreatMetadata(pool, pageItems)),
+    _ft('analystCounts', enrichItemsWithAnalystIntelligenceCounts(pool, pageItems)),
+    _ft('feedClass', batchLoadFeedClassifications(pool, pageItems))
   ]);
+  console.log(`[finalize timing] total=${Date.now()-t0}ms`);
   return enriched.map((it) => {
     const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
     const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
