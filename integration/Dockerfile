@@ -9,6 +9,7 @@ COPY integration/ ./
 COPY backend/lib/ioc-suppression.js ./lib/ioc-suppression.js
 COPY backend/lib/importOptimizationContext.js ./lib/importOptimizationContext.js
 COPY backend/lib/iocExpiration.js ./lib/iocExpiration.js
+COPY backend/lib/feedExpirationPolicy.js ./lib/feedExpirationPolicy.js
 COPY backend/lib/iocFeedSourceEvidence.js ./lib/iocFeedSourceEvidence.js
 COPY backend/lib/feedLifecycle.js ./lib/feedLifecycle.js
 COPY backend/lib/iocActiveSources.js ./lib/iocActiveSources.js
@@ -22,6 +23,7 @@ COPY backend/lib/iocConfidence.js ./lib/iocConfidence.js
 COPY backend/lib/auditConstants.js ./lib/auditConstants.js
 COPY backend/lib/customThreatFeedUtils.js ./lib/customThreatFeedUtils.js
 COPY backend/lib/customThreatFeedParser.js ./lib/customThreatFeedParser.js
+COPY backend/lib/customThreatFeedAuth.js ./lib/customThreatFeedAuth.js
 COPY backend/lib/customThreatFeedFetch.js ./lib/customThreatFeedFetch.js
 COPY backend/lib/customThreatFeedSync.js ./lib/customThreatFeedSync.js
 COPY backend/lib/customThreatFeedWorkerAudit.js ./lib/customThreatFeedWorkerAudit.js
