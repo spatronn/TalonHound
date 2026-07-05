@@ -1,4 +1,5 @@
 import { validateFeedUrl } from './customThreatFeedUtils.js';
+import { buildCustomFeedAuthHeaders } from './customThreatFeedAuth.js';
 
 export const DEFAULT_MAX_FETCH_BYTES = Math.max(
   Number(process.env.CUSTOM_FEED_MAX_FETCH_BYTES || 52_428_800),
@@ -18,15 +19,17 @@ export async function fetchFeedUrl(url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const authHeaders = buildCustomFeedAuthHeaders(options.credentials || null);
+
   try {
     const res = await fetch(check.url, {
       method: 'GET',
       redirect: 'follow',
       signal: controller.signal,
       headers: {
+        ...authHeaders,
         Accept: 'text/plain,text/csv,*/*',
         'User-Agent': 'demo-runbook-custom-threat-feed/1.0'
-        // TODO: auth header / token support when secret storage pattern exists
       }
     });
 

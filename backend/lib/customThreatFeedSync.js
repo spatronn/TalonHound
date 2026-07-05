@@ -1,6 +1,7 @@
 import { fetchFeedUrl } from './customThreatFeedFetch.js';
 import { parseFeedContent } from './customThreatFeedParser.js';
 import { sanitizeUrlForDisplay } from './customThreatFeedUtils.js';
+import { redactCustomFeedSecrets } from './customThreatFeedAuth.js';
 import {
   upsertMembershipOnImport,
   recomputeIocGlobalStatus,
@@ -182,7 +183,10 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
   try {
     if (signal?.aborted) throw new Error('Sync aborted');
 
-    const fetchResult = await fetchFeedUrl(feedRow.url, { timeoutMs: feedRow.timeout_ms });
+    const fetchResult = await fetchFeedUrl(feedRow.url, {
+      timeoutMs: feedRow.timeout_ms,
+      credentials: feedRow.credentials || null
+    });
     counters.http_status = fetchResult.httpStatus;
     counters.fetched_bytes = fetchResult.fetchedBytes;
 
@@ -232,7 +236,8 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     else status = 'success';
   } catch (err) {
     status = 'failed';
-    errorMessage = String(err?.message || err).slice(0, 4000);
+    const rawMessage = String(err?.message || err).slice(0, 4000);
+    errorMessage = redactCustomFeedSecrets(rawMessage, feedRow.credentials || null);
   }
 
   const durationMs = Date.now() - startedAt;
@@ -316,6 +321,7 @@ export async function loadCustomFeedForSync(client, customFeedId) {
             f.name AS feed_name,
             f.default_confidence,
             f.active AS integration_active,
+            f.credentials,
             ls.finished_at AS last_success_at
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id
@@ -342,6 +348,7 @@ export async function loadCustomFeedByIntegrationKey(client, integrationKey) {
             f.schedule_cron AS schedule,
             f.default_confidence,
             f.active AS integration_active,
+            f.credentials,
             ls.finished_at AS last_success_at
      FROM custom_threat_feeds c
      JOIN integration_feeds f ON f.integration_id = c.feed_id

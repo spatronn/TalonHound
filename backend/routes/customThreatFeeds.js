@@ -1,6 +1,11 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import {
+  validateCustomFeedAuth,
+  normalizeCustomFeedAuth,
+  buildCustomFeedAuthSummary
+} from '../lib/customThreatFeedAuth.js';
 import { findActiveRunningJobForSource } from '../lib/integrationQueueRecovery.js';
 import { syncSingleFeedSchedule } from '../lib/integrationFeedScheduleSync.js';
 import { formatExpirationSummary } from '../lib/iocExpiration.js';
@@ -36,6 +41,7 @@ const FEED_ROW_SELECT = `
          f.default_confidence,
          f.active AS integration_active,
          f.archived_at,
+         f.credentials,
          p.enabled AS exp_enabled,
          p.expiration_mode,
          p.ttl_days AS exp_ttl_days,
@@ -102,6 +108,10 @@ function validateFeedPayload(body, partial = false) {
       errors.push('schedule_cron is invalid');
     }
   }
+  if (body?.auth !== undefined) {
+    const authCheck = validateCustomFeedAuth(body.auth);
+    if (!authCheck.ok) errors.push(`auth: ${authCheck.error}`);
+  }
   return errors;
 }
 
@@ -155,7 +165,8 @@ function serializeFeedRow(row) {
     last_error: row.last_run_error || null,
     archived_at: row.archived_at || null,
     feed_kind: 'custom',
-    feed_update_mode: 'snapshot'
+    feed_update_mode: 'snapshot',
+    auth: buildCustomFeedAuthSummary(row.credentials || {})
   };
 }
 
@@ -329,18 +340,22 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     try {
       await client.query('BEGIN');
 
+      const authValidated = validateCustomFeedAuth(body.auth ?? null);
+      const newCredentials = normalizeCustomFeedAuth(authValidated.value, {});
+
       const integrationInsert = await client.query(
         `INSERT INTO integration_feeds (
            key, name, source_url, schedule_cron, trust_level, active,
-           feed_kind, feed_update_mode, default_confidence, integration_id
-         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5, gen_random_uuid())
+           feed_kind, feed_update_mode, default_confidence, credentials, integration_id
+         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5, $6::jsonb, gen_random_uuid())
          RETURNING integration_id, key, name`,
         [
           feedKey,
           feedName,
           sanitizeUrlForDisplay(body.url),
           scheduleCron,
-          DEFAULT_CONFIDENCE
+          DEFAULT_CONFIDENCE,
+          JSON.stringify(newCredentials)
         ]
       );
       const integration = integrationInsert.rows[0];
@@ -455,6 +470,17 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
           `UPDATE integration_feeds SET source_url = $2, updated_at = NOW() WHERE integration_id = $1::uuid`,
           [existing.feed_id, sanitizeUrlForDisplay(body.url)]
         );
+      }
+
+      if (body.auth !== undefined) {
+        const authValidated = validateCustomFeedAuth(body.auth);
+        if (authValidated.ok) {
+          const updatedCredentials = normalizeCustomFeedAuth(authValidated.value, existing.credentials || {});
+          await client.query(
+            `UPDATE integration_feeds SET credentials = $2::jsonb, updated_at = NOW() WHERE integration_id = $1::uuid`,
+            [existing.feed_id, JSON.stringify(updatedCredentials)]
+          );
+        }
       }
 
       const scheduleChanged = body.schedule_cron !== undefined;
@@ -612,7 +638,10 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
     }
 
     try {
-      const fetchResult = await fetchFeedUrl(row.url, { timeoutMs: row.timeout_ms });
+      const fetchResult = await fetchFeedUrl(row.url, {
+        timeoutMs: row.timeout_ms,
+        credentials: row.credentials || null
+      });
       const parsed = parseFeedContent(fetchResult.bodyText, {
         format: row.format,
         contentType: fetchResult.contentType,

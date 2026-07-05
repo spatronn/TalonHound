@@ -6609,6 +6609,147 @@ const CTF_INPUT_STYLE = {
   width: '100%'
 };
 
+function buildCustomFeedAuthPayload(draftAuth) {
+  const t = draftAuth?.auth_type || 'none';
+  if (t === 'none') return { auth_type: 'none' };
+  if (t === 'bearer_token') {
+    const token = String(draftAuth.token || '').trim();
+    return token ? { auth_type: 'bearer_token', token } : { auth_type: 'bearer_token' };
+  }
+  if (t === 'api_key_header') {
+    const headerName = String(draftAuth.header_name || '').trim();
+    const headerValue = String(draftAuth.header_value || '').trim();
+    const out = { auth_type: 'api_key_header', header_name: headerName };
+    if (headerValue) out.header_value = headerValue;
+    return out;
+  }
+  if (t === 'basic_auth') {
+    const username = String(draftAuth.username || '').trim();
+    const password = String(draftAuth.password || '').trim();
+    const out = { auth_type: 'basic_auth', username };
+    if (password) out.password = password;
+    return out;
+  }
+  return { auth_type: 'none' };
+}
+
+function CustomFeedAuthSection({ draftAuth, onAuthChange, existingAuth, disabled }) {
+  const t = draftAuth?.auth_type || 'none';
+  const existing = existingAuth || {};
+
+  function setAuthType(type) {
+    onAuthChange({ auth_type: type });
+  }
+
+  const helpText = { color: '#64748b', fontSize: 11, marginTop: 2 };
+  const configuredBadge = (
+    <span style={{ color: '#86efac', fontSize: 11, marginLeft: 6 }}>configured</span>
+  );
+
+  return (
+    <div>
+      <label style={CTF_FIELD_LABEL}>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>Auth Type</span>
+        <select
+          value={t}
+          disabled={disabled}
+          onChange={(e) => setAuthType(e.target.value)}
+          style={CTF_INPUT_STYLE}
+        >
+          <option value="none">None</option>
+          <option value="bearer_token">Bearer Token</option>
+          <option value="api_key_header">API Key Header</option>
+          <option value="basic_auth">Basic Auth</option>
+        </select>
+      </label>
+
+      {t === 'bearer_token' && (
+        <label style={CTF_FIELD_LABEL}>
+          <span style={{ color: '#94a3b8', fontSize: 12 }}>
+            Token
+            {existing.auth_type === 'bearer_token' && existing.configured ? configuredBadge : null}
+          </span>
+          <input
+            type="password"
+            value={draftAuth.token || ''}
+            disabled={disabled}
+            onChange={(e) => onAuthChange({ ...draftAuth, token: e.target.value })}
+            style={CTF_INPUT_STYLE}
+            placeholder={existing.auth_type === 'bearer_token' && existing.configured ? `current: ${existing.masked_token || '****'}` : 'Enter bearer token'}
+            autoComplete="new-password"
+          />
+          <span style={helpText}>Leave empty to keep existing token. Secrets are never shown again.</span>
+        </label>
+      )}
+
+      {t === 'api_key_header' && (
+        <>
+          <label style={CTF_FIELD_LABEL}>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>Header Name</span>
+            <input
+              type="text"
+              value={draftAuth.header_name || ''}
+              disabled={disabled}
+              onChange={(e) => onAuthChange({ ...draftAuth, header_name: e.target.value })}
+              style={CTF_INPUT_STYLE}
+              placeholder="X-API-Key"
+            />
+          </label>
+          <label style={CTF_FIELD_LABEL}>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>
+              Header Value
+              {existing.auth_type === 'api_key_header' && existing.configured ? configuredBadge : null}
+            </span>
+            <input
+              type="password"
+              value={draftAuth.header_value || ''}
+              disabled={disabled}
+              onChange={(e) => onAuthChange({ ...draftAuth, header_value: e.target.value })}
+              style={CTF_INPUT_STYLE}
+              placeholder={existing.auth_type === 'api_key_header' && existing.configured ? `current: ${existing.masked_header_value || '****'}` : 'Enter header value'}
+              autoComplete="new-password"
+            />
+            <span style={helpText}>Leave empty to keep existing value. Secrets are never shown again.</span>
+          </label>
+        </>
+      )}
+
+      {t === 'basic_auth' && (
+        <>
+          <label style={CTF_FIELD_LABEL}>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>Username</span>
+            <input
+              type="text"
+              value={draftAuth.username || ''}
+              disabled={disabled}
+              onChange={(e) => onAuthChange({ ...draftAuth, username: e.target.value })}
+              style={CTF_INPUT_STYLE}
+              placeholder="username"
+              autoComplete="off"
+            />
+          </label>
+          <label style={CTF_FIELD_LABEL}>
+            <span style={{ color: '#94a3b8', fontSize: 12 }}>
+              Password
+              {existing.auth_type === 'basic_auth' && existing.password_configured ? configuredBadge : null}
+            </span>
+            <input
+              type="password"
+              value={draftAuth.password || ''}
+              disabled={disabled}
+              onChange={(e) => onAuthChange({ ...draftAuth, password: e.target.value })}
+              style={CTF_INPUT_STYLE}
+              placeholder={existing.auth_type === 'basic_auth' && existing.password_configured ? '(current password set)' : 'Enter password'}
+              autoComplete="new-password"
+            />
+            <span style={helpText}>Leave empty to keep existing password. Secrets are never shown again.</span>
+          </label>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CustomFeedLifecycleFields({
   feedActive,
   draftCron,
@@ -6816,10 +6957,13 @@ function CustomThreatFeedsPage() {
   const [editUrlMissing, setEditUrlMissing] = useState(false);
   const [deleteModal, setDeleteModal] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [draftAuth, setDraftAuth] = useState({ auth_type: 'none' });
 
   const emptyForm = {
     name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: ''
   };
+
+  const emptyAuth = { auth_type: 'none' };
 
   async function loadFeeds() {
     setLoading(true);
@@ -6844,6 +6988,7 @@ function CustomThreatFeedsPage() {
     setFormError('');
     setDraftCron('0 * * * *');
     setEditUrlMissing(false);
+    setDraftAuth(emptyAuth);
     setShowModal(true);
   }
 
@@ -6865,6 +7010,7 @@ function CustomThreatFeedsPage() {
     setDraftConfidence(String(feed.default_confidence || 'medium').trim().toLowerCase());
     setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     setEditActive(feed.active !== false);
+    setDraftAuth({ auth_type: feed.auth?.auth_type || 'none' });
     setFormError('');
     setShowModal(true);
     const feedKey = feed.integration_key || feed.key;
@@ -6896,7 +7042,8 @@ function CustomThreatFeedsPage() {
           setSaving(false);
           return;
         }
-        const payload = { ...form, name, url };
+        const authPayload = buildCustomFeedAuthPayload(draftAuth);
+        const payload = { ...form, name, url, auth: authPayload };
         await api.put(`/custom-threat-feeds/${encodeURIComponent(editingFeed.id)}`, payload);
 
         const feedKey = editingFeed.integration_key || editingFeed.key;
@@ -6924,7 +7071,8 @@ function CustomThreatFeedsPage() {
           setSaving(false);
           return;
         }
-        await api.post('/custom-threat-feeds', { ...form, name, url, schedule_cron: draftCron });
+        const authPayload = buildCustomFeedAuthPayload(draftAuth);
+        await api.post('/custom-threat-feeds', { ...form, name, url, schedule_cron: draftCron, auth: authPayload });
         setShowModal(false);
         setToast('Custom Threat Feed created');
       }
@@ -7220,6 +7368,15 @@ function CustomThreatFeedsPage() {
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>Description</span>
                     <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...CTF_INPUT_STYLE, minHeight: 72, resize: 'vertical' }} rows={3} />
                   </label>
+                </CustomFeedModalSection>
+
+                <CustomFeedModalSection title="Authentication">
+                  <CustomFeedAuthSection
+                    draftAuth={draftAuth}
+                    onAuthChange={setDraftAuth}
+                    existingAuth={editingFeed?.auth || null}
+                    disabled={saving}
+                  />
                 </CustomFeedModalSection>
 
                 <CustomFeedModalSection title={editingFeed ? 'Schedule & Lifecycle' : 'Schedule'}>
