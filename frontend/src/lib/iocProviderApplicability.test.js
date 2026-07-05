@@ -12,7 +12,7 @@ import {
   isProviderApplicable,
   normalizeIocType
 } from './iocProviderApplicability.js';
-import { computeLayeredProviderCoverage, computeProviderCoverage } from './intelligenceSummary.js';
+import { computeLayeredProviderCoverage, computeProviderCoverage, providerStateStyle } from './intelligenceSummary.js';
 
 test('normalizeIocType maps hash aliases to hash', () => {
   assert.equal(normalizeIocType('sha256'), 'hash');
@@ -33,9 +33,9 @@ test('hash IOC only includes VirusTotal', () => {
   assert.equal(isProviderApplicable('rdap', 'sha256', { rdapEligible: true }), false);
 });
 
-test('IP IOC includes VT, IPinfo, and AbuseIPDB but not RDAP', () => {
+test('IP IOC includes VT, IPinfo, AbuseIPDB, and Spamhaus DROP but not RDAP', () => {
   const providers = getApplicableProvidersForIocType('ip');
-  assert.deepEqual(providers, ['virustotal', 'ipinfo', 'abuseipdb']);
+  assert.deepEqual(providers, ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
   assert.equal(isProviderApplicable('rdap', 'ip', { rdapEligible: true }), false);
 });
 
@@ -63,7 +63,7 @@ test('computeProviderCoverage filters non-applicable providers for hash IOC', ()
 
 test('computeProviderCoverage includes IP providers for IP IOC', () => {
   const coverage = computeProviderCoverage({}, { iocType: 'ip' });
-  assert.deepEqual(coverage.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb']);
+  assert.deepEqual(coverage.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
 });
 
 test('computeProviderCoverage omits RDAP for hash even with stale snapshots', () => {
@@ -92,7 +92,7 @@ test('isIpAddress detects IPv4 literals', () => {
 
 test('URL with IP host yields derived IP providers only', () => {
   const url = 'http://222.138.182.107:48022/bin.sh';
-  assert.deepEqual(getDerivedInfrastructureProviders(url, 'url'), ['ipinfo', 'abuseipdb']);
+  assert.deepEqual(getDerivedInfrastructureProviders(url, 'url'), ['ipinfo', 'abuseipdb', 'spamhaus_drop']);
   const ctx = getDerivedInfrastructureContext(url, 'url');
   assert.equal(ctx.host, '222.138.182.107');
   assert.equal(ctx.hostKind, 'ip');
@@ -127,11 +127,11 @@ test('computeProviderCoverage supports explicit providerKeys for derived section
 
 test('getDirectApplicableProviders matches direct IOC rules', () => {
   assert.deepEqual(getDirectApplicableProviders('url'), ['virustotal']);
-  assert.deepEqual(getDirectApplicableProviders('ip'), ['virustotal', 'ipinfo', 'abuseipdb']);
+  assert.deepEqual(getDirectApplicableProviders('ip'), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
 });
 
 test('getDerivedApplicableProviders returns IP providers for ip host kind', () => {
-  assert.deepEqual(getDerivedApplicableProviders('ip'), ['ipinfo', 'abuseipdb']);
+  assert.deepEqual(getDerivedApplicableProviders('ip'), ['ipinfo', 'abuseipdb', 'spamhaus_drop']);
   assert.deepEqual(getDerivedApplicableProviders('domain', { rdapEligible: true }), ['rdap']);
 });
 
@@ -150,7 +150,7 @@ test('computeLayeredProviderCoverage splits direct and derived for URL with IP h
   assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal']);
   assert.equal(layered.direct[0].state, 'available');
   assert.equal(layered.derivedHost, '196.189.3.1');
-  assert.deepEqual(layered.derived.map((p) => p.key), ['ipinfo', 'abuseipdb']);
+  assert.deepEqual(layered.derived.map((p) => p.key), ['ipinfo', 'abuseipdb', 'spamhaus_drop']);
   assert.equal(layered.derived[0].state, 'available');
   assert.equal(layered.derived[1].state, 'not_run');
 });
@@ -161,6 +161,85 @@ test('computeLayeredProviderCoverage returns direct-only for IP IOC', () => {
     iocType: 'ip',
     derivedContext: null
   });
-  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb']);
+  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
   assert.equal(layered.derived, null);
+});
+
+// ---------------------------------------------------------------------------
+// Spamhaus DROP coverage badge colors
+// ---------------------------------------------------------------------------
+
+test('spamhaus_drop listed status maps to available (green badge)', () => {
+  const coverage = computeProviderCoverage(
+    { spamhaus_drop: { status: 'listed' } },
+    { providerKeys: ['spamhaus_drop'] }
+  );
+  assert.equal(coverage[0].state, 'available');
+  assert.equal(providerStateStyle('available').dot, '#22c55e');
+});
+
+test('spamhaus_drop not_listed status maps to available (green badge)', () => {
+  const coverage = computeProviderCoverage(
+    { spamhaus_drop: { status: 'not_listed' } },
+    { providerKeys: ['spamhaus_drop'] }
+  );
+  assert.equal(coverage[0].state, 'available');
+});
+
+test('spamhaus_drop not_run status maps to not_run (gray badge)', () => {
+  const coverage = computeProviderCoverage(
+    { spamhaus_drop: { status: 'not_run' } },
+    { providerKeys: ['spamhaus_drop'] }
+  );
+  assert.equal(coverage[0].state, 'not_run');
+});
+
+test('spamhaus_drop missing snapshot maps to not_run (gray badge)', () => {
+  const coverage = computeProviderCoverage({}, { providerKeys: ['spamhaus_drop'] });
+  assert.equal(coverage[0].state, 'not_run');
+});
+
+test('spamhaus_drop disabled status maps to disabled (yellow badge)', () => {
+  const coverage = computeProviderCoverage(
+    { spamhaus_drop: { status: 'disabled' } },
+    { providerKeys: ['spamhaus_drop'] }
+  );
+  assert.equal(coverage[0].state, 'disabled');
+  assert.equal(providerStateStyle('disabled').dot, '#f59e0b');
+});
+
+test('spamhaus_drop dataset_not_synced status maps to not_configured (yellow badge)', () => {
+  const coverage = computeProviderCoverage(
+    { spamhaus_drop: { status: 'dataset_not_synced' } },
+    { providerKeys: ['spamhaus_drop'] }
+  );
+  assert.equal(coverage[0].state, 'not_configured');
+  assert.equal(providerStateStyle('not_configured').dot, '#f59e0b');
+});
+
+test('spamhaus_drop suspicious status maps to not_configured (yellow badge)', () => {
+  const coverage = computeProviderCoverage(
+    { spamhaus_drop: { status: 'suspicious' } },
+    { providerKeys: ['spamhaus_drop'] }
+  );
+  assert.equal(coverage[0].state, 'not_configured');
+});
+
+test('spamhaus_drop is applicable for ip IOC type', () => {
+  assert.equal(isProviderApplicable('spamhaus_drop', 'ip'), true);
+});
+
+test('spamhaus_drop is not applicable for hash IOC type', () => {
+  assert.equal(isProviderApplicable('spamhaus_drop', 'hash'), false);
+  assert.equal(isProviderApplicable('spamhaus_drop', 'sha256'), false);
+});
+
+test('spamhaus_drop is not applicable for domain IOC type', () => {
+  assert.equal(isProviderApplicable('spamhaus_drop', 'domain'), false);
+});
+
+test('computeProviderCoverage includes spamhaus_drop for ip IOC', () => {
+  const coverage = computeProviderCoverage({}, { iocType: 'ip' });
+  const keys = coverage.map((p) => p.key);
+  assert.ok(keys.includes('spamhaus_drop'), 'spamhaus_drop must be included for ip IOC');
 });

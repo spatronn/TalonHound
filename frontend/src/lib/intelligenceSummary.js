@@ -2,10 +2,11 @@ import { isProviderApplicable } from './iocProviderApplicability.js';
 
 function providerCoverageStatus(snapshot) {
   const status = String(snapshot?.status || 'not_run').toLowerCase();
-  if (['success', 'available', 'enriched', 'vt_not_indexed'].includes(status)) return 'available';
-  if (['not_configured', 'api_key_missing', 'disabled'].includes(status)) return status === 'disabled' ? 'disabled' : 'not_configured';
+  if (['success', 'available', 'enriched', 'vt_not_indexed', 'listed', 'not_listed'].includes(status)) return 'available';
+  if (status === 'disabled') return 'disabled';
+  if (['not_configured', 'api_key_missing'].includes(status)) return 'not_configured';
+  if (['dataset_not_synced', 'suspicious', 'stale'].includes(status)) return 'not_configured';
   if (['error', 'failed'].includes(status)) return 'error';
-  if (['not_found', 'loading', 'private_ip'].includes(status)) return status === 'loading' ? 'not_run' : 'not_run';
   return 'not_run';
 }
 

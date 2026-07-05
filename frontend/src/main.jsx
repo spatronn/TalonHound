@@ -13521,57 +13521,67 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
 }
 
 function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
-  const [state, setState] = useState({ status: 'loading', data: null });
+  const [state, setState] = useState({ status: 'not_run', data: null });
   const [refreshing, setRefreshing] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
-
-  const load = useCallback(async () => {
-    if (!active) return;
-    setState((s) => ({ ...s, status: 'loading' }));
-    try {
-      const { data } = await api.get('/enrichment/spamhaus-drop/ioc', {
-        params: { ioc_value: iocValue, ioc_type: iocType }
-      });
-      setHasLoaded(true);
-      setState({ status: data?.status || 'not_applicable', data });
-    } catch (err) {
-      setHasLoaded(true);
-      setState({ status: 'error', data: null });
-    }
-  }, [iocValue, iocType, active]);
-
-  useEffect(() => {
-    if (!active) return;
-    load().catch(() => {});
-  }, [load, active]);
+  const [hasEnriched, setHasEnriched] = useState(false);
 
   useEffect(() => {
     if (!onSnapshot) return;
     onSnapshot({ status: state.status, listed: state.data?.listed ?? null });
   }, [state, onSnapshot]);
 
-  async function refresh() {
+  async function enrich() {
     if (!canRefresh) return;
     setRefreshing(true);
     try {
       const { data } = await api.post('/enrichment/spamhaus-drop/ioc/refresh', { ioc_value: iocValue, ioc_type: iocType });
+      setHasEnriched(true);
       setState({ status: data?.status || 'not_applicable', data });
     } catch {
+      setHasEnriched(true);
       setState((s) => ({ ...s, status: 'error' }));
     } finally {
       setRefreshing(false);
     }
   }
 
-  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
-
-  if (!active && !hasLoaded) return null;
+  if (!active) return null;
 
   const d = state.data || {};
   const status = state.status;
 
-  if (status === 'loading') {
-    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading Spamhaus DROP...</span></div>;
+  const cardBase = { marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' };
+
+  const StatusBadge = ({ label, borderColor, color }) => (
+    <span style={{ border: `1px solid ${borderColor}`, color, borderRadius: 999, padding: '2px 8px', fontSize: 11, marginLeft: 8, fontWeight: 600 }}>{label}</span>
+  );
+
+  const TargetIpBox = ({ ip }) => ip ? (
+    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#94a3b8', marginTop: 8, fontFamily: 'monospace' }}>
+      <span style={{ color: '#64748b', marginRight: 6 }}>IP</span>{ip}
+    </div>
+  ) : null;
+
+  const RefreshBtn = ({ label }) => canRefresh ? (
+    <button type="button" onClick={() => enrich().catch(() => {})} disabled={refreshing} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+      {refreshing ? 'Enriching…' : label}
+    </button>
+  ) : null;
+
+  if (status === 'not_run') {
+    return (
+      <div style={{ ...cardBase, border: '1px solid #334155' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>Spamhaus DROP</div>
+          {canRefresh ? (
+            <button type="button" onClick={() => enrich().catch(() => {})} disabled={refreshing} style={{ fontSize: 12 }}>
+              {refreshing ? 'Enriching…' : 'Enrich with Spamhaus DROP'}
+            </button>
+          ) : null}
+        </div>
+        <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>CIDR blocklist — click to check</div>
+      </div>
+    );
   }
 
   if (status === 'not_applicable' || status === 'disabled') {
@@ -13580,66 +13590,79 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
 
   if (status === 'dataset_not_synced') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
-        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Spamhaus DROP <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>CIDR blocklist</span></div>
-        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 6 }}>Dataset not yet synced</div>
-        {isAdmin ? <Link to="/administration/enrichment-providers" style={{ color: '#93c5fd', fontSize: 13, marginTop: 8 }}>Run sync in Administration</Link> : null}
+      <div style={{ ...cardBase, border: '1px solid #334155' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>
+            Spamhaus DROP
+            <StatusBadge label="Not synced" borderColor="#475569" color="#94a3b8" />
+          </div>
+          <RefreshBtn label="Refresh Spamhaus DROP" />
+        </div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>Dataset not yet synced</div>
+        {isAdmin ? <Link to="/administration/enrichment-providers" style={{ color: '#93c5fd', fontSize: 12, marginTop: 6, display: 'inline-block' }}>Run sync in Administration</Link> : null}
       </div>
     );
   }
 
   if (status === 'error') {
     return (
-      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
-        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Spamhaus DROP</div>
-        <span style={{ color: '#fca5a5', fontSize: 13 }}>Lookup failed</span>
-        {canRefresh ? <button type="button" onClick={() => refresh().catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Retry'}</button> : null}
+      <div style={{ ...cardBase, border: '1px solid #7f1d1d' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>
+            Spamhaus DROP
+            <StatusBadge label="Error" borderColor="#7f1d1d" color="#fca5a5" />
+          </div>
+          <RefreshBtn label={hasEnriched ? 'Refresh Spamhaus DROP' : 'Enrich with Spamhaus DROP'} />
+        </div>
+        <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 4 }}>Lookup failed</div>
       </div>
     );
   }
 
   if (status === 'listed') {
     return (
-      <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #7f1d1d', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
+      <div style={{ ...cardBase, border: '1px solid #7f1d1d' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+            <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>
               Spamhaus DROP
-              <span style={{ marginLeft: 8, border: '1px solid #7f1d1d', color: '#fca5a5', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Listed</span>
+              <StatusBadge label="Listed" borderColor="#7f1d1d" color="#fca5a5" />
             </div>
             <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>IP found in Spamhaus DROP blocklist</div>
           </div>
-          {canRefresh ? <button type="button" onClick={() => refresh().catch(() => {})} disabled={refreshing} style={{ fontSize: 12 }}>{refreshing ? 'Refreshing…' : 'Refresh Spamhaus DROP'}</button> : null}
+          <RefreshBtn label="Refresh Spamhaus DROP" />
         </div>
+        <TargetIpBox ip={d.target_ip} />
         <div className="enrichment-summary-grid" style={{ marginTop: 10 }}>
-          <EnrichmentFieldCard label="Target IP" value={d.target_ip} variant="compact" />
           <EnrichmentFieldCard label="Matched CIDR" value={d.matched_cidr} />
           <EnrichmentFieldCard label="List" value={d.list_type} />
           <EnrichmentFieldCard label="SBL ID" value={d.sblid} />
           <EnrichmentFieldCard label="RIR" value={d.rir} />
           <EnrichmentFieldCard label="Dataset status" value={d.dataset_status} />
         </div>
+        {d.last_sync_at ? <div style={{ color: '#475569', fontSize: 11, marginTop: 10 }}>Last synced {formatUserDateTime(d.last_sync_at)}</div> : null}
       </div>
     );
   }
 
   if (status === 'not_listed') {
     return (
-      <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #166534', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
+      <div style={{ ...cardBase, border: '1px solid #166534' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+            <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>
               Spamhaus DROP
-              <span style={{ marginLeft: 8, border: '1px solid #166534', color: '#86efac', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Not listed</span>
+              <StatusBadge label="Not listed" borderColor="#166534" color="#86efac" />
             </div>
             <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>IP not found in Spamhaus DROP blocklist</div>
           </div>
-          {canRefresh ? <button type="button" onClick={() => refresh().catch(() => {})} disabled={refreshing} style={{ fontSize: 12 }}>{refreshing ? 'Refreshing…' : 'Refresh Spamhaus DROP'}</button> : null}
+          <RefreshBtn label="Refresh Spamhaus DROP" />
         </div>
-        <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
-          {d.target_ip ? `Queried: ${d.target_ip}` : null}
-          {d.dataset_status && d.dataset_status !== 'healthy' ? ` · Dataset: ${d.dataset_status}` : null}
-        </div>
+        <TargetIpBox ip={d.target_ip} />
+        {d.dataset_status && d.dataset_status !== 'healthy' ? (
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>Dataset: {d.dataset_status}</div>
+        ) : null}
+        {d.last_sync_at ? <div style={{ color: '#475569', fontSize: 11, marginTop: 8 }}>Last synced {formatUserDateTime(d.last_sync_at)}</div> : null}
       </div>
     );
   }

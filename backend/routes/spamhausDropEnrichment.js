@@ -55,27 +55,18 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
       }
 
       const config = await getSpamhausDropConfig(pool);
-      const syncState = await getSpamhausDropSyncState(pool);
+
+      if (!config.enabled) {
+        return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'disabled', listed: null });
+      }
 
       const targetIp = extractIpFromIoc(iocValue, iocType);
-
       if (targetIp === null) {
-        const resp = buildSpamhausLookupResponse({ lookup: null, syncState, config, targetIp: null, notApplicable: true });
-        return res.json(resp);
+        return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'not_applicable', listed: null });
       }
 
-      let lookup;
-      try {
-        lookup = await lookupIpInSpamhausDrop(pool, targetIp);
-      } catch (err) {
-        if (err?.code === 'invalid_ip') {
-          return res.status(400).json({ message: err.message, code: 'invalid_ip' });
-        }
-        throw err;
-      }
-
-      const resp = buildSpamhausLookupResponse({ lookup, syncState, config, targetIp });
-      return res.json(resp);
+      // Return not_run — actual lookup only happens on POST refresh
+      return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'not_run', listed: null });
     } catch (err) {
       console.error('[spamhaus-drop] GET ioc lookup failed', err?.message || err);
       return res.status(500).json({ message: 'Spamhaus DROP lookup failed' });
