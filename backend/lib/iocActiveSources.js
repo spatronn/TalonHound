@@ -605,24 +605,34 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   const need = Math.min(offset + cappedLimit, cap);
   const scanLimit = Math.min(Math.max(need * 20, 150), cap * 4);
 
-  const memRes = await queryWithoutParallelWorkers(
-    pool,
-    `SELECT m.ioc_item_id, m.ioc_observable_type, MIN(m.first_seen_in_feed) AS sort_ts
-     FROM ioc_feed_memberships m
-     INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
-     WHERE m.status = 'active'
-       AND m.purged_at IS NULL
-       AND f.archived_at IS NULL
-     GROUP BY m.ioc_item_id, m.ioc_observable_type
-     ORDER BY sort_ts DESC NULLS LAST
-     LIMIT $1`,
-    [scanLimit]
-  );
-
-  const manualRes = { rows: [] };
+  const [memRes, manualRes] = await Promise.all([
+    queryWithoutParallelWorkers(
+      pool,
+      `SELECT m.ioc_item_id, m.ioc_observable_type, MIN(m.first_seen_in_feed) AS sort_ts
+       FROM ioc_feed_memberships m
+       INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.status = 'active'
+         AND m.purged_at IS NULL
+         AND f.archived_at IS NULL
+       GROUP BY m.ioc_item_id, m.ioc_observable_type
+       ORDER BY sort_ts DESC NULLS LAST
+       LIMIT $1`,
+      [scanLimit]
+    ),
+    queryWithoutParallelWorkers(
+      pool,
+      `SELECT id AS ioc_item_id, observable_type AS ioc_observable_type, created_at AS sort_ts
+       FROM ioc_items
+       WHERE ioc_source_id IS NOT NULL
+         AND COALESCE(status, 'active') = 'active'
+       ORDER BY created_at DESC NULLS LAST
+       LIMIT $1`,
+      [scanLimit]
+    )
+  ]);
 
   const combined = [...memRes.rows, ...manualRes.rows].sort(
-    (a, b) => new Date(b.sort_ts).getTime() - new Date(a.sort_ts).getTime()
+    (a, b) => new Date(b.sort_ts || 0).getTime() - new Date(a.sort_ts || 0).getTime()
   );
   const resolved = await resolveIocPartitionRows(pool, combined);
 
