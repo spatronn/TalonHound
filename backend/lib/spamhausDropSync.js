@@ -387,7 +387,8 @@ export async function runSpamhausDropListSync(pool, listType, options = {}) {
     for (const item of parsedItems) {
       await client.query(
         `INSERT INTO spamhaus_drop_entries (list_type, cidr, sblid, rir, raw_json, synced_at, created_at)
-         VALUES ($1, $2::cidr, $3, $4, $5::jsonb, $6, $6)`,
+         VALUES ($1, $2::cidr, $3, $4, $5::jsonb, $6, $6)
+         ON CONFLICT (list_type, cidr) DO NOTHING`,
         [listType, item.cidr, item.sblid, item.rir, JSON.stringify(item.raw_json), now]
       );
     }
