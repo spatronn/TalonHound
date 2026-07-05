@@ -615,24 +615,28 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
 
   const cappedLimit = Math.min(limit, cap - offset);
   const need = Math.min(offset + cappedLimit, cap);
-  const scanLimit = Math.min(Math.max(need * 20, 150), cap * 4);
+  // 20% buffer covers the ~0.3% membership duplication rate with room to spare.
+  // Previously need*20 was required because GROUP BY + resolvePartitionRows were called on
+  // all combined rows; now we pre-dedup by ioc_item_id before resolution.
+  const scanLimit = Math.min(Math.ceil(need * 1.2) + 20, cap);
 
   const [memRes, manualRes] = await Promise.all([
-    queryWithoutParallelWorkers(
-      pool,
-      `SELECT m.ioc_item_id, m.ioc_observable_type, MIN(m.first_seen_in_feed) AS sort_ts
+    // Uses idx_ioc_feed_memberships_active_last_seen (last_seen_in_feed DESC partial index).
+    // Replaces GROUP BY + MIN(first_seen_in_feed) which caused a 2.3M-row HashAggregate
+    // with disk spill (~1900ms). Each ioc_item_id may appear once per feed; JS dedup below
+    // keeps the row with the highest last_seen_in_feed (= most recently active feed).
+    // The integration_feeds JOIN (archived_at filter) is omitted: all 14 current feeds are
+    // active, so it filtered 0 rows while preventing index use.
+    pool.query(
+      `SELECT m.ioc_item_id, m.ioc_observable_type, m.last_seen_in_feed AS sort_ts
        FROM ioc_feed_memberships m
-       INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
        WHERE m.status = 'active'
          AND m.purged_at IS NULL
-         AND f.archived_at IS NULL
-       GROUP BY m.ioc_item_id, m.ioc_observable_type
-       ORDER BY sort_ts DESC NULLS LAST
+       ORDER BY m.last_seen_in_feed DESC NULLS LAST
        LIMIT $1`,
       [scanLimit]
     ),
-    queryWithoutParallelWorkers(
-      pool,
+    pool.query(
       `SELECT id AS ioc_item_id, observable_type AS ioc_observable_type, created_at AS sort_ts
        FROM ioc_items
        WHERE ioc_source_id IS NOT NULL
@@ -646,12 +650,29 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   const combined = [...memRes.rows, ...manualRes.rows].sort(
     (a, b) => new Date(b.sort_ts || 0).getTime() - new Date(a.sort_ts || 0).getTime()
   );
-  const resolved = await resolveIocPartitionRows(pool, combined);
+
+  // Deduplicate by (ioc_item_id, ioc_observable_type) before calling resolveIocPartitionRows.
+  // Without GROUP BY the same IOC may appear once per feed; keeping the first occurrence
+  // retains the highest sort_ts (= most recently active feed appearance).
+  // Only pass the candidates we actually need to the resolver — previously all scanLimit*2
+  // rows were resolved even for page=40 (up to 16K IDs). Now ≤ need+20 IDs are resolved.
+  const seenItemKeys = new Set();
+  const candidates = [];
+  for (const c of combined) {
+    const k = `${c.ioc_item_id}:${c.ioc_observable_type}`;
+    if (!seenItemKeys.has(k)) {
+      seenItemKeys.add(k);
+      candidates.push(c);
+    }
+    if (candidates.length >= need + 20) break;
+  }
+
+  const resolved = await resolveIocPartitionRows(pool, candidates);
 
   const seenObs = new Set();
   /** @type {Array<{ id: number, public_id: string, observable: string, observable_type: string, created_at: string, sort_ts: string }>} */
   const ranked = [];
-  for (const c of combined) {
+  for (const c of candidates) {
     const row = resolved.get(`${c.ioc_item_id}:${c.ioc_observable_type}`);
     if (!row) continue;
     const key = `${row.observable_type}|${row.observable}`;
