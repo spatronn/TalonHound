@@ -13556,12 +13556,6 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
     <span style={{ border: `1px solid ${borderColor}`, color, borderRadius: 999, padding: '2px 8px', fontSize: 11, marginLeft: 8, fontWeight: 600 }}>{label}</span>
   );
 
-  const TargetIpBox = ({ ip }) => ip ? (
-    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#94a3b8', marginTop: 8, fontFamily: 'monospace' }}>
-      <span style={{ color: '#64748b', marginRight: 6 }}>IP</span>{ip}
-    </div>
-  ) : null;
-
   const RefreshBtn = ({ label }) => canRefresh ? (
     <button type="button" onClick={() => enrich().catch(() => {})} disabled={refreshing} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
       {refreshing ? 'Enriching…' : label}
@@ -13632,8 +13626,8 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
           </div>
           <RefreshBtn label="Refresh Spamhaus DROP" />
         </div>
-        <TargetIpBox ip={d.target_ip} />
         <div className="enrichment-summary-grid" style={{ marginTop: 10 }}>
+          <EnrichmentFieldCard label="Target IP" value={d.target_ip} />
           <EnrichmentFieldCard label="Matched CIDR" value={d.matched_cidr} />
           <EnrichmentFieldCard label="List" value={d.list_type} />
           <EnrichmentFieldCard label="SBL ID" value={d.sblid} />
@@ -13658,10 +13652,10 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
           </div>
           <RefreshBtn label="Refresh Spamhaus DROP" />
         </div>
-        <TargetIpBox ip={d.target_ip} />
-        {d.dataset_status && d.dataset_status !== 'healthy' ? (
-          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>Dataset: {d.dataset_status}</div>
-        ) : null}
+        <div className="enrichment-summary-grid" style={{ marginTop: 10 }}>
+          <EnrichmentFieldCard label="Target IP" value={d.target_ip} />
+          {d.dataset_status && d.dataset_status !== 'healthy' ? <EnrichmentFieldCard label="Dataset status" value={d.dataset_status} /> : null}
+        </div>
         {d.last_sync_at ? <div style={{ color: '#475569', fontSize: 11, marginTop: 8 }}>Last synced {formatUserDateTime(d.last_sync_at)}</div> : null}
       </div>
     );
