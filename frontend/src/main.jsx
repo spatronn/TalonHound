@@ -14574,6 +14574,10 @@ function IOCDetailsPage() {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [removeSaving, setRemoveSaving] = useState(false);
   const [removeError, setRemoveError] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [actionToast, setActionToast] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const [pendingAction, setPendingAction] = useState(null);
@@ -14767,6 +14771,23 @@ function IOCDetailsPage() {
       setRemoveError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
     } finally {
       setRemoveSaving(false);
+    }
+  }
+
+  async function submitDeleteIoc() {
+    const pubId = summary?.public_id;
+    if (!pubId) return;
+    if (deleteConfirmText.trim().toLowerCase() !== 'delete') return;
+    setDeleteLoading(true);
+    setDeleteError('');
+    try {
+      await api.delete(`/ioc/${pubId}`, { data: { confirmation: deleteConfirmText.trim().toLowerCase() } });
+      setShowDeleteModal(false);
+      navigate('/ioc');
+    } catch (err) {
+      setDeleteError(apiErrorMessage(err, 'Failed to delete IOC'));
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -15185,6 +15206,9 @@ function IOCDetailsPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {summary && !suppressionActive && isAdmin ? (
               <button type="button" style={ui.btnPrimary} onClick={() => { setShowSuppressModal(true); setSuppressError(''); }}>Mark as False Positive</button>
+            ) : null}
+            {summary && isAdmin ? (
+              <button type="button" style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={() => { setShowDeleteModal(true); setDeleteConfirmText(''); setDeleteError(''); }}>Delete IOC</button>
             ) : null}
             <button onClick={() => navigate('/ioc')}>Back to IOC List</button>
             <button onClick={() => load().catch(() => {})}>Refresh</button>
@@ -15769,6 +15793,32 @@ function IOCDetailsPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
             <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitRemoveSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {showDeleteModal ? (
+        <ModalOverlay onClose={() => !deleteLoading && (setShowDeleteModal(false), setDeleteConfirmText(''), setDeleteError(''))}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Delete IOC</h3>
+          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 4 }}>You are about to permanently delete this IOC from the platform.</p>
+          <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: '#e2e8f0', marginBottom: 12, overflowWrap: 'anywhere' }}>{summary?.observable}</div>
+          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 12 }}>This action will remove the IOC from active IOC operations and correlation lookup. This is intended for incorrectly imported or mistakenly added IOCs.</p>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>To confirm, type: <span style={{ color: '#fca5a5', fontFamily: 'monospace' }}>delete</span></div>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="delete"
+              disabled={deleteLoading}
+              autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0', fontSize: 13, outline: 'none' }}
+            />
+          </div>
+          {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" style={ui.btn} onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); setDeleteError(''); }} disabled={deleteLoading}>Cancel</button>
+            <button type="button" style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #7f1d1d', background: deleteConfirmText.trim().toLowerCase() === 'delete' ? '#991b1b' : 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: deleteConfirmText.trim().toLowerCase() === 'delete' ? 'pointer' : 'not-allowed', opacity: deleteConfirmText.trim().toLowerCase() === 'delete' ? 1 : 0.5 }} onClick={() => submitDeleteIoc().catch(() => {})} disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}>{deleteLoading ? 'Deleting…' : 'Delete IOC'}</button>
           </div>
         </ModalOverlay>
       ) : null}
