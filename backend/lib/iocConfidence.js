@@ -600,6 +600,7 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
   const ids = keyed.map((x) => Number(x.id));
   const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
 
+  const _qt0 = Date.now();
   const [{ rows: mRows }, { rows: iocItemRows }] = await Promise.all([
     pool.query(
       `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
@@ -617,6 +618,7 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
       [ids]
     )
   ]);
+  console.log(`[confidence detail] dbQuery=${Date.now()-_qt0}ms mRows=${mRows.length} iocItemRows=${iocItemRows.length}`);
 
   const byKey = new Map();
   for (const m of mRows) {
