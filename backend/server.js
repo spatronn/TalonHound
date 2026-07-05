@@ -5564,12 +5564,14 @@ registerIocDeleteRoute(app, pool, auditLogService, { invalidateDetailsCache: inv
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
-  const confMap = await buildDisplayConfidenceForItems(pool, enriched, {
-    includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
-  });
-  const threatMetaMap = await enrichItemsWithThreatMetadata(pool, enriched);
-  const analystMap = await enrichItemsWithAnalystIntelligenceCounts(pool, enriched);
-  const feedClassMap = await batchLoadFeedClassifications(pool, enriched);
+  const [confMap, threatMetaMap, analystMap, feedClassMap] = await Promise.all([
+    buildDisplayConfidenceForItems(pool, enriched, {
+      includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
+    }),
+    enrichItemsWithThreatMetadata(pool, pageItems),
+    enrichItemsWithAnalystIntelligenceCounts(pool, pageItems),
+    batchLoadFeedClassifications(pool, pageItems)
+  ]);
   return enriched.map((it) => {
     const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
     const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
