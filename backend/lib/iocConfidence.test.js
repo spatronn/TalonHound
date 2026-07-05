@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildIocInheritedConfidenceSummary,
   buildConfidenceProvenance,
+  buildDisplayConfidenceForItems,
   computeInheritedEffectiveConfidence,
   computeItemStoredConfidence,
   normalizeConfidence,
@@ -239,4 +240,78 @@ test('resolveManualIocConfidenceProvenance distinguishes source default vs manua
 test('validateConfidenceInput rejects invalid values', () => {
   assert.equal(validateConfidenceInput('very_high').ok, false);
   assert.equal(validateConfidenceInput('high').ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// buildDisplayConfidenceForItems — manual IOC confidence from ioc_items
+// ---------------------------------------------------------------------------
+
+function makeConfPool({ memberships = [], iocItems = [] } = {}) {
+  return {
+    async query(sql) {
+      if (sql.includes('FROM ioc_feed_memberships')) return { rows: memberships };
+      if (sql.includes('FROM ioc_items')) return { rows: iocItems };
+      return { rows: [] };
+    }
+  };
+}
+
+test('buildDisplayConfidenceForItems resolves high from ioc_items.confidence when no memberships', async () => {
+  const pool = makeConfPool({
+    memberships: [],
+    iocItems: [{ id: 99, confidence: 'high', analyst_confidence_override: null, ioc_source_id: 7, source_name: 'Threat-Hunting' }]
+  });
+  const items = [{ id: 99, observable: '31.76.32.249', observable_type: 'ip', active_source_count: 1 }];
+  const map = await buildDisplayConfidenceForItems(pool, items);
+  const result = map.get('99|ip');
+  assert.ok(result, 'must have a result for the item');
+  assert.equal(result.confidence_effective, 'high', 'manual IOC must show high from ioc_items.confidence');
+});
+
+test('buildDisplayConfidenceForItems does not override existing it.confidence with ioc_items data', async () => {
+  const pool = makeConfPool({
+    memberships: [],
+    iocItems: [{ id: 100, confidence: 'low', analyst_confidence_override: null, ioc_source_id: 7, source_name: 'Threat-Hunting' }]
+  });
+  // item already has confidence set (e.g. from a wider query)
+  const items = [{ id: 100, observable: '10.0.0.1', observable_type: 'ip', active_source_count: 1, confidence: 'medium' }];
+  const map = await buildDisplayConfidenceForItems(pool, items);
+  const result = map.get('100|ip');
+  assert.equal(result.confidence_effective, 'medium', 'existing it.confidence must take precedence over ioc_items');
+});
+
+test('buildDisplayConfidenceForItems analyst_override takes highest precedence', async () => {
+  const pool = makeConfPool({
+    memberships: [],
+    iocItems: [{ id: 101, confidence: 'high', analyst_confidence_override: 'low', ioc_source_id: 7, source_name: 'Threat-Hunting' }]
+  });
+  const items = [{ id: 101, observable: '1.2.3.4', observable_type: 'ip', active_source_count: 1 }];
+  const map = await buildDisplayConfidenceForItems(pool, items);
+  const result = map.get('101|ip');
+  assert.equal(result.confidence_effective, 'low', 'analyst override must take precedence over stored confidence');
+});
+
+test('buildDisplayConfidenceForItems feed membership confidence takes precedence over ioc_items', async () => {
+  const pool = makeConfPool({
+    memberships: [{
+      ioc_item_id: 102, ioc_observable_type: 'ip', status: 'active',
+      explicit_confidence: null, feed_key: 'urlhaus', feed_name: 'URLHaus', feed_default_confidence: 'medium'
+    }],
+    iocItems: [{ id: 102, confidence: 'low', analyst_confidence_override: null, ioc_source_id: null, source_name: null }]
+  });
+  const items = [{ id: 102, observable: '5.6.7.8', observable_type: 'ip', active_source_count: 1 }];
+  const map = await buildDisplayConfidenceForItems(pool, items);
+  const result = map.get('102|ip');
+  assert.equal(result.confidence_effective, 'medium', 'feed default confidence must win over ioc_items.confidence when membership exists');
+});
+
+test('buildDisplayConfidenceForItems returns null effective for item with no source and no confidence', async () => {
+  const pool = makeConfPool({
+    memberships: [],
+    iocItems: [{ id: 103, confidence: null, analyst_confidence_override: null, ioc_source_id: null, source_name: null }]
+  });
+  const items = [{ id: 103, observable: '9.9.9.9', observable_type: 'ip', active_source_count: 0 }];
+  const map = await buildDisplayConfidenceForItems(pool, items);
+  const result = map.get('103|ip');
+  assert.equal(result.confidence_effective, null, 'no-source, no-confidence item must not fabricate a confidence value');
 });

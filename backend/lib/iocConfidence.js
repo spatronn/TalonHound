@@ -600,15 +600,23 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
   const ids = keyed.map((x) => Number(x.id));
   const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
 
-  const { rows: mRows } = await pool.query(
-    `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
-            f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
-     FROM ioc_feed_memberships m
-     JOIN integration_feeds f ON f.integration_id = m.feed_id
-     WHERE m.ioc_item_id = ANY($1::bigint[])
-       AND m.ioc_observable_type = ANY($2::text[])`,
-    [ids, types]
-  );
+  const [{ rows: mRows }, { rows: iocItemRows }] = await Promise.all([
+    pool.query(
+      `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
+              f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = ANY($1::bigint[])
+         AND m.ioc_observable_type = ANY($2::text[])`,
+      [ids, types]
+    ),
+    pool.query(
+      `SELECT id, confidence, analyst_confidence_override, ioc_source_id, source_name
+       FROM ioc_items
+       WHERE id = ANY($1::bigint[])`,
+      [ids]
+    )
+  ]);
 
   const byKey = new Map();
   for (const m of mRows) {
@@ -617,14 +625,29 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
     byKey.get(k).push(m);
   }
 
+  const iocItemById = new Map();
+  for (const r of iocItemRows) {
+    iocItemById.set(Number(r.id), r);
+  }
+
   const out = new Map();
   for (const it of keyed) {
     const k = `${Number(it.id)}|${String(it.observable_type)}`;
     const memberships = byKey.get(k) || [];
+    const storedItem = iocItemById.get(Number(it.id));
+    const itEnriched = storedItem
+      ? {
+          ...it,
+          confidence: it.confidence ?? storedItem.confidence,
+          analyst_confidence_override: it.analyst_confidence_override ?? storedItem.analyst_confidence_override,
+          ioc_source_id: it.ioc_source_id ?? storedItem.ioc_source_id,
+          source_name: it.source_name ?? storedItem.source_name,
+        }
+      : it;
     const { inherited, confidenceSourceScope } = resolveIocConfidenceFromMemberships({
-      analystOverride: it.analyst_confidence_override,
+      analystOverride: itEnriched.analyst_confidence_override,
       membershipRows: memberships,
-      iocRows: [it],
+      iocRows: [itEnriched],
       allowHistoricalFallback: includeInactiveMemberships
     });
     let effective = inherited.effective;
@@ -632,10 +655,10 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
     let sourceName = inherited.confidence_feed_name || inherited.confidence_source_name;
     const scope = confidenceSourceScope;
     if (!effective) {
-      const hasAnySource = Number(it.active_source_count) > 0
+      const hasAnySource = Number(itEnriched.active_source_count) > 0
         || filterConfidenceMemberships(memberships, { allowHistorical: true }).length > 0
         || (memberships || []).some((m) => isActiveFeedMembership(m));
-      const itemStored = hasAnySource ? computeItemStoredConfidence(it) : null;
+      const itemStored = hasAnySource ? computeItemStoredConfidence(itEnriched) : null;
       if (itemStored) {
         effective = itemStored.effective;
         source = itemStored.confidence_source;
@@ -643,7 +666,7 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
       }
     }
     effective = effective
-      || (Number(it.active_source_count) > 0 ? normalizeConfidence(it.confidence) : null)
+      || (Number(itEnriched.active_source_count) > 0 ? normalizeConfidence(itEnriched.confidence) : null)
       || null;
     out.set(k, {
       confidence_effective: effective,
@@ -651,7 +674,7 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
       confidence_source_scope: effective ? scope : null,
       confidence_source_description: effective
         ? buildConfidenceSourceDescription(source || 'unknown', sourceName, { scope })
-        : (Number(it.active_source_count) > 0 && it.source_name ? `Historical from ${it.source_name}` : 'No active source')
+        : (Number(itEnriched.active_source_count) > 0 && itEnriched.source_name ? `Historical from ${itEnriched.source_name}` : 'No active source')
     });
   }
   return out;
