@@ -135,7 +135,9 @@ export const AUDIT_ACTION = Object.freeze({
   CUSTOM_FEED_SYNC_FAILED: 'custom_feed.sync_failed',
   CUSTOM_FEED_DELETED: 'custom_feed.deleted',
   CUSTOM_FEED_UNLINKED_FROM_PUBLISHED: 'custom_feed.unlinked_from_published',
-  CUSTOM_FEED_CLEANUP_DELETED: 'custom_feed.cleanup_delete'
+  CUSTOM_FEED_CLEANUP_DELETED: 'custom_feed.cleanup_delete',
+  SPAMHAUS_DROP_SYNC_TRIGGERED: 'enrichment.spamhaus_drop.sync_triggered',
+  SPAMHAUS_DROP_ENRICHMENT_REFRESH: 'enrichment.spamhaus_drop.refresh'
 });
 
 export const AUDIT_ENTITY = Object.freeze({

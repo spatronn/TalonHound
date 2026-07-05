@@ -28,6 +28,7 @@ import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
+import { registerSpamhausDropEnrichmentRoutes } from './routes/spamhausDropEnrichment.js';
 import {
   registerAnalystIntelligenceRoutes,
   enrichItemsWithAnalystIntelligenceCounts,
@@ -73,6 +74,7 @@ import {
 } from './lib/environmentInsight.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
+import { getSpamhausDropConfig, getSpamhausDropSyncState } from './lib/spamhausDropSync.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence, computeInheritedEffectiveConfidence } from './lib/iocConfidence.js';
@@ -5179,6 +5181,7 @@ registerRouteModule('rdap_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
+registerSpamhausDropEnrichmentRoutes(app, pool, auditLogService, { importQueue });
 registerAnalystIntelligenceRoutes(app, pool, auditLogService);
 registerRouteModule('analyst_intelligence');
 registerRouteModule('ip_enrichment');
@@ -8132,7 +8135,33 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
         last_error_at: abuseipdb.last_error_at,
         last_error_message: abuseipdb.last_error_message
       },
-      getRdapProviderAdminSummary()
+      getRdapProviderAdminSummary(),
+      await (async () => {
+        const sdCfg = await getSpamhausDropConfig(pool);
+        const sdState = await getSpamhausDropSyncState(pool);
+        const v4 = sdState.find((s) => s.list_type === 'drop_v4');
+        const v6 = sdState.find((s) => s.list_type === 'drop_v6');
+        const lastSuccess = [v4?.last_success_at, v6?.last_success_at].filter(Boolean)
+          .reduce((a, b) => (a && new Date(a) > new Date(b) ? a : b), null);
+        const anyFailed = [v4?.status, v6?.status].some((s) => s === 'failed');
+        const allHealthy = [v4?.status, v6?.status].every((s) => s === 'healthy');
+        const sdStatus = !sdCfg.enabled ? 'disabled'
+          : !lastSuccess ? 'never_synced'
+          : anyFailed ? 'error'
+          : allHealthy ? 'healthy'
+          : 'running';
+        return {
+          provider: 'spamhaus_drop',
+          name: 'Spamhaus DROP',
+          enabled: sdCfg.enabled,
+          configured: true,
+          sync_interval_hours: sdCfg.sync_interval_hours,
+          timeout_ms: sdCfg.timeout_ms,
+          status: sdStatus,
+          last_success_at: lastSuccess,
+          sync_state: sdState
+        };
+      })()
     ]});
   } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
 });

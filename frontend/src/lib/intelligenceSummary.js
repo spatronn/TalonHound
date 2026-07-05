@@ -70,7 +70,8 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
     { key: 'virustotal', label: 'VT' },
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
-    { key: 'rdap', label: 'RDAP' }
+    { key: 'rdap', label: 'RDAP' },
+    { key: 'spamhaus_drop', label: 'Spamhaus' }
   ];
   let applicable;
   if (Array.isArray(providerKeys) && providerKeys.length) {

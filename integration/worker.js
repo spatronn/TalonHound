@@ -20,6 +20,7 @@ import {
 } from './lib/integrationQueueJobState.js';
 import { runFeedDataPurgeJob } from './lib/feedLifecycle.js';
 import { runCustomThreatFeedImport } from './lib/customThreatFeedImport.js';
+import { runSpamhausDropSync } from './lib/spamhausDropSync.js';
 import { resolveWorkerJobFailureType } from './lib/job-cancellation.js';
 
 const pool = createIntegrationPool();
@@ -41,6 +42,7 @@ function resolveIntegrationKey(job) {
   if (job?.data?.integration_key) return job.data.integration_key;
   if (job?.name === 'feed_data_purge') return job.data.integration_key || job.data.feed_key || 'unknown';
   if (job?.name === 'custom-threat-feed-sync') return job.data.integration_key || 'unknown';
+  if (job?.name === 'spamhaus-drop-sync') return 'spamhaus-drop';
   if (job?.name === 'hourly-import') return 'et-blockrules';
   if (job?.name === 'usom-import') return 'usom-trcert';
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
@@ -79,6 +81,9 @@ async function runImportForJob(job, { signal, triggeredBy } = {}) {
       jobId: String(job.id)
     });
   }
+  if (job.name === 'spamhaus-drop-sync') {
+    return runSpamhausDropSync(pool, opts);
+  }
   if (job.name === 'hourly-import') return runHourlyImport(opts);
   if (job.name === 'usom-import') return runUsomImport(opts);
   if (job.name === 'urlhaus-import') return runUrlhausImport(opts);
@@ -107,6 +112,10 @@ function resolveJobTimeoutMs(integrationKey, jobName) {
   if (jobName === 'custom-threat-feed-sync') {
     const n = Number(process.env.CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS || 600000);
     return { timeoutMs: Math.max(n, 60000), source: 'CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS' };
+  }
+  if (jobName === 'spamhaus-drop-sync') {
+    const n = Number(process.env.SPAMHAUS_DROP_JOB_TIMEOUT_MS || 120000);
+    return { timeoutMs: Math.max(n, 30000), source: 'SPAMHAUS_DROP_JOB_TIMEOUT_MS' };
   }
   const envName = map[integrationKey];
   if (!envName) return { timeoutMs: globalTimeout, source: 'global' };

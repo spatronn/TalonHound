@@ -178,7 +178,8 @@ function DerivedInfrastructureSection({
   onProviderSnapshot,
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
-  RdapEnrichmentCard
+  RdapEnrichmentCard,
+  SpamhausDropEnrichmentCard
 }) {
   if (!context) return null;
 
@@ -240,6 +241,17 @@ function DerivedInfrastructureSection({
             isAdmin={isAdmin}
             compact
             onSnapshot={(snap) => onProviderSnapshot('rdap', snap)}
+          />
+        ) : null}
+        {isDerivedProviderApplicable('spamhaus_drop', context) && SpamhausDropEnrichmentCard ? (
+          <SpamhausDropEnrichmentCard
+            iocValue={iocValue}
+            iocType={iocType}
+            active={active}
+            canRefresh={canWrite}
+            isAdmin={isAdmin}
+            compact
+            onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)}
           />
         ) : null}
       </div>
@@ -582,7 +594,8 @@ export function IntelligenceTabPanel({
   VirusTotalEnrichmentCard,
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
-  RdapEnrichmentCard
+  RdapEnrichmentCard,
+  SpamhausDropEnrichmentCard
 }) {
   const [providerSnapshots, setProviderSnapshots] = useState({});
   const [derivedProviderSnapshots, setDerivedProviderSnapshots] = useState({});
@@ -602,6 +615,7 @@ export function IntelligenceTabPanel({
   const showAbuse = isProviderApplicable('abuseipdb', iocType);
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
+  const showSpamhaus = isProviderApplicable('spamhaus_drop', iocType);
 
   const onProviderSnapshot = useCallback((provider, snapshot) => {
     setProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
@@ -646,6 +660,9 @@ export function IntelligenceTabPanel({
           {showRdap ? (
             <RdapEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('rdap', snap)} />
           ) : null}
+          {showSpamhaus && SpamhausDropEnrichmentCard ? (
+            <SpamhausDropEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
+          ) : null}
         </div>
       </div>
 
@@ -662,6 +679,7 @@ export function IntelligenceTabPanel({
         IpEnrichmentCard={IpEnrichmentCard}
         AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
         RdapEnrichmentCard={RdapEnrichmentCard}
+        SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
       />
 
       <AnalystIntelligenceSection

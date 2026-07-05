@@ -1,6 +1,6 @@
 import { ipEnrichStripHostPort } from './ipEnrichmentTarget.js';
 
-export const PROVIDER_KEYS = Object.freeze(['virustotal', 'ipinfo', 'abuseipdb', 'rdap']);
+export const PROVIDER_KEYS = Object.freeze(['virustotal', 'ipinfo', 'abuseipdb', 'rdap', 'spamhaus_drop']);
 
 const HASH_TYPES = new Set([
   'file_hash',
@@ -71,6 +71,7 @@ export function isProviderApplicable(providerKey, iocType, { rdapEligible = fals
 
   if (key === 'virustotal') return true;
   if (key === 'ipinfo' || key === 'abuseipdb') return normalized === 'ip';
+  if (key === 'spamhaus_drop') return normalized === 'ip';
   if (key === 'rdap') return normalized === 'domain' && Boolean(rdapEligible);
   return false;
 }
@@ -90,7 +91,7 @@ export function getDirectApplicableProviders(iocType, options = {}) {
  */
 export function getDerivedApplicableProviders(derivedEntityType, { rdapEligible = false } = {}) {
   const kind = String(derivedEntityType || '').toLowerCase();
-  if (kind === 'ip') return ['ipinfo', 'abuseipdb'];
+  if (kind === 'ip') return ['ipinfo', 'abuseipdb', 'spamhaus_drop'];
   if (kind === 'domain' && rdapEligible) return ['rdap'];
   return [];
 }

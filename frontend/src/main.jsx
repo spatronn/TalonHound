@@ -10609,11 +10609,13 @@ function EnrichmentProvidersPage() {
   const [ipinfo, setIpinfo] = useState(null);
   const [abuseipdb, setAbuseipdb] = useState(null);
   const [rdap, setRdap] = useState(null);
+  const [spamhaus, setSpamhaus] = useState(null);
   const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
   const [ipForm, setIpForm] = useState({ enabled: true, token: '', base_url: 'https://api.ipinfo.io/lite', timeout_seconds: 6, usage_note: '' });
   const [abuseForm, setAbuseForm] = useState({ enabled: false, api_key: '', cache_ttl_hours: 24, timeout_ms: 8000, max_age_days: 90, verbose: false, test_ip: '' });
+  const [spamhausForm, setSpamhausForm] = useState({ enabled: false, sync_interval_hours: 24, timeout_ms: 30000 });
   const [feedback, setFeedback] = useState({ type: '', text: '' });
-  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false, abuseSave: false, abuseTest: false, abuseRemove: false });
+  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false, abuseSave: false, abuseTest: false, abuseRemove: false, spamSave: false, spamSync: false });
 
   const statusMeta = (status) => {
     const s = String(status || '').toLowerCase();
@@ -10632,10 +10634,12 @@ function EnrichmentProvidersPage() {
       const ipRow = (data?.providers || []).find((x) => x.provider === 'ipinfo_lite') || null;
       const abuseRow = (data?.providers || []).find((x) => x.provider === 'abuseipdb') || null;
       const rdapRow = (data?.providers || []).find((x) => x.provider === 'rdap') || null;
+      const spamRow = (data?.providers || []).find((x) => x.provider === 'spamhaus_drop') || null;
       setVt(vtRow);
       setIpinfo(ipRow);
       setAbuseipdb(abuseRow);
       setRdap(rdapRow);
+      setSpamhaus(spamRow);
       if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
       if (ipRow) {
         setIpForm((f) => ({
@@ -10653,6 +10657,14 @@ function EnrichmentProvidersPage() {
           timeout_ms: abuseRow.timeout_ms || 8000,
           max_age_days: abuseRow.max_age_days || 90,
           verbose: abuseRow.verbose === true
+        }));
+      }
+      if (spamRow) {
+        setSpamhausForm((f) => ({
+          ...f,
+          enabled: spamRow.enabled,
+          sync_interval_hours: spamRow.sync_interval_hours || 24,
+          timeout_ms: spamRow.timeout_ms || 30000
         }));
       }
     } finally { setLoading(false); }
@@ -10778,11 +10790,40 @@ function EnrichmentProvidersPage() {
     } finally { setBusy((b) => ({ ...b, abuseRemove: false })); }
   }
 
+  async function saveSpamhaus() {
+    setBusy((b) => ({ ...b, spamSave: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const reason = await requestRequiredReason('Update Spamhaus DROP provider settings');
+      if (!reason) return;
+      await api.put('/admin/enrichment-providers/spamhaus-drop', { ...spamhausForm, reason });
+      setFeedback({ type: 'success', text: 'Spamhaus DROP settings saved.' });
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
+    } finally { setBusy((b) => ({ ...b, spamSave: false })); }
+  }
+
+  async function runSpamhausSync() {
+    setBusy((b) => ({ ...b, spamSync: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const reason = await requestRequiredReason('Trigger immediate Spamhaus DROP sync');
+      if (!reason) return;
+      await api.post('/admin/enrichment-providers/spamhaus-drop/sync', { reason });
+      setFeedback({ type: 'success', text: 'Spamhaus DROP sync job queued.' });
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Sync failed' });
+    } finally { setBusy((b) => ({ ...b, spamSync: false })); }
+  }
+
   const cardShell = { border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a', marginBottom:16 };
   const vtSm = statusMeta(vt?.status);
   const ipSm = statusMeta(ipinfo?.status);
   const abuseSm = statusMeta(abuseipdb?.status === 'disabled' ? 'not_configured' : (abuseipdb?.status || 'not_configured'));
   const rdapSm = statusMeta(rdap?.status === 'disabled' ? 'not_configured' : (rdap?.status || 'healthy'));
+  const spamSm = statusMeta(spamhaus?.status === 'disabled' ? 'not_configured' : (spamhaus?.status === 'never_synced' ? 'not_configured' : (spamhaus?.status || 'not_configured')));
   const anyBusy = Object.values(busy).some(Boolean);
 
   const abuseConnectionStatus = abuseipdb?.enabled
@@ -10946,6 +10987,58 @@ function EnrichmentProvidersPage() {
         </div>
         <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#0b1220', color:'#94a3b8', fontSize:13, lineHeight:1.5 }}>
           Used on-demand from <b style={{ color:'#e2e8f0' }}>IOC Details → Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain (e.g. tenant.wixstudio.com → wixstudio.com).
+        </div>
+      </div> : null}
+
+      {spamhaus ? <div style={cardShell}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
+          <div>
+            <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>Spamhaus DROP</h3>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>Periodic CIDR blocklist dataset sync. Local lookup only — no per-IP external calls.</div>
+          </div>
+          <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+            {spamhaus.enabled ? (
+              <span style={{ border:`1px solid ${spamSm.border}`, background:spamSm.bg, color:spamSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>{spamhaus.status === 'healthy' ? 'Healthy' : spamhaus.status === 'never_synced' ? 'Never synced' : spamSm.label}</span>
+            ) : (
+              <span style={{ border:'1px solid #475569', background:'rgba(100,116,139,0.2)', color:'#cbd5e1', borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700 }}>Provider off</span>
+            )}
+            <label htmlFor="spamhaus-enable-provider" style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:8, cursor: isAdmin ? 'pointer' : 'default', whiteSpace:'nowrap' }}>
+              <input id="spamhaus-enable-provider" type="checkbox" checked={spamhausForm.enabled} onChange={(e)=>setSpamhausForm((x)=>({...x, enabled:e.target.checked}))} disabled={!isAdmin} />
+              Enable provider
+            </label>
+          </div>
+        </div>
+        <p style={{ margin:'8px 0 0', color:'#64748b', fontSize:12 }}>Downloads DROP/DROPv6 CIDR datasets on a schedule. Lookups are local — no external call per IOC.</p>
+        <div style={providerGridStyle}>
+          <label htmlFor="spamhaus-interval" style={providerFieldLabelStyle}>
+            Sync interval (hours)
+            <select id="spamhaus-interval" value={spamhausForm.sync_interval_hours} onChange={(e)=>setSpamhausForm((x)=>({...x, sync_interval_hours:Number(e.target.value)}))} disabled={!isAdmin} style={{ ...providerFieldInputStyle, cursor: isAdmin ? 'pointer' : 'default' }}>
+              <option value={6}>Every 6 hours</option>
+              <option value={12}>Every 12 hours</option>
+              <option value={24}>Every 24 hours</option>
+            </select>
+          </label>
+          <label htmlFor="spamhaus-timeout" style={providerFieldLabelStyle}>
+            Fetch timeout (ms)
+            <input id="spamhaus-timeout" type="number" min="5000" value={spamhausForm.timeout_ms} onChange={(e)=>setSpamhausForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
+        </div>
+        {spamhaus.sync_state?.length ? (
+          <div style={{ marginTop:14, display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:10 }}>
+            {spamhaus.sync_state.map((s) => (
+              <div key={s.list_type} style={{ padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#0b1220', fontSize:12 }}>
+                <div style={{ color:'#94a3b8', marginBottom:4, fontWeight:600, textTransform:'uppercase', fontSize:11 }}>{s.list_type}</div>
+                <div style={{ color:'#e2e8f0' }}>Status: {s.status}</div>
+                {s.entry_count != null ? <div style={{ color:'#94a3b8', marginTop:2 }}>Entries: {s.entry_count.toLocaleString()}</div> : null}
+                {s.last_success_at ? <div style={{ color:'#94a3b8', marginTop:2 }}>Last sync: {new Date(s.last_success_at).toLocaleString()}</div> : null}
+                {s.error_message ? <div style={{ color:'#fca5a5', marginTop:2, wordBreak:'break-word' }}>Error: {s.error_message}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
+          <button onClick={()=>saveSpamhaus().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.spamSave ? 'Saving...' : 'Save'}</button>
+          <button onClick={()=>runSpamhausSync().catch(()=>{})} disabled={!isAdmin || anyBusy || !spamhausForm.enabled} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }} title={!spamhausForm.enabled ? 'Enable provider first' : 'Enqueue an immediate sync job'}>{busy.spamSync ? 'Queuing...' : 'Run sync now'}</button>
         </div>
       </div> : null}
     </>}
@@ -13427,6 +13520,133 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
   );
 }
 
+function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
+  const [state, setState] = useState({ status: 'loading', data: null });
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!active) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get('/enrichment/spamhaus-drop/ioc', {
+        params: { ioc_value: iocValue, ioc_type: iocType }
+      });
+      setHasLoaded(true);
+      setState({ status: data?.status || 'not_applicable', data });
+    } catch (err) {
+      setHasLoaded(true);
+      setState({ status: 'error', data: null });
+    }
+  }, [iocValue, iocType, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    onSnapshot({ status: state.status, listed: state.data?.listed ?? null });
+  }, [state, onSnapshot]);
+
+  async function refresh() {
+    if (!canRefresh) return;
+    setRefreshing(true);
+    try {
+      const { data } = await api.post('/enrichment/spamhaus-drop/ioc/refresh', { ioc_value: iocValue, ioc_type: iocType });
+      setState({ status: data?.status || 'not_applicable', data });
+    } catch {
+      setState((s) => ({ ...s, status: 'error' }));
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+
+  if (!active && !hasLoaded) return null;
+
+  const d = state.data || {};
+  const status = state.status;
+
+  if (status === 'loading') {
+    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading Spamhaus DROP...</span></div>;
+  }
+
+  if (status === 'not_applicable' || status === 'disabled') {
+    return null;
+  }
+
+  if (status === 'dataset_not_synced') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Spamhaus DROP <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>CIDR blocklist</span></div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 6 }}>Dataset not yet synced</div>
+        {isAdmin ? <Link to="/administration/enrichment-providers" style={{ color: '#93c5fd', fontSize: 13, marginTop: 8 }}>Run sync in Administration</Link> : null}
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Spamhaus DROP</div>
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>Lookup failed</span>
+        {canRefresh ? <button type="button" onClick={() => refresh().catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Retry'}</button> : null}
+      </div>
+    );
+  }
+
+  if (status === 'listed') {
+    return (
+      <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #7f1d1d', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+              Spamhaus DROP
+              <span style={{ marginLeft: 8, border: '1px solid #7f1d1d', color: '#fca5a5', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Listed</span>
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>IP found in Spamhaus DROP blocklist</div>
+          </div>
+          {canRefresh ? <button type="button" onClick={() => refresh().catch(() => {})} disabled={refreshing} style={{ fontSize: 12 }}>{refreshing ? 'Refreshing…' : 'Refresh Spamhaus DROP'}</button> : null}
+        </div>
+        <div className="enrichment-summary-grid" style={{ marginTop: 10 }}>
+          <EnrichmentFieldCard label="Target IP" value={d.target_ip} variant="compact" />
+          <EnrichmentFieldCard label="Matched CIDR" value={d.matched_cidr} />
+          <EnrichmentFieldCard label="List" value={d.list_type} />
+          <EnrichmentFieldCard label="SBL ID" value={d.sblid} />
+          <EnrichmentFieldCard label="RIR" value={d.rir} />
+          <EnrichmentFieldCard label="Dataset status" value={d.dataset_status} />
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'not_listed') {
+    return (
+      <div style={{ marginBottom: compact ? 0 : 14, padding: compact ? 12 : 14, border: '1px solid #166534', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+              Spamhaus DROP
+              <span style={{ marginLeft: 8, border: '1px solid #166534', color: '#86efac', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Not listed</span>
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>IP not found in Spamhaus DROP blocklist</div>
+          </div>
+          {canRefresh ? <button type="button" onClick={() => refresh().catch(() => {})} disabled={refreshing} style={{ fontSize: 12 }}>{refreshing ? 'Refreshing…' : 'Refresh Spamhaus DROP'}</button> : null}
+        </div>
+        <div style={{ marginTop: 8, color: '#94a3b8', fontSize: 12 }}>
+          {d.target_ip ? `Queried: ${d.target_ip}` : null}
+          {d.dataset_status && d.dataset_status !== 'healthy' ? ` · Dataset: ${d.dataset_status}` : null}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 /**
  * UI-only eligibility for RDAP card (backend validation unchanged).
  * @returns {{ eligible: boolean, host: string|null, rdapDomain: string|null, reason: string|null }}
@@ -15420,6 +15640,7 @@ function IOCDetailsPage() {
                 IpEnrichmentCard={IpEnrichmentCard}
                 AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
                 RdapEnrichmentCard={RdapEnrichmentCard}
+                SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
               />
             ) : null}
 
