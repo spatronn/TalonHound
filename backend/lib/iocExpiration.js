@@ -598,6 +598,7 @@ export async function upsertMembershipOnImport(client, {
   observableType,
   feedId,
   seenAt = new Date(),
+  firstSeenAt = null,
   explicitConfidence = null,
   audit = null,
   actor = { actor_type: 'feed_import', source: 'integration' },
@@ -608,6 +609,7 @@ export async function upsertMembershipOnImport(client, {
   const importCtx = getImportOptimizationContext();
   const policy = await getFeedPolicy(client, feedId, observableType, { importContext: importCtx });
   const now = seenAt instanceof Date ? seenAt : new Date(seenAt);
+  const firstNow = firstSeenAt ? (firstSeenAt instanceof Date ? firstSeenAt : new Date(firstSeenAt)) : now;
 
   const existing = await client.query(
     `SELECT * FROM ioc_feed_memberships
@@ -625,9 +627,9 @@ export async function upsertMembershipOnImport(client, {
       `INSERT INTO ioc_feed_memberships (
          ioc_item_id, ioc_observable_type, feed_id,
          first_seen_in_feed, last_seen_in_feed, missing_since, status
-       ) VALUES ($1, $2, $3::uuid, $4, $4, NULL, 'active')
+       ) VALUES ($1, $2, $3::uuid, $4, $5, NULL, 'active')
        RETURNING *`,
-      [iocItemId, observableType, feedId, now]
+      [iocItemId, observableType, feedId, firstNow, now]
     );
     membershipRow = ins.rows[0];
     membershipId = membershipRow.id;
@@ -928,6 +930,7 @@ export async function syncMembershipAfterIocImport(client, {
   confidence = null,
   category = null,
   seenAt = new Date(),
+  firstSeenAt = null,
   reactivateOnly = false
 }) {
   const feedId = await resolveFeedIdBySourceName(client, sourceName);
@@ -952,6 +955,7 @@ export async function syncMembershipAfterIocImport(client, {
     observableType: row.observable_type,
     feedId,
     seenAt,
+    firstSeenAt,
     explicitConfidence: resolvedConfidence,
     reactivateOnly
   });

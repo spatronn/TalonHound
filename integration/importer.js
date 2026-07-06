@@ -619,7 +619,8 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
     feedDefaultConfidence,
     category,
     note,
-    threatClassification
+    threatClassification,
+    firstSeenAt: entry.dateAdded || null
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {
@@ -733,7 +734,8 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     sourceConfidence: entry.confidence,
     category,
     note,
-    threatClassification
+    threatClassification,
+    firstSeenAt: entry.firstSeenUtc || null
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {
@@ -974,7 +976,8 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
     sourceConfidence: entry.confidence,
     category,
     note,
-    threatClassification
+    threatClassification,
+    firstSeenAt: entry.firstSeen || null
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {
@@ -1225,7 +1228,7 @@ export async function updateObservableBySourceOnImport(client, {
   return existing;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null, threatClassification = null }, suppressionStats = null, signal = null) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null, threatClassification = null, firstSeenAt = null }, suppressionStats = null, signal = null) {
   throwIfAborted(signal);
   const index = await fetchActiveSuppressionIndex(
     client,
@@ -1316,6 +1319,7 @@ async function insertObservable(client, { observable, observableType, sourceName
       sourceUrl,
       explicitConfidence: confFields.source_confidence,
       category,
+      firstSeenAt,
       reactivateOnly: true
     }));
     return 'duplicate';
@@ -1339,7 +1343,8 @@ async function insertObservable(client, { observable, observableType, sourceName
     sourceName,
     sourceUrl,
     explicitConfidence: confFields.source_confidence,
-    category
+    category,
+    firstSeenAt
   }));
   return true;
 }
