@@ -10605,12 +10605,14 @@ function EnrichmentProvidersPage() {
   const [abuseipdb, setAbuseipdb] = useState(null);
   const [rdap, setRdap] = useState(null);
   const [spamhaus, setSpamhaus] = useState(null);
+  const [filescan, setFilescan] = useState(null);
   const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
   const [ipForm, setIpForm] = useState({ enabled: true, token: '', base_url: 'https://api.ipinfo.io/lite', timeout_seconds: 6, usage_note: '' });
   const [abuseForm, setAbuseForm] = useState({ enabled: false, api_key: '', cache_ttl_hours: 24, timeout_ms: 8000, max_age_days: 90, verbose: false, test_ip: '' });
   const [spamhausForm, setSpamhausForm] = useState({ enabled: false, sync_interval_hours: 24, timeout_ms: 30000 });
+  const [filescanForm, setFilescanForm] = useState({ enabled: false, api_key: '', cache_ttl_hours: 24, timeout_ms: 15000, rate_limit_per_minute: 10 });
   const [feedback, setFeedback] = useState({ type: '', text: '' });
-  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false, abuseSave: false, abuseTest: false, abuseRemove: false, spamSave: false, spamSync: false });
+  const [busy, setBusy] = useState({ vtSave: false, vtTest: false, vtRemove: false, ipSave: false, ipTest: false, ipRemove: false, abuseSave: false, abuseTest: false, abuseRemove: false, spamSave: false, spamSync: false, fsSave: false, fsTest: false, fsRemove: false });
 
   const statusMeta = (status) => {
     const s = String(status || '').toLowerCase();
@@ -10630,11 +10632,13 @@ function EnrichmentProvidersPage() {
       const abuseRow = (data?.providers || []).find((x) => x.provider === 'abuseipdb') || null;
       const rdapRow = (data?.providers || []).find((x) => x.provider === 'rdap') || null;
       const spamRow = (data?.providers || []).find((x) => x.provider === 'spamhaus_drop') || null;
+      const fsRow = (data?.providers || []).find((x) => x.provider === 'filescan') || null;
       setVt(vtRow);
       setIpinfo(ipRow);
       setAbuseipdb(abuseRow);
       setRdap(rdapRow);
       setSpamhaus(spamRow);
+      setFilescan(fsRow);
       if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
       if (ipRow) {
         setIpForm((f) => ({
@@ -10660,6 +10664,15 @@ function EnrichmentProvidersPage() {
           enabled: spamRow.enabled,
           sync_interval_hours: spamRow.sync_interval_hours || 24,
           timeout_ms: spamRow.timeout_ms || 30000
+        }));
+      }
+      if (fsRow) {
+        setFilescanForm((f) => ({
+          ...f,
+          enabled: fsRow.enabled,
+          cache_ttl_hours: fsRow.cache_ttl_hours || 24,
+          timeout_ms: fsRow.timeout_ms || 15000,
+          rate_limit_per_minute: fsRow.rate_limit_per_minute || 10
         }));
       }
     } finally { setLoading(false); }
@@ -10813,12 +10826,53 @@ function EnrichmentProvidersPage() {
     } finally { setBusy((b) => ({ ...b, spamSync: false })); }
   }
 
+  async function saveFilescan() {
+    setBusy((b) => ({ ...b, fsSave: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const reason = await requestRequiredReason('Update Filescan.io provider settings');
+      if (!reason) return;
+      await api.put('/admin/enrichment-providers/filescan', { ...filescanForm, reason });
+      setFeedback({ type: 'success', text: 'Filescan.io settings saved.' });
+      setFilescanForm((f) => ({ ...f, api_key: '' }));
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
+    } finally { setBusy((b) => ({ ...b, fsSave: false })); }
+  }
+
+  async function testFilescan() {
+    setBusy((b) => ({ ...b, fsTest: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const { data } = await api.post('/admin/enrichment-providers/filescan/test');
+      setFeedback({ type: 'success', text: data?.message || `Filescan.io connection successful (verdict: ${data?.verdict || 'n/a'})` });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Test failed';
+      setFeedback({ type: /rate limit/i.test(msg) ? 'warn' : 'error', text: msg });
+      await load();
+    } finally { setBusy((b) => ({ ...b, fsTest: false })); }
+  }
+
+  async function removeFilescanKey() {
+    setBusy((b) => ({ ...b, fsRemove: true }));
+    try {
+      await api.post('/admin/enrichment-providers/filescan/remove-key');
+      setFeedback({ type: 'success', text: 'Filescan.io API key removed.' });
+      await load();
+    } catch {
+      setFeedback({ type: 'error', text: 'Remove failed' });
+    } finally { setBusy((b) => ({ ...b, fsRemove: false })); }
+  }
+
   const cardShell = { border:'1px solid #334155', borderRadius:12, padding:16, background:'#0f172a', marginBottom:16 };
   const vtSm = statusMeta(vt?.status);
   const ipSm = statusMeta(ipinfo?.status);
   const abuseSm = statusMeta(abuseipdb?.status === 'disabled' ? 'not_configured' : (abuseipdb?.status || 'not_configured'));
   const rdapSm = statusMeta(rdap?.status === 'disabled' ? 'not_configured' : (rdap?.status || 'healthy'));
   const spamSm = statusMeta(spamhaus?.status === 'disabled' ? 'not_configured' : (spamhaus?.status === 'never_synced' ? 'not_configured' : (spamhaus?.status || 'not_configured')));
+  const fsSm = statusMeta(filescan?.status === 'disabled' ? 'not_configured' : (filescan?.status || 'not_configured'));
   const anyBusy = Object.values(busy).some(Boolean);
 
   const abuseConnectionStatus = abuseipdb?.enabled
@@ -11035,6 +11089,55 @@ function EnrichmentProvidersPage() {
           <button onClick={()=>saveSpamhaus().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.spamSave ? 'Saving...' : 'Save'}</button>
           <button onClick={()=>runSpamhausSync().catch(()=>{})} disabled={!isAdmin || anyBusy || !spamhausForm.enabled} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }} title={!spamhausForm.enabled ? 'Enable provider first' : 'Enqueue an immediate sync job'}>{busy.spamSync ? 'Queuing...' : 'Run sync now'}</button>
         </div>
+      </div> : null}
+
+      {filescan ? <div style={{ ...cardShell, boxSizing:'border-box', minWidth:0 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
+          <div style={{ flex:'1 1 220px', minWidth:0 }}>
+            <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>Filescan.io</h3>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>On-demand file/URL/domain/IP reputation search. Enrichment evidence only — does not change IOC status.</div>
+          </div>
+          <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap', flexShrink:0 }}>
+            {filescan.enabled ? (
+              <span style={{ border:`1px solid ${fsSm.border}`, background:fsSm.bg, color:fsSm.color, borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>{fsSm.label}</span>
+            ) : (
+              <span style={{ border:'1px solid #475569', background:'rgba(100,116,139,0.2)', color:'#cbd5e1', borderRadius:999, padding:'4px 10px', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>Provider off</span>
+            )}
+            <label style={{ color:'#cbd5e1', fontSize:13, display:'inline-flex', alignItems:'center', gap:8, cursor:isAdmin?'pointer':'default', whiteSpace:'nowrap' }}>
+              <input type="checkbox" checked={filescanForm.enabled} onChange={(e)=>setFilescanForm((x)=>({...x, enabled:e.target.checked}))} disabled={!isAdmin} />
+              Enable provider
+            </label>
+          </div>
+        </div>
+        <p style={{ margin:'8px 0 0', color:'#64748b', fontSize:12 }}>
+          API key is optional — public endpoint works without one, but providing a key increases rate limits.
+          Env fallback: <code style={{ background:'#0b1220', padding:'1px 5px', borderRadius:4 }}>FILESCAN_API_KEY</code>. Key is never returned in plaintext.
+        </p>
+        <div style={{ marginTop:14, minWidth:0 }}>
+          <label style={{ display:'block', color:'#cbd5e1', fontSize:13, marginBottom:6 }}>API Key (optional)</label>
+          <input type="password" value={filescanForm.api_key} onChange={(e)=>setFilescanForm((x)=>({...x, api_key:e.target.value}))} placeholder={filescan.masked_key ? 'Leave blank to keep current key' : 'Paste Filescan.io API key (optional)'} disabled={!isAdmin} style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#020617', color:'#e2e8f0', boxSizing:'border-box' }} />
+          {filescan.masked_key ? <div style={{ marginTop:6, color:'#94a3b8', fontSize:12 }}>Current key: {filescan.masked_key}</div> : null}
+        </div>
+        <div style={providerGridStyle}>
+          <label style={providerFieldLabelStyle}>
+            Cache TTL (hours)
+            <input type="number" min="1" value={filescanForm.cache_ttl_hours} onChange={(e)=>setFilescanForm((x)=>({...x, cache_ttl_hours:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
+          <label style={providerFieldLabelStyle}>
+            Timeout (ms)
+            <input type="number" min="3000" value={filescanForm.timeout_ms} onChange={(e)=>setFilescanForm((x)=>({...x, timeout_ms:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
+          <label style={providerFieldLabelStyle}>
+            Rate limit (req/min)
+            <input type="number" min="1" value={filescanForm.rate_limit_per_minute} onChange={(e)=>setFilescanForm((x)=>({...x, rate_limit_per_minute:Number(e.target.value)}))} disabled={!isAdmin} style={providerFieldInputStyle} />
+          </label>
+        </div>
+        <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
+          <button onClick={()=>saveFilescan().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #2563eb', background:'#2563eb', color:'#fff', fontWeight:600 }}>{busy.fsSave ? 'Saving...' : 'Save'}</button>
+          <button onClick={()=>testFilescan().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #475569', background:'#1f2937', color:'#e2e8f0' }}>{busy.fsTest ? 'Testing...' : 'Test Connection'}</button>
+          {filescan.masked_key ? <button onClick={()=>removeFilescanKey().catch(()=>{})} disabled={!isAdmin || anyBusy} style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(127,29,29,0.25)', color:'#fca5a5' }}>{busy.fsRemove ? 'Removing...' : 'Remove key'}</button> : null}
+        </div>
+        {filescan.last_error_message ? <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #7f1d1d', background:'rgba(220,38,38,0.14)', color:'#fca5a5', fontSize:13 }}><b>Last error:</b> {filescan.last_error_message}</div> : null}
       </div> : null}
     </>}
   </section></AppShell>;
@@ -13659,6 +13762,226 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
   return null;
 }
 
+function filescanVerdictMeta(verdict) {
+  const v = String(verdict || '').toLowerCase();
+  if (v === 'malicious') return { label: 'Malicious', color: '#fca5a5', bg: 'rgba(220,38,38,0.18)', border: '#7f1d1d' };
+  if (v === 'suspicious') return { label: 'Suspicious', color: '#fcd34d', bg: 'rgba(217,119,6,0.18)', border: '#b45309' };
+  if (v === 'benign') return { label: 'Benign', color: '#86efac', bg: 'rgba(22,163,74,0.18)', border: '#166534' };
+  if (v === 'no_threat') return { label: 'No threat', color: '#86efac', bg: 'rgba(22,163,74,0.18)', border: '#166534' };
+  return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(100,116,139,0.2)', border: '#475569' };
+}
+
+function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
+  const [state, setState] = useState({ status: 'loading', data: null, message: '' });
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!active) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const params = new URLSearchParams({ ioc_type: iocType, ioc_value: iocValue });
+      const { data } = await api.get(`/enrichment/filescan?${params.toString()}`);
+      setHasLoaded(true);
+      if (data?.provider_status === 'unsupported_type') {
+        setState({ status: 'unsupported', data, message: 'IOC type not supported by Filescan.io' });
+      } else if (data?.provider_status === 'disabled') {
+        setState({ status: 'disabled', data, message: 'Filescan.io provider is disabled' });
+      } else if (data?.enriched) {
+        setState({ status: 'success', data, message: '' });
+      } else if (data?.last_enriched_at && data?.provider_status && data.provider_status !== 'success') {
+        setState({ status: 'failed', data, message: data?.error_message || 'Filescan.io lookup failed' });
+      } else {
+        setState({ status: 'not_found', data, message: '' });
+      }
+    } catch (err) {
+      setHasLoaded(true);
+      setState({ status: 'error', data: err?.response?.data || null, message: err?.response?.data?.message || 'Failed to load Filescan.io enrichment' });
+    }
+  }, [iocValue, iocType, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
+
+  async function refresh(force = false) {
+    if (!canRefresh) return;
+    setRefreshing(true);
+    try {
+      const { data } = await api.post(`/enrichment/filescan/refresh${force ? '?force=true' : ''}`, { ioc_type: iocType, ioc_value: iocValue, force });
+      if (data?.enriched || data?.provider_status === 'success') {
+        setState({ status: 'success', data, message: '' });
+      } else {
+        setState({ status: 'failed', data, message: data?.error_message || data?.error || data?.message || 'Filescan.io lookup failed' });
+      }
+    } catch (err) {
+      const status = err?.response?.status;
+      const body = err?.response?.data || {};
+      const msg = status === 409
+        ? (body.message || 'Filescan.io is not available')
+        : (status === 429
+          ? 'Filescan.io rate limit reached. Try again later.'
+          : (status === 401
+            ? 'Invalid or unauthorized Filescan.io API key'
+            : (body.message || body.error || 'Filescan.io lookup failed')));
+      const nextStatus = body.provider_status === 'disabled' ? 'disabled'
+        : (body.provider_status === 'auth_error' ? 'failed'
+          : (body.provider_status === 'rate_limited' ? 'failed' : 'failed'));
+      setState({ status: nextStatus, data: body, message: msg });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    const d = state.data || {};
+    onSnapshot({ status: state.status, verdict: d.verdict, report_count: d.report_count });
+  }, [state, onSnapshot]);
+
+  if (!active && !hasLoaded) return null;
+
+  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const d = state.data || {};
+
+  if (state.status === 'loading') {
+    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading Filescan.io enrichment...</span></div>;
+  }
+
+  if (state.status === 'unsupported') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Not supported for this IOC type</div>
+      </div>
+    );
+  }
+
+  if (state.status === 'disabled') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Filescan.io provider is disabled</div>
+      </div>
+    );
+  }
+
+  if (state.status === 'not_found') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Search</span></div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>IOC not found in Filescan.io</div>
+          </div>
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Searching…' : 'Search Filescan'}</button> : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'error' || state.status === 'failed') {
+    return (
+      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io</div>
+        <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message}</span>
+        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Retrying…' : 'Retry'}</button> : null}
+      </div>
+    );
+  }
+
+  const vm = filescanVerdictMeta(d.verdict);
+  const reports = Array.isArray(d.reports) ? d.reports : [];
+  const tags = Array.isArray(d.tags) ? d.tags : [];
+  const indicators = Array.isArray(d.threat_indicators) ? d.threat_indicators : [];
+
+  if (!compact) {
+    return (
+      <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+        <EnrichmentIntelligenceStyles />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
+              Filescan.io
+              <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Search</span>
+              {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+              {d.last_enriched_at ? `Last checked: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand file/URL reputation'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Searching…' : 'Refresh Filescan'}</button> : null}
+            {canRefresh && isAdmin ? <button type="button" onClick={() => refresh(true).catch(() => {})} disabled={refreshing} title="Admin force refresh">Force</button> : null}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
+            {vm.label}
+          </span>
+          {d.report_count != null ? (
+            <span style={{ border: '1px solid #334155', background: '#0b1220', color: '#94a3b8', borderRadius: 999, padding: '4px 10px', fontSize: 12 }}>
+              {d.report_count} {d.report_count === 1 ? 'report' : 'reports'}
+            </span>
+          ) : null}
+        </div>
+
+        {(tags.length > 0 || indicators.length > 0) ? (
+          <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {indicators.slice(0, 8).map((ind) => (
+              <span key={ind.name} style={{ border: '1px solid #7f1d1d', background: 'rgba(220,38,38,0.12)', color: '#fca5a5', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>
+                {ind.name}
+              </span>
+            ))}
+            {tags.filter((t) => !indicators.find((i) => i.name === t)).slice(0, 8).map((tag) => (
+              <span key={tag} style={{ border: '1px solid #334155', background: '#0b1220', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>
+                {tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {reports.length > 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Reports</div>
+            {reports.slice(0, 5).map((r, idx) => {
+              const rvm = filescanVerdictMeta(r.verdict);
+              return (
+                <div key={r.report_id || idx} style={{ marginTop: idx ? 6 : 0, padding: '6px 10px', borderRadius: 6, border: '1px solid #1e293b', background: '#0b1220', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
+                  <span style={{ border: `1px solid ${rvm.border}`, background: rvm.bg, color: rvm.color, borderRadius: 999, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>{rvm.label}</span>
+                  {r.report_date ? <span style={{ color: '#64748b' }}>{r.report_date.slice(0, 10)}</span> : null}
+                  {r.file_hash ? <span style={{ color: '#64748b', fontFamily: 'monospace', fontSize: 10 }}>{r.file_hash.slice(0, 16)}…</span> : null}
+                  {r.link ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd', marginLeft: 'auto' }}>View ↗</a> : null}
+                </div>
+              );
+            })}
+            {reports.length > 5 ? <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>+{reports.length - 5} more reports on Filescan.io</div> : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // Compact mode
+  return (
+    <div style={compactCardStyle}>
+      <div>
+        <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 13 }}>Filescan.io</div>
+        <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+          {d.last_enriched_at ? `Checked: ${formatUserDateTime(d.last_enriched_at)}` : null}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{vm.label}</span>
+        {d.report_count != null ? <span style={{ color: '#64748b', fontSize: 11 }}>{d.report_count} rpts</span> : null}
+        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing} style={{ fontSize: 11 }}>{refreshing ? '…' : 'Refresh'}</button> : null}
+      </div>
+    </div>
+  );
+}
+
 /**
  * UI-only eligibility for RDAP card (backend validation unchanged).
  * @returns {{ eligible: boolean, host: string|null, rdapDomain: string|null, reason: string|null }}
@@ -15677,6 +16000,7 @@ function IOCDetailsPage() {
                 AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
                 RdapEnrichmentCard={RdapEnrichmentCard}
                 SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
+                FilescanEnrichmentCard={FilescanEnrichmentCard}
               />
             ) : null}
 

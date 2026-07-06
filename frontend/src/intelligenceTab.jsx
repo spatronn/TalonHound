@@ -595,7 +595,8 @@ export function IntelligenceTabPanel({
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
   RdapEnrichmentCard,
-  SpamhausDropEnrichmentCard
+  SpamhausDropEnrichmentCard,
+  FilescanEnrichmentCard
 }) {
   const [providerSnapshots, setProviderSnapshots] = useState({});
   const [derivedProviderSnapshots, setDerivedProviderSnapshots] = useState({});
@@ -616,6 +617,7 @@ export function IntelligenceTabPanel({
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
   const showSpamhaus = isProviderApplicable('spamhaus_drop', iocType);
+  const showFilescan = isProviderApplicable('filescan', iocType);
 
   const onProviderSnapshot = useCallback((provider, snapshot) => {
     setProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
@@ -662,6 +664,9 @@ export function IntelligenceTabPanel({
           ) : null}
           {showSpamhaus && SpamhausDropEnrichmentCard ? (
             <SpamhausDropEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
+          ) : null}
+          {showFilescan && FilescanEnrichmentCard ? (
+            <FilescanEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('filescan', snap)} />
           ) : null}
         </div>
       </div>

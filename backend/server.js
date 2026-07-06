@@ -29,6 +29,8 @@ import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
 import { registerSpamhausDropEnrichmentRoutes } from './routes/spamhausDropEnrichment.js';
+import { registerFilescanEnrichmentRoutes } from './routes/filescanEnrichment.js';
+import { getFilescanConfig, maskApiKey as maskFilescanKey } from './services/filescanService.js';
 import {
   registerAnalystIntelligenceRoutes,
   enrichItemsWithAnalystIntelligenceCounts,
@@ -5183,6 +5185,7 @@ registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
 registerSpamhausDropEnrichmentRoutes(app, pool, auditLogService, { importQueue });
+registerFilescanEnrichmentRoutes(app, pool, auditLogService);
 registerAnalystIntelligenceRoutes(app, pool, auditLogService);
 registerRouteModule('analyst_intelligence');
 registerRouteModule('ip_enrichment');
@@ -8139,6 +8142,31 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
           status: sdStatus,
           last_success_at: lastSuccess,
           sync_state: sdState
+        };
+      })(),
+      await (async () => {
+        const fsCfg = await getFilescanConfig(pool);
+        let fsStatus = 'not_configured';
+        if (!fsCfg.enabled) fsStatus = 'disabled';
+        else if (fsCfg.last_error_at && (!fsCfg.last_success_at || new Date(fsCfg.last_error_at) > new Date(fsCfg.last_success_at))) fsStatus = 'error';
+        else if (fsCfg.last_success_at) fsStatus = 'healthy';
+        else fsStatus = 'configured';
+        return {
+          provider: fsCfg.provider_key,
+          name: fsCfg.display_name,
+          enabled: fsCfg.enabled,
+          configured: fsCfg.configured,
+          masked_key: fsCfg.api_key_masked,
+          api_key_set: fsCfg.api_key_set,
+          source: fsCfg.source,
+          cache_ttl_hours: fsCfg.cache_ttl_hours,
+          timeout_ms: fsCfg.timeout_ms,
+          rate_limit_per_minute: fsCfg.rate_limit_per_minute,
+          status: fsStatus,
+          last_test_at: fsCfg.last_test_at,
+          last_success_at: fsCfg.last_success_at,
+          last_error_at: fsCfg.last_error_at,
+          last_error_message: fsCfg.last_error_message
         };
       })()
     ]});
