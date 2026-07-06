@@ -5736,8 +5736,6 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function syncEditingFeed(list) {
-    const key = editingFeed?.key;
-    const feed = key ? (list || []).find((i) => i.key === key) : null;
     setEditingFeed((prev) => {
       if (!prev) return prev;
       const f = (list || []).find((i) => i.key === prev.key);
@@ -5757,9 +5755,6 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
         default_confidence: f.default_confidence
       };
     });
-    if (feed?.expiration_policy) {
-      setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
-    }
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
