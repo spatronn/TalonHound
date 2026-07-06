@@ -5186,6 +5186,7 @@ registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
 registerSpamhausDropEnrichmentRoutes(app, pool, auditLogService, { importQueue });
 registerFilescanEnrichmentRoutes(app, pool, auditLogService);
+registerRouteModule('filescan_enrichment');
 registerAnalystIntelligenceRoutes(app, pool, auditLogService);
 registerRouteModule('analyst_intelligence');
 registerRouteModule('ip_enrichment');
