@@ -6064,8 +6064,6 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
     const policy = patchData?.policy;
     const summary = patchData?.summary;
-    // eslint-disable-next-line no-console
-    console.debug('[expiration-save] patchData:', JSON.stringify({ policy, type_policies: patchData?.expiration_type_policies }));
     if (policy) {
       setSettingsDraftExpiration(defaultExpirationDraft(policy, patchData?.expiration_type_policies));
       setIntegrations((prev) => prev.map((i) => (
