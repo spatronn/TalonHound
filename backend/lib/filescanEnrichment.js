@@ -10,13 +10,34 @@ export function maskApiKey(key) {
 }
 
 /**
- * Derive an overall verdict from an array of per-item verdicts.
+ * Normalize a raw Filescan verdict string to a canonical value.
+ * Handles Filescan-specific labels like "confirmed_threat" / "Confirmed Threat".
+ */
+export function normalizeVerdict(raw) {
+  const s = String(raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (['malicious', 'confirmed_threat', 'threat', 'infected', 'malware'].includes(s)) return 'malicious';
+  if (s === 'suspicious') return 'suspicious';
+  if (['benign', 'clean', 'safe'].includes(s)) return 'benign';
+  if (s === 'no_threat') return 'no_threat';
+  return 'unknown';
+}
+
+/**
+ * Human-readable display label preserving original casing with underscores replaced.
+ * @returns {string|null}
+ */
+export function verdictDisplayLabel(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || null;
+}
+
+/**
+ * Aggregate a list of raw verdict strings into a single canonical verdict.
  * Precedence: malicious > suspicious > benign > no_threat > unknown
- * @param {string[]} verdicts
- * @returns {'malicious'|'suspicious'|'benign'|'no_threat'|'unknown'}
  */
 export function aggregateVerdict(verdicts) {
-  const all = (verdicts || []).map((v) => String(v || '').toLowerCase());
+  const all = (verdicts || []).map((v) => normalizeVerdict(String(v || '')));
   if (all.includes('malicious')) return 'malicious';
   if (all.includes('suspicious')) return 'suspicious';
   if (all.includes('benign')) return 'benign';
@@ -25,78 +46,230 @@ export function aggregateVerdict(verdicts) {
 }
 
 /**
- * @param {'malicious'|'suspicious'|'benign'|'no_threat'|'unknown'} verdict
- * @returns {'high'|'medium'|'low'|null}
+ * Confidence hint from canonical verdict. Never written to IOC global confidence.
  */
-export function verdictToConfidenceHint(verdict) {
+export function verdictToConfidenceHint(verdict, summaryCounts) {
   if (verdict === 'malicious') return 'high';
   if (verdict === 'suspicious') return 'medium';
   if (verdict === 'benign' || verdict === 'no_threat') return 'low';
   return null;
 }
 
+// Tag classification — small focused sets, not exhaustive
+const MALWARE_FAMILY_TAGS = new Set([
+  'phorpiex', 'emotet', 'trickbot', 'wannacry', 'locky', 'mirai',
+  'dridex', 'qakbot', 'ryuk', 'conti', 'njrat', 'remcos', 'asyncrat',
+  'nanocore', 'agent_tesla', 'formbook', 'redline', 'vidar', 'raccoon',
+  'azorult', 'darkcomet', 'netwire', 'ursnif', 'zeus', 'blackcat',
+  'lockbit', 'revil', 'sodinokibi', 'icedid', 'bazarloader', 'darkside',
+  'cobaltstrike', 'metasploit', 'sliver', 'brute_ratel'
+]);
+
+const THREAT_TYPE_TAGS = new Set([
+  'dropper', 'downloader', 'trojan', 'stealer', 'ransomware', 'botnet',
+  'phishing', 'c2', 'loader', 'backdoor', 'rat', 'keylogger', 'rootkit',
+  'worm', 'adware', 'spyware', 'infostealer', 'miner', 'cryptominer',
+  'exploit', 'shellcode', 'injector', 'packer', 'banker', 'credential_stealer'
+]);
+
+const FILE_TYPE_TAGS = new Set([
+  'peexe', 'pe32', 'pe64', 'elf', 'elf64', 'macho', 'apk', 'jar', 'dex',
+  'document', 'pdf', 'office', 'docx', 'xlsx', 'script', 'dll', 'lnk',
+  'vbs', 'js', 'ps1', 'bat', 'hta', 'msi', 'iso'
+]);
+
+const COMPILER_HINT_TAGS = new Set([
+  'microsoft_visual_cc', 'visual_cpp', 'dotnet', 'net', 'csharp',
+  'go', 'golang', 'rust', 'python', 'autoit', 'nsis', 'inno',
+  'upx', 'aspack', 'themida', 'vmprotect', 'msil', 'delphi', 'vb6', 'visualbasic'
+]);
+
+/**
+ * Classify a tag into semantic buckets.
+ * A single tag may appear in multiple buckets.
+ */
+export function classifyTag(name) {
+  const n = String(name || '').trim().toLowerCase();
+  return {
+    is_malware_family: MALWARE_FAMILY_TAGS.has(n),
+    is_threat_type: THREAT_TYPE_TAGS.has(n),
+    is_file_type: FILE_TYPE_TAGS.has(n),
+    is_compiler_hint: COMPILER_HINT_TAGS.has(n)
+  };
+}
+
 /**
  * Normalize a raw Filescan.io search response into the canonical enrichment model.
- * @param {unknown} rawBody
- * @param {{ iocType: string, iocValue: string, fetchedAt?: string }} ctx
  */
 export function normalizeFilescanResponse(rawBody, ctx) {
   const items = Array.isArray(rawBody?.items) ? rawBody.items : [];
   const fetchedAt = ctx.fetchedAt || new Date().toISOString();
 
-  const verdicts = items.map((item) => String(item?.verdict || 'unknown').toLowerCase());
-  const verdict = aggregateVerdict(verdicts);
+  // --- Verdict aggregation ---
+  const rawVerdicts = items.map((item) => String(item?.verdict || 'unknown'));
+  const verdict = aggregateVerdict(rawVerdicts);
+  const bestRawVerdict = rawVerdicts.find((v) => normalizeVerdict(v) === verdict) || null;
+  const verdict_label = verdictDisplayLabel(bestRawVerdict);
 
+  // Primary item: first with the highest-severity verdict
+  const primaryItem = items.find((item) => normalizeVerdict(String(item?.verdict || '')) === verdict) || items[0] || null;
+
+  // --- File metadata ---
+  const fileObj = primaryItem?.file && typeof primaryItem.file === 'object' ? primaryItem.file : null;
+  const file = fileObj ? {
+    name: fileObj.name || null,
+    sha256: fileObj.sha256 || null,
+    sha1: fileObj.sha1 || null,
+    md5: fileObj.md5 || null,
+    media_type: fileObj.media_type || fileObj.mediaType || null,
+    type: fileObj.type || null,
+    size: fileObj.size != null ? fileObj.size : null,
+    entropy: fileObj.entropy != null ? Number(fileObj.entropy) : null,
+    strings_count: fileObj.strings != null ? Number(fileObj.strings)
+      : (fileObj.strings_count != null ? Number(fileObj.strings_count) : null)
+  } : null;
+
+  // --- Primary report metadata ---
+  const primaryFlowId = primaryItem?.scan_init?.id || primaryItem?.id || null;
+  const primaryReportId = primaryItem?.id ? String(primaryItem.id) : null;
+  const primaryLink = primaryFlowId
+    ? `https://www.filescan.io/reports/${encodeURIComponent(String(primaryFlowId))}`
+    : null;
+  const report = primaryItem ? {
+    report_id: primaryReportId,
+    flow_id: primaryFlowId ? String(primaryFlowId) : null,
+    report_date: primaryItem.date || null,
+    scan_engine: primaryItem.scan_engine || primaryItem.scanEngine || null,
+    link: primaryLink
+  } : null;
+
+  // --- Reports list ---
   const reports = items.slice(0, 20).map((item) => {
     const flowId = item?.scan_init?.id || item?.id || null;
-    const fileHash = item?.file?.sha256 || null;
-    const fileLink = item?.file?.link || null;
     const reportLink = flowId
       ? `https://www.filescan.io/reports/${encodeURIComponent(String(flowId))}`
       : null;
     return {
       report_id: item?.id ? String(item.id) : null,
       flow_id: flowId ? String(flowId) : null,
-      verdict: String(item?.verdict || 'unknown').toLowerCase(),
+      verdict: normalizeVerdict(String(item?.verdict || 'unknown')),
       report_date: item?.date || null,
       file_name: item?.file?.name || null,
-      file_hash: fileHash,
-      file_link: fileLink,
+      file_hash: item?.file?.sha256 || null,
+      sha256: item?.file?.sha256 || null,
+      file_link: item?.file?.link || null,
       link: reportLink
     };
   });
 
-  // Collect unique tag names across all items
+  // --- Tags + semantic classification ---
   const tagSet = new Set();
-  const threatIndicators = [];
+  const malwareFamilySet = new Set();
+  const threatTypeSet = new Set();
+  const fileTypeSet = new Set();
+  const compilerHintSet = new Set();
+
   for (const item of items) {
     if (!Array.isArray(item?.tags)) continue;
     for (const t of item.tags) {
       const name = t?.tag?.name;
-      if (name && typeof name === 'string') {
-        tagSet.add(name.trim());
-        if (t.isRootTag || t.isMalwareFamilyTag) {
-          if (!threatIndicators.find((x) => x.name === name.trim())) {
-            threatIndicators.push({
-              name: name.trim(),
-              source: t.source || null,
-              is_malware_family: Boolean(t.isMalwareFamilyTag)
+      if (!name || typeof name !== 'string') continue;
+      const n = name.trim();
+      if (!n) continue;
+      tagSet.add(n);
+      if (t.isMalwareFamilyTag) malwareFamilySet.add(n);
+      const cls = classifyTag(n);
+      if (cls.is_malware_family) malwareFamilySet.add(n);
+      if (cls.is_threat_type) threatTypeSet.add(n);
+      if (cls.is_file_type) fileTypeSet.add(n);
+      if (cls.is_compiler_hint) compilerHintSet.add(n);
+    }
+  }
+
+  // --- Threat indicators ---
+  // Deduplicated by title+provider key
+  const indicatorMap = new Map();
+  for (const item of items) {
+    // Option A: dedicated threat_indicators array on item
+    if (Array.isArray(item?.threat_indicators)) {
+      for (const ti of item.threat_indicators) {
+        const key = `${ti?.title || ''}|${ti?.origin || ti?.provider || ''}`;
+        if (!indicatorMap.has(key)) {
+          indicatorMap.set(key, {
+            title: ti?.title || null,
+            verdict: ti?.verdict ? String(ti.verdict).toLowerCase() : null,
+            origin: ti?.origin || ti?.provider || null,
+            provider: ti?.origin || ti?.provider || null,
+            resource_type: ti?.resource_type || ti?.resourceType || null,
+            resource_value: ti?.resource_value || ti?.resourceValue || null
+          });
+        }
+      }
+    }
+    // Option B: root-tagged items as indicators
+    if (Array.isArray(item?.tags)) {
+      for (const t of item.tags) {
+        if (t?.isRootTag && t?.source && t?.tag?.name) {
+          const key = `tag|${t.tag.name}|${t.source}`;
+          if (!indicatorMap.has(key)) {
+            indicatorMap.set(key, {
+              title: t.tag.name,
+              verdict: normalizeVerdict(String(item?.verdict || 'unknown')),
+              origin: t.source || null,
+              provider: t.source || null,
+              resource_type: null,
+              resource_value: null
             });
           }
         }
       }
     }
   }
+  const threat_indicators = Array.from(indicatorMap.values()).slice(0, 20);
+
+  // --- Summary counts ---
+  const primarySummary = primaryItem?.summary && typeof primaryItem.summary === 'object'
+    ? primaryItem.summary : {};
+  const summary_counts = {
+    threat_reputation_iocs: primarySummary.threat_reputation_iocs ?? primarySummary.reputationIocs ?? null,
+    confirmed_threat_indicators: primarySummary.confirmed_threat_indicators
+      ?? primarySummary.confirmedThreatIndicators
+      ?? (indicatorMap.size > 0 ? indicatorMap.size : null),
+    similar_samples: primarySummary.similar_samples ?? primarySummary.similarSamples ?? null,
+    extracted_iocs: primarySummary.extracted_iocs ?? primarySummary.extractedIocs ?? null
+  };
+
+  // --- Emulation data ---
+  const emuObj = primaryItem?.emulation && typeof primaryItem.emulation === 'object'
+    ? primaryItem.emulation : null;
+  const emulation = emuObj ? {
+    applicable: emuObj.applicable ?? null,
+    processes_count: emuObj.processes ?? emuObj.processesCount ?? null,
+    network_count: emuObj.network ?? emuObj.networkCount ?? null,
+    other_count: emuObj.other ?? emuObj.otherCount ?? null
+  } : null;
 
   return {
     provider: FILESCAN_PROVIDER,
     found: items.length > 0,
     verdict,
-    confidence_hint: verdictToConfidenceHint(verdict),
+    verdict_label,
+    confidence_hint: verdictToConfidenceHint(verdict, summary_counts),
     report_count: items.length,
-    reports,
+
     tags: Array.from(tagSet).slice(0, 30),
-    threat_indicators: threatIndicators.slice(0, 20),
+    malware_families: Array.from(malwareFamilySet).slice(0, 10),
+    threat_types: Array.from(threatTypeSet).slice(0, 10),
+    file_type_hints: Array.from(fileTypeSet).slice(0, 5),
+    compiler_hints: Array.from(compilerHintSet).slice(0, 5),
+
+    file,
+    report,
+    reports,
+    threat_indicators,
+    summary_counts,
+    emulation,
+
     source_references: [],
     ioc_type: ctx.iocType,
     ioc_value: ctx.iocValue,
@@ -111,7 +284,6 @@ export function normalizeFilescanResponse(rawBody, ctx) {
 
 /**
  * Map HTTP status to normalized provider_status + user message.
- * @param {number} status
  */
 export function filescanHttpError(status) {
   const code = Number(status);
@@ -129,8 +301,6 @@ export function filescanHttpError(status) {
 
 /**
  * Normalize an IOC value for cache key purposes.
- * @param {string} iocType
- * @param {string} iocValue
  */
 export function normalizeFilescanCacheKey(iocType, iocValue) {
   const t = String(iocType || '').trim().toLowerCase();

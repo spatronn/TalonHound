@@ -13762,12 +13762,13 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
   return null;
 }
 
-function filescanVerdictMeta(verdict) {
+function filescanVerdictMeta(verdict, verdictLabel) {
   const v = String(verdict || '').toLowerCase();
-  if (v === 'malicious') return { label: 'Malicious', color: '#fca5a5', bg: 'rgba(220,38,38,0.18)', border: '#7f1d1d' };
-  if (v === 'suspicious') return { label: 'Suspicious', color: '#fcd34d', bg: 'rgba(217,119,6,0.18)', border: '#b45309' };
-  if (v === 'benign') return { label: 'Benign', color: '#86efac', bg: 'rgba(22,163,74,0.18)', border: '#166534' };
-  if (v === 'no_threat') return { label: 'No threat', color: '#86efac', bg: 'rgba(22,163,74,0.18)', border: '#166534' };
+  const display = verdictLabel || (v ? v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ') : 'Unknown');
+  if (v === 'malicious') return { label: display || 'Malicious', color: '#fca5a5', bg: 'rgba(220,38,38,0.18)', border: '#7f1d1d' };
+  if (v === 'suspicious') return { label: display || 'Suspicious', color: '#fcd34d', bg: 'rgba(217,119,6,0.18)', border: '#b45309' };
+  if (v === 'benign') return { label: display || 'Benign', color: '#86efac', bg: 'rgba(22,163,74,0.18)', border: '#166534' };
+  if (v === 'no_threat') return { label: display || 'No threat', color: '#86efac', bg: 'rgba(22,163,74,0.18)', border: '#166534' };
   return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(100,116,139,0.2)', border: '#475569' };
 }
 
@@ -13825,9 +13826,7 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
           : (status === 401
             ? 'Invalid or unauthorized Filescan.io API key'
             : (body.message || body.error || 'Filescan.io lookup failed')));
-      const nextStatus = body.provider_status === 'disabled' ? 'disabled'
-        : (body.provider_status === 'auth_error' ? 'failed'
-          : (body.provider_status === 'rate_limited' ? 'failed' : 'failed'));
+      const nextStatus = body.provider_status === 'disabled' ? 'disabled' : 'failed';
       setState({ status: nextStatus, data: body, message: msg });
     } finally {
       setRefreshing(false);
@@ -13842,16 +13841,16 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
 
   if (!active && !hasLoaded) return null;
 
-  const compactCardStyle = { marginBottom: compact ? 0 : 14, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' };
+  const baseCardStyle = { marginBottom: compact ? 0 : 14, padding: compact ? '10px 12px' : 14, border: '1px solid #334155', borderRadius: compact ? 10 : 12, background: compact ? '#0b1220' : '#0f172a' };
   const d = state.data || {};
 
   if (state.status === 'loading') {
-    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading Filescan.io enrichment...</span></div>;
+    return <div style={{ ...baseCardStyle, display: 'flex', alignItems: 'center' }}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading Filescan.io enrichment...</span></div>;
   }
 
   if (state.status === 'unsupported') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={baseCardStyle}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io</div>
         <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Not supported for this IOC type</div>
       </div>
@@ -13860,7 +13859,7 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
 
   if (state.status === 'disabled') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={baseCardStyle}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io</div>
         <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>Filescan.io provider is disabled</div>
       </div>
@@ -13869,11 +13868,11 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
 
   if (state.status === 'not_found') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={baseCardStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Search</span></div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>IOC not found in Filescan.io</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>No result found in Filescan.io</div>
           </div>
           {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Searching…' : 'Search Filescan'}</button> : null}
         </div>
@@ -13883,101 +13882,238 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
 
   if (state.status === 'error' || state.status === 'failed') {
     return (
-      <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={{ ...baseCardStyle, borderColor: '#7f1d1d' }}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>Filescan.io</div>
-        <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message}</span>
-        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Retrying…' : 'Retry'}</button> : null}
+        <span style={{ color: '#fca5a5', fontSize: 13, display: 'block', marginTop: 4 }}>{state.message}</span>
+        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing} style={{ marginTop: 8 }}>{refreshing ? 'Retrying…' : 'Retry'}</button> : null}
       </div>
     );
   }
 
-  const vm = filescanVerdictMeta(d.verdict);
+  const vm = filescanVerdictMeta(d.verdict, d.verdict_label);
   const reports = Array.isArray(d.reports) ? d.reports : [];
   const tags = Array.isArray(d.tags) ? d.tags : [];
+  const families = Array.isArray(d.malware_families) ? d.malware_families : [];
+  const threatTypes = Array.isArray(d.threat_types) ? d.threat_types : [];
+  const fileTypeHints = Array.isArray(d.file_type_hints) ? d.file_type_hints : [];
+  const compilerHints = Array.isArray(d.compiler_hints) ? d.compiler_hints : [];
   const indicators = Array.isArray(d.threat_indicators) ? d.threat_indicators : [];
+  const fileData = d.file && typeof d.file === 'object' ? d.file : null;
+  const reportData = d.report && typeof d.report === 'object' ? d.report : null;
+  const sc = d.summary_counts && typeof d.summary_counts === 'object' ? d.summary_counts : {};
 
-  if (!compact) {
+  // Compact mode
+  if (compact) {
     return (
-      <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
-        <EnrichmentIntelligenceStyles />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>
-              Filescan.io
-              <span style={{ marginLeft: 8, border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Search</span>
-              {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
-            </div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
-              {d.last_enriched_at ? `Last checked: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand file/URL reputation'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Searching…' : 'Refresh Filescan'}</button> : null}
-            {canRefresh && isAdmin ? <button type="button" onClick={() => refresh(true).catch(() => {})} disabled={refreshing} title="Admin force refresh">Force</button> : null}
+      <div style={{ ...baseCardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 13 }}>Filescan.io</div>
+          {families.length > 0 ? <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 1 }}>{families[0]}</div> : null}
+          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 1 }}>
+            {d.last_enriched_at ? `Checked: ${formatUserDateTime(d.last_enriched_at)}` : null}
           </div>
         </div>
-
-        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
-            {vm.label}
-          </span>
-          {d.report_count != null ? (
-            <span style={{ border: '1px solid #334155', background: '#0b1220', color: '#94a3b8', borderRadius: 999, padding: '4px 10px', fontSize: 12 }}>
-              {d.report_count} {d.report_count === 1 ? 'report' : 'reports'}
-            </span>
-          ) : null}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{vm.label}</span>
+          {d.report_count != null ? <span style={{ color: '#64748b', fontSize: 11 }}>{d.report_count} rpts</span> : null}
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing} style={{ fontSize: 11 }}>{refreshing ? '…' : 'Refresh'}</button> : null}
         </div>
-
-        {(tags.length > 0 || indicators.length > 0) ? (
-          <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {indicators.slice(0, 8).map((ind) => (
-              <span key={ind.name} style={{ border: '1px solid #7f1d1d', background: 'rgba(220,38,38,0.12)', color: '#fca5a5', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>
-                {ind.name}
-              </span>
-            ))}
-            {tags.filter((t) => !indicators.find((i) => i.name === t)).slice(0, 8).map((tag) => (
-              <span key={tag} style={{ border: '1px solid #334155', background: '#0b1220', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
-        {reports.length > 0 ? (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ color: '#cbd5e1', fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Reports</div>
-            {reports.slice(0, 5).map((r, idx) => {
-              const rvm = filescanVerdictMeta(r.verdict);
-              return (
-                <div key={r.report_id || idx} style={{ marginTop: idx ? 6 : 0, padding: '6px 10px', borderRadius: 6, border: '1px solid #1e293b', background: '#0b1220', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
-                  <span style={{ border: `1px solid ${rvm.border}`, background: rvm.bg, color: rvm.color, borderRadius: 999, padding: '1px 7px', fontSize: 11, fontWeight: 700 }}>{rvm.label}</span>
-                  {r.report_date ? <span style={{ color: '#64748b' }}>{r.report_date.slice(0, 10)}</span> : null}
-                  {r.file_hash ? <span style={{ color: '#64748b', fontFamily: 'monospace', fontSize: 10 }}>{r.file_hash.slice(0, 16)}…</span> : null}
-                  {r.link ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd', marginLeft: 'auto' }}>View ↗</a> : null}
-                </div>
-              );
-            })}
-            {reports.length > 5 ? <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>+{reports.length - 5} more reports on Filescan.io</div> : null}
-          </div>
-        ) : null}
       </div>
     );
   }
 
-  // Compact mode
+  // Full card
+  // Tag display: show malware families + threat types first (colored), then others (gray), limit total visible
+  const priorityTags = [...new Set([...families, ...threatTypes])];
+  const otherTags = tags.filter((t) => !priorityTags.includes(t));
+  const allDisplayTags = [...priorityTags, ...fileTypeHints.filter((t) => !priorityTags.includes(t)), ...compilerHints.filter((t) => !priorityTags.includes(t) && !fileTypeHints.includes(t)), ...otherTags.filter((t) => !priorityTags.includes(t) && !fileTypeHints.includes(t) && !compilerHints.includes(t))];
+  const visibleTags = allDisplayTags.slice(0, 10);
+  const hiddenTagCount = allDisplayTags.length > 10 ? allDisplayTags.length - 10 : 0;
+
+  // File size formatting
+  function fmtSize(bytes) {
+    if (bytes == null) return null;
+    const n = Number(bytes);
+    if (!Number.isFinite(n)) return null;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(2)} kB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  // SHA256 short display
+  function shortHash(h) {
+    if (!h || h.length < 16) return h || null;
+    return `${h.slice(0, 10)}…${h.slice(-8)}`;
+  }
+
+  // Best threat indicator for summary line
+  const bestIndicator = indicators[0] || null;
+  const confirmedCount = sc.confirmed_threat_indicators ?? (indicators.length > 0 ? indicators.length : null);
+
+  const sectionLabel = { color: '#94a3b8', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5, marginTop: 12 };
+  const row = { display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 12 };
+  const rowKey = { color: '#64748b', minWidth: 90, flexShrink: 0 };
+  const rowVal = { color: '#cbd5e1', wordBreak: 'break-all' };
+  const monoVal = { color: '#cbd5e1', fontFamily: 'monospace', fontSize: 11 };
+
   return (
-    <div style={compactCardStyle}>
-      <div>
-        <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 13 }}>Filescan.io</div>
-        <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
-          {d.last_enriched_at ? `Checked: ${formatUserDateTime(d.last_enriched_at)}` : null}
+    <div style={{ marginBottom: 14, padding: 14, border: '1px solid #334155', borderRadius: 12, background: '#0f172a' }}>
+      <EnrichmentIntelligenceStyles />
+
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            Filescan.io
+            <span style={{ border: '1px solid #1d4ed8', color: '#93c5fd', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Search</span>
+            {d.cached ? <span style={{ border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
+          </div>
+          <div style={{ color: '#64748b', fontSize: 12, marginTop: 3 }}>
+            {d.last_enriched_at ? `Last checked: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand file/URL reputation'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Searching…' : 'Refresh'}</button> : null}
+          {canRefresh && isAdmin ? <button type="button" onClick={() => refresh(true).catch(() => {})} disabled={refreshing} title="Admin force refresh">Force</button> : null}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{vm.label}</span>
-        {d.report_count != null ? <span style={{ color: '#64748b', fontSize: 11 }}>{d.report_count} rpts</span> : null}
-        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing} style={{ fontSize: 11 }}>{refreshing ? '…' : 'Refresh'}</button> : null}
+
+      {/* Verdict + report count */}
+      <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>
+          {vm.label}
+        </span>
+        {d.report_count != null && d.report_count > 0 ? (
+          <span style={{ border: '1px solid #334155', background: '#0b1220', color: '#94a3b8', borderRadius: 999, padding: '3px 10px', fontSize: 12 }}>
+            {d.report_count} {d.report_count === 1 ? 'report' : 'reports'}
+          </span>
+        ) : null}
+        {confirmedCount != null && confirmedCount > 0 ? (
+          <span style={{ border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fcd34d', borderRadius: 999, padding: '3px 10px', fontSize: 12 }}>
+            {confirmedCount} confirmed threat {confirmedCount === 1 ? 'indicator' : 'indicators'}
+          </span>
+        ) : null}
       </div>
+
+      {/* Threat indicators */}
+      {indicators.length > 0 ? (
+        <div>
+          <div style={sectionLabel}>Threat Intelligence</div>
+          {indicators.slice(0, 3).map((ti, idx) => (
+            <div key={idx} style={{ ...row, marginBottom: 3 }}>
+              {ti.origin || ti.provider ? <span style={{ ...rowKey, color: '#fcd34d', fontWeight: 600 }}>{ti.origin || ti.provider}</span> : null}
+              <span style={rowVal}>{ti.title || '—'}</span>
+              {ti.resource_type ? <span style={{ color: '#64748b', marginLeft: 4, flexShrink: 0 }}>· {ti.resource_type}</span> : null}
+            </div>
+          ))}
+          {indicators.length > 3 ? <div style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>+{indicators.length - 3} more indicators</div> : null}
+        </div>
+      ) : null}
+
+      {/* Malware context: families + threat types */}
+      {(families.length > 0 || threatTypes.length > 0) ? (
+        <div>
+          <div style={sectionLabel}>Threat Context</div>
+          {families.length > 0 ? (
+            <div style={{ ...row, marginBottom: 3 }}>
+              <span style={rowKey}>Family</span>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {families.map((f) => (
+                  <span key={f} style={{ border: '1px solid #7f1d1d', background: 'rgba(220,38,38,0.12)', color: '#fca5a5', borderRadius: 999, padding: '1px 8px', fontSize: 11 }}>{f}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {threatTypes.length > 0 ? (
+            <div style={{ ...row, marginBottom: 3 }}>
+              <span style={rowKey}>Type</span>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {threatTypes.map((t) => (
+                  <span key={t} style={{ border: '1px solid #b45309', background: 'rgba(217,119,6,0.12)', color: '#fcd34d', borderRadius: 999, padding: '1px 8px', fontSize: 11 }}>{t}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* File metadata */}
+      {fileData ? (
+        <div>
+          <div style={sectionLabel}>File</div>
+          {fileData.name ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Name</span><span style={rowVal}>{fileData.name}</span></div> : null}
+          {fileData.sha256 ? (
+            <div style={{ ...row, marginBottom: 3 }}>
+              <span style={rowKey}>SHA256</span>
+              <span style={monoVal} title={fileData.sha256}>{shortHash(fileData.sha256)}</span>
+            </div>
+          ) : null}
+          {fileData.sha1 ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>SHA1</span><span style={{ ...monoVal }} title={fileData.sha1}>{shortHash(fileData.sha1)}</span></div> : null}
+          {fileData.media_type ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Type</span><span style={rowVal}>{fileData.media_type}</span></div> : null}
+          {fileData.size != null ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Size</span><span style={rowVal}>{fmtSize(fileData.size)}</span></div> : null}
+          {fileData.entropy != null ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Entropy</span><span style={rowVal}>{fileData.entropy}</span></div> : null}
+          {fileData.strings_count != null ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Strings</span><span style={rowVal}>{fileData.strings_count}</span></div> : null}
+        </div>
+      ) : null}
+
+      {/* Tags */}
+      {visibleTags.length > 0 ? (
+        <div>
+          <div style={sectionLabel}>Filescan Tags</div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {visibleTags.map((tag) => {
+              const isMalware = families.includes(tag);
+              const isThreat = threatTypes.includes(tag);
+              const isFile = fileTypeHints.includes(tag);
+              const isCompiler = compilerHints.includes(tag);
+              const style = isMalware
+                ? { border: '1px solid #7f1d1d', background: 'rgba(220,38,38,0.10)', color: '#fca5a5' }
+                : isThreat
+                  ? { border: '1px solid #b45309', background: 'rgba(217,119,6,0.10)', color: '#fcd34d' }
+                  : (isFile || isCompiler)
+                    ? { border: '1px solid #1e3a5f', background: 'rgba(29,78,216,0.10)', color: '#93c5fd' }
+                    : { border: '1px solid #334155', background: '#0b1220', color: '#94a3b8' };
+              return (
+                <span key={tag} style={{ ...style, borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>{tag}</span>
+              );
+            })}
+            {hiddenTagCount > 0 ? <span style={{ border: '1px solid #334155', background: 'transparent', color: '#64748b', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>+{hiddenTagCount} more</span> : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Report / link */}
+      {reportData ? (
+        <div>
+          <div style={sectionLabel}>Report</div>
+          {reportData.report_id ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Report ID</span><span style={monoVal}>{reportData.report_id}</span></div> : null}
+          {reportData.flow_id && reportData.flow_id !== reportData.report_id ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Flow ID</span><span style={monoVal}>{reportData.flow_id}</span></div> : null}
+          {reportData.report_date ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Scan date</span><span style={rowVal}>{String(reportData.report_date).slice(0, 10)}</span></div> : null}
+          {reportData.scan_engine ? <div style={{ ...row, marginBottom: 3 }}><span style={rowKey}>Engine</span><span style={rowVal}>{reportData.scan_engine}</span></div> : null}
+          {reportData.link ? (
+            <div style={{ marginTop: 8 }}>
+              <a href={reportData.link} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd', fontSize: 13, textDecoration: 'none', border: '1px solid #1d4ed8', borderRadius: 6, padding: '4px 10px', display: 'inline-block' }}>
+                Open in Filescan.io ↗
+              </a>
+            </div>
+          ) : null}
+        </div>
+      ) : (reports.length > 0 && reports[0].link) ? (
+        <div style={{ marginTop: 12 }}>
+          <a href={reports[0].link} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd', fontSize: 13, textDecoration: 'none', border: '1px solid #1d4ed8', borderRadius: 6, padding: '4px 10px', display: 'inline-block' }}>
+            Open in Filescan.io ↗
+          </a>
+        </div>
+      ) : null}
+
+      {/* Neutral context: summary counts if present and non-trivial */}
+      {(sc.threat_reputation_iocs != null || sc.similar_samples != null || sc.extracted_iocs != null) ? (
+        <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 6, border: '1px solid #1e293b', background: '#080f1a', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {sc.threat_reputation_iocs != null ? <span style={{ fontSize: 11, color: '#64748b' }}>Threat IOCs: {sc.threat_reputation_iocs}</span> : null}
+          {sc.similar_samples != null ? <span style={{ fontSize: 11, color: '#64748b' }}>Similar samples: {sc.similar_samples}</span> : null}
+          {sc.extracted_iocs != null ? <span style={{ fontSize: 11, color: '#64748b' }}>Extracted IOCs: {sc.extracted_iocs}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
