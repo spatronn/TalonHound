@@ -25,6 +25,19 @@ const THREATFOX_MAP = Object.freeze({
   infostealer:      'malware',
 });
 
+// EmergingThreats Blockrules: category values produced by inferCategory() in the importer.
+// These are deterministic labels derived from the blocklist filename.
+const ET_BLOCKRULES_MAP = Object.freeze({
+  c2:                 'command_and_control',
+  'botnet-c2':        'command_and_control',
+  tor:                'suspicious_infrastructure',
+  'compromised-host': 'suspicious_infrastructure',
+  'known-malicious':  'malware',
+  scanner:            'scanner_recon',
+  bruteforce:         'suspicious_infrastructure',
+  'malicious-ip':     'suspicious_infrastructure',
+});
+
 // OTX pulse tags / categories that carry unambiguous classification signals.
 // Return null for anything not listed — OTX is heterogeneous; no blanket default.
 const OTX_MAP = Object.freeze({
@@ -62,5 +75,7 @@ export function resolveClassificationFromFeed(feedKey, rawValue) {
   if (feedKey === 'phishtank-opendnsrr') return 'phishing';
   // OTX: only classify when there is a clear signal; return null otherwise.
   if (feedKey === 'alienvault-otx') return OTX_MAP[v] || null;
+  // EmergingThreats Blockrules: category is inferred from filename by the importer.
+  if (feedKey === 'et-blockrules') return ET_BLOCKRULES_MAP[rawValue] || null;
   return null;
 }

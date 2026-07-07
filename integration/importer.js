@@ -1078,7 +1078,7 @@ export async function batchInsertIocs(client, entries, observableType = 'ip', su
         e.note ?? null,
         now,
         now,
-        e.threatClassification || null
+        e.threatClassification || 'unknown'
       );
     });
     const typeParam = resolvedKept.length * 11 + 1;
@@ -1413,13 +1413,15 @@ export async function runHourlyImport(options = {}) {
       const category = inferCategory(file);
       const note = `Auto-imported from ET blockrules (${file})`;
 
+      const threatClassification = resolveClassificationFromFeed('et-blockrules', category) || 'unknown';
       const entries = ips.map((ip) => ({
         ip,
         sourceName,
         sourceUrl,
         confidence,
         category,
-        note
+        note,
+        threatClassification
       }));
 
       await withPgTransaction(client, 'hourly_import_batch', async (tx) => {
