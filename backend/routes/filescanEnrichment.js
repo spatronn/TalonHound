@@ -43,11 +43,12 @@ export function registerFilescanEnrichmentRoutes(app, pool, audit) {
       if (!isFilescanSupportedType(iocType)) {
         return res.json({
           enriched: false,
+          supported: false,
           ioc_type: iocType,
           ioc_value: iocValue,
           provider: FILESCAN_PROVIDER,
           provider_status: 'unsupported_type',
-          message: 'IOC type not supported by Filescan.io'
+          message: 'Filescan.io enrichment is only supported for file hashes.'
         });
       }
 
@@ -88,8 +89,9 @@ export function registerFilescanEnrichmentRoutes(app, pool, audit) {
 
     if (!isFilescanSupportedType(iocType)) {
       return res.status(422).json({
-        error: 'IOC type not supported by Filescan.io',
-        message: 'IOC type not supported by Filescan.io',
+        error: 'Filescan.io enrichment is only supported for file hashes.',
+        message: 'Filescan.io enrichment is only supported for file hashes.',
+        supported: false,
         provider_status: 'unsupported_type'
       });
     }

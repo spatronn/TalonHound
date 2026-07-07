@@ -204,13 +204,9 @@ export async function fetchFilescanSearch(iocValue, config, options = {}) {
  */
 export function isFilescanSupportedType(iocType) {
   const t = String(iocType || '').trim().toLowerCase();
-  const supported = new Set([
-    'file_hash', 'hash', 'md5', 'sha1', 'sha256',
-    'url',
-    'domain', 'hostname',
-    'ip', 'ipv4', 'ipv6', 'ip6'
-  ]);
-  return supported.has(t);
+  // Filescan enrichment is scoped to file hashes only.
+  // URL/domain/IP lookup returns little signal and adds UI noise.
+  return new Set(['file_hash', 'hash', 'md5', 'sha1', 'sha256']).has(t);
 }
 
 /**

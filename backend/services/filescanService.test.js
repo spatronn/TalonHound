@@ -57,13 +57,17 @@ test('isCacheFresh force=true within 5min cooldown returns true (skip re-fetch)'
 
 // --- isFilescanSupportedType ---
 
-test('isFilescanSupportedType returns true for supported types', () => {
-  for (const t of ['hash', 'file_hash', 'md5', 'sha1', 'sha256', 'url', 'domain', 'hostname', 'ip', 'ipv4', 'ipv6', 'ip6']) {
+test('isFilescanSupportedType returns true for hash types only', () => {
+  for (const t of ['hash', 'file_hash', 'md5', 'sha1', 'sha256']) {
     assert.equal(isFilescanSupportedType(t), true, `${t} should be supported`);
   }
 });
 
-test('isFilescanSupportedType returns false for unsupported types', () => {
+test('isFilescanSupportedType returns false for url/domain/ip and other types', () => {
+  // Scope restricted to file hashes — URL/domain/IP add noise with little signal
+  for (const t of ['url', 'domain', 'hostname', 'ip', 'ipv4', 'ipv6', 'ip6']) {
+    assert.equal(isFilescanSupportedType(t), false, `${t} should not be supported`);
+  }
   assert.equal(isFilescanSupportedType('email'), false);
   assert.equal(isFilescanSupportedType('user_agent'), false);
   assert.equal(isFilescanSupportedType(''), false);

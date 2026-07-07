@@ -73,9 +73,7 @@ export function isProviderApplicable(providerKey, iocType, { rdapEligible = fals
   if (key === 'ipinfo' || key === 'abuseipdb') return normalized === 'ip';
   if (key === 'spamhaus_drop') return normalized === 'ip';
   if (key === 'rdap') return normalized === 'domain' && Boolean(rdapEligible);
-  if (key === 'filescan') return (
-    normalized === 'hash' || normalized === 'url' || normalized === 'domain' || normalized === 'ip'
-  );
+  if (key === 'filescan') return normalized === 'hash';
   return false;
 }
 
