@@ -486,3 +486,93 @@ test('normalizeFilescanResponse never touches ioc_items confidence or status fie
     assert.equal(out[f], undefined, `Field "${f}" must not appear in enrichment output`);
   }
 });
+
+// --- scan_state / states ---
+
+test('normalizeFilescanResponse: scan_state reflects primary item state', () => {
+  const raw = {
+    items: [
+      { id: 'a1', state: 'success_partial', verdict: 'likely_malicious', file: {}, scan_init: { id: 'f1' }, tags: [] }
+    ],
+    count: 1
+  };
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'abc' });
+  assert.equal(out.scan_state, 'success_partial', 'scan_state must be "success_partial" from primary item');
+  assert.deepEqual(out.states, ['success_partial']);
+});
+
+test('normalizeFilescanResponse: states deduplicated across all items', () => {
+  const raw = {
+    items: [
+      { id: 'a1', state: 'success', verdict: 'unknown', file: {}, scan_init: { id: 'f1' }, tags: [] },
+      { id: 'a2', state: 'success_partial', verdict: 'likely_malicious', file: {}, scan_init: { id: 'f2' }, tags: [] },
+      { id: 'a3', state: 'success', verdict: 'unknown', file: {}, scan_init: { id: 'f3' }, tags: [] }
+    ],
+    count: 3
+  };
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'abc' });
+  // primary item is items[1] (likely_malicious → malicious, the highest verdict)
+  assert.equal(out.scan_state, 'success_partial');
+  assert.equal(out.states.length, 2, 'states must be deduplicated');
+  assert.ok(out.states.includes('success'));
+  assert.ok(out.states.includes('success_partial'));
+});
+
+test('normalizeFilescanResponse: scan_state null for empty items', () => {
+  const raw = { items: [], count: 0 };
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'abc' });
+  assert.equal(out.scan_state, null);
+  assert.deepEqual(out.states, []);
+});
+
+test('normalizeFilescanResponse: scan_state null for item with missing state field', () => {
+  const raw = {
+    items: [{ id: 'a1', verdict: 'malicious', file: {}, scan_init: { id: 'f1' }, tags: [] }],
+    count: 1
+  };
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'abc' });
+  assert.equal(out.scan_state, null);
+  assert.deepEqual(out.states, []);
+});
+
+test('normalizeFilescanResponse: e0fa3d8a structure — success_partial, no OSINT, 3 tags', () => {
+  // Models the real API response for e0fa3d8a — success_partial with only MEDIA_TYPE/CERTIFICATE/SIGNAL
+  const raw = {
+    items: [
+      {
+        id: '4d1b8a02-4838-4376-b6f4-0009c0e5b7c3',
+        state: 'success_partial',
+        verdict: 'likely_malicious',
+        date: '2026-07-07T14:24:32.927000',
+        file: {
+          name: 'e0fa3d8a58dd358448888a6194b36bc2c252628e4331b26547691199556d2f45.exe',
+          sha256: 'e0fa3d8a58dd358448888a6194b36bc2c252628e4331b26547691199556d2f45',
+          mime_type: 'application/x-msdownload; format=pe',
+          short_type: 'peexe',
+          link: null
+        },
+        scan_init: { id: '6a4d0c153234235b013849cb' },
+        tags: [
+          { source: 'MEDIA_TYPE', isRootTag: true, isMalwareFamilyTag: false, tag: { name: 'peexe', descriptions: [] } },
+          { source: 'CERTIFICATE', isRootTag: true, isMalwareFamilyTag: false, tag: { name: 'signed', descriptions: [] } },
+          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'packed', descriptions: [] } }
+        ]
+      }
+    ],
+    count: 1
+  };
+
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'e0fa3d8a...' });
+
+  assert.equal(out.scan_state, 'success_partial');
+  assert.deepEqual(out.states, ['success_partial']);
+  assert.equal(out.verdict, 'malicious');
+  assert.equal(out.verdict_label, 'Likely Malicious');
+  assert.deepEqual(out.malware_families, [], 'no OSINT match → empty malware_families');
+  assert.ok(out.file_type_hints.includes('peexe'));
+  assert.equal(out.file.media_type, 'application/x-msdownload; format=pe');
+  assert.equal(out.file.type, 'peexe');
+  assert.ok(out.tags.includes('peexe'));
+  assert.ok(out.tags.includes('signed'));
+  assert.ok(out.tags.includes('packed'));
+});

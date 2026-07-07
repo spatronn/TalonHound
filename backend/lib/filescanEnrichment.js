@@ -273,11 +273,18 @@ export function normalizeFilescanResponse(rawBody, ctx) {
     other_count: emuObj.other ?? emuObj.otherCount ?? null
   } : null;
 
+  // --- Scan state ---
+  const scan_state = primaryItem?.state || null;
+  const stateSet = new Set(items.map((item) => item.state).filter(Boolean));
+  const states = Array.from(stateSet);
+
   return {
     provider: FILESCAN_PROVIDER,
     found: items.length > 0,
     verdict,
     verdict_label,
+    scan_state,
+    states,
     confidence_hint: verdictToConfidenceHint(verdict, summary_counts),
     report_count: items.length,
 

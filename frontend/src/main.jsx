@@ -13891,6 +13891,7 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
   }
 
   const vm = filescanVerdictMeta(d.verdict, d.verdict_label);
+  const isPartialResult = d.scan_state === 'success_partial' || (Array.isArray(d.states) && d.states.some((s) => s === 'success_partial'));
   const reports = Array.isArray(d.reports) ? d.reports : [];
   const tags = Array.isArray(d.tags) ? d.tags : [];
   const families = Array.isArray(d.malware_families) ? d.malware_families : [];
@@ -13915,6 +13916,7 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ border: `1px solid ${vm.border}`, background: vm.bg, color: vm.color, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{vm.label}</span>
+          {isPartialResult ? <span title="Partial scan result" style={{ border: '1px solid #854d0e', color: '#fbbf24', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>Partial</span> : null}
           {d.report_count != null ? <span style={{ color: '#64748b', fontSize: 11 }}>{d.report_count} rpts</span> : null}
           {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing} style={{ fontSize: 11 }}>{refreshing ? '…' : 'Refresh'}</button> : null}
         </div>
@@ -13991,6 +13993,22 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
         {confirmedCount != null && confirmedCount > 0 ? (
           <span style={{ border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fcd34d', borderRadius: 999, padding: '3px 10px', fontSize: 12 }}>
             {confirmedCount} confirmed threat {confirmedCount === 1 ? 'indicator' : 'indicators'}
+          </span>
+        ) : null}
+        {isPartialResult ? (
+          <span
+            title="Filescan search API returned a partial result. Some report details (file metadata, YARA/Sigma, extracted IOCs) may not be available from the search endpoint."
+            style={{ border: '1px solid #854d0e', background: 'rgba(133,77,14,0.15)', color: '#fbbf24', borderRadius: 999, padding: '3px 10px', fontSize: 11, cursor: 'default' }}
+          >
+            Partial result
+          </span>
+        ) : null}
+        {families.length === 0 && (d.verdict === 'malicious' || d.verdict === 'suspicious') ? (
+          <span
+            title="No malware family or OSINT attribution found in Filescan search results for this IOC."
+            style={{ border: '1px solid #334155', background: 'transparent', color: '#64748b', borderRadius: 999, padding: '3px 10px', fontSize: 11, cursor: 'default' }}
+          >
+            No OSINT match
           </span>
         ) : null}
       </div>
