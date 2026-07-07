@@ -13836,7 +13836,14 @@ function FilescanEnrichmentCard({ iocValue, iocType, active = true, canRefresh =
   useEffect(() => {
     if (!onSnapshot) return;
     const d = state.data || {};
-    onSnapshot({ status: state.status, verdict: d.verdict, report_count: d.report_count });
+    onSnapshot({
+      status: state.status,
+      verdict: d.verdict,
+      verdict_label: d.verdict_label,
+      report_count: d.report_count,
+      found: d.found === true,
+      scan_state: d.scan_state || null
+    });
   }, [state, onSnapshot]);
 
   if (!active && !hasLoaded) return null;

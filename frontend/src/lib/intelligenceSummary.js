@@ -2,7 +2,12 @@ import { isProviderApplicable } from './iocProviderApplicability.js';
 
 function providerCoverageStatus(snapshot) {
   const status = String(snapshot?.status || 'not_run').toLowerCase();
-  if (['success', 'available', 'enriched', 'vt_not_indexed', 'listed', 'not_listed'].includes(status)) return 'available';
+  if (['success', 'available', 'enriched', 'vt_not_indexed', 'listed', 'not_listed'].includes(status)) {
+    if (snapshot?.found === false) return 'not_found';
+    if (snapshot?.scan_state === 'success_partial') return 'partial';
+    return 'available';
+  }
+  if (status === 'not_found') return 'not_found';
   if (status === 'disabled') return 'disabled';
   if (['not_configured', 'api_key_missing'].includes(status)) return 'not_configured';
   if (['dataset_not_synced', 'suspicious', 'stale'].includes(status)) return 'not_configured';
@@ -10,7 +15,7 @@ function providerCoverageStatus(snapshot) {
   return 'not_run';
 }
 
-export function computeOverallSignal({ vt, abuseipdb }) {
+export function computeOverallSignal({ vt, abuseipdb, filescan }) {
   const vtMal = Number(vt?.malicious ?? vt?.stats?.malicious ?? 0);
   const vtSusp = Number(vt?.suspicious ?? vt?.stats?.suspicious ?? 0);
   const vtDetected = Number(vt?.detected ?? vt?.detection_ratio?.detected ?? 0);
@@ -18,19 +23,33 @@ export function computeOverallSignal({ vt, abuseipdb }) {
 
   const hasVt = vt && vt.status === 'success';
   const hasAbuse = abuseipdb && abuseipdb.status === 'success';
+  const hasFilescan = filescan && filescan.status === 'success' && filescan.found === true;
+  const filescanVerdict = hasFilescan ? String(filescan.verdict || '') : '';
 
-  if (!hasVt && !hasAbuse) return { label: 'Unknown', tone: 'muted' };
-  if ((hasVt && vtMal >= 5) || (hasAbuse && abuseScore >= 75)) {
+  if (!hasVt && !hasAbuse && !hasFilescan) return { label: 'Unknown', tone: 'muted' };
+
+  if (
+    (hasVt && vtMal >= 5) ||
+    (hasAbuse && abuseScore >= 75) ||
+    (hasFilescan && filescanVerdict === 'malicious')
+  ) {
     return { label: 'Malicious signal', tone: 'bad' };
   }
-  if ((hasVt && (vtMal > 0 || vtSusp > 0 || vtDetected > 0)) || (hasAbuse && abuseScore >= 25)) {
+  if (
+    (hasVt && (vtMal > 0 || vtSusp > 0 || vtDetected > 0)) ||
+    (hasAbuse && abuseScore >= 25) ||
+    (hasFilescan && filescanVerdict === 'suspicious')
+  ) {
     return { label: 'Suspicious', tone: 'warn' };
   }
   if (hasVt || hasAbuse) return { label: 'Clean / No reports', tone: 'good' };
+  if (hasFilescan && (filescanVerdict === 'benign' || filescanVerdict === 'no_threat')) {
+    return { label: 'Clean / No reports', tone: 'good' };
+  }
   return { label: 'Unknown', tone: 'muted' };
 }
 
-export function computeReputationSummary({ vt, abuseipdb }) {
+export function computeReputationSummary({ vt, abuseipdb, filescan }) {
   const parts = [];
   if (vt?.status === 'success') {
     const detected = Number(vt.detected ?? vt.detection_ratio?.detected ?? 0);
@@ -40,7 +59,12 @@ export function computeReputationSummary({ vt, abuseipdb }) {
   if (abuseipdb?.status === 'success' && abuseipdb.score != null) {
     parts.push({ label: 'AbuseIPDB', value: `${Number(abuseipdb.score)} / 100` });
   }
-  return parts.slice(0, 2);
+  if (filescan?.status === 'success' && filescan.found === true && filescan.verdict && filescan.verdict !== 'unknown') {
+    const displayLabel = filescan.verdict_label
+      || (filescan.verdict.charAt(0).toUpperCase() + filescan.verdict.slice(1).replace(/_/g, ' '));
+    parts.push({ label: 'Filescan', value: displayLabel });
+  }
+  return parts.slice(0, 3);
 }
 
 export function computeInfrastructureSummary({ ipinfo, abuseipdb, rdap }) {
@@ -69,6 +93,7 @@ export function computeInfrastructureSummary({ ipinfo, abuseipdb, rdap }) {
 export function computeProviderCoverage(snapshots, { iocType, rdapEligible = false, providerKeys } = {}) {
   const providers = [
     { key: 'virustotal', label: 'VT' },
+    { key: 'filescan', label: 'Filescan' },
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
     { key: 'rdap', label: 'RDAP' },
@@ -126,6 +151,8 @@ export function signalToneStyle(tone) {
 
 export function providerStateLabel(state) {
   if (state === 'available') return 'Available';
+  if (state === 'partial') return 'Partial';
+  if (state === 'not_found') return 'Not found';
   if (state === 'disabled') return 'Disabled';
   if (state === 'not_configured') return 'Not configured';
   if (state === 'error') return 'Error';
@@ -134,6 +161,8 @@ export function providerStateLabel(state) {
 
 export function providerStateStyle(state) {
   if (state === 'available') return { dot: '#22c55e', color: '#86efac' };
+  if (state === 'partial') return { dot: '#f59e0b', color: '#fbbf24' };
+  if (state === 'not_found') return { dot: '#64748b', color: '#94a3b8' };
   if (state === 'error') return { dot: '#ef4444', color: '#fca5a5' };
   if (state === 'disabled' || state === 'not_configured') return { dot: '#f59e0b', color: '#fcd34d' };
   return { dot: '#64748b', color: '#94a3b8' };

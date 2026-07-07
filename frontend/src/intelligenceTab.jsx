@@ -88,10 +88,16 @@ export function IntelligenceSummarySection({
   const abuseSnap = providerSnapshots?.abuseipdb || {};
   const ipinfoSnap = providerSnapshots?.ipinfo || {};
   const rdapSnap = providerSnapshots?.rdap || {};
+  const filescanSnap = providerSnapshots?.filescan || {};
 
   const showAbuse = isProviderApplicable('abuseipdb', iocType);
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible });
+  const showFilescan = isProviderApplicable('filescan', iocType);
+
+  const filescanForSignal = showFilescan && filescanSnap.status === 'success' && filescanSnap.found === true
+    ? { status: 'success', found: true, verdict: filescanSnap.verdict, verdict_label: filescanSnap.verdict_label, scan_state: filescanSnap.scan_state }
+    : null;
 
   const overall = computeOverallSignal({
     vt: vtSnap.status === 'success' ? {
@@ -101,11 +107,13 @@ export function IntelligenceSummarySection({
       detected: vtSnap.detected,
       stats: vtSnap.stats
     } : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null,
+    filescan: filescanForSignal
   });
   const reputation = computeReputationSummary({
     vt: vtSnap.status === 'success' ? { status: 'success', detected: vtSnap.detected, total: vtSnap.total } : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null,
+    filescan: filescanForSignal
   });
   const layeredCoverage = computeLayeredProviderCoverage({
     directSnapshots: providerSnapshots,
@@ -630,7 +638,8 @@ export function IntelligenceTabPanel({
   const providerGridStyle = useMemo(() => ({
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-    gap: 12
+    gap: 12,
+    alignItems: 'start'
   }), []);
 
   return (
