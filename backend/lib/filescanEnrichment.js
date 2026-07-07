@@ -16,6 +16,8 @@ export function maskApiKey(key) {
 export function normalizeVerdict(raw) {
   const s = String(raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['malicious', 'confirmed_threat', 'threat', 'infected', 'malware'].includes(s)) return 'malicious';
+  // likely_malicious is Filescan's second-highest severity — treat as malicious for threat triage
+  if (s === 'likely_malicious') return 'malicious';
   if (s === 'suspicious') return 'suspicious';
   if (['benign', 'clean', 'safe'].includes(s)) return 'benign';
   if (s === 'no_threat') return 'no_threat';
@@ -53,6 +55,26 @@ export function verdictToConfidenceHint(verdict, summaryCounts) {
   if (verdict === 'suspicious') return 'medium';
   if (verdict === 'benign' || verdict === 'no_threat') return 'low';
   return null;
+}
+
+// Cluster types that identify OSINT_LOOKUP tags as malware families
+const MALWARE_CLUSTER_TYPES = new Set(['malpedia', 'ransomware', 'tool', 'exploit_kit', 'rat']);
+
+/**
+ * Determine if a tag entry from Filescan is a malware family reference.
+ * `isMalwareFamilyTag` is unreliable — many known families (phorpiex, bashlite)
+ * have it set to false. Use cluster type from descriptions as the primary signal.
+ */
+export function isTagMalwareFamily(tagEntry) {
+  if (tagEntry?.isMalwareFamilyTag) return true;
+  const src = tagEntry?.source;
+  if (src === 'OSINT_LOOKUP' || src === 'THREAT_ATTRIBUTION') {
+    const descs = tagEntry?.tag?.descriptions;
+    if (Array.isArray(descs)) {
+      return descs.some((d) => MALWARE_CLUSTER_TYPES.has(d?.cluster?.type));
+    }
+  }
+  return false;
 }
 
 // Tag classification — small focused sets, not exhaustive
@@ -121,8 +143,9 @@ export function normalizeFilescanResponse(rawBody, ctx) {
     sha256: fileObj.sha256 || null,
     sha1: fileObj.sha1 || null,
     md5: fileObj.md5 || null,
-    media_type: fileObj.media_type || fileObj.mediaType || null,
-    type: fileObj.type || null,
+    // API field is mime_type (not media_type); short_type for PE/ELF/etc label
+    media_type: fileObj.mime_type || fileObj.media_type || fileObj.mediaType || null,
+    type: fileObj.short_type || fileObj.type || null,
     size: fileObj.size != null ? fileObj.size : null,
     entropy: fileObj.entropy != null ? Number(fileObj.entropy) : null,
     strings_count: fileObj.strings != null ? Number(fileObj.strings)
@@ -177,7 +200,8 @@ export function normalizeFilescanResponse(rawBody, ctx) {
       const n = name.trim();
       if (!n) continue;
       tagSet.add(n);
-      if (t.isMalwareFamilyTag) malwareFamilySet.add(n);
+      // isTagMalwareFamily checks isMalwareFamilyTag + cluster type (more reliable)
+      if (isTagMalwareFamily(t)) malwareFamilySet.add(n);
       const cls = classifyTag(n);
       if (cls.is_malware_family) malwareFamilySet.add(n);
       if (cls.is_threat_type) threatTypeSet.add(n);

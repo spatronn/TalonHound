@@ -7,6 +7,7 @@ import {
   aggregateVerdict,
   verdictToConfidenceHint,
   classifyTag,
+  isTagMalwareFamily,
   normalizeFilescanResponse,
   filescanHttpError,
   normalizeFilescanCacheKey
@@ -50,6 +51,10 @@ test('normalizeVerdict maps Filescan-specific labels', () => {
   assert.equal(normalizeVerdict('infected'), 'malicious');
   assert.equal(normalizeVerdict('clean'), 'benign');
   assert.equal(normalizeVerdict('safe'), 'benign');
+  // likely_malicious is Filescan's second-highest severity
+  assert.equal(normalizeVerdict('likely_malicious'), 'malicious');
+  assert.equal(normalizeVerdict('LIKELY_MALICIOUS'), 'malicious');
+  assert.equal(normalizeVerdict('Likely Malicious'), 'malicious');
 });
 
 // --- verdictDisplayLabel ---
@@ -76,6 +81,9 @@ test('aggregateVerdict precedence', () => {
 test('aggregateVerdict handles Filescan-specific raw values', () => {
   assert.equal(aggregateVerdict(['confirmed_threat', 'no_threat']), 'malicious');
   assert.equal(aggregateVerdict(['clean', 'no_threat']), 'benign');
+  // likely_malicious should be treated as malicious, not unknown
+  assert.equal(aggregateVerdict(['likely_malicious', 'unknown']), 'malicious');
+  assert.equal(aggregateVerdict(['unknown', 'likely_malicious']), 'malicious');
 });
 
 // --- verdictToConfidenceHint ---
@@ -125,64 +133,117 @@ test('classifyTag: unknown tag → all false', () => {
   assert.equal(r.is_compiler_hint, false);
 });
 
+// --- isTagMalwareFamily ---
+
+test('isTagMalwareFamily: isMalwareFamilyTag=true → true', () => {
+  const t = { isMalwareFamilyTag: true, source: 'OSINT_LOOKUP', tag: { name: 'mirai', descriptions: [] } };
+  assert.equal(isTagMalwareFamily(t), true);
+});
+
+test('isTagMalwareFamily: phorpiex OSINT_LOOKUP + malpedia cluster → true (isMalwareFamilyTag=false)', () => {
+  // Real Filescan API has isMalwareFamilyTag:false for phorpiex but it IS a family
+  const t = {
+    isMalwareFamilyTag: false,
+    source: 'OSINT_LOOKUP',
+    tag: {
+      name: 'phorpiex',
+      descriptions: [{ cluster: { type: 'malpedia' } }]
+    }
+  };
+  assert.equal(isTagMalwareFamily(t), true);
+});
+
+test('isTagMalwareFamily: crypt + ransomware cluster → true', () => {
+  const t = {
+    isMalwareFamilyTag: false,
+    source: 'OSINT_LOOKUP',
+    tag: {
+      name: 'crypt',
+      descriptions: [{ cluster: { type: 'ransomware' } }]
+    }
+  };
+  assert.equal(isTagMalwareFamily(t), true);
+});
+
+test('isTagMalwareFamily: dropper OSINT_LOOKUP no cluster → false (threat type, not family)', () => {
+  const t = {
+    isMalwareFamilyTag: false,
+    source: 'OSINT_LOOKUP',
+    tag: { name: 'dropper', descriptions: [] }
+  };
+  assert.equal(isTagMalwareFamily(t), false);
+});
+
+test('isTagMalwareFamily: SIGNAL source → false', () => {
+  const t = { isMalwareFamilyTag: false, source: 'SIGNAL', tag: { name: 'obfuscated', descriptions: [] } };
+  assert.equal(isTagMalwareFamily(t), false);
+});
+
 // --- normalizeFilescanResponse ---
 
-test('normalizeFilescanResponse: full hash response with all fields', () => {
+test('normalizeFilescanResponse: real Filescan API structure (mime_type, short_type, OSINT_LOOKUP family)', () => {
+  // Models real API response structure for hash 2012c7af...
   const raw = {
     items: [
       {
         id: '265fec2c-6833-461d-9da8-f7a6f3b61e3d',
-        state: 'success',
-        verdict: 'confirmed_threat',
-        date: '2026-07-01T10:00:00Z',
-        scan_engine: 'Internal',
+        state: 'success_partial',
+        verdict: 'malicious',
+        date: '2026-07-06T17:13:26.189000',
         file: {
           name: '_2012c7af.exe',
           sha256: '2012c7af2da6b649bc2bb58f54837b200cafecc44ceda8d5e2e43b0ea205ac97',
-          sha1: 'abc123sha1',
-          md5: 'abc123md5',
-          media_type: 'application/x-dosexec',
-          type: 'PE',
-          size: 15872,
-          entropy: 5.9,
-          strings: 0,
+          // API uses mime_type, NOT media_type
+          mime_type: 'application/x-dosexec',
+          // API uses short_type, NOT type
+          short_type: 'peexe',
           link: null
         },
-        scan_init: { id: 'flow-abc' },
+        scan_init: { id: '6a4be234b4cc16a49fa26b58' },
         tags: [
-          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: true, tag: { name: 'phorpiex' } },
-          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'dropper' } },
-          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'peexe' } },
-          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'microsoft_visual_cc' } }
-        ],
-        threat_indicators: [
           {
-            title: 'OSINT source detected malicious resource',
-            verdict: 'MALICIOUS',
-            origin: 'OPSWAT_METADEFENDER',
-            resource_type: 'FILE_HASH_SHA256',
-            resource_value: '2012c7af...'
+            source: 'MEDIA_TYPE', isRootTag: true, isMalwareFamilyTag: false,
+            tag: { name: 'peexe', synonyms: [], descriptions: [], verdict: { verdict: 'NO_THREAT', threatLevel: 0.1, confidence: 1.0 } }
+          },
+          {
+            // phorpiex: isMalwareFamilyTag=false in real API but IS a family via malpedia cluster
+            source: 'OSINT_LOOKUP', isMalwareFamilyTag: false,
+            tag: {
+              name: 'phorpiex',
+              synonyms: ['phorphiex'],
+              descriptions: [{ description: 'Proofpoint...', cluster: { type: 'malpedia', authors: [] } }],
+              verdict: { verdict: 'LIKELY_MALICIOUS', threatLevel: 0.75, confidence: 1.0 }
+            }
+          },
+          {
+            source: 'OSINT_LOOKUP', isMalwareFamilyTag: false,
+            tag: { name: 'dropper', synonyms: [], descriptions: [], verdict: { verdict: 'SUSPICIOUS', threatLevel: 0.5, confidence: 1.0 } }
+          },
+          {
+            source: 'DIE_OUTPUT', isRootTag: false, isMalwareFamilyTag: false,
+            tag: { name: 'microsoft_visual_cc', synonyms: [], descriptions: [], verdict: { verdict: 'NO_THREAT', threatLevel: 0.1, confidence: 1.0 } }
           }
-        ],
-        summary: {
-          threat_reputation_iocs: 0,
-          confirmed_threat_indicators: 1,
-          similar_samples: 0
-        }
+        ]
       }
     ],
     count: 1,
-    method: 'and'
+    method: 'or'
   };
 
   const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: '2012c7af...' });
 
   // Verdict
   assert.equal(out.verdict, 'malicious');
-  assert.equal(out.verdict_label, 'Confirmed Threat');
-  assert.equal(out.confidence_hint, 'high');
+  assert.equal(out.verdict_label, 'Malicious');
   assert.equal(out.found, true);
   assert.equal(out.report_count, 1);
+
+  // File metadata: API uses mime_type/short_type — must be mapped to media_type/type
+  assert.ok(out.file !== null, 'file should be present');
+  assert.equal(out.file.name, '_2012c7af.exe');
+  assert.equal(out.file.sha256, '2012c7af2da6b649bc2bb58f54837b200cafecc44ceda8d5e2e43b0ea205ac97');
+  assert.equal(out.file.media_type, 'application/x-dosexec', 'mime_type must be mapped to media_type');
+  assert.equal(out.file.type, 'peexe', 'short_type must be mapped to type');
 
   // Tags
   assert.ok(out.tags.includes('phorpiex'));
@@ -190,39 +251,113 @@ test('normalizeFilescanResponse: full hash response with all fields', () => {
   assert.ok(out.tags.includes('peexe'));
   assert.ok(out.tags.includes('microsoft_visual_cc'));
 
-  // Semantic classification
-  assert.ok(out.malware_families.includes('phorpiex'), 'phorpiex should be in malware_families');
-  assert.ok(out.threat_types.includes('dropper'), 'dropper should be in threat_types');
-  assert.ok(out.file_type_hints.includes('peexe'), 'peexe should be in file_type_hints');
-  assert.ok(out.compiler_hints.includes('microsoft_visual_cc'), 'microsoft_visual_cc should be in compiler_hints');
+  // phorpiex: OSINT_LOOKUP + malpedia cluster → malware_family (even with isMalwareFamilyTag=false)
+  assert.ok(out.malware_families.includes('phorpiex'), 'phorpiex must be in malware_families via OSINT malpedia cluster');
+  assert.ok(out.threat_types.includes('dropper'), 'dropper must be in threat_types');
+  assert.ok(out.file_type_hints.includes('peexe'), 'peexe must be in file_type_hints');
+  assert.ok(out.compiler_hints.includes('microsoft_visual_cc'), 'microsoft_visual_cc must be in compiler_hints');
+});
+
+test('normalizeFilescanResponse: likely_malicious verdict (real API — hash ffa874d0...)', () => {
+  // Real hash ffa874d0 returns verdict: "likely_malicious", not "malicious"
+  const raw = {
+    items: [
+      {
+        id: 'bcdea0ac-8783-43be-8f07-f1980ac064cf',
+        state: 'success',
+        verdict: 'likely_malicious',
+        date: '2026-07-07T17:03:55.330000',
+        file: {
+          name: 'ffa874d010db98be13b184074f4f857b151a6f22b95503899714804a24799620.exe',
+          sha256: 'ffa874d010db98be13b184074f4f857b151a6f22b95503899714804a24799620',
+          mime_type: 'application/x-msdownload; format=pe32',
+          short_type: 'peexe',
+          link: null
+        },
+        scan_init: { id: '6a4d3179f283379540e32525' },
+        tags: [
+          { source: 'MEDIA_TYPE', isRootTag: true, isMalwareFamilyTag: false, tag: { name: 'peexe', descriptions: [], verdict: { verdict: 'NO_THREAT' } } },
+          { source: 'MEDIA_TYPE', isRootTag: true, isMalwareFamilyTag: false, tag: { name: 'dotnet_pe', descriptions: [], verdict: { verdict: 'UNKNOWN' } } },
+          {
+            source: 'OSINT_LOOKUP', isMalwareFamilyTag: false,
+            tag: {
+              name: 'crypt',
+              synonyms: ['crypt ransomware'],
+              descriptions: [{ cluster: { type: 'ransomware' } }],
+              verdict: { verdict: 'LIKELY_MALICIOUS', threatLevel: 0.75 }
+            }
+          },
+          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'obfuscated', descriptions: [], verdict: { verdict: 'LIKELY_MALICIOUS' } } },
+          { source: 'SIGNAL', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'packed', descriptions: [], verdict: { verdict: 'SUSPICIOUS' } } },
+          { source: 'DIE_OUTPUT', isRootTag: false, isMalwareFamilyTag: false, tag: { name: 'vbnet', descriptions: [], verdict: { verdict: 'NO_THREAT' } } }
+        ]
+      }
+    ],
+    count: 1,
+    method: 'or'
+  };
+
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'ffa874d0...' });
+
+  // likely_malicious must not fall through to 'unknown'
+  assert.equal(out.verdict, 'malicious', 'likely_malicious verdict must normalize to malicious');
+  assert.equal(out.verdict_label, 'Likely Malicious');
+  assert.equal(out.found, true);
 
   // File metadata
-  assert.ok(out.file !== null, 'file should be present');
-  assert.equal(out.file.name, '_2012c7af.exe');
-  assert.equal(out.file.sha256, '2012c7af2da6b649bc2bb58f54837b200cafecc44ceda8d5e2e43b0ea205ac97');
-  assert.equal(out.file.sha1, 'abc123sha1');
-  assert.equal(out.file.md5, 'abc123md5');
-  assert.equal(out.file.media_type, 'application/x-dosexec');
-  assert.equal(out.file.size, 15872);
-  assert.equal(out.file.entropy, 5.9);
-  assert.equal(out.file.strings_count, 0);
+  assert.equal(out.file.media_type, 'application/x-msdownload; format=pe32');
+  assert.equal(out.file.type, 'peexe');
 
-  // Threat indicators
-  assert.equal(out.threat_indicators.length, 1);
-  assert.equal(out.threat_indicators[0].title, 'OSINT source detected malicious resource');
-  assert.equal(out.threat_indicators[0].origin, 'OPSWAT_METADEFENDER');
-  assert.equal(out.threat_indicators[0].resource_type, 'FILE_HASH_SHA256');
+  // crypt: OSINT_LOOKUP + ransomware cluster → malware_family
+  assert.ok(out.malware_families.includes('crypt'), 'crypt must be in malware_families via ransomware cluster');
+  assert.ok(out.tags.includes('obfuscated'));
+  assert.ok(out.tags.includes('packed'));
+});
 
-  // Summary counts
-  assert.equal(out.summary_counts.confirmed_threat_indicators, 1);
-  assert.equal(out.summary_counts.threat_reputation_iocs, 0);
-  assert.equal(out.summary_counts.similar_samples, 0);
+test('normalizeFilescanResponse: mirai ELF hash — likely_malicious in mixed verdicts', () => {
+  // hash ff056a4b: items[0] verdict=unknown, items[1] verdict=likely_malicious
+  const raw = {
+    items: [
+      {
+        id: 'ddcbab54-2474-4200-a674-fad312d39e97',
+        verdict: 'unknown',
+        date: '2026-07-07T17:03:45.519000',
+        file: { name: 'm68k.elf', sha256: 'ff056a4b...', mime_type: 'application/x-executable', short_type: 'elf', link: null },
+        scan_init: { id: '6a4d316de97e48d015a61445' },
+        tags: [{ source: 'MEDIA_TYPE', isRootTag: true, isMalwareFamilyTag: false, tag: { name: 'elf', descriptions: [], verdict: { verdict: 'UNKNOWN' } } }]
+      },
+      {
+        id: '94cbb3c4-8b87-42f0-a177-9bbfea09645d',
+        verdict: 'likely_malicious',
+        date: '2026-07-07T16:59:47.651000',
+        file: { name: 'm68k.elf', sha256: 'ff056a4b...', mime_type: 'application/x-executable', short_type: 'elf', link: null },
+        scan_init: { id: '6a4d308051f8d7a4558b695c' },
+        tags: [
+          { source: 'MEDIA_TYPE', isRootTag: true, isMalwareFamilyTag: false, tag: { name: 'elf', descriptions: [], verdict: { verdict: 'UNKNOWN' } } },
+          {
+            source: 'OSINT_LOOKUP', isMalwareFamilyTag: false,
+            tag: { name: 'bashlite', synonyms: ['gafgyt'], descriptions: [{ cluster: { type: 'malpedia' } }], verdict: { verdict: 'LIKELY_MALICIOUS' } }
+          },
+          {
+            source: 'OSINT_LOOKUP', isMalwareFamilyTag: true,
+            tag: { name: 'mirai', synonyms: ['katana'], descriptions: [{ cluster: { type: 'malpedia' } }], verdict: { verdict: 'UNKNOWN' } }
+          }
+        ]
+      }
+    ],
+    count: 2,
+    method: 'or'
+  };
 
-  // Report
-  assert.ok(out.report !== null);
-  assert.equal(out.report.report_id, '265fec2c-6833-461d-9da8-f7a6f3b61e3d');
-  assert.equal(out.report.scan_engine, 'Internal');
-  assert.ok(out.report.link.includes('flow-abc'));
+  const out = normalizeFilescanResponse(raw, { iocType: 'hash', iocValue: 'ff056a4b...' });
+
+  // aggregateVerdict(['unknown', 'likely_malicious']) must now be 'malicious'
+  assert.equal(out.verdict, 'malicious', 'likely_malicious in mixed items must produce malicious verdict');
+  assert.equal(out.verdict_label, 'Likely Malicious');
+  assert.equal(out.report_count, 2);
+  assert.ok(out.malware_families.includes('mirai'), 'mirai (isMalwareFamilyTag=true) must be in families');
+  assert.ok(out.malware_families.includes('bashlite'), 'bashlite (malpedia cluster) must be in families');
+  assert.ok(out.file_type_hints.includes('elf'));
 });
 
 test('normalizeFilescanResponse: empty result (not found)', () => {
