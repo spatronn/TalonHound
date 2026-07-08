@@ -88,16 +88,9 @@ export function IntelligenceSummarySection({
   const abuseSnap = providerSnapshots?.abuseipdb || {};
   const ipinfoSnap = providerSnapshots?.ipinfo || {};
   const rdapSnap = providerSnapshots?.rdap || {};
-  const filescanSnap = providerSnapshots?.filescan || {};
-
   const showAbuse = isProviderApplicable('abuseipdb', iocType);
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible });
-  const showFilescan = isProviderApplicable('filescan', iocType);
-
-  const filescanForSignal = showFilescan && filescanSnap.status === 'success' && filescanSnap.found === true
-    ? { status: 'success', found: true, verdict: filescanSnap.verdict, verdict_label: filescanSnap.verdict_label, scan_state: filescanSnap.scan_state }
-    : null;
 
   const overall = computeOverallSignal({
     vt: vtSnap.status === 'success' ? {
@@ -107,13 +100,11 @@ export function IntelligenceSummarySection({
       detected: vtSnap.detected,
       stats: vtSnap.stats
     } : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null,
-    filescan: filescanForSignal
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
   });
   const reputation = computeReputationSummary({
     vt: vtSnap.status === 'success' ? { status: 'success', detected: vtSnap.detected, total: vtSnap.total } : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null,
-    filescan: filescanForSignal
+    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
   });
   const layeredCoverage = computeLayeredProviderCoverage({
     directSnapshots: providerSnapshots,
@@ -603,8 +594,7 @@ export function IntelligenceTabPanel({
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
   RdapEnrichmentCard,
-  SpamhausDropEnrichmentCard,
-  FilescanEnrichmentCard
+  SpamhausDropEnrichmentCard
 }) {
   const [providerSnapshots, setProviderSnapshots] = useState({});
   const [derivedProviderSnapshots, setDerivedProviderSnapshots] = useState({});
@@ -625,7 +615,6 @@ export function IntelligenceTabPanel({
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
   const showSpamhaus = isProviderApplicable('spamhaus_drop', iocType);
-  const showFilescan = isProviderApplicable('filescan', iocType);
 
   const onProviderSnapshot = useCallback((provider, snapshot) => {
     setProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
@@ -673,9 +662,6 @@ export function IntelligenceTabPanel({
           ) : null}
           {showSpamhaus && SpamhausDropEnrichmentCard ? (
             <SpamhausDropEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
-          ) : null}
-          {showFilescan && FilescanEnrichmentCard ? (
-            <FilescanEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('filescan', snap)} />
           ) : null}
         </div>
       </div>

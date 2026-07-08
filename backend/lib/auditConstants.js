@@ -138,8 +138,6 @@ export const AUDIT_ACTION = Object.freeze({
   CUSTOM_FEED_CLEANUP_DELETED: 'custom_feed.cleanup_delete',
   SPAMHAUS_DROP_SYNC_TRIGGERED: 'enrichment.spamhaus_drop.sync_triggered',
   SPAMHAUS_DROP_ENRICHMENT_REFRESH: 'enrichment.spamhaus_drop.refresh',
-  FILESCAN_ENRICHMENT_REFRESH: 'enrichment.filescan.refresh',
-  FILESCAN_CONNECTION_TEST: 'enrichment.filescan.test'
 });
 
 export const AUDIT_ENTITY = Object.freeze({
