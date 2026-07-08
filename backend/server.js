@@ -7171,7 +7171,9 @@ app.get('/api/ioc/details', async (req, res) => {
         i.match_count,
         i.first_seen_log,
         i.last_seen_log,
-        i.created_at
+        i.created_at,
+        i.first_seen_at AS item_first_seen_at,
+        i.last_seen_at AS item_last_seen_at
       FROM ioc_items i
       INNER JOIN seed s
         ON i.observable = s.observable
@@ -7419,6 +7421,23 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const totalSourceMembershipCount = membershipSummary.activeSourceCount + membershipSummary.historicalSourceCount;
 
+    // Global first/last seen: prefer feed membership timestamps over ioc_items.created_at.
+    // first_seen_in_feed is set from the feed's own date_added (e.g. URLhaus dateAdded),
+    // not our import time — so it can predate created_at and is the correct analyst-facing value.
+    const globalFirstSeenAt = (() => {
+      const mDates = membershipSummary.membershipRows.map((m) => m.first_seen_in_feed).filter(Boolean);
+      if (mDates.length) return mDates.reduce((min, d) => new Date(d) < new Date(min) ? d : min);
+      const iDates = rows.map((r) => r.item_first_seen_at || r.created_at).filter(Boolean);
+      return iDates.length ? iDates.reduce((min, d) => new Date(d) < new Date(min) ? d : min) : null;
+    })();
+
+    const globalLastSeenAt = (() => {
+      const mDates = membershipSummary.membershipRows.map((m) => m.last_seen_in_feed).filter(Boolean);
+      if (mDates.length) return mDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max);
+      const iDates = rows.map((r) => r.item_last_seen_at || r.created_at).filter(Boolean);
+      return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
+    })();
+
     const summary = {
       id: seedRow.id,
       public_id: seedRow.public_id,
@@ -7438,8 +7457,8 @@ app.get('/api/ioc/details', async (req, res) => {
       ...(await buildThreatMetadataFields(pool, lifecycleRow)),
       manual_status_override: Boolean(lifecycleRow.manual_status_override),
       manual_status: lifecycleRow.manual_status || null,
-      first_seen_at: rows[rows.length - 1]?.created_at || null,
-      last_seen_at: rows[0]?.created_at || null,
+      first_seen_at: globalFirstSeenAt,
+      last_seen_at: globalLastSeenAt,
       match_count: computedMatchCount,
       evidence_logs_count: totalEvidenceLogsCount,
       first_seen_log: firstSeenLog,
