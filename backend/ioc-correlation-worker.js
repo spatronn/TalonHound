@@ -7,6 +7,7 @@ import { getRedisUrl } from './lib/redis-url.js';
 import { ensureIocCorrelationAssets, syncIocLookupFromPostgres, query as clickhouseQuery } from './lib/clickhouse.js';
 import { buildRelatedEvidenceRow, insertIncidentRelatedLogEvidenceSafe } from './lib/relatedLogsEvidence.js';
 import { normalizeObservable } from './lib/observable-normalization.js';
+import { lookupTuplesForObs, matchObsToLookup, MATCH_SCOPE_HOST_ROOT_URL } from './lib/urlIocHostMatch.js';
 import { findOrCreateActivity } from './lib/ioc-activity.js';
 import { createSuppressionStats, fetchActiveSuppressionIndex, filterSuppressedPairs } from './lib/ioc-suppression.js';
 import { buildIncidentStatsSnapshot, buildIncidentVersion, shouldTriggerLlm } from './risk/llmRiskCommon.js';
@@ -128,55 +129,11 @@ function expandRowObservables(r) {
   return legacy;
 }
 
-function lookupTuplesForObs(obs) {
-  const t = obs.type;
-  const v = String(obs.value || '').trim();
-  if (!v) return [];
-  if (t === 'ipv4') return [[v, 'ip']];
-  if (t === 'sha256') return [[v.toLowerCase(), 'sha256']];
-  if (t === 'domain') {
-    const lv = v.toLowerCase();
-    return [
-      [lv, 'domain'],
-      [lv, 'url']
-    ];
-  }
-  if (t === 'url') return [[normalizeObservable('url', v), 'url']];
-  return [];
-}
+// lookupTuplesForObs -- moved to lib/urlIocHostMatch.js
 
-function pickBestLookup(a, b) {
-  if (!a) return b || null;
-  if (!b) return a;
-  const ta = new Date(a.updated_at).getTime();
-  const tb = new Date(b.updated_at).getTime();
-  if (Number.isNaN(ta) && Number.isNaN(tb)) return a;
-  if (Number.isNaN(ta)) return b;
-  if (Number.isNaN(tb)) return a;
-  if (tb !== ta) return tb > ta ? b : a;
-  return Number(b.confidence || 0) > Number(a.confidence || 0) ? b : a;
-}
+// pickBestLookup -- moved to lib/urlIocHostMatch.js
 
-function matchObsToLookup(obs, lookupMap) {
-  const t = obs.type;
-  const v = String(obs.value || '').trim();
-  if (!v) return null;
-  if (t === 'ipv4') {
-    return lookupMap.get(`ip\t${v}`) || null;
-  }
-  if (t === 'sha256') {
-    return lookupMap.get(`sha256\t${v.toLowerCase()}`) || null;
-  }
-  if (t === 'domain') {
-    const lv = v.toLowerCase();
-    return pickBestLookup(lookupMap.get(`domain\t${lv}`), lookupMap.get(`url\t${lv}`));
-  }
-  if (t === 'url') {
-    const lv = v.toLowerCase();
-    return pickBestLookup(lookupMap.get(`url\t${lv}`), lookupMap.get(`domain\t${lv}`));
-  }
-  return null;
-}
+// matchObsToLookup -- moved to lib/urlIocHostMatch.js
 
 function iocTypeForPg(obsType) {
   return obsType === 'ipv4' ? 'ip' : obsType;
@@ -257,8 +214,15 @@ function rowToMatchEvents(r, lookupMap) {
     if (!hit) continue;
     const iocUpdatedMs = hit.updated_at ? new Date(hit.updated_at).getTime() : 0;
     const iocWasPresent = ingestMs > 0 && iocUpdatedMs > 0 && iocUpdatedMs <= ingestMs;
-    const matchedIoc = matchedIocValue(obs);
-    const iocType = iocTypeForPg(obs.type);
+    const isHostRootUrlMatch = hit._matchScope === MATCH_SCOPE_HOST_ROOT_URL;
+    // When a domain observable matched a root URL IOC, preserve the URL IOC identity.
+    // Observable identity is recorded separately in matchContext.
+    const matchedIoc = isHostRootUrlMatch
+      ? String(hit.observable || '').toLowerCase()
+      : matchedIocValue(obs);
+    const iocType = isHostRootUrlMatch
+      ? String(hit.observable_type || 'url')
+      : iocTypeForPg(obs.type);
     const rawLogSnapshot = r.raw ? String(r.raw) : null;
     const normalizedEvent = {
       source_type: null,
@@ -292,7 +256,10 @@ function rowToMatchEvents(r, lookupMap) {
       observable_merge_type: obs.type,
       detection_type: 'realtime',
       match_source: obs.source,
-      ioc_was_present_at_ingest: iocWasPresent
+      ioc_was_present_at_ingest: iocWasPresent,
+      match_scope: hit._matchScope || null,
+      observed_observable: isHostRootUrlMatch ? String(obs.value || '').toLowerCase() : null,
+      observed_observable_type: isHostRootUrlMatch ? obs.type : null
     };
     const sourceType = normalizeSourceType(r, matchContext);
     normalizedEvent.source_type = sourceType;
