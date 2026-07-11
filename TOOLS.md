@@ -39,20 +39,24 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 
 Add whatever helps you do your job. This is your cheat sheet.
 
-## Demo VM
+## TalonHound VM (aktif)
+
+- VM IP: `192.168.1.190`
+- Hostname: `talonhound`
+- SSH user: `spatronn` (root: key ile erişim yok)
+- SSH port: `22`
+- Auth: Windows host `~/.ssh/id_ed25519`
+- Web: `https://192.168.1.190` (self-signed cert beklenir)
+- Stack path (sunucu): `/opt/demo-runbook` (henüz rename edilmemiş olabilir)
+
+## Demo VM (arşiv)
 
 - VM IP: `192.168.1.251`
 - SSH users: `spatronn`, `root`
-- SSH port: `22`
-- Auth: SSH key (primary: `~/.ssh/demo_vm_ed25519`)
-- Notes: same subnet demo target
-- Privilege flow: `spatronn` erişimi mevcut; gerektiğinde direkt `root` erişimi de mevcut.
+- Auth: `~/.ssh/demo_vm_ed25519` (Linux host)
 
-## GitHub Access (demo-runbook)
+## GitHub Access (TalonHound)
 
 - GitHub user: `spatronn`
-- Repo: `https://github.com/spatronn/demo-runbook`
-- Token policy: PAT is repo-scoped for demo project operations
-- Security: PAT value is **not** stored in plaintext in workspace files
-- Local secret path (host): `/home/spatronn/.openclaw/secrets/github.env` (chmod 600)
-- Git credential store: `/home/spatronn/.git-credentials` (chmod 600)
+- Repo: `https://github.com/spatronn/TalonHound`
+- Local path: `C:\Proje\TalonHound`

@@ -26,7 +26,6 @@ The **proxy** service terminates TLS on **443** and redirects **80 → HTTPS**. 
 docker compose ps
 docker compose logs --tail=100 proxy
 docker compose logs --tail=100 backend
-docker compose logs --tail=100 signal-engine
 ```
 
 ## IP Enrichment (IPinfo Lite)
