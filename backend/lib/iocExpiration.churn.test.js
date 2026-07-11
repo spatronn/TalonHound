@@ -14,7 +14,6 @@ import {
 } from './importOptimizationContext.js';
 import { buildSuppressionIndex } from './ioc-suppression.js';
 import { persistPublishedFeedSnapshot } from './feedPublisherService.js';
-import { fingerprintAggregateRows } from '../ioc-match-count-worker.js';
 
 describe('computeMembershipFieldPatch no-op detection', () => {
   it('detects unchanged computed membership fields', () => {
@@ -242,12 +241,3 @@ describe('persistPublishedFeedSnapshot unchanged hash', () => {
   });
 });
 
-describe('match-count fingerprint', () => {
-  it('returns stable hash for identical aggregate rows', () => {
-    const rows = [
-      { observable_value: 'a.com', match_count: 2, first_seen_log: '2026-01-01', last_seen_log: '2026-01-02' },
-      { observable_value: 'b.com', match_count: 1, first_seen_log: '2026-01-01', last_seen_log: '2026-01-01' }
-    ];
-    assert.equal(fingerprintAggregateRows(rows), fingerprintAggregateRows([...rows].reverse()));
-  });
-});

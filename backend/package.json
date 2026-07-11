@@ -8,11 +8,7 @@
     "migrate:list": "node migrate.js --list",
     "start": "node server.js",
     "signal-worker": "node signal-worker.js",
-    "ioc-correlation-worker": "node ioc-correlation-worker.js",
-    "ioc-retro-worker": "node ioc-retro-worker.js",
-    "ioc-match-count-worker": "node ioc-match-count-worker.js",
     "ioc-expiration-worker": "node ioc-expiration-worker.js",
-    "dashboard-map-worker": "node dashboard-map-worker.js",
     "llm-risk-worker": "node workers/llmRiskWorker.js",
     "syslog-receiver": "node syslog-receiver.js",
     "backfill:ioc-activities": "node scripts/backfill-ioc-activities.js",
@@ -38,7 +34,7 @@
     "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js",
     "test:ioc-classification-mapping": "node --test lib/iocClassificationMapping.test.js",
     "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/bulkTriageHelpers.test.js lib/bulkRouteOrder.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
-    "test:ioc-retro-dedup": "node --test lib/iocRetroDedup.test.js",
+
     "smoke:routes": "node scripts/smoke-routes.js",
     "test:url-ioc-host-match": "node --test lib/urlIocHostMatch.test.js"
   },
