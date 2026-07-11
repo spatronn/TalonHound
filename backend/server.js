@@ -601,11 +601,11 @@ app.get('/api/system/status', async (req, res) => {
       pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'"),
       pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
       pool.query(
-        SELECT COUNT(*)::bigint AS count
+        `SELECT COUNT(*)::bigint AS count
          FROM ioc_items
          WHERE created_at >= (
            date_trunc('day', NOW() AT TIME ZONE $1)
-         ) AT TIME ZONE $1,
+         ) AT TIME ZONE $1`,
         [userTimezone]
       )
     ]);
