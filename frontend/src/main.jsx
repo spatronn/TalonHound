@@ -1344,7 +1344,7 @@ function LoginPage() {
       await api.post('/auth/login', { email, password });
       localStorage.removeItem('demo_timezone');
       await refreshSession();
-      navigate('/analytics');
+      navigate('/ioc');
     } catch (err) {
       const msg = err?.response?.data?.message || 'Invalid email or password';
       alert(msg);
@@ -13342,7 +13342,7 @@ function DefaultRedirect() {
     return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading�</div>;
   }
   if (authState === 'anon') return <Navigate to="/login" replace />;
-  return <Navigate to="/analytics" replace />;
+  return <Navigate to="/ioc" replace />;
 }
 
 function App() {
