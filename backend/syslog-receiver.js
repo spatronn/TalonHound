@@ -1,14 +1,9 @@
-import "./lib/ensure-db-password.js";
+﻿import "./lib/ensure-db-password.js";
 import dgram from "dgram";
 import http from "http";
 import crypto from "crypto";
 import pg from "pg";
-import { insertLogs, insertObservables, ensureSyslogTable, pingClickhouse } from "./lib/clickhouse.js";
-
 const { Pool } = pg;
-
-const LOG_STORAGE = (process.env.LOG_STORAGE || "postgres").toLowerCase();
-const USE_CLICKHOUSE = LOG_STORAGE === "clickhouse";
 
 const SYSLOG_PORT = Number(process.env.SYSLOG_PORT || 514);
 const SYSLOG_HOST = process.env.SYSLOG_HOST || "0.0.0.0";
@@ -45,7 +40,7 @@ function makeQueryId(name) {
 }
 
 const metrics = {
-  storage_backend: LOG_STORAGE,
+  storage_backend: 'postgres',
   received_logs: 0,
   dropped_logs: 0,
   dropped_queue_full: 0,
@@ -57,8 +52,6 @@ const metrics = {
   flush_duration_ms_max: 0,
   queue_depth_high_watermark: 0,
   socket_recv_buffer_size: null,
-  clickhouse_insert_latency: 0,
-  clickhouse_insert_latency_max: 0,
   batch_size_avg: 0,
   flush_time_avg: 0,
   last_flush_at: null,
@@ -392,12 +385,10 @@ function enqueue(sourceIp, rawEvent) {
   else armFlushTimer();
 }
 
-function updateAverages(batchSize, flushMs, chLatencyMs = 0) {
+function updateAverages(batchSize, flushMs) {
   const n = metrics.flush_runs;
   metrics.batch_size_avg = n <= 1 ? batchSize : ((metrics.batch_size_avg * (n - 1)) + batchSize) / n;
   metrics.flush_time_avg = n <= 1 ? flushMs : ((metrics.flush_time_avg * (n - 1)) + flushMs) / n;
-  metrics.clickhouse_insert_latency = chLatencyMs;
-  if (chLatencyMs > metrics.clickhouse_insert_latency_max) metrics.clickhouse_insert_latency_max = chLatencyMs;
 }
 
 function buildPgBatch(events) {
@@ -469,44 +460,6 @@ async function flushToPostgres(events) {
   }
 }
 
-function observableTypeForCh(type) {
-  return type === 'ipv4' ? 'ip' : type;
-}
-
-function buildObservableRows(parsedBatch) {
-  const rows = [];
-  for (const r of parsedBatch) {
-    const rawRowHash = crypto.createHash('sha1').update(String(r.raw || '')).digest('hex');
-    const obs = Array.isArray(r.merged_observables) ? r.merged_observables : [];
-    for (const { type, value } of obs) {
-      rows.push({
-        ts: r.ts,
-        source: r.source,
-        host: r.host,
-        observable: value,
-        observable_type: observableTypeForCh(type),
-        raw_row_hash: rawRowHash
-      });
-    }
-  }
-  return rows;
-}
-
-async function flushToClickhouse(events) {
-  const batch = events.map((e) => parseSyslogLine(e.rawEvent, e.sourceIp));
-  const observablesBatch = buildObservableRows(batch);
-  const logRows = batch.map(({ merged_observables, ...log }) => ({
-    ...log,
-    merged_observables: JSON.stringify(merged_observables || [])
-  }));
-  const t0 = Date.now();
-  await insertLogs(logRows, { queryId: makeQueryId('insert-batch'), logTag: 'syslog-receiver.insert-batch' });
-  if (observablesBatch.length > 0) {
-    await insertObservables(observablesBatch, { queryId: makeQueryId('insert-observables'), logTag: 'syslog-receiver.insert-observables' });
-  }
-  const t1 = Date.now() - t0;
-  return { inserted: batch.length, chLatency: t1 };
-}
 
 async function flushOnce(force = false) {
   if (queue.length === 0) return;
@@ -533,7 +486,7 @@ async function flushOnce(force = false) {
 
     const started = Date.now();
     try {
-      const result = USE_CLICKHOUSE ? await flushToClickhouse(events) : await flushToPostgres(events);
+      const result = await flushToPostgres(events);
       metrics.inserted_logs += result.inserted;
       metrics.flush_runs += 1;
       metrics.last_flush_at = new Date().toISOString();
@@ -541,7 +494,7 @@ async function flushOnce(force = false) {
       const duration = Date.now() - started;
       metrics.flush_duration_ms_last = duration;
       if (duration > metrics.flush_duration_ms_max) metrics.flush_duration_ms_max = duration;
-      updateAverages(events.length, duration, result.chLatency || 0);
+      updateAverages(events.length, duration);
     } catch (err) {
       metrics.insert_errors += 1;
       const canRequeue = Math.max(0, MAX_BUFFERED - queue.length);
@@ -572,7 +525,7 @@ udp.bind(SYSLOG_PORT, SYSLOG_HOST, () => {
   try { metrics.socket_recv_buffer_size = udp.getRecvBufferSize(); } catch { metrics.socket_recv_buffer_size = null; }
   console.log(`[syslog-receiver] listening udp://${SYSLOG_HOST}:${SYSLOG_PORT}`);
   const udpKeyHint = UDP_INGEST_SECRET ? " udp_ingest_key=required(prefix SECRET|)" : "";
-  console.log(`[syslog-receiver] storage=${LOG_STORAGE} mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} min_insert=${MIN_INSERT_ROWS} force_flush_max_ms=${FORCE_FLUSH_MAX_MS} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}${udpKeyHint}`);
+  console.log(`[syslog-receiver] storage=postgres mode=batch-first batch=${BATCH_SIZE} min_flush=${MIN_FLUSH_SIZE} min_insert=${MIN_INSERT_ROWS} force_flush_max_ms=${FORCE_FLUSH_MAX_MS} fallback_interval=${FLUSH_INTERVAL_MS}ms overflow=${OVERFLOW_POLICY}${udpKeyHint}`);
 });
 
 const timers = [];
@@ -620,10 +573,6 @@ const health = http.createServer((req, res) => {
 });
 
 async function bootstrap() {
-  if (USE_CLICKHOUSE) {
-    await ensureSyslogTable();
-    await pingClickhouse();
-  }
   health.listen(HEALTH_PORT, "0.0.0.0", () => {
     const authHint = HEALTH_TOKEN ? " (Bearer or X-Syslog-Health-Token required)" : " (unauthenticated — set SYSLOG_HEALTH_TOKEN)";
     console.log(`[syslog-receiver] health endpoint on :${HEALTH_PORT}/receiver/health${authHint}`);

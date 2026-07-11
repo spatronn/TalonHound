@@ -2,7 +2,6 @@ import './lib/ensure-db-password.js';
 import pg from 'pg';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { runExpirationWorkerBatch } from './lib/iocExpiration.js';
-import { backfillExpiredIocsToLookup } from './lib/clickhouse.js';
 
 const { Pool } = pg;
 
@@ -19,20 +18,6 @@ const BATCH_SIZE = Math.max(Number(process.env.IOC_EXPIRATION_BATCH_SIZE || 500)
 
 const audit = createAuditLogService(pool);
 let stopping = false;
-let backfillDone = false;
-
-async function maybeBackfillExpiredLookup() {
-  if (backfillDone) return;
-  backfillDone = true;
-  try {
-    const res = await backfillExpiredIocsToLookup(pool);
-    if (Number(res?.written || 0) > 0) {
-      console.log(`[ioc-expiration] expired_lookup_backfill written=${res.written}`);
-    }
-  } catch (err) {
-    console.warn('[ioc-expiration] expired_lookup_backfill failed', err?.message || err);
-  }
-}
 
 async function tick() {
   const client = await pool.connect();
@@ -56,7 +41,6 @@ async function tick() {
 
 async function main() {
   console.log(`[ioc-expiration] worker started poll_ms=${POLL_MS} batch_size=${BATCH_SIZE}`);
-  await maybeBackfillExpiredLookup();
   while (!stopping) {
     await tick();
     await new Promise((r) => setTimeout(r, POLL_MS));

@@ -1,11 +1,6 @@
 import { IOC_MATCH_EVENT_STATS_SELECT } from './incidentEventAggSql.js';
 import { normEventSourceType } from './eventSourceNorm.js';
 import { computeIncidentRiskScore } from './incidentRiskScore.js';
-import { query as clickhouseQuery } from './clickhouse.js';
-
-function escapeChString(v) {
-  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
 
 export { computeIncidentRiskScore } from './incidentRiskScore.js';
 
@@ -19,24 +14,7 @@ async function resolveEvidenceLogCount(pool, observable, observableType) {
   `;
   const evidenceRes = await pool.query(evidenceQ, [observable, observableType]);
   const pgCount = Number(evidenceRes.rows?.[0]?.c);
-  const pg = Number.isFinite(pgCount) ? pgCount : 0;
-
-  try {
-    const o = escapeChString(String(observable || '').trim().toLowerCase());
-    const t = escapeChString(String(observableType || '').trim().toLowerCase());
-    const chRows = await clickhouseQuery(`
-      SELECT countDistinct(evidence_hash) AS c
-      FROM security_evidence.incident_related_logs
-      WHERE lower(matched_ioc) = lower('${o}')
-        AND lower(observable_type) = lower('${t}')
-    `);
-    const ch = Number(chRows?.[0]?.c || 0);
-    if (Number.isFinite(ch) && ch > 0) return ch;
-  } catch {
-    // ClickHouse unavailable — fall back to Postgres count
-  }
-
-  return pg;
+  return Number.isFinite(pgCount) ? pgCount : 0;
 }
 
 export function emptyIocEnvironmentImpact() {

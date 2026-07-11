@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { parse as parseTld } from 'tldts';
 import ReactDOM from 'react-dom/client';
@@ -139,42 +139,6 @@ function formatDurationSeconds(totalSec) {
   return formatDurationMs(totalSec * 1000);
 }
 
-function retroHealthPresentation(stateHealth, fallbackLabel) {
-  const key = String(stateHealth || 'ERROR').toUpperCase();
-  const map = {
-    OK: { label: 'OK', color: '#22c55e' },
-    WARNING: { label: 'Warning', color: '#fbbf24' },
-    STALE: { label: 'Stale', color: '#fb923c' },
-    ERROR: { label: 'Error', color: '#f87171' }
-  };
-  const base = map[key] || map.ERROR;
-  return fallbackLabel ? { ...base, label: fallbackLabel } : base;
-}
-
-function retroHealthLine(label, healthKey, labelOverride) {
-  const presentation = retroHealthPresentation(healthKey, labelOverride);
-  return (
-    <div>
-      <b>{label}:</b>{' '}
-      <span style={{ color: presentation.color, fontWeight: 700 }}>{presentation.label}</span>
-    </div>
-  );
-}
-
-const RETRO_STATUS_TOOLTIPS = {
-  lastRun: 'Retro worker’ın son başarılı run/state yazma zamanı. 1 saatlik periyoda göre 65 dakikayı aşarsa uyarı verilir.',
-  lastRunAge: 'Son retro run’dan bu yana geçen süre. Varsayılan eşik: 60 dk interval + 5 dk grace → 65 dk uyarı, 90 dk stale.',
-  processedCursor: 'Retro scan tarafından başarıyla kapsanan en son ClickHouse IOC lookup timestamp’i. Worker bitiş zamanı değildir.',
-  chMaxLookup: 'Latest updated_at in ClickHouse ioc_lookup (active IOCs only). Retro scans IOCs up to this stream position after sync.',
-  retroBacklog: 'IOCs in ClickHouse waiting for retro scan after the processed cursor.',
-  cursorLag: 'Seconds between processed IOC cursor and latest ClickHouse ioc_lookup updated_at.',
-  pgUnsynced: 'IOCs present in PostgreSQL but not yet synced into ClickHouse ioc_lookup. Retro can only scan after sync.',
-  pgSyncLag: 'PostgreSQL’e gelen IOC’lerin ClickHouse ioc_lookup tablosuna sync edilmesindeki gecikme. Retro scan bu sync tamamlanmadan bu IOC’leri göremez.',
-  workerHealth: 'Retro worker run periyodu (varsayılan saatlik). Son run yaşı 65 dk üstünde uyarı, 90 dk üstünde stale.',
-  cursorHealth: 'Retro cursor ve CH backlog. Backlog 0 ve cursor lag düşükse OK.',
-  syncHealth: 'PG→CH correlation sync gecikmesi. Retro worker health’ten bağımsız değerlendirilir.',
-  overallHealth: 'Retro worker, cursor ve correlation sync health birleşimi.'
-};
 
 function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
   const byKey = {
@@ -214,7 +178,7 @@ function integrationJobReasonLabel(job) {
     if (job?.running_for_ms != null) parts.push(`running for ${formatDurationMs(job.running_for_ms)}`);
     if (job?.started_at) parts.push(`started ${formatUserDateTime(job.started_at)}`);
     if (job?.possibly_stuck) parts.push('Possibly stuck / stale');
-    return parts.length ? parts.join(' · ') : '-';
+    return parts.length ? parts.join(' � ') : '-';
   }
   if (job?.failed_reason) {
     if (job?.failure_type) return `[${job.failure_type}] ${job.failed_reason}`;
@@ -582,7 +546,7 @@ function IocExpirationActionModal({
             onChange={(e) => onReasonChange(e.target.value)}
             disabled={loading}
             rows={3}
-            placeholder={pending.requiresReason ? 'Enter reason…' : 'Optional reason…'}
+            placeholder={pending.requiresReason ? 'Enter reason�' : 'Optional reason�'}
             style={{ ...ui.textarea, minHeight: 72 }}
           />
         </label>
@@ -594,7 +558,7 @@ function IocExpirationActionModal({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <button type="button" style={ui.btn} onClick={onCancel} disabled={loading}>Cancel</button>
           <button type="button" style={confirmStyle} onClick={onConfirm} disabled={loading}>
-            {loading ? 'Working…' : pending.confirmLabel}
+            {loading ? 'Working�' : pending.confirmLabel}
           </button>
         </div>
       </div>
@@ -692,7 +656,7 @@ function auditStatusBadgeStyle(status) {
 }
 
 function auditJsonBlock(value) {
-  if (value == null) return '—';
+  if (value == null) return '�';
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -727,7 +691,7 @@ const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
 
 function formatExpirationPolicyLabel(policy) {
   const value = String(policy || '').trim();
-  if (!value) return '—';
+  if (!value) return '�';
   if (value === 'never') return 'Never expire';
   if (value === 'expire_after_days') return 'Expire after days';
   if (value === 'custom_date') return 'Custom expire date';
@@ -768,7 +732,7 @@ function truncateAuditText(value, max = 72) {
   const text = String(value || '').trim();
   if (!text) return '';
   if (text.length <= max) return text;
-  return `${text.slice(0, max - 1)}…`;
+  return `${text.slice(0, max - 1)}�`;
 }
 
 function formatAuditEntityPrimary(row) {
@@ -776,8 +740,8 @@ function formatAuditEntityPrimary(row) {
   const value = auditSnapshotValue(row, 'ioc_value', 'observable');
   if (value) return value;
   const type = auditSnapshotValue(row, 'ioc_observable_type', 'observable_type');
-  if (type && row?.entity_id) return `${type} · #${row.entity_id}`;
-  return row?.entity_id || '—';
+  if (type && row?.entity_id) return `${type} � #${row.entity_id}`;
+  return row?.entity_id || '�';
 }
 
 function formatAuditEntitySubtitle(row) {
@@ -787,7 +751,7 @@ function formatAuditEntitySubtitle(row) {
   const parts = [entityType];
   if (type) parts.push(type);
   if (id) parts.push(`#${id}`);
-  return parts.join(' · ');
+  return parts.join(' � ');
 }
 
 function formatAuditEntityLabel(row) {
@@ -814,7 +778,7 @@ function formatThreatClassificationLabel(value) {
 
 function formatExpirationAuditReasonLabel(reason) {
   const value = String(reason || '').trim();
-  if (!value) return '—';
+  if (!value) return '�';
   if (value === 'expires_at_reached') return 'Expires at reached';
   if (value === 'all_feed_memberships_expired') return 'All feed memberships expired';
   if (value === 'manual_override') return 'Manual override';
@@ -835,27 +799,27 @@ function formatTaxonomyAuditMetadata(metadata) {
     const newText = Array.isArray(newClasses) && newClasses.length
       ? newClasses.map((x) => formatThreatClassificationLabel(x)).join(', ')
       : 'Unknown';
-    parts.push(`${oldText} → ${newText}`);
+    parts.push(`${oldText} ? ${newText}`);
   } else {
     const oldClass = auditMetadataValue(metadata, 'old_classification');
     const newClass = auditMetadataValue(metadata, 'new_classification');
     if (oldClass != null && newClass != null) {
-      parts.push(`${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}`);
+      parts.push(`${formatThreatClassificationLabel(oldClass)} ? ${formatThreatClassificationLabel(newClass)}`);
     }
   }
   const oldActor = auditMetadataValue(metadata, 'old_threat_actor');
   const newActor = auditMetadataValue(metadata, 'new_threat_actor');
   if (oldActor != null || newActor != null) {
-    parts.push(`${oldActor || 'Not selected'} → ${newActor || 'Not selected'}`);
+    parts.push(`${oldActor || 'Not selected'} ? ${newActor || 'Not selected'}`);
   }
-  return parts.length ? parts.join(' · ') : null;
+  return parts.length ? parts.join(' � ') : null;
 }
 
 function formatAuditStatusTransition(metadata) {
   const oldStatus = auditMetadataValue(metadata, 'old_status');
   const newStatus = auditMetadataValue(metadata, 'new_status');
-  if (!oldStatus && !newStatus) return '—';
-  if (oldStatus && newStatus) return `${oldStatus} → ${newStatus}`;
+  if (!oldStatus && !newStatus) return '�';
+  if (oldStatus && newStatus) return `${oldStatus} ? ${newStatus}`;
   return oldStatus || newStatus;
 }
 
@@ -876,7 +840,7 @@ function AuditExpirationSummary({ item }) {
     ['Feed', auditSnapshotValue(item, 'feed_name')],
     ['Membership ID', auditSnapshotValue(item, 'membership_id')],
     ['Source', auditSnapshotValue(item, 'source') || item?.source]
-  ].filter(([, value]) => value && value !== '—');
+  ].filter(([, value]) => value && value !== '�');
 
   if (!rows.length) return null;
 
@@ -907,14 +871,14 @@ function AuditTaxonomySummary({ item }) {
   const newClasses = item?.after_data?.threat_classifications || metadata.new_classifications
     || (newClass != null ? [newClass] : null);
   const classSummary = Array.isArray(oldClasses) || Array.isArray(newClasses)
-    ? `${(Array.isArray(oldClasses) && oldClasses.length ? oldClasses.map((x) => formatThreatClassificationLabel(x)).join(', ') : 'Unknown')} → ${(Array.isArray(newClasses) && newClasses.length ? newClasses.map((x) => formatThreatClassificationLabel(x)).join(', ') : 'Unknown')}`
-    : (oldClass != null && newClass != null ? `${formatThreatClassificationLabel(oldClass)} → ${formatThreatClassificationLabel(newClass)}` : null);
+    ? `${(Array.isArray(oldClasses) && oldClasses.length ? oldClasses.map((x) => formatThreatClassificationLabel(x)).join(', ') : 'Unknown')} ? ${(Array.isArray(newClasses) && newClasses.length ? newClasses.map((x) => formatThreatClassificationLabel(x)).join(', ') : 'Unknown')}`
+    : (oldClass != null && newClass != null ? `${formatThreatClassificationLabel(oldClass)} ? ${formatThreatClassificationLabel(newClass)}` : null);
   const rows = [
     ['Classifications', classSummary],
-    ['Threat actor', oldActor != null || newActor != null ? `${oldActor || 'Not selected'} → ${newActor || 'Not selected'}` : null],
+    ['Threat actor', oldActor != null || newActor != null ? `${oldActor || 'Not selected'} ? ${newActor || 'Not selected'}` : null],
     ['IOC', auditSnapshotValue(item, 'ioc_value', 'observable')],
     ['Type', auditSnapshotValue(item, 'ioc_observable_type', 'observable_type')]
-  ].filter(([, value]) => value && value !== '—');
+  ].filter(([, value]) => value && value !== '�');
 
   if (!rows.length) return null;
 
@@ -934,7 +898,7 @@ function AuditTaxonomySummary({ item }) {
 }
 
 function formatAuditDate(value) {
-  if (!value) return '—';
+  if (!value) return '�';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleString();
@@ -1155,7 +1119,7 @@ function ReasonPromptProvider({ children }) {
               value={reason}
               onChange={(e) => { setReason(e.target.value); if (error) setError(''); }}
               rows={4}
-              placeholder="Enter reason…"
+              placeholder="Enter reason�"
               style={inputStyle}
               autoFocus
             />
@@ -1232,7 +1196,7 @@ function BulkActionConfirmModal({
           value={reason}
           onChange={(e) => onReasonChange(e.target.value)}
           rows={4}
-          placeholder="Enter reason…"
+          placeholder="Enter reason�"
           style={{
             padding: '8px 10px',
             borderRadius: 6,
@@ -1255,7 +1219,7 @@ function BulkActionConfirmModal({
       ) : null}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
         <button type="button" onClick={onCancel} disabled={loading}>Cancel</button>
-        <button type="button" onClick={onConfirm} disabled={loading}>{loading ? 'Working…' : confirmLabel}</button>
+        <button type="button" onClick={onConfirm} disabled={loading}>{loading ? 'Working�' : confirmLabel}</button>
       </div>
     </ModalOverlay>
   );
@@ -1490,13 +1454,13 @@ function AppShell({ children }) {
   return (
     <div className="app-shell" style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <div className="mobile-topbar">
-        <button className="mobile-menu-btn" onClick={() => setIsMobileNavOpen((v) => !v)} aria-label="Toggle navigation menu">☰</button>
+        <button className="mobile-menu-btn" onClick={() => setIsMobileNavOpen((v) => !v)} aria-label="Toggle navigation menu">?</button>
         <span className="mobile-topbar-title">demo-runbook</span>
         <span className="mobile-topbar-user">{userEmail ? userEmail.split('@')[0] : 'user'}</span>
       </div>
       {isMobileNavOpen && <div className="mobile-backdrop" onClick={() => setIsMobileNavOpen(false)} />}
       <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 240px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
-        <div className="mobile-sidebar-close"><button onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu">✕</button></div>
+        <div className="mobile-sidebar-close"><button onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu">?</button></div>
         <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{userEmail || 'demo user'}</b> <span style={{ color: '#94a3b8' }}>({role})</span></div>
 
         <nav>
@@ -1935,8 +1899,8 @@ function AnalyticsPage() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
+                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
                       </div>
                     </td>
                   </tr>
@@ -2014,18 +1978,18 @@ function EnvironmentInsightPage() {
               <option value="30d">Last 30 days</option>
               <option value="90d">Last 90 days</option>
             </select>
-            <button onClick={() => load().catch(() => {})} disabled={loading || refreshing}>{loading ? 'Loading…' : 'Reload'}</button>
-            <button onClick={() => refresh().catch(() => {})} disabled={refreshing}>{refreshing ? 'Generating…' : 'Refresh Insight'}</button>
+            <button onClick={() => load().catch(() => {})} disabled={loading || refreshing}>{loading ? 'Loading�' : 'Reload'}</button>
+            <button onClick={() => refresh().catch(() => {})} disabled={refreshing}>{refreshing ? 'Generating�' : 'Refresh Insight'}</button>
           </div>
         </div>
 
         {error ? <div style={{ ...card, borderColor: '#7f1d1d', color: '#fca5a5' }}>{error}</div> : null}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-          <div style={card}><div style={muted}>Posture Level</div><div style={{ fontSize: 28, fontWeight: 800, textTransform: 'capitalize' }}>{insight.posture_level || '—'}</div></div>
-          <div style={card}><div style={muted}>Primary Exposure</div><div style={{ fontSize: 20, fontWeight: 700 }}>{insight.primary_exposure || '—'}</div></div>
-          <div style={card}><div style={muted}>Incidents</div><div style={{ fontSize: 28, fontWeight: 800 }}>{totals.total_incidents ?? '—'}</div><div style={muted}>Open {totals.open_incidents ?? 0} / Closed {totals.closed_incidents ?? 0}</div></div>
-          <div style={card}><div style={muted}>Detection Events</div><div style={{ fontSize: 28, fontWeight: 800 }}>{totals.detection_events ?? '—'}</div><div style={muted}>Observed hosts {totals.observed_hosts ?? 0}</div></div>
+          <div style={card}><div style={muted}>Posture Level</div><div style={{ fontSize: 28, fontWeight: 800, textTransform: 'capitalize' }}>{insight.posture_level || '�'}</div></div>
+          <div style={card}><div style={muted}>Primary Exposure</div><div style={{ fontSize: 20, fontWeight: 700 }}>{insight.primary_exposure || '�'}</div></div>
+          <div style={card}><div style={muted}>Incidents</div><div style={{ fontSize: 28, fontWeight: 800 }}>{totals.total_incidents ?? '�'}</div><div style={muted}>Open {totals.open_incidents ?? 0} / Closed {totals.closed_incidents ?? 0}</div></div>
+          <div style={card}><div style={muted}>Detection Events</div><div style={{ fontSize: 28, fontWeight: 800 }}>{totals.detection_events ?? '�'}</div><div style={muted}>Observed hosts {totals.observed_hosts ?? 0}</div></div>
         </div>
 
         <div style={card}>
@@ -2605,7 +2569,7 @@ function IOCMatchEventsPage() {
   if (dateFrom || dateTo) {
     activeFilters.push({
       key: 'date',
-      label: `${formatRangeShort(dateFrom) || '-'} → ${formatRangeShort(dateTo) || '-'}`,
+      label: `${formatRangeShort(dateFrom) || '-'} ? ${formatRangeShort(dateTo) || '-'}`,
       onClear: () => {
         setDateFrom('');
         setDateTo('');
@@ -2661,7 +2625,7 @@ function IOCMatchEventsPage() {
             {activeFilters.length ? activeFilters.map((f) => (
               <span key={f.key + f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #475569', borderRadius: 999, padding: '3px 8px', fontSize: 12, color: '#cbd5e1' }}>
                 {f.label}
-                <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
+                <button onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>?</button>
               </span>
             )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
             <button onClick={resetFilters} style={{ marginLeft: 'auto', fontSize: 12 }}>Reset filters</button>
@@ -2688,7 +2652,7 @@ function IOCMatchEventsPage() {
               }}
               style={{ minWidth: 180, fontSize: 12 }}
             >
-              <option value="">Load saved view…</option>
+              <option value="">Load saved view�</option>
               {savedViews.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
             </select>
           </div>
@@ -2878,8 +2842,8 @@ function IOCMatchEventsPage() {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                        <button onClick={() => openReview(evt)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                        <button onClick={() => navigate(`/analytics/detection-events/${evt.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
+                        <button onClick={() => openReview(evt)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
                       </div>
                     </td>
                   </tr>
@@ -2930,7 +2894,7 @@ function IOCMatchEventsPage() {
             </div>
 
             <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 10 }}>
-              {selectedEvent.matched_ioc || '-'} • {formatUserDateTime(selectedEvent.detected_at || selectedEvent.last_seen_at || selectedEvent.event_time || selectedEvent.created_at)}
+              {selectedEvent.matched_ioc || '-'} � {formatUserDateTime(selectedEvent.detected_at || selectedEvent.last_seen_at || selectedEvent.event_time || selectedEvent.created_at)}
             </div>
 
             <div style={{ marginBottom: 10 }}>
@@ -3070,15 +3034,15 @@ function IOCMatchEventDetailsPage() {
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
               <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Event Context (v2)</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, fontSize: 13 }}>
-                <div><b>Event Family:</b> {item?.v2_context?.event_family || '—'}</div>
-                <div><b>Control Point:</b> {item?.v2_context?.control_point || '—'}</div>
-                <div><b>Matched Field:</b> {item?.v2_context?.matched_field || '—'}</div>
-                <div><b>Scenario:</b> {item?.v2_context?.scenario_type || '—'}</div>
-                <div><b>Direction:</b> {item?.v2_context?.direction || '—'}</div>
-                <div><b>Outcome:</b> {item?.v2_context?.outcome || '—'}</div>
-                <div><b>Classification Confidence:</b> {Number.isFinite(Number(item?.v2_context?.classification_confidence)) ? Number(item.v2_context.classification_confidence).toFixed(2) : '—'}</div>
-                <div><b>Outcome Confidence:</b> {Number.isFinite(Number(item?.v2_context?.outcome_confidence)) ? Number(item.v2_context.outcome_confidence).toFixed(2) : '—'}</div>
-                <div style={{ gridColumn: '1 / -1' }}><b>Context Explanation:</b> {item?.v2_context?.context_explanation || '—'}</div>
+                <div><b>Event Family:</b> {item?.v2_context?.event_family || '�'}</div>
+                <div><b>Control Point:</b> {item?.v2_context?.control_point || '�'}</div>
+                <div><b>Matched Field:</b> {item?.v2_context?.matched_field || '�'}</div>
+                <div><b>Scenario:</b> {item?.v2_context?.scenario_type || '�'}</div>
+                <div><b>Direction:</b> {item?.v2_context?.direction || '�'}</div>
+                <div><b>Outcome:</b> {item?.v2_context?.outcome || '�'}</div>
+                <div><b>Classification Confidence:</b> {Number.isFinite(Number(item?.v2_context?.classification_confidence)) ? Number(item.v2_context.classification_confidence).toFixed(2) : '�'}</div>
+                <div><b>Outcome Confidence:</b> {Number.isFinite(Number(item?.v2_context?.outcome_confidence)) ? Number(item.v2_context.outcome_confidence).toFixed(2) : '�'}</div>
+                <div style={{ gridColumn: '1 / -1' }}><b>Context Explanation:</b> {item?.v2_context?.context_explanation || '�'}</div>
               </div>
             </div>
 
@@ -3116,7 +3080,7 @@ function IOCMatchEventDetailsPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ color: '#94a3b8', fontSize: 12 }}>
-                  Assigned: {item.assigned_to || '-'} {item.assigned_at ? `• ${formatUserDateTime(item.assigned_at)}` : ''}
+                  Assigned: {item.assigned_to || '-'} {item.assigned_at ? `� ${formatUserDateTime(item.assigned_at)}` : ''}
                 </div>
                 <button onClick={() => saveVerdict().catch(() => {})} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
               </div>
@@ -3236,8 +3200,8 @@ function IncidentEventsTable({ activityId, refreshKey = 0 }) {
                 </td>
                 <td>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
-                    <button onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>✏️</button>
+                    <button onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="View detail" aria-label="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
+                    <button onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="Review verdict" aria-label="Review verdict" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
                   </div>
                 </td>
               </tr>
@@ -3300,9 +3264,9 @@ function RiskOverviewPage() {
   const dataTruncated = Boolean(data?.data_truncated);
 
   function formatAiDelta(value) {
-    if (value === null || value === undefined) return '—';
+    if (value === null || value === undefined) return '�';
     const n = Number(value);
-    if (!Number.isFinite(n)) return '—';
+    if (!Number.isFinite(n)) return '�';
     if (n > 0) return `+${n}`;
     if (n < 0) return `${n}`;
     return '0';
@@ -3317,7 +3281,7 @@ function RiskOverviewPage() {
   }
   const trend = String(trendData?.trend || 'stable');
   const delta = Number(trendData?.delta || 0);
-  const trendArrow = trend === 'increasing' ? '↗' : trend === 'decreasing' ? '↘' : '→';
+  const trendArrow = trend === 'increasing' ? '?' : trend === 'decreasing' ? '?' : '?';
   const trendColor = trend === 'increasing' ? '#ef4444' : trend === 'decreasing' ? '#22c55e' : '#94a3b8';
   const history = Array.isArray(trendData?.history) ? trendData.history : [];
   const chartPoints = history.map((s, i) => {
@@ -3362,12 +3326,12 @@ function RiskOverviewPage() {
               <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, color: trendColor, fontWeight: 700 }}>
                 <span>{trendArrow}</span>
                 <span style={{ textTransform: 'capitalize' }}>{trend}</span>
-                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Δ {delta >= 0 ? '+' : ''}{delta.toFixed(2)}</span>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>? {delta >= 0 ? '+' : ''}{delta.toFixed(2)}</span>
               </div>
               {llmAggregate?.enabled ? (
                 <div style={{ marginTop: 8, fontSize: 12, color: '#93c5fd', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <span>AI adjusted risk enabled</span>
-                  <span>AI Δ {Number(llmAggregate.total_adjustment || 0) >= 0 ? '+' : ''}{Number(llmAggregate.total_adjustment || 0).toFixed(2)}</span>
+                  <span>AI ? {Number(llmAggregate.total_adjustment || 0) >= 0 ? '+' : ''}{Number(llmAggregate.total_adjustment || 0).toFixed(2)}</span>
                 </div>
               ) : null}
               <div style={{ marginTop: 10, border: '1px solid #334155', borderRadius: 8, padding: 8, background: '#0b1220' }}>
@@ -3377,7 +3341,7 @@ function RiskOverviewPage() {
                     {history.map((p, i) => {
                       const x = history.length <= 1 ? 0 : (i / (history.length - 1)) * 100;
                       const y = 100 - Math.max(0, Math.min(100, Number(p?.risk_score || 0)));
-                      return <circle key={`${p.ts}-${i}`} cx={x} cy={y} r="1.2" fill="#93c5fd"><title>{`${new Date(p.ts).toLocaleString()} • ${Number(p.risk_score || 0).toFixed(2)}`}</title></circle>;
+                      return <circle key={`${p.ts}-${i}`} cx={x} cy={y} r="1.2" fill="#93c5fd"><title>{`${new Date(p.ts).toLocaleString()} � ${Number(p.risk_score || 0).toFixed(2)}`}</title></circle>;
                     })}
                   </svg>
                 ) : (
@@ -3438,10 +3402,10 @@ function RiskOverviewPage() {
                       <tr key={`${it.id}-${it.rank}`} style={{ borderTop: '1px solid #334155' }}>
                         <td>{it.incident_id || it.id ? <Link to={`/incidents/${it.incident_id || it.id}`}>#{it.incident_id || '-'}</Link> : '-'}</td>
                         <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.ioc_value || '-'}</td>
-                        <td>{Number.isFinite(Number(it?.risk_score)) ? Number(it.risk_score).toFixed(2) : '—'}</td>
-                        <td>{Number.isFinite(Number(it?.contribution)) ? Number(it.contribution).toFixed(3) : '—'}</td>
-                        <td>{it.verdict || '—'}</td>
-                        <td>{it.confidence || '—'}</td>
+                        <td>{Number.isFinite(Number(it?.risk_score)) ? Number(it.risk_score).toFixed(2) : '�'}</td>
+                        <td>{Number.isFinite(Number(it?.contribution)) ? Number(it.contribution).toFixed(3) : '�'}</td>
+                        <td>{it.verdict || '�'}</td>
+                        <td>{it.confidence || '�'}</td>
                       </tr>
                     );
                   }) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No active incidents.</td></tr>}
@@ -3633,11 +3597,11 @@ function IncidentDetailsPage() {
               <div style={{ color: '#e2e8f0', marginTop: 6, fontSize: 16, fontWeight: 600 }}>{item.ioc_value}</div>
               <div style={{ color: '#94a3b8', marginTop: 6 }}>
                 Type: {item.ioc_type}
-                {' • '}Detection Events: {item.detection_event_count ?? item.event_count ?? 0}
-                {' • '}Evidence Logs: {evidenceSummary.unavailable ? '-' : (Number.isFinite(Number(evidenceSummary.count)) ? Number(evidenceSummary.count) : (item.related_log_count ?? 0))}
-                {' • '}Observed Hosts: {item.asset_count || 0}
+                {' � '}Detection Events: {item.detection_event_count ?? item.event_count ?? 0}
+                {' � '}Evidence Logs: {evidenceSummary.unavailable ? '-' : (Number.isFinite(Number(evidenceSummary.count)) ? Number(evidenceSummary.count) : (item.related_log_count ?? 0))}
+                {' � '}Observed Hosts: {item.asset_count || 0}
               </div>
-              <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} • Last Seen: {formatUserDateTime(item.last_seen)}</div>
+              <div style={{ color: '#94a3b8', marginTop: 4 }}>First Seen: {formatUserDateTime(item.first_seen)} � Last Seen: {formatUserDateTime(item.last_seen)}</div>
             </div>
 
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a', display: 'grid', gap: 10 }}>
@@ -3703,7 +3667,7 @@ function IncidentDetailsPage() {
                         const adjColor = adj > 0 ? '#fca5a5' : adj < 0 ? '#86efac' : '#94a3b8';
                         const adjText = adj > 0 ? `+${adj}` : `${adj}`;
 	                        const conf = Number(item.llm_risk_confidence);
-	                        const confText = Number.isFinite(conf) ? `${Math.round(Math.min(Math.max(conf, 0), 1) * 100)}%` : '—';
+	                        const confText = Number.isFinite(conf) ? `${Math.round(Math.min(Math.max(conf, 0), 1) * 100)}%` : '�';
 	                        const insight = item.ai_insight || {};
 	                        const chip = (value) => <span key={value} style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 999, border: '1px solid #334155', background: '#111827', color: '#cbd5e1', fontSize: 11 }}>{String(value).replaceAll('_', ' ')}</span>;
 
@@ -3713,11 +3677,11 @@ function IncidentDetailsPage() {
 	                            <div style={{ fontSize: 13 }}>Confidence: <b>{confText}</b></div>
 	                            {insight?.summary ? <div style={{ fontSize: 13 }}>Summary: <span style={{ color: '#cbd5e1' }}>{insight.summary}</span></div> : null}
 	                            {insight?.threat_class ? <div style={{ fontSize: 13 }}>Threat Class: <b>{String(insight.threat_class).replaceAll('_', ' ')}</b></div> : null}
-	                            {insight?.impact_level ? <div style={{ fontSize: 13 }}>Impact: <b>{insight.impact_level}</b> • Evidence: <b>{insight.evidence_strength || '—'}</b></div> : null}
+	                            {insight?.impact_level ? <div style={{ fontSize: 13 }}>Impact: <b>{insight.impact_level}</b> � Evidence: <b>{insight.evidence_strength || '�'}</b></div> : null}
 	                            <div style={{ fontSize: 13, display: 'grid', gridTemplateColumns: '60px 1fr', gap: 8, alignItems: 'start' }}>
 	                              <span>Reason:</span>
                               <span style={{ color: '#cbd5e1', whiteSpace: 'normal', overflow: 'visible', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.4 }}>
-                                {item.llm_risk_reason || '—'}
+                                {item.llm_risk_reason || '�'}
 	                              </span>
 	                            </div>
 	                            {Array.isArray(insight.risk_drivers) && insight.risk_drivers.length ? <div style={{ fontSize: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}><span style={{ color: '#94a3b8' }}>Drivers:</span>{insight.risk_drivers.map(chip)}</div> : null}
@@ -3728,8 +3692,8 @@ function IncidentDetailsPage() {
 	                            {item.llm_related_evidence ? (
                               <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
                                 <div style={{ color: '#cbd5e1', marginBottom: 4 }}>Related Evidence:</div>
-                                <div>- Domain: {item.llm_related_evidence.domain || '—'}</div>
-                                <div>- Resolved IP: {item.llm_related_evidence.resolved_ip || '—'}</div>
+                                <div>- Domain: {item.llm_related_evidence.domain || '�'}</div>
+                                <div>- Resolved IP: {item.llm_related_evidence.resolved_ip || '�'}</div>
                                 <div>- Resolved IP in IOC list: {item.llm_related_evidence.resolved_ip_in_ioc_list ? 'yes' : 'no'}</div>
                                 <div>- Accepted traffic: {item.llm_related_evidence.accepted_traffic ? 'yes' : 'no'}</div>
                                 <div>- Service/port: {item.llm_related_evidence.service_port || 'not specified'}</div>
@@ -4057,7 +4021,7 @@ function IncidentPage() {
   }, [items]);
 
   const activeFilters = [];
-  if (from || to) activeFilters.push({ key: 'date', label: `${from || '-'} → ${to || '-'}`, onClear: () => { setFrom(''); setTo(''); setQuickRange(''); } });
+  if (from || to) activeFilters.push({ key: 'date', label: `${from || '-'} ? ${to || '-'}`, onClear: () => { setFrom(''); setTo(''); setQuickRange(''); } });
   if (status) activeFilters.push({ key: 'status', label: `Status: ${status}`, onClear: () => setStatus('') });
   if (verdict.length) activeFilters.push({ key: 'verdict', label: `Verdict: ${verdict.join(', ')}`, onClear: () => setVerdict([]) });
   if (assigneeFilter !== 'all') activeFilters.push({ key: 'assignee', label: `Assignee: ${assigneeFilter}`, onClear: () => setAssigneeFilter('all') });
@@ -4193,7 +4157,7 @@ function IncidentPage() {
             {activeFilters.length ? activeFilters.map((f) => (
               <span key={f.key + f.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #475569', borderRadius: 999, padding: '3px 8px', fontSize: 12, color: '#cbd5e1', maxWidth: '100%' }}>
                 {f.label}
-                <button type="button" onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
+                <button type="button" onClick={f.onClear} style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>?</button>
               </span>
             )) : <span style={{ color: '#64748b', fontSize: 12 }}>None</span>}
             <button type="button" className="incidents-meta-reset" onClick={resetFilters} style={{ fontSize: 12 }}>Reset filters</button>
@@ -4220,7 +4184,7 @@ function IncidentPage() {
               }}
               style={{ width: 180, maxWidth: '100%', fontSize: 12 }}
             >
-              <option value="">Load saved view…</option>
+              <option value="">Load saved view�</option>
               {savedViews.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
             </select>
           </div>
@@ -4391,10 +4355,6 @@ function SystemStatusPage() {
 
   const database = status?.database || {};
   const redisStatus = status?.redis || {};
-  const clickhouseStatus = status?.clickhouse || {};
-  const retroStatus = status?.retro || {};
-  const retroOverallKey = retroStatus.overall_health || retroStatus.state_health;
-  const retroHealth = retroHealthPresentation(retroOverallKey, retroStatus.state_health_label);
   const queues = status?.queues || {};
   const queueRows = Object.entries(queues).filter(([key]) => key !== 'error');
   const integrations = status?.integrations || {};
@@ -4436,7 +4396,7 @@ function SystemStatusPage() {
           <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>Database</div>
-              <span style={statusDot(database.ok)}>● {database.ok ? 'OK' : 'Down'}</span>
+              <span style={statusDot(database.ok)}>? {database.ok ? 'OK' : 'Down'}</span>
             </div>
             <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
               <div><b>Name:</b> {database.current_database || '-'}</div>
@@ -4450,7 +4410,7 @@ function SystemStatusPage() {
           <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>Redis</div>
-              <span style={statusDot(redisStatus.ok)}>● {redisStatus.ok ? 'OK' : 'Down'}</span>
+              <span style={statusDot(redisStatus.ok)}>? {redisStatus.ok ? 'OK' : 'Down'}</span>
             </div>
             <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
               <div><b>Version:</b> {redisStatus.version || '-'}</div>
@@ -4462,73 +4422,6 @@ function SystemStatusPage() {
             </div>
           </div>
 
-          {/* ClickHouse card moved below as full-width section */}
-        </div>
-
-        <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>ClickHouse</span>
-            <span style={statusDot(clickhouseStatus.ok)}>● {clickhouseStatus.ok ? 'OK' : 'Down'}</span>
-          </div>
-          <div style={{ padding: 12, background: '#0f172a' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
-              <div><b>Table:</b> {clickhouseStatus.table || 'syslog_logs'}</div>
-              <div><b>Version:</b> {clickhouseStatus.version || '-'}</div>
-              <div><b>Rows:</b> {clickhouseStatus.rows ?? '-'}</div>
-              <div><b>Size:</b> {clickhouseStatus.size_mb !== undefined ? `${clickhouseStatus.size_mb} MB` : '-'}</div>
-            </div>
-            {clickhouseStatus.note && <div style={{ color: '#94a3b8', marginTop: 8 }}>{clickhouseStatus.note}</div>}
-            {clickhouseStatus.error && <div style={{ color: '#f87171', marginTop: 8 }}>{clickhouseStatus.error}</div>}
-          </div>
-        </div>
-
-        <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Retro Scan</span>
-            <span style={{ ...statusDot(retroOverallKey === 'OK' || retroOverallKey === 'WARNING'), color: retroHealth.color }}>
-              ● Overall: {retroStatus.state_health_label || retroHealth.label}
-            </span>
-          </div>
-          <div style={{ padding: 12, background: '#0f172a' }}>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-              Retro worker (hourly), cursor coverage, and PG→CH sync are evaluated separately.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
-              <div title={RETRO_STATUS_TOOLTIPS.lastRun}><b>Last Retro Run:</b> {retroStatus.last_run_at_iso ? formatUserDateTime(retroStatus.last_run_at_iso) : (retroStatus.last_run_at || '-')}</div>
-              <div title={RETRO_STATUS_TOOLTIPS.lastRunAge}><b>Last Run Age:</b> {formatDurationSeconds(retroStatus.last_run_age_seconds)}</div>
-              <div title={RETRO_STATUS_TOOLTIPS.processedCursor}>
-                <b>Processed IOC Cursor:</b> {retroStatus.cursor_ts_iso ? formatUserDateTime(retroStatus.cursor_ts_iso) : (retroStatus.cursor_ts || '-')}
-              </div>
-              <div title={RETRO_STATUS_TOOLTIPS.chMaxLookup}>
-                <b>CH Lookup Max IOC TS:</b> {retroStatus.ch_max_lookup_updated_at_iso ? formatUserDateTime(retroStatus.ch_max_lookup_updated_at_iso) : (retroStatus.ch_max_lookup_updated_at || '-')}
-              </div>
-              <div title={RETRO_STATUS_TOOLTIPS.retroBacklog}><b>Retro Backlog:</b> {retroStatus.ch_pending_ioc_count ?? '-'} IOC</div>
-              <div title={RETRO_STATUS_TOOLTIPS.cursorLag}><b>Retro Cursor Lag:</b> {retroStatus.ch_cursor_lag_seconds != null ? `${retroStatus.ch_cursor_lag_seconds} sec` : '-'}</div>
-              <div title={RETRO_STATUS_TOOLTIPS.workerHealth}>
-                {retroHealthLine('Retro Worker Health', retroStatus.retro_worker_health, retroStatus.retro_worker_health_label)}
-              </div>
-              <div title={RETRO_STATUS_TOOLTIPS.cursorHealth}>
-                {retroHealthLine('Retro Cursor Health', retroStatus.retro_cursor_health, retroStatus.retro_cursor_health_label)}
-              </div>
-              <div title={RETRO_STATUS_TOOLTIPS.pgUnsynced}><b>{'PG \u2192 CH Unsynced IOC:'}</b> {retroStatus.pg_unsynced_ioc_count ?? '-'}</div>
-              <div title={RETRO_STATUS_TOOLTIPS.pgSyncLag}><b>{'PG \u2192 CH Sync Lag:'}</b> {formatDurationSeconds(retroStatus.pg_to_ch_sync_lag_seconds)}</div>
-              <div title={RETRO_STATUS_TOOLTIPS.syncHealth}>
-                {retroHealthLine('Correlation Sync Health', retroStatus.correlation_sync_health, retroStatus.correlation_sync_health_label)}
-              </div>
-              <div title={RETRO_STATUS_TOOLTIPS.overallHealth}>
-                {retroHealthLine('Overall', retroOverallKey, retroStatus.state_health_label)}
-              </div>
-              <div><b>Last Retro Duration:</b> {retroStatus.last_run_duration_ms !== undefined ? `${retroStatus.last_run_duration_ms} ms` : '-'}</div>
-              <div><b>Last Chunk Scanned IOC:</b> {retroStatus.last_chunk_scanned_count ?? retroStatus.last_retro_scanned_ioc ?? '-'}</div>
-              {Number(retroStatus.chunk_active) === 1 && (
-                <div><b>Active Chunk:</b> {retroStatus.retro_chunk_ioc_count ?? 0} IOC ({retroStatus.retro_chunk_rows_processed ?? 0} match rows processed)</div>
-              )}
-              {retroStatus.correlation_sync && (
-                <div><b>Correlation Sync:</b> last_sync_ts {renderTimestamp(retroStatus.correlation_sync.last_sync_ts)} · id {retroStatus.correlation_sync.last_sync_id ?? '-'}</div>
-              )}
-            </div>
-            {retroStatus.error && <div style={{ color: '#f87171', marginTop: 8 }}>{retroStatus.error}</div>}
-          </div>
         </div>
 
         <div style={{ marginTop: 20, border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
@@ -4612,7 +4505,7 @@ const FEED_METRIC_TOOLTIPS = {
 function feedMetricsHintPresentation(hint) {
   const map = {
     legacy_metrics: { label: 'Legacy metrics', color: '#fcd34d', title: 'Import breakdown unavailable until the feed runs again with granular metrics.' },
-    no_delta: { label: 'No delta', color: '#94a3b8', title: 'Last run processed records but did not insert or update IOCs — often normal when feed content is unchanged.' },
+    no_delta: { label: 'No delta', color: '#94a3b8', title: 'Last run processed records but did not insert or update IOCs � often normal when feed content is unchanged.' },
     high_skipped: { label: 'High skipped', color: '#fdba74', title: 'Most records were skipped (unchanged, filtered, or already known). Review if unexpected.' },
     high_failed: { label: 'High failed', color: '#fca5a5', title: 'A significant share of records failed to import.' }
   };
@@ -4776,7 +4669,7 @@ const AUTH_KEY_FEED_CONFIG = {
   [THREATFOX_FEED_KEY]: {
     title: 'ThreatFox Auth-Key',
     placeholder: 'Enter ThreatFox Auth-Key',
-    helpText: 'Required for ThreatFox recent IOC API (get_iocs). Default lookback is 3 days (1–7).',
+    helpText: 'Required for ThreatFox recent IOC API (get_iocs). Default lookback is 3 days (1�7).',
     saveSuccess: 'ThreatFox Auth-Key saved.',
     saveError: 'Failed to save ThreatFox Auth-Key',
     supportsTest: true,
@@ -4895,7 +4788,7 @@ function FeedSettingsModal({
                 disabled={!canWrite || savingConfidence}
                 style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
               >
-                <option value="">Unknown / —</option>
+                <option value="">Unknown / �</option>
                 {CONFIDENCE_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
@@ -4968,7 +4861,7 @@ function FeedSettingsModal({
               ) : null}
               {AUTH_KEY_FEED_CONFIG[feed.key]?.supportsRecentDays ? (
                 <label style={{ display: 'grid', gap: 6 }}>
-                  <span style={{ color: '#94a3b8' }}>Recent days (1–7)</span>
+                  <span style={{ color: '#94a3b8' }}>Recent days (1�7)</span>
                   <input
                     type="number"
                     min={1}
@@ -5228,7 +5121,7 @@ function feedHealthPresentation(feed) {
 function feedConfidencePresentation(defaultConfidence) {
   const value = String(defaultConfidence || '').trim().toLowerCase();
   if (!value || !['low', 'medium', 'high'].includes(value)) {
-    return { label: '—', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
+    return { label: '�', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
   }
   const badge = confidenceBadgeStyle(value);
   return {
@@ -5264,7 +5157,7 @@ function truncateFeedError(text, max = 48) {
   const raw = String(text || '').trim();
   if (!raw) return '';
   if (raw.length <= max) return raw;
-  return `${raw.slice(0, max - 1)}…`;
+  return `${raw.slice(0, max - 1)}�`;
 }
 
 function LastRunMetricsCell({ metrics, hints = [] }) {
@@ -5437,7 +5330,7 @@ function RiskExplanationPanel({ explanation, item }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <div style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px' }}>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Base Risk</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{ex.base_score != null ? Number(ex.base_score).toFixed(2) : '—'}</div>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>{ex.base_score != null ? Number(ex.base_score).toFixed(2) : '�'}</div>
         </div>
         <div style={{ border: '1px solid #1e293b', borderRadius: 8, padding: '8px 10px' }}>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Final Risk</div>
@@ -5472,7 +5365,7 @@ function RiskExplanationPanel({ explanation, item }) {
             {components.map((c) => (
               <div key={c.name} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 160px) 80px 1fr', gap: 10, fontSize: 12, alignItems: 'start' }}>
                 <strong style={{ color: '#e2e8f0' }}>{c.name}</strong>
-                <span style={{ color: '#93c5fd' }}>{c.contribution != null ? `+${Number(c.contribution).toFixed(2)}` : '—'}</span>
+                <span style={{ color: '#93c5fd' }}>{c.contribution != null ? `+${Number(c.contribution).toFixed(2)}` : '�'}</span>
                 <span style={{ color: '#94a3b8', lineHeight: 1.45 }}>{c.explanation}</span>
               </div>
             ))}
@@ -5499,7 +5392,7 @@ function FeedPurgePreviewSummary({ preview, loading }) {
   if (loading) {
     return (
       <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 13, color: '#94a3b8' }}>
-        Loading impact summary…
+        Loading impact summary�
       </div>
     );
   }
@@ -5666,7 +5559,7 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
             disabled={!nameMatches || busy || !preview}
             style={(!nameMatches || busy || !preview) ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
           >
-            {purging ? 'Starting purge job…' : 'Purge'}
+            {purging ? 'Starting purge job�' : 'Purge'}
           </button>
         </div>
       </div>
@@ -6484,7 +6377,7 @@ function IntegrationsQueueStatusPage() {
                 <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
                   {recoverPreview.stale_queued_jobs.map((j) => (
                     <li key={j.job_id} style={{ color: '#fcd34d' }}>
-                      #{j.job_id} · {j.integration_key} · queued {Math.round((j.age_seconds || 0) / 60)}m ago
+                      #{j.job_id} � {j.integration_key} � queued {Math.round((j.age_seconds || 0) / 60)}m ago
                     </li>
                   ))}
                 </ul>
@@ -6548,7 +6441,7 @@ function IntegrationsQueueStatusPage() {
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.id}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.integration_name || j.integration_key || '-'}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{integrationJobDisplayName(j)}</td>
-                  <td style={{ color: queueJobStateColor(j.state === 'fail' ? 'failed' : j.state), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ⚠' : ''}</td>
+                  <td style={{ color: queueJobStateColor(j.state === 'fail' ? 'failed' : j.state), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ?' : ''}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.started_at)}</td>
                   <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#fcd34d' : '#cbd5e1' }} title={integrationJobReasonLabel(j)}>{integrationJobReasonLabel(j)}</td>
@@ -6559,7 +6452,7 @@ function IntegrationsQueueStatusPage() {
         </div>
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ color: '#94a3b8', fontSize: 13 }}>
-            Page {queue.pagination?.page || page} / {queue.pagination?.total_pages || 1} · Total {queue.pagination?.total || 0}
+            Page {queue.pagination?.page || page} / {queue.pagination?.total_pages || 1} � Total {queue.pagination?.total || 0}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button disabled={(queue.pagination?.page || page) <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
@@ -7178,7 +7071,7 @@ function CustomThreatFeedsPage() {
     if (status === 'success') return 'Sync completed';
     if (status === 'failed') return 'Failed';
     if (status === 'running') return 'Running';
-    return status || '—';
+    return status || '�';
   };
 
   function renderStateBadge(feed) {
@@ -7209,7 +7102,7 @@ function CustomThreatFeedsPage() {
 
           {toast ? <div style={{ marginBottom: 10, color: '#86efac' }}>{toast}</div> : null}
           {error ? <div style={{ marginBottom: 10, color: '#fca5a5' }}>{error}</div> : null}
-          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : null}
+          {loading ? <p style={{ color: '#94a3b8' }}>Loading�</p> : null}
 
           {!loading && feeds.length === 0 ? (
             <p style={{ color: '#94a3b8' }}>No Custom Threat Feeds configured.</p>
@@ -7245,9 +7138,9 @@ function CustomThreatFeedsPage() {
                       <td style={{ padding: 8 }}>{formatFeedScheduleLabel(feed.schedule)}</td>
                       <td style={{ padding: 8, textTransform: 'capitalize' }}>{feed.default_confidence || 'medium'}</td>
                       <td style={{ padding: 8 }}>{feed.expiration_summary || 'Never'}</td>
-                      <td style={{ padding: 8 }}>{feed.last_success_at ? new Date(feed.last_success_at).toLocaleString() : '—'}</td>
+                      <td style={{ padding: 8 }}>{feed.last_success_at ? new Date(feed.last_success_at).toLocaleString() : '�'}</td>
                       <td style={{ padding: 8 }}>{statusLabel(feed.last_run_status)}</td>
-                      <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '—'}</td>
+                      <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '�'}</td>
                       <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                           {isAdmin ? (
@@ -7415,7 +7308,7 @@ function CustomThreatFeedsPage() {
                 flexShrink: 0
               }}>
                 <button type="button" onClick={() => { setShowModal(false); setEditingFeed(null); }} disabled={saving}>Cancel</button>
-                <button type="button" onClick={() => saveFeed().catch(() => {})} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                <button type="button" onClick={() => saveFeed().catch(() => {})} disabled={saving}>{saving ? 'Saving�' : 'Save'}</button>
               </div>
             </div>
           </div>
@@ -7449,11 +7342,11 @@ function CustomThreatFeedsPage() {
           let title, body;
           if (!canDel) {
             if (reason === 'job_running_or_queued') {
-              title = 'Cannot modify feed — jobs are active';
+              title = 'Cannot modify feed � jobs are active';
               body = 'Cannot modify this feed while jobs are queued or running. Please wait for the job to finish or clear the queued/running job before deleting or purging this feed.';
             } else if (reason === 'requires_purge') {
-              title = 'Cannot delete — feed has active IOC data';
-              body = `This feed has ${check.active_membership_count} active IOC membership(s). Purge the imported IOC data first, then delete the feed.${check.published_feed_dependency_count > 0 ? ` It is also linked to ${check.published_feed_dependency_count} published feed(s) — those links will be automatically cleaned up when you delete.` : ''}`;
+              title = 'Cannot delete � feed has active IOC data';
+              body = `This feed has ${check.active_membership_count} active IOC membership(s). Purge the imported IOC data first, then delete the feed.${check.published_feed_dependency_count > 0 ? ` It is also linked to ${check.published_feed_dependency_count} published feed(s) � those links will be automatically cleaned up when you delete.` : ''}`;
             } else if (reason === 'requires_disable') {
               title = 'Cannot delete enabled feed';
               body = 'This feed has no active imported IOC data, but it is still enabled. Disable it before deleting.';
@@ -7493,7 +7386,7 @@ function CustomThreatFeedsPage() {
                       style={{ padding: '6px 14px', background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', borderRadius: 6, cursor: deleteLoading ? 'not-allowed' : 'pointer', fontWeight: 600 }}
                     >
                       {deleteLoading
-                        ? 'Deleting…'
+                        ? 'Deleting�'
                         : check.delete_mode === 'cleanup_delete'
                           ? 'Delete and remove from Published Feeds'
                           : 'Confirm delete'}
@@ -7630,7 +7523,7 @@ function IntegrationsRecentRunsPage() {
                   <td style={ellipsisCellStyle} title={r.job_id || '-'}>{r.job_id || '-'}</td>
                   <td style={ellipsisCellStyle} title={r.integration_name || r.integration_key || '-'}>{r.integration_name || r.integration_key || '-'}</td>
                   <td style={ellipsisCellStyle} title={integrationJobDisplayName(r) || r.job_type || '-'}>{integrationJobDisplayName(r) || r.job_type || '-'}</td>
-                  <td style={{ ...ellipsisCellStyle, color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }} title={statusLabel(r.state || r.status)}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ⚠' : ''}</td>
+                  <td style={{ ...ellipsisCellStyle, color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }} title={statusLabel(r.state || r.status)}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ?' : ''}</td>
                   <td style={ellipsisCellStyle} title={formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
                   <td style={ellipsisCellStyle} title={formatUserDateTime(r.started_at)}>{formatUserDateTime(r.started_at)}</td>
                   <td style={ellipsisCellStyle} title={formatUserDateTime(r.finished_at)}>{formatUserDateTime(r.finished_at)}</td>
@@ -7686,7 +7579,7 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
     const alreadySelected = selected.includes(o.key);
     // Non-selectable items can still be unchecked if already selected (allow cleanup without re-enabling).
     const disabled = o.selectable === false && !alreadySelected;
-    // display_name from backend is fully normalized — includes state suffix, no frontend duplication needed.
+    // display_name from backend is fully normalized � includes state suffix, no frontend duplication needed.
     const label = o.display_name || o.name || o.key;
     const isInactiveSelected = alreadySelected && o.selectable === false && !o.missing;
     return (
@@ -8231,14 +8124,14 @@ function PublishedFeedsPage() {
                     </td>
                     <td style={ui.td}>{f.ioc_type}</td>
                     <td style={ui.td}>{windowLabel(f.time_window)}</td>
-                    <td style={ui.td}>{f.max_items ?? '—'}</td>
+                    <td style={ui.td}>{f.max_items ?? '�'}</td>
                     <td style={ui.td}>{formatUserDateTime(f.last_generated_at)}</td>
                     <td style={{
                       ...ui.td,
                       color: f.last_status === 'success' ? '#86efac' : f.last_status === 'failed' ? '#fca5a5' : '#fcd34d',
                       fontWeight: 600
-                    }}>{f.last_status || '—'}</td>
-                    <td style={ui.td}>{f.last_item_count ?? '—'}</td>
+                    }}>{f.last_status || '�'}</td>
+                    <td style={ui.td}>{f.last_item_count ?? '�'}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                       {canWrite ? (
                         <button type="button" style={ui.btn} onClick={() => openEditForm(f)}>Edit</button>
@@ -8501,7 +8394,7 @@ function AuditLogsPage() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 16 }}>
-          <input style={ui.input} placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
+          <input style={ui.input} placeholder="Search�" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
           <input style={ui.input} placeholder="Action (e.g. ioc.created)" value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} />
           <input style={ui.input} placeholder="Entity type" value={entityTypeFilter} onChange={(e) => { setEntityTypeFilter(e.target.value); setPage(1); }} />
           <select style={ui.select} value={severityFilter} onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}>
@@ -8544,13 +8437,13 @@ function AuditLogsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={8} style={ui.td}>Loading�</td></tr>
               ) : !items.length ? (
                 <tr><td colSpan={8} style={ui.td}>No audit logs found.</td></tr>
               ) : items.map((row) => (
                 <tr key={row.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(row)}>
                   <td style={ui.td}>{formatAuditDate(row.created_at)}</td>
-                  <td style={ui.td}>{row.actor_username || row.actor_email || '—'}</td>
+                  <td style={ui.td}>{row.actor_username || row.actor_email || '�'}</td>
                   <td style={ui.td}>
                     <div style={{ fontWeight: 600 }}>{row.action_label || row.action}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{row.action}</div>
@@ -8560,8 +8453,8 @@ function AuditLogsPage() {
                   </td>
                   <td style={ui.td}><span style={auditSeverityBadgeStyle(row.severity)}>{row.severity}</span></td>
                   <td style={ui.td}><span style={auditStatusBadgeStyle(row.status)}>{row.status}</span></td>
-                  <td style={ui.td}>{row.ip_address || '—'}</td>
-                  <td style={ui.td}>{row.source || '—'}</td>
+                  <td style={ui.td}>{row.ip_address || '�'}</td>
+                  <td style={ui.td}>{row.source || '�'}</td>
                 </tr>
               ))}
             </tbody>
@@ -8569,7 +8462,7 @@ function AuditLogsPage() {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ color: '#94a3b8', fontSize: 13 }}>{total} total · page {page} / {totalPages}</span>
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>{total} total � page {page} / {totalPages}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" style={ui.btn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
             <button type="button" style={ui.btn} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
@@ -8580,12 +8473,12 @@ function AuditLogsPage() {
       {detailItem ? (
         <ModalOverlay onClose={() => setDetailItem(null)}>
           <h3 style={{ margin: '0 0 12px', color: '#f8fafc' }}>Audit Log #{detailItem.id}</h3>
-          {detailLoading ? <p style={ui.helper}>Loading details…</p> : null}
+          {detailLoading ? <p style={ui.helper}>Loading details�</p> : null}
           <div style={{ display: 'grid', gap: 10, maxHeight: '70vh', overflowY: 'auto' }}>
             <div><strong>Date:</strong> {formatAuditDate(detailItem.created_at)}</div>
-            <div><strong>Actor:</strong> {detailItem.actor_username || detailItem.actor_email || '—'} ({detailItem.actor_role || '—'})</div>
+            <div><strong>Actor:</strong> {detailItem.actor_username || detailItem.actor_email || '�'} ({detailItem.actor_role || '�'})</div>
             <div><strong>Action:</strong> {detailItem.action_label || detailItem.action} <span style={{ color: '#64748b' }}>({detailItem.action})</span></div>
-            <div><strong>Entity:</strong> {detailItem.entity_type} · <span title={formatAuditEntityPrimary(detailItem)}>{truncateAuditText(formatAuditEntityPrimary(detailItem), 120)}</span></div>
+            <div><strong>Entity:</strong> {detailItem.entity_type} � <span title={formatAuditEntityPrimary(detailItem)}>{truncateAuditText(formatAuditEntityPrimary(detailItem), 120)}</span></div>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>{formatAuditEntitySubtitle(detailItem)}</div>
             <AuditExpirationSummary item={detailItem} />
             <AuditTaxonomySummary item={detailItem} />
@@ -8593,7 +8486,7 @@ function AuditLogsPage() {
               <span style={auditSeverityBadgeStyle(detailItem.severity)}>{detailItem.severity}</span>
               <span style={auditStatusBadgeStyle(detailItem.status)}>{detailItem.status}</span>
             </div>
-            <div><strong>Request:</strong> IP {detailItem.ip_address || '—'} · {detailItem.user_agent || '—'} · req {detailItem.request_id || '—'} · source {detailItem.source || '—'}</div>
+            <div><strong>Request:</strong> IP {detailItem.ip_address || '�'} � {detailItem.user_agent || '�'} � req {detailItem.request_id || '�'} � source {detailItem.source || '�'}</div>
             <div>
               <strong>before_data</strong>
               <pre style={{ ...ui.code, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto' }}>{auditJsonBlock(detailItem.before_data)}</pre>
@@ -8799,11 +8692,11 @@ function ApiKeysPage() {
                   <tr style={ui.tr}>
                     <td style={ui.td}>{k.name}</td>
                     <td style={ui.td}>{keyTypeLabel(k.key_type)}</td>
-                    <td style={ui.td}>{k.feed_name || '—'}</td>
-                    <td style={ui.td}>{k.feed_ioc_type || '—'}</td>
+                    <td style={ui.td}>{k.feed_name || '�'}</td>
+                    <td style={ui.td}>{k.feed_ioc_type || '�'}</td>
                     <td style={ui.td}>{k.status}</td>
                     <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
-                    <td style={ui.td}>{k.last_used_ip || '—'}</td>
+                    <td style={ui.td}>{k.last_used_ip || '�'}</td>
                     <td style={ui.td}>{formatUserDateTime(k.created_at)}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                       <button type="button" style={ui.btn} onClick={() => setExpandedKeyId((prev) => (prev === k.id ? null : k.id))}>
@@ -8885,7 +8778,7 @@ function ApiKeysPage() {
                     onChange={(e) => setForm((x) => ({ ...x, feed_id: e.target.value }))}
                     style={ui.select}
                   >
-                    <option value="">Select feed…</option>
+                    <option value="">Select feed�</option>
                     {feeds.map((f) => (
                       <option key={f.id} value={f.id}>{f.name} ({f.ioc_type})</option>
                     ))}
@@ -9071,7 +8964,7 @@ function ThreatClassificationMultiSelect({
                   style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
                   aria-label={`Remove ${label}`}
                 >
-                  ×
+                  �
                 </button>
               ) : null}
             </span>
@@ -9281,7 +9174,7 @@ function TagManagerPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={7} style={ui.td}>Loading�</td></tr>
               ) : !tags.length ? (
                 <tr><td colSpan={7} style={ui.td}>No tags found.</td></tr>
               ) : tags.map((tag) => (
@@ -9290,12 +9183,12 @@ function TagManagerPage() {
                     <div style={{ fontWeight: 600 }}>{tag.name}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{tag.slug || tag.name}</div>
                   </td>
-                  <td style={ui.td}>{tag.category || '—'}</td>
+                  <td style={ui.td}>{tag.category || '�'}</td>
                   <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>
-                    {tag.description || '—'}
+                    {tag.description || '�'}
                     {(String(tag.description || '').includes('legacy-migrated') || tag.is_active === false) ? (
                       <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, fontStyle: 'italic' }}>
-                        Legacy migrated tag — use Threat Classification or Threat Actor fields instead.
+                        Legacy migrated tag � use Threat Classification or Threat Actor fields instead.
                       </div>
                     ) : null}
                   </td>
@@ -9305,7 +9198,7 @@ function TagManagerPage() {
                         <span style={{ width: 14, height: 14, borderRadius: 4, background: tag.color, border: '1px solid #475569' }} />
                         {tag.color}
                       </span>
-                    ) : '—'}
+                    ) : '�'}
                   </td>
                   <td style={ui.td}>{tag.is_active ? 'Yes' : 'No'}</td>
                   <td style={ui.td}>{formatUserDateTime(tag.created_at)}</td>
@@ -9339,7 +9232,7 @@ function TagManagerPage() {
             <FeedFormField ui={ui} label="Description" fullWidth>
               <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
               <span style={{ ...ui.helper, display: 'block', marginTop: 6 }}>
-                Do not use tags for threat classifications or threat actors — those are managed under Administration → Threat Actors and the IOC threat classification field.
+                Do not use tags for threat classifications or threat actors � those are managed under Administration ? Threat Actors and the IOC threat classification field.
               </span>
             </FeedFormField>
             <FeedFormField ui={ui} label="Color" helper="Optional hex or CSS color for UI chips." fullWidth>
@@ -9354,7 +9247,7 @@ function TagManagerPage() {
             {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
               <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingTag ? 'Save Changes' : 'Create Tag')}</button>
+              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving�' : (editingTag ? 'Save Changes' : 'Create Tag')}</button>
             </div>
           </form>
         </ModalOverlay>
@@ -9537,7 +9430,7 @@ function ThreatClassificationManagerPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={6} style={ui.td}>Loading�</td></tr>
               ) : !items.length ? (
                 <tr><td colSpan={6} style={ui.td}>No classifications found.</td></tr>
               ) : items.map((item) => (
@@ -9547,7 +9440,7 @@ function ThreatClassificationManagerPage() {
                     <code style={{ fontSize: 11, color: '#64748b' }}>{item.slug}</code>
                   </td>
                   <td className="tc-col-description tc-description-cell" style={ui.td} title={item.description || undefined}>
-                    {item.description || '—'}
+                    {item.description || '�'}
                   </td>
                   <td className="tc-col-status" style={ui.td}>
                     <span style={{
@@ -9564,8 +9457,8 @@ function ThreatClassificationManagerPage() {
                       {item.active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td className="tc-col-builtin" style={ui.td}>{item.system_default ? 'Yes' : '—'}</td>
-                  <td className="tc-col-order" style={ui.td}>{item.sort_order ?? '—'}</td>
+                  <td className="tc-col-builtin" style={ui.td}>{item.system_default ? 'Yes' : '�'}</td>
+                  <td className="tc-col-order" style={ui.td}>{item.sort_order ?? '�'}</td>
                   <td className="tc-col-actions tc-actions-cell" style={ui.td}>
                     <div className="tc-action-buttons">
                       <button type="button" style={ui.btn} onClick={() => openEditModal(item)}>Edit</button>
@@ -9631,7 +9524,7 @@ function ThreatClassificationManagerPage() {
             {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
               <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Classification')}</button>
+              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving�' : (editingItem ? 'Save Changes' : 'Create Classification')}</button>
             </div>
           </form>
         </ModalOverlay>
@@ -9648,9 +9541,9 @@ const EMPTY_THREAT_ACTOR_FORM = {
 };
 
 function formatThreatActorAliases(aliases) {
-  if (!aliases) return '—';
-  if (Array.isArray(aliases)) return aliases.length ? aliases.join(', ') : '—';
-  return String(aliases).trim() || '—';
+  if (!aliases) return '�';
+  if (Array.isArray(aliases)) return aliases.length ? aliases.join(', ') : '�';
+  return String(aliases).trim() || '�';
 }
 
 function ThreatActorManagerPage() {
@@ -9697,7 +9590,7 @@ function ThreatActorManagerPage() {
     setEditingActor(actor);
     setForm({
       name: actor?.name || '',
-      aliases: formatThreatActorAliases(actor?.aliases) === '—' ? '' : formatThreatActorAliases(actor?.aliases),
+      aliases: formatThreatActorAliases(actor?.aliases) === '�' ? '' : formatThreatActorAliases(actor?.aliases),
       description: actor?.description || '',
       active: actor?.active !== false
     });
@@ -9801,7 +9694,7 @@ function ThreatActorManagerPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={6} style={ui.td}>Loading�</td></tr>
               ) : !actors.length ? (
                 <tr><td colSpan={6} style={ui.td}>No threat actors found.</td></tr>
               ) : actors.map((actor) => (
@@ -9811,7 +9704,7 @@ function ThreatActorManagerPage() {
                     <div style={{ fontSize: 11, color: '#64748b' }}>{actor.slug || actor.name}</div>
                   </td>
                   <td style={{ ...ui.td, maxWidth: 220, whiteSpace: 'normal' }}>{formatThreatActorAliases(actor.aliases)}</td>
-                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{actor.description || '—'}</td>
+                  <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>{actor.description || '�'}</td>
                   <td style={ui.td}>{actor.active ? 'Yes' : 'No'}</td>
                   <td style={ui.td}>{formatUserDateTime(actor.created_at)}</td>
                   <td style={ui.td}>
@@ -9851,7 +9744,7 @@ function ThreatActorManagerPage() {
             {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
               <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingActor ? 'Save Changes' : 'Create Threat Actor')}</button>
+              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving�' : (editingActor ? 'Save Changes' : 'Create Threat Actor')}</button>
             </div>
           </form>
         </ModalOverlay>
@@ -9989,7 +9882,7 @@ function IocSourcesPage() {
       } else {
         const normalizedName = normalizeNameInput(form.name);
         if (normalizedName.length < 3) {
-          setFormError('Name must be 3–64 characters: letters, numbers, underscore, hyphen.');
+          setFormError('Name must be 3�64 characters: letters, numbers, underscore, hyphen.');
           return;
         }
         await api.post('/ioc-sources', { ...payload, name: normalizedName });
@@ -10211,7 +10104,7 @@ function IocSourcesPage() {
             </thead>
             <tbody>
               {loading ? (
-	                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+	                <tr><td colSpan={7} style={ui.td}>Loading�</td></tr>
               ) : sources.length ? sources.map((s) => {
                 const iocCount = sourceIocCount(s);
                 const state = s.state || (s.archived_at ? 'archived' : s.active === false ? 'disabled' : 'active');
@@ -10219,8 +10112,8 @@ function IocSourcesPage() {
                 return (
                 <tr key={s.id} style={{ ...ui.tr, opacity: state === 'active' ? 1 : 0.72 }}>
 	                  <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', monospace" }}>{s.name}</td>
-	                  <td style={ui.td}>{s.default_confidence || '—'}</td>
-	                  <td style={ui.td}>{String(s.default_threat_classification || '—').replaceAll('_', ' ')}</td>
+	                  <td style={ui.td}>{s.default_confidence || '�'}</td>
+	                  <td style={ui.td}>{String(s.default_threat_classification || '�').replaceAll('_', ' ')}</td>
 	                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
                   <td style={ui.td}>{iocCount.toLocaleString('en-US')}</td>
                   <td style={ui.td}>{formatIocSourceStateLabel(s)}</td>
@@ -10275,7 +10168,7 @@ function IocSourcesPage() {
             </p>
             <form onSubmit={submitForm} style={{ display: 'grid', gap: 14 }}>
               {!editing ? (
-                <FeedFormField ui={ui} label="Name" helper="3–64 chars: letters, numbers, underscore, hyphen." fullWidth>
+                <FeedFormField ui={ui} label="Name" helper="3�64 chars: letters, numbers, underscore, hyphen." fullWidth>
                   <input
                     required
                     value={form.name}
@@ -10295,7 +10188,7 @@ function IocSourcesPage() {
               </FeedFormField>
 	              <FeedFormField ui={ui} label="Default Confidence" fullWidth>
                 <select value={form.default_confidence} onChange={(e) => setForm((x) => ({ ...x, default_confidence: e.target.value }))} style={ui.select}>
-                  <option value="">— None —</option>
+                  <option value="">� None �</option>
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
@@ -10374,7 +10267,7 @@ function IocSourcesPage() {
               {formError ? <div style={{ ...ui.banner, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid #334155' }}>
                 <button type="button" style={ui.btn} onClick={closeFormModal}>Cancel</button>
-                <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editing ? 'Save' : 'Create Source')}</button>
+                <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving�' : (editing ? 'Save' : 'Create Source')}</button>
               </div>
             </form>
           </div>
@@ -10398,7 +10291,7 @@ function IocSourcesPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => setDisableTarget(null)}>Cancel</button>
               <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
-                {disableBusy ? 'Disabling…' : 'Disable Source'}
+                {disableBusy ? 'Disabling�' : 'Disable Source'}
               </button>
             </div>
           </div>
@@ -10419,7 +10312,7 @@ function IocSourcesPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => setArchiveTarget(null)}>Cancel</button>
               <button type="button" style={{ ...ui.btn, borderColor: '#92400e', color: '#fde68a' }} disabled={archiveBusy} onClick={() => confirmArchiveSource().catch(() => {})}>
-                {archiveBusy ? 'Archiving…' : 'Archive Source'}
+                {archiveBusy ? 'Archiving�' : 'Archive Source'}
               </button>
             </div>
           </div>
@@ -10436,7 +10329,7 @@ function IocSourcesPage() {
             {deleteTarget.deleteMode === 'loading' || deletePreviewBusy ? (
               <>
                 <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete source</h3>
-                <p style={{ margin: 0, color: '#94a3b8', lineHeight: 1.55, fontSize: 14 }}>Checking whether this source can be deleted…</p>
+                <p style={{ margin: 0, color: '#94a3b8', lineHeight: 1.55, fontSize: 14 }}>Checking whether this source can be deleted�</p>
               </>
             ) : deleteTarget.deleteMode === 'blocked' ? (
               <>
@@ -10495,7 +10388,7 @@ function IocSourcesPage() {
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal}>Cancel</button>
                   <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
-                    {deleteBusy ? 'Deleting…' : 'Delete source'}
+                    {deleteBusy ? 'Deleting�' : 'Delete source'}
                   </button>
                 </div>
               </>
@@ -10529,7 +10422,7 @@ function IocSourcesPage() {
                   }}
                   style={ui.select}
                 >
-                  <option value="">Select target source…</option>
+                  <option value="">Select target source�</option>
                   {moveTargetOptions.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
@@ -10566,13 +10459,13 @@ function IocSourcesPage() {
                   <div>Will merge: {movePreview.will_merge ?? 0}</div>
                   <div>Will skip: {movePreview.will_skip ?? 0}</div>
                   {movePreview.source_will_be_empty_after_move ? (
-                    <div style={{ marginTop: 8, color: '#86efac' }}>Source will be empty after move — you can delete it.</div>
+                    <div style={{ marginTop: 8, color: '#86efac' }}>Source will be empty after move � you can delete it.</div>
                   ) : null}
                 </div>
               ) : null}
               {moveSuccess ? (
                 <div style={{ padding: 12, borderRadius: 8, border: '1px solid #166534', background: 'rgba(22,163,74,0.12)', color: '#86efac', fontSize: 13 }}>
-                  Move complete — moved {moveSuccess.moved ?? 0}, merged {moveSuccess.merged ?? 0}, skipped {moveSuccess.skipped ?? 0}.
+                  Move complete � moved {moveSuccess.moved ?? 0}, merged {moveSuccess.merged ?? 0}, skipped {moveSuccess.skipped ?? 0}.
                   Source IOC count: {moveSuccess.source_ioc_count_after ?? 0}. Target IOC count: {moveSuccess.target_ioc_count_after ?? 0}.
                   {moveSuccess.source_ioc_count_after === 0 ? ' You can now delete this source.' : ''}
                   {moveSuccess.archived_source ? ' Source archived.' : ''}
@@ -10583,10 +10476,10 @@ function IocSourcesPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
               <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy} onClick={closeMoveModal}>Close</button>
               <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy || !moveForm.target_source_id} onClick={() => runMovePreview().catch(() => {})}>
-                {movePreviewBusy ? 'Previewing…' : 'Preview'}
+                {movePreviewBusy ? 'Previewing�' : 'Preview'}
               </button>
               <button type="button" style={ui.btnPrimary} disabled={moveBusy || movePreviewBusy || !moveForm.target_source_id} onClick={() => confirmMoveSource().catch(() => {})}>
-                {moveBusy ? 'Moving…' : 'Confirm Move'}
+                {moveBusy ? 'Moving�' : 'Confirm Move'}
               </button>
             </div>
           </div>
@@ -10981,7 +10874,7 @@ function EnrichmentProvidersPage() {
           </div>
         </div>
         <div style={{ marginTop:12, padding:'10px 12px', borderRadius:8, border:'1px solid #334155', background:'#0b1220', color:'#94a3b8', fontSize:13, lineHeight:1.5 }}>
-          Used on-demand from <b style={{ color:'#e2e8f0' }}>IOC Details → Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain (e.g. tenant.wixstudio.com → wixstudio.com).
+          Used on-demand from <b style={{ color:'#e2e8f0' }}>IOC Details ? Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain (e.g. tenant.wixstudio.com ? wixstudio.com).
         </div>
       </div> : null}
 
@@ -10989,7 +10882,7 @@ function EnrichmentProvidersPage() {
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
           <div>
             <h3 style={{ margin:'0 0 4px', color:'#e2e8f0' }}>Spamhaus DROP</h3>
-            <div style={{ color:'#94a3b8', fontSize:13 }}>Periodic CIDR blocklist dataset sync. Local lookup only — no per-IP external calls.</div>
+            <div style={{ color:'#94a3b8', fontSize:13 }}>Periodic CIDR blocklist dataset sync. Local lookup only � no per-IP external calls.</div>
           </div>
           <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
             {spamhaus.enabled ? (
@@ -11003,7 +10896,7 @@ function EnrichmentProvidersPage() {
             </label>
           </div>
         </div>
-        <p style={{ margin:'8px 0 0', color:'#64748b', fontSize:12 }}>Downloads DROP/DROPv6 CIDR datasets on a schedule. Lookups are local — no external call per IOC.</p>
+        <p style={{ margin:'8px 0 0', color:'#64748b', fontSize:12 }}>Downloads DROP/DROPv6 CIDR datasets on a schedule. Lookups are local � no external call per IOC.</p>
         <div style={providerGridStyle}>
           <label htmlFor="spamhaus-interval" style={providerFieldLabelStyle}>
             Sync interval (hours)
@@ -11290,7 +11183,7 @@ function AdministrationSettingsPage() {
                 cursor: saving ? 'wait' : 'pointer'
               }}
             >
-              {saving ? 'Saving…' : 'Save timezone'}
+              {saving ? 'Saving�' : 'Save timezone'}
             </button>
           </div>
           {timezoneError ? (
@@ -11342,7 +11235,7 @@ function AdministrationSettingsPage() {
                     cursor: profileBusy ? 'wait' : 'pointer'
                   }}
                 >
-                  {profileBusy ? 'Saving…' : 'Update name'}
+                  {profileBusy ? 'Saving�' : 'Update name'}
                 </button>
               </div>
             </form>
@@ -11460,7 +11353,7 @@ function CreateUserModal({ onClose, onCreated }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
           <button type="button" style={ui.btn} onClick={onClose} disabled={saving}>Cancel</button>
           <button type="submit" style={ui.btnPrimary} disabled={saving}>
-            {saving ? 'Creating…' : 'Create User'}
+            {saving ? 'Creating�' : 'Create User'}
           </button>
         </div>
       </form>
@@ -11472,7 +11365,7 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
   const ui = PUBLISHED_FEEDS_UI;
 
   if (usersLoading) {
-    return <div style={{ color: '#94a3b8', padding: '12px 0' }}>Loading…</div>;
+    return <div style={{ color: '#94a3b8', padding: '12px 0' }}>Loading�</div>;
   }
   if (!users.length) {
     return <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No users yet.</div>;
@@ -11515,7 +11408,7 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
                         }}
                         title={isOwnRow ? 'You cannot deactivate your own account' : 'Deactivate user'}
                       >
-                        {busy ? '…' : 'Deactivate'}
+                        {busy ? '�' : 'Deactivate'}
                       </button>
                     ) : (
                       <button
@@ -11529,7 +11422,7 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
                         }}
                         title="Activate user"
                       >
-                        {busy ? '…' : 'Activate'}
+                        {busy ? '�' : 'Activate'}
                       </button>
                     )}
                     <button
@@ -11538,7 +11431,7 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
                       style={USERS_ACTION_BTN.delete}
                       title="Delete user"
                     >
-                      <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>×</span>
+                      <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>�</span>
                       Delete
                     </button>
                   </div>
@@ -11933,7 +11826,7 @@ function IOCHotListPage() {
 
         {!loading && !banner && items.length === 0 && (
           <div className="hot-ioc-banner hot-ioc-banner--empty">
-            No hot IOCs yet — nothing in your environment has matched a listed indicator.
+            No hot IOCs yet � nothing in your environment has matched a listed indicator.
           </div>
         )}
 
@@ -12307,7 +12200,7 @@ function IOCSuppressionsPage() {
           <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>Summary cards reflect the current page only. Source filter is client-side on the loaded page (backend has no source_name query param).</div>
         </div>
 
-        {loading ? <div style={{ color: '#94a3b8', marginBottom: 12 }}>Loading suppressions…</div> : null}
+        {loading ? <div style={{ color: '#94a3b8', marginBottom: 12 }}>Loading suppressions�</div> : null}
         {!loading && !items.length ? (
           <div style={{ padding: 16, border: '1px solid #334155', borderRadius: 10, background: '#0f172a', color: '#94a3b8' }}>
             <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>No IOC suppressions yet.</div>
@@ -12331,9 +12224,9 @@ function IOCSuppressionsPage() {
                     <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
                     <td style={ui.td}>{item.ioc_type}</td>
                     <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
-                    <td style={ui.td}>{item.source_name || '—'}</td>
+                    <td style={ui.td}>{item.source_name || '�'}</td>
                     <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
-                    <td style={ui.td}>{item.created_by || '—'}</td>
+                    <td style={ui.td}>{item.created_by || '�'}</td>
                     <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
                     <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
                     <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{item.status || 'unknown'}</span></td>
@@ -12342,9 +12235,9 @@ function IOCSuppressionsPage() {
                       <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
                       {isAdmin ? (
                         <>
-                          {' · '}
+                          {' � '}
                           <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)}>Edit</button>
-                          {' · '}
+                          {' � '}
                           <button type="button" style={{ ...ui.linkBtn, color: '#fca5a5' }} onClick={() => { setRemoveItem(item); setRemoveError(''); }}>Remove</button>
                         </>
                       ) : null}
@@ -12357,7 +12250,7 @@ function IOCSuppressionsPage() {
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-          <div style={{ color: '#94a3b8', fontSize: 13 }}>Page {page} / {totalPages} · {total} total</div>
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>Page {page} / {totalPages} � {total} total</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" style={ui.btn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
             <button type="button" style={ui.btn} disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Next</button>
@@ -12380,7 +12273,7 @@ function IOCSuppressionsPage() {
             {editError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{editError}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={ui.btn} onClick={() => setEditItem(null)} disabled={editSaving}>Cancel</button>
-              <button type="button" style={ui.btnPrimary} onClick={() => saveEdit().catch(() => {})} disabled={!isAdmin || editSaving}>{editSaving ? 'Saving…' : 'Save changes'}</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => saveEdit().catch(() => {})} disabled={!isAdmin || editSaving}>{editSaving ? 'Saving�' : 'Save changes'}</button>
             </div>
           </div>
         </ModalOverlay>
@@ -12394,7 +12287,7 @@ function IOCSuppressionsPage() {
           {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setRemoveItem(null)} disabled={removeSaving}>Cancel</button>
-            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => confirmRemove().catch(() => {})} disabled={!isAdmin || removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => confirmRemove().catch(() => {})} disabled={!isAdmin || removeSaving}>{removeSaving ? 'Removing�' : 'Remove suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -12604,7 +12497,7 @@ function IOCListPage() {
 
   function sortIndicator(key) {
     if (sortState.key !== key || !sortState.dir) return '';
-    return sortState.dir === 'asc' ? ' ▲' : ' ▼';
+    return sortState.dir === 'asc' ? ' ?' : ' ?';
   }
 
   const sortedRows = useMemo(() => {
@@ -12693,7 +12586,7 @@ function IOCListPage() {
   };
 
   const statsCalculatedLabel = formatStatsCalculatedAt(statsMeta.calculated_at);
-  const statsNumber = (n) => summaryLoading ? '—' : Number(n || 0).toLocaleString('en-US');
+  const statsNumber = (n) => summaryLoading ? '�' : Number(n || 0).toLocaleString('en-US');
 
   const confidenceBadgeStyle = (confidence) => ({
     display: 'inline-block',
@@ -12757,9 +12650,9 @@ function IOCListPage() {
             <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0' }}>IOC Stats</div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.45 }}>
               Stats are calculated every 6 hours
-              {statsCalculatedLabel ? ` · Last calculated: ${statsCalculatedLabel}` : ''}
-              {statsMeta.refresh_in_progress ? ' · Stats refresh is running…' : ''}
-              {statsMeta.missing || statsMeta.stale ? ' · Stats are being prepared' : ''}
+              {statsCalculatedLabel ? ` � Last calculated: ${statsCalculatedLabel}` : ''}
+              {statsMeta.refresh_in_progress ? ' � Stats refresh is running�' : ''}
+              {statsMeta.missing || statsMeta.stale ? ' � Stats are being prepared' : ''}
             </div>
           </div>
           {canWrite ? (
@@ -12769,7 +12662,7 @@ function IOCListPage() {
               onClick={() => refreshStatsSnapshot().catch(() => {})}
               style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', fontSize: 12, fontWeight: 600, cursor: statsRefreshBusy ? 'not-allowed' : 'pointer', opacity: statsRefreshBusy ? 0.72 : 1 }}
             >
-              {statsRefreshBusy ? 'Refreshing…' : 'Refresh stats'}
+              {statsRefreshBusy ? 'Refreshing�' : 'Refresh stats'}
             </button>
           ) : null}
         </div>
@@ -12806,7 +12699,7 @@ function IOCListPage() {
           <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Top 5 sources</div>
           <div style={{ fontSize: 14, display: 'grid', gap: 6 }}>
             {summaryLoading ? (
-              <span style={{ color: '#64748b' }}>Preparing cached stats…</span>
+              <span style={{ color: '#64748b' }}>Preparing cached stats�</span>
             ) : summary.by_source.length ? summary.by_source.slice(0, 5).map((s, idx) => (
               <div key={s.source_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px dashed #334155', paddingBottom: 4 }}>
                 <span style={{ color: '#cbd5e1' }}>{idx + 1}. {s.source_name}</span>
@@ -13185,7 +13078,7 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
             {state.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.'}
           </span>
           <button onClick={() => refresh().catch(() => {})} disabled={refreshing}>
-            {refreshing ? 'Checking VirusTotal…' : 'Check again'}
+            {refreshing ? 'Checking VirusTotal�' : 'Check again'}
           </button>
         </div>
       );
@@ -13217,7 +13110,7 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
             {chip('Harmless', stats.harmless ?? 0, { bg:'rgba(22,163,74,.14)', b:'#166534', t:'#86efac' })}
             {chip('Undetected', stats.undetected ?? 0, { bg:'rgba(71,85,105,.18)', b:'#475569', t:'#cbd5e1' })}
           </div>
-          <div style={{ marginTop:10, fontSize:12, color:'#94a3b8' }}>Last analysis: {formatUserDateTime(s.last_analysis_date)} • Fetched: {formatUserDateTime(state.fetchedAt)}</div>
+          <div style={{ marginTop:10, fontSize:12, color:'#94a3b8' }}>Last analysis: {formatUserDateTime(s.last_analysis_date)} � Fetched: {formatUserDateTime(state.fetchedAt)}</div>
         </div>
       </div>
 
@@ -13444,7 +13337,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
         <AbuseIpdbTargetNote observable={target.observable} ip={ip} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: '#cbd5e1', fontSize: 13 }}>No AbuseIPDB data yet for {ip}</span>
-          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh AbuseIPDB'}</button> : null}
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing�' : 'Refresh AbuseIPDB'}</button> : null}
         </div>
       </div>
     );
@@ -13455,7 +13348,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
       <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>AbuseIPDB</div>
         <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message}</span>
-        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Retry'}</button> : null}
+        {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing�' : 'Retry'}</button> : null}
       </div>
     );
   }
@@ -13475,7 +13368,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh AbuseIPDB'}</button> : null}
+          {canRefresh ? <button type="button" onClick={() => refresh(false).catch(() => {})} disabled={refreshing}>{refreshing ? 'Refreshing�' : 'Refresh AbuseIPDB'}</button> : null}
           {canRefresh && isAdmin ? <button type="button" onClick={() => refresh(true).catch(() => {})} disabled={refreshing} title="Admin force refresh">Force</button> : null}
         </div>
       </div>
@@ -13484,7 +13377,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
 
       <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ border: `1px solid ${risk.border}`, background: risk.bg, color: risk.color, borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700 }}>
-          Score: {Number.isFinite(Number(d.abuseConfidenceScore)) ? d.abuseConfidenceScore : '—'} · {risk.text}
+          Score: {Number.isFinite(Number(d.abuseConfidenceScore)) ? d.abuseConfidenceScore : '�'} � {risk.text}
         </span>
       </div>
 
@@ -13505,9 +13398,9 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
           <div style={{ color: '#cbd5e1', fontWeight: 600, marginBottom: 6 }}>Recent reports (summary)</div>
           {d.recent_reports_summary.slice(0, 5).map((r, idx) => (
             <div key={idx} style={{ color: '#94a3b8', marginTop: idx ? 6 : 0 }}>
-              {r.reportedAt ? formatUserDateTime(r.reportedAt) : '—'}
-              {r.categories?.length ? ` · categories: ${r.categories.join(', ')}` : ''}
-              {r.comment ? ` · ${r.comment}` : ''}
+              {r.reportedAt ? formatUserDateTime(r.reportedAt) : '�'}
+              {r.categories?.length ? ` � categories: ${r.categories.join(', ')}` : ''}
+              {r.comment ? ` � ${r.comment}` : ''}
             </div>
           ))}
         </div>
@@ -13554,7 +13447,7 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
 
   const RefreshBtn = ({ label }) => canRefresh ? (
     <button type="button" onClick={() => enrich().catch(() => {})} disabled={refreshing} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-      {refreshing ? 'Enriching…' : label}
+      {refreshing ? 'Enriching�' : label}
     </button>
   ) : null;
 
@@ -13565,11 +13458,11 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
           <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>Spamhaus DROP</div>
           {canRefresh ? (
             <button type="button" onClick={() => enrich().catch(() => {})} disabled={refreshing} style={{ fontSize: 12 }}>
-              {refreshing ? 'Enriching…' : 'Enrich with Spamhaus DROP'}
+              {refreshing ? 'Enriching�' : 'Enrich with Spamhaus DROP'}
             </button>
           ) : null}
         </div>
-        <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>CIDR blocklist — click to check</div>
+        <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>CIDR blocklist � click to check</div>
       </div>
     );
   }
@@ -13936,7 +13829,7 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, c
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: '#cbd5e1', fontSize: 13 }}>No IP enrichment yet</span>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>
-            {enriching ? 'Enriching…' : 'Enrich IP'}
+            {enriching ? 'Enriching�' : 'Enrich IP'}
           </button>
         </div>
       </div>
@@ -13948,7 +13841,7 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, c
       <div style={{ ...compactCardStyle, borderColor: '#7f1d1d', flexDirection: 'column', alignItems: 'stretch' }}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>IP Enrichment</div>
         <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message || 'IP enrichment failed'}</span>
-        <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Retry'}</button>
+        <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching�' : 'Retry'}</button>
       </div>
     );
   }
@@ -13970,7 +13863,7 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, c
           ) : null}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching�' : 'Refresh'}</button>
           {isAdmin ? <button type="button" onClick={() => enrich(true).catch(() => {})} disabled={enriching} title="Admin force refresh (5 min cooldown)">Force</button> : null}
         </div>
       </div>
@@ -14138,7 +14031,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ color: '#cbd5e1', fontSize: 13 }}>No RDAP enrichment yet</span>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>
-            {enriching ? 'Enriching…' : 'Enrich RDAP'}
+            {enriching ? 'Enriching�' : 'Enrich RDAP'}
           </button>
         </div>
       </div>
@@ -14152,7 +14045,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
         {state.data ? <RdapTargetNote data={state.data} /> : null}
         <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message || 'RDAP lookup failed'}</span>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Retry'}</button>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching�' : 'Retry'}</button>
         </div>
       </div>
     );
@@ -14200,7 +14093,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
           ) : null}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
+          <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching�' : 'Refresh'}</button>
           {isAdmin ? <button type="button" onClick={() => enrich(true).catch(() => {})} disabled={enriching} title="Admin force refresh (5 min cooldown)">Force</button> : null}
         </div>
       </div>
@@ -14235,7 +14128,7 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
       {!compact ? (
       <div className="enrichment-detail-stack">
         <EnrichmentDetailBlock label="Nameservers" value={nsList.length ? nsList.join(', ') : '-'} />
-        <EnrichmentDetailBlock label="Status Codes" value={statusList.length ? statusList.join(' • ') : '-'} />
+        <EnrichmentDetailBlock label="Status Codes" value={statusList.length ? statusList.join(' � ') : '-'} />
       </div>
       ) : null}
 
@@ -14405,7 +14298,7 @@ function IocDetectionEventsPanel({ observable, enabled }) {
                   {(r.source_names && r.source_names[0]) || r.source_name || '-'}
                 </td>
                 <td>
-                  <button type="button" onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                  <button type="button" onClick={() => navigate(`/analytics/detection-events/${r.id}`)} title="View detail" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
                 </td>
               </tr>
             );
@@ -14422,7 +14315,7 @@ function IocRelatedLogsByIncidentsPanel({ incidents, enabled }) {
   if (!list.length) {
     return (
       <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, color: '#94a3b8', fontSize: 13 }}>
-        No related incidents — evidence logs are shown per incident when available.
+        No related incidents � evidence logs are shown per incident when available.
       </div>
     );
   }
@@ -14450,7 +14343,7 @@ function iocAuditMetadataSummary(metadata) {
   if (iocValue) expirationParts.push(String(iocValue));
   if (iocType) expirationParts.push(String(iocType));
   const statusTransition = formatAuditStatusTransition(metadata);
-  if (statusTransition && statusTransition !== '—') expirationParts.push(statusTransition);
+  if (statusTransition && statusTransition !== '�') expirationParts.push(statusTransition);
   const reason = auditMetadataValue(metadata, 'reason');
   if (reason) expirationParts.push(formatExpirationAuditReasonLabel(reason));
   const expirationPolicy = auditMetadataValue(metadata, 'expiration_policy');
@@ -14459,7 +14352,7 @@ function iocAuditMetadataSummary(metadata) {
   if (expireDays != null && expireDays !== '') expirationParts.push(`${expireDays} days`);
   const feedName = auditMetadataValue(metadata, 'feed_name');
   if (feedName) expirationParts.push(String(feedName));
-  if (expirationParts.length) return expirationParts.join(' · ');
+  if (expirationParts.length) return expirationParts.join(' � ');
   if (metadata.reference_type || metadata.assessment_impact || metadata.title) {
     const refParts = [];
     if (metadata.title) refParts.push(String(metadata.title));
@@ -14467,7 +14360,7 @@ function iocAuditMetadataSummary(metadata) {
     if (metadata.assessment_impact) refParts.push(String(metadata.assessment_impact));
     if (metadata.tlp) refParts.push(`TLP:${String(metadata.tlp).toUpperCase()}`);
     if (metadata.url) refParts.push(String(metadata.url));
-    if (refParts.length) return refParts.join(' · ');
+    if (refParts.length) return refParts.join(' � ');
   }
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
@@ -14478,7 +14371,7 @@ function iocAuditMetadataSummary(metadata) {
   if (metadata.malicious != null || metadata.suspicious != null) {
     parts.push(`detections: ${metadata.malicious ?? 0}/${metadata.suspicious ?? 0}`);
   }
-  return parts.length ? parts.join(' · ') : '-';
+  return parts.length ? parts.join(' � ') : '-';
 }
 
 function IocAuditHistoryPanel({ iocId, enabled }) {
@@ -15242,9 +15135,9 @@ function IOCDetailsPage() {
               <div style={{ marginBottom: 14, padding: 14, borderRadius: 10, border: '1px solid #166534', background: 'rgba(34,197,94,0.08)' }}>
                 <div style={{ fontWeight: 700, color: '#86efac', marginBottom: 8 }}>This IOC is marked as False Positive / Suppressed.</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1' }}>
-                  <div><span style={{ color: '#94a3b8' }}>Reason:</span> {suppression.reason || '—'}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Reason:</span> {suppression.reason || '�'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Scope:</span> {suppression.scope || 'global'}</div>
-                  <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '—'}</div>
+                  <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '�'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Created at:</span> {formatUserDateTime(suppression.created_at)}</div>
                   <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {suppression.expires_at ? formatUserDateTime(suppression.expires_at) : 'Never'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Risk contribution:</span> 0</div>
@@ -15322,9 +15215,9 @@ function IOCDetailsPage() {
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
                                   <td>{formatUserDateTime(src.last_seen_at)}</td>
-                                  <td>{src.source_type === 'feed' ? formatUserDateTime(src.policy_expires_at) : '—'}</td>
+                                  <td>{src.source_type === 'feed' ? formatUserDateTime(src.policy_expires_at) : '�'}</td>
                                   <td>{formatUserDateTime(src.expires_at)}</td>
-                                  <td>{src.source_type === 'feed' ? (src.override_enabled ? 'Yes' : 'No') : '—'}</td>
+                                  <td>{src.source_type === 'feed' ? (src.override_enabled ? 'Yes' : 'No') : '�'}</td>
                                   <td>
                                     {isAdmin && src.actions_enabled && src.source_type === 'feed' ? (
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -15333,7 +15226,7 @@ function IOCDetailsPage() {
                                         <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('expire_membership', src.membership_id)}>Expire source</button>
                                         <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('clear_membership_override', src.membership_id)}>Clear override</button>
                                       </div>
-                                    ) : '—'}
+                                    ) : '�'}
                                   </td>
                                 </tr>
                               ))}
@@ -15364,7 +15257,7 @@ function IOCDetailsPage() {
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
                                   <td>{formatUserDateTime(src.last_seen_at)}</td>
                                   <td>{formatUserDateTime(src.purged_at)}</td>
-                                  <td>{src.description || src.purge_reason || '—'}</td>
+                                  <td>{src.description || src.purge_reason || '�'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -15539,7 +15432,7 @@ function IOCDetailsPage() {
                                   style={{ padding: 0, border: 'none', background: 'transparent', color: inactive ? '#57534e' : '#a16207', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
                                   disabled={tagsSaving}
                                 >
-                                  ×
+                                  �
                                 </button>
                               </span>
                             );
@@ -15569,7 +15462,7 @@ function IOCDetailsPage() {
 
                     <div style={{ position: 'relative' }} ref={tagDropdownRef}>
                       <button type="button" onClick={() => setTagDropdownOpen((v) => !v)} disabled={tagsSaving}>
-                        + Add Tag {tagsLoading || tagsSaving ? '⏳' : ''}
+                        + Add Tag {tagsLoading || tagsSaving ? '?' : ''}
                       </button>
 
                       {tagDropdownOpen ? (
@@ -15583,7 +15476,7 @@ function IOCDetailsPage() {
                           />
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: TAG_PICKER_LIST_HEIGHT, overflow: 'hidden' }}>
                             {tagsLoading ? (
-                              <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>Loading…</div>
+                              <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>Loading�</div>
                             ) : tagSuggestions.map((t) => (
                               <button
                                 key={`opt-tag-${t.id}`}
@@ -15717,7 +15610,7 @@ function IOCDetailsPage() {
                           <td>{inc.status || '-'}</td>
                           <td>{Number.isFinite(Number(inc.risk_score)) ? Number(inc.risk_score).toFixed(2) : '-'}</td>
                           <td>
-                            <button type="button" onClick={() => navigate(`/incidents/${inc.incident_id || inc.id}`)} title="View incident" aria-label="View incident" style={{ minWidth: 32, padding: '4px 8px' }}>🔍</button>
+                            <button type="button" onClick={() => navigate(`/incidents/${inc.incident_id || inc.id}`)} title="View incident" aria-label="View incident" style={{ minWidth: 32, padding: '4px 8px' }}>??</button>
                           </td>
                         </tr>
                       )) : <tr><td colSpan={10} style={{ color: '#94a3b8' }}>No related incidents found for this IOC.</td></tr>}
@@ -15777,7 +15670,7 @@ function IOCDetailsPage() {
             {suppressError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{suppressError}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={ui.btn} onClick={() => setShowSuppressModal(false)} disabled={suppressSaving}>Cancel</button>
-              <button type="button" style={ui.btnPrimary} onClick={() => submitSuppress().catch(() => {})} disabled={suppressSaving}>{suppressSaving ? 'Saving…' : 'Suppress IOC'}</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => submitSuppress().catch(() => {})} disabled={suppressSaving}>{suppressSaving ? 'Saving�' : 'Suppress IOC'}</button>
             </div>
           </div>
         </ModalOverlay>
@@ -15790,7 +15683,7 @@ function IOCDetailsPage() {
           {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
-            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitRemoveSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitRemoveSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Removing�' : 'Remove suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -15816,7 +15709,7 @@ function IOCDetailsPage() {
           {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); setDeleteError(''); }} disabled={deleteLoading}>Cancel</button>
-            <button type="button" style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #7f1d1d', background: deleteConfirmText.trim().toLowerCase() === 'delete' ? '#991b1b' : 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: deleteConfirmText.trim().toLowerCase() === 'delete' ? 'pointer' : 'not-allowed', opacity: deleteConfirmText.trim().toLowerCase() === 'delete' ? 1 : 0.5 }} onClick={() => submitDeleteIoc().catch(() => {})} disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}>{deleteLoading ? 'Deleting…' : 'Delete IOC'}</button>
+            <button type="button" style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #7f1d1d', background: deleteConfirmText.trim().toLowerCase() === 'delete' ? '#991b1b' : 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: deleteConfirmText.trim().toLowerCase() === 'delete' ? 'pointer' : 'not-allowed', opacity: deleteConfirmText.trim().toLowerCase() === 'delete' ? 1 : 0.5 }} onClick={() => submitDeleteIoc().catch(() => {})} disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}>{deleteLoading ? 'Deleting�' : 'Delete IOC'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -15863,7 +15756,7 @@ function IOCDetailsPage() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" style={ui.btn} onClick={() => setShowConfidenceModal(false)} disabled={confidenceSaving}>Cancel</button>
                 <button type="button" style={ui.btnPrimary} onClick={() => submitConfidenceOverride(false).catch(() => {})} disabled={confidenceSaving}>
-                  {confidenceSaving ? 'Saving…' : 'Save'}
+                  {confidenceSaving ? 'Saving�' : 'Save'}
                 </button>
               </div>
             </div>
@@ -15886,7 +15779,7 @@ function IOCDetailsPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={ui.btn} onClick={() => setShowThreatClassModal(false)} disabled={threatClassSaving}>Cancel</button>
               <button type="button" style={ui.btnPrimary} onClick={() => submitThreatClassification().catch(() => {})} disabled={threatClassSaving}>
-                {threatClassSaving ? 'Saving…' : 'Save'}
+                {threatClassSaving ? 'Saving�' : 'Save'}
               </button>
             </div>
           </div>
@@ -15915,7 +15808,7 @@ function IOCDetailsPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={ui.btn} onClick={() => setShowThreatActorModal(false)} disabled={threatActorSaving}>Cancel</button>
               <button type="button" style={ui.btnPrimary} onClick={() => submitThreatActor().catch(() => {})} disabled={threatActorSaving}>
-                {threatActorSaving ? 'Saving…' : 'Save'}
+                {threatActorSaving ? 'Saving�' : 'Save'}
               </button>
             </div>
           </div>
@@ -15942,7 +15835,7 @@ function formatIocSourceDefaultsHelper(source, threatClassOptions) {
   const threatOption = threatClassOptions.find((o) => o.value === threatSlug);
   const threatLabel = threatOption?.label
     || String(threatSlug).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return `Source defaults: Confidence ${conf} · Threat class ${threatLabel} · ${formatIocSourceDefaultExpiration(source)}`;
+  return `Source defaults: Confidence ${conf} � Threat class ${threatLabel} � ${formatIocSourceDefaultExpiration(source)}`;
 }
 
 function IOCAddPage() {
@@ -16123,7 +16016,7 @@ function IOCAddPage() {
 
   function recentIndicator(key) {
     if (recentSort.key !== key || !recentSort.dir) return '';
-    return recentSort.dir === 'asc' ? ' ▲' : ' ▼';
+    return recentSort.dir === 'asc' ? ' ?' : ' ?';
   }
 
   function startRecentResize(col, e) {
@@ -16197,7 +16090,7 @@ function IOCAddPage() {
         const expLabel = data?.expiration_policy === 'never'
           ? 'never expires'
           : (data?.expires_at ? `expires ${formatUserDateTime(data.expires_at)}` : 'expiration set');
-        setMessage({ type: 'success', text: `IOC saved — source: ${srcLabel}, ${expLabel}.` });
+        setMessage({ type: 'success', text: `IOC saved � source: ${srcLabel}, ${expLabel}.` });
       }
     } catch (err) {
       const msg = apiErrorMessage(err, 'Failed to save record');
@@ -16236,7 +16129,7 @@ function IOCAddPage() {
             <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 8, border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fde68a', fontSize: 14 }}>
               No active IOC sources defined. Please create or enable a source first.
               {' '}
-              <Link to="/administration/ioc-sources" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration → IOC Sources</Link>
+              <Link to="/administration/ioc-sources" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration ? IOC Sources</Link>
             </div>
           ) : null}
               {message && (
@@ -16274,7 +16167,7 @@ function IOCAddPage() {
                   disabled={!canWrite || sourcesLoading || !sources.length}
                   style={inputStyle}
                 >
-                  <option value="">{sourcesLoading ? 'Loading sources…' : 'Select source…'}</option>
+                  <option value="">{sourcesLoading ? 'Loading sources�' : 'Select source�'}</option>
                   {sources.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
@@ -16314,7 +16207,7 @@ function IOCAddPage() {
 	            <div>
 	              <label htmlFor="threat-actor-id" style={fieldLabelStyle}>Threat Actor (optional)</label>
 	              <select id="threat-actor-id" value={threatActorId} onChange={(e) => setThreatActorId(e.target.value)} disabled={!canWrite || threatActorsLoading} style={inputStyle}>
-	                <option value="">{threatActorsLoading ? 'Loading threat actors…' : 'Not selected'}</option>
+	                <option value="">{threatActorsLoading ? 'Loading threat actors�' : 'Not selected'}</option>
 	                {threatActors.map((actor) => (
 	                  <option key={actor.id} value={actor.id}>{actor.name}</option>
 	                ))}
@@ -16393,7 +16286,7 @@ function Protected({ children }) {
   const { authState } = useSession();
 
   if (authState === 'loading') {
-    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
+    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading�</div>;
   }
   if (authState === 'anon') return <Navigate to="/login" replace />;
   return children;
@@ -16403,7 +16296,7 @@ function DefaultRedirect() {
   const { authState } = useSession();
 
   if (authState === 'loading') {
-    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
+    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading�</div>;
   }
   if (authState === 'anon') return <Navigate to="/login" replace />;
   return <Navigate to="/analytics" replace />;
@@ -17044,7 +16937,7 @@ function App() {
           color: #fca5a5 !important;
         }
 
-        /* ─── Responsive layout ─────────────────────────────── */
+        /* --- Responsive layout ------------------------------- */
 
         .mobile-topbar {
           display: none;

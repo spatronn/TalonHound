@@ -22,7 +22,7 @@
     "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js services/rdapEnrichmentService.test.js services/rdapPersistentStore.test.js",
     "test:abuseipdb": "node --test lib/abuseipdbEnrichment.test.js services/abuseipdbService.test.js routes/abuseipdbEnrichment.test.js",
     "test:analyst-intelligence": "node --test lib/analystIntelligence.test.js routes/analystIntelligence.test.js",
-    "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/feedExpirationPolicy.test.js lib/iocExpiration.churn.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/publishedFeedSources.test.js lib/iocLookupSync.test.js",
+    "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/feedExpirationPolicy.test.js lib/iocExpiration.churn.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/publishedFeedSources.test.js",
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js lib/iocListPagination.test.js lib/iocListDisplay.test.js lib/iocListStatsSnapshot.test.js",
@@ -38,7 +38,6 @@
     "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js",
     "test:ioc-classification-mapping": "node --test lib/iocClassificationMapping.test.js",
     "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/bulkTriageHelpers.test.js lib/bulkRouteOrder.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
-    "test:retro-status": "node --test lib/retroStatus.test.js",
     "test:ioc-retro-dedup": "node --test lib/iocRetroDedup.test.js",
     "smoke:routes": "node scripts/smoke-routes.js",
     "test:url-ioc-host-match": "node --test lib/urlIocHostMatch.test.js"
@@ -51,7 +50,6 @@
     "express": "^4.21.2",
     "ioredis": "^5.4.1",
     "pg": "^8.16.3",
-    "@clickhouse/client": "^1.10.0",
     "jsonwebtoken": "^9.0.2",
     "tldts": "^6.1.86"
   }

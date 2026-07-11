@@ -14,10 +14,7 @@ COPY backend/lib/iocFeedSourceEvidence.js ./lib/iocFeedSourceEvidence.js
 COPY backend/lib/feedLifecycle.js ./lib/feedLifecycle.js
 COPY backend/lib/iocActiveSources.js ./lib/iocActiveSources.js
 COPY backend/lib/iocStatsCache.js ./lib/iocStatsCache.js
-COPY backend/lib/clickhouse.js ./lib/clickhouse.js
-COPY backend/lib/iocLookupSync.js ./lib/iocLookupSync.js
 COPY backend/lib/ensure-db-password.js ./lib/ensure-db-password.js
-COPY backend/lib/ensure-clickhouse-password.js ./lib/ensure-clickhouse-password.js
 COPY backend/lib/auditIocContext.js ./lib/auditIocContext.js
 COPY backend/lib/iocConfidence.js ./lib/iocConfidence.js
 COPY backend/lib/auditConstants.js ./lib/auditConstants.js

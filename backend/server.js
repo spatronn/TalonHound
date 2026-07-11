@@ -7,7 +7,6 @@ import bcrypt from 'bcrypt';
 import IORedis from 'ioredis';
 import { Queue } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
-import { query as clickhouseQuery, ensureSyslogTable, pingClickhouse } from './lib/clickhouse.js';
 import {
   signUserToken,
   apiAuthGate,
@@ -172,8 +171,6 @@ const app = express();
 const port = process.env.PORT || 3000;
 const demoEmail = String(process.env.DEMO_EMAIL || '').trim();
 const demoPassword = String(process.env.DEMO_PASSWORD || '').trim();
-const LOG_STORAGE = (process.env.LOG_STORAGE || 'postgres').toLowerCase();
-const USE_CLICKHOUSE = LOG_STORAGE === 'clickhouse';
 
 // Single shared pool: no new Client() per request; connections are reused (recommended for latency).
 const pool = new Pool({
@@ -272,31 +269,6 @@ function isoFromEpochMs(v) {
   return new Date(n).toISOString();
 }
 
-function classifyClickhouseError(err) {
-  const msg = String(err?.message || err || '').toLowerCase();
-  if (msg.includes('econnrefused') || msg.includes('connect') || msg.includes('network')) return 'clickhouse_unreachable';
-  if (msg.includes('authentication failed') || msg.includes('code: 516')) return 'clickhouse_auth_failed';
-  if (msg.includes('timeout') || msg.includes('timeoutexceeded') || msg.includes('timeout exceeded')) return 'clickhouse_timeout';
-  if (msg.includes('unknown table') || msg.includes('doesn\'t exist')) return 'table_missing';
-  if (msg.includes('unknown column') || msg.includes('no such column')) return 'column_missing';
-  if (msg.includes('query')) return 'clickhouse_query_failed';
-  return 'unknown_error';
-}
-
-function reasonSuggestedAction(reason) {
-  const map = {
-    clickhouse_unreachable: 'Wait for ClickHouse readiness or restart backend after ClickHouse is healthy.',
-    clickhouse_auth_failed: 'Check CLICKHOUSE_PASSWORD and ClickHouse user password.',
-    clickhouse_timeout: 'Reduce retro query load/chunk size or check ClickHouse load.',
-    table_missing: 'Verify required ClickHouse tables (ioc_lookup, ioc_retro_state) exist.',
-    column_missing: 'Verify schema/migrations for ioc_retro_state columns are applied.',
-    clickhouse_query_failed: 'Check backend logs and failing ClickHouse query.',
-    no_state: 'Retro state not found yet; wait for first successful retro run.',
-    unknown_error: 'Check backend and ClickHouse logs for details.'
-  };
-  return map[reason] || map.unknown_error;
-}
-
 function isValidIpv4(input) {
   const parts = String(input || '').split('.');
   if (parts.length !== 4) return false;
@@ -345,19 +317,11 @@ function parseNoteKeyValues(note) {
   return out;
 }
 
-function escapeChString(v) {
-  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
-
 /** Squid / explicit HTTP proxy evidence in a raw syslog line (shared list + detail context). */
 function rawLooksLikeSquidOrHttpProxy(raw) {
   return /\bsquid[_\s-]?proxy\b|\bTCP_(?:TUNNEL|MISS|HIT|DENIED|REFRESH|MEM_HIT|CLIENT_REFRESH)\/[0-9-]{3}|\bCONNECT\s+[^\s]+:[0-9]+|\bHIER_DIRECT\//i.test(String(raw || ''));
 }
 
-/**
- * Prefer ClickHouse syslog_logs bulk match when incident_related_logs snapshot is missing
- * proxy-shaped evidence (common when source_type/parser metadata is stale).
- */
 function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
   const id = Number(pgRow?.id || 0);
   const relRaw = String(relEv?.raw_message_sample || '').trim();
@@ -393,186 +357,6 @@ function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
   }
   return null;
 }
-
-async function withRawSyslogEvent(row) {
-  if (!USE_CLICKHOUSE) return row;
-
-  try {
-    const parserSource = String(row?.parser_source || '').trim().toLowerCase();
-    if (parserSource === 'microsoft_dns_debug') return row;
-
-    const matched = String(row?.matched_ioc || '').trim();
-    if (!matched) return row;
-
-    const ts = row?.event_time ? new Date(row.event_time) : null;
-    const tsStart = ts ? new Date(ts.getTime() - 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
-    const tsEnd = ts ? new Date(ts.getTime() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ') : null;
-
-    const baseWhereParts = [];
-    if (tsStart && tsEnd) baseWhereParts.push(`ts BETWEEN toDateTime('${tsStart}') AND toDateTime('${tsEnd}')`);
-
-    const rowSource = String(row?.source || '').trim();
-    const rowHost = String(row?.host_name || '').trim();
-    const rowParser = String(row?.parser_source || '').trim();
-    const rowDestIp = String(row?.destination_ip || '').trim();
-
-    const escapedMatched = escapeChString(matched);
-    const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(matched);
-    const iocClause = isIp
-      ? `(ioc_ip = '${escapedMatched}' OR parsed_ip = '${escapedMatched}' OR position(COALESCE(raw, message), '${escapedMatched}') > 0)`
-      : `(
-          ioc_query = '${escapedMatched}'
-          OR lower(ioc_query) = lower('${escapedMatched}')
-          OR lower(parsed_query) = lower('${escapedMatched}')
-          OR positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapedMatched}') > 0
-        )`;
-
-    const strictParts = [...baseWhereParts];
-    if (rowSource) strictParts.push(`source = '${escapeChString(rowSource)}'`);
-    if (rowHost) strictParts.push(`host = '${escapeChString(rowHost)}'`);
-    if (rowParser) strictParts.push(`parser_source = '${escapeChString(rowParser)}'`);
-    if (rowDestIp) strictParts.push(`(parsed_ip = '${escapeChString(rowDestIp)}' OR ioc_ip = '${escapeChString(rowDestIp)}')`);
-    strictParts.push(iocClause);
-
-    const mediumParts = [...baseWhereParts];
-    if (rowSource) mediumParts.push(`source = '${escapeChString(rowSource)}'`);
-    if (rowParser) mediumParts.push(`parser_source = '${escapeChString(rowParser)}'`);
-    mediumParts.push(iocClause);
-
-    const relaxedParts = [...baseWhereParts, iocClause];
-
-    // If event_time is delayed/skewed against ClickHouse ts, try without time window.
-    const noTimeStrictParts = [];
-    if (rowSource) noTimeStrictParts.push(`source = '${escapeChString(rowSource)}'`);
-    if (rowHost) noTimeStrictParts.push(`host = '${escapeChString(rowHost)}'`);
-    if (rowParser) noTimeStrictParts.push(`parser_source = '${escapeChString(rowParser)}'`);
-    if (rowDestIp) noTimeStrictParts.push(`(parsed_ip = '${escapeChString(rowDestIp)}' OR ioc_ip = '${escapeChString(rowDestIp)}')`);
-    noTimeStrictParts.push(iocClause);
-
-    const noTimeRelaxedParts = [iocClause];
-
-    const candidates = [strictParts, mediumParts, relaxedParts, noTimeStrictParts, noTimeRelaxedParts];
-
-    for (const parts of candidates) {
-      const whereSql = parts.length ? `WHERE ${parts.join(' AND ')}` : '';
-      const rows = await clickhouseQuery(`
-        SELECT COALESCE(NULLIF(raw, ''), NULLIF(message, '')) AS raw_event
-        FROM syslog_logs
-        ${whereSql}
-        ORDER BY ts DESC
-        LIMIT 1
-      `);
-
-      const raw = rows?.[0]?.raw_event;
-      if (raw && String(raw).trim()) {
-        return { ...row, matched_syslog_event: String(raw) };
-      }
-    }
-
-    return row;
-  } catch {
-    return row;
-  }
-}
-
-async function bulkRawSyslogEvidence(rows = []) {
-  if (!USE_CLICKHOUSE || !Array.isArray(rows) || rows.length === 0) return new Map();
-  const items = rows.filter((r) => String(r?.matched_ioc || '').trim());
-  if (!items.length) return new Map();
-
-  const iocs = Array.from(new Set(items.map((r) => String(r.matched_ioc).trim().toLowerCase()))).slice(0, 100);
-  const times = items.map((r) => new Date(r?.event_time || r?.created_at || Date.now()).getTime()).filter((v) => Number.isFinite(v));
-  if (!iocs.length || !times.length) return new Map();
-
-  const fromIso = new Date(Math.min(...times) - (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
-  const toIso = new Date(Math.max(...times) + (10 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
-  // Page-scoped IOCs only (caller passes current page rows); max 100 distinct observables.
-  const iocClause = iocs.map((ioc) => `positionCaseInsensitiveUTF8(COALESCE(raw, message), '${escapeChString(ioc)}') > 0`).join(' OR ');
-  if (!String(iocClause || '').trim()) return new Map();
-
-  const RELAX_PAD_MS = 14 * 24 * 60 * 60 * 1000;
-  const relaxFromIso = new Date(Math.min(...times) - RELAX_PAD_MS).toISOString().slice(0, 19).replace('T', ' ');
-  const relaxToIso = new Date(Math.max(...times) + RELAX_PAD_MS).toISOString().slice(0, 19).replace('T', ' ');
-  const chSettings = { max_execution_time: 12 };
-
-  let timedRows = [];
-  let relaxRows = [];
-  try {
-    timedRows = await clickhouseQuery(
-      `
-      SELECT ts, host, source, parser_source, source_type, COALESCE(raw, message) AS raw_message
-      FROM syslog_logs
-      WHERE ts BETWEEN toDateTime('${fromIso}') AND toDateTime('${toIso}')
-        AND (${iocClause})
-      ORDER BY ts DESC
-      LIMIT 5000
-    `,
-      { logTag: 'bulk_raw_syslog_timed', settings: chSettings }
-    );
-  } catch (e) {
-    console.warn('[bulkRawSyslogEvidence] timed syslog_logs query failed', e?.message || e);
-  }
-  try {
-    relaxRows = await clickhouseQuery(
-      `
-      SELECT ts, host, source, parser_source, source_type, COALESCE(raw, message) AS raw_message
-      FROM syslog_logs
-      WHERE ts BETWEEN toDateTime('${relaxFromIso}') AND toDateTime('${relaxToIso}')
-        AND (${iocClause})
-      ORDER BY ts DESC
-      LIMIT 5000
-    `,
-      { logTag: 'bulk_raw_syslog_relax', settings: chSettings }
-    );
-  } catch (e) {
-    console.warn('[bulkRawSyslogEvidence] relaxed-window syslog_logs query failed; using timed pool only', e?.message || e);
-  }
-
-  const seen = new Set();
-  const pool = [];
-  for (const c of [...(timedRows || []), ...(relaxRows || [])]) {
-    const raw = String(c?.raw_message || '');
-    const k = `${c?.ts}\0${raw.slice(0, 280)}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    pool.push(c);
-  }
-
-  const WINDOW_MS = 10 * 60 * 1000;
-  const byEventId = new Map();
-  for (const r of items) {
-    const ioc = String(r?.matched_ioc || '').toLowerCase();
-    const t = new Date(r?.event_time || r?.created_at || Date.now()).getTime();
-    const rowHost = String(r?.host_name || '').trim();
-    const rowSource = String(r?.source || '').trim();
-    const scored = [];
-    for (const c of pool) {
-      const raw = String(c?.raw_message || '');
-      const rawL = raw.toLowerCase();
-      if (!rawL.includes(ioc)) continue;
-      const ct = new Date(c?.ts || 0).getTime();
-      const dt = Number.isFinite(ct) ? Math.abs(ct - t) : Infinity;
-      const squid = rawLooksLikeSquidOrHttpProxy(raw);
-      const hostMatch = !rowHost || String(c?.host || '').trim() === rowHost;
-      const inWin = dt <= WINDOW_MS;
-      const sourceMatch = !rowSource || String(c?.source || '').trim() === rowSource;
-      scored.push({ c, dt, squid, hostMatch, inWin, sourceMatch, ct });
-    }
-    if (!scored.length) continue;
-    scored.sort((a, b) => {
-      if (a.squid !== b.squid) return a.squid ? -1 : 1;
-      if (a.inWin !== b.inWin) return a.inWin ? -1 : 1;
-      if (a.hostMatch !== b.hostMatch) return a.hostMatch ? -1 : 1;
-      if (a.sourceMatch !== b.sourceMatch) return a.sourceMatch ? -1 : 1;
-      if (a.dt !== b.dt) return a.dt - b.dt;
-      return (b.ct || 0) - (a.ct || 0);
-    });
-    const hit = scored[0]?.c;
-    if (hit) byEventId.set(Number(r.id), hit);
-  }
-  return byEventId;
-}
-
 
 async function refreshGeoCache(limit = 20000) {
   if (geoCacheRefreshInProgress) return;
@@ -648,7 +432,7 @@ app.get('/healthz', (_req, res) => {
 });
 
 app.get('/readyz', async (_req, res) => {
-  const result = await runReadinessChecks(pool, redis, { useClickhouse: USE_CLICKHOUSE });
+  const result = await runReadinessChecks(pool, redis);
   const payload = buildHealthPayload(result.ok ? 'ok' : 'error', result.checks);
   if (!result.ok) {
     payload.error = result.error;
@@ -659,7 +443,7 @@ app.get('/readyz', async (_req, res) => {
 
 app.get('/health', async (_req, res) => {
   try {
-    const result = await runReadinessChecks(pool, redis, { useClickhouse: USE_CLICKHOUSE });
+    const result = await runReadinessChecks(pool, redis);
     if (result.ok) {
       return res.json({
         ok: true,
@@ -732,131 +516,6 @@ app.get('/api/system/status', async (req, res) => {
   }
   payload.database = database;
 
-  const clickhouse = { ok: false, reason_code: null, suggested_action: null };
-  if (USE_CLICKHOUSE) {
-    try {
-      const [verRows, rowRows, sizeRows, retroStateRows] = await Promise.all([
-        clickhouseQuery('SELECT version() AS version'),
-        clickhouseQuery('SELECT count() AS rows FROM syslog_logs'),
-        clickhouseQuery("SELECT sum(bytes_on_disk) AS bytes FROM system.parts WHERE active = 1 AND database = currentDatabase() AND table = 'syslog_logs'"),
-        clickhouseQuery(`
-          SELECT
-            toString(last_processed_ts) AS cursor_ts,
-            toUInt64(toUnixTimestamp64Milli(last_processed_ts)) AS cursor_ts_ms,
-            toString(toUInt64(last_processed_row_hash)) AS cursor_hash,
-            toString(updated_at) AS state_updated_at,
-            toUInt64(toUnixTimestamp64Milli(updated_at)) AS state_updated_at_ms,
-            toInt32(last_run_duration_ms) AS last_run_duration_ms,
-            toUInt8(chunk_active) AS chunk_active,
-            toString(chunk_end_ts) AS chunk_end_ts,
-            toString(chunk_end_row_hash) AS chunk_end_row_hash,
-            toUInt32(chunk_ioc_count) AS chunk_ioc_count,
-            toUInt64(chunk_rows_processed) AS chunk_rows_processed,
-            last_error_type,
-            last_error_message,
-            toString(last_error_at) AS last_error_at,
-            toString(last_success_at) AS last_success_at,
-            toUInt32(last_chunk_size) AS last_chunk_size,
-            toUInt8(last_chunk_retry_count) AS last_chunk_retry_count
-          FROM ioc_retro_state
-          WHERE worker_name = 'ioc-retro-v1'
-          ORDER BY updated_at DESC
-          LIMIT 2
-        `)
-      ]);
-
-      const latestState = retroStateRows?.[0] || null;
-      if (!latestState) {
-        clickhouse.reason_code = 'no_state';
-        clickhouse.suggested_action = reasonSuggestedAction('no_state');
-      }
-      const prevState = retroStateRows?.[1] || null;
-      let retroRows = [{ pending: 0, cursor_ts: null, cursor_hash: null }];
-      let lastRetroScannedIoc = null;
-
-      if (latestState?.cursor_ts && latestState?.cursor_hash) {
-        retroRows = await clickhouseQuery(`
-          SELECT
-            count() AS pending,
-            min(updated_at) AS pending_min_ts,
-            max(updated_at) AS pending_max_ts,
-            '${String(latestState.cursor_ts)}' AS cursor_ts,
-            '${String(latestState.cursor_hash)}' AS cursor_hash
-          FROM ioc_lookup
-          WHERE (updated_at > toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3))
-             OR (updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
-                 AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(latestState.cursor_hash))}'))
-        `);
-      }
-
-      if (latestState?.cursor_ts && latestState?.cursor_hash && prevState?.cursor_ts && prevState?.cursor_hash) {
-        const lastScannedRows = await clickhouseQuery(`
-          SELECT count() AS scanned
-          FROM ioc_lookup
-          WHERE (
-            updated_at > toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
-            OR (
-              updated_at = toDateTime64('${safeTs(String(prevState.cursor_ts))}', 3)
-              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) > toUInt64('${safeHash(String(prevState.cursor_hash))}')
-            )
-          )
-          AND (
-            updated_at < toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
-            OR (
-              updated_at = toDateTime64('${safeTs(String(latestState.cursor_ts))}', 3)
-              AND cityHash64(concat(observable, '|', observable_type, '|', source_name)) <= toUInt64('${safeHash(String(latestState.cursor_hash))}')
-            )
-          )
-        `);
-        lastRetroScannedIoc = Number(lastScannedRows?.[0]?.scanned || 0);
-      }
-
-      const sizeBytes = Number(sizeRows?.[0]?.bytes || 0);
-      clickhouse.ok = true;
-      clickhouse.version = verRows?.[0]?.version || null;
-      clickhouse.rows = Number(rowRows?.[0]?.rows || 0);
-      clickhouse.size_bytes = sizeBytes;
-      clickhouse.size_mb = Number((sizeBytes / (1024 * 1024)).toFixed(2));
-      clickhouse.table = 'syslog_logs';
-      const rawPendingIoc = Number(retroRows?.[0]?.pending || 0);
-      const activeChunkIoc = Number(latestState?.chunk_ioc_count || 0);
-      const chunkActive = Number(latestState?.chunk_active || 0) === 1;
-      // When a chunk is active, those IOC rows are already being processed by retro worker.
-      // Exclude them from pending to avoid a misleading "stuck" value on /system.
-      clickhouse.retro_pending_ioc = chunkActive
-        ? Math.max(0, rawPendingIoc - activeChunkIoc)
-        : rawPendingIoc;
-      clickhouse.retro_cursor_ts = retroRows?.[0]?.cursor_ts || latestState?.cursor_ts || null;
-      clickhouse.retro_cursor_ts_iso = isoFromEpochMs(latestState?.cursor_ts_ms);
-      clickhouse.retro_cursor_hash = retroRows?.[0]?.cursor_hash || latestState?.cursor_hash || null;
-      clickhouse.retro_last_run_at = latestState?.state_updated_at || null;
-      clickhouse.retro_last_run_at_iso = isoFromEpochMs(latestState?.state_updated_at_ms);
-      clickhouse.retro_last_duration_ms = Number(latestState?.last_run_duration_ms || 0);
-      clickhouse.retro_last_scanned_ioc = lastRetroScannedIoc;
-      clickhouse.retro_pending_min_ts = retroRows?.[0]?.pending_min_ts || null;
-      clickhouse.retro_pending_max_ts = retroRows?.[0]?.pending_max_ts || null;
-      clickhouse.retro_chunk_active = Number(latestState?.chunk_active || 0);
-      clickhouse.retro_chunk_end_ts = latestState?.chunk_end_ts || null;
-      clickhouse.retro_chunk_end_row_hash = latestState?.chunk_end_row_hash || null;
-      clickhouse.retro_chunk_ioc_count = Number(latestState?.chunk_ioc_count || 0);
-      clickhouse.retro_chunk_rows_processed = Number(latestState?.chunk_rows_processed || 0);
-      clickhouse.retro_last_error_type = latestState?.last_error_type || '';
-      clickhouse.retro_last_error_message = latestState?.last_error_message || '';
-      clickhouse.retro_last_error_at = latestState?.last_error_at || null;
-      clickhouse.retro_last_success_at = latestState?.last_success_at || null;
-      clickhouse.retro_last_chunk_size = Number(latestState?.last_chunk_size || 0);
-      clickhouse.retro_last_chunk_retry_count = Number(latestState?.last_chunk_retry_count || 0);
-      clickhouse.retro_health_reason = clickhouse.retro_last_error_type || (clickhouse.retro_pending_ioc > 0 ? 'backlog' : 'ok');
-    } catch (err) {
-      clickhouse.error = err.message;
-      clickhouse.reason_code = classifyClickhouseError(err);
-      clickhouse.suggested_action = reasonSuggestedAction(clickhouse.reason_code);
-      clickhouse.retro_health_reason = clickhouse.reason_code;
-    }
-  } else {
-    clickhouse.note = 'LOG_STORAGE is not clickhouse';
-  }
-  payload.clickhouse = clickhouse;
 
   const redisInfo = { ok: false };
   try {
@@ -938,33 +597,21 @@ app.get('/api/system/status', async (req, res) => {
 
   let telemetry = {};
   try {
-    const signals24hPromise = USE_CLICKHOUSE
-      ? clickhouseQuery(`
-          SELECT count() AS count
-          FROM syslog_logs
-          WHERE ts >= now() - INTERVAL 24 HOUR
-        `)
-      : pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'");
-
     const [signals24hRes, iocTotalRes, iocTodayRes] = await Promise.all([
-      signals24hPromise,
+      pool.query("SELECT COUNT(*)::bigint AS count FROM signal_events WHERE created_at >= NOW() - INTERVAL '24 hours'"),
       pool.query('SELECT COUNT(*)::bigint AS count FROM ioc_items'),
       pool.query(
-        `SELECT COUNT(*)::bigint AS count
+        SELECT COUNT(*)::bigint AS count
          FROM ioc_items
          WHERE created_at >= (
            date_trunc('day', NOW() AT TIME ZONE $1)
-         ) AT TIME ZONE $1`,
+         ) AT TIME ZONE $1,
         [userTimezone]
       )
     ]);
 
-    const signalCount = USE_CLICKHOUSE
-      ? Number(signals24hRes?.[0]?.count || 0)
-      : Number(signals24hRes.rows?.[0]?.count || 0);
-
     telemetry = {
-      signal_events_24h: signalCount,
+      signal_events_24h: Number(signals24hRes.rows?.[0]?.count || 0),
       ioc_total: Number(iocTotalRes.rows[0]?.count || 0),
       ioc_today: Number(iocTodayRes.rows[0]?.count || 0)
     };
@@ -973,52 +620,6 @@ app.get('/api/system/status', async (req, res) => {
   }
   payload.telemetry = telemetry;
 
-  const retro = {
-    last_run_at: clickhouse.retro_last_run_at || null,
-    last_run_age_seconds: null,
-    cursor_ts: clickhouse.retro_cursor_ts || null,
-    ch_max_lookup_updated_at: clickhouse.retro_pending_max_ts || null,
-    ch_pending_ioc_count: Number.isFinite(Number(clickhouse.retro_pending_ioc)) ? Number(clickhouse.retro_pending_ioc) : null,
-    ch_cursor_lag_seconds: null,
-    pg_max_ioc_created_at: null,
-    pg_unsynced_ioc_count: null,
-    pg_to_ch_sync_lag_seconds: null,
-    retro_worker_health: 'error',
-    retro_cursor_health: 'error',
-    correlation_sync_health: 'error',
-    overall_health: 'error',
-    last_retro_duration_ms: Number.isFinite(Number(clickhouse.retro_last_duration_ms)) ? Number(clickhouse.retro_last_duration_ms) : null,
-    last_chunk_scanned_ioc: Number.isFinite(Number(clickhouse.retro_last_scanned_ioc)) ? Number(clickhouse.retro_last_scanned_ioc) : null,
-    error_reason_code: clickhouse.reason_code || clickhouse.retro_last_error_type || null,
-    error_message: clickhouse.error || clickhouse.retro_last_error_message || null,
-    suggested_action: clickhouse.suggested_action || null,
-    errors: {
-      clickhouse_state: clickhouse.error || null,
-      clickhouse_lookup: clickhouse.error || null,
-      postgres_ioc: null,
-      correlation_sync: null
-    }
-  };
-
-  if (retro.last_run_at) {
-    const age = Math.floor((Date.now() - new Date(retro.last_run_at).getTime()) / 1000);
-    retro.last_run_age_seconds = Number.isFinite(age) ? Math.max(age, 0) : null;
-  }
-  if (retro.cursor_ts && retro.ch_max_lookup_updated_at) {
-    const lag = Math.floor((new Date(retro.ch_max_lookup_updated_at).getTime() - new Date(retro.cursor_ts).getTime()) / 1000);
-    retro.ch_cursor_lag_seconds = Number.isFinite(lag) ? Math.max(lag, 0) : null;
-  }
-
-  if (clickhouse.ok) {
-    retro.retro_worker_health = retro.last_run_age_seconds != null && retro.last_run_age_seconds > 7200 ? 'stale' : 'ok';
-    retro.retro_cursor_health = retro.ch_cursor_lag_seconds != null && retro.ch_cursor_lag_seconds > 3600 ? 'stale' : 'ok';
-  }
-  retro.correlation_sync_health = retro.errors.correlation_sync ? 'error' : 'ok';
-  retro.overall_health = [retro.retro_worker_health, retro.retro_cursor_health, retro.correlation_sync_health].includes('error')
-    ? 'error'
-    : ([retro.retro_worker_health, retro.retro_cursor_health, retro.correlation_sync_health].includes('stale') ? 'stale' : 'ok');
-
-  payload.retro = retro;
   payload.services = { backend: { ok: true } };
 
   return res.json(payload);
@@ -1026,25 +627,6 @@ app.get('/api/system/status', async (req, res) => {
 
 app.get('/api/analytics/data-sources', async (_req, res) => {
   try {
-    if (USE_CLICKHOUSE) {
-      const rows = await clickhouseQuery(`
-        SELECT
-          source AS key,
-          concat('Syslog ', source) AS name,
-          'syslog' AS platform,
-          'active' AS status,
-          '' AS source_ip,
-          'syslog' AS protocol,
-          count() AS event_count,
-          max(ts) AS last_seen_at
-        FROM syslog_logs
-        WHERE ts > now() - INTERVAL 30 DAY
-        GROUP BY source
-        ORDER BY last_seen_at DESC
-      `);
-      return res.json({ total: rows.length, sources: rows });
-    }
-
     const q = await pool.query(
       `SELECT key, name, platform, status, source_ip, protocol, event_count, last_seen_at
        FROM signal_sources
@@ -1060,29 +642,6 @@ app.get('/api/analytics/data-sources', async (_req, res) => {
 app.get('/api/analytics/raw-events', async (req, res) => {
   try {
     const limit = Math.min(Math.max(Number(req.query?.limit || 10), 1), 100);
-
-    if (USE_CLICKHOUSE) {
-      const rows = await clickhouseQuery(`
-        SELECT
-          cityHash64(raw) AS id,
-          source AS source_key,
-          '' AS source_ip,
-          ts AS event_time,
-          ts AS received_at,
-          host AS host_name,
-          program AS process_name,
-          '' AS destination_ip,
-          0 AS destination_port,
-          'syslog' AS protocol,
-          ts AS created_at,
-          message AS raw_event,
-          raw
-        FROM syslog_logs
-        ORDER BY ts DESC
-        LIMIT ${limit}
-      `);
-      return res.json({ total: rows.length, items: rows });
-    }
 
     const q = await pool.query(
       `SELECT id, source_key, source_ip, event_time, received_at, host_name, process_name, destination_ip, destination_port, protocol, created_at, raw_event, raw
@@ -1228,9 +787,7 @@ app.get('/api/analytics/ioc-matches', async (req, res) => {
           [limit]
         );
 
-    const items = USE_CLICKHOUSE
-      ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
-      : q.rows;
+    const items = q.rows;
 
     return res.json({ total: q.rowCount, items });
   } catch (err) {
@@ -1453,14 +1010,10 @@ app.get('/api/ioc/match-events', async (req, res) => {
 
     const q = await pool.query(sql, params);
 
-    // ClickHouse raw-event enrichment is expensive for list views and is not
-    // needed by the Detection Events table. Keep it opt-in for faster response.
     const includeRaw = String(req.query?.include_raw || req.query?.includeRaw || '').toLowerCase();
     const shouldIncludeRaw = includeRaw === '1' || includeRaw === 'true' || includeRaw === 'yes';
 
-    const items = (USE_CLICKHOUSE && shouldIncludeRaw)
-      ? await Promise.all((q.rows || []).map((row) => withRawSyslogEvent(row)))
-      : q.rows;
+    const items = q.rows;
 
     return res.json({
       total,
@@ -1546,12 +1099,6 @@ app.get('/api/ioc/match-events/:id', async (req, res) => {
     if (pgRow?.raw_log_snapshot && String(pgRow.raw_log_snapshot).trim()) {
       evidenceSource = 'pg_snapshot';
       itemRaw = { ...pgRow, matched_syslog_event: String(pgRow.raw_log_snapshot) };
-    } else if (USE_CLICKHOUSE) {
-      const enriched = await withRawSyslogEvent(pgRow);
-      if (String(enriched?.matched_syslog_event || '').trim() && String(enriched?.matched_syslog_event || '').trim() !== String(pgRow?.matched_syslog_event || '').trim()) {
-        evidenceSource = 'clickhouse_enrich';
-      }
-      itemRaw = enriched;
     }
 
     if (!String(itemRaw?.matched_syslog_event || '').trim() || String(itemRaw?.matched_syslog_event || '').trim() === '-') {
@@ -2194,28 +1741,7 @@ app.get('/api/incidents/:id', async (req, res) => {
         [context.id]
       );
       const pgCount = Number(relQ.rows?.[0]?.c);
-      if (Number.isFinite(pgCount) && pgCount > 0) {
-        related_log_count = pgCount;
-      } else {
-        const iocValue = String(context?.ioc_value || '').trim().toLowerCase();
-        const firstSeen = context?.first_seen ? new Date(context.first_seen) : null;
-        const lastSeen = context?.last_seen ? new Date(context.last_seen) : null;
-        const hasWindow = firstSeen && lastSeen && !Number.isNaN(firstSeen.getTime()) && !Number.isNaN(lastSeen.getTime());
-        if (iocValue && hasWindow) {
-          const fromIso = new Date(firstSeen.getTime() - (5 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
-          const toIso = new Date(lastSeen.getTime() + (5 * 60 * 1000)).toISOString().slice(0, 19).replace('T', ' ');
-          const escaped = escapeChString(iocValue);
-          const q = await clickhouseQuery(`
-            SELECT count() AS c
-            FROM syslog_observables
-            WHERE lower(observable) = '${escaped}'
-              AND ts >= toDateTime('${fromIso}')
-              AND ts <= toDateTime('${toIso}')
-          `);
-          const chCount = Number(q?.[0]?.c);
-          if (Number.isFinite(chCount) && chCount > 0) related_log_count = chCount;
-        }
-      }
+      if (Number.isFinite(pgCount) && pgCount > 0) related_log_count = pgCount;
     } catch (e) {
       console.warn('[incident-detail] related_log_count unavailable', e?.message || e);
       related_log_count = null;
@@ -2885,36 +2411,8 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
     const sort = String(req.query?.sort || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
 
     const activityId = String(incident.id);
-    const rows = await clickhouseQuery(`
-      SELECT
-        activity_id,
-        any(incident_id) AS incident_id,
-        any(match_event_id) AS match_event_id,
-        evidence_hash,
-        min(log_ts) AS log_ts,
-        any(matched_ioc) AS matched_ioc,
-        any(observable_type) AS observable_type,
-        any(log_host) AS log_host,
-        any(observed_host) AS observed_host,
-        any(parser_source) AS parser_source,
-        any(source_type) AS source_type,
-        any(raw_message_sample) AS raw_message_sample,
-        any(raw_message_hash) AS raw_message_hash
-      FROM security_evidence.incident_related_logs
-      WHERE activity_id = toUUID('${escapeChString(activityId)}')
-      GROUP BY activity_id, evidence_hash
-      ORDER BY log_ts ${sort}
-    `);
-
-    let normalized = (rows || []).map(normalizeEvidenceRecord).filter(Boolean).map((r) => ({
-      ...r,
-      evidence_origin: 'clickhouse_related_logs',
-      fallback: false
-    }));
-
-    if (normalized.length === 0) {
-      const pgQ = await pool.query(
-        `SELECT
+    const pgQ = await pool.query(
+      `SELECT
            id AS match_event_id,
            activity_id,
            event_time AS log_ts,
@@ -2928,24 +2426,22 @@ app.get('/api/incidents/:id/related-logs', async (req, res) => {
          FROM ioc_match_events
          WHERE activity_id = $1::uuid
          ORDER BY COALESCE(last_seen_at, event_time, created_at) ${sort}, id ${sort}`,
-        [activityId]
-      );
+      [activityId]
+    );
 
-      normalized = (pgQ.rows || []).map((r) => {
-        const raw = String(r?.raw_log_snapshot || '').trim();
-        const normJson = r?.normalized_event_json ? JSON.stringify(r.normalized_event_json) : '';
-        const evidenceText = raw || normJson;
-        if (!evidenceText) return null;
-        return normalizeEvidenceRecord({
-          ...r,
-          raw_message_sample: evidenceText
-        });
-      }).filter(Boolean).map((r) => ({
+    const normalized = (pgQ.rows || []).map((r) => {
+      const raw = String(r?.raw_log_snapshot || '').trim();
+      const normJson = r?.normalized_event_json ? JSON.stringify(r.normalized_event_json) : '';
+      const evidenceText = raw || normJson;
+      if (!evidenceText) return null;
+      return normalizeEvidenceRecord({
         ...r,
-        evidence_origin: 'pg_detection_event_snapshot',
-        fallback: true
-      }));
-    }
+        raw_message_sample: evidenceText
+      });
+    }).filter(Boolean).map((r) => ({
+      ...r,
+      evidence_origin: 'pg_detection_event_snapshot'
+    }));
 
     const total = normalized.length;
     const paged = normalized.slice(offset, offset + pageSize);
@@ -2965,18 +2461,35 @@ app.get('/api/incidents/:id/related-logs/export.csv', async (req, res) => {
     if (!incident?.id) return res.status(404).send('Incident not found');
     const maxRows = Math.max(Number(process.env.RELATED_LOG_EXPORT_MAX_ROWS || 10000), 1000);
     const activityId = String(incident.id);
-    const rows = await clickhouseQuery(`
-      SELECT any(incident_id) AS incident_id, activity_id, any(match_event_id) AS match_event_id,
-             evidence_hash, min(log_ts) AS log_ts, toNullable(NULL) AS ingest_time, any(observed_host) AS observed_host, any(log_host) AS log_host,
-             any(matched_ioc) AS matched_ioc, any(observable_type) AS observable_type, any(parser_source) AS parser_source,
-             any(source_type) AS source_type, any(raw_message_sample) AS raw_message_sample, any(raw_message_hash) AS raw_message_hash
-      FROM security_evidence.incident_related_logs
-      WHERE activity_id = toUUID('${escapeChString(activityId)}')
-      GROUP BY activity_id, evidence_hash
-      ORDER BY log_ts ASC
-      LIMIT ${maxRows}
-    `);
-    const normalized = (rows || []).map(normalizeEvidenceRecord).filter(Boolean);
+    const pgExport = await pool.query(
+      `SELECT
+           id AS match_event_id,
+           activity_id,
+           event_time AS log_ts,
+           NULL AS ingest_time,
+           matched_ioc,
+           ioc_type AS observable_type,
+           host_name AS log_host,
+           NULL AS observed_host,
+           source_type,
+           parser_source,
+           COALESCE(raw_log_snapshot, '') AS raw_log_snapshot,
+           normalized_event_json,
+           NULL AS evidence_hash,
+           NULL AS raw_message_hash
+         FROM ioc_match_events
+         WHERE activity_id = $1::uuid
+         ORDER BY COALESCE(last_seen_at, event_time, created_at) ASC, id ASC
+         LIMIT $2`,
+      [activityId, maxRows]
+    );
+    const normalized = (pgExport.rows || []).map((r) => {
+      const raw = String(r?.raw_log_snapshot || '').trim();
+      const normJson = r?.normalized_event_json ? JSON.stringify(r.normalized_event_json) : '';
+      const evidenceText = raw || normJson;
+      if (!evidenceText) return null;
+      return normalizeEvidenceRecord({ ...r, raw_message_sample: evidenceText });
+    }).filter(Boolean);
     const esc = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
     const header = ['time','ingest_time','observed_host','matched_ioc','observable_type','source_type','parser_source','source_host','detection_event_id','evidence_hash','raw_log'];
     const lines = [header.join(',')];
@@ -3104,19 +2617,11 @@ app.get('/api/incidents/:id/events', async (req, res) => {
       return out;
     }
 
-    const enrichedRows = await mapWithConcurrency(baseItems, 8, async (r) => {
-      try {
-        if (r?.raw_log_snapshot && String(r.raw_log_snapshot).trim()) {
-          return { ...r, matched_syslog_event: String(r.raw_log_snapshot) };
-        }
-        const enriched = await Promise.race([
-          withRawSyslogEvent(r),
-          new Promise((resolve) => setTimeout(() => resolve(r), 1500))
-        ]);
-        return enriched || r;
-      } catch {
-        return r;
+    const enrichedRows = baseItems.map((r) => {
+      if (r?.raw_log_snapshot && String(r.raw_log_snapshot).trim()) {
+        return { ...r, matched_syslog_event: String(r.raw_log_snapshot) };
       }
+      return r;
     });
 
     perf.rows = enrichedRows.length;
@@ -3373,56 +2878,6 @@ app.patch('/api/incidents/:id', async (req, res) => {
 app.get('/api/analytics/statistics', async (req, res) => {
   try {
     const hours = Math.min(Math.max(Number(req.query?.hours || 24), 1), 168);
-
-    if (USE_CLICKHOUSE) {
-      const top_sources = await clickhouseQuery(`
-        SELECT source, count() AS events
-        FROM syslog_logs
-        WHERE ts > now() - INTERVAL ${hours} HOUR
-        GROUP BY source
-        ORDER BY events DESC
-        LIMIT 10
-      `);
-
-      const top_clients = await clickhouseQuery(`
-        SELECT host, count() AS events
-        FROM syslog_logs
-        WHERE ts > now() - INTERVAL ${hours} HOUR
-        GROUP BY host
-        ORDER BY events DESC
-        LIMIT 10
-      `);
-
-      const timeline = await clickhouseQuery(`
-        SELECT toStartOfHour(ts) AS hour, count() AS events
-        FROM syslog_logs
-        WHERE ts > now() - INTERVAL ${hours} HOUR
-        GROUP BY hour
-        ORDER BY hour
-      `);
-
-      const riskyClientsQ = await pool.query(
-        `SELECT
-           host_name,
-           COUNT(*)::bigint AS risky_event_count,
-           MAX(created_at) AS last_risky_seen_at
-         FROM ioc_match_events
-         WHERE created_at >= NOW() - ($1::text || ' hours')::interval
-           AND host_name IS NOT NULL
-         GROUP BY host_name
-         ORDER BY risky_event_count DESC, last_risky_seen_at DESC
-         LIMIT 10`,
-        [hours]
-      );
-
-      return res.json({
-        hours,
-        top_sources,
-        top_clients,
-        risky_clients: riskyClientsQ.rows,
-        timeline
-      });
-    }
 
     const topSourceQ = await pool.query(
       `SELECT source_key, COUNT(*)::bigint AS event_count
@@ -6606,33 +6061,7 @@ app.get('/api/ioc/hot', async (req, res) => {
       ...stripHotIocSuppressionFields(row),
       suppression: formatHotIocSuppression(row)
     }));
-    try {
-      const pairs = (baseItems || [])
-        .map((r) => ({ o: String(r?.observable || '').trim().toLowerCase(), t: String(r?.observable_type || '').trim().toLowerCase() }))
-        .filter((x) => x.o && x.t);
-      if (pairs.length) {
-        const tupleIn = pairs
-          .map((p) => `('${escapeChString(p.o)}','${escapeChString(p.t)}')`)
-          .join(', ');
-        const chRows = await clickhouseQuery(`
-          SELECT
-            lower(matched_ioc) AS observable,
-            lower(observable_type) AS observable_type,
-            countDistinct(evidence_hash) AS c
-          FROM security_evidence.incident_related_logs
-          WHERE (lower(matched_ioc), lower(observable_type)) IN (${tupleIn})
-          GROUP BY observable, observable_type
-        `);
-        const chMap = new Map((chRows || []).map((r) => [`${String(r.observable)}|${String(r.observable_type)}`, Number(r.c || 0)]));
-        items = items.map((it) => {
-          const key = `${String(it?.observable || '').toLowerCase()}|${String(it?.observable_type || '').toLowerCase()}`;
-          const ev = chMap.get(key);
-          return { ...it, evidence_logs: Number.isFinite(ev) && ev > 0 ? ev : null };
-        });
-      }
-    } catch {
-      items = items.map((it) => ({ ...it, evidence_logs: null }));
-    }
+    items = items.map((it) => ({ ...it, evidence_logs: null }));
 
     items = await finalizeIocListPageItems(pool, items);
 
@@ -7308,30 +6737,7 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const [geo, incidentsRaw, impact] = await Promise.all([geoPromise, incidentsPromise, impactPromise]);
 
-    let incidents = incidentsRaw;
-    try {
-      const activityIds = (incidentsRaw || []).map((x) => String(x?.id || '').trim()).filter(Boolean);
-      if (activityIds.length) {
-        const inList = activityIds.map((id) => `toUUID('${escapeChString(id)}')`).join(', ');
-        const chRows = await clickhouseQuery(`
-          SELECT activity_id, countDistinct(evidence_hash) AS c
-          FROM security_evidence.incident_related_logs
-          WHERE activity_id IN (${inList})
-          GROUP BY activity_id
-        `);
-        const chMap = new Map((chRows || []).map((r) => [String(r.activity_id || '').toLowerCase(), Number(r.c || 0)]));
-        incidents = (incidentsRaw || []).map((it) => {
-          const k = String(it?.id || '').toLowerCase();
-          const chCount = chMap.get(k);
-          return {
-            ...it,
-            evidence_logs: Number.isFinite(chCount) && chCount > 0 ? chCount : (it?.evidence_logs ?? null)
-          };
-        });
-      }
-    } catch {
-      incidents = incidentsRaw;
-    }
+    const incidents = incidentsRaw;
 
     const totalEvidenceLogsCount = (incidents || []).reduce((acc, it) => {
       const n = Number(it?.evidence_logs);
@@ -7715,12 +7121,6 @@ app.post('/api/ioc/stats/refresh', requireRole(ROLES.ADMIN, ROLES.ANALYST), asyn
   }
 });
 
-if (USE_CLICKHOUSE) {
-  ensureSyslogTable()
-    .then(() => pingClickhouse())
-    .then(() => console.log('[clickhouse] ready'))
-    .catch((err) => console.error('[clickhouse] init failed', err));
-}
 
 async function ensureSeedDemoUser() {
   try {

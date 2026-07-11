@@ -1,16 +1,11 @@
-import { pingClickhouse } from './clickhouse.js';
-
 /**
  * @param {import('pg').Pool} pool
  * @param {import('ioredis').default} redis
- * @param {{ useClickhouse?: boolean }} opts
  */
-export async function runReadinessChecks(pool, redis, opts = {}) {
-  const useClickhouse = opts.useClickhouse !== false;
+export async function runReadinessChecks(pool, redis) {
   const checks = {
     postgres: 'unknown',
-    redis: 'unknown',
-    clickhouse: useClickhouse ? 'unknown' : 'skipped'
+    redis: 'unknown'
   };
 
   try {
@@ -30,16 +25,6 @@ export async function runReadinessChecks(pool, redis, opts = {}) {
   } catch (err) {
     checks.redis = 'error';
     return { ok: false, checks, error: err?.message || 'redis unavailable' };
-  }
-
-  if (useClickhouse) {
-    try {
-      await pingClickhouse();
-      checks.clickhouse = 'ok';
-    } catch (err) {
-      checks.clickhouse = 'error';
-      return { ok: false, checks, error: err?.message || 'clickhouse unavailable' };
-    }
   }
 
   return { ok: true, checks };

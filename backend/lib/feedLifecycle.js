@@ -1,6 +1,4 @@
-import { recomputeIocGlobalStatus } from './iocExpiration.js';
-import { fetchLookupTombstoneRowsForObservable } from './iocActiveSources.js';
-import { pushIocLookupTombstones } from './clickhouse.js';
+﻿import { recomputeIocGlobalStatus } from './iocExpiration.js';
 import { invalidateIocStatsCache } from './iocStatsCache.js';
 
 export const FEED_KIND = Object.freeze({
@@ -285,22 +283,6 @@ export async function purgeFeedDataInBatches(client, feedKey, {
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
-    }
-  }
-
-  if (expiredObservables.size > 0) {
-    try {
-      const tombstoneRows = [];
-      for (const key of expiredObservables) {
-        const [observableType, observable] = key.split('\u0000');
-        const rows = await fetchLookupTombstoneRowsForObservable(client, observable, observableType);
-        tombstoneRows.push(...rows);
-      }
-      if (tombstoneRows.length) {
-        await pushIocLookupTombstones(tombstoneRows);
-      }
-    } catch (err) {
-      console.warn('[feed-purge] ClickHouse lookup tombstone push failed:', err?.message || err);
     }
   }
 

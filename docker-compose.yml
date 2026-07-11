@@ -74,14 +74,9 @@ services:
       # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
       - IOC_LIST_TIMING=1
       - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
-      - LOG_STORAGE=clickhouse
-      - CLICKHOUSE_URL=http://demo-clickhouse:8123
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     depends_on:
       - db
       - redis
-      - clickhouse
     volumes:
       - ./backups:/backups
     healthcheck:
@@ -200,76 +195,6 @@ services:
       - redis
     restart: unless-stopped
 
-  ioc-correlation-engine:
-    build: ./backend
-    container_name: demo-ioc-correlation-engine
-    command: ["npm", "run", "ioc-correlation-worker"]
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=demo
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
-      - LOG_STORAGE=clickhouse
-      - CLICKHOUSE_URL=http://demo-clickhouse:8123
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - IOC_CORRELATION_WORKER_NAME=clickhouse-ioc-correlation-v1
-      - IOC_CORRELATION_POLL_INTERVAL_MS=30000
-      - IOC_CORRELATION_BATCH_SIZE=2000
-      - IOC_CORRELATION_MAX_BATCHES_PER_TICK=1
-      - IOC_CORRELATION_DEDUP_WINDOW_SECONDS=300
-      - IOC_LOOKUP_SYNC_INTERVAL_SECONDS=300
-      - IOC_LOOKUP_SYNC_BATCH_SIZE=20000
-      - IOC_LOOKUP_SYNC_ENABLED=1
-      - PG_SUPPLEMENT_LOOKUP_ENABLED=${PG_SUPPLEMENT_LOOKUP_ENABLED:-1}
-      - PG_SUPPLEMENT_LOOKUP_MAX_KEYS=${PG_SUPPLEMENT_LOOKUP_MAX_KEYS:-100}
-      - IOC_CORRELATION_CH_MAX_THREADS=1
-      - IOC_CORRELATION_CH_MAX_EXECUTION_TIME_SECONDS=20
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
-      - LLM_RISK_QUEUE_NAME=llm-risk-jobs
-      - LLM_RISK_TRIGGER_ENABLED=1
-      - LLM_RISK_SNAPSHOT_TTL_SECONDS=604800
-    depends_on:
-      - db
-      - clickhouse
-    restart: unless-stopped
-
-  ioc-retro-engine:
-    build: ./backend
-    container_name: demo-ioc-retro-engine
-    command: ["npm", "run", "ioc-retro-worker"]
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=demo
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
-      - LOG_STORAGE=clickhouse
-      - CLICKHOUSE_URL=http://demo-clickhouse:8123
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - IOC_LOOKUP_SYNC_INTERVAL_SECONDS=3600
-      - IOC_LOOKUP_SYNC_ENABLED=0
-      - IOC_RETRO_SCAN_INTERVAL_SECONDS=3600
-      - IOC_RETRO_LOOKBACK_DAYS=30
-      - IOC_RETRO_NEW_IOC_WINDOW_HOURS=24
-      - IOC_RETRO_MAX_NEW_IOCS=20000
-      - IOC_RETRO_BATCH_SIZE=5000
-      - IOC_RETRO_IOC_CHUNK_SIZE=1000
-      - IOC_RETRO_POLL_INTERVAL_MS=5000
-      - IOC_RETRO_ALIGN_ENABLED=1
-      - IOC_RETRO_ALIGN_MINUTE=10
-      - IOC_CORRELATION_DEDUP_WINDOW_SECONDS=300
-      - IOC_RETRO_CH_MAX_THREADS=1
-      - IOC_RETRO_CH_MAX_EXECUTION_TIME_SECONDS=25
-    depends_on:
-      - db
-      - clickhouse
-    restart: unless-stopped
-
   ioc-expiration-worker:
     build: ./backend
     container_name: demo-ioc-expiration-worker
@@ -280,38 +205,10 @@ services:
       - DB_USER=demo
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=demo
-      - LOG_STORAGE=clickhouse
-      - CLICKHOUSE_URL=http://demo-clickhouse:8123
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
       - IOC_EXPIRATION_BATCH_SIZE=500
     depends_on:
       - db
-      - clickhouse
-    restart: unless-stopped
-
-  ioc-match-count-worker:
-    build: ./backend
-    container_name: demo-ioc-match-count-worker
-    command: ["npm", "run", "ioc-match-count-worker"]
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=demo
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
-      - LOG_STORAGE=clickhouse
-      - CLICKHOUSE_URL=http://demo-clickhouse:8123
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - IOC_MATCH_COUNT_INTERVAL_MS=60000
-      - IOC_MATCH_COUNT_BATCH_SIZE=2000
-      - IOC_MATCH_COUNT_CH_MAX_THREADS=1
-      - IOC_MATCH_COUNT_CH_MAX_EXECUTION_TIME_SECONDS=120
-    depends_on:
-      - db
-      - clickhouse
     restart: unless-stopped
 
   llm-risk-worker:
@@ -371,41 +268,19 @@ services:
       - SYSLOG_HOST=0.0.0.0
       - SYSLOG_HEALTH_PORT=8081
       - SYSLOG_HEALTH_TOKEN=${SYSLOG_HEALTH_TOKEN:?Set SYSLOG_HEALTH_TOKEN in .env (e.g. openssl rand -hex 16)}
-      # Avoid ClickHouse small-part amplification: micro-batch flush (rows OR time)
-      - SYSLOG_BATCH_SIZE=3000
-      - SYSLOG_MIN_FLUSH_SIZE=1000
-      - SYSLOG_MIN_INSERT_ROWS=1000
-      - SYSLOG_FORCE_FLUSH_MAX_MS=60000
-      - SYSLOG_FLUSH_INTERVAL_MS=3000
+      - SYSLOG_BATCH_SIZE=500
+      - SYSLOG_MIN_FLUSH_SIZE=100
+      - SYSLOG_MIN_INSERT_ROWS=100
+      - SYSLOG_FORCE_FLUSH_MAX_MS=10000
+      - SYSLOG_FLUSH_INTERVAL_MS=2000
       - SYSLOG_FLUSH_WORKERS=1
       - SYSLOG_MAX_BUFFERED=100000
       - SYSLOG_OVERFLOW_POLICY=drop_oldest
       - SYSLOG_SOCKET_RCVBUF=8388608
-      - LOG_STORAGE=clickhouse
-      - CLICKHOUSE_URL=http://demo-clickhouse:8123
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     depends_on:
       - db
-      - clickhouse
     # UDP 514 / HTTP health are not published on the host by default (avoids open ingest + unauthenticated metrics).
     # To expose for local forwarders or host scripts: docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d
-    restart: unless-stopped
-
-  # ClickHouse is reachable only on the Docker network (demo-clickhouse:8123 / :9000).
-  # Do not publish HTTP/native ports to the host in production. For ad-hoc queries:
-  #   docker compose exec clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD"
-  clickhouse:
-    build:
-      context: .
-      dockerfile: Dockerfile.clickhouse
-    container_name: demo-clickhouse
-    environment:
-      - CLICKHOUSE_USER=demo
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
     restart: unless-stopped
 
   loadgen:
@@ -457,4 +332,3 @@ services:
 
 volumes:
   postgres_data:
-  clickhouse_data:
