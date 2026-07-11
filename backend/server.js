@@ -3356,282 +3356,6 @@ async function handleIocList(req, res) {
 
 app.get('/api/ioc/list', handleIocList);
 
-/** Hot IOC list: `last_seen_since` = ISO 8601 or relative `24h`, `7d`, `1h`, `30m`, `60s`. */
-function parseLastSeenSinceParam(raw) {
-  if (raw == null) return { ok: true, since: null };
-  const s = String(raw).trim();
-  if (!s) return { ok: true, since: null };
-  const rel = /^(\d+)\s*(s|m|h|d)$/i.exec(s);
-  if (rel) {
-    const n = Math.min(Math.max(parseInt(rel[1], 10) || 0, 1), 100000);
-    const u = rel[2].toLowerCase();
-    let ms;
-    if (u === 's') ms = n * 1000;
-    else if (u === 'm') ms = n * 60 * 1000;
-    else if (u === 'h') ms = n * 3600 * 1000;
-    else ms = n * 86400 * 1000;
-    return { ok: true, since: new Date(Date.now() - ms) };
-  }
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) return { ok: true, since: d };
-  return { ok: false, error: 'Use ISO 8601 timestamp or a relative window like 24h, 7d, 1h, 30m, 60s.' };
-}
-
-function parseHotIocSuppressedParam(raw) {
-  const s = String(raw ?? 'hide').trim().toLowerCase();
-  if (s === 'hide' || s === 'exclude') return { ok: true, mode: 'hide' };
-  if (s === 'include' || s === 'only') return { ok: true, mode: s };
-  return { ok: false, error: 'Allowed values: hide, include, only.' };
-}
-
-function hotIocActiveSuppressionExistsSql(obsCol, typeCol) {
-  return `EXISTS (
-    SELECT 1
-    FROM ioc_suppressions s
-    WHERE s.active = TRUE
-      AND (s.expires_at IS NULL OR s.expires_at > NOW())
-      AND s.scope = 'global'
-      AND lower(s.ioc_value) = lower(${obsCol})
-      AND lower(s.ioc_type) = lower(${typeCol})
-  )`;
-}
-
-function buildHotIocSuppressionWhere(mode) {
-  const exists = hotIocActiveSuppressionExistsSql('observable', 'observable_type');
-  if (mode === 'include') return '';
-  if (mode === 'only') return ` AND ${exists} `;
-  return ` AND NOT ${exists} `;
-}
-
-function formatHotIocSuppression(row) {
-  if (row?.sup_ioc_value) {
-    return {
-      active: true,
-      reason: row.sup_reason || null,
-      scope: row.sup_scope || 'global',
-      expires_at: row.sup_expires_at || null,
-      created_by: row.sup_created_by || null,
-      created_at: row.sup_created_at || null
-    };
-  }
-  return { active: false };
-}
-
-function stripHotIocSuppressionFields(row) {
-  const {
-    sup_ioc_value,
-    sup_reason,
-    sup_scope,
-    sup_expires_at,
-    sup_created_by,
-    sup_created_at,
-    ...rest
-  } = row || {};
-  return rest;
-}
-
-app.get('/api/ioc/hot', async (req, res) => {
-  const page = Math.max(parseInt(String(req.query.page || '1'), 10) || 1, 1);
-  let limit = parseInt(String(req.query.limit ?? req.query.page_size ?? '50'), 10);
-  if (!Number.isFinite(limit) || limit < 1) limit = 50;
-  limit = Math.min(limit, 200);
-  const offset = (page - 1) * limit;
-
-  const typeRaw = String(req.query.type || '').trim().toLowerCase();
-  const qRaw = String(req.query.q || '').trim();
-  const classificationFilterHot = parseThreatClassificationFilterParam(
-    req.query.threat_classification ?? req.query.threat_classifications
-  );
-  const params = [];
-  let extraWhere = '';
-
-  if (typeRaw === 'ip') {
-    extraWhere += ` AND observable_type IN ('ip', 'ip6') `;
-  } else if (typeRaw === 'domain') {
-    extraWhere += ` AND observable_type = 'domain' `;
-  } else if (typeRaw === 'hash') {
-    extraWhere += ` AND observable_type IN ('md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh') `;
-  } else if (typeRaw) {
-    return res.status(400).json({
-      message: 'Invalid query parameter: type',
-      detail: 'Allowed values: ip, domain, hash.'
-    });
-  }
-
-  const sinceParsed = parseLastSeenSinceParam(req.query.last_seen_since);
-  if (!sinceParsed.ok) {
-    return res.status(400).json({
-      message: 'Invalid query parameter: last_seen_since',
-      detail: sinceParsed.error
-    });
-  }
-  if (sinceParsed.since) {
-    params.push(sinceParsed.since.toISOString());
-    extraWhere += ` AND last_seen_log >= $${params.length}::timestamptz `;
-  }
-
-  if (qRaw) {
-    params.push(`%${qRaw}%`);
-    extraWhere += ` AND (observable ILIKE $${params.length} OR public_id::text ILIKE $${params.length}) `;
-  }
-
-  if (classificationFilterHot.length) {
-    params.push(classificationFilterHot);
-    extraWhere += ` AND EXISTS (
-      SELECT 1 FROM ioc_threat_classifications itc
-      WHERE itc.ioc_id = ioc_items.id
-        AND itc.ioc_observable_type = ioc_items.observable_type
-        AND itc.classification_slug = ANY($${params.length}::text[])
-    ) `;
-  }
-
-  const suppressedParsed = parseHotIocSuppressedParam(req.query.suppressed);
-  if (!suppressedParsed.ok) {
-    return res.status(400).json({
-      message: 'Invalid query parameter: suppressed',
-      detail: suppressedParsed.error
-    });
-  }
-  const suppressedMode = suppressedParsed.mode;
-  extraWhere += buildHotIocSuppressionWhere(suppressedMode);
-
-  const baseWhere = `match_count > 0${extraWhere}`;
-
-  try {
-    const countQ = `
-      SELECT COUNT(*)::bigint AS cnt
-      FROM (
-        SELECT observable, observable_type
-        FROM ioc_items
-        WHERE ${baseWhere}
-        GROUP BY observable, observable_type
-      ) g
-    `;
-    const { rows: countRows } = await pool.query(countQ, params);
-    const total = Number(countRows[0]?.cnt || 0);
-    const totalPages = total === 0 ? 1 : Math.max(Math.ceil(total / limit), 1);
-
-    const listParams = [...params, limit, offset];
-    const limIdx = params.length + 1;
-    const offIdx = params.length + 2;
-
-    const listQ = `
-      WITH grouped AS (
-        SELECT
-          MIN(id) AS id,
-          MIN(public_id::text) AS public_id,
-          observable,
-          observable_type,
-          COUNT(DISTINCT source_name)::bigint AS source_count,
-          MIN(first_seen_log) AS first_seen_log,
-          MAX(last_seen_log) AS last_seen_log,
-          MAX(match_count) AS sort_match_count
-        FROM ioc_items
-        WHERE ${baseWhere}
-        GROUP BY observable, observable_type
-        ORDER BY MAX(last_seen_log) DESC NULLS LAST, MAX(match_count) DESC, observable ASC
-        LIMIT $${limIdx} OFFSET $${offIdx}
-      )
-      SELECT
-        g.id,
-        g.public_id,
-        g.observable,
-        g.observable_type,
-        NULL AS evidence_logs,
-        g.source_count,
-        g.first_seen_log,
-        g.last_seen_log,
-        sup.sup_ioc_value,
-        sup.sup_reason,
-        sup.sup_scope,
-        sup.sup_expires_at,
-        sup.sup_created_by,
-        sup.sup_created_at
-      FROM grouped g
-      LEFT JOIN LATERAL (
-        SELECT
-          s.ioc_value AS sup_ioc_value,
-          s.reason AS sup_reason,
-          s.scope AS sup_scope,
-          s.expires_at AS sup_expires_at,
-          s.created_by AS sup_created_by,
-          s.created_at AS sup_created_at
-        FROM ioc_suppressions s
-        WHERE s.active = TRUE
-          AND (s.expires_at IS NULL OR s.expires_at > NOW())
-          AND s.scope = 'global'
-          AND lower(s.ioc_value) = lower(g.observable)
-          AND lower(s.ioc_type) = lower(g.observable_type)
-        ORDER BY s.created_at DESC
-        LIMIT 1
-      ) sup ON TRUE
-      ORDER BY g.last_seen_log DESC NULLS LAST, g.sort_match_count DESC, g.observable ASC
-    `;
-
-    const { rows: baseItems } = await pool.query(listQ, listParams);
-
-    let items = (baseItems || []).map((row) => ({
-      ...stripHotIocSuppressionFields(row),
-      suppression: formatHotIocSuppression(row)
-    }));
-    items = items.map((it) => ({ ...it, evidence_logs: null }));
-
-    items = await finalizeIocListPageItems(pool, items);
-
-    const statsQ = `
-      WITH grouped AS (
-        SELECT observable, observable_type
-        FROM ioc_items
-        WHERE ${baseWhere}
-        GROUP BY observable, observable_type
-      )
-      SELECT
-        COUNT(*)::bigint AS total,
-        COUNT(*) FILTER (WHERE observable_type = 'ip')::bigint AS ip,
-        COUNT(*) FILTER (WHERE observable_type = 'url')::bigint AS url,
-        COUNT(*) FILTER (WHERE observable_type = 'domain')::bigint AS domain,
-        COUNT(*) FILTER (WHERE observable_type = 'ip6')::bigint AS ip6,
-        COUNT(*) FILTER (WHERE observable_type IN ('md5','sha1','sha256','ssdeep','imphash','tlsh'))::bigint AS hash
-      FROM grouped
-    `;
-    const { rows: statsRows } = await pool.query(statsQ, params);
-    const s = statsRows[0] || {};
-
-    const topSourcesQ = `
-      SELECT source_name, COUNT(DISTINCT (observable, observable_type))::bigint AS count
-      FROM ioc_items
-      WHERE ${baseWhere}
-      GROUP BY source_name
-      ORDER BY count DESC, source_name ASC
-      LIMIT 5
-    `;
-    const { rows: topSources } = await pool.query(topSourcesQ, params);
-
-    return res.json({
-      items,
-      summary: {
-        total: Number(s.total || 0),
-        by_type: [
-          { observable_type: 'ip', count: Number(s.ip || 0) },
-          { observable_type: 'url', count: Number(s.url || 0) },
-          { observable_type: 'domain', count: Number(s.domain || 0) },
-          { observable_type: 'ip6', count: Number(s.ip6 || 0) },
-          { observable_type: 'hash', count: Number(s.hash || 0) }
-        ],
-        by_source: topSources.map((r) => ({ source_name: r.source_name, count: Number(r.count || 0) }))
-      },
-      pagination: {
-        page,
-        page_size: limit,
-        total,
-        total_pages: totalPages
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to fetch hot IOC list', detail: err.message });
-  }
-});
-
 app.get('/api/ioc/ip/sources', async (req, res) => {
   const { ip } = req.query;
   if (!ip) {
@@ -4075,9 +3799,6 @@ app.get('/api/ioc/details', async (req, res) => {
         ${confidenceSelect}
         i.category,
         i.note,
-        i.match_count,
-        i.first_seen_log,
-        i.last_seen_log,
         i.created_at,
         i.first_seen_at AS item_first_seen_at,
         i.last_seen_at AS item_last_seen_at
@@ -4108,17 +3829,6 @@ app.get('/api/ioc/details', async (req, res) => {
     const lifecycleRow = pickIocLifecycleRow(rows, seedRow);
     const observable = seedRow.observable;
     const observableType = seedRow.observable_type;
-
-    const computedMatchCount = rows.reduce((max, r) => Math.max(max, Number(r.match_count || 0)), 0);
-    const firstSeenLog = rows
-      .map((r) => r.first_seen_log)
-      .filter(Boolean)
-      .sort()[0] || null;
-    const lastSeenLog = rows
-      .map((r) => r.last_seen_log)
-      .filter(Boolean)
-      .sort()
-      .slice(-1)[0] || null;
 
     const signalRawExpr = 'NULL';
 
@@ -4153,7 +3863,6 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const incidents = [];
     const impact = null;
-    const totalEvidenceLogsCount = 0;
 
     const iocItemIds = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
     const membershipSummary = await fetchObservableMembershipSummary(pool, {
@@ -4272,10 +3981,6 @@ app.get('/api/ioc/details', async (req, res) => {
       manual_status: lifecycleRow.manual_status || null,
       first_seen_at: globalFirstSeenAt,
       last_seen_at: globalLastSeenAt,
-      match_count: computedMatchCount,
-      evidence_logs_count: totalEvidenceLogsCount,
-      first_seen_log: firstSeenLog,
-      last_seen_log: lastSeenLog,
       // source_count kept for backward compat but now equals total_source_membership_count
       source_count: totalSourceMembershipCount,
       total_source_membership_count: totalSourceMembershipCount,
@@ -4391,7 +4096,6 @@ app.get('/api/ioc/details', async (req, res) => {
     const payload = {
       summary,
       confidence: enrichedConfidenceDetail,
-      match_count: Number(summary.match_count || 0),
       sources: sourceEvidence,
       historical_ioc_rows: rows.filter((r) => String(r.status || 'active') !== 'active'),
       active_sources: membershipSummary.activeSources,
