@@ -158,12 +158,6 @@ async function fetchIocRows(pool, feed, window) {
 
   if (feed.exclude_false_positive) {
     sql += `
-      AND NOT EXISTS (
-        SELECT 1 FROM ioc_activity a
-        WHERE lower(a.ioc_value) = lower(i.observable)
-          AND lower(a.ioc_type) = lower(i.observable_type)
-          AND a.verdict = 'FP'
-      )
       AND COALESCE(i.category, '') NOT ILIKE '%false%positive%'
       AND lower(COALESCE(i.category, '')) <> 'fp'
     `;
@@ -254,12 +248,6 @@ export async function fetchIocExportFingerprint(pool, feed, window) {
 
   if (feed.exclude_false_positive) {
     sql += `
-      AND NOT EXISTS (
-        SELECT 1 FROM ioc_activity a
-        WHERE lower(a.ioc_value) = lower(i.observable)
-          AND lower(a.ioc_type) = lower(i.observable_type)
-          AND a.verdict = 'FP'
-      )
       AND COALESCE(i.category, '') NOT ILIKE '%false%positive%'
       AND lower(COALESCE(i.category, '')) <> 'fp'
     `;

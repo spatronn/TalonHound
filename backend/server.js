@@ -3744,22 +3744,6 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
 });
 
 
-let signalEventsTableCache = { value: null, checkedAt: 0 };
-
-async function hasSignalEventsTable() {
-  const now = Date.now();
-  if (signalEventsTableCache.value != null && (now - signalEventsTableCache.checkedAt) < 60000) {
-    return signalEventsTableCache.value;
-  }
-  try {
-    const r = await pool.query(`SELECT to_regclass('public.signal_events') AS rel`);
-    signalEventsTableCache = { value: Boolean(r.rows?.[0]?.rel), checkedAt: now };
-    return signalEventsTableCache.value;
-  } catch {
-    signalEventsTableCache = { value: false, checkedAt: now };
-    return false;
-  }
-}
 
 app.get('/api/ioc/:id/suppression', async (req, res) => {
   if (!canReadSuppression(req)) return res.status(403).json({ message: 'Forbidden' });
@@ -3824,17 +3808,6 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
                      updated_at = NOW()
        RETURNING *`,
       [iocValue, iocType, reason, createdBy, expiresAt ? expiresAt.toISOString() : null]
-    );
-
-    await client.query(
-      `UPDATE ioc_activity
-       SET verdict = 'FP',
-           status = 'closed',
-           updated_at = NOW()
-       WHERE lower(ioc_value) = lower($1)
-         AND lower(COALESCE(ioc_type, '')) = lower(COALESCE($2, ioc_type, ''))
-         AND status = 'open'`,
-      [iocValue, iocType]
     );
 
     await client.query('COMMIT');
@@ -3943,19 +3916,11 @@ app.get('/api/ioc-suppressions', async (req, res) => {
                 WHEN s.expires_at IS NOT NULL AND s.expires_at <= NOW() THEN 'expired'
                 ELSE 'active'
               END AS status,
-              COALESCE(a.cnt, 0)::int AS affected_incidents,
-              COALESCE(a.closed_cnt, 0)::int AS closed_incidents,
-              COALESCE(a.open_cnt, 0)::int AS open_incidents,
+              0::int AS affected_incidents,
+              0::int AS closed_incidents,
+              0::int AS open_incidents,
               0::double precision AS risk_contribution
        FROM ioc_suppressions s
-       LEFT JOIN LATERAL (
-         SELECT COUNT(*)::int AS cnt,
-                COUNT(*) FILTER (WHERE status='closed')::int AS closed_cnt,
-                COUNT(*) FILTER (WHERE status='open')::int AS open_cnt
-         FROM ioc_activity ia
-         WHERE lower(ia.ioc_value) = lower(s.ioc_value)
-           AND lower(COALESCE(ia.ioc_type,'')) = lower(COALESCE(s.ioc_type,''))
-       ) a ON TRUE
        WHERE ${baseWhere}
        ORDER BY ${orderBy}
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -4155,15 +4120,7 @@ app.get('/api/ioc/details', async (req, res) => {
       .sort()
       .slice(-1)[0] || null;
 
-    const signalEventsExists = await hasSignalEventsTable();
-    const signalRawExpr = signalEventsExists
-      ? `(
-          SELECT se.raw_event
-          FROM signal_events se
-          WHERE se.id = m.signal_event_id
-          LIMIT 1
-        )`
-      : 'NULL';
+    const signalRawExpr = 'NULL';
 
     const geoIp = extractIpv4ForGeo(observable, observableType);
 

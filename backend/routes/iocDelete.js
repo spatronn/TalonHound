@@ -21,7 +21,7 @@ export function registerIocDeleteRoute(app, pool, auditLogService, { invalidateD
     try {
       const prev = await pool.query(
         `SELECT i.id, i.public_id, i.observable, i.observable_type, i.ioc_source_id,
-                (SELECT COUNT(*) FROM ioc_match_events WHERE ioc_item_id = i.id) AS match_event_count,
+                0 AS match_event_count,
                 (SELECT COUNT(*) FROM ioc_manual_source_memberships WHERE ioc_item_id = i.id) AS manual_membership_count
          FROM ioc_items i WHERE i.public_id = $1::uuid LIMIT 1`,
         [publicId]

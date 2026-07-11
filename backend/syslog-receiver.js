@@ -1,9 +1,6 @@
-﻿import "./lib/ensure-db-password.js";
-import dgram from "dgram";
+﻿import dgram from "dgram";
 import http from "http";
 import crypto from "crypto";
-import pg from "pg";
-const { Pool } = pg;
 
 const SYSLOG_PORT = Number(process.env.SYSLOG_PORT || 514);
 const SYSLOG_HOST = process.env.SYSLOG_HOST || "0.0.0.0";
@@ -19,15 +16,6 @@ const SOCKET_RCVBUF = Math.max(Number(process.env.SYSLOG_SOCKET_RCVBUF || 8 * 10
 const OVERFLOW_POLICY = String(process.env.SYSLOG_OVERFLOW_POLICY || "drop_oldest").toLowerCase();
 /** If set, each UDP datagram must begin with UTF-8 `SECRET|` (timing-safe check); remainder is parsed as syslog. Mitigates open 514 when published to the host. */
 const UDP_INGEST_SECRET = String(process.env.SYSLOG_UDP_SHARED_SECRET || "").trim();
-
-const pool = new Pool({
-  host: process.env.DB_HOST || "db",
-  port: Number(process.env.DB_PORT || 5432),
-  user: process.env.DB_USER || "demo",
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || "demo",
-  max: Math.max(FLUSH_WORKERS + 2, 6)
-});
 
 const udp = dgram.createSocket({ type: "udp4", reuseAddr: true });
 const queue = [];
@@ -391,73 +379,11 @@ function updateAverages(batchSize, flushMs) {
   metrics.flush_time_avg = n <= 1 ? flushMs : ((metrics.flush_time_avg * (n - 1)) + flushMs) / n;
 }
 
-function buildPgBatch(events) {
-  const values = [];
-  const params = [];
-  const byIp = new Map();
-
-  for (let i = 0; i < events.length; i += 1) {
-    const e = events[i];
-    const base = i * 7;
-    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}::jsonb, $${base + 7})`);
-    params.push(
-      `syslog:${e.sourceIp}`,
-      e.sourceIp,
-      e.receivedAt.toISOString(),
-      e.receivedAt.toISOString(),
-      e.rawEvent,
-      JSON.stringify({ source_ip: e.sourceIp, received_at: e.receivedAt.toISOString(), raw_event: e.rawEvent, protocol: "syslog" }),
-      "syslog"
-    );
-    byIp.set(e.sourceIp, (byIp.get(e.sourceIp) || 0) + 1);
-  }
-
-  return { values, params, byIp };
-}
 
 async function flushToPostgres(events) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const { values, params, byIp } = buildPgBatch(events);
-    await client.query(
-      `INSERT INTO signal_events (source_key, source_ip, event_time, received_at, raw_event, raw, protocol)
-       VALUES ${values.join(",")}`,
-      params
-    );
-
-    const ips = [...byIp.keys()];
-    const srcValues = [];
-    const srcParams = [];
-    for (let i = 0; i < ips.length; i += 1) {
-      const ip = ips[i];
-      const base = i * 7;
-      srcValues.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, NOW(), NOW())`);
-      srcParams.push(`syslog:${ip}`, `Syslog ${ip}`, "syslog", "active", ip, "syslog", byIp.get(ip));
-    }
-
-    await client.query(
-      `INSERT INTO signal_sources (key, name, platform, status, source_ip, protocol, event_count, first_seen_at, last_seen_at)
-       VALUES ${srcValues.join(",")}
-       ON CONFLICT (key)
-       DO UPDATE SET
-         status = EXCLUDED.status,
-         source_ip = EXCLUDED.source_ip,
-         protocol = EXCLUDED.protocol,
-         event_count = signal_sources.event_count + EXCLUDED.event_count,
-         last_seen_at = NOW()`,
-      srcParams
-    );
-
-    await client.query("COMMIT");
-    return { inserted: events.length, chLatency: 0 };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  // signal_events and signal_sources tables were removed in migration 110;
+  // the downstream signal-engine is no longer deployed. Accept and drop.
+  return { inserted: events.length };
 }
 
 
