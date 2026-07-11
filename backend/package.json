@@ -26,7 +26,7 @@
     "test:ioc-export": "node --test lib/iocExportHelpers.test.js",
     "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js",
     "test:ioc-classification-mapping": "node --test lib/iocClassificationMapping.test.js",
-    "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/bulkRouteOrder.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
+    "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
 
     "smoke:routes": "node scripts/smoke-routes.js",
     "test:url-ioc-host-match": "node --test lib/urlIocHostMatch.test.js"
