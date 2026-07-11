@@ -132,7 +132,7 @@ docker compose run --rm backend npm run migrate
 
 if [ -n "$CH_FILES" ]; then
   echo "[restore] ClickHouse import..."
-  docker compose stop syslog-receiver ioc-correlation-engine ioc-retro-engine 2>/dev/null || true
+  :
   for f in $CH_FILES; do
     table=$(basename "$f" .native)
     echo "[restore]   TRUNCATE + INSERT ${table}"

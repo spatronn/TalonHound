@@ -2,7 +2,6 @@
 import json
 import os
 import random
-import socket
 import time
 import urllib.parse
 import urllib.request
@@ -104,9 +103,6 @@ def build_endpoint_log(host, filename, sha256):
 
 def main():
     enabled = os.getenv("ENABLED", "0") == "1"
-    target_host = os.getenv("SYSLOG_HOST", "syslog-receiver")
-    target_port = env_int("SYSLOG_PORT", 514)
-    udp_ingest_key = os.getenv("SYSLOG_UDP_SHARED_SECRET", "").strip()
     api_base = os.getenv("IOC_API_BASE", "http://backend:3000")
 
     eps = max(env_int("EPS", 200), 1)
@@ -115,7 +111,7 @@ def main():
     source_name = os.getenv("IOC_SOURCE_NAME", "loadgen-advanced")
     confidence = os.getenv("IOC_CONFIDENCE", "90")
     note = os.getenv("IOC_NOTE", "advanced scenario loadgen")
-    ioc_insert_ratio = max(0.0, min(env_float("IOC_INSERT_RATIO", 0.05), 1.0))  # target noisy-realistic ratio
+    ioc_insert_ratio = max(0.0, min(env_float("IOC_INSERT_RATIO", 0.05), 1.0))
     benign_ratio = max(0.0, min(env_float("BENIGN_RATIO", 0.95), 1.0))
 
     scenario = os.getenv("SCENARIO", "mixed").strip().upper()
@@ -126,7 +122,6 @@ def main():
         while True:
             time.sleep(30)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     interval = 1.0 / eps
     t0 = time.time()
     last_stats = t0
@@ -203,7 +198,6 @@ def main():
         if "endpoint" in log_types:
             records.append(("endpoint", build_endpoint_log(host, file_name, sha256)))
 
-        # IOC pipeline hinting: only part of events should hit IOCs
         do_ioc = (not is_benign) and (random.random() < min(1.0, ioc_insert_ratio / max(1e-6, (1.0 - benign_ratio))))
         if do_ioc:
             try:
@@ -212,11 +206,7 @@ def main():
             except Exception:
                 ioc_post_fail += 1
 
-        for typ, msg in records:
-            payload = msg.encode("utf-8")
-            if udp_ingest_key:
-                payload = f"{udp_ingest_key}|".encode("utf-8") + payload
-            sock.sendto(payload, (target_host, target_port))
+        for typ, _ in records:
             by_type[typ] += 1
             sent += 1
         by_class["benign" if is_benign else "ioc"] += len(records)
@@ -228,7 +218,7 @@ def main():
             benign_pct = (by_class['benign'] * 100.0) / total_cls
             ioc_pct = (by_class['ioc'] * 100.0) / total_cls
             print(
-                f"[loadgen] sent={sent} ioc_posts={ioc_posts} fail={ioc_post_fail} eps_avg={sent/elapsed:.1f} "
+                f"[loadgen] ioc_posts={ioc_posts} fail={ioc_post_fail} eps_avg={sent/elapsed:.1f} "
                 f"fw={by_type['firewall']} dns={by_type['dns']} proxy={by_type['proxy']} endpoint={by_type['endpoint']} "
                 f"benign={benign_pct:.1f}% ioc={ioc_pct:.1f}%"
             )
@@ -238,7 +228,7 @@ def main():
         if sleep_for > 0:
             time.sleep(sleep_for)
 
-    print(f"[loadgen] done sent={sent} by_type={by_type} ioc_posts={ioc_posts} fail={ioc_post_fail}")
+    print(f"[loadgen] done ioc_posts={ioc_posts} fail={ioc_post_fail}")
 
 
 if __name__ == "__main__":

@@ -34,8 +34,7 @@ docker compose logs backend --tail=200
 docker compose up -d frontend proxy
 
 # 7. Workers (after backend is healthy)
-docker compose up -d signal-engine ioc-expiration-worker llm-risk-worker \
-  syslog-receiver integration-worker
+docker compose up -d ioc-expiration-worker integration-worker
 
 # 8. Scheduler last (starts feed imports)
 docker compose up -d integration-scheduler

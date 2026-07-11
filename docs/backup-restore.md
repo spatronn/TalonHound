@@ -79,8 +79,7 @@ The restore script will:
 ### Manual PostgreSQL restore (equivalent)
 
 ```bash
-docker compose stop backend integration-scheduler integration-worker signal-engine \
-  ioc-expiration-worker llm-risk-worker syslog-receiver
+docker compose stop backend integration-scheduler integration-worker ioc-expiration-worker
 
 docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists \
   < backups/demo-runbook-YYYYMMDDTHHMMSSZ/postgres.dump

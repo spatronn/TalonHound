@@ -137,28 +137,6 @@ docker compose up -d --build
 
 ---
 
-### 9) `demo-syslog-receiver`
-**Purpose**
-- Syslog ingest service (UDP receiver + buffered batch writer).
-- Persists parsed syslog events into PostgreSQL.
-
-**Behavior**
-- Uses batching + flush workers to avoid small-part amplification.
-- Supports health endpoint with token guard.
-
-**Key env vars**
-- `SYSLOG_PORT`, `SYSLOG_HOST`
-- `SYSLOG_HEALTH_PORT`, `SYSLOG_HEALTH_TOKEN`
-- `SYSLOG_BATCH_SIZE`, `SYSLOG_FLUSH_INTERVAL_MS`, `SYSLOG_FORCE_FLUSH_MAX_MS`
-- `SYSLOG_FLUSH_WORKERS`, `SYSLOG_MAX_BUFFERED`, `SYSLOG_OVERFLOW_POLICY`
-
-**Ops notes**
-- Logs:
-  ```bash
-  docker compose logs -f --tail=100 syslog-receiver
-  ```
-
----
 
 ### 10) `demo-llm-risk-worker`
 **Purpose**
@@ -283,12 +261,7 @@ cd /opt/demo-runbook
 
 docker compose ps
 docker compose logs --tail=100 backend
-docker compose logs --tail=100 signal-engine
-docker compose logs --tail=100 llm-risk-worker
-docker compose logs --tail=100 syslog-receiver
-docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \
-  -c "SELECT count(*) AS raw_count FROM signal_events;" \
-  -c "SELECT count(*) AS ioc_match_count FROM ioc_match_events;"
+docker compose logs --tail=100 integration-worker
 ```
 
 ---

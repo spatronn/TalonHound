@@ -1,7 +1,7 @@
 # Shared helpers for backup-stack.sh and restore-stack.sh (POSIX sh).
 
 # Writer services stopped during restore to avoid concurrent writes.
-WRITER_SERVICES="backend integration-scheduler integration-worker signal-engine ioc-correlation-engine ioc-retro-engine ioc-expiration-worker ioc-match-count-worker llm-risk-worker syslog-receiver"
+WRITER_SERVICES="backend integration-scheduler integration-worker ioc-expiration-worker"
 
 # ClickHouse tables included in optional backup (Faz 1 MVP).
 CH_BACKUP_TABLES="default.syslog_logs default.syslog_observables security_evidence.incident_related_logs"
@@ -158,8 +158,6 @@ stop_writers() {
 
 start_writers() {
   echo "[restore] starting core services..."
-  docker compose up -d db redis clickhouse
-  docker compose up -d backend integration-scheduler integration-worker signal-engine \
-    ioc-correlation-engine ioc-retro-engine ioc-expiration-worker ioc-match-count-worker \
-    llm-risk-worker syslog-receiver frontend proxy
+  docker compose up -d db redis
+  docker compose up -d backend integration-scheduler integration-worker ioc-expiration-worker frontend proxy
 }

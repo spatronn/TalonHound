@@ -1,30 +1,27 @@
-# Demo-Run System Diagram
+# TalonHound System Diagram
 
 ## 1) Logical Flow
 
 ```mermaid
 flowchart LR
     FE[demo-frontend\nUI]
-    BE[demo-backend\nAPI + enqueue]
+    BE[demo-backend\nAPI]
     R[(demo-redis\nBullMQ queues)]
-    SE[demo-signal-engine\nqueue consumer]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
+    EXP[demo-ioc-expiration-worker\nexpiry sweeper]
     DB[(demo-db\nPostgreSQL)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
     FE -->|API calls| BE
-
-    BE -->|enqueue signal-events| R
-    R -->|consume signal-events| SE
-    SE -->|write raw events + ioc_match_events| DB
+    BE -->|queries| DB
 
     IS -->|enqueue integration-imports| R
     R -->|consume integration-imports| IW
     EXT -->|fetch IOC lists| IW
     IW -->|upsert ioc_items| DB
 
-    BE -->|analytics/auth queries| DB
+    EXP -->|expire stale IOCs| DB
 ```
 
 ## 2) Deployment View (Host + Container Boundary)
@@ -40,29 +37,21 @@ flowchart TB
         BE[demo-backend\n:3000 internal]
         R[(demo-redis)]
         DB[(demo-db\nPostgreSQL)]
-        SE[demo-signal-engine]
         IS[demo-integration-scheduler]
         IW[demo-integration-worker]
-        LLMW[demo-llm-risk-worker]
-        SR[demo-syslog-receiver\n:514 UDP]
+        EXP[demo-ioc-expiration-worker]
       end
     end
 
     USER[Analyst Browser] -->|HTTPS :443| RP
     RP --> FE
     FE -->|API| BE
-
-    BE -->|signal-events| R
-    BE -->|llm-risk-jobs| R
-    R --> SE
-    R --> LLMW
-    SE --> DB
+    BE --> DB
 
     IS -->|integration-imports| R
     R --> IW
     IOC --> IW
     IW --> DB
 
-    SR --> DB
-    BE --> DB
+    EXP --> DB
 ```

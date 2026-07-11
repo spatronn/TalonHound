@@ -358,7 +358,7 @@ function isApiMutationSuccess(data) {
 const IOC_EXPIRATION_ACTION_PRESETS = {
   expire_ioc: {
     title: 'Expire IOC now',
-    description: 'This IOC will be marked as expired. It will not be published/exported and will not be used in syslog correlation. Existing incidents, detection events and audit history will remain unchanged.',
+    description: 'This IOC will be marked as expired. It will not be published/exported. Existing audit history will remain unchanged.',
     requiresReason: true,
     requiresDate: false,
     confirmLabel: 'Expire IOC',
@@ -367,7 +367,7 @@ const IOC_EXPIRATION_ACTION_PRESETS = {
   },
   reactivate_ioc: {
     title: 'Reactivate IOC',
-    description: 'This will manually reactivate the IOC and set a new expiration policy. It may become eligible for publish/export and syslog correlation again unless disabled or suppressed.',
+    description: 'This will manually reactivate the IOC and set a new expiration policy. It may become eligible for publish/export again unless disabled or suppressed.',
     requiresReason: true,
     requiresDate: false,
     requiresExpirationPolicy: true,
@@ -1313,8 +1313,7 @@ function normalizeEventContext(event) {
     event?.context,
     event?.v2_context?.event_family,
     event?.v2_context?.control_point,
-    event?.v2_context?.scenario_type,
-    event?.matched_syslog_event
+    event?.v2_context?.scenario_type
   ]
     .map((v) => String(v || '').toLowerCase())
     .filter(Boolean)
@@ -2297,7 +2296,7 @@ function FeedSettingsModal({
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
           <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Expiration Policy</div>
           <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
-            Expired IOCs are kept in database but excluded from publish/export and syslog correlation.
+            Expired IOCs are kept in database but excluded from publish/export.
           </div>
           <div style={{ display: 'grid', gap: 10 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2352,7 +2351,6 @@ function FeedSettingsModal({
               When IOC expires:
               <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
                 <li>It will not be published/exported</li>
-                <li>It will not be used in syslog correlation</li>
                 <li>It will remain in database with status=expired</li>
               </ul>
             </div>

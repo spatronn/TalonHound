@@ -169,38 +169,6 @@ services:
       - db
     restart: unless-stopped
 
-  syslog-receiver:
-    build: ./backend
-    container_name: demo-syslog-receiver
-    command: ["npm", "run", "syslog-receiver"]
-    ports:
-      - "514:514/udp"
-      - "8081:8081"
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=demo
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
-      - SYSLOG_PORT=514
-      - SYSLOG_HOST=0.0.0.0
-      - SYSLOG_HEALTH_PORT=8081
-      - SYSLOG_HEALTH_TOKEN=${SYSLOG_HEALTH_TOKEN:?Set SYSLOG_HEALTH_TOKEN in .env (e.g. openssl rand -hex 16)}
-      - SYSLOG_BATCH_SIZE=500
-      - SYSLOG_MIN_FLUSH_SIZE=100
-      - SYSLOG_MIN_INSERT_ROWS=100
-      - SYSLOG_FORCE_FLUSH_MAX_MS=10000
-      - SYSLOG_FLUSH_INTERVAL_MS=2000
-      - SYSLOG_FLUSH_WORKERS=1
-      - SYSLOG_MAX_BUFFERED=100000
-      - SYSLOG_OVERFLOW_POLICY=drop_oldest
-      - SYSLOG_SOCKET_RCVBUF=8388608
-    depends_on:
-      - db
-    # UDP 514 / HTTP health are not published on the host by default (avoids open ingest + unauthenticated metrics).
-    # To expose for local forwarders or host scripts: docker compose -f docker-compose.yml -f docker-compose.syslog-host.yml up -d
-    restart: unless-stopped
-
   loadgen:
     build: ./tools/loadgen
     container_name: demo-loadgen
@@ -215,17 +183,13 @@ services:
       - REALTIME_RATIO=0.5
       - RETRO_DELAY_MS=0
       - STATS_EVERY_SEC=10
-      - SYSLOG_HOST=syslog-receiver
-      - SYSLOG_PORT=514
       - IOC_API_BASE=http://backend:3000
       - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
-      - API_BEARER_TOKEN=${API_BEARER_TOKEN:-}
       - IOC_SOURCE_NAME=loadgen-smoke
       - IOC_CONFIDENCE=90
       - IOC_NOTE=loadgen random ioc
     depends_on:
       - backend
-      - syslog-receiver
     restart: unless-stopped
 
   frontend:
