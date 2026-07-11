@@ -14,7 +14,7 @@ Migrations **never** run automatically on container startup. They are applied in
 
 ```bash
 # 1. Infrastructure
-docker compose up -d db redis clickhouse
+docker compose up -d db redis
 
 # 2. Build images (when code changed)
 docker compose build backend frontend integration-worker integration-scheduler
@@ -34,9 +34,8 @@ docker compose logs backend --tail=200
 docker compose up -d frontend proxy
 
 # 7. Workers (after backend is healthy)
-docker compose up -d signal-worker ioc-correlation-worker ioc-retro-worker \
-  ioc-expiration-worker ioc-match-count-worker llm-risk-worker syslog-receiver \
-  integration-worker
+docker compose up -d signal-engine ioc-expiration-worker llm-risk-worker \
+  syslog-receiver integration-worker
 
 # 8. Scheduler last (starts feed imports)
 docker compose up -d integration-scheduler

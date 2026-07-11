@@ -7,27 +7,9 @@ Docker Compose deployment for `demo-runbook`. Backup/restore is **CLI-first** in
 | Component | Critical data | Faz 1 |
 |-----------|---------------|-------|
 | **PostgreSQL** (`postgres_data`) | IOCs, incidents, users, audit logs, integration state, `schema_migrations` | **Required** — `postgres.dump` |
-| **ClickHouse** (`clickhouse_data`) | Syslog logs, observables, incident evidence | **Optional** — Native table exports |
 | **Redis** | BullMQ queues, cache | **Excluded** — reconcile queues after restore |
 | **`.env`** | Secrets | **Not in bundle** — store separately |
 | **TLS certs** (`proxy/certs/`) | HTTPS | Manual if not managed externally |
-
-### ClickHouse tables (optional backup)
-
-Included only when `--include-clickhouse` is passed (not the default):
-
-- `default.syslog_logs`
-- `default.syslog_observables`
-- `security_evidence.incident_related_logs`
-
-Excluded but rebuildable (listed in `manifest.json` as `excluded_rebuildable_tables`):
-
-- `default.ioc_lookup`
-- `default.ioc_lookup_by_updated`
-- `default.ioc_lookup_sync_state`
-- `default.ioc_retro_state`
-
-Workers can repopulate lookup/retro state from PostgreSQL after restore.
 
 ## Backup bundle layout
 
@@ -37,10 +19,6 @@ backups/demo-runbook-YYYYMMDDTHHMMSSZ/
   postgres.dump          # pg_dump -Fc
   checksums.sha256
   README.txt
-  clickhouse/            # only with --include-clickhouse
-    default.syslog_logs.native
-    default.syslog_observables.native
-    security_evidence.incident_related_logs.native
 ```
 
 Host path `backups/` is bind-mounted to `/backups` in the backend container for future API use. Generated bundles are git-ignored.
@@ -48,7 +26,7 @@ Host path `backups/` is bind-mounted to `/backups` in the backend container for 
 ## Pre-backup checklist
 
 1. Note stack version: `git rev-parse HEAD` (recorded in `manifest.json`)
-2. **Quiet period recommended** — avoid backup during migrations, large feed imports, or retro scans
+2. **Quiet period recommended** — avoid backup during migrations or large feed imports
 3. Optionally pause scheduler: `docker compose stop integration-scheduler`
 4. Ensure no migration is running: `docker compose run --rm backend npm run migrate:list`
 
@@ -58,11 +36,7 @@ Host path `backups/` is bind-mounted to `/backups` in the backend container for 
 cd /opt/demo-runbook
 chmod +x scripts/backup-stack.sh scripts/restore-stack.sh
 
-# PostgreSQL only (default)
 ./scripts/backup-stack.sh
-
-# PostgreSQL + ClickHouse
-./scripts/backup-stack.sh --include-clickhouse
 ```
 
 Custom output root:
@@ -88,22 +62,10 @@ Preview (no changes):
 ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --dry-run
 ```
 
-Execute restore (PostgreSQL only; default):
+Execute restore:
 
 ```bash
 ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm
-```
-
-PostgreSQL + ClickHouse (when bundle includes `clickhouse/`):
-
-```bash
-./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm --restore-clickhouse
-```
-
-Explicit PostgreSQL-only alias:
-
-```bash
-./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm --postgres-only
 ```
 
 The restore script will:
@@ -112,15 +74,13 @@ The restore script will:
 2. Stop writer services
 3. `pg_restore --clean --if-exists` into `demo` database
 4. `npm run migrate` (forward-only)
-5. Import ClickHouse Native files when `--restore-clickhouse` is passed
-6. Start services again
+5. Start services again
 
 ### Manual PostgreSQL restore (equivalent)
 
 ```bash
 docker compose stop backend integration-scheduler integration-worker signal-engine \
-  ioc-correlation-engine ioc-retro-engine ioc-expiration-worker ioc-match-count-worker \
-  llm-risk-worker syslog-receiver
+  ioc-expiration-worker llm-risk-worker syslog-receiver
 
 docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists \
   < backups/demo-runbook-YYYYMMDDTHHMMSSZ/postgres.dump
@@ -161,10 +121,6 @@ Test restore quarterly. No automatic retention in Faz 1.
 1. Provision VM with Docker Compose
 2. Clone repo at known git tag (match `manifest.json` `git_sha` when possible)
 3. Restore `.env` from secret store
-4. `docker compose up -d db redis clickhouse` (minimal)
+4. `docker compose up -d db redis` (minimal)
 5. `./scripts/restore-stack.sh --backup <bundle> --confirm`
 6. Run verification steps above
-
-## Legacy flat backups
-
-Older `backups/postgres-demo-*.dump` and `backups/clickhouse-*/` layouts are deprecated. Use new bundle directories or manual `pg_restore` per the manual section.

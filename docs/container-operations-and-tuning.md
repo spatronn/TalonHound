@@ -91,45 +91,11 @@ docker compose up -d --build
 
 ---
 
----
-
-
-### 5) `demo-ioc-correlation-engine`
-**Purpose**
-- ClickHouse tabanlı IOC correlation worker.
-- `syslog_logs` içindeki parse edilmiş IOC adaylarını dictionary lookup ile eşleştirir.
-- Eşleşmeleri PostgreSQL `ioc_match_events` tablosuna batch upsert eder.
-
-**Core behavior**
-- Incremental scan (watermark): `ioc_correlation_state`
-- ClickHouse dictionaries:
-  - `default.ioc_domain_dict`
-  - `default.ioc_ip_dict`
-- Dedup/Aggregation:
-  - `ON CONFLICT (dedup_key, bucket_start)`
-  - `hit_count`, `last_seen_at` güncellenir
-
-**Key env vars**
-- `IOC_CORRELATION_POLL_INTERVAL_MS` (default `3000`)
-- `IOC_CORRELATION_BATCH_SIZE` (default `5000`)
-- `IOC_CORRELATION_MAX_BATCHES_PER_TICK` (default `5`)
-- `IOC_CORRELATION_DEDUP_WINDOW_SECONDS` (default `300`)
-
-**Ops notes**
-- Logs:
-  ```bash
-  docker compose logs -f --tail=100 ioc-correlation-engine
-  ```
-- Troubleshooting metric log format:
-  - `scanned=... matched=... inserted_or_upserted=... duration_ms=...`
-
----
-
-### 6) `demo-integration-scheduler`
+### 5) `demo-integration-scheduler`
 **Purpose**
 - Schedules IOC feed import jobs.
 
-### 7) `demo-integration-worker`
+### 6) `demo-integration-worker`
 **Purpose**
 - Executes IOC import jobs and updates IOC dataset.
 
@@ -138,42 +104,7 @@ docker compose up -d --build
 
 ---
 
-### 8) `demo-ioc-match-count-worker`
-**Purpose**
-- Calculates IOC match totals from **ClickHouse** (`syslog_observables`) and snapshots them into PostgreSQL.
-- Source of truth for IOC hit count: ClickHouse aggregation.
-- Persistence/UI snapshot: PostgreSQL (`ioc_match_count_snapshot` + `ioc_items.match_count`).
-
-**What it updates**
-- `ioc_match_count_snapshot`
-- `ioc_items.match_count`
-- `ioc_items.first_seen_log`
-- `ioc_items.last_seen_log`
-
-**Behavior**
-- Periodic run (default every 60s).
-- Single batch aggregation query on ClickHouse (`GROUP BY observable_value`).
-- PostgreSQL side uses bulk upsert/update (no per-IOC runtime join in API).
-
-**Key env vars**
-- `IOC_MATCH_COUNT_INTERVAL_MS` (default `60000`)
-- `IOC_MATCH_COUNT_BATCH_SIZE` (default `2000`)
-- `IOC_MATCH_COUNT_CH_MAX_THREADS` (default `1`)
-- `IOC_MATCH_COUNT_CH_MAX_EXECUTION_TIME_SECONDS` (default `120`)
-
-**Ops notes**
-- Logs:
-  ```bash
-  docker compose logs -f --tail=100 ioc-match-count-worker
-  ```
-- Quick status check:
-  ```bash
-  docker compose exec -T db psql -U demo -d demo -c "SELECT count(*) AS snapshot_rows, max(updated_at) AS last_update FROM ioc_match_count_snapshot;"
-  ```
-
----
-
-### 9) `demo-dashboard-map-worker`
+### 7) `demo-dashboard-map-worker`
 **Purpose**
 - Batch worker for Threat World Map aggregation.
 - Processes IOC rows in chunks (default 1000) and updates precomputed map tables.
@@ -200,43 +131,16 @@ docker compose up -d --build
   ```
 
 
-### 10) IP enrichment (IPinfo Lite, on-demand)
+### 8) IP enrichment (IPinfo Lite, on-demand)
 - No dedicated container. Configured in **Administration → Enrichment Providers** (or `IPINFO_LITE_TOKEN` env).
 - Results stored in `ioc_ip_enrichment` when analysts enrich an IP from IOC Details.
 
 ---
 
-### 11) `demo-ioc-retro-engine`
-**Purpose**
-- Periodic retrospective IOC scan worker on ClickHouse data.
-- Detects historical matches for newly imported IOCs (lookback mode).
-
-**Behavior**
-- Runs on interval / alignment settings.
-- Writes matched events into PostgreSQL `ioc_match_events` (dedup-aware flow).
-
-**Key env vars**
-- `IOC_RETRO_SCAN_INTERVAL_SECONDS`
-- `IOC_RETRO_LOOKBACK_DAYS`
-- `IOC_RETRO_NEW_IOC_WINDOW_HOURS`
-- `IOC_RETRO_MAX_NEW_IOCS`
-- `IOC_RETRO_BATCH_SIZE`
-- `IOC_RETRO_IOC_CHUNK_SIZE`
-- `IOC_RETRO_ALIGN_ENABLED`
-- `IOC_RETRO_ALIGN_MINUTE`
-
-**Ops notes**
-- Logs:
-  ```bash
-  docker compose logs -f --tail=100 ioc-retro-engine
-  ```
-
----
-
-### 12) `demo-syslog-receiver`
+### 9) `demo-syslog-receiver`
 **Purpose**
 - Syslog ingest service (UDP receiver + buffered batch writer).
-- Persists normalized/raw log stream into ClickHouse.
+- Persists parsed syslog events into PostgreSQL.
 
 **Behavior**
 - Uses batching + flush workers to avoid small-part amplification.
@@ -256,27 +160,7 @@ docker compose up -d --build
 
 ---
 
-### 13) `demo-clickhouse`
-**Purpose**
-- Columnar log analytics store (primary source for high-volume IOC correlation/search).
-
-**Behavior**
-- Stores large telemetry tables (e.g. syslog observables/logs).
-- Queried by correlation/retro/count workers and backend analytics paths.
-
-**Ops notes**
-- Logs:
-  ```bash
-  docker compose logs -f --tail=100 clickhouse
-  ```
-- Quick SQL check:
-  ```bash
-  docker compose exec -T clickhouse clickhouse-client -u demo --password "$CLICKHOUSE_PASSWORD" -q "SELECT now();"
-  ```
-
----
-
-### 14) `demo-llm-risk-worker`
+### 10) `demo-llm-risk-worker`
 **Purpose**
 - Asynchronous LLM risk advisor worker.
 - Consumes `llm-risk-jobs` queue and calls Ollama for risk adjustment output.
@@ -309,7 +193,7 @@ docker compose up -d --build
   docker compose exec -T redis redis-cli -a "$REDIS_PASSWORD" LLEN bull:llm-risk-jobs:wait
   ```
 
-### 15) `demo-frontend`
+### 11) `demo-frontend`
 **Purpose**
 - Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
 
@@ -323,7 +207,7 @@ docker compose up -d --build
   - Incident list
   - Incident detail (AI Insight + manual AI analyze action)
 
-### 16) `demo-proxy`
+### 12) `demo-proxy`
 **Purpose**
 - TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
 
@@ -348,14 +232,10 @@ flowchart LR
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
     SE[demo-signal-engine\nqueue consumer]
-    ICE[demo-ioc-correlation-engine\nCH dictionary matcher]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
-    MW[demo-dashboard-map-worker\nmap batch worker]
-    IMC[demo-ioc-match-count-worker\nCH->PG match_count snapshot]
     LLMW[demo-llm-risk-worker\nLLM risk queue worker]
     DB[(demo-db\nPostgreSQL)]
-    CH[(demo-clickhouse\nsyslog_observables)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
     FE -->|API calls| BE
@@ -364,17 +244,13 @@ flowchart LR
     BE -->|enqueue llm-risk-jobs| R
     R -->|consume signal-events| SE
     R -->|consume llm-risk-jobs| LLMW
-    SE -->|write raw events| DB
-    ICE -->|match + upsert ioc_match_events| DB
+    SE -->|write raw events + ioc_match_events| DB
     LLMW -->|cache llm adjustment by incident version| R
 
     IS -->|enqueue integration-imports| R
     R -->|consume integration-imports| IW
     EXT -->|fetch IOC lists| IW
     IW -->|upsert ioc_items| DB
-    MW -->|batch aggregate + daily snapshot| DB
-    IMC -->|aggregate observable hits| CH
-    IMC -->|upsert snapshot + update ioc_items.match_count| DB
     BE -->|on-demand IPinfo / RDAP / VT| EXT
     BE -->|analytics/auth queries| DB
 ```
@@ -408,17 +284,11 @@ cd /opt/demo-runbook
 docker compose ps
 docker compose logs --tail=100 backend
 docker compose logs --tail=100 signal-engine
-docker compose logs --tail=100 ioc-correlation-engine
-docker compose logs --tail=100 ioc-retro-engine
 docker compose logs --tail=100 llm-risk-worker
 docker compose logs --tail=100 syslog-receiver
-docker compose logs --tail=100 clickhouse
-docker compose logs --tail=100 ioc-match-count-worker
-docker compose logs --tail=100 dashboard-map-worker
 docker compose exec -T db psql -U demo -d demo -c "SELECT now();" \
   -c "SELECT count(*) AS raw_count FROM signal_events;" \
-  -c "SELECT count(*) AS ioc_match_count FROM ioc_match_events;" \
-  -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
+  -c "SELECT count(*) AS ioc_match_count FROM ioc_match_events;"
 ```
 
 ---

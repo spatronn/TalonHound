@@ -8,7 +8,6 @@ flowchart LR
     BE[demo-backend\nAPI + enqueue]
     R[(demo-redis\nBullMQ queues)]
     SE[demo-signal-engine\nqueue consumer]
-    ICE[demo-ioc-correlation-engine\nCH dictionary matcher]
     IS[demo-integration-scheduler\njob scheduler]
     IW[demo-integration-worker\nIOC import worker]
     DB[(demo-db\nPostgreSQL)]
@@ -18,8 +17,7 @@ flowchart LR
 
     BE -->|enqueue signal-events| R
     R -->|consume signal-events| SE
-    SE -->|write raw events| DB
-    ICE -->|match + upsert ioc_match_events| DB
+    SE -->|write raw events + ioc_match_events| DB
 
     IS -->|enqueue integration-imports| R
     R -->|consume integration-imports| IW
@@ -35,17 +33,18 @@ flowchart LR
 flowchart TB
     IOC[External IOC Feeds\nET / USOM / URLhaus]
 
-    subgraph HOST[Linux Host 192.168.1.251]
-      subgraph COMPOSE[Docker Compose: /opt/demo-runbook]
+    subgraph HOST[Linux Host 192.168.1.190]
+      subgraph COMPOSE[Docker Compose: /opt/TalonHound]
         RP[demo-proxy\n:80 / :443 TLS]
         FE[demo-frontend\n:80 internal]
         BE[demo-backend\n:3000 internal]
         R[(demo-redis)]
-        DB[(demo-db)]
+        DB[(demo-db\nPostgreSQL)]
         SE[demo-signal-engine]
-        ICE[demo-ioc-correlation-engine]
         IS[demo-integration-scheduler]
         IW[demo-integration-worker]
+        LLMW[demo-llm-risk-worker]
+        SR[demo-syslog-receiver\n:514 UDP]
       end
     end
 
@@ -54,16 +53,16 @@ flowchart TB
     FE -->|API| BE
 
     BE -->|signal-events| R
+    BE -->|llm-risk-jobs| R
     R --> SE
+    R --> LLMW
     SE --> DB
-    BE -->|read parsed logs| CH[(demo-clickhouse)]
-    CH --> ICE
-    ICE --> DB
 
     IS -->|integration-imports| R
     R --> IW
     IOC --> IW
     IW --> DB
 
+    SR --> DB
     BE --> DB
 ```
