@@ -11,7 +11,7 @@
 
 ```bash
 cd /opt/demo-runbook
-docker compose up -d db redis clickhouse
+docker compose up -d db redis
 docker compose run --rm backend npm run migrate   # explicit one-shot — see docs/deployment.md
 docker compose up -d --build
 ```

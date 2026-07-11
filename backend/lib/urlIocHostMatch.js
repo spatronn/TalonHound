@@ -46,7 +46,7 @@ export function pickBestLookup(a, b) {
 }
 
 /**
- * Build ClickHouse ioc_lookup query tuples for a given observable.
+ * Build ioc_lookup query tuples for a given observable.
  *
  * For domain observables, also generates normalized root URL forms
  * (https://domain/, http://domain/) to enable cross-matching against

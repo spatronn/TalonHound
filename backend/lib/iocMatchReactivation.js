@@ -85,7 +85,7 @@ export function createPgSupplementStats() {
 }
 
 /**
- * Supplement ClickHouse lookup with Postgres rows (covers expired IOCs removed from CH lookup).
+ * Supplement ioc_items lookup with Postgres rows (covers expired IOCs).
  * Returns stats; mutates lookupMap in place.
  */
 export async function supplementLookupMapFromPostgres(client, tupleList, lookupMap) {
