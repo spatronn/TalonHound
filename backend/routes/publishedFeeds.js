@@ -1,6 +1,6 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
-import { generatePublishedFeedSnapshot, normalizeFeedConfig } from '../lib/feedPublisherService.js';
+import { generatePublishedFeedSnapshot, normalizeFeedConfig, getLatestSnapshot } from '../lib/feedPublisherService.js';
 import { FEED_IOC_TYPES } from '../lib/feedFormatter.js';
 import {
   fetchPublishedFeedSourceOptions,
@@ -102,16 +102,11 @@ function validateFeedPayload(body, partial = false) {
   return errors;
 }
 
-async function latestItemCount(pool, feedId) {
-  const { rows } = await pool.query(
-    `SELECT item_count
-     FROM published_feed_snapshots
-     WHERE feed_id = $1 AND status = 'success'
-     ORDER BY generated_at DESC
-     LIMIT 1`,
-    [Number(feedId)]
-  );
-  return rows[0]?.item_count != null ? Number(rows[0].item_count) : null;
+async function latestItemCount(pool, feedRow) {
+  const feed = normalizeFeedConfig(feedRow);
+  if (!feed?.id) return null;
+  const snapshot = await getLatestSnapshot(pool, feed.id, feed.ioc_type, feed.time_window);
+  return snapshot?.item_count != null ? Number(snapshot.item_count) : null;
 }
 
 function feedAuditSnapshot(row) {
@@ -153,7 +148,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       const feeds = [];
       for (const row of rows) {
         const norm = normalizeFeedConfig(row);
-        const last_item_count = await latestItemCount(pool, norm.id);
+        const last_item_count = await latestItemCount(pool, norm);
         feeds.push(toPublicFeed(norm, { last_item_count }));
       }
       return res.json({ feeds });
@@ -227,7 +222,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
       if (!rows.length) return res.status(404).json({ message: 'Feed not found' });
       const feed = normalizeFeedConfig(rows[0]);
-      const last_item_count = await latestItemCount(pool, id);
+      const last_item_count = await latestItemCount(pool, rows[0]);
       return res.json({ feed: toPublicFeed(feed, { last_item_count }) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to fetch feed', detail: err.message });
@@ -339,7 +334,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     try {
       const result = await generatePublishedFeedSnapshot(pool, id, { force: true });
       const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
-      const last_item_count = await latestItemCount(pool, id);
+      const last_item_count = await latestItemCount(pool, rows[0]);
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.FEED_RUN_TRIGGERED,
