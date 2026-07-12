@@ -99,7 +99,7 @@ async function fetchLatestIntegrationFinishedAt(pool, feed = null) {
   if (manualSourceIds.length) {
     queries.push(
       pool.query(
-        `SELECT MAX(GREATEST(updated_at, created_at)) AS latest_finished_at
+        `SELECT MAX(COALESCE(last_seen_log, last_seen_at, created_at)) AS latest_finished_at
          FROM ioc_items
          WHERE ioc_source_id = ANY($1::bigint[])`,
         [manualSourceIds]

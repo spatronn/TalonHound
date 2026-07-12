@@ -337,7 +337,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
     try {
-      const result = await generatePublishedFeedSnapshot(pool, id);
+      const result = await generatePublishedFeedSnapshot(pool, id, { force: true });
       const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
       const last_item_count = await latestItemCount(pool, id);
       audit?.auditSuccess({
