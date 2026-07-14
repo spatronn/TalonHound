@@ -567,7 +567,11 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       [existing.id]
     );
     await pool.query(
-      `UPDATE integration_feeds SET active = FALSE, updated_at = NOW() WHERE integration_id = $1::uuid`,
+      `UPDATE integration_feeds
+       SET active = FALSE,
+           archived_at = COALESCE(archived_at, NOW()),
+           updated_at = NOW()
+       WHERE integration_id = $1::uuid`,
       [existing.feed_id]
     );
     await syncSingleFeedSchedule(pool, importQueue, existing.integration_key, { logPrefix: '[custom-feeds]' });
@@ -793,7 +797,11 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
               [feedRow.id]
             );
             await client.query(
-              `UPDATE integration_feeds SET active = FALSE WHERE integration_id = $1::uuid`,
+              `UPDATE integration_feeds
+               SET active = FALSE,
+                   archived_at = COALESCE(archived_at, NOW()),
+                   updated_at = NOW()
+               WHERE integration_id = $1::uuid`,
               [feedRow.feed_id]
             );
           }
@@ -847,6 +855,14 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
         await pool.query(
           `UPDATE custom_threat_feeds SET deactivated_at = NOW(), updated_at = NOW() WHERE id = $1::uuid`,
           [feedRow.id]
+        );
+        await pool.query(
+          `UPDATE integration_feeds
+           SET active = FALSE,
+               archived_at = COALESCE(archived_at, NOW()),
+               updated_at = NOW()
+           WHERE integration_id = $1::uuid`,
+          [feedRow.feed_id]
         );
       }
 

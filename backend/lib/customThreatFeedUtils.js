@@ -36,6 +36,8 @@ export async function findCustomFeedNameConflict(db, name, excludeCustomFeedId =
      FROM integration_feeds f
      INNER JOIN custom_threat_feeds c ON c.feed_id = f.integration_id
      WHERE f.feed_kind = 'custom'
+       AND c.deactivated_at IS NULL
+       AND f.archived_at IS NULL
        AND lower(trim(f.name)) = $1
        AND ($2::uuid IS NULL OR c.id <> $2::uuid)
      LIMIT 1`,

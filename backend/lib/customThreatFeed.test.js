@@ -6,6 +6,7 @@ import {
   sanitizeUrlForDisplay,
   normalizeCustomFeedName,
   customFeedNameComparisonKey,
+  findCustomFeedNameConflict,
   DUPLICATE_CUSTOM_FEED_NAME_ERROR
 } from './customThreatFeedUtils.js';
 import {
@@ -41,6 +42,31 @@ test('custom feed name normalization is trim + case-insensitive key', () => {
   assert.equal(customFeedNameComparisonKey('VALIDIN-PHISH-FEED-1'), 'validin-phish-feed-1');
   assert.equal(customFeedNameComparisonKey('Validin-Phish-Feed-1'), 'validin-phish-feed-1');
   assert.equal(DUPLICATE_CUSTOM_FEED_NAME_ERROR, 'A custom threat feed with this name already exists.');
+});
+
+test('findCustomFeedNameConflict ignores deactivated and archived feeds', async () => {
+  let capturedSql = '';
+  const pool = {
+    query: async (sql, params) => {
+      capturedSql = sql;
+      assert.equal(params[0], 'validin-phish-feed-7');
+      return { rows: [] };
+    }
+  };
+  const conflict = await findCustomFeedNameConflict(pool, 'validin-phish-feed-7');
+  assert.equal(conflict, null);
+  assert.match(capturedSql, /c\.deactivated_at IS NULL/);
+  assert.match(capturedSql, /f\.archived_at IS NULL/);
+});
+
+test('findCustomFeedNameConflict returns active feed with same name', async () => {
+  const pool = {
+    query: async () => ({
+      rows: [{ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', name: 'validin-phish-feed-7' }]
+    })
+  };
+  const conflict = await findCustomFeedNameConflict(pool, ' Validin-Phish-Feed-7 ');
+  assert.equal(conflict?.name, 'validin-phish-feed-7');
 });
 
 test('custom feed schedule uses integration_feeds schedule_cron model', async () => {
