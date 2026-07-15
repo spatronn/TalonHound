@@ -9,8 +9,13 @@ import {
   buildSpamhausLookupResponse,
   validateSyncIntervalHours
 } from '../lib/spamhausDropSync.js';
+import {
+  getSpamhausDropEnrichmentByIp,
+  persistSpamhausLookupResult,
+  rowToSpamhausApiPayload
+} from '../services/spamhausDropEnrichmentService.js';
 
-function extractIpFromIoc(iocValue, iocType) {
+export function extractIpFromIoc(iocValue, iocType) {
   const type = String(iocType || '').trim().toLowerCase();
   if (type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'ip6') {
     return String(iocValue || '').trim().split('/')[0].trim() || null;
@@ -43,7 +48,7 @@ function extractIpFromIoc(iocValue, iocType) {
 export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options = {}) {
   const { importQueue } = options;
   // -------------------------------------------------------------------------
-  // IOC Detail: lookup by IOC value + type (local dataset only)
+  // IOC Detail: hydrate persisted enrichment (no live CIDR re-lookup)
   // -------------------------------------------------------------------------
   app.get('/api/enrichment/spamhaus-drop/ioc', async (req, res) => {
     try {
@@ -65,8 +70,8 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
         return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'not_applicable', listed: null });
       }
 
-      // Return not_run — actual lookup only happens on POST refresh
-      return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'not_run', listed: null });
+      const row = await getSpamhausDropEnrichmentByIp(pool, targetIp);
+      return res.json(rowToSpamhausApiPayload(row));
     } catch (err) {
       console.error('[spamhaus-drop] GET ioc lookup failed', err?.message || err);
       return res.status(500).json({ message: 'Spamhaus DROP lookup failed' });
@@ -74,7 +79,7 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
   });
 
   // -------------------------------------------------------------------------
-  // IOC Detail: refresh = re-lookup from local dataset (no external call)
+  // IOC Detail: refresh = re-lookup from local dataset + persist result
   // -------------------------------------------------------------------------
   app.post('/api/enrichment/spamhaus-drop/ioc/refresh', async (req, res) => {
     try {
@@ -101,6 +106,19 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
         if (err?.code === 'invalid_ip') {
           return res.status(400).json({ message: err.message, code: 'invalid_ip' });
         }
+        const failResp = {
+          provider: SPAMHAUS_DROP_PROVIDER,
+          status: 'error',
+          listed: null,
+          target_ip: targetIp,
+          error_message: err?.message || 'Spamhaus DROP lookup failed'
+        };
+        await persistSpamhausLookupResult(pool, {
+          targetIp,
+          iocValue,
+          iocType,
+          response: failResp
+        }).catch(() => {});
         throw err;
       }
 
@@ -115,7 +133,19 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
       }).catch(() => {});
 
       const resp = buildSpamhausLookupResponse({ lookup, syncState, config, targetIp });
-      return res.json(resp);
+      await persistSpamhausLookupResult(pool, {
+        targetIp,
+        iocValue,
+        iocType,
+        response: resp
+      }).catch((persistErr) => {
+        console.error('[spamhaus-drop] persist failed', persistErr?.message || persistErr);
+      });
+
+      const enrichedAt = resp.status === 'listed' || resp.status === 'not_listed'
+        ? new Date().toISOString()
+        : null;
+      return res.json(enrichedAt ? { ...resp, last_enriched_at: enrichedAt } : resp);
     } catch (err) {
       console.error('[spamhaus-drop] POST refresh failed', err?.message || err);
       return res.status(500).json({ message: 'Spamhaus DROP refresh failed' });

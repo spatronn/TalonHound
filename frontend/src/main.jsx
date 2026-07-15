@@ -10308,9 +10308,34 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
 }
 
 function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
-  const [state, setState] = useState({ status: 'not_run', data: null });
+  const [state, setState] = useState({ status: 'loading', data: null });
   const [refreshing, setRefreshing] = useState(false);
   const [hasEnriched, setHasEnriched] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!iocValue || !iocType || !active) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get('/enrichment/spamhaus-drop/ioc', {
+        params: { ioc_value: iocValue, ioc_type: iocType }
+      });
+      setHasLoaded(true);
+      const status = String(data?.status || 'not_run');
+      if (status === 'listed' || status === 'not_listed' || status === 'error' || status === 'failed') {
+        setHasEnriched(true);
+      }
+      setState({ status: status === 'failed' ? 'error' : status, data });
+    } catch {
+      setHasLoaded(true);
+      setState({ status: 'error', data: null });
+    }
+  }, [iocValue, iocType, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
 
   useEffect(() => {
     if (!onSnapshot) return;
@@ -10323,7 +10348,8 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
     try {
       const { data } = await api.post('/enrichment/spamhaus-drop/ioc/refresh', { ioc_value: iocValue, ioc_type: iocType });
       setHasEnriched(true);
-      setState({ status: data?.status || 'not_applicable', data });
+      const status = String(data?.status || 'not_applicable');
+      setState({ status: status === 'failed' ? 'error' : status, data });
     } catch {
       setHasEnriched(true);
       setState((s) => ({ ...s, status: 'error' }));
@@ -10332,7 +10358,7 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
     }
   }
 
-  if (!active) return null;
+  if (!active && !hasLoaded) return null;
 
   const d = state.data || {};
   const status = state.status;
@@ -10345,9 +10371,18 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
 
   const RefreshBtn = ({ label }) => canRefresh ? (
     <button type="button" onClick={() => enrich().catch(() => {})} disabled={refreshing} style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-      {refreshing ? 'Enriching�' : label}
+      {refreshing ? 'Enriching…' : label}
     </button>
   ) : null;
+
+  if (status === 'loading') {
+    return (
+      <div style={{ ...cardBase, border: '1px solid #334155' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0', fontSize: 14 }}>Spamhaus DROP</div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>Loading Spamhaus DROP enrichment...</div>
+      </div>
+    );
+  }
 
   if (status === 'not_run') {
     return (
