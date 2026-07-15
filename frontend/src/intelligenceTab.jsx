@@ -65,10 +65,13 @@ function ProviderCoverageBadges({ coverage }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {coverage.map((p) => {
         const st = providerStateStyle(p.state);
+        const caption = p.key === 'dnsmania' && p.detail
+          ? p.detail
+          : providerStateLabel(p.state);
         return (
           <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: st.color }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
-            {p.label}: {providerStateLabel(p.state)}
+            {p.label}: {caption}
           </span>
         );
       })}

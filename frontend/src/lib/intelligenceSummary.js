@@ -94,10 +94,33 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
   } else {
     applicable = providers;
   }
-  return applicable.map((p) => ({
-    ...p,
-    state: providerCoverageStatus(snapshots?.[p.key])
-  }));
+  return applicable.map((p) => {
+    const snap = snapshots?.[p.key];
+    const state = providerCoverageStatus(snap);
+    return {
+      ...p,
+      state,
+      detail: p.key === 'dnsmania' ? dnsmaniaCoverageDetail(snap, state) : null
+    };
+  });
+}
+
+/** Frontend-only coverage caption for DNSMania snapshots (no risk/signal impact). */
+export function dnsmaniaCoverageDetail(snapshot, state) {
+  if (!snapshot || String(snapshot?.status || '') === 'not_run' || state === 'not_run') return 'Not run';
+  const status = String(snapshot.status || '').toLowerCase();
+  if (status === 'disabled' || state === 'disabled') return 'Disabled';
+  if (status === 'failed' || state === 'error') return 'Error';
+  if (status === 'no_data' || (status === 'completed' && snapshot.known === false) || state === 'not_found') {
+    return 'No data';
+  }
+  if (status === 'completed' || state === 'available') {
+    if (snapshot.nxdomain_observed === true) return 'NXDOMAIN observed';
+    const n = Number(snapshot.relation_count);
+    if (Number.isFinite(n) && n > 0) return `${n} relation${n === 1 ? '' : 's'}`;
+    return 'Found';
+  }
+  return providerStateLabel(state);
 }
 
 export function computeLayeredProviderCoverage({

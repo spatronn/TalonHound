@@ -11055,17 +11055,16 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   const [hasLoaded, setHasLoaded] = useState(false);
   const enrichInFlight = useRef(false);
 
-  const compactCardStyle = {
+  const shellStyle = {
     marginBottom: compact ? 0 : 14,
-    padding: '10px 12px',
+    padding: compact ? 12 : 14,
     border: '1px solid #334155',
-    borderRadius: 10,
-    background: '#0b1220',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    flexWrap: 'wrap'
+    borderRadius: compact ? 10 : 12,
+    background: compact ? '#0b1220' : '#0f172a',
+    minWidth: 0,
+    alignSelf: 'start',
+    width: '100%',
+    boxSizing: 'border-box'
   };
 
   const load = useCallback(async () => {
@@ -11137,28 +11136,35 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
     if (!onSnapshot) return;
     const relationCount = Number(summary.relation_count ?? relations.length) || 0;
     onSnapshot({
-      status: state.status === 'completed' ? 'completed' : state.status,
+      status: state.status,
       known: d.known,
       relation_count: relationCount,
       lookup_type: d.lookup_type,
-      lookup_value: d.lookup_value
+      lookup_value: d.lookup_value,
+      nxdomain_observed: summary.nxdomain_observed === true
     });
-  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.relation_count, relations.length, onSnapshot]);
+  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.relation_count, summary.nxdomain_observed, relations.length, onSnapshot]);
 
   if (!active && !hasLoaded) return null;
 
   if (state.status === 'loading') {
-    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading DNSMania enrichment...</span></div>;
+    return (
+      <div style={shellStyle}>
+        <span style={{ color: '#94a3b8', fontSize: 13 }}>Loading DNSMania enrichment...</span>
+      </div>
+    );
   }
 
   if (state.status === 'not_run') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
-        <div>
-          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
-          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Passive DNS history (manual on-demand only)</div>
+      <div style={shellStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>DNS history enrichment for the extracted IOC host.</div>
+          </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
           <span style={{ color: '#cbd5e1', fontSize: 13 }}>DNS enrichment has not been run for this IOC.</span>
           <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
             {enriching ? 'Enriching...' : 'Enrich with DNSMania'}
@@ -11170,7 +11176,7 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
 
   if (state.status === 'disabled') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={shellStyle}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
         <div style={{ color: '#fcd34d', fontSize: 13, marginTop: 6 }}>
           {state.message || 'DNSMania enrichment is currently disabled.'}
@@ -11181,14 +11187,14 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
 
   if (state.status === 'failed') {
     return (
-      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={{ ...shellStyle, borderColor: '#7f1d1d' }}>
         <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
         <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 6 }}>
-          {state.message || 'DNSMania enrichment failed. Please try again.'}
+          {state.message || 'DNSMania enrichment failed.'}
         </div>
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 10 }}>
           <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
-            {enriching ? 'Enriching...' : 'Refresh DNSMania'}
+            {enriching ? 'Enriching...' : 'Retry'}
           </button>
         </div>
       </div>
@@ -11200,13 +11206,17 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   const associatedValue = d.lookup_type === 'ip'
     ? (summary.associated_domain_count ?? '—')
     : (summary.associated_ip_count ?? '—');
+  const relationHint = relationTotal <= 1
+    ? (relationTotal === 1 ? '1 DNS relation' : null)
+    : `Showing first ${shownRelations.length} of ${relationTotal} relations`;
 
   return (
-    <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+    <div style={shellStyle}>
+      <EnrichmentIntelligenceStyles />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div>
+        <div style={{ minWidth: 0, flex: '1 1 180px' }}>
           <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
-          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Passive DNS history (manual on-demand only)</div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>DNS history enrichment for the extracted IOC host.</div>
         </div>
         <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
           {enriching ? 'Enriching...' : 'Refresh DNSMania'}
@@ -11214,11 +11224,11 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
       </div>
 
       {state.status === 'no_data' ? (
-        <div style={{ color: '#cbd5e1', fontSize: 13, marginTop: 8 }}>No DNS history was found for this IOC.</div>
+        <div style={{ color: '#cbd5e1', fontSize: 13, marginTop: 10 }}>No DNS history was found for this IOC.</div>
       ) : null}
 
-      <div className="enrichment-summary-grid" style={{ marginTop: 10 }}>
-        <EnrichmentFieldCard label={lookupLabel} value={d.lookup_value || '—'} variant="compact" wide />
+      <div className="enrichment-summary-grid">
+        <EnrichmentFieldCard label={lookupLabel} value={d.lookup_value || '—'} variant="wrap" wide />
         <EnrichmentFieldCard label="Known in DNSMania" value={d.known ? 'Yes' : 'No'} />
         <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
         <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
@@ -11231,36 +11241,37 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
       </div>
 
       {shownRelations.length ? (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>
-            Showing first {shownRelations.length} of {relationTotal} relations
-          </div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {shownRelations.map((rel, idx) => {
-              const primary = d.lookup_type === 'ip'
-                ? (rel.domain || '—')
-                : (rel.value || rel.record_type || '—');
-              const meta = [
-                rel.record_type,
-                rel.count != null ? `count ${rel.count}` : null,
-                rel.last_seen ? `last ${formatUserDateTime(rel.last_seen)}` : null
-              ].filter(Boolean).join(' · ');
-              return (
-                <div
-                  key={`${primary}-${idx}`}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    border: '1px solid #334155',
-                    background: '#111827',
-                    fontSize: 12
-                  }}
-                >
-                  <div style={{ color: '#e2e8f0', fontFamily: "'JetBrains Mono', Consolas, monospace", overflowWrap: 'anywhere' }}>{primary}</div>
-                  {meta ? <div style={{ color: '#94a3b8', marginTop: 2 }}>{meta}</div> : null}
-                </div>
-              );
-            })}
+        <div className="enrichment-detail-stack">
+          <div>
+            <div style={{ fontWeight: 650, color: '#e2e8f0', fontSize: 13, marginBottom: 4 }}>Related DNS Records</div>
+            {relationHint ? (
+              <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>{relationHint}</div>
+            ) : null}
+            <div style={{ display: 'grid', gap: 8 }}>
+              {shownRelations.map((rel, idx) => {
+                const recordType = rel.record_type || null;
+                const primary = d.lookup_type === 'ip'
+                  ? (rel.domain || '—')
+                  : (rel.value || recordType || '—');
+                return (
+                  <div key={`${primary}-${idx}`} className="enrichment-detail-block">
+                    {recordType ? (
+                      <div className="enrichment-detail-label">{recordType}</div>
+                    ) : null}
+                    <div className="enrichment-detail-value" title={primary !== '—' ? primary : undefined}>
+                      {primary}
+                    </div>
+                    <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 11, lineHeight: 1.45 }}>
+                      {[
+                        rel.count != null ? `Count: ${rel.count}` : null,
+                        rel.first_seen ? `First seen: ${formatUserDateTime(rel.first_seen)}` : null,
+                        rel.last_seen ? `Last seen: ${formatUserDateTime(rel.last_seen)}` : null
+                      ].filter(Boolean).join(' · ') || '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : null}
