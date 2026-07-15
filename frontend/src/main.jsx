@@ -11452,7 +11452,6 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
                   ? (rel.domain || '—')
                   : (rel.value || recordType || '—');
                 const metaParts = [
-                  rel.count != null ? `Count: ${rel.count}` : null,
                   rel.first_seen ? `First seen: ${formatUserDateTime(rel.first_seen)}` : null,
                   rel.last_seen ? `Last seen: ${formatUserDateTime(rel.last_seen)}` : null
                 ].filter(Boolean);
@@ -11464,9 +11463,11 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
                     <div className="enrichment-detail-value" title={primary !== '—' ? primary : undefined}>
                       {primary}
                     </div>
-                    <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 11, lineHeight: 1.45 }}>
-                      {metaParts.join(' · ') || '—'}
-                    </div>
+                    {metaParts.length ? (
+                      <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 11, lineHeight: 1.45 }}>
+                        {metaParts.join(' · ')}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
