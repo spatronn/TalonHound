@@ -11044,6 +11044,230 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
   );
 }
 
+function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = false, onSnapshot }) {
+  const type = String(iocType || '').trim().toLowerCase();
+  const value = String(iocValue || '').trim();
+  const applicable = type === 'domain' || type === 'url' || type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'ip6' || type === 'hostname';
+  if (!applicable || !value) return null;
+
+  const [state, setState] = useState({ status: 'loading', data: null, message: '' });
+  const [enriching, setEnriching] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const enrichInFlight = useRef(false);
+
+  const compactCardStyle = {
+    marginBottom: compact ? 0 : 14,
+    padding: '10px 12px',
+    border: '1px solid #334155',
+    borderRadius: 10,
+    background: '#0b1220',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    flexWrap: 'wrap'
+  };
+
+  const load = useCallback(async () => {
+    if (!value || !active) return;
+    setState((s) => ({ ...s, status: 'loading' }));
+    try {
+      const { data } = await api.get('/enrichment/dnsmania', { params: { value, ioc_type: type } });
+      setHasLoaded(true);
+      const status = String(data?.status || 'not_run');
+      if (status === 'completed') setState({ status: 'completed', data, message: '' });
+      else if (status === 'no_data') setState({ status: 'no_data', data, message: data?.message || '' });
+      else if (status === 'failed') setState({ status: 'failed', data, message: data?.error_message || data?.message || 'DNSMania enrichment failed' });
+      else if (status === 'disabled') setState({ status: 'disabled', data, message: data?.message || 'DNSMania enrichment is currently disabled' });
+      else if (status === 'not_configured') setState({ status: 'disabled', data, message: data?.message || 'DNSMania is not configured' });
+      else setState({ status: 'not_run', data, message: '' });
+    } catch (err) {
+      setHasLoaded(true);
+      const msg = err?.response?.data?.error || err?.response?.data?.message || 'Failed to load DNSMania enrichment';
+      setState({ status: 'failed', data: err?.response?.data || null, message: msg });
+    }
+  }, [value, type, active]);
+
+  useEffect(() => {
+    if (!active) return;
+    load().catch(() => {});
+  }, [load, active]);
+
+  async function enrich() {
+    if (enrichInFlight.current || enriching) return;
+    enrichInFlight.current = true;
+    setEnriching(true);
+    try {
+      const res = await api.post('/enrichment/dnsmania/refresh', {
+        value,
+        ioc_type: type
+      }, {
+        validateStatus: (status) => status >= 200 && status < 600,
+        timeout: 30000
+      });
+      const data = res.data || {};
+      const status = String(data.status || (res.status >= 500 ? 'failed' : 'not_run'));
+      if (status === 'completed') setState({ status: 'completed', data, message: '' });
+      else if (status === 'no_data') setState({ status: 'no_data', data, message: data.message || '' });
+      else if (status === 'disabled' || status === 'not_configured') {
+        setState({ status: 'disabled', data, message: data.message || data.error || 'DNSMania enrichment is currently disabled' });
+      } else {
+        setState({
+          status: 'failed',
+          data,
+          message: data.error_message || data.error || data.message || 'DNSMania enrichment failed. Please try again.'
+        });
+      }
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.response?.data?.message || err?.message || 'DNSMania enrichment failed. Please try again.';
+      setState({ status: 'failed', data: err?.response?.data || null, message: msg });
+    } finally {
+      setEnriching(false);
+      enrichInFlight.current = false;
+    }
+  }
+
+  const d = state.data || {};
+  const summary = d.summary || {};
+  const relations = Array.isArray(d.relations) ? d.relations : [];
+  const shownRelations = relations.slice(0, 10);
+  const relationTotal = Number(summary.relation_count ?? relations.length) || relations.length;
+
+  useEffect(() => {
+    if (!onSnapshot) return;
+    const relationCount = Number(summary.relation_count ?? relations.length) || 0;
+    onSnapshot({
+      status: state.status === 'completed' ? 'completed' : state.status,
+      known: d.known,
+      relation_count: relationCount,
+      lookup_type: d.lookup_type,
+      lookup_value: d.lookup_value
+    });
+  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.relation_count, relations.length, onSnapshot]);
+
+  if (!active && !hasLoaded) return null;
+
+  if (state.status === 'loading') {
+    return <div style={compactCardStyle}><span style={{ color: '#94a3b8', fontSize: 13 }}>Loading DNSMania enrichment...</span></div>;
+  }
+
+  if (state.status === 'not_run') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Passive DNS history (manual on-demand only)</div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ color: '#cbd5e1', fontSize: 13 }}>DNS enrichment has not been run for this IOC.</span>
+          <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
+            {enriching ? 'Enriching...' : 'Enrich with DNSMania'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'disabled') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
+        <div style={{ color: '#fcd34d', fontSize: 13, marginTop: 6 }}>
+          {state.message || 'DNSMania enrichment is currently disabled.'}
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'failed') {
+    return (
+      <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
+        <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 6 }}>
+          {state.message || 'DNSMania enrichment failed. Please try again.'}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
+            {enriching ? 'Enriching...' : 'Refresh DNSMania'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const lookupLabel = d.lookup_type === 'ip' ? 'Lookup IP' : 'Lookup Domain';
+  const associatedLabel = d.lookup_type === 'ip' ? 'Associated Domains' : 'Associated IPs';
+  const associatedValue = d.lookup_type === 'ip'
+    ? (summary.associated_domain_count ?? '—')
+    : (summary.associated_ip_count ?? '—');
+
+  return (
+    <div style={{ ...compactCardStyle, flexDirection: 'column', alignItems: 'stretch' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>Passive DNS history (manual on-demand only)</div>
+        </div>
+        <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
+          {enriching ? 'Enriching...' : 'Refresh DNSMania'}
+        </button>
+      </div>
+
+      {state.status === 'no_data' ? (
+        <div style={{ color: '#cbd5e1', fontSize: 13, marginTop: 8 }}>No DNS history was found for this IOC.</div>
+      ) : null}
+
+      <div className="enrichment-summary-grid" style={{ marginTop: 10 }}>
+        <EnrichmentFieldCard label={lookupLabel} value={d.lookup_value || '—'} variant="compact" wide />
+        <EnrichmentFieldCard label="Known in DNSMania" value={d.known ? 'Yes' : 'No'} />
+        <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
+        <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
+        <EnrichmentFieldCard label={associatedLabel} value={associatedValue} />
+        <EnrichmentFieldCard label="Observation Count" value={summary.observation_count ?? '—'} />
+        <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
+        {d.lookup_type === 'domain' && summary.nxdomain_observed != null ? (
+          <EnrichmentFieldCard label="NXDOMAIN Observed" value={summary.nxdomain_observed ? 'Yes' : 'No'} />
+        ) : null}
+      </div>
+
+      {shownRelations.length ? (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 6 }}>
+            Showing first {shownRelations.length} of {relationTotal} relations
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {shownRelations.map((rel, idx) => {
+              const primary = d.lookup_type === 'ip'
+                ? (rel.domain || '—')
+                : (rel.value || rel.record_type || '—');
+              const meta = [
+                rel.record_type,
+                rel.count != null ? `count ${rel.count}` : null,
+                rel.last_seen ? `last ${formatUserDateTime(rel.last_seen)}` : null
+              ].filter(Boolean).join(' · ');
+              return (
+                <div
+                  key={`${primary}-${idx}`}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: '1px solid #334155',
+                    background: '#111827',
+                    fontSize: 12
+                  }}
+                >
+                  <div style={{ color: '#e2e8f0', fontFamily: "'JetBrains Mono', Consolas, monospace", overflowWrap: 'anywhere' }}>{primary}</div>
+                  {meta ? <div style={{ color: '#94a3b8', marginTop: 2 }}>{meta}</div> : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const TAG_PICKER_LIMIT = 5;
 const TAG_PICKER_ITEM_HEIGHT = 34;
 const TAG_PICKER_LIST_HEIGHT = TAG_PICKER_ITEM_HEIGHT * TAG_PICKER_LIMIT + 6 * (TAG_PICKER_LIMIT - 1);
@@ -12318,6 +12542,7 @@ function IOCDetailsPage() {
                 AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
                 RdapEnrichmentCard={RdapEnrichmentCard}
                 SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
+                DnsmaniaEnrichmentCard={DnsmaniaEnrichmentCard}
               />
             ) : null}
 

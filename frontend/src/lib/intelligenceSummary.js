@@ -8,6 +8,8 @@ function providerCoverageStatus(snapshot) {
     return 'available';
   }
   if (status === 'not_found') return 'not_found';
+  if (status === 'no_data') return 'not_found';
+  if (status === 'completed') return snapshot?.known === false ? 'not_found' : 'available';
   if (status === 'disabled') return 'disabled';
   if (['not_configured', 'api_key_missing'].includes(status)) return 'not_configured';
   if (['dataset_not_synced', 'suspicious', 'stale'].includes(status)) return 'not_configured';
@@ -81,7 +83,8 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
     { key: 'rdap', label: 'RDAP' },
-    { key: 'spamhaus_drop', label: 'Spamhaus' }
+    { key: 'spamhaus_drop', label: 'Spamhaus' },
+    { key: 'dnsmania', label: 'DNSMania' }
   ];
   let applicable;
   if (Array.isArray(providerKeys) && providerKeys.length) {

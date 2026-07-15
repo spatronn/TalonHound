@@ -24,6 +24,7 @@ import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
+import { registerDnsmaniaEnrichmentRoutes } from './routes/dnsmaniaEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
 import { registerSpamhausDropEnrichmentRoutes } from './routes/spamhausDropEnrichment.js';
@@ -60,6 +61,7 @@ import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './lib/spamhausDropSync.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
+import { getDnsmaniaProviderAdminSummary } from './services/dnsmaniaEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence, computeInheritedEffectiveConfidence } from './lib/iocConfidence.js';
 import {
@@ -2154,6 +2156,8 @@ registerRouteModule('audit');
 
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('rdap_enrichment');
+registerDnsmaniaEnrichmentRoutes(app, pool, auditLogService);
+registerRouteModule('dnsmania_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
@@ -4626,6 +4630,7 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
         last_error_message: abuseipdb.last_error_message
       },
       getRdapProviderAdminSummary(),
+      getDnsmaniaProviderAdminSummary(),
       await (async () => {
         const sdCfg = await getSpamhausDropConfig(pool);
         const sdState = await getSpamhausDropSyncState(pool);

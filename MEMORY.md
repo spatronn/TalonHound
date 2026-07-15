@@ -10,6 +10,15 @@
 
 - **Aktif proje:** TalonHound — threat intel & enrichment odaklı.
 - **Arşiv:** demo-runbook (2026-07 geçişi).
+- **Entegrasyon (devam):** TalonHound ↔ DNSMania DNS enrichment.
+  - DNSMania local path: `C:\Proje\DNSMania`
+  - API readiness raporu: `C:\Proje\DNSMania\docs\api-reference.html`
+  - DNSMania test API: `http://192.168.1.191:3000` (BIND + DNSTAP; auth yok, LAN)
+  - **Phase 1 (manuel):** IOC Detail > Intelligence DNSMania kartı eklendi
+    - Env: `DNSMANIA_BASE_URL`, `DNSMANIA_TIMEOUT_MS`, `DNSMANIA_ENABLED`
+    - Routes: `GET/POST /api/enrichment/dnsmania` (+ `/refresh`)
+    - Table: `ioc_dnsmania_enrichment` (migration `112_...`)
+    - Otomatik/cron/batch YOK — yalnızca Enrich/Refresh butonu
 
 ## Infrastructure Facts (Persistent)
 
