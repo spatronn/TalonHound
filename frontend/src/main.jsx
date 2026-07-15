@@ -10570,6 +10570,91 @@ const ENRICHMENT_INTELLIGENCE_LAYOUT_CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.dnsmania-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  padding: 3px 10px;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  background: rgba(71, 85, 105, 0.18);
+  white-space: nowrap;
+}
+.dnsmania-status-badge.is-found {
+  border-color: #166534;
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.14);
+}
+.dnsmania-status-badge.is-nodata {
+  border-color: #475569;
+  color: #94a3b8;
+  background: rgba(71, 85, 105, 0.18);
+}
+.dnsmania-status-badge.is-failed {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.14);
+}
+.dnsmania-status-badge.is-disabled {
+  border-color: #92400e;
+  color: #fcd34d;
+  background: rgba(217, 119, 6, 0.14);
+}
+.dnsmania-status-badge.is-nxdomain {
+  border-color: #a16207;
+  color: #fde68a;
+  background: rgba(161, 98, 7, 0.16);
+}
+.dnsmania-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  align-items: start;
+}
+.dnsmania-metric-grid > .enrichment-field-card {
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  .dnsmania-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .dnsmania-metric-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.dnsmania-lookup-panel {
+  margin-top: 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #0b1220;
+  min-width: 0;
+}
+.dnsmania-lookup-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+.dnsmania-lookup-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+.dnsmania-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 6px;
+}
 `;
 
 function EnrichmentIntelligenceStyles() {
@@ -11044,6 +11129,21 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
   );
 }
 
+function dnsmaniaIsNxRelation(rel) {
+  const rt = String(rel?.record_type || '').toUpperCase();
+  return rt === 'NXDOMAIN' || rt === 'SERVFAIL' || rt === 'REFUSED'
+    || (rel?.value == null && rel?.domain == null && Boolean(rt));
+}
+
+function dnsmaniaIsResolvableRelation(rel, lookupType) {
+  if (String(lookupType) === 'ip') return Boolean(rel?.domain);
+  return Boolean(rel?.value);
+}
+
+function DnsmaniaStatusBadge({ kind, label }) {
+  return <span className={`dnsmania-status-badge is-${kind}`}>{label}</span>;
+}
+
 function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = false, onSnapshot }) {
   const type = String(iocType || '').trim().toLowerCase();
   const value = String(iocValue || '').trim();
@@ -11054,6 +11154,7 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   const [enriching, setEnriching] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const enrichInFlight = useRef(false);
+  const isUrlIoc = type === 'url';
 
   const shellStyle = {
     marginBottom: compact ? 0 : 14,
@@ -11129,28 +11230,57 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   const d = state.data || {};
   const summary = d.summary || {};
   const relations = Array.isArray(d.relations) ? d.relations : [];
-  const shownRelations = relations.slice(0, 10);
-  const relationTotal = Number(summary.relation_count ?? relations.length) || relations.length;
+  const resolvableRelations = relations.filter((rel) => dnsmaniaIsResolvableRelation(rel, d.lookup_type));
+  const nxRelations = relations.filter((rel) => dnsmaniaIsNxRelation(rel));
+  const nxdomainOnly = Boolean(summary.nxdomain_observed) && resolvableRelations.length === 0 && nxRelations.length > 0;
+  const associatedCount = d.lookup_type === 'ip'
+    ? (Number.isFinite(Number(summary.associated_domain_count)) ? Number(summary.associated_domain_count) : resolvableRelations.length)
+    : (Number.isFinite(Number(summary.associated_ip_count)) ? Number(summary.associated_ip_count) : resolvableRelations.length);
+  const relationList = (nxdomainOnly ? nxRelations : resolvableRelations).slice(0, 10);
+  const relationTotal = (nxdomainOnly ? nxRelations : resolvableRelations).length;
 
   useEffect(() => {
     if (!onSnapshot) return;
-    const relationCount = Number(summary.relation_count ?? relations.length) || 0;
     onSnapshot({
       status: state.status,
       known: d.known,
-      relation_count: relationCount,
+      relation_count: resolvableRelations.length,
       lookup_type: d.lookup_type,
       lookup_value: d.lookup_value,
-      nxdomain_observed: summary.nxdomain_observed === true
+      nxdomain_observed: summary.nxdomain_observed === true || nxdomainOnly
     });
-  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.relation_count, summary.nxdomain_observed, relations.length, onSnapshot]);
+  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.nxdomain_observed, resolvableRelations.length, nxdomainOnly, onSnapshot]);
+
+  const header = (actionButton) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{ minWidth: 0, flex: '1 1 180px' }}>
+        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>DNS history enrichment for the extracted IOC host.</div>
+        {isUrlIoc ? (
+          <div style={{ color: '#64748b', fontSize: 11, marginTop: 4 }}>Lookup extracted from URL hostname.</div>
+        ) : null}
+      </div>
+      {actionButton}
+    </div>
+  );
+
+  const lookupPanel = (lookupLabel, lookupValue, extraMuted) => (
+    <div className="dnsmania-lookup-panel">
+      <div className="dnsmania-lookup-label">{lookupLabel}</div>
+      <div className="dnsmania-lookup-value" title={lookupValue || undefined}>{lookupValue || '—'}</div>
+      {extraMuted ? <div style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>{extraMuted}</div> : null}
+    </div>
+  );
 
   if (!active && !hasLoaded) return null;
 
   if (state.status === 'loading') {
     return (
       <div style={shellStyle}>
-        <span style={{ color: '#94a3b8', fontSize: 13 }}>Loading DNSMania enrichment...</span>
+        {header(
+          <button type="button" disabled>Loading...</button>
+        )}
+        <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 12 }}>Loading DNSMania enrichment...</div>
       </div>
     );
   }
@@ -11158,17 +11288,14 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   if (state.status === 'not_run') {
     return (
       <div style={shellStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          <div>
-            <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>DNS history enrichment for the extracted IOC host.</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
-          <span style={{ color: '#cbd5e1', fontSize: 13 }}>DNS enrichment has not been run for this IOC.</span>
+        {header(
           <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
             {enriching ? 'Enriching...' : 'Enrich with DNSMania'}
           </button>
+        )}
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <DnsmaniaStatusBadge kind="nodata" label="Not run" />
+          <span style={{ color: '#cbd5e1', fontSize: 13 }}>DNS enrichment has not been run for this IOC.</span>
         </div>
       </div>
     );
@@ -11177,9 +11304,10 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   if (state.status === 'disabled') {
     return (
       <div style={shellStyle}>
-        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
-        <div style={{ color: '#fcd34d', fontSize: 13, marginTop: 6 }}>
-          {state.message || 'DNSMania enrichment is currently disabled.'}
+        {header(null)}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <DnsmaniaStatusBadge kind="disabled" label="Disabled" />
+          <span style={{ color: '#fcd34d', fontSize: 13 }}>{state.message || 'DNSMania enrichment is currently disabled.'}</span>
         </div>
       </div>
     );
@@ -11188,14 +11316,14 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   if (state.status === 'failed') {
     return (
       <div style={{ ...shellStyle, borderColor: '#7f1d1d' }}>
-        <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
-        <div style={{ color: '#fca5a5', fontSize: 13, marginTop: 6 }}>
-          {state.message || 'DNSMania enrichment failed.'}
-        </div>
-        <div style={{ marginTop: 10 }}>
+        {header(
           <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
             {enriching ? 'Enriching...' : 'Retry'}
           </button>
+        )}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <DnsmaniaStatusBadge kind="failed" label="Failed" />
+          <span style={{ color: '#fca5a5', fontSize: 13 }}>{state.message || 'DNSMania enrichment failed.'}</span>
         </div>
       </div>
     );
@@ -11203,56 +11331,96 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
 
   const lookupLabel = d.lookup_type === 'ip' ? 'Lookup IP' : 'Lookup Domain';
   const associatedLabel = d.lookup_type === 'ip' ? 'Associated Domains' : 'Associated IPs';
-  const associatedValue = d.lookup_type === 'ip'
-    ? (summary.associated_domain_count ?? '—')
-    : (summary.associated_ip_count ?? '—');
-  const relationHint = relationTotal <= 1
-    ? (relationTotal === 1 ? '1 DNS relation' : null)
-    : `Showing first ${shownRelations.length} of ${relationTotal} relations`;
+  const refreshBtn = (
+    <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
+      {enriching ? 'Enriching...' : 'Refresh DNSMania'}
+    </button>
+  );
+
+  if (state.status === 'no_data') {
+    return (
+      <div style={shellStyle}>
+        <EnrichmentIntelligenceStyles />
+        {header(refreshBtn)}
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <DnsmaniaStatusBadge kind="nodata" label="No data" />
+          <span style={{ color: '#cbd5e1', fontSize: 13 }}>No DNS history was found for this IOC.</span>
+        </div>
+        {lookupPanel(lookupLabel, d.lookup_value, d.last_attempt_at || d.enriched_at
+          ? `Last checked: ${formatUserDateTime(d.last_attempt_at || d.enriched_at)}`
+          : null)}
+      </div>
+    );
+  }
+
+  // completed
+  const statusBadge = nxdomainOnly
+    ? <DnsmaniaStatusBadge kind="nxdomain" label="NXDOMAIN observed" />
+    : <DnsmaniaStatusBadge kind="found" label="Found" />;
+
+  const relationHint = relationTotal > relationList.length
+    ? `Showing ${relationList.length} of ${relationTotal} relations`
+    : null;
 
   return (
     <div style={shellStyle}>
       <EnrichmentIntelligenceStyles />
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-          <div style={{ fontWeight: 700, color: '#e2e8f0' }}>DNSMania Enrichment</div>
-          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>DNS history enrichment for the extracted IOC host.</div>
+      {header(refreshBtn)}
+
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+        {statusBadge}
+        {!nxdomainOnly ? (
+          <div>
+            <div style={{ color: '#94a3b8', fontSize: 11 }}>Known in DNSMania</div>
+            <div style={{ color: '#86efac', fontSize: 14, fontWeight: 700, marginTop: 2 }}>Yes</div>
+          </div>
+        ) : (
+          <div style={{ color: '#fde68a', fontSize: 12, lineHeight: 1.4, paddingTop: 2 }}>
+            DNS name observed with NXDOMAIN history (not a reputation verdict).
+          </div>
+        )}
+      </div>
+
+      {lookupPanel(lookupLabel, d.lookup_value)}
+
+      {!nxdomainOnly ? (
+        <div className="dnsmania-metric-grid">
+          <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
+          <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
+          <EnrichmentFieldCard label={associatedLabel} value={associatedCount} />
+          <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
         </div>
-        <button type="button" onClick={() => enrich().catch(() => {})} disabled={enriching}>
-          {enriching ? 'Enriching...' : 'Refresh DNSMania'}
-        </button>
-      </div>
+      ) : (
+        <div className="dnsmania-metric-grid">
+          <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(nxRelations[0]?.first_seen || summary.first_seen)} />
+          <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(nxRelations[0]?.last_seen || summary.last_seen)} />
+          {nxRelations[0]?.count != null ? (
+            <EnrichmentFieldCard label="NXDOMAIN Count" value={nxRelations[0].count} />
+          ) : null}
+          <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
+        </div>
+      )}
 
-      {state.status === 'no_data' ? (
-        <div style={{ color: '#cbd5e1', fontSize: 13, marginTop: 10 }}>No DNS history was found for this IOC.</div>
-      ) : null}
-
-      <div className="enrichment-summary-grid">
-        <EnrichmentFieldCard label={lookupLabel} value={d.lookup_value || '—'} variant="wrap" wide />
-        <EnrichmentFieldCard label="Known in DNSMania" value={d.known ? 'Yes' : 'No'} />
-        <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
-        <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
-        <EnrichmentFieldCard label={associatedLabel} value={associatedValue} />
-        <EnrichmentFieldCard label="Observation Count" value={summary.observation_count ?? '—'} />
-        <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
-        {d.lookup_type === 'domain' && summary.nxdomain_observed != null ? (
-          <EnrichmentFieldCard label="NXDOMAIN Observed" value={summary.nxdomain_observed ? 'Yes' : 'No'} />
-        ) : null}
-      </div>
-
-      {shownRelations.length ? (
+      {relationList.length ? (
         <div className="enrichment-detail-stack">
           <div>
-            <div style={{ fontWeight: 650, color: '#e2e8f0', fontSize: 13, marginBottom: 4 }}>Related DNS Records</div>
+            <div className="dnsmania-section-title">
+              {nxdomainOnly ? 'NXDOMAIN History' : associatedLabel}
+            </div>
             {relationHint ? (
               <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>{relationHint}</div>
             ) : null}
             <div style={{ display: 'grid', gap: 8 }}>
-              {shownRelations.map((rel, idx) => {
+              {relationList.map((rel, idx) => {
                 const recordType = rel.record_type || null;
                 const primary = d.lookup_type === 'ip'
                   ? (rel.domain || '—')
                   : (rel.value || recordType || '—');
+                const metaParts = [
+                  rel.count != null ? `Count: ${rel.count}` : null,
+                  rel.first_seen ? `First seen: ${formatUserDateTime(rel.first_seen)}` : null,
+                  rel.last_seen ? `Last seen: ${formatUserDateTime(rel.last_seen)}` : null
+                ].filter(Boolean);
                 return (
                   <div key={`${primary}-${idx}`} className="enrichment-detail-block">
                     {recordType ? (
@@ -11262,11 +11430,7 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
                       {primary}
                     </div>
                     <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 11, lineHeight: 1.45 }}>
-                      {[
-                        rel.count != null ? `Count: ${rel.count}` : null,
-                        rel.first_seen ? `First seen: ${formatUserDateTime(rel.first_seen)}` : null,
-                        rel.last_seen ? `Last seen: ${formatUserDateTime(rel.last_seen)}` : null
-                      ].filter(Boolean).join(' · ') || '—'}
+                      {metaParts.join(' · ') || '—'}
                     </div>
                   </div>
                 );

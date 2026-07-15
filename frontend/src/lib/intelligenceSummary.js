@@ -109,18 +109,18 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
 export function dnsmaniaCoverageDetail(snapshot, state) {
   if (!snapshot || String(snapshot?.status || '') === 'not_run' || state === 'not_run') return 'Not run';
   const status = String(snapshot.status || '').toLowerCase();
-  if (status === 'disabled' || state === 'disabled') return 'Disabled';
-  if (status === 'failed' || state === 'error') return 'Error';
+  if (status === 'disabled' || status === 'not_configured' || state === 'disabled' || state === 'not_configured') {
+    return 'Disabled';
+  }
+  if (status === 'failed' || state === 'error') return 'Failed';
   if (status === 'no_data' || (status === 'completed' && snapshot.known === false) || state === 'not_found') {
     return 'No data';
   }
   if (status === 'completed' || state === 'available') {
-    if (snapshot.nxdomain_observed === true) return 'NXDOMAIN observed';
-    const n = Number(snapshot.relation_count);
-    if (Number.isFinite(n) && n > 0) return `${n} relation${n === 1 ? '' : 's'}`;
+    // Prefer Found over Available — DNS history present is not a reputation verdict.
     return 'Found';
   }
-  return providerStateLabel(state);
+  return 'Not run';
 }
 
 export function computeLayeredProviderCoverage({
