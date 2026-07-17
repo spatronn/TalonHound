@@ -8890,7 +8890,6 @@ function IOCSuppressionsPage() {
   const [deleteItem, setDeleteItem] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState('');
-  const [actionBusyId, setActionBusyId] = useState(null);
   const [toast, setToast] = useState('');
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -9009,26 +9008,6 @@ function IOCSuppressionsPage() {
       setEditError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
     } finally {
       setEditSaving(false);
-    }
-  }
-
-  async function setSuppressionEnabled(item, enabled) {
-    if (!item?.id || actionBusyId) return;
-    const ok = window.confirm(
-      enabled
-        ? 'Enable this suppression? It will become effective immediately.'
-        : 'Disable this suppression? It will no longer prevent matching activity, but the record will be kept.'
-    );
-    if (!ok) return;
-    setActionBusyId(item.id);
-    try {
-      await api.patch(`/ioc-suppressions/${item.id}`, { active: Boolean(enabled) });
-      setToast(enabled ? 'Suppression enabled' : 'Suppression disabled');
-      await load();
-    } catch (err) {
-      setToast(apiErrorMessage(err, 'Failed to update suppression'));
-    } finally {
-      setActionBusyId(null);
     }
   }
 
@@ -9156,50 +9135,37 @@ function IOCSuppressionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
-                  const rowEnabled = Boolean(item.active);
-                  return (
-                    <tr key={item.id} style={ui.tr}>
-                      <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
-                      <td style={ui.td}>{item.ioc_type}</td>
-                      <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
-                      <td style={ui.td}>{item.source_name || '—'}</td>
-                      <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
-                      <td style={ui.td}>{item.created_by || '—'}</td>
-                      <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
-                      <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
-                      <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{formatSuppressionStatusLabel(item.status)}</span></td>
-                      <td style={ui.td}>{Number(item.affected_incidents || 0)}</td>
-                      <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                        <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
-                        {isAdmin ? (
-                          <>
-                            {' · '}
-                            <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)} disabled={actionBusyId === item.id}>Edit</button>
-                            {' · '}
-                            <button
-                              type="button"
-                              style={ui.linkBtn}
-                              disabled={actionBusyId === item.id}
-                              onClick={() => setSuppressionEnabled(item, !rowEnabled).catch(() => {})}
-                            >
-                              {rowEnabled ? 'Disable' : 'Enable'}
-                            </button>
-                            {' · '}
-                            <button
-                              type="button"
-                              style={{ ...ui.linkBtn, color: '#fca5a5' }}
-                              disabled={actionBusyId === item.id}
-                              onClick={() => { setDeleteItem(item); setDeleteError(''); }}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        ) : null}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {items.map((item) => (
+                  <tr key={item.id} style={ui.tr}>
+                    <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
+                    <td style={ui.td}>{item.ioc_type}</td>
+                    <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
+                    <td style={ui.td}>{item.source_name || '—'}</td>
+                    <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
+                    <td style={ui.td}>{item.created_by || '—'}</td>
+                    <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
+                    <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
+                    <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{formatSuppressionStatusLabel(item.status)}</span></td>
+                    <td style={ui.td}>{Number(item.affected_incidents || 0)}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                      <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
+                      {isAdmin ? (
+                        <>
+                          {' · '}
+                          <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)}>Edit</button>
+                          {' · '}
+                          <button
+                            type="button"
+                            style={{ ...ui.linkBtn, color: '#fca5a5' }}
+                            onClick={() => { setDeleteItem(item); setDeleteError(''); }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
