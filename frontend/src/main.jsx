@@ -11268,11 +11268,16 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   const resolvableRelations = relations.filter((rel) => dnsmaniaIsResolvableRelation(rel, d.lookup_type));
   const nxRelations = relations.filter((rel) => dnsmaniaIsNxRelation(rel));
   const nxdomainOnly = Boolean(summary.nxdomain_observed) && resolvableRelations.length === 0 && nxRelations.length > 0;
+  const latestDnsStatus = String(summary.latest_dns_status || '').toUpperCase() || null;
+  const latestIsErrorStatus = latestDnsStatus === 'NXDOMAIN' || latestDnsStatus === 'SERVFAIL' || latestDnsStatus === 'REFUSED';
   const associatedCount = d.lookup_type === 'ip'
     ? (Number.isFinite(Number(summary.associated_domain_count)) ? Number(summary.associated_domain_count) : resolvableRelations.length)
     : (Number.isFinite(Number(summary.associated_ip_count)) ? Number(summary.associated_ip_count) : resolvableRelations.length);
-  const relationList = (nxdomainOnly ? nxRelations : resolvableRelations).slice(0, 10);
-  const relationTotal = (nxdomainOnly ? nxRelations : resolvableRelations).length;
+  // Always prefer historical IP/domain relations for the list; NXDOMAIN-only falls back to NX rows.
+  const relationList = (resolvableRelations.length ? resolvableRelations : (nxdomainOnly ? nxRelations : [])).slice(0, 10);
+  const relationTotal = resolvableRelations.length
+    ? resolvableRelations.length
+    : (nxdomainOnly ? nxRelations.length : 0);
 
   useEffect(() => {
     if (!onSnapshot) return;
@@ -11282,9 +11287,10 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
       relation_count: resolvableRelations.length,
       lookup_type: d.lookup_type,
       lookup_value: d.lookup_value,
-      nxdomain_observed: summary.nxdomain_observed === true || nxdomainOnly
+      nxdomain_observed: summary.nxdomain_observed === true || latestIsErrorStatus || nxdomainOnly,
+      latest_dns_status: latestDnsStatus
     });
-  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.nxdomain_observed, resolvableRelations.length, nxdomainOnly, onSnapshot]);
+  }, [state.status, d.known, d.lookup_type, d.lookup_value, summary.nxdomain_observed, resolvableRelations.length, nxdomainOnly, latestDnsStatus, latestIsErrorStatus, onSnapshot]);
 
   const header = (actionButton) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -11388,10 +11394,16 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
     );
   }
 
-  // completed
-  const statusBadge = nxdomainOnly
-    ? <DnsmaniaStatusBadge kind="nxdomain" label="NXDOMAIN observed" />
-    : <DnsmaniaStatusBadge kind="found" label="Found" />;
+  // completed — Found means historical data exists; latest DNS status is separate.
+  const statusBadge = <DnsmaniaStatusBadge kind="found" label="Found" />;
+  const latestStatusBadge = latestDnsStatus
+    ? (
+      <DnsmaniaStatusBadge
+        kind={latestIsErrorStatus ? 'nxdomain' : 'found'}
+        label={latestDnsStatus}
+      />
+    )
+    : null;
 
   const relationHint = relationTotal > relationList.length
     ? `Showing ${relationList.length} of ${relationTotal} relations`
@@ -11404,43 +11416,49 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
 
       <div style={{ marginTop: 12, display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
         {statusBadge}
-        {!nxdomainOnly ? (
+        <div>
+          <div style={{ color: '#94a3b8', fontSize: 11 }}>Known in DNSMania</div>
+          <div style={{ color: '#86efac', fontSize: 14, fontWeight: 700, marginTop: 2 }}>Yes</div>
+        </div>
+        {latestDnsStatus ? (
           <div>
-            <div style={{ color: '#94a3b8', fontSize: 11 }}>Known in DNSMania</div>
-            <div style={{ color: '#86efac', fontSize: 14, fontWeight: 700, marginTop: 2 }}>Yes</div>
+            <div style={{ color: '#94a3b8', fontSize: 11 }}>Latest DNS Status</div>
+            <div style={{ marginTop: 4 }}>{latestStatusBadge}</div>
           </div>
-        ) : (
-          <div style={{ color: '#fde68a', fontSize: 12, lineHeight: 1.4, paddingTop: 2 }}>
-            DNS name observed with NXDOMAIN history (not a reputation verdict).
-          </div>
-        )}
+        ) : null}
       </div>
 
       {lookupPanel(lookupLabel, d.lookup_value)}
 
-      {!nxdomainOnly ? (
-        <div className="dnsmania-metric-grid">
-          <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
-          <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
+      {latestIsErrorStatus && resolvableRelations.length > 0 ? (
+        <div style={{ marginTop: 10, color: '#fde68a', fontSize: 12, lineHeight: 1.45 }}>
+          Latest observation returned {latestDnsStatus}. Previously resolved IPs are shown below.
+        </div>
+      ) : null}
+
+      <div className="dnsmania-metric-grid">
+        <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
+        <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
+        {latestDnsStatus ? (
+          <EnrichmentFieldCard label="Latest DNS Status" value={latestDnsStatus} />
+        ) : null}
+        {latestIsErrorStatus && summary.last_successfully_resolved ? (
+          <EnrichmentFieldCard
+            label="Last Successfully Resolved"
+            value={formatUserDateTime(summary.last_successfully_resolved)}
+          />
+        ) : null}
+        {!nxdomainOnly ? (
           <EnrichmentFieldCard label={associatedLabel} value={associatedCount} />
-          <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
-        </div>
-      ) : (
-        <div className="dnsmania-metric-grid">
-          <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(nxRelations[0]?.first_seen || summary.first_seen)} />
-          <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(nxRelations[0]?.last_seen || summary.last_seen)} />
-          {nxRelations[0]?.count != null ? (
-            <EnrichmentFieldCard label="NXDOMAIN Count" value={nxRelations[0].count} />
-          ) : null}
-          <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
-        </div>
-      )}
+        ) : null}
+        <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
+      </div>
 
       {relationList.length ? (
         <div className="enrichment-detail-stack">
           <div>
             <div className="dnsmania-section-title">
-              {nxdomainOnly ? 'NXDOMAIN History' : associatedLabel}
+              {resolvableRelations.length ? associatedLabel : (nxdomainOnly ? 'NXDOMAIN History' : associatedLabel)}
             </div>
             {relationHint ? (
               <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>{relationHint}</div>

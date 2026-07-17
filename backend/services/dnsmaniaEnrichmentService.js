@@ -70,8 +70,105 @@ function truncateRawJson(payload) {
 
 function toIsoOrNull(value) {
   if (value == null || value === '') return null;
-  const d = new Date(value);
+  let raw = String(value).trim();
+  // DNSMania returns UTC wall-clock without timezone, e.g. "2026-07-17 14:44:30.978"
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(raw)) {
+    raw = `${raw.replace(' ', 'T')}Z`;
+  }
+  const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function toEpochMs(value) {
+  if (value == null || value === '') return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function isErrorDnsRecordType(recordType) {
+  const rt = String(recordType || '').toUpperCase();
+  return rt === 'NXDOMAIN' || rt === 'SERVFAIL' || rt === 'REFUSED';
+}
+
+function isResolvableDomainRelation(rel) {
+  return Boolean(rel?.value);
+}
+
+/**
+ * Derive latest DNS observation status from normalized relations.
+ * Prefer max(last_seen); fall back to first_seen. Same-timestamp A/AAAA/CNAME
+ * group as one resolvable observation — do not treat sibling A rows as separate "latest".
+ *
+ * @param {Array<object>} relations
+ * @returns {{
+ *   latest_dns_status: string|null,
+ *   latest_dns_status_first_seen: string|null,
+ *   latest_dns_status_last_seen: string|null,
+ *   last_successfully_resolved: string|null,
+ *   nxdomain_observed: boolean
+ * }}
+ */
+export function deriveLatestDnsStatusFromRelations(relations) {
+  const list = Array.isArray(relations) ? relations : [];
+  let latest = null;
+  let latestMs = -1;
+  let lastResolvedMs = -1;
+  let lastResolvedIso = null;
+  let nxdomainObserved = false;
+
+  for (const rel of list) {
+    const rt = String(rel?.record_type || '').toUpperCase() || null;
+    if (isErrorDnsRecordType(rt)) nxdomainObserved = true;
+
+    const ms = toEpochMs(rel?.last_seen) ?? toEpochMs(rel?.first_seen);
+    if (ms != null && isResolvableDomainRelation(rel) && ms >= lastResolvedMs) {
+      lastResolvedMs = ms;
+      lastResolvedIso = toIsoOrNull(rel.last_seen) || toIsoOrNull(rel.first_seen);
+    }
+
+    if (ms == null) continue;
+    // Prefer error/status rows over sibling A/AAAA answers when timestamps tie
+    // (same query often emits multiple A rows in the same second).
+    if (ms > latestMs || (ms === latestMs && isErrorDnsRecordType(rt) && !isErrorDnsRecordType(latest?.record_type))) {
+      latestMs = ms;
+      latest = rel;
+    }
+  }
+
+  if (!latest) {
+    return {
+      latest_dns_status: null,
+      latest_dns_status_first_seen: null,
+      latest_dns_status_last_seen: null,
+      last_successfully_resolved: lastResolvedIso,
+      nxdomain_observed: nxdomainObserved
+    };
+  }
+
+  const latestType = String(latest.record_type || '').toUpperCase() || null;
+  let status = latestType;
+  if (!status && isResolvableDomainRelation(latest)) status = 'RESOLVED';
+  if (!status && latest.value == null) status = 'NXDOMAIN';
+
+  return {
+    latest_dns_status: status,
+    latest_dns_status_first_seen: toIsoOrNull(latest.first_seen),
+    latest_dns_status_last_seen: toIsoOrNull(latest.last_seen),
+    last_successfully_resolved: lastResolvedIso,
+    nxdomain_observed: nxdomainObserved || isErrorDnsRecordType(status)
+  };
+}
+
+function mergeLatestDnsFields(summary, relations) {
+  const derived = deriveLatestDnsStatusFromRelations(relations);
+  return {
+    ...summary,
+    latest_dns_status: summary?.latest_dns_status ?? derived.latest_dns_status,
+    latest_dns_status_first_seen: summary?.latest_dns_status_first_seen ?? derived.latest_dns_status_first_seen,
+    latest_dns_status_last_seen: summary?.latest_dns_status_last_seen ?? derived.latest_dns_status_last_seen,
+    last_successfully_resolved: summary?.last_successfully_resolved ?? derived.last_successfully_resolved,
+    nxdomain_observed: summary?.nxdomain_observed === true || derived.nxdomain_observed
+  };
 }
 
 /**
@@ -84,10 +181,6 @@ export function normalizeDnsmaniaDomainResponse(body, lookupValue) {
   const firstSeen = toIsoOrNull(body?.first_seen);
   const lastSeen = toIsoOrNull(body?.last_seen);
   const known = firstSeen != null || lastSeen != null || records.length > 0;
-  const nxdomainObserved = records.some((r) => {
-    const rt = String(r?.record_type || '').toUpperCase();
-    return rt === 'NXDOMAIN' || (r?.ip == null && (rt === 'NXDOMAIN' || rt === 'SERVFAIL' || rt === 'REFUSED'));
-  });
 
   const relations = records.map((r) => ({
     record_type: r?.record_type != null ? String(r.record_type) : null,
@@ -97,6 +190,7 @@ export function normalizeDnsmaniaDomainResponse(body, lookupValue) {
     count: Number.isFinite(Number(r?.count)) ? Number(r.count) : null
   }));
 
+  const latest = deriveLatestDnsStatusFromRelations(relations);
   const associatedIpCount = Number.isFinite(Number(body?.unique_ips))
     ? Number(body.unique_ips)
     : relations.filter((r) => r.value).length;
@@ -115,7 +209,11 @@ export function normalizeDnsmaniaDomainResponse(body, lookupValue) {
       last_seen: lastSeen,
       associated_ip_count: associatedIpCount,
       observation_count: observationCount,
-      nxdomain_observed: nxdomainObserved,
+      nxdomain_observed: latest.nxdomain_observed,
+      latest_dns_status: latest.latest_dns_status,
+      latest_dns_status_first_seen: latest.latest_dns_status_first_seen,
+      latest_dns_status_last_seen: latest.latest_dns_status_last_seen,
+      last_successfully_resolved: latest.last_successfully_resolved,
       relation_count: relations.length,
       pagination_returned: body?.pagination?.returned != null ? Number(body.pagination.returned) : relations.length
     },
@@ -411,12 +509,15 @@ export function rowToApiPayload(row, extra = {}) {
     };
   }
 
-  const summary = typeof row.normalized_summary === 'string'
+  const summaryRaw = typeof row.normalized_summary === 'string'
     ? JSON.parse(row.normalized_summary)
     : (row.normalized_summary || {});
   const relations = typeof row.relations_json === 'string'
     ? JSON.parse(row.relations_json)
     : (row.relations_json || []);
+  const summary = row.lookup_type === 'domain'
+    ? mergeLatestDnsFields(summaryRaw, relations)
+    : (summaryRaw || {});
 
   return {
     provider: DNSMANIA_PROVIDER,
