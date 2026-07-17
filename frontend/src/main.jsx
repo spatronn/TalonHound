@@ -9129,7 +9129,7 @@ function IOCSuppressionsPage() {
             <table className="ioc-table published-feeds-table" width="100%" style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
               <thead style={ui.thead}>
                 <tr>
-                  {['IOC', 'Type', 'Scope', 'Source', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Affected', 'Actions'].map((h) => (
+                  {['IOC', 'Type', 'Scope', 'Source', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Actions'].map((h) => (
                     <th key={h} style={ui.th}>{h}</th>
                   ))}
                 </tr>
@@ -9146,7 +9146,6 @@ function IOCSuppressionsPage() {
                     <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
                     <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
                     <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{formatSuppressionStatusLabel(item.status)}</span></td>
-                    <td style={ui.td}>{Number(item.affected_incidents || 0)}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                       <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
                       {isAdmin ? (
@@ -12730,7 +12729,6 @@ function IOCDetailsPage() {
                   <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '—'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Created at:</span> {formatUserDateTime(suppression.created_at)}</div>
                   <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {suppression.expires_at ? formatUserDateTime(suppression.expires_at) : 'Never'}</div>
-                  <div><span style={{ color: '#94a3b8' }}>Risk contribution:</span> 0</div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>

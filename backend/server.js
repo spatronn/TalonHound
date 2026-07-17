@@ -3931,11 +3931,7 @@ app.get('/api/ioc-suppressions', async (req, res) => {
     const baseWhere = where.join(' AND ');
     const q = await pool.query(
       `SELECT s.*,
-              ${SUPPRESSION_STATUS_CASE_SQL} AS status,
-              0::int AS affected_incidents,
-              0::int AS closed_incidents,
-              0::int AS open_incidents,
-              0::double precision AS risk_contribution
+              ${SUPPRESSION_STATUS_CASE_SQL} AS status
        FROM ioc_suppressions s
        WHERE ${baseWhere}
        ORDER BY ${orderBy}
