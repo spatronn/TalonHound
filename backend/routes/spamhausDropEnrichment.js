@@ -1,6 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
+import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
 import {
   SPAMHAUS_DROP_PROVIDER,
   getSpamhausDropConfig,
@@ -122,14 +123,35 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
         throw err;
       }
 
+      const subject = await resolveSubjectIocFromRequest(pool, req);
+      const scope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || iocValue,
+        subjectIocType: subject?.observable_type || iocType,
+        targetType: 'ip',
+        targetValue: targetIp,
+        provider: SPAMHAUS_DROP_PROVIDER,
+        extraMetadata: {
+          ioc_value: iocValue,
+          ioc_type: iocType,
+          target_ip: targetIp,
+          original_value: iocValue,
+          observable_value: iocValue
+        }
+      });
       await audit.auditSuccess({
         req,
         action: AUDIT_ACTION.SPAMHAUS_DROP_ENRICHMENT_REFRESH,
         entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: iocValue,
-        entityDisplay: iocValue,
+        entityId: scope.entityId,
+        entityDisplay: scope.entityDisplay,
+        subjectIocId: scope.subjectIocId,
+        subjectIocType: scope.subjectIocType,
+        subjectIocValue: scope.subjectIocValue,
+        targetType: scope.targetType,
+        targetValue: scope.targetValue,
         severity: AUDIT_SEVERITY.INFO,
-        metadata: { ioc_value: iocValue, ioc_type: iocType, target_ip: targetIp, provider: SPAMHAUS_DROP_PROVIDER }
+        metadata: scope.metadata
       }).catch(() => {});
 
       const resp = buildSpamhausLookupResponse({ lookup, syncState, config, targetIp });

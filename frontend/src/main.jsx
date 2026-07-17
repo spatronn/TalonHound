@@ -735,18 +735,24 @@ function truncateAuditText(value, max = 72) {
 }
 
 function formatAuditEntityPrimary(row) {
+  const subjectValue = row?.subject_ioc_value
+    || auditSnapshotValue(row, 'subject_ioc_value', 'observable_value', 'original_value', 'ioc_value');
+  if (subjectValue) return subjectValue;
   if (row?.entity_display) return row.entity_display;
   const value = auditSnapshotValue(row, 'ioc_value', 'observable');
   if (value) return value;
-  const type = auditSnapshotValue(row, 'ioc_observable_type', 'observable_type');
+  const type = auditSnapshotValue(row, 'ioc_observable_type', 'observable_type', 'subject_ioc_type');
   if (type && row?.entity_id) return `${type} · #${row.entity_id}`;
   return row?.entity_id || '—';
 }
 
 function formatAuditEntitySubtitle(row) {
   const entityType = String(row?.entity_type || 'ioc').trim();
-  const type = auditSnapshotValue(row, 'ioc_observable_type', 'observable_type');
-  const id = auditSnapshotValue(row, 'ioc_id') || row?.entity_id;
+  const type = row?.subject_ioc_type
+    || auditSnapshotValue(row, 'subject_ioc_type', 'ioc_observable_type', 'observable_type');
+  const id = row?.subject_ioc_id
+    || auditSnapshotValue(row, 'subject_ioc_id', 'ioc_id')
+    || row?.entity_id;
   const parts = [entityType];
   if (type) parts.push(type);
   if (id) parts.push(`#${id}`);
@@ -10105,7 +10111,7 @@ function abuseIpdbRiskMeta(label) {
   return { text: 'Unknown', border: '#475569', bg: 'rgba(71,85,105,0.18)', color: '#94a3b8' };
 }
 
-function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
+function AbuseIpdbEnrichmentCard({ iocId, iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
   const target = useMemo(() => isAbuseIpdbEligible(iocValue, iocType), [iocValue, iocType]);
   if (!target.eligible || !target.ip) return null;
 
@@ -10153,7 +10159,11 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
     if (!canRefresh || target.privateIp) return;
     setRefreshing(true);
     try {
-      const { data } = await api.post(`/enrichment/abuseipdb/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`);
+      const { data } = await api.post(`/enrichment/abuseipdb/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`, {
+        ioc_id: iocId || undefined,
+        value: iocValue || undefined,
+        ioc_type: iocType || undefined
+      });
       if (data?.enriched || data?.provider_status === 'success') {
         setState({ status: 'success', data, message: '' });
       } else {
@@ -10307,7 +10317,7 @@ function AbuseIpdbEnrichmentCard({ iocValue, iocType, active = true, canRefresh 
   );
 }
 
-function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
+function SpamhausDropEnrichmentCard({ iocId, iocValue, iocType, active = true, canRefresh = true, isAdmin = false, compact = false, onSnapshot }) {
   const [state, setState] = useState({ status: 'loading', data: null });
   const [refreshing, setRefreshing] = useState(false);
   const [hasEnriched, setHasEnriched] = useState(false);
@@ -10346,7 +10356,11 @@ function SpamhausDropEnrichmentCard({ iocValue, iocType, active = true, canRefre
     if (!canRefresh) return;
     setRefreshing(true);
     try {
-      const { data } = await api.post('/enrichment/spamhaus-drop/ioc/refresh', { ioc_value: iocValue, ioc_type: iocType });
+      const { data } = await api.post('/enrichment/spamhaus-drop/ioc/refresh', {
+        ioc_value: iocValue,
+        ioc_type: iocType,
+        ioc_id: iocId || undefined
+      });
       setHasEnriched(true);
       const status = String(data?.status || 'not_applicable');
       setState({ status: status === 'failed' ? 'error' : status, data });
@@ -10859,7 +10873,7 @@ function EnrichmentDetailBlock({ label, value }) {
   );
 }
 
-function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, compact = false, onSnapshot }) {
+function IpEnrichmentCard({ iocId, iocValue, iocType, active = true, isAdmin = false, compact = false, onSnapshot }) {
   const target = useMemo(() => isIpEnrichmentEligible(iocValue, iocType), [iocValue, iocType]);
   if (!target.eligible || !target.ip) return null;
 
@@ -10901,7 +10915,11 @@ function IpEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, c
   async function enrich(force = false) {
     setEnriching(true);
     try {
-      const { data } = await api.post(`/enrichment/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`);
+      const { data } = await api.post(`/enrichment/ip/${encodeURIComponent(ip)}/refresh${force ? '?force=true' : ''}`, {
+        ioc_id: iocId || undefined,
+        value: iocValue || undefined,
+        ioc_type: iocType || undefined
+      });
       if (data?.enriched || data?.provider_status === 'success') {
         setState({ status: 'success', data, message: '', providerConfigured: true });
       } else {
@@ -11072,7 +11090,7 @@ function RdapTargetNote({ data }) {
   );
 }
 
-function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false, compact = false, onSnapshot }) {
+function RdapEnrichmentCard({ iocId, iocValue, iocType, active = true, isAdmin = false, compact = false, onSnapshot }) {
   const eligibility = useMemo(() => isRdapEligibleObservable(iocValue, iocType), [iocValue, iocType]);
   if (!eligibility.eligible) return null;
 
@@ -11117,7 +11135,8 @@ function RdapEnrichmentCard({ iocValue, iocType, active = true, isAdmin = false,
       const res = await api.post('/enrichment/rdap/refresh', {
         value,
         force: force || undefined,
-        ioc_type: type
+        ioc_type: type,
+        ioc_id: iocId || undefined
       }, {
         validateStatus: (status) => status >= 200 && status < 600,
         timeout: 30000
@@ -11327,7 +11346,7 @@ function dnsmaniaLatestStatusKind(status) {
   return 'nodata';
 }
 
-function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = false, onSnapshot }) {
+function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compact = false, onSnapshot }) {
   const type = String(iocType || '').trim().toLowerCase();
   const value = String(iocValue || '').trim();
   const applicable = type === 'domain' || type === 'url' || type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'ip6' || type === 'hostname';
@@ -11385,7 +11404,8 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
     try {
       const res = await api.post('/enrichment/dnsmania/refresh', {
         value,
-        ioc_type: type
+        ioc_type: type,
+        ioc_id: iocId || undefined
       }, {
         validateStatus: (status) => status >= 200 && status < 600,
         timeout: 30000
@@ -11778,8 +11798,10 @@ function iocAuditMetadataSummary(metadata) {
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
   if (metadata.cached === true) parts.push('cached');
-  if (metadata.root_domain) parts.push(`root: ${metadata.root_domain}`);
-  if (metadata.ip) parts.push(`ip: ${metadata.ip}`);
+  const target = metadata.target_value || metadata.root_domain || metadata.lookup_value || metadata.ip || metadata.target_ip;
+  if (target) parts.push(`target: ${target}`);
+  else if (metadata.root_domain) parts.push(`root: ${metadata.root_domain}`);
+  if (metadata.ip && !String(target || '').includes(String(metadata.ip))) parts.push(`ip: ${metadata.ip}`);
   if (metadata.error_message) parts.push(String(metadata.error_message));
   if (metadata.malicious != null || metadata.suspicious != null) {
     parts.push(`detections: ${metadata.malicious ?? 0}/${metadata.suspicious ?? 0}`);

@@ -1,5 +1,6 @@
 import { isDnsmaniaSupportedIocType, normalizeDnsmaniaLookup } from '../lib/dnsmaniaTarget.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
 import {
   DNSMANIA_PROVIDER,
   enrichIocWithDnsmania,
@@ -166,20 +167,39 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
         });
       }
 
+      const subject = await resolveSubjectIocFromRequest(pool, req);
+      const subjectValue = subject?.observable || value;
+      const requestedScope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocType: parsed.ioc_type,
+        subjectIocValue: subjectValue,
+        targetType: parsed.lookup_type || 'domain',
+        targetValue: parsed.lookup_value,
+        provider: DNSMANIA_PROVIDER,
+        extraMetadata: {
+          ioc_type: parsed.ioc_type,
+          lookup_type: parsed.lookup_type,
+          lookup_value: parsed.lookup_value,
+          lookup_key: parsed.lookup_key,
+          original_value: value,
+          observable_value: subjectValue,
+          source_page: 'ioc_detail_intelligence'
+        }
+      });
+
       await audit?.auditSuccess?.({
         req,
         action: AUDIT_ACTION.DNSMANIA_ENRICHMENT_REQUESTED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: parsed.lookup_key,
-        entityDisplay: parsed.lookup_value,
+        entityId: requestedScope.entityId,
+        entityDisplay: requestedScope.entityDisplay,
+        subjectIocId: requestedScope.subjectIocId,
+        subjectIocType: requestedScope.subjectIocType,
+        subjectIocValue: requestedScope.subjectIocValue,
+        targetType: requestedScope.targetType,
+        targetValue: requestedScope.targetValue,
         severity: AUDIT_SEVERITY.INFO,
-        metadata: {
-          ioc_type: parsed.ioc_type,
-          lookup_type: parsed.lookup_type,
-          lookup_value: parsed.lookup_value,
-          provider: DNSMANIA_PROVIDER,
-          source_page: 'ioc_detail_intelligence'
-        }
+        metadata: requestedScope.metadata
       })?.catch?.(() => {});
 
       const result = await enrichIocWithDnsmania(pool, parsed, { config: cfg });
@@ -190,40 +210,72 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
       });
 
       if (row.provider_status === 'completed' || row.provider_status === 'no_data') {
+        const completedScope = buildEnrichmentAuditScope({
+          subject,
+          subjectIocType: parsed.ioc_type,
+          subjectIocValue: subjectValue,
+          targetType: parsed.lookup_type || 'domain',
+          targetValue: parsed.lookup_value,
+          provider: DNSMANIA_PROVIDER,
+          extraMetadata: {
+            ioc_type: parsed.ioc_type,
+            lookup_type: parsed.lookup_type,
+            lookup_value: parsed.lookup_value,
+            lookup_key: parsed.lookup_key,
+            original_value: value,
+            observable_value: subjectValue,
+            result_status: row.provider_status,
+            known: row.known
+          }
+        });
         await audit?.auditSuccess?.({
           req,
           action: AUDIT_ACTION.DNSMANIA_ENRICHMENT_COMPLETED,
           entityType: AUDIT_ENTITY.ENRICHMENT,
-          entityId: parsed.lookup_key,
-          entityDisplay: parsed.lookup_value,
+          entityId: completedScope.entityId,
+          entityDisplay: completedScope.entityDisplay,
+          subjectIocId: completedScope.subjectIocId,
+          subjectIocType: completedScope.subjectIocType,
+          subjectIocValue: completedScope.subjectIocValue,
+          targetType: completedScope.targetType,
+          targetValue: completedScope.targetValue,
           severity: AUDIT_SEVERITY.INFO,
-          metadata: {
-            ioc_type: parsed.ioc_type,
-            lookup_type: parsed.lookup_type,
-            lookup_value: parsed.lookup_value,
-            provider: DNSMANIA_PROVIDER,
-            result_status: row.provider_status,
-            known: row.known
-          }
+          metadata: completedScope.metadata
         })?.catch?.(() => {});
         return res.json(payload);
       }
 
+      const failedScope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocType: parsed.ioc_type,
+        subjectIocValue: subjectValue,
+        targetType: parsed.lookup_type || 'domain',
+        targetValue: parsed.lookup_value,
+        provider: DNSMANIA_PROVIDER,
+        extraMetadata: {
+          ioc_type: parsed.ioc_type,
+          lookup_type: parsed.lookup_type,
+          lookup_value: parsed.lookup_value,
+          lookup_key: parsed.lookup_key,
+          original_value: value,
+          observable_value: subjectValue,
+          result_status: row.provider_status,
+          error_code: row.error_code
+        }
+      });
       await audit?.auditFailure?.({
         req,
         action: AUDIT_ACTION.DNSMANIA_ENRICHMENT_FAILED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: parsed.lookup_key,
-        entityDisplay: parsed.lookup_value,
+        entityId: failedScope.entityId,
+        entityDisplay: failedScope.entityDisplay,
+        subjectIocId: failedScope.subjectIocId,
+        subjectIocType: failedScope.subjectIocType,
+        subjectIocValue: failedScope.subjectIocValue,
+        targetType: failedScope.targetType,
+        targetValue: failedScope.targetValue,
         severity: AUDIT_SEVERITY.WARNING,
-        metadata: {
-          ioc_type: parsed.ioc_type,
-          lookup_type: parsed.lookup_type,
-          lookup_value: parsed.lookup_value,
-          provider: DNSMANIA_PROVIDER,
-          result_status: row.provider_status,
-          error_code: row.error_code
-        }
+        metadata: failedScope.metadata
       })?.catch?.(() => {});
 
       const statusCode = row.error_code === 'timeout' ? 504 : 502;

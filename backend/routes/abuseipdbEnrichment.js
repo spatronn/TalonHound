@@ -2,6 +2,7 @@ import { normalizeAppRole, requireRole, ROLES } from '../lib/rbac.js';
 import { isValidIpAddress, validatePublicIp } from '../lib/publicIp.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
+import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
 import {
   enrichIpWithAbuseIpdb,
   getAbuseIpdbConfig,
@@ -130,22 +131,38 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
       }
 
       if (!result.cached || force) {
-        await audit.auditSuccess({
-          req,
-          action: AUDIT_ACTION.ABUSEIPDB_ENRICHMENT_REFRESH,
-          entityType: AUDIT_ENTITY.ENRICHMENT,
-          entityId: publicIp,
-          entityDisplay: publicIp,
-          severity: AUDIT_SEVERITY.INFO,
-          metadata: {
+        const subject = await resolveSubjectIocFromRequest(pool, req);
+        const scope = buildEnrichmentAuditScope({
+          subject,
+          subjectIocValue: subject?.observable || req.body?.value || publicIp,
+          subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+          targetType: 'ip',
+          targetValue: publicIp,
+          provider: ABUSEIPDB_PROVIDER,
+          extraMetadata: {
             ip: publicIp,
-            provider: ABUSEIPDB_PROVIDER,
+            original_value: subject?.observable || req.body?.value || publicIp,
+            observable_value: subject?.observable || req.body?.value || publicIp,
             cache_bypass: force || !result.cached,
             cached: result.cached,
             force,
             provider_status: result.provider_status,
             abuse_confidence_score: result.row?.normalized_summary?.abuseConfidenceScore ?? null
           }
+        });
+        await audit.auditSuccess({
+          req,
+          action: AUDIT_ACTION.ABUSEIPDB_ENRICHMENT_REFRESH,
+          entityType: AUDIT_ENTITY.ENRICHMENT,
+          entityId: scope.entityId,
+          entityDisplay: scope.entityDisplay,
+          subjectIocId: scope.subjectIocId,
+          subjectIocType: scope.subjectIocType,
+          subjectIocValue: scope.subjectIocValue,
+          targetType: scope.targetType,
+          targetValue: scope.targetValue,
+          severity: AUDIT_SEVERITY.INFO,
+          metadata: scope.metadata
         }).catch(() => {});
       }
 

@@ -1,6 +1,7 @@
 import { normalizeAppRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { validatePublicIp } from '../lib/publicIp.js';
+import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
 import {
   enrichIpWithIpinfoLite,
   getEnrichmentByIp,
@@ -81,14 +82,36 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         });
       }
 
+      const subject = await resolveSubjectIocFromRequest(pool, req);
+      const requestedScope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || req.body?.value || publicIp,
+        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+        targetType: 'ip',
+        targetValue: publicIp,
+        provider: IPINFO_PROVIDER,
+        extraMetadata: {
+          ip: publicIp,
+          original_value: subject?.observable || req.body?.value || publicIp,
+          observable_value: subject?.observable || req.body?.value || publicIp,
+          force,
+          cached: false
+        }
+      });
+
       await audit.auditSuccess({
         req,
         action: AUDIT_ACTION.IP_ENRICHMENT_REQUESTED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: publicIp,
-        entityDisplay: publicIp,
+        entityId: requestedScope.entityId,
+        entityDisplay: requestedScope.entityDisplay,
+        subjectIocId: requestedScope.subjectIocId,
+        subjectIocType: requestedScope.subjectIocType,
+        subjectIocValue: requestedScope.subjectIocValue,
+        targetType: requestedScope.targetType,
+        targetValue: requestedScope.targetValue,
         severity: AUDIT_SEVERITY.INFO,
-        metadata: { ip: publicIp, provider: IPINFO_PROVIDER, force, cached: false }
+        metadata: requestedScope.metadata
       }).catch(() => {});
 
       const result = await enrichIpWithIpinfoLite(pool, publicIp, { force });
@@ -98,38 +121,68 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
       });
 
       if (result.row?.provider_status === 'success') {
-        await audit.auditSuccess({
-          req,
-          action: AUDIT_ACTION.IP_ENRICHMENT_COMPLETED,
-          entityType: AUDIT_ENTITY.ENRICHMENT,
-          entityId: publicIp,
-          entityDisplay: publicIp,
-          severity: AUDIT_SEVERITY.INFO,
-          metadata: {
+        const completedScope = buildEnrichmentAuditScope({
+          subject,
+          subjectIocValue: subject?.observable || req.body?.value || publicIp,
+          subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+          targetType: 'ip',
+          targetValue: publicIp,
+          provider: IPINFO_PROVIDER,
+          extraMetadata: {
             ip: publicIp,
-            provider: IPINFO_PROVIDER,
+            original_value: subject?.observable || req.body?.value || publicIp,
+            observable_value: subject?.observable || req.body?.value || publicIp,
             cached: result.cached,
             force,
             status: result.row.provider_status
           }
+        });
+        await audit.auditSuccess({
+          req,
+          action: AUDIT_ACTION.IP_ENRICHMENT_COMPLETED,
+          entityType: AUDIT_ENTITY.ENRICHMENT,
+          entityId: completedScope.entityId,
+          entityDisplay: completedScope.entityDisplay,
+          subjectIocId: completedScope.subjectIocId,
+          subjectIocType: completedScope.subjectIocType,
+          subjectIocValue: completedScope.subjectIocValue,
+          targetType: completedScope.targetType,
+          targetValue: completedScope.targetValue,
+          severity: AUDIT_SEVERITY.INFO,
+          metadata: completedScope.metadata
         }).catch(() => {});
         return res.json(payload);
       }
 
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: publicIp,
-        entityDisplay: publicIp,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: {
+      const failedScope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || req.body?.value || publicIp,
+        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+        targetType: 'ip',
+        targetValue: publicIp,
+        provider: IPINFO_PROVIDER,
+        extraMetadata: {
           ip: publicIp,
-          provider: IPINFO_PROVIDER,
+          original_value: subject?.observable || req.body?.value || publicIp,
+          observable_value: subject?.observable || req.body?.value || publicIp,
           cached: result.cached,
           status: result.row?.provider_status,
           error_message: result.row?.error_message
         }
+      });
+      await audit.auditFailure({
+        req,
+        action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: failedScope.entityId,
+        entityDisplay: failedScope.entityDisplay,
+        subjectIocId: failedScope.subjectIocId,
+        subjectIocType: failedScope.subjectIocType,
+        subjectIocValue: failedScope.subjectIocValue,
+        targetType: failedScope.targetType,
+        targetValue: failedScope.targetValue,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: failedScope.metadata
       }).catch(() => {});
 
       return res.status(result.row?.provider_status === 'unavailable' ? 404 : 502).json({
@@ -152,14 +205,29 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
           retry_after: err.retryAfter || null
         });
       }
+      const subject = await resolveSubjectIocFromRequest(pool, req).catch(() => null);
+      const failedScope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || req.body?.value || publicIp,
+        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+        targetType: 'ip',
+        targetValue: publicIp,
+        provider: IPINFO_PROVIDER,
+        extraMetadata: { error_message: String(err?.message || err), ip: publicIp }
+      });
       await audit.auditFailure({
         req,
         action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: publicIp,
-        entityDisplay: publicIp,
+        entityId: failedScope.entityId,
+        entityDisplay: failedScope.entityDisplay,
+        subjectIocId: failedScope.subjectIocId,
+        subjectIocType: failedScope.subjectIocType,
+        subjectIocValue: failedScope.subjectIocValue,
+        targetType: failedScope.targetType,
+        targetValue: failedScope.targetValue,
         severity: AUDIT_SEVERITY.WARNING,
-        metadata: { error_message: String(err?.message || err) }
+        metadata: failedScope.metadata
       }).catch(() => {});
       return res.status(500).json({ error: 'IP enrichment failed', message: 'IP enrichment failed' });
     }

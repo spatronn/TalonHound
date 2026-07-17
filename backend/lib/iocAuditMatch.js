@@ -1,16 +1,10 @@
-import { normalizeRdapTarget } from './domainRoot.js';
-import { resolveIpEnrichmentTarget } from './ipEnrichmentEligibility.js';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function addLower(set, value) {
-  const v = String(value || '').trim();
-  if (!v) return;
-  set.add(v.toLowerCase());
-}
-
 /**
  * Build lookup keys for IOC-scoped audit log queries.
+ *
+ * Enrichment history is scoped by subject IOC id (column or metadata).
+ * Shared hostname / root domain / IP must NOT be primary match keys —
+ * that leaks audits across URL IOCs that share infrastructure.
+ *
  * @param {{ id?: number, public_id?: string, observable?: string, observable_type?: string }} item
  */
 export function buildIocAuditMatchContext(item) {
@@ -21,34 +15,16 @@ export function buildIocAuditMatchContext(item) {
 
   const entityIds = new Set();
   const entityDisplays = new Set();
+  const exactObservables = new Set();
 
   if (publicId) entityIds.add(publicId);
   if (internalId) entityIds.add(internalId);
-  addLower(entityDisplays, observable);
-
-  let rootDomain = null;
-  let normalizedHost = null;
-  let parsedIp = null;
-
-  if (observable && (observableType === 'domain' || observableType === 'url')) {
-    const rdap = normalizeRdapTarget(observable, observableType);
-    if (rdap.ok) {
-      rootDomain = rdap.rdap_domain;
-      normalizedHost = rdap.normalized_host;
-      if (rootDomain) entityIds.add(rootDomain);
-      if (normalizedHost) entityIds.add(normalizedHost);
-      addLower(entityDisplays, normalizedHost);
-    }
-    if (observableType === 'domain') {
+  if (observable) {
+    entityDisplays.add(observable.toLowerCase());
+    exactObservables.add(observable.toLowerCase());
+    // Domain/IP IOC values are themselves the technical identity.
+    if (observableType === 'domain' || observableType === 'ip' || observableType === 'ip6') {
       entityIds.add(observable.toLowerCase());
-    }
-  }
-
-  if (observable && (observableType === 'ip' || observableType === 'ip6' || observableType === 'url')) {
-    const ipTarget = resolveIpEnrichmentTarget(observable, observableType);
-    if (ipTarget.eligible && ipTarget.ip) {
-      parsedIp = ipTarget.ip;
-      entityIds.add(parsedIp);
     }
   }
 
@@ -57,13 +33,16 @@ export function buildIocAuditMatchContext(item) {
     observableType,
     publicId,
     internalId,
-    rootDomain,
-    normalizedHost,
-    parsedIp,
+    rootDomain: null,
+    normalizedHost: null,
+    parsedIp: null,
     entityIds: [...entityIds].filter(Boolean),
-    entityDisplays: [...entityDisplays].filter(Boolean)
+    entityDisplays: [...entityDisplays].filter(Boolean),
+    exactObservables: [...exactObservables].filter(Boolean)
   };
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function isUuid(value) {
   return UUID_RE.test(String(value || '').trim());
@@ -76,9 +55,16 @@ export function isUuid(value) {
 export function buildIocAuditLogsWhere(ctx) {
   const entityIds = ctx.entityIds.length ? ctx.entityIds : ['__none__'];
   const entityDisplays = ctx.entityDisplays.length ? ctx.entityDisplays : ['__none__'];
+  const exactObservables = ctx.exactObservables?.length
+    ? ctx.exactObservables
+    : (ctx.entityDisplays.length ? ctx.entityDisplays : ['__none__']);
   const internalId = ctx.internalId || '__none__';
 
-  const params = [entityIds, entityDisplays, internalId];
+  // $1 entity ids (ioc public/internal + domain/ip self)
+  // $2 entity displays for ioc / suppression rows
+  // $3 internal ioc id (text) for enrichment subject match
+  // $4 exact full observable values for safe legacy enrichment fallback
+  const params = [entityIds, entityDisplays, internalId, exactObservables];
   const whereSql = `(
     (entity_type = 'ioc' AND (
       entity_id = ANY($1::text[])
@@ -89,13 +75,15 @@ export function buildIocAuditLogsWhere(ctx) {
       OR lower(COALESCE(metadata->>'ioc_value', '')) = ANY($2::text[])
     ))
     OR (entity_type = 'enrichment' AND (
-      entity_id = ANY($1::text[])
-      OR lower(COALESCE(entity_display, '')) = ANY($2::text[])
-      OR lower(COALESCE(metadata->>'root_domain', '')) = ANY($1::text[])
-      OR lower(COALESCE(metadata->>'ip', '')) = ANY($1::text[])
-      OR lower(COALESCE(metadata->>'observable_value', '')) = ANY($2::text[])
-      OR lower(COALESCE(metadata->>'original_value', '')) = ANY($2::text[])
+      subject_ioc_id::text = $3
+      OR metadata->>'subject_ioc_id' = $3
       OR metadata->>'ioc_id' = $3
+      OR lower(COALESCE(subject_ioc_value, '')) = ANY($4::text[])
+      OR lower(COALESCE(entity_display, '')) = ANY($4::text[])
+      OR lower(COALESCE(metadata->>'subject_ioc_value', '')) = ANY($4::text[])
+      OR lower(COALESCE(metadata->>'observable_value', '')) = ANY($4::text[])
+      OR lower(COALESCE(metadata->>'original_value', '')) = ANY($4::text[])
+      OR lower(COALESCE(entity_id, '')) = ANY($4::text[])
     ))
   )`;
 

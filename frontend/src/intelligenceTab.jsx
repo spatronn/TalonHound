@@ -172,6 +172,7 @@ function DerivedInfrastructureSection({
   context,
   providerSnapshots,
   active,
+  iocId,
   iocValue,
   iocType,
   canWrite,
@@ -216,6 +217,7 @@ function DerivedInfrastructureSection({
       <div style={providerGridStyle}>
         {isDerivedProviderApplicable('ipinfo', context) ? (
           <IpEnrichmentCard
+            iocId={iocId}
             iocValue={iocValue}
             iocType={iocType}
             active={active}
@@ -226,6 +228,7 @@ function DerivedInfrastructureSection({
         ) : null}
         {isDerivedProviderApplicable('abuseipdb', context) ? (
           <AbuseIpdbEnrichmentCard
+            iocId={iocId}
             iocValue={iocValue}
             iocType={iocType}
             active={active}
@@ -237,6 +240,7 @@ function DerivedInfrastructureSection({
         ) : null}
         {isDerivedProviderApplicable('rdap', context) ? (
           <RdapEnrichmentCard
+            iocId={iocId}
             iocValue={iocValue}
             iocType={iocType}
             active={active}
@@ -247,6 +251,7 @@ function DerivedInfrastructureSection({
         ) : null}
         {isDerivedProviderApplicable('spamhaus_drop', context) && SpamhausDropEnrichmentCard ? (
           <SpamhausDropEnrichmentCard
+            iocId={iocId}
             iocValue={iocValue}
             iocType={iocType}
             active={active}
@@ -657,19 +662,19 @@ export function IntelligenceTabPanel({
             <VirusTotalEnrichmentCard iocId={iocId} active={active} compact onSnapshot={(snap) => onProviderSnapshot('virustotal', snap)} />
           ) : null}
           {showAbuse ? (
-            <AbuseIpdbEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)} />
+            <AbuseIpdbEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)} />
           ) : null}
           {showIpinfo ? (
-            <IpEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)} />
+            <IpEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)} />
           ) : null}
           {showRdap ? (
-            <RdapEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('rdap', snap)} />
+            <RdapEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('rdap', snap)} />
           ) : null}
           {showSpamhaus && SpamhausDropEnrichmentCard ? (
-            <SpamhausDropEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
+            <SpamhausDropEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
           ) : null}
           {showDnsmania && DnsmaniaEnrichmentCard ? (
-            <DnsmaniaEnrichmentCard iocValue={iocValue} iocType={iocType} active={active} compact onSnapshot={(snap) => onProviderSnapshot('dnsmania', snap)} />
+            <DnsmaniaEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} compact onSnapshot={(snap) => onProviderSnapshot('dnsmania', snap)} />
           ) : null}
         </div>
       </div>
@@ -678,6 +683,7 @@ export function IntelligenceTabPanel({
         context={derivedContext}
         providerSnapshots={derivedProviderSnapshots}
         active={active}
+        iocId={iocId}
         iocValue={iocValue}
         iocType={iocType}
         canWrite={canWrite}

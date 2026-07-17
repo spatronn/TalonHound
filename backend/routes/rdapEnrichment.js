@@ -1,6 +1,7 @@
 import { normalizeRdapTarget, isRdapSupportedIocType } from '../lib/domainRoot.js';
 import { normalizeAppRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
 import {
   getEnrichmentByRootDomain,
   refreshRdapEnrichment,
@@ -77,23 +78,38 @@ async function handleRdapGet(pool, parsed) {
 }
 
 async function handleRdapRefresh(pool, audit, req, parsed, force) {
-  await audit.auditSuccess({
-    req,
-    action: AUDIT_ACTION.RDAP_ENRICHMENT_REQUESTED,
-    entityType: AUDIT_ENTITY.ENRICHMENT,
-    entityId: parsed.rdap_domain,
-    entityDisplay: parsed.rdap_domain,
-    severity: AUDIT_SEVERITY.INFO,
-    metadata: {
+  const subject = await resolveSubjectIocFromRequest(pool, req);
+  const auditScope = buildEnrichmentAuditScope({
+    subject,
+    subjectIocType: parsed.ioc_type,
+    subjectIocValue: parsed.observable_value || parsed.original_value,
+    targetType: 'domain',
+    targetValue: parsed.rdap_domain,
+    provider: 'rdap',
+    extraMetadata: {
       root_domain: parsed.rdap_domain,
       normalized_host: parsed.normalized_host,
       original_value: parsed.original_value,
       observable_value: parsed.observable_value,
       observable_type: parsed.ioc_type,
-      provider: 'rdap',
       force,
       source_page: 'ioc_detail_intelligence'
     }
+  });
+
+  await audit.auditSuccess({
+    req,
+    action: AUDIT_ACTION.RDAP_ENRICHMENT_REQUESTED,
+    entityType: AUDIT_ENTITY.ENRICHMENT,
+    entityId: auditScope.entityId,
+    entityDisplay: auditScope.entityDisplay,
+    subjectIocId: auditScope.subjectIocId,
+    subjectIocType: auditScope.subjectIocType,
+    subjectIocValue: auditScope.subjectIocValue,
+    targetType: auditScope.targetType,
+    targetValue: auditScope.targetValue,
+    severity: AUDIT_SEVERITY.INFO,
+    metadata: auditScope.metadata
   }).catch(() => {});
 
   const result = await refreshRdapEnrichment(pool, parsed, { force });
@@ -117,44 +133,70 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
   });
 
   if (row.rdap_status === 'success') {
-    await audit.auditSuccess({
-      req,
-      action: AUDIT_ACTION.RDAP_ENRICHMENT_COMPLETED,
-      entityType: AUDIT_ENTITY.ENRICHMENT,
-      entityId: parsed.rdap_domain,
-      entityDisplay: parsed.rdap_domain,
-      severity: AUDIT_SEVERITY.INFO,
-      metadata: {
+    const completedScope = buildEnrichmentAuditScope({
+      subject,
+      subjectIocType: parsed.ioc_type,
+      subjectIocValue: parsed.observable_value || parsed.original_value,
+      targetType: 'domain',
+      targetValue: parsed.rdap_domain,
+      provider: 'rdap',
+      extraMetadata: {
         root_domain: parsed.rdap_domain,
         normalized_host: parsed.normalized_host,
         original_value: parsed.original_value,
         observable_value: parsed.observable_value,
         observable_type: parsed.ioc_type,
-        provider: 'rdap',
         cached: result.cached,
         force,
         from_lookup: result.fromLookup
       }
+    });
+    await audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.RDAP_ENRICHMENT_COMPLETED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: completedScope.entityId,
+      entityDisplay: completedScope.entityDisplay,
+      subjectIocId: completedScope.subjectIocId,
+      subjectIocType: completedScope.subjectIocType,
+      subjectIocValue: completedScope.subjectIocValue,
+      targetType: completedScope.targetType,
+      targetValue: completedScope.targetValue,
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: completedScope.metadata
     }).catch(() => {});
     return { status: 200, body: payload };
   }
 
+  const failedScope = buildEnrichmentAuditScope({
+    subject,
+    subjectIocType: parsed.ioc_type,
+    subjectIocValue: parsed.observable_value || parsed.original_value,
+    targetType: 'domain',
+    targetValue: parsed.rdap_domain,
+    provider: 'rdap',
+    extraMetadata: {
+      root_domain: parsed.rdap_domain,
+      original_value: parsed.original_value,
+      observable_value: parsed.observable_value,
+      observable_type: parsed.ioc_type,
+      cached: result.cached,
+      error_message: row.error_message
+    }
+  });
   await audit.auditFailure({
     req,
     action: AUDIT_ACTION.RDAP_ENRICHMENT_FAILED,
     entityType: AUDIT_ENTITY.ENRICHMENT,
-    entityId: parsed.rdap_domain,
-    entityDisplay: parsed.rdap_domain,
+    entityId: failedScope.entityId,
+    entityDisplay: failedScope.entityDisplay,
+    subjectIocId: failedScope.subjectIocId,
+    subjectIocType: failedScope.subjectIocType,
+    subjectIocValue: failedScope.subjectIocValue,
+    targetType: failedScope.targetType,
+    targetValue: failedScope.targetValue,
     severity: AUDIT_SEVERITY.WARNING,
-      metadata: {
-        root_domain: parsed.rdap_domain,
-        original_value: parsed.original_value,
-        observable_value: parsed.observable_value,
-        observable_type: parsed.ioc_type,
-        provider: 'rdap',
-        cached: result.cached,
-        error_message: row.error_message
-      }
+    metadata: failedScope.metadata
   }).catch(() => {});
 
   return {
