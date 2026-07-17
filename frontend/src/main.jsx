@@ -281,7 +281,16 @@ function suppressionStatusBadgeStyle(status) {
   };
   if (s === 'active') return { ...base, background: 'rgba(34,197,94,0.15)', color: '#86efac', border: '1px solid #166534' };
   if (s === 'expired') return { ...base, background: 'rgba(251,191,36,0.15)', color: '#fcd34d', border: '1px solid #854d0e' };
+  if (s === 'disabled' || s === 'inactive') return { ...base, background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid #475569' };
   return { ...base, background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid #475569' };
+}
+
+function formatSuppressionStatusLabel(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'disabled' || s === 'inactive') return 'Disabled';
+  if (s === 'active') return 'Active';
+  if (s === 'expired') return 'Expired';
+  return status || 'unknown';
 }
 
 function apiErrorMessage(err, fallback = 'Request failed') {
@@ -8867,18 +8876,21 @@ function IOCSuppressionsPage() {
   const [search, setSearch] = useState(String(searchParams.get('search') || ''));
   const [iocType, setIocType] = useState(String(searchParams.get('ioc_type') || 'all'));
   const [scope, setScope] = useState(String(searchParams.get('scope') || 'all'));
-  const [statusFilter, setStatusFilter] = useState(String(searchParams.get('status') || 'all'));
+  const initialStatus = String(searchParams.get('status') || 'all');
+  const [statusFilter, setStatusFilter] = useState(initialStatus === 'inactive' ? 'disabled' : initialStatus);
   const [sourceName, setSourceName] = useState(String(searchParams.get('source_name') || ''));
   const [createdBy, setCreatedBy] = useState(String(searchParams.get('created_by') || ''));
   const [editItem, setEditItem] = useState(null);
   const [editReason, setEditReason] = useState('');
+  const [editEnabled, setEditEnabled] = useState(true);
   const [editPreset, setEditPreset] = useState('never');
   const [editCustomDate, setEditCustomDate] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
-  const [removeItem, setRemoveItem] = useState(null);
-  const [removeSaving, setRemoveSaving] = useState(false);
-  const [removeError, setRemoveError] = useState('');
+  const [deleteItem, setDeleteItem] = useState(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [actionBusyId, setActionBusyId] = useState(null);
   const [toast, setToast] = useState('');
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -8892,14 +8904,8 @@ function IOCSuppressionsPage() {
       if (iocType && iocType !== 'all') params.ioc_type = iocType;
       if (scope && scope !== 'all') params.scope = scope;
       if (createdBy.trim()) params.created_by = createdBy.trim();
-      if (statusFilter === 'active') {
-        params.active = 'true';
-        params.expires = 'active';
-      } else if (statusFilter === 'inactive') {
-        params.active = 'false';
-      } else if (statusFilter === 'expired') {
-        params.active = 'true';
-        params.expires = 'expired';
+      if (statusFilter && statusFilter !== 'all') {
+        params.status = statusFilter === 'inactive' ? 'disabled' : statusFilter;
       }
       const { data } = await api.get('/ioc-suppressions', { params });
       let loaded = Array.isArray(data?.items) ? data.items : [];
@@ -8907,8 +8913,11 @@ function IOCSuppressionsPage() {
         const q = sourceName.trim().toLowerCase();
         loaded = loaded.filter((x) => String(x.source_name || '').toLowerCase().includes(q));
       }
+      const nextTotal = Number(data?.total || 0);
       setItems(loaded);
-      setTotal(Number(data?.total || 0));
+      setTotal(nextTotal);
+      const nextTotalPages = Math.max(1, Math.ceil(nextTotal / pageSize));
+      if (page > nextTotalPages) setPage(nextTotalPages);
     } catch (err) {
       setItems([]);
       setTotal(0);
@@ -8942,11 +8951,14 @@ function IOCSuppressionsPage() {
 
   const pageSummary = useMemo(() => {
     const active = items.filter((x) => String(x.status || '').toLowerCase() === 'active').length;
+    const disabled = items.filter((x) => {
+      const s = String(x.status || '').toLowerCase();
+      return s === 'disabled' || s === 'inactive' || x.active === false;
+    }).length;
     const expired = items.filter((x) => String(x.status || '').toLowerCase() === 'expired').length;
     const global = items.filter((x) => String(x.scope || '').toLowerCase() === 'global').length;
     const sourceScoped = items.filter((x) => String(x.scope || '').toLowerCase() === 'source').length;
-    const affected = items.reduce((acc, x) => acc + Number(x.affected_incidents || 0), 0);
-    return { active, expired, global, sourceScoped, affected };
+    return { active, disabled, expired, global, sourceScoped };
   }, [items]);
 
   function applyFilters() {
@@ -8957,6 +8969,7 @@ function IOCSuppressionsPage() {
   function openEdit(item) {
     setEditItem(item);
     setEditReason(String(item?.reason || ''));
+    setEditEnabled(item?.active !== false);
     setEditError('');
     if (!item?.expires_at) {
       setEditPreset('never');
@@ -8974,7 +8987,7 @@ function IOCSuppressionsPage() {
   }
 
   async function saveEdit() {
-    if (!editItem?.id) return;
+    if (!editItem?.id || editSaving) return;
     const reason = String(editReason || '').trim();
     if (!reason) {
       setEditError('Reason is required');
@@ -8986,7 +8999,7 @@ function IOCSuppressionsPage() {
       await api.patch(`/ioc-suppressions/${editItem.id}`, {
         reason,
         expires_at: expiresAtFromPreset(editPreset, editCustomDate),
-        active: true
+        active: Boolean(editEnabled)
       });
       setEditItem(null);
       setToast('Suppression updated');
@@ -8999,22 +9012,42 @@ function IOCSuppressionsPage() {
     }
   }
 
-  async function confirmRemove() {
-    if (!removeItem?.id) return;
-    const reason = await requestRequiredReason('Remove IOC suppression');
-    if (!reason) return;
-    setRemoveSaving(true);
-    setRemoveError('');
+  async function setSuppressionEnabled(item, enabled) {
+    if (!item?.id || actionBusyId) return;
+    const ok = window.confirm(
+      enabled
+        ? 'Enable this suppression? It will become effective immediately.'
+        : 'Disable this suppression? It will no longer prevent matching activity, but the record will be kept.'
+    );
+    if (!ok) return;
+    setActionBusyId(item.id);
     try {
-      await api.delete(`/ioc-suppressions/${removeItem.id}`, { data: { reason } });
-      setRemoveItem(null);
-      setToast('Suppression removed');
+      await api.patch(`/ioc-suppressions/${item.id}`, { active: Boolean(enabled) });
+      setToast(enabled ? 'Suppression enabled' : 'Suppression disabled');
+      await load();
+    } catch (err) {
+      setToast(apiErrorMessage(err, 'Failed to update suppression'));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteItem?.id || deleteSaving) return;
+    const reason = await requestRequiredReason('Delete IOC suppression');
+    if (!reason) return;
+    setDeleteSaving(true);
+    setDeleteError('');
+    try {
+      await api.delete(`/ioc-suppressions/${deleteItem.id}`, { data: { reason } });
+      setDeleteItem(null);
+      setToast('Suppression deleted');
       await load();
     } catch (err) {
       const msg = apiErrorMessage(err, 'Suppression failed');
-      setRemoveError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
+      setDeleteError(msg.includes('Forbidden') ? 'You do not have permission to modify suppressions' : msg);
     } finally {
-      setRemoveSaving(false);
+      setDeleteSaving(false);
     }
   }
 
@@ -9046,10 +9079,10 @@ function IOCSuppressionsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
           {[
             ['Active (page)', pageSummary.active],
+            ['Disabled (page)', pageSummary.disabled],
             ['Expired (page)', pageSummary.expired],
             ['Global (page)', pageSummary.global],
-            ['Source-specific (page)', pageSummary.sourceScoped],
-            ['Affected incidents (page)', pageSummary.affected]
+            ['Source-specific (page)', pageSummary.sourceScoped]
           ].map(([label, val]) => (
             <div key={label} style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 12, color: '#94a3b8' }}>{label}</div>
@@ -9084,7 +9117,7 @@ function IOCSuppressionsPage() {
               <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={ui.select}>
                 <option value="all">All</option>
                 <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="disabled">Disabled</option>
                 <option value="expired">Expired</option>
               </select>
             </div>
@@ -9123,31 +9156,50 @@ function IOCSuppressionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} style={ui.tr}>
-                    <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
-                    <td style={ui.td}>{item.ioc_type}</td>
-                    <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
-                    <td style={ui.td}>{item.source_name || '—'}</td>
-                    <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
-                    <td style={ui.td}>{item.created_by || '—'}</td>
-                    <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
-                    <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
-                    <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{item.status || 'unknown'}</span></td>
-                    <td style={ui.td}>{Number(item.affected_incidents || 0)}</td>
-                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                      <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
-                      {isAdmin ? (
-                        <>
-                          {' · '}
-                          <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)}>Edit</button>
-                          {' · '}
-                          <button type="button" style={{ ...ui.linkBtn, color: '#fca5a5' }} onClick={() => { setRemoveItem(item); setRemoveError(''); }}>Remove</button>
-                        </>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item) => {
+                  const rowEnabled = Boolean(item.active);
+                  return (
+                    <tr key={item.id} style={ui.tr}>
+                      <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
+                      <td style={ui.td}>{item.ioc_type}</td>
+                      <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
+                      <td style={ui.td}>{item.source_name || '—'}</td>
+                      <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
+                      <td style={ui.td}>{item.created_by || '—'}</td>
+                      <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
+                      <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
+                      <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{formatSuppressionStatusLabel(item.status)}</span></td>
+                      <td style={ui.td}>{Number(item.affected_incidents || 0)}</td>
+                      <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                        <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
+                        {isAdmin ? (
+                          <>
+                            {' · '}
+                            <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)} disabled={actionBusyId === item.id}>Edit</button>
+                            {' · '}
+                            <button
+                              type="button"
+                              style={ui.linkBtn}
+                              disabled={actionBusyId === item.id}
+                              onClick={() => setSuppressionEnabled(item, !rowEnabled).catch(() => {})}
+                            >
+                              {rowEnabled ? 'Disable' : 'Enable'}
+                            </button>
+                            {' · '}
+                            <button
+                              type="button"
+                              style={{ ...ui.linkBtn, color: '#fca5a5' }}
+                              disabled={actionBusyId === item.id}
+                              onClick={() => { setDeleteItem(item); setDeleteError(''); }}
+                            >
+                              Delete
+                            </button>
+                          </>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -9169,11 +9221,29 @@ function IOCSuppressionsPage() {
             <div><span style={ui.label}>IOC</span><input readOnly value={editItem.ioc_value} style={ui.input} /></div>
             <div><span style={ui.label}>Type</span><input readOnly value={editItem.ioc_type} style={ui.input} /></div>
             <div><span style={ui.label}>Scope</span><input readOnly value={editItem.scope || 'global'} style={ui.input} /></div>
+            {String(editItem.scope || '').toLowerCase() === 'source' ? (
+              <div><span style={ui.label}>Source</span><input readOnly value={editItem.source_name || '—'} style={ui.input} /></div>
+            ) : null}
             <div>
               <span style={ui.label}>Reason</span>
               <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} style={ui.textarea} disabled={!isAdmin || editSaving} />
             </div>
             <SuppressionExpirationFields ui={ui} preset={editPreset} setPreset={setEditPreset} customDate={editCustomDate} setCustomDate={setEditCustomDate} disabled={!isAdmin || editSaving} />
+            <div>
+              <span style={ui.label}>Status</span>
+              <select
+                value={editEnabled ? 'enabled' : 'disabled'}
+                onChange={(e) => setEditEnabled(e.target.value === 'enabled')}
+                style={ui.select}
+                disabled={!isAdmin || editSaving}
+              >
+                <option value="enabled">Enabled</option>
+                <option value="disabled">Disabled</option>
+              </select>
+              <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
+                Enabled with a past expiration date shows as Expired until you extend expiration.
+              </div>
+            </div>
             {editError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{editError}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" style={ui.btn} onClick={() => setEditItem(null)} disabled={editSaving}>Cancel</button>
@@ -9183,15 +9253,15 @@ function IOCSuppressionsPage() {
         </ModalOverlay>
       ) : null}
 
-      {removeItem ? (
-        <ModalOverlay onClose={() => !removeSaving && setRemoveItem(null)}>
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Remove suppression</h3>
-          <p style={ui.modalSub}>This will allow this IOC to become active again in future imports/correlation. Existing closed incidents will not be automatically reopened.</p>
-          <div style={{ ...ui.code, marginBottom: 12 }}>{removeItem.ioc_value} ({removeItem.ioc_type})</div>
-          {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
+      {deleteItem ? (
+        <ModalOverlay onClose={() => !deleteSaving && setDeleteItem(null)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Delete suppression</h3>
+          <p style={ui.modalSub}>Permanently delete this suppression? This action cannot be undone.</p>
+          <div style={{ ...ui.code, marginBottom: 12 }}>{deleteItem.ioc_value} ({deleteItem.ioc_type})</div>
+          {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" style={ui.btn} onClick={() => setRemoveItem(null)} disabled={removeSaving}>Cancel</button>
-            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => confirmRemove().catch(() => {})} disabled={!isAdmin || removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+            <button type="button" style={ui.btn} onClick={() => setDeleteItem(null)} disabled={deleteSaving}>Cancel</button>
+            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => confirmDelete().catch(() => {})} disabled={!isAdmin || deleteSaving}>{deleteSaving ? 'Deleting…' : 'Delete suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -12122,17 +12192,17 @@ function IOCDetailsPage() {
     }
   }
 
-  async function submitRemoveSuppression() {
+  async function submitDisableSuppression() {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0) return;
-    const reason = await requestRequiredReason('Remove IOC suppression');
+    const reason = await requestRequiredReason('Disable IOC suppression');
     if (!reason) return;
     setRemoveSaving(true);
     setRemoveError('');
     try {
       await api.delete(`/ioc/${iocId}/suppress`, { data: { reason } });
       setShowRemoveConfirm(false);
-      setActionToast('Suppression removed');
+      setActionToast('Suppression disabled');
       await load();
     } catch (err) {
       const msg = apiErrorMessage(err, 'Suppression failed');
@@ -12699,7 +12769,7 @@ function IOCDetailsPage() {
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>
                   {isAdmin ? (
-                    <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Remove suppression</button>
+                    <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Disable suppression</button>
                   ) : null}
                 </div>
               </div>
@@ -13236,12 +13306,12 @@ function IOCDetailsPage() {
 
       {showRemoveConfirm ? (
         <ModalOverlay onClose={() => !removeSaving && setShowRemoveConfirm(false)}>
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Remove suppression</h3>
-          <p style={ui.modalSub}>This will allow this IOC to become active again in future imports/correlation. Existing closed incidents will not be automatically reopened.</p>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Disable suppression</h3>
+          <p style={ui.modalSub}>Disable this suppression? It will no longer prevent matching activity, but the record will be kept.</p>
           {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
-            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitRemoveSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Removing…' : 'Remove suppression'}</button>
+            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitDisableSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Disabling…' : 'Disable suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}

@@ -55,6 +55,8 @@ export function registerIocExportRoutes(app, pool) {
       where.push(`EXISTS (
         SELECT 1 FROM ioc_suppressions s
         WHERE s.active = TRUE
+          AND s.deleted_at IS NULL
+          AND (s.expires_at IS NULL OR s.expires_at > NOW())
           AND LOWER(s.ioc_value) = LOWER(i.observable)
           AND LOWER(s.ioc_type) = LOWER(i.observable_type)
       )`);
@@ -66,6 +68,8 @@ export function registerIocExportRoutes(app, pool) {
       where.push(`NOT EXISTS (
         SELECT 1 FROM ioc_suppressions s
         WHERE s.active = TRUE
+          AND s.deleted_at IS NULL
+          AND (s.expires_at IS NULL OR s.expires_at > NOW())
           AND LOWER(s.ioc_value) = LOWER(i.observable)
           AND LOWER(s.ioc_type) = LOWER(i.observable_type)
       )`);

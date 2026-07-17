@@ -83,6 +83,7 @@ export async function fetchActiveSuppressionIndex(client, pairs = [], opts = {})
               lower(source_name) AS source_name
        FROM ioc_suppressions
        WHERE active = TRUE
+         AND deleted_at IS NULL
          AND (expires_at IS NULL OR expires_at > NOW())
          AND EXISTS (
            SELECT 1

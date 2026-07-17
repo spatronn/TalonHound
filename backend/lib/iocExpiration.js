@@ -323,6 +323,7 @@ async function queryIocSuppressedFromDb(client, observable, observableType) {
      WHERE lower(ioc_value) = lower($1)
        AND lower(ioc_type) = lower($2)
        AND active = TRUE
+       AND deleted_at IS NULL
        AND (expires_at IS NULL OR expires_at > NOW())
      LIMIT 1`,
     [observable, observableType]

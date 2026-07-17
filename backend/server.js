@@ -46,6 +46,11 @@ import {
 } from './lib/feedLifecycle.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
+import {
+  computeSuppressionEffectiveStatus,
+  normalizeSuppressionStatusFilter,
+  SUPPRESSION_STATUS_CASE_SQL
+} from './lib/iocSuppressionStatus.js';
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
 import {
@@ -3749,11 +3754,12 @@ app.get('/api/ioc/:id/suppression', async (req, res) => {
     const iocValue = String(iocQ.rows[0].observable || '').trim();
     const iocType = String(iocQ.rows[0].observable_type || '').trim();
     const supQ = await pool.query(
-      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at
+      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at, deleted_at
        FROM ioc_suppressions
        WHERE lower(ioc_value) = lower($1)
          AND lower(ioc_type) = lower($2)
          AND active = TRUE
+         AND deleted_at IS NULL
          AND (expires_at IS NULL OR expires_at > NOW())
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -3794,11 +3800,14 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
     const upsertQ = await client.query(
       `INSERT INTO ioc_suppressions (ioc_value, ioc_type, scope, source_name, reason, created_by, expires_at, active, updated_at)
        VALUES ($1, $2, 'global', NULL, $3, $4, $5, TRUE, NOW())
-       ON CONFLICT (lower(ioc_value), lower(ioc_type), scope, COALESCE(lower(source_name), '')) WHERE active = TRUE
+       ON CONFLICT (lower(ioc_value), lower(ioc_type), scope, COALESCE(lower(source_name), ''))
+         WHERE deleted_at IS NULL
        DO UPDATE SET reason = EXCLUDED.reason,
                      created_by = COALESCE(EXCLUDED.created_by, ioc_suppressions.created_by),
                      expires_at = EXCLUDED.expires_at,
                      active = TRUE,
+                     deleted_at = NULL,
+                     deleted_by = NULL,
                      updated_at = NOW()
        RETURNING *`,
       [iocValue, iocType, reason, createdBy, expiresAt ? expiresAt.toISOString() : null]
@@ -3843,36 +3852,40 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
     const iocValue = String(iocQ.rows[0].observable || '').trim();
     const iocType = String(iocQ.rows[0].observable_type || '').trim();
 
-    const beforeQ = await pool.query(
-      `SELECT * FROM ioc_suppressions
-       WHERE lower(ioc_value) = lower($1) AND lower(ioc_type) = lower($2) AND active = TRUE`,
-      [iocValue, iocType]
-    );
     const q = await pool.query(
       `UPDATE ioc_suppressions
        SET active = FALSE, updated_at = NOW()
        WHERE lower(ioc_value) = lower($1)
          AND lower(ioc_type) = lower($2)
          AND active = TRUE
+         AND deleted_at IS NULL
        RETURNING *`,
       [iocValue, iocType]
     );
     for (const row of q.rows || []) {
       await auditLogService.auditSuccess({
         req,
-        action: AUDIT_ACTION.IOC_SUPPRESSION_DELETED,
+        action: AUDIT_ACTION.IOC_SUPPRESSION_DISABLED,
         entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
         entityId: String(row.id),
         entityDisplay: `${row.ioc_value} (${row.ioc_type})`,
         severity: AUDIT_SEVERITY.WARNING,
-        before: { active: true, reason: row.reason },
-        after: { active: false },
-        metadata: { ioc_id: iocId, removed_count: q.rowCount, reason: reasonCheck.reason }
-      }).catch((e) => console.warn('[audit] suppression delete log failed', e?.message || e));
+        before: { active: true, status: 'active', reason: row.reason },
+        after: { active: false, status: 'disabled' },
+        metadata: {
+          ioc_id: iocId,
+          ioc_value: row.ioc_value,
+          ioc_type: row.ioc_type,
+          suppression_id: row.id,
+          previous_status: 'active',
+          new_status: 'disabled',
+          reason: reasonCheck.reason
+        }
+      }).catch((e) => console.warn('[audit] suppression disable log failed', e?.message || e));
     }
     return res.json({ ok: true, updated: q.rowCount || 0 });
   } catch (err) {
-    return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
+    return res.status(500).json({ message: 'Failed to disable suppression', detail: err.message });
   }
 });
 
@@ -3886,16 +3899,29 @@ app.get('/api/ioc-suppressions', async (req, res) => {
   const scope = String(req.query?.scope || '').trim().toLowerCase();
   const activeParam = String(req.query?.active || '').trim().toLowerCase();
   const expires = String(req.query?.expires || 'all').trim().toLowerCase();
+  const statusFilter = normalizeSuppressionStatusFilter(req.query?.status || '');
   const createdBy = String(req.query?.created_by || '').trim();
-  const where = ['1=1'];
+  const where = ['s.deleted_at IS NULL'];
   const params = [];
   if (search) { params.push(`%${search.toLowerCase()}%`); where.push(`(lower(s.ioc_value) LIKE $${params.length} OR lower(COALESCE(s.reason,'')) LIKE $${params.length})`); }
   if (iocType) { params.push(iocType); where.push(`lower(s.ioc_type) = $${params.length}`); }
   if (scope && scope !== 'all') { params.push(scope); where.push(`lower(s.scope) = $${params.length}`); }
-  if (activeParam === 'true' || activeParam === 'false') { params.push(activeParam === 'true'); where.push(`s.active = $${params.length}`); }
   if (createdBy) { params.push(`%${createdBy.toLowerCase()}%`); where.push(`lower(COALESCE(s.created_by,'')) LIKE $${params.length}`); }
-  if (expires === 'active') where.push(`s.active = TRUE AND (s.expires_at IS NULL OR s.expires_at > NOW())`);
-  if (expires === 'expired') where.push(`s.active = TRUE AND s.expires_at IS NOT NULL AND s.expires_at <= NOW()`);
+
+  if (statusFilter === 'active') {
+    where.push('s.active = TRUE AND (s.expires_at IS NULL OR s.expires_at > NOW())');
+  } else if (statusFilter === 'disabled') {
+    where.push('s.active = FALSE');
+  } else if (statusFilter === 'expired') {
+    where.push('s.active = TRUE AND s.expires_at IS NOT NULL AND s.expires_at <= NOW()');
+  } else {
+    if (activeParam === 'true' || activeParam === 'false') {
+      params.push(activeParam === 'true');
+      where.push(`s.active = $${params.length}`);
+    }
+    if (expires === 'active') where.push('s.active = TRUE AND (s.expires_at IS NULL OR s.expires_at > NOW())');
+    if (expires === 'expired') where.push('s.active = TRUE AND s.expires_at IS NOT NULL AND s.expires_at <= NOW()');
+  }
 
   const sort = String(req.query?.sort || 'created_at_desc').trim();
   const orderBy = sort === 'created_at_asc' ? 's.created_at ASC' : sort === 'expires_at_asc' ? 's.expires_at ASC NULLS LAST' : sort === 'ioc_value_asc' ? 's.ioc_value ASC' : 's.created_at DESC';
@@ -3905,11 +3931,7 @@ app.get('/api/ioc-suppressions', async (req, res) => {
     const baseWhere = where.join(' AND ');
     const q = await pool.query(
       `SELECT s.*,
-              CASE
-                WHEN s.active = FALSE THEN 'inactive'
-                WHEN s.expires_at IS NOT NULL AND s.expires_at <= NOW() THEN 'expired'
-                ELSE 'active'
-              END AS status,
+              ${SUPPRESSION_STATUS_CASE_SQL} AS status,
               0::int AS affected_incidents,
               0::int AS closed_incidents,
               0::int AS open_incidents,
@@ -3934,9 +3956,10 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
   if (!id) return res.status(400).json({ message: 'Invalid id' });
   const reasonRaw = req.body?.reason;
   const expiresAtRaw = req.body?.expires_at;
-  const active = req.body?.active;
+  const activeRaw = req.body?.active !== undefined ? req.body.active : req.body?.enabled;
   const sets = ['updated_at = NOW()'];
   const params = [id];
+  let nextActive = null;
   if (reasonRaw !== undefined) {
     const reason = String(reasonRaw || '').trim();
     if (!reason) return res.status(400).json({ message: 'reason is required' });
@@ -3951,34 +3974,64 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
       params.push(d.toISOString()); sets.push(`expires_at = $${params.length}::timestamptz`);
     }
   }
-  if (active !== undefined) {
-    if (typeof active !== 'boolean') return res.status(400).json({ message: 'active must be boolean' });
-    params.push(active); sets.push(`active = $${params.length}`);
+  if (activeRaw !== undefined) {
+    const active = activeRaw === true || activeRaw === 'true' || activeRaw === 1 || activeRaw === '1';
+    if (typeof activeRaw === 'boolean' || ['true', 'false', '1', '0'].includes(String(activeRaw))) {
+      nextActive = active;
+      params.push(active); sets.push(`active = $${params.length}`);
+    } else {
+      return res.status(400).json({ message: 'active must be boolean' });
+    }
   }
+  if (sets.length === 1) return res.status(400).json({ message: 'No fields to update' });
   try {
-    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
+    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
-    const q = await pool.query(`UPDATE ioc_suppressions SET ${sets.join(', ')} WHERE id = $1 RETURNING *`, params);
+    const before = beforeQ.rows[0];
+    const activeChanged = nextActive !== null && Boolean(before.active) !== Boolean(nextActive);
+    // Idempotent enable/disable: no-op when active already matches and nothing else changes
+    if (nextActive !== null && !activeChanged && reasonRaw === undefined && expiresAtRaw === undefined) {
+      const status = computeSuppressionEffectiveStatus(before);
+      return res.json({ item: { ...before, status }, noop: true });
+    }
+    const q = await pool.query(`UPDATE ioc_suppressions SET ${sets.join(', ')} WHERE id = $1 AND deleted_at IS NULL RETURNING *`, params);
     if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+    const after = q.rows[0];
+    const prevStatus = computeSuppressionEffectiveStatus(before);
+    const newStatus = computeSuppressionEffectiveStatus(after);
+    const reasonUnchanged = reasonRaw === undefined || String(before.reason || '') === String(after.reason || '');
+    const expBefore = before.expires_at ? new Date(before.expires_at).toISOString() : null;
+    const expAfter = after.expires_at ? new Date(after.expires_at).toISOString() : null;
+    const expiresUnchanged = expiresAtRaw === undefined || expBefore === expAfter;
+    if (!activeChanged && reasonUnchanged && expiresUnchanged) {
+      return res.json({ item: { ...after, status: newStatus }, noop: true });
+    }
+    let auditAction = AUDIT_ACTION.IOC_SUPPRESSION_UPDATED;
+    if (activeChanged && nextActive) auditAction = AUDIT_ACTION.IOC_SUPPRESSION_ENABLED;
+    else if (activeChanged && !nextActive) auditAction = AUDIT_ACTION.IOC_SUPPRESSION_DISABLED;
     await auditLogService.auditSuccess({
       req,
-      action: AUDIT_ACTION.IOC_SUPPRESSION_UPDATED,
+      action: auditAction,
       entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
       entityId: String(id),
-      entityDisplay: `${q.rows[0].ioc_value} (${q.rows[0].ioc_type})`,
+      entityDisplay: `${after.ioc_value} (${after.ioc_type})`,
       severity: AUDIT_SEVERITY.INFO,
-      before: {
-        reason: beforeQ.rows[0].reason,
-        expires_at: beforeQ.rows[0].expires_at,
-        active: beforeQ.rows[0].active
-      },
-      after: {
-        reason: q.rows[0].reason,
-        expires_at: q.rows[0].expires_at,
-        active: q.rows[0].active
+      before: { reason: before.reason, expires_at: before.expires_at, active: before.active, status: prevStatus },
+      after: { reason: after.reason, expires_at: after.expires_at, active: after.active, status: newStatus },
+      metadata: {
+        suppression_id: after.id,
+        ioc_value: after.ioc_value,
+        ioc_type: after.ioc_type,
+        scope: after.scope,
+        source_name: after.source_name,
+        previous_status: prevStatus,
+        new_status: newStatus,
+        previous_expiration: before.expires_at,
+        new_expiration: after.expires_at,
+        reason: after.reason
       }
     }).catch((e) => console.warn('[audit] suppression update log failed', e?.message || e));
-    return res.json({ item: q.rows[0] });
+    return res.json({ item: { ...after, status: newStatus } });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
   }
@@ -3991,27 +4044,50 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
   const reasonCheck = parseActionReason(req.body);
   if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
   try {
-    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1', [id]);
+    const beforeQ = await pool.query('SELECT * FROM ioc_suppressions WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (!beforeQ.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+    const before = beforeQ.rows[0];
+    const deletedBy = String(req.user?.email || req.user?.username || '').trim() || null;
     const q = await pool.query(
-      'UPDATE ioc_suppressions SET active = FALSE, updated_at = NOW() WHERE id = $1 RETURNING *',
-      [id]
+      `UPDATE ioc_suppressions
+       SET active = FALSE,
+           deleted_at = NOW(),
+           deleted_by = $2,
+           updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING *`,
+      [id, deletedBy]
     );
     if (!q.rowCount) return res.status(404).json({ message: 'Suppression not found' });
+    const after = q.rows[0];
     await auditLogService.auditSuccess({
       req,
       action: AUDIT_ACTION.IOC_SUPPRESSION_DELETED,
       entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
       entityId: String(id),
-      entityDisplay: `${q.rows[0].ioc_value} (${q.rows[0].ioc_type})`,
+      entityDisplay: `${after.ioc_value} (${after.ioc_type})`,
       severity: AUDIT_SEVERITY.WARNING,
-      before: { active: beforeQ.rows[0].active, reason: beforeQ.rows[0].reason },
-      after: { active: false },
-      metadata: { reason: reasonCheck.reason }
+      before: {
+        active: before.active,
+        reason: before.reason,
+        expires_at: before.expires_at,
+        status: computeSuppressionEffectiveStatus(before)
+      },
+      after: { active: false, deleted_at: after.deleted_at, status: 'deleted' },
+      metadata: {
+        suppression_id: id,
+        ioc_value: after.ioc_value,
+        ioc_type: after.ioc_type,
+        scope: after.scope,
+        source_name: after.source_name,
+        previous_status: computeSuppressionEffectiveStatus(before),
+        new_status: 'deleted',
+        reason: reasonCheck.reason
+      }
     }).catch((e) => console.warn('[audit] suppression delete log failed', e?.message || e));
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(500).json({ message: 'Failed to remove suppression', detail: err.message });
+    return res.status(500).json({ message: 'Failed to delete suppression', detail: err.message });
   }
 });
 
@@ -4363,6 +4439,7 @@ app.get('/api/ioc/details', async (req, res) => {
        WHERE lower(ioc_value) = lower($1)
          AND lower(ioc_type) = lower($2)
          AND active = TRUE
+         AND deleted_at IS NULL
          AND (expires_at IS NULL OR expires_at > NOW())
        ORDER BY created_at DESC
        LIMIT 1`,
