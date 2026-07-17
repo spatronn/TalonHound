@@ -161,14 +161,86 @@ export function deriveLatestDnsStatusFromRelations(relations) {
 
 function mergeLatestDnsFields(summary, relations) {
   const derived = deriveLatestDnsStatusFromRelations(relations);
+  const timeline = Array.isArray(summary?.dns_timeline) && summary.dns_timeline.length
+    ? summary.dns_timeline
+    : buildDnsTimelineFromRelations(relations);
   return {
     ...summary,
     latest_dns_status: summary?.latest_dns_status ?? derived.latest_dns_status,
     latest_dns_status_first_seen: summary?.latest_dns_status_first_seen ?? derived.latest_dns_status_first_seen,
     latest_dns_status_last_seen: summary?.latest_dns_status_last_seen ?? derived.latest_dns_status_last_seen,
     last_successfully_resolved: summary?.last_successfully_resolved ?? derived.last_successfully_resolved,
-    nxdomain_observed: summary?.nxdomain_observed === true || derived.nxdomain_observed
+    nxdomain_observed: summary?.nxdomain_observed === true || derived.nxdomain_observed,
+    dns_timeline: timeline
   };
+}
+
+/**
+ * Group DNSMania relation rows into chronological status periods.
+ * Sibling A/AAAA answers that share the same first/last seen window collapse into one RESOLVED period.
+ * NXDOMAIN/SERVFAIL/REFUSED remain their own periods (API already aggregates observation counts).
+ *
+ * @param {Array<object>} relations
+ * @returns {Array<object>} oldest → newest
+ */
+export function buildDnsTimelineFromRelations(relations) {
+  const list = Array.isArray(relations) ? relations : [];
+  const groups = new Map();
+
+  for (const rel of list) {
+    const rt = String(rel?.record_type || '').toUpperCase() || null;
+    const firstSeen = toIsoOrNull(rel?.first_seen);
+    const lastSeen = toIsoOrNull(rel?.last_seen);
+    const count = Number.isFinite(Number(rel?.count)) ? Number(rel.count) : 0;
+    const isError = isErrorDnsRecordType(rt) || (!rel?.value && !rel?.domain && Boolean(rt));
+
+    if (isError) {
+      const key = `err:${rt || 'NXDOMAIN'}:${firstSeen || ''}:${lastSeen || ''}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.observation_count += count || 0;
+      } else {
+        groups.set(key, {
+          status: rt || 'NXDOMAIN',
+          record_type: rt || 'NXDOMAIN',
+          first_seen: firstSeen,
+          last_seen: lastSeen,
+          observation_count: count || 0,
+          values: []
+        });
+      }
+      continue;
+    }
+
+    if (!rel?.value && !rel?.domain) continue;
+
+    // Collapse sibling answers that share the same observation window + type.
+    const key = `ok:${rt || 'RESOLVED'}:${firstSeen || ''}:${lastSeen || ''}`;
+    const existing = groups.get(key);
+    const value = rel.value || rel.domain || null;
+    if (existing) {
+      existing.observation_count += count || 0;
+      if (value && !existing.values.includes(value)) existing.values.push(value);
+    } else {
+      groups.set(key, {
+        status: 'RESOLVED',
+        record_type: rt || null,
+        first_seen: firstSeen,
+        last_seen: lastSeen,
+        observation_count: count || 0,
+        values: value ? [value] : []
+      });
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const aMs = toEpochMs(a.first_seen) ?? toEpochMs(a.last_seen) ?? 0;
+    const bMs = toEpochMs(b.first_seen) ?? toEpochMs(b.last_seen) ?? 0;
+    if (aMs !== bMs) return aMs - bMs;
+    const aLast = toEpochMs(a.last_seen) ?? 0;
+    const bLast = toEpochMs(b.last_seen) ?? 0;
+    return aLast - bLast;
+  });
 }
 
 /**
@@ -191,6 +263,7 @@ export function normalizeDnsmaniaDomainResponse(body, lookupValue) {
   }));
 
   const latest = deriveLatestDnsStatusFromRelations(relations);
+  const dnsTimeline = buildDnsTimelineFromRelations(relations);
   const associatedIpCount = Number.isFinite(Number(body?.unique_ips))
     ? Number(body.unique_ips)
     : relations.filter((r) => r.value).length;
@@ -214,6 +287,7 @@ export function normalizeDnsmaniaDomainResponse(body, lookupValue) {
       latest_dns_status_first_seen: latest.latest_dns_status_first_seen,
       latest_dns_status_last_seen: latest.latest_dns_status_last_seen,
       last_successfully_resolved: latest.last_successfully_resolved,
+      dns_timeline: dnsTimeline,
       relation_count: relations.length,
       pagination_returned: body?.pagination?.returned != null ? Number(body.pagination.returned) : relations.length
     },

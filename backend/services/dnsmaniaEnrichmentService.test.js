@@ -4,6 +4,7 @@ import {
   normalizeDnsmaniaDomainResponse,
   normalizeDnsmaniaIpResponse,
   deriveLatestDnsStatusFromRelations,
+  buildDnsTimelineFromRelations,
   enrichIocWithDnsmania,
   rowToApiPayload
 } from './dnsmaniaEnrichmentService.js';
@@ -114,6 +115,74 @@ test('sibling A records at same second do not lose to each other when NXDOMAIN i
   ]);
   assert.equal(derived.latest_dns_status, 'NXDOMAIN');
   assert.match(derived.last_successfully_resolved, /^2026-07-17T14:44:31/);
+});
+
+test('dns timeline groups sibling A rows and keeps NXDOMAIN as separate period', () => {
+  const n = normalizeDnsmaniaDomainResponse({
+    domain: 'caudzzwo.coop-fresh.com',
+    first_seen: '2026-07-17 14:44:30.978',
+    last_seen: '2026-07-17 15:21:19.268',
+    unique_ips: 2,
+    records: [
+      { ip: '188.114.96.3', record_type: 'A', first_seen: '2026-07-17 14:44:30.978', last_seen: '2026-07-17 14:44:31.022', count: 2 },
+      { ip: '188.114.97.3', record_type: 'A', first_seen: '2026-07-17 14:44:30.978', last_seen: '2026-07-17 14:44:31.022', count: 2 },
+      { ip: null, record_type: 'NXDOMAIN', first_seen: '2026-07-17 15:21:17.997', last_seen: '2026-07-17 15:21:19.268', count: 11 }
+    ]
+  }, 'caudzzwo.coop-fresh.com');
+
+  assert.equal(n.summary.dns_timeline.length, 2);
+  assert.equal(n.summary.dns_timeline[0].status, 'RESOLVED');
+  assert.equal(n.summary.dns_timeline[0].record_type, 'A');
+  assert.equal(n.summary.dns_timeline[0].observation_count, 4);
+  assert.deepEqual(n.summary.dns_timeline[0].values, ['188.114.96.3', '188.114.97.3']);
+  assert.equal(n.summary.dns_timeline[1].status, 'NXDOMAIN');
+  assert.equal(n.summary.dns_timeline[1].observation_count, 11);
+  assert.deepEqual(n.summary.dns_timeline[1].values, []);
+});
+
+test('dns timeline does not explode many NXDOMAIN observations into many rows', () => {
+  const timeline = buildDnsTimelineFromRelations([
+    { value: null, record_type: 'NXDOMAIN', first_seen: '2026-07-17T15:21:17.997Z', last_seen: '2026-07-17T15:21:19.268Z', count: 11 }
+  ]);
+  assert.equal(timeline.length, 1);
+  assert.equal(timeline[0].status, 'NXDOMAIN');
+  assert.equal(timeline[0].observation_count, 11);
+});
+
+test('A-only timeline has single RESOLVED period', () => {
+  const n = normalizeDnsmaniaDomainResponse({
+    domain: 'example.com',
+    first_seen: '2026-07-10T10:00:00Z',
+    last_seen: '2026-07-15T14:00:00Z',
+    unique_ips: 1,
+    records: [
+      { ip: '1.2.3.4', record_type: 'A', first_seen: '2026-07-10T10:00:00Z', last_seen: '2026-07-15T14:00:00Z', count: 2 }
+    ]
+  }, 'example.com');
+  assert.equal(n.summary.dns_timeline.length, 1);
+  assert.equal(n.summary.dns_timeline[0].status, 'RESOLVED');
+});
+
+test('rowToApiPayload backfills dns_timeline for legacy summary', () => {
+  const p = rowToApiPayload({
+    provider_status: 'completed',
+    known: true,
+    lookup_type: 'domain',
+    lookup_value: 'caudzzwo.coop-fresh.com',
+    normalized_summary: {
+      first_seen: '2026-07-17T14:44:30.978Z',
+      last_seen: '2026-07-17T15:21:19.268Z',
+      associated_ip_count: 2,
+      nxdomain_observed: true
+    },
+    relations_json: [
+      { value: '188.114.96.3', record_type: 'A', first_seen: '2026-07-17T14:44:30.978Z', last_seen: '2026-07-17T14:44:31.022Z', count: 2 },
+      { value: '188.114.97.3', record_type: 'A', first_seen: '2026-07-17T14:44:30.978Z', last_seen: '2026-07-17T14:44:31.022Z', count: 2 },
+      { value: null, record_type: 'NXDOMAIN', first_seen: '2026-07-17T15:21:17.997Z', last_seen: '2026-07-17T15:21:19.268Z', count: 11 }
+    ]
+  });
+  assert.equal(p.summary.latest_dns_status, 'NXDOMAIN');
+  assert.equal(p.summary.dns_timeline.length, 2);
 });
 
 test('domain never-seen response maps to no_data', () => {

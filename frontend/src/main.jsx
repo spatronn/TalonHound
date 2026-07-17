@@ -10643,6 +10643,16 @@ const ENRICHMENT_INTELLIGENCE_LAYOUT_CSS = `
   color: #fde68a;
   background: rgba(161, 98, 7, 0.16);
 }
+.dnsmania-status-badge.is-resolved {
+  border-color: #166534;
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.14);
+}
+.dnsmania-status-badge.is-warn {
+  border-color: #a16207;
+  color: #fde68a;
+  background: rgba(161, 98, 7, 0.16);
+}
 .dnsmania-metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -10683,6 +10693,136 @@ const ENRICHMENT_INTELLIGENCE_LAYOUT_CSS = `
   overflow-wrap: anywhere;
   word-break: break-word;
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+.dnsmania-latest-status-panel {
+  margin-top: 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #0b1220;
+  min-width: 0;
+}
+.dnsmania-latest-status-panel.is-nxdomain,
+.dnsmania-latest-status-panel.is-warn {
+  border-color: #a16207;
+  background: rgba(161, 98, 7, 0.10);
+}
+.dnsmania-latest-status-panel.is-resolved {
+  border-color: #166534;
+  background: rgba(22, 163, 74, 0.08);
+}
+.dnsmania-latest-status-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+.dnsmania-latest-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dnsmania-latest-status-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: 0.02em;
+}
+.dnsmania-latest-status-panel.is-nxdomain .dnsmania-latest-status-value,
+.dnsmania-latest-status-panel.is-warn .dnsmania-latest-status-value {
+  color: #fde68a;
+}
+.dnsmania-latest-status-panel.is-resolved .dnsmania-latest-status-value {
+  color: #86efac;
+}
+.dnsmania-latest-status-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+.dnsmania-timeline {
+  margin-top: 14px;
+}
+.dnsmania-timeline-list {
+  display: grid;
+  gap: 0;
+  margin-top: 8px;
+}
+.dnsmania-timeline-item {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 10px;
+  position: relative;
+}
+.dnsmania-timeline-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.dnsmania-timeline-rail::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: -8px;
+  width: 1px;
+  background: #334155;
+}
+.dnsmania-timeline-item:last-child .dnsmania-timeline-rail::before {
+  display: none;
+}
+.dnsmania-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid #64748b;
+  background: #0f172a;
+  margin-top: 4px;
+  z-index: 1;
+  box-sizing: border-box;
+}
+.dnsmania-timeline-item.is-latest .dnsmania-timeline-dot {
+  border-color: #fde68a;
+  background: #fde68a;
+  box-shadow: 0 0 0 3px rgba(161, 98, 7, 0.2);
+}
+.dnsmania-timeline-item.is-latest.is-resolved .dnsmania-timeline-dot {
+  border-color: #86efac;
+  background: #86efac;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+}
+.dnsmania-timeline-body {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #0b1220;
+  margin-bottom: 8px;
+  min-width: 0;
+}
+.dnsmania-timeline-item.is-latest .dnsmania-timeline-body {
+  border-color: #475569;
+}
+.dnsmania-timeline-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.dnsmania-timeline-values {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+.dnsmania-timeline-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.45;
 }
 .dnsmania-section-title {
   font-size: 12px;
@@ -11179,6 +11319,14 @@ function DnsmaniaStatusBadge({ kind, label }) {
   return <span className={`dnsmania-status-badge is-${kind}`}>{label}</span>;
 }
 
+function dnsmaniaLatestStatusKind(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'NXDOMAIN') return 'nxdomain';
+  if (s === 'SERVFAIL' || s === 'REFUSED' || s === 'TIMEOUT') return 'warn';
+  if (s === 'A' || s === 'AAAA' || s === 'CNAME' || s === 'RESOLVED' || s === 'NOERROR') return 'resolved';
+  return 'nodata';
+}
+
 function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = false, onSnapshot }) {
   const type = String(iocType || '').trim().toLowerCase();
   const value = String(iocValue || '').trim();
@@ -11188,8 +11336,10 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
   const [state, setState] = useState({ status: 'loading', data: null, message: '' });
   const [enriching, setEnriching] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
   const enrichInFlight = useRef(false);
   const isUrlIoc = type === 'url';
+  const TIMELINE_DEFAULT_LIMIT = 5;
 
   const shellStyle = {
     marginBottom: compact ? 0 : 14,
@@ -11396,14 +11546,13 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
 
   // completed — Found means historical data exists; latest DNS status is separate.
   const statusBadge = <DnsmaniaStatusBadge kind="found" label="Found" />;
-  const latestStatusBadge = latestDnsStatus
-    ? (
-      <DnsmaniaStatusBadge
-        kind={latestIsErrorStatus ? 'nxdomain' : 'found'}
-        label={latestDnsStatus}
-      />
-    )
-    : null;
+  const latestKind = dnsmaniaLatestStatusKind(latestDnsStatus);
+  const timelineAll = Array.isArray(summary.dns_timeline) ? summary.dns_timeline : [];
+  const timelineVisible = timelineExpanded
+    ? timelineAll
+    : timelineAll.slice(Math.max(0, timelineAll.length - TIMELINE_DEFAULT_LIMIT));
+  const timelineHiddenCount = Math.max(0, timelineAll.length - timelineVisible.length);
+  const lastCheckedAt = summary.latest_dns_status_last_seen || summary.last_seen;
 
   const relationHint = relationTotal > relationList.length
     ? `Showing ${relationList.length} of ${relationTotal} relations`
@@ -11420,29 +11569,35 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
           <div style={{ color: '#94a3b8', fontSize: 11 }}>Known in DNSMania</div>
           <div style={{ color: '#86efac', fontSize: 14, fontWeight: 700, marginTop: 2 }}>Yes</div>
         </div>
-        {latestDnsStatus ? (
-          <div>
-            <div style={{ color: '#94a3b8', fontSize: 11 }}>Latest DNS Status</div>
-            <div style={{ marginTop: 4 }}>{latestStatusBadge}</div>
-          </div>
-        ) : null}
       </div>
 
       {lookupPanel(lookupLabel, d.lookup_value)}
 
-      {latestIsErrorStatus && resolvableRelations.length > 0 ? (
-        <div style={{ marginTop: 10, color: '#fde68a', fontSize: 12, lineHeight: 1.45 }}>
-          Latest observation returned {latestDnsStatus}. Previously resolved IPs are shown below.
+      {latestDnsStatus ? (
+        <div className={`dnsmania-latest-status-panel is-${latestKind}`}>
+          <div className="dnsmania-latest-status-label">Latest DNS Status</div>
+          <div className="dnsmania-latest-status-row">
+            <span className="dnsmania-latest-status-value">{latestDnsStatus}</span>
+            <DnsmaniaStatusBadge kind={latestKind} label={latestDnsStatus} />
+          </div>
+          <div className="dnsmania-latest-status-meta">
+            {latestIsErrorStatus
+              ? `Latest observation returned ${latestDnsStatus}.`
+              : `Latest observation resolved as ${latestDnsStatus}.`}
+            {lastCheckedAt ? ` Last checked: ${formatUserDateTime(lastCheckedAt)}.` : ''}
+          </div>
+          {latestIsErrorStatus && resolvableRelations.length > 0 ? (
+            <div className="dnsmania-latest-status-meta">
+              Previously resolved. Historical IP addresses are shown below.
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       <div className="dnsmania-metric-grid">
         <EnrichmentFieldCard label="First Seen" value={formatUserDateTime(summary.first_seen)} />
         <EnrichmentFieldCard label="Last Seen" value={formatUserDateTime(summary.last_seen)} />
-        {latestDnsStatus ? (
-          <EnrichmentFieldCard label="Latest DNS Status" value={latestDnsStatus} />
-        ) : null}
-        {latestIsErrorStatus && summary.last_successfully_resolved ? (
+        {summary.last_successfully_resolved ? (
           <EnrichmentFieldCard
             label="Last Successfully Resolved"
             value={formatUserDateTime(summary.last_successfully_resolved)}
@@ -11453,6 +11608,67 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
         ) : null}
         <EnrichmentFieldCard label="Last Enriched" value={formatUserDateTime(d.enriched_at || d.last_success_at)} />
       </div>
+
+      {timelineAll.length ? (
+        <div className="dnsmania-timeline">
+          <div className="dnsmania-section-title">DNS Timeline</div>
+          {timelineHiddenCount > 0 && !timelineExpanded ? (
+            <div style={{ color: '#64748b', fontSize: 11, marginBottom: 6 }}>
+              Showing latest {timelineVisible.length} of {timelineAll.length} periods
+            </div>
+          ) : null}
+          <div className="dnsmania-timeline-list">
+            {timelineVisible.map((period) => {
+              const status = String(period?.status || period?.record_type || 'UNKNOWN').toUpperCase();
+              const kind = dnsmaniaLatestStatusKind(status);
+              const absoluteLatest = period === timelineAll[timelineAll.length - 1];
+              const values = Array.isArray(period?.values) ? period.values.filter(Boolean) : [];
+              const obsCount = Number(period?.observation_count);
+              const metaParts = [
+                period?.last_seen ? `Last observed: ${formatUserDateTime(period.last_seen)}` : null,
+                Number.isFinite(obsCount) && obsCount > 0
+                  ? `${obsCount} observation${obsCount === 1 ? '' : 's'}`
+                  : null
+              ].filter(Boolean);
+              return (
+                <div
+                  key={`${status}-${period?.first_seen || ''}-${period?.last_seen || ''}-${values.join(',')}`}
+                  className={`dnsmania-timeline-item${absoluteLatest ? ` is-latest is-${kind}` : ''}`}
+                >
+                  <div className="dnsmania-timeline-rail">
+                    <span className="dnsmania-timeline-dot" />
+                  </div>
+                  <div className="dnsmania-timeline-body">
+                    <div className="dnsmania-timeline-title">
+                      <span>{period?.first_seen ? formatUserDateTime(period.first_seen) : '—'}</span>
+                      <span>—</span>
+                      <DnsmaniaStatusBadge kind={kind} label={status} />
+                    </div>
+                    {values.length ? (
+                      <div className="dnsmania-timeline-values">
+                        {(period.record_type && status === 'RESOLVED') ? `${period.record_type}: ` : ''}
+                        {values.join(', ')}
+                      </div>
+                    ) : null}
+                    {metaParts.length ? (
+                      <div className="dnsmania-timeline-meta">{metaParts.join(' · ')}</div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {timelineHiddenCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setTimelineExpanded((v) => !v)}
+              style={{ marginTop: 4, fontSize: 12 }}
+            >
+              {timelineExpanded ? 'Show less' : `Show earlier periods (${timelineHiddenCount})`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {relationList.length ? (
         <div className="enrichment-detail-stack">
