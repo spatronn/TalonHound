@@ -73,8 +73,6 @@ test('previewFeedDataPurge returns preview stats', async () => {
   assert.equal(result.preview.feed_name, 'USOM TR-CERT');
   assert.equal(result.preview.active_memberships, 5);
   assert.equal(result.preview.iocs_only_from_this_feed, 4);
-  assert.equal(result.preview.will_preserve_history, true);
-  assert.equal(result.preview.incidents_deleted, 0);
   assert.equal(result.preview.feed_enabled, false);
   assert.equal(result.preview.feed_archived, false);
   assert.equal(result.preview.reimport_possible, false);
@@ -211,7 +209,7 @@ test('findActivePurgeJobForFeed returns active purge job', async () => {
   assert.equal(row?.job_id, 'job-1');
 });
 
-test('purgeFeedData soft-purges memberships without deleting incidents', async () => {
+test('purgeFeedData soft-purges memberships and recomputes IOC status', async () => {
   const feedId = '11111111-1111-4111-8111-111111111111';
   let batchSelectCalls = 0;
   const state = {
@@ -285,8 +283,7 @@ test('purgeFeedData soft-purges memberships without deleting incidents', async (
   });
   assert.equal(result.ok, true);
   assert.equal(result.result.active_memberships_removed, 2);
-  assert.equal(result.result.preserved_incidents, true);
-  assert.equal(result.result.preserved_events, true);
+  assert.equal(result.result.iocs_kept_active_due_to_other_sources >= 0, true);
   assert.ok(state.queries.some((q) => q.sql.includes("status = 'purged'")));
 });
 

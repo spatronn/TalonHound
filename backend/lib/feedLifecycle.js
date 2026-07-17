@@ -94,10 +94,6 @@ export async function previewFeedDataPurge(client, feedKey) {
       active_memberships: Number(stats.active_memberships || 0),
       iocs_only_from_this_feed: Number(stats.iocs_only_from_this_feed || 0),
       iocs_shared_with_other_sources: Number(stats.iocs_shared_with_other_sources || 0),
-      incidents_deleted: 0,
-      events_deleted: 0,
-      will_preserve_history: true,
-      history_preserved: true,
       feed_enabled: feedEnabled,
       feed_archived: feedArchived,
       reimport_possible: computeReimportPossible(feed)
@@ -296,11 +292,6 @@ export async function purgeFeedDataInBatches(client, feedKey, {
     active_memberships_removed: activeMembershipsRemoved,
     iocs_expired_or_removed: iocsExpired,
     iocs_kept_active_due_to_other_sources: iocsKeptActive,
-    incidents_deleted: 0,
-    events_deleted: 0,
-    history_preserved: true,
-    preserved_incidents: true,
-    preserved_events: true,
     performed_by: actorUsername || null
   };
 

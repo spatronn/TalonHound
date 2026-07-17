@@ -2432,7 +2432,7 @@ function FeedSettingsModal({
           <div style={{ borderTop: '1px solid #7f1d1d', paddingTop: 14 }}>
             <div style={{ color: '#fca5a5', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Feed data actions</div>
             <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.55, marginBottom: 10 }}>
-              Remove active IOC memberships imported from this feed. Incidents, match events, evidence logs and audit history are preserved.
+              Remove active IOC memberships imported from this feed.
             </div>
             {!isArchived ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -2660,7 +2660,6 @@ function FeedPurgePreviewSummary({ preview, loading }) {
     ? 'Archived'
     : (preview.feed_enabled ? 'Enabled' : 'Disabled');
   const reimportLabel = preview.reimport_possible ? 'Yes' : 'No';
-  const historyLabel = (preview.history_preserved ?? preview.will_preserve_history) ? 'Yes' : 'No';
 
   return (
     <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #334155', background: '#0b1220', fontSize: 13, lineHeight: 1.55 }}>
@@ -2668,11 +2667,7 @@ function FeedPurgePreviewSummary({ preview, loading }) {
       <div style={{ color: '#cbd5e1' }}>Active memberships to purge: <b>{preview.active_memberships ?? 0}</b></div>
       <div style={{ color: '#cbd5e1' }}>IOCs that will become expired/removed: <b>{preview.iocs_only_from_this_feed ?? 0}</b></div>
       <div style={{ color: '#cbd5e1' }}>IOCs that will stay active because of other sources: <b>{preview.iocs_shared_with_other_sources ?? 0}</b></div>
-      <div style={{ color: '#94a3b8', marginTop: 8 }}>
-        Incidents/events/evidence deleted: {preview.incidents_deleted ?? 0}
-      </div>
-      <div style={{ color: '#94a3b8' }}>History preserved: {historyLabel}</div>
-      <div style={{ color: '#94a3b8' }}>Feed state: {feedState}</div>
+      <div style={{ color: '#94a3b8', marginTop: 8 }}>Feed state: {feedState}</div>
       <div style={{ color: '#94a3b8' }}>Re-import possible: {reimportLabel}</div>
       {preview.feed_enabled && !preview.feed_archived ? (
         <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #854d0e', color: '#fcd34d', background: 'rgba(120,53,15,0.2)', fontSize: 12, lineHeight: 1.5 }}>
@@ -2785,7 +2780,7 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
         <div className="modal-body">
           <div id="feed-purge-modal-title" className="modal-title" style={{ marginBottom: 8 }}>Purge feed data</div>
           <p style={{ margin: '0 0 12px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
-            This will remove active IOC memberships imported from this feed. Existing incidents, match events, evidence logs and audit history will be preserved.
+            This will remove active IOC memberships imported from this feed.
           </p>
           <FeedPurgePreviewSummary preview={preview} loading={loadingPreview} />
           <p style={{ margin: '12px 0 0', color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
