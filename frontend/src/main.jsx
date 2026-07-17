@@ -12197,14 +12197,20 @@ function IOCDetailsPage() {
     }
   }
 
-  async function removeIocTag(tagId) {
+  async function removeIocTag(tag) {
     const iocId = Number(data?.summary?.id);
+    const tagId = Number(tag?.id ?? tag);
     if (!Number.isFinite(iocId) || iocId <= 0) return;
+    if (!Number.isFinite(tagId) || tagId <= 0) return;
+
+    const tagName = String(tag?.name || 'this tag').trim() || 'this tag';
+    const ok = window.confirm(`Remove the analyst tag "${tagName}" from this IOC?`);
+    if (!ok) return;
 
     setTagsSaving(true);
     try {
-      await api.delete(`/ioc/${iocId}/tags/${Number(tagId)}`);
-      setIocTags((prev) => prev.filter((t) => Number(t.id) !== Number(tagId)));
+      await api.delete(`/ioc/${iocId}/tags/${tagId}`);
+      setIocTags((prev) => prev.filter((t) => Number(t.id) !== tagId));
     } catch (err) {
       console.log('[ioc-tags] delete failed', err);
     } finally {
@@ -12973,7 +12979,7 @@ function IOCDetailsPage() {
                                 {tag.name}
                                 <button
                                   type="button"
-                                  onClick={() => removeIocTag(tag.id).catch(() => {})}
+                                  onClick={() => removeIocTag(tag).catch(() => {})}
                                   title="Remove tag"
                                   aria-label={`Remove ${tag.name}`}
                                   style={{ padding: 0, border: 'none', background: 'transparent', color: inactive ? '#57534e' : '#a16207', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
