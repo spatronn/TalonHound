@@ -11798,6 +11798,11 @@ function iocAuditMetadataSummary(metadata) {
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
   if (metadata.tag_name) parts.push(`tag: ${metadata.tag_name}`);
+  if (metadata.tag && !metadata.tag_name) parts.push(`tag: ${metadata.tag}`);
+  if (metadata.source_name || metadata.source) {
+    const src = metadata.source_name || metadata.source;
+    if (metadata.tag || metadata.tag_name) parts.push(`source: ${src}`);
+  }
   if (metadata.cached === true) parts.push('cached');
   const target = metadata.target_value || metadata.root_domain || metadata.lookup_value || metadata.ip || metadata.target_ip;
   if (target) parts.push(`target: ${target}`);
@@ -11886,6 +11891,8 @@ function IOCDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [], suppression: { active: false } });
   const [iocTags, setIocTags] = useState([]);
+  const [hiddenSourceTags, setHiddenSourceTags] = useState([]);
+  const [showHiddenSourceTags, setShowHiddenSourceTags] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState([]);
   const [tagSearch, setTagSearch] = useState('');
   const [tagsLoading, setTagsLoading] = useState(false);
@@ -11965,6 +11972,37 @@ function IOCDetailsPage() {
     }
   }
 
+  async function loadHiddenSourceTags(iocId) {
+    if (!iocId) {
+      setHiddenSourceTags([]);
+      return;
+    }
+    try {
+      const res = await api.get(`/ioc/${iocId}/tags/source/hidden`);
+      setHiddenSourceTags(Array.isArray(res.data?.items) ? res.data.items : []);
+    } catch (err) {
+      console.log('[ioc-tags] hidden source load failed', err);
+      setHiddenSourceTags([]);
+    }
+  }
+
+  function patchFeedIntelligenceTags(nextTags) {
+    setData((prev) => {
+      if (!prev?.summary) return prev;
+      const fi = prev.summary.feed_intelligence || {};
+      return {
+        ...prev,
+        summary: {
+          ...prev.summary,
+          feed_intelligence: {
+            ...fi,
+            tags: Array.isArray(nextTags) ? nextTags : []
+          }
+        }
+      };
+    });
+  }
+
   async function loadTagSuggestions(search = '') {
     setTagsLoading(true);
     try {
@@ -12021,9 +12059,12 @@ function IOCDetailsPage() {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0) {
       setIocTags([]);
+      setHiddenSourceTags([]);
+      setShowHiddenSourceTags(false);
       return;
     }
     loadIocTags(iocId).catch(() => {});
+    loadHiddenSourceTags(iocId).catch(() => {});
   }, [data?.summary?.id]);
 
   useEffect(() => {
@@ -12166,6 +12207,78 @@ function IOCDetailsPage() {
       setIocTags((prev) => prev.filter((t) => Number(t.id) !== Number(tagId)));
     } catch (err) {
       console.log('[ioc-tags] delete failed', err);
+    } finally {
+      setTagsSaving(false);
+    }
+  }
+
+  async function hideSourceTag(ft) {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0 || !ft) return;
+    const tag = String(ft.tag || '').trim();
+    const source = String(ft.source_name || '').trim();
+    if (!tag || !source) return;
+
+    const ok = window.confirm('Remove this source tag from this IOC? It will not affect other IOCs.');
+    if (!ok) return;
+
+    const prevTags = Array.isArray(data?.summary?.feed_intelligence?.tags)
+      ? data.summary.feed_intelligence.tags
+      : [];
+    const nextTags = prevTags.filter(
+      (t) => !(String(t.normalized || '').toLowerCase() === String(ft.normalized || '').toLowerCase()
+        && String(t.source_name || '').toLowerCase() === source.toLowerCase())
+    );
+    patchFeedIntelligenceTags(nextTags);
+    setTagsSaving(true);
+    try {
+      await api.post(`/ioc/${iocId}/tags/source/hide`, { tag, source });
+      await loadHiddenSourceTags(iocId);
+    } catch (err) {
+      console.log('[ioc-tags] hide source failed', err);
+      patchFeedIntelligenceTags(prevTags);
+      setActionToast(apiErrorMessage(err, 'Failed to hide source tag'));
+    } finally {
+      setTagsSaving(false);
+    }
+  }
+
+  async function restoreSourceTag(item) {
+    const iocId = Number(data?.summary?.id);
+    if (!Number.isFinite(iocId) || iocId <= 0 || !item) return;
+    const tag = String(item.tag || '').trim();
+    const source = String(item.source || item.source_name || '').trim();
+    if (!tag || !source) return;
+
+    setTagsSaving(true);
+    try {
+      await api.post(`/ioc/${iocId}/tags/source/restore`, { tag, source });
+      setHiddenSourceTags((prev) => prev.filter((h) => !(
+        String(h.tag_normalized || h.tag || '').toLowerCase() === String(item.tag_normalized || item.tag || '').toLowerCase()
+        && String(h.source || h.source_name || '').toLowerCase() === source.toLowerCase()
+      )));
+      // Soft-add restored tag into visible feed tags without full page reload
+      const prevTags = Array.isArray(data?.summary?.feed_intelligence?.tags)
+        ? data.summary.feed_intelligence.tags
+        : [];
+      const already = prevTags.some((t) => (
+        String(t.normalized || t.tag || '').toLowerCase() === String(item.tag_normalized || tag).toLowerCase()
+        && String(t.source_name || '').toLowerCase() === source.toLowerCase()
+      ));
+      if (!already) {
+        patchFeedIntelligenceTags([
+          ...prevTags,
+          {
+            tag,
+            normalized: String(item.tag_normalized || tag).toLowerCase(),
+            origin: 'feed',
+            source_name: source
+          }
+        ]);
+      }
+    } catch (err) {
+      console.log('[ioc-tags] restore source failed', err);
+      setActionToast(apiErrorMessage(err, 'Failed to restore source tag'));
     } finally {
       setTagsSaving(false);
     }
@@ -12873,11 +12986,12 @@ function IOCDetailsPage() {
                           })}
                           {feedOnlyTags.map((ft) => (
                             <span
-                              key={`feedtag-${ft.normalized}`}
+                              key={`feedtag-${ft.normalized}-${ft.source_name || ''}`}
                               title={ft.source_name ? `Imported from ${ft.source_name}` : 'Imported from feed'}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
+                                gap: 5,
                                 padding: '3px 8px',
                                 borderRadius: 999,
                                 border: '1px solid #1e40af',
@@ -12887,6 +13001,18 @@ function IOCDetailsPage() {
                               }}
                             >
                               {ft.tag}
+                              {canWrite ? (
+                                <button
+                                  type="button"
+                                  onClick={() => hideSourceTag(ft).catch(() => {})}
+                                  title="Remove this source tag from this IOC"
+                                  aria-label={`Hide source tag ${ft.tag}`}
+                                  style={{ padding: 0, border: 'none', background: 'transparent', color: '#60a5fa', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
+                                  disabled={tagsSaving}
+                                >
+                                  ×
+                                </button>
+                              ) : null}
                             </span>
                           ))}
                           {!hasTags ? <span style={{ color: '#64748b', fontSize: 12 }}>No tags</span> : null}
@@ -12944,6 +13070,49 @@ function IOCDetailsPage() {
                       ) : null}
                     </div>
                   </div>
+                  {canWrite && hiddenSourceTags.length > 0 ? (
+                    <div style={{ marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowHiddenSourceTags((v) => !v)}
+                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 8, border: '1px solid #334155', background: '#0b1220', color: '#93c5fd' }}
+                      >
+                        {showHiddenSourceTags ? 'Hide' : 'Restore'} source tags ({hiddenSourceTags.length})
+                      </button>
+                      {showHiddenSourceTags ? (
+                        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {hiddenSourceTags.map((h) => (
+                            <div
+                              key={`hidden-${h.tag_normalized || h.tag}-${h.source || h.source_name}`}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                padding: '6px 8px',
+                                borderRadius: 8,
+                                border: '1px dashed #334155',
+                                background: '#0b1220'
+                              }}
+                            >
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ color: '#64748b', fontSize: 12, textDecoration: 'line-through' }}>{h.tag}</div>
+                                <div style={{ color: '#475569', fontSize: 11 }}>{h.source || h.source_name}</div>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={tagsSaving}
+                                onClick={() => restoreSourceTag(h).catch(() => {})}
+                                style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+                              >
+                                Restore
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 {(() => {

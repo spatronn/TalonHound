@@ -82,6 +82,13 @@ import {
 import { buildFileInformation } from './lib/iocFileInformation.js';
 import { buildFeedIntelligence } from './lib/feedTagNormalization.js';
 import {
+  applySourceTagOverrides,
+  feedTagsIncludeSourceTag,
+  hideSourceTag,
+  listActiveSourceTagOverrides,
+  restoreSourceTag
+} from './lib/iocSourceTagOverrides.js';
+import {
   buildIocStatsCacheKey,
   readIocStatsCache,
   writeIocStatsCache
@@ -2588,6 +2595,191 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
   }
 });
 
+app.get('/api/ioc/:id/tags/source/hidden', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const iocId = parsePositiveInt(req.params?.id);
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  try {
+    const iocExists = await pool.query('SELECT id FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const rows = await listActiveSourceTagOverrides(pool, iocId);
+    return res.json({
+      items: rows.map((r) => ({
+        id: Number(r.id),
+        tag: r.tag_value,
+        tag_normalized: r.tag_normalized,
+        source: r.source_name,
+        source_name: r.source_name,
+        hidden_at: r.created_at,
+        action: r.action
+      }))
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to list hidden source tags', detail: err.message });
+  }
+});
+
+app.post('/api/ioc/:id/tags/source/hide', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const iocId = parsePositiveInt(req.params?.id);
+  const tagValue = String(req.body?.tag || req.body?.tag_value || '').trim();
+  const sourceName = String(req.body?.source || req.body?.source_name || '').trim();
+
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  if (!tagValue) return res.status(400).json({ message: 'tag is required' });
+  if (!sourceName) return res.status(400).json({ message: 'source is required' });
+
+  try {
+    const iocExists = await pool.query(
+      `SELECT id, public_id, observable, observable_type
+       FROM ioc_items WHERE id = $1 LIMIT 1`,
+      [iocId]
+    );
+    if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const ioc = iocExists.rows[0];
+
+    // Resolve sibling items for same observable so evidence/tags match details view
+    const siblings = await pool.query(
+      `SELECT id FROM ioc_items
+       WHERE observable = $1 AND observable_type = $2`,
+      [ioc.observable, ioc.observable_type]
+    );
+    const iocItemIds = siblings.rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
+    const evidenceRows = await fetchFeedSourceEvidenceForItems(pool, {
+      iocItemIds,
+      observableType: ioc.observable_type
+    });
+    const feedIntelligence = buildFeedIntelligence(evidenceRows);
+    if (!feedTagsIncludeSourceTag(feedIntelligence.tags, tagValue, sourceName)) {
+      return res.status(404).json({
+        message: 'Source tag not found on this IOC',
+        code: 'source_tag_not_found'
+      });
+    }
+
+    const result = await hideSourceTag(pool, {
+      iocId,
+      iocObservableType: ioc.observable_type,
+      tagValue,
+      sourceName,
+      createdBy: req.user?.id ?? null
+    });
+
+    if (result.created) {
+      await auditLogService.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_SOURCE_TAG_HIDDEN,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: ioc.public_id ? String(ioc.public_id) : String(iocId),
+        entityDisplay: ioc.observable || String(iocId),
+        subjectIocId: iocId,
+        subjectIocType: ioc.observable_type || null,
+        subjectIocValue: ioc.observable || null,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          ioc_id: String(iocId),
+          subject_ioc_id: String(iocId),
+          subject_ioc_type: ioc.observable_type || null,
+          subject_ioc_value: ioc.observable || null,
+          tag: tagValue,
+          tag_normalized: result.row.tag_normalized,
+          source: sourceName,
+          source_name: sourceName
+        }
+      }).catch(() => {});
+      invalidateIocDetailsCache(ioc.public_id);
+    }
+
+    return res.json({
+      ok: true,
+      created: result.created,
+      item: {
+        id: Number(result.row.id),
+        tag: result.row.tag_value,
+        tag_normalized: result.row.tag_normalized,
+        source: result.row.source_name,
+        source_name: result.row.source_name,
+        hidden_at: result.row.created_at
+      }
+    });
+  } catch (err) {
+    if (err?.code === 'invalid_tag' || err?.code === 'invalid_source') {
+      return res.status(400).json({ message: err.message, code: err.code });
+    }
+    return res.status(500).json({ message: 'Failed to hide source tag', detail: err.message });
+  }
+});
+
+app.post('/api/ioc/:id/tags/source/restore', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
+  const iocId = parsePositiveInt(req.params?.id);
+  const tagValue = String(req.body?.tag || req.body?.tag_value || '').trim();
+  const sourceName = String(req.body?.source || req.body?.source_name || '').trim();
+
+  if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
+  if (!tagValue) return res.status(400).json({ message: 'tag is required' });
+  if (!sourceName) return res.status(400).json({ message: 'source is required' });
+
+  try {
+    const iocExists = await pool.query(
+      `SELECT id, public_id, observable, observable_type
+       FROM ioc_items WHERE id = $1 LIMIT 1`,
+      [iocId]
+    );
+    if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const ioc = iocExists.rows[0];
+
+    const result = await restoreSourceTag(pool, {
+      iocId,
+      tagValue,
+      sourceName,
+      restoredBy: req.user?.id ?? null
+    });
+
+    if (result.restored) {
+      await auditLogService.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_SOURCE_TAG_RESTORED,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: ioc.public_id ? String(ioc.public_id) : String(iocId),
+        entityDisplay: ioc.observable || String(iocId),
+        subjectIocId: iocId,
+        subjectIocType: ioc.observable_type || null,
+        subjectIocValue: ioc.observable || null,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          ioc_id: String(iocId),
+          subject_ioc_id: String(iocId),
+          subject_ioc_type: ioc.observable_type || null,
+          subject_ioc_value: ioc.observable || null,
+          tag: result.row.tag_value || tagValue,
+          tag_normalized: result.row.tag_normalized,
+          source: result.row.source_name || sourceName,
+          source_name: result.row.source_name || sourceName
+        }
+      }).catch(() => {});
+      invalidateIocDetailsCache(ioc.public_id);
+    }
+
+    return res.json({
+      ok: true,
+      restored: result.restored,
+      item: result.row
+        ? {
+          id: Number(result.row.id),
+          tag: result.row.tag_value,
+          tag_normalized: result.row.tag_normalized,
+          source: result.row.source_name,
+          source_name: result.row.source_name,
+          restored_at: result.row.restored_at
+        }
+        : null
+    });
+  } catch (err) {
+    if (err?.code === 'invalid_tag' || err?.code === 'invalid_source') {
+      return res.status(400).json({ message: err.message, code: err.code });
+    }
+    return res.status(500).json({ message: 'Failed to restore source tag', detail: err.message });
+  }
+});
+
 app.post('/api/ioc/ip', async (req, res) => {
   try {
     const result = await createManualIoc(pool, req.body || {}, {
@@ -4038,6 +4230,19 @@ app.get('/api/ioc/details', async (req, res) => {
       return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
     })();
 
+    const rawFeedIntelligence = buildFeedIntelligence(evidenceRows);
+    let feedIntelligence = rawFeedIntelligence;
+    try {
+      const overrides = await listActiveSourceTagOverrides(pool, seedRow.id);
+      feedIntelligence = applySourceTagOverrides(rawFeedIntelligence, overrides);
+    } catch (err) {
+      if (String(err?.message || '').includes('ioc_source_tag_overrides')) {
+        console.warn('[ioc-details] source tag overrides unavailable:', err.message);
+      } else {
+        throw err;
+      }
+    }
+
     const summary = {
       id: seedRow.id,
       public_id: seedRow.public_id,
@@ -4071,7 +4276,7 @@ app.get('/api/ioc/details', async (req, res) => {
       category_set: [...new Set(rows.map((r) => r.category).filter(Boolean))],
       geo,
       file_information: buildFileInformation(rows, observable, rows[0].observable_type, evidenceRows),
-      feed_intelligence: buildFeedIntelligence(evidenceRows)
+      feed_intelligence: feedIntelligence
     };
 
     let confidenceDetail = null;

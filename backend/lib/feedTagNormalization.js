@@ -156,7 +156,7 @@ export function buildFeedIntelligence(evidenceRows = []) {
   const allTags = [];
   const sourceMetadata = [];
   const seenSlugs = new Set();
-  const seenNorm = new Set();
+  const seenTagKeys = new Set();
 
   for (const row of (evidenceRows || [])) {
     const noteFields = parseNoteFields(row.note);
@@ -178,9 +178,11 @@ export function buildFeedIntelligence(evidenceRows = []) {
     }
 
     for (const t of tags) {
-      if (!seenNorm.has(t.normalized)) {
+      // Keep source-scoped instances so hide/restore can target one integration only.
+      const key = `${t.normalized}::${String(t.source_name || '').trim().toLowerCase()}`;
+      if (!seenTagKeys.has(key)) {
         allTags.push(t);
-        seenNorm.add(t.normalized);
+        seenTagKeys.add(key);
       }
     }
 

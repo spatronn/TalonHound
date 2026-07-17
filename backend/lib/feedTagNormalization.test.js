@@ -176,15 +176,16 @@ describe('buildFeedIntelligence', () => {
     expect(tagNorms).toContain('elf');
   });
 
-  it('deduplicates tags and classifications across multiple evidence rows', () => {
+  it('keeps same tag from different sources as separate source-scoped entries', () => {
     const evidenceRows = [
       { source_name: 'URLHaus', feed_key: 'urlhaus', category: null, note: 'Auto | tags=elf,c2' },
       { source_name: 'ThreatFox', feed_key: 'threatfox', category: null, note: 'Auto | tags=elf,phishing' }
     ];
     const fi = buildFeedIntelligence(evidenceRows);
 
-    const tagNorms = fi.tags.map((t) => t.normalized);
-    expect(tagNorms.filter((n) => n === 'elf')).toHaveLength(1);
+    const elfTags = fi.tags.filter((t) => t.normalized === 'elf');
+    expect(elfTags).toHaveLength(2);
+    expect(elfTags.map((t) => t.source_name).sort()).toEqual(['ThreatFox', 'URLHaus']);
 
     const classSlugs = fi.classifications.map((c) => c.value);
     expect(classSlugs.filter((v) => v === 'command_and_control')).toHaveLength(1);
