@@ -2470,20 +2470,54 @@ app.post('/api/ioc/:id/tags', async (req, res) => {
   if (!tagId) return res.status(400).json({ message: 'Invalid tag_id' });
 
   try {
-    const iocExists = await pool.query('SELECT observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
+    const iocExists = await pool.query(
+      `SELECT id, public_id, observable, observable_type
+       FROM ioc_items WHERE id = $1 LIMIT 1`,
+      [iocId]
+    );
     if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
 
-    const iocObservableType = String(iocExists.rows[0].observable_type || '').trim();
+    const ioc = iocExists.rows[0];
+    const iocObservableType = String(ioc.observable_type || '').trim();
 
-    const tagExists = await pool.query('SELECT 1 FROM tags WHERE id = $1 AND enabled = TRUE LIMIT 1', [tagId]);
+    const tagExists = await pool.query(
+      `SELECT id, name, type, category FROM tags WHERE id = $1 AND enabled = TRUE LIMIT 1`,
+      [tagId]
+    );
     if (!tagExists.rowCount) return res.status(404).json({ message: 'Tag not found or disabled' });
+    const tag = tagExists.rows[0];
 
-    await pool.query(
+    const insertQ = await pool.query(
       `INSERT INTO ioc_tags (ioc_id, ioc_observable_type, tag_id, created_by)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (ioc_id, tag_id) DO NOTHING`,
+       ON CONFLICT (ioc_id, tag_id) DO NOTHING
+       RETURNING tag_id`,
       [iocId, iocObservableType, tagId, req.user?.id ?? null]
     );
+
+    if (insertQ.rowCount) {
+      await auditLogService.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_TAG_ADDED,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: ioc.public_id ? String(ioc.public_id) : String(iocId),
+        entityDisplay: ioc.observable || String(iocId),
+        subjectIocId: iocId,
+        subjectIocType: iocObservableType || null,
+        subjectIocValue: ioc.observable || null,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          ioc_id: String(iocId),
+          subject_ioc_id: String(iocId),
+          subject_ioc_type: iocObservableType || null,
+          subject_ioc_value: ioc.observable || null,
+          tag_id: tag.id,
+          tag_name: tag.name,
+          tag_type: tag.type,
+          tag_category: tag.category
+        }
+      }).catch(() => {});
+    }
 
     return res.status(201).json({ ok: true });
   } catch (err) {
@@ -2499,15 +2533,55 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
   if (!tagId) return res.status(400).json({ message: 'Invalid tag id' });
 
   try {
-    await pool.query(
+    const iocExists = await pool.query(
+      `SELECT id, public_id, observable, observable_type
+       FROM ioc_items WHERE id = $1 LIMIT 1`,
+      [iocId]
+    );
+    if (!iocExists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    const ioc = iocExists.rows[0];
+
+    const tagQ = await pool.query(
+      `SELECT id, name, type, category FROM tags WHERE id = $1 LIMIT 1`,
+      [tagId]
+    );
+    const tag = tagQ.rows[0] || null;
+
+    const deleteQ = await pool.query(
       `DELETE FROM ioc_tags
        WHERE ioc_id = $1
          AND tag_id = $2
          AND ioc_observable_type = (
            SELECT observable_type FROM ioc_items WHERE id = $1 LIMIT 1
-         )`,
+         )
+       RETURNING tag_id`,
       [iocId, tagId]
     );
+
+    if (deleteQ.rowCount) {
+      await auditLogService.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_TAG_REMOVED,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: ioc.public_id ? String(ioc.public_id) : String(iocId),
+        entityDisplay: ioc.observable || String(iocId),
+        subjectIocId: iocId,
+        subjectIocType: ioc.observable_type || null,
+        subjectIocValue: ioc.observable || null,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          ioc_id: String(iocId),
+          subject_ioc_id: String(iocId),
+          subject_ioc_type: ioc.observable_type || null,
+          subject_ioc_value: ioc.observable || null,
+          tag_id: tagId,
+          tag_name: tag?.name || null,
+          tag_type: tag?.type || null,
+          tag_category: tag?.category || null
+        }
+      }).catch(() => {});
+    }
+
     return res.status(204).end();
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete IOC tag', detail: err.message });

@@ -69,10 +69,14 @@ export function buildIocAuditLogsWhere(ctx) {
     (entity_type = 'ioc' AND (
       entity_id = ANY($1::text[])
       OR lower(COALESCE(entity_display, '')) = ANY($2::text[])
+      OR subject_ioc_id::text = $3
+      OR metadata->>'subject_ioc_id' = $3
+      OR metadata->>'ioc_id' = $3
     ))
     OR (entity_type = 'ioc_suppression' AND (
       lower(COALESCE(entity_display, '')) = ANY($2::text[])
       OR lower(COALESCE(metadata->>'ioc_value', '')) = ANY($2::text[])
+      OR metadata->>'ioc_id' = $3
     ))
     OR (entity_type = 'enrichment' AND (
       subject_ioc_id::text = $3

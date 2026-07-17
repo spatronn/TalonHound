@@ -39,6 +39,7 @@ test('enrichment WHERE prefers subject_ioc_id and excludes root_domain match', (
   const { whereSql, params } = buildIocAuditLogsWhere(ctx);
   assert.match(whereSql, /subject_ioc_id/);
   assert.match(whereSql, /metadata->>'ioc_id'/);
+  assert.match(whereSql, /entity_type = 'ioc'/);
   assert.doesNotMatch(whereSql, /metadata->>'root_domain'/);
   assert.doesNotMatch(whereSql, /metadata->>'ip'/);
   assert.equal(params[2], '7');

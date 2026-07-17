@@ -11797,6 +11797,7 @@ function iocAuditMetadataSummary(metadata) {
   }
   const parts = [];
   if (metadata.provider) parts.push(String(metadata.provider));
+  if (metadata.tag_name) parts.push(`tag: ${metadata.tag_name}`);
   if (metadata.cached === true) parts.push('cached');
   const target = metadata.target_value || metadata.root_domain || metadata.lookup_value || metadata.ip || metadata.target_ip;
   if (target) parts.push(`target: ${target}`);
