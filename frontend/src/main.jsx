@@ -11623,12 +11623,8 @@ function DnsmaniaEnrichmentCard({ iocValue, iocType, active = true, compact = fa
               const kind = dnsmaniaLatestStatusKind(status);
               const absoluteLatest = period === timelineAll[timelineAll.length - 1];
               const values = Array.isArray(period?.values) ? period.values.filter(Boolean) : [];
-              const obsCount = Number(period?.observation_count);
               const metaParts = [
-                period?.last_seen ? `Last observed: ${formatUserDateTime(period.last_seen)}` : null,
-                Number.isFinite(obsCount) && obsCount > 0
-                  ? `${obsCount} observation${obsCount === 1 ? '' : 's'}`
-                  : null
+                period?.last_seen ? `Last observed: ${formatUserDateTime(period.last_seen)}` : null
               ].filter(Boolean);
               return (
                 <div
