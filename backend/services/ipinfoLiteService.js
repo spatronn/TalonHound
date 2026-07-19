@@ -1,8 +1,7 @@
-import { validatePublicIp } from '../lib/publicIp.js';
+import { normalizeIpAddress, validatePublicIp } from '../lib/publicIp.js';
 
 const IPINFO_PROVIDER = 'ipinfo_lite';
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const FORCE_COOLDOWN_MS = 5 * 60 * 1000;
+export const MAX_BULK_IPS = 50;
 const MAX_CONCURRENCY = Math.min(Math.max(Number(process.env.IPINFO_LITE_MAX_CONCURRENCY || 3), 1), 5);
 const DEFAULT_BASE_URL = 'https://api.ipinfo.io/lite';
 const DEFAULT_TIMEOUT_SEC = 6;
@@ -84,7 +83,10 @@ function parseIpinfoResponse(raw, ip) {
   const asnRaw = String(raw?.asn || '').trim();
   const asn = asnRaw ? (asnRaw.toUpperCase().startsWith('AS') ? asnRaw.toUpperCase() : `AS${asnRaw}`) : null;
   return {
-    ip: String(raw?.ip || ip),
+    // The requested canonical IP is the cache identity. Provider spelling is
+    // retained in raw_json but must never create a second cache row.
+    ip,
+    normalized_ip: ip,
     provider: IPINFO_PROVIDER,
     provider_status: 'success',
     asn,
@@ -111,6 +113,7 @@ export function rowToApiPayload(row, { cached = false, enriched = true } = {}) {
     enriched: enriched && row.provider_status === 'success',
     cached,
     ip: row.ip,
+    normalized_ip: row.normalized_ip || row.ip,
     provider: row.provider || IPINFO_PROVIDER,
     provider_status: row.provider_status,
     asn: row.asn,
@@ -127,43 +130,62 @@ export function rowToApiPayload(row, { cached = false, enriched = true } = {}) {
 }
 
 export function isCacheFresh(row, { force = false } = {}) {
-  if (!row?.last_enriched_at) return false;
-  const at = Date.parse(row.last_enriched_at);
-  if (!Number.isFinite(at)) return false;
-  const ageMs = Date.now() - at;
-
-  if (row.provider_status === 'failed') {
-    // Don't cache transient failures — each manual retry should hit the API.
-    return false;
-  }
-
-  if (force) {
-    const signals = row.derived_signals || {};
-    const lastForce = signals.last_force_refresh_at ? Date.parse(signals.last_force_refresh_at) : NaN;
-    if (Number.isFinite(lastForce) && (Date.now() - lastForce) < FORCE_COOLDOWN_MS) {
-      return true;
-    }
-    return false;
-  }
-
-  return row.provider_status === 'success' && ageMs < CACHE_TTL_MS;
+  if (force) return false;
+  // Normal enrichment is a persistent-cache read. Only an explicit force
+  // refresh is allowed to bypass an existing successful provider result.
+  return row?.provider_status === 'success';
 }
 
 export async function getEnrichmentByIp(pool, ip) {
-  const { rows } = await pool.query(`SELECT * FROM ioc_ip_enrichment WHERE ip = $1 LIMIT 1`, [ip]);
+  const normalized = normalizeIpAddress(ip);
+  if (!normalized) return null;
+  const { rows } = await pool.query(
+    `SELECT * FROM ioc_ip_enrichment
+     WHERE normalized_ip = $1 OR (normalized_ip IS NULL AND ip = $1)
+     ORDER BY (provider_status = 'success') DESC, last_enriched_at DESC NULLS LAST
+     LIMIT 1`,
+    [normalized]
+  );
   return rows[0] || null;
 }
 
+export async function getEnrichmentsByIps(pool, ips) {
+  const normalizedIps = [...new Set(
+    (Array.isArray(ips) ? ips : [])
+      .map((ip) => validatePublicIp(ip))
+      .filter(Boolean)
+  )].slice(0, MAX_BULK_IPS);
+  if (!normalizedIps.length) return new Map();
+  const { rows } = await pool.query(
+    `SELECT * FROM ioc_ip_enrichment
+     WHERE normalized_ip = ANY($1::text[])
+        OR (normalized_ip IS NULL AND ip = ANY($1::text[]))
+     ORDER BY (provider_status = 'success') DESC, last_enriched_at DESC NULLS LAST`,
+    [normalizedIps]
+  );
+  const byIp = new Map();
+  for (const row of rows) {
+    const key = normalizeIpAddress(row.normalized_ip || row.ip);
+    if (key && !byIp.has(key)) byIp.set(key, row);
+  }
+  return byIp;
+}
+
 export async function upsertIpEnrichment(pool, record) {
+  const normalizedIp = validatePublicIp(record.normalized_ip || record.ip);
+  if (!normalizedIp) {
+    throw new Error('Cannot persist an invalid or private IP enrichment key');
+  }
   const signals = buildDerivedSignals(record);
   const now = new Date().toISOString();
   const { rows } = await pool.query(
     `INSERT INTO ioc_ip_enrichment (
-      ip, provider, provider_status, asn, as_name, as_domain,
+      ip, normalized_ip, provider, provider_status, asn, as_name, as_domain,
       country_code, country, continent_code, continent,
       derived_signals, raw_json, error_message, last_enriched_at, updated_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14::timestamptz,NOW())
-    ON CONFLICT (ip) DO UPDATE SET
+    ) VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14::timestamptz,NOW())
+    ON CONFLICT (normalized_ip) DO UPDATE SET
+      ip = EXCLUDED.ip,
       provider = EXCLUDED.provider,
       provider_status = EXCLUDED.provider_status,
       asn = EXCLUDED.asn,
@@ -180,7 +202,7 @@ export async function upsertIpEnrichment(pool, record) {
       updated_at = NOW()
     RETURNING *`,
     [
-      record.ip,
+      normalizedIp,
       record.provider || IPINFO_PROVIDER,
       record.provider_status,
       record.asn,
@@ -249,38 +271,27 @@ export async function enrichIpWithIpinfoLite(pool, ip, options = {}) {
   const normalized = validatePublicIp(ip);
   if (!normalized) {
     return {
-      row: await upsertIpEnrichment(pool, {
-        ip: String(ip || '').trim(),
-        provider: IPINFO_PROVIDER,
-        provider_status: 'skipped',
-        asn: null,
-        as_name: null,
-        as_domain: null,
-        country_code: null,
-        country: null,
-        continent_code: null,
-        continent: null,
-        derived_signals: { skipped: true, reason: 'private_or_reserved' },
-        raw_json: null,
-        error_message: 'Private or reserved IP — external lookup skipped'
-      }),
+      row: null,
       cached: false,
       skipped: true,
-      configured: true
+      configured: true,
+      state: 'invalid_ip'
     };
   }
 
-  const config = await getIpinfoLiteConfig(pool);
+  const force = options.force === true;
+  const existing = Object.prototype.hasOwnProperty.call(options, 'existing')
+    ? options.existing
+    : await getEnrichmentByIp(pool, normalized);
+  if (existing && isCacheFresh(existing, { force })) {
+    return { row: existing, cached: true, skipped: false, configured: true, state: 'cached' };
+  }
+
+  const config = options.config || await getIpinfoLiteConfig(pool);
   if (!config.configured || !config.enabled) {
     const err = new Error('IPinfo Lite provider is not configured');
     err.code = 'not_configured';
     throw err;
-  }
-
-  const force = options.force === true;
-  const existing = await getEnrichmentByIp(pool, normalized);
-  if (existing && isCacheFresh(existing, { force })) {
-    return { row: existing, cached: true, skipped: false, configured: true };
   }
 
   try {
@@ -291,14 +302,28 @@ export async function enrichIpWithIpinfoLite(pool, ip, options = {}) {
       parsed.derived_signals.last_force_refresh_at = new Date().toISOString();
     }
     const row = await upsertIpEnrichment(pool, parsed);
-    return { row, cached: false, skipped: false, configured: true };
+    return { row, cached: false, skipped: false, configured: true, state: 'enriched' };
   } catch (err) {
     const status = err.code === 'unavailable' ? 'unavailable' : 'failed';
     let errorMessage = String(err?.message || 'IPinfo Lite lookup failed').slice(0, 2000);
     if (err.retryAfter) errorMessage += ` (Retry-After: ${err.retryAfter})`;
 
+    if (existing?.provider_status === 'success') {
+      return {
+        row: existing,
+        cached: true,
+        skipped: false,
+        configured: true,
+        state: 'provider_error',
+        error: err,
+        error_message: errorMessage,
+        stale_cached: true
+      };
+    }
+
     const failed = {
       ip: normalized,
+      normalized_ip: normalized,
       provider: IPINFO_PROVIDER,
       provider_status: status,
       asn: null,
@@ -325,8 +350,115 @@ export async function enrichIpWithIpinfoLite(pool, ip, options = {}) {
       rlErr.retryAfter = err.retryAfter;
       throw rlErr;
     }
-    return { row, cached: false, skipped: false, configured: true, error: err };
+    return {
+      row,
+      cached: false,
+      skipped: false,
+      configured: true,
+      state: err.code === 'unavailable' ? 'not_found' : 'provider_error',
+      error: err,
+      error_message: errorMessage
+    };
   }
+}
+
+export async function enrichIpsWithIpinfoLite(pool, ips, options = {}) {
+  const requested = Array.isArray(ips) ? ips.slice(0, MAX_BULK_IPS) : [];
+  const unique = [];
+  const seen = new Set();
+  const invalid = [];
+  for (const value of requested) {
+    const normalized = validatePublicIp(value);
+    if (!normalized) {
+      invalid.push({
+        requested_ip: String(value ?? ''),
+        normalized_ip: null,
+        state: 'invalid_ip',
+        data: null,
+        error: 'Invalid, private, or reserved IP'
+      });
+      continue;
+    }
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      unique.push(normalized);
+    }
+  }
+
+  const existingByIp = await getEnrichmentsByIps(pool, unique);
+  const resultByIp = new Map();
+  const lookupIps = [];
+  for (const normalizedIp of unique) {
+    const existing = existingByIp.get(normalizedIp) || null;
+    if (!options.force && existing?.provider_status === 'success') {
+      resultByIp.set(normalizedIp, {
+        requested_ip: normalizedIp,
+        normalized_ip: normalizedIp,
+        state: 'cached',
+        data: rowToApiPayload(existing, { cached: true, enriched: true }),
+        error: null
+      });
+    } else {
+      lookupIps.push(normalizedIp);
+    }
+  }
+  if (!lookupIps.length) {
+    return [...invalid, ...unique.map((normalizedIp) => resultByIp.get(normalizedIp))];
+  }
+
+  let config;
+  try {
+    config = await getIpinfoLiteConfig(pool);
+  } catch (error) {
+    for (const normalizedIp of lookupIps) {
+      resultByIp.set(normalizedIp, {
+        requested_ip: normalizedIp,
+        normalized_ip: normalizedIp,
+        state: 'provider_error',
+        data: existingByIp.has(normalizedIp)
+          ? rowToApiPayload(existingByIp.get(normalizedIp), { cached: true })
+          : null,
+        error: String(error?.message || 'Failed to load IPinfo Lite configuration')
+      });
+    }
+    return [...invalid, ...unique.map((normalizedIp) => resultByIp.get(normalizedIp))];
+  }
+
+  const results = await Promise.all(lookupIps.map(async (normalizedIp) => {
+    const existing = existingByIp.get(normalizedIp) || null;
+    try {
+      const result = await enrichIpWithIpinfoLite(pool, normalizedIp, {
+        ...options,
+        config,
+        existing
+      });
+      return {
+        requested_ip: normalizedIp,
+        normalized_ip: normalizedIp,
+        state: result.state || (result.cached ? 'cached' : 'enriched'),
+        data: result.row
+          ? rowToApiPayload(result.row, {
+            cached: result.cached,
+            enriched: result.row.provider_status === 'success'
+          })
+          : null,
+        error: result.error_message || result.error?.message || null
+      };
+    } catch (error) {
+      return {
+        requested_ip: normalizedIp,
+        normalized_ip: normalizedIp,
+        state: 'provider_error',
+        data: existing?.provider_status === 'success'
+          ? rowToApiPayload(existing, { cached: true, enriched: true })
+          : null,
+        error: String(error?.message || 'IP enrichment failed')
+      };
+    }
+  }));
+
+  for (const result of results) resultByIp.set(result.normalized_ip, result);
+  return [...invalid, ...unique.map((normalizedIp) => resultByIp.get(normalizedIp))];
 }
 
 /** Geo summary for IOC details URL/IP Information table */

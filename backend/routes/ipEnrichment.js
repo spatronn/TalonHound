@@ -4,8 +4,11 @@ import { validatePublicIp } from '../lib/publicIp.js';
 import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
 import {
   enrichIpWithIpinfoLite,
+  enrichIpsWithIpinfoLite,
   getEnrichmentByIp,
+  getEnrichmentsByIps,
   getIpinfoLiteConfig,
+  MAX_BULK_IPS,
   rowToApiPayload,
   testIpinfoLiteConnection,
   maskToken
@@ -22,12 +25,190 @@ function decodeRouteIp(raw) {
   }
 }
 
+function parseBulkIps(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return values.map((ip) => String(ip || '').trim()).filter(Boolean);
+}
+
+function bulkStateForRow(row) {
+  if (!row) return 'not_found';
+  if (row.provider_status === 'success') return 'cached';
+  if (row.provider_status === 'unavailable') return 'not_found';
+  return 'provider_error';
+}
+
+function bulkSummary(results) {
+  return results.reduce((summary, item) => {
+    summary[item.state] = (summary[item.state] || 0) + 1;
+    return summary;
+  }, { cached: 0, enriched: 0, not_found: 0, provider_error: 0, invalid_ip: 0 });
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
  * @param {ReturnType<import('../lib/auditLogService.js').createAuditLogService>} audit
  */
 export function registerIpEnrichmentRoutes(app, pool, audit) {
+  app.get('/api/enrichment/ips', async (req, res) => {
+    const requestedIps = parseBulkIps(req.query?.ips);
+    if (!requestedIps.length) {
+      return res.status(400).json({ error: 'ips is required', message: 'ips is required' });
+    }
+    if (requestedIps.length > MAX_BULK_IPS) {
+      return res.status(400).json({
+        error: `A maximum of ${MAX_BULK_IPS} IPs is allowed`,
+        message: `A maximum of ${MAX_BULK_IPS} IPs is allowed`
+      });
+    }
+
+    try {
+      const valid = [];
+      const invalid = [];
+      const seen = new Set();
+      for (const requestedIp of requestedIps) {
+        const normalizedIp = validatePublicIp(requestedIp);
+        if (!normalizedIp) {
+          invalid.push({
+            requested_ip: requestedIp,
+            normalized_ip: null,
+            state: 'invalid_ip',
+            data: null,
+            error: 'Invalid, private, or reserved IP'
+          });
+        } else if (!seen.has(normalizedIp)) {
+          seen.add(normalizedIp);
+          valid.push(normalizedIp);
+        }
+      }
+
+      const byIp = await getEnrichmentsByIps(pool, valid);
+      const results = [
+        ...invalid,
+        ...valid.map((normalizedIp) => {
+          const row = byIp.get(normalizedIp) || null;
+          return {
+            requested_ip: normalizedIp,
+            normalized_ip: normalizedIp,
+            state: bulkStateForRow(row),
+            data: row
+              ? rowToApiPayload(row, {
+                cached: true,
+                enriched: row.provider_status === 'success'
+              })
+              : null,
+            error: row?.error_message || null
+          };
+        })
+      ];
+      return res.json({
+        provider: IPINFO_PROVIDER,
+        results,
+        summary: bulkSummary(results)
+      });
+    } catch (err) {
+      console.error('[ip-enrichment] bulk GET failed', err?.message || err);
+      return res.status(500).json({ error: 'Failed to load IP enrichments', message: 'Failed to load IP enrichments' });
+    }
+  });
+
+  app.post('/api/enrichment/ips/enrich', async (req, res) => {
+    const requestedIps = parseBulkIps(req.body?.ips);
+    const force = req.body?.force === true;
+    const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
+    if (!requestedIps.length) {
+      return res.status(400).json({ error: 'ips is required', message: 'ips is required' });
+    }
+    if (requestedIps.length > MAX_BULK_IPS) {
+      return res.status(400).json({
+        error: `A maximum of ${MAX_BULK_IPS} IPs is allowed`,
+        message: `A maximum of ${MAX_BULK_IPS} IPs is allowed`
+      });
+    }
+    if (force && role !== ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' });
+    }
+
+    const normalizedTargets = [...new Set(requestedIps.map((ip) => validatePublicIp(ip)).filter(Boolean))];
+    const subject = await resolveSubjectIocFromRequest(pool, req);
+    const subjectValue = subject?.observable || req.body?.value || normalizedTargets[0] || null;
+    const targetValue = normalizedTargets.join(',').slice(0, 2000);
+    const requestedScope = buildEnrichmentAuditScope({
+      subject,
+      subjectIocValue: subjectValue,
+      subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+      targetType: normalizedTargets.length === 1 ? 'ip' : 'ip_batch',
+      targetValue,
+      provider: IPINFO_PROVIDER,
+      extraMetadata: {
+        ips: normalizedTargets,
+        count: normalizedTargets.length,
+        force,
+        source_page: 'ioc_detail_intelligence'
+      }
+    });
+
+    try {
+      const results = await enrichIpsWithIpinfoLite(pool, requestedIps, { force });
+      const summary = bulkSummary(results);
+      const attempted = results.some((item) => item.state !== 'cached' && item.state !== 'invalid_ip');
+      if (!attempted) {
+        return res.json({ provider: IPINFO_PROVIDER, results, summary });
+      }
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IP_ENRICHMENT_REQUESTED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: requestedScope.entityId,
+        entityDisplay: requestedScope.entityDisplay,
+        subjectIocId: requestedScope.subjectIocId,
+        subjectIocType: requestedScope.subjectIocType,
+        subjectIocValue: requestedScope.subjectIocValue,
+        targetType: requestedScope.targetType,
+        targetValue: requestedScope.targetValue,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: requestedScope.metadata
+      }).catch(() => {});
+
+      const hasSuccess = summary.enriched > 0 || summary.not_found > 0;
+      const hasFailure = summary.provider_error > 0;
+      const auditArgs = {
+        req,
+        action: hasSuccess ? AUDIT_ACTION.IP_ENRICHMENT_COMPLETED : AUDIT_ACTION.IP_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: requestedScope.entityId,
+        entityDisplay: requestedScope.entityDisplay,
+        subjectIocId: requestedScope.subjectIocId,
+        subjectIocType: requestedScope.subjectIocType,
+        subjectIocValue: requestedScope.subjectIocValue,
+        targetType: requestedScope.targetType,
+        targetValue: requestedScope.targetValue,
+        severity: hasFailure ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+        metadata: { ...requestedScope.metadata, summary, success: !hasFailure }
+      };
+      if (hasSuccess) await audit.auditSuccess(auditArgs).catch(() => {});
+      else await audit.auditFailure(auditArgs).catch(() => {});
+      return res.json({ provider: IPINFO_PROVIDER, results, summary });
+    } catch (err) {
+      const message = String(err?.message || 'IP enrichment failed');
+      await audit.auditFailure({
+        req,
+        action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: requestedScope.entityId,
+        entityDisplay: requestedScope.entityDisplay,
+        subjectIocId: requestedScope.subjectIocId,
+        subjectIocType: requestedScope.subjectIocType,
+        subjectIocValue: requestedScope.subjectIocValue,
+        targetType: requestedScope.targetType,
+        targetValue: requestedScope.targetValue,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { ...requestedScope.metadata, error_message: message, success: false }
+      }).catch(() => {});
+      return res.status(500).json({ error: 'IP enrichment failed', message: 'IP enrichment failed' });
+    }
+  });
+
   app.get('/api/enrichment/ip/:ip', async (req, res) => {
     try {
       const ip = decodeRouteIp(req.params.ip);
@@ -39,7 +220,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
       if (!row) {
         return res.json({ enriched: false, ip: publicIp, provider: IPINFO_PROVIDER });
       }
-      return res.json(rowToApiPayload(row, { enriched: row.provider_status === 'success', cached: false }));
+      return res.json(rowToApiPayload(row, { enriched: row.provider_status === 'success', cached: true }));
     } catch (err) {
       console.error('[ip-enrichment] GET failed', err?.message || err);
       return res.status(500).json({ error: 'Failed to load IP enrichment', message: 'Failed to load IP enrichment' });
@@ -68,6 +249,13 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
 
     try {
+      if (!force) {
+        const existing = await getEnrichmentByIp(pool, publicIp);
+        if (existing?.provider_status === 'success') {
+          return res.json(rowToApiPayload(existing, { enriched: true, cached: true }));
+        }
+      }
+
       const cfg = await getIpinfoLiteConfig(pool);
       if (!cfg.configured) {
         return res.status(409).json({
@@ -120,7 +308,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         cached: result.cached
       });
 
-      if (result.row?.provider_status === 'success') {
+      if (result.row?.provider_status === 'success' && !result.error) {
         const completedScope = buildEnrichmentAuditScope({
           subject,
           subjectIocValue: subject?.observable || req.body?.value || publicIp,
@@ -166,8 +354,9 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
           original_value: subject?.observable || req.body?.value || publicIp,
           observable_value: subject?.observable || req.body?.value || publicIp,
           cached: result.cached,
+          force,
           status: result.row?.provider_status,
-          error_message: result.row?.error_message
+          error_message: result.error_message || result.row?.error_message
         }
       });
       await audit.auditFailure({
@@ -187,8 +376,10 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
 
       return res.status(result.row?.provider_status === 'unavailable' ? 404 : 502).json({
         ...payload,
-        error: result.row?.error_message || 'IP enrichment failed',
-        message: result.row?.error_message || 'IP enrichment failed'
+        state: result.state || 'provider_error',
+        refresh_error: Boolean(result.error),
+        error: result.error_message || result.row?.error_message || 'IP enrichment failed',
+        message: result.error_message || result.row?.error_message || 'IP enrichment failed'
       });
     } catch (err) {
       console.error('[ip-enrichment] POST refresh failed', err?.message || err);
@@ -213,7 +404,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         targetType: 'ip',
         targetValue: publicIp,
         provider: IPINFO_PROVIDER,
-        extraMetadata: { error_message: String(err?.message || err), ip: publicIp }
+        extraMetadata: { error_message: String(err?.message || err), ip: publicIp, force }
       });
       await audit.auditFailure({
         req,

@@ -1,7 +1,5 @@
+import { isIP } from 'node:net';
 import { isPrivateOrReservedIp } from './feedFormatter.js';
-
-const IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-const IPV6_RE = /^([0-9a-f]{0,4}:){2,}[0-9a-f]{0,4}$/i;
 
 function expandIpv6(host) {
   let h = String(host || '').trim().toLowerCase();
@@ -27,11 +25,28 @@ function isPrivateOrReservedIpv6(host) {
 }
 
 export function isValidIpAddress(value) {
+  return normalizeIpAddress(value) != null;
+}
+
+/**
+ * Canonical IP identity used by all enrichment caches.
+ * IPv4 is emitted in dotted-decimal form and equivalent IPv6 spellings collapse
+ * to the compressed lowercase representation produced by the WHATWG URL parser.
+ */
+export function normalizeIpAddress(value) {
   const host = String(value || '').trim().split('/')[0].trim();
-  if (!host) return false;
-  if (IPV4_RE.test(host)) return true;
-  if (host.includes(':') && IPV6_RE.test(host)) return true;
-  return false;
+  const version = isIP(host);
+  if (version === 4) {
+    return host.split('.').map((part) => String(Number(part))).join('.');
+  }
+  if (version === 6) {
+    try {
+      return new URL(`http://[${host}]/`).hostname.slice(1, -1).toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -39,15 +54,13 @@ export function isValidIpAddress(value) {
  * Private/reserved/local IPs are not eligible for external enrichment.
  */
 export function validatePublicIp(value) {
-  const host = String(value || '').trim().split('/')[0].trim();
-  if (!host) return null;
-  if (IPV4_RE.test(host)) {
-    if (isPrivateOrReservedIp(host)) return null;
-    return host;
+  const normalized = normalizeIpAddress(value);
+  if (!normalized) return null;
+  if (isIP(normalized) === 4) {
+    if (isPrivateOrReservedIp(normalized)) return null;
+    return normalized;
   }
-  if (host.includes(':')) {
-    const normalized = host.toLowerCase();
-    if (!IPV6_RE.test(normalized)) return null;
+  if (isIP(normalized) === 6) {
     if (isPrivateOrReservedIpv6(normalized)) return null;
     return normalized;
   }

@@ -12,6 +12,7 @@
     "test:tags": "node --test lib/tagHelpers.test.js",
     "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js services/rdapEnrichmentService.test.js services/rdapPersistentStore.test.js",
     "test:dnsmania": "node --test lib/dnsmaniaTarget.test.js services/dnsmaniaEnrichmentService.test.js",
+    "test:ip-enrichment": "node --test lib/publicIp.test.js services/ipinfoLiteService.test.js routes/ipEnrichment.test.js",
     "test:abuseipdb": "node --test lib/abuseipdbEnrichment.test.js services/abuseipdbService.test.js routes/abuseipdbEnrichment.test.js",
     "test:analyst-intelligence": "node --test lib/analystIntelligence.test.js routes/analystIntelligence.test.js",
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/feedExpirationPolicy.test.js lib/iocExpiration.churn.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/publishedFeedSources.test.js",

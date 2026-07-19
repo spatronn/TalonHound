@@ -674,7 +674,7 @@ export function IntelligenceTabPanel({
             <SpamhausDropEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
           ) : null}
           {showDnsmania && DnsmaniaEnrichmentCard ? (
-            <DnsmaniaEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} compact onSnapshot={(snap) => onProviderSnapshot('dnsmania', snap)} />
+            <DnsmaniaEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canWrite={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('dnsmania', snap)} />
           ) : null}
         </div>
       </div>

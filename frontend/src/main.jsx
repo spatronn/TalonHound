@@ -15,6 +15,11 @@ import {
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
 import { getDnsmaniaPresentation } from './lib/dnsmaniaPresentation.js';
+import {
+  compactAssociatedIpViewModel,
+  indexAssociatedIpResults,
+  isAssociatedIpEnrichmentCandidate
+} from './lib/associatedIpEnrichment.js';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
@@ -10977,6 +10982,75 @@ const ENRICHMENT_INTELLIGENCE_LAYOUT_CSS = `
   color: #e2e8f0;
   margin-bottom: 6px;
 }
+.associated-ip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 700px) {
+  .associated-ip-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.associated-ip-card {
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px;
+  background: #0b1220;
+  min-width: 0;
+  min-height: 158px;
+  box-sizing: border-box;
+}
+.associated-ip-card.is-error {
+  border-color: #7f1d1d;
+}
+.associated-ip-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.associated-ip-card-ip {
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.associated-ip-card-body {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  margin-top: 9px;
+}
+.associated-ip-network-icon {
+  width: 24px;
+  height: 24px;
+  color: #64748b;
+}
+.associated-ip-primary {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.associated-ip-line {
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.associated-ip-muted {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.associated-ip-error {
+  color: #fca5a5;
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 6px;
+}
 `;
 
 function EnrichmentIntelligenceStyles() {
@@ -11070,12 +11144,22 @@ function IpEnrichmentCard({ iocId, iocValue, iocType, active = true, isAdmin = f
         : (err?.response?.status === 429
           ? 'IPinfo Lite rate limit reached. Try again later.'
           : (err?.response?.data?.error || err?.response?.data?.message || 'IP enrichment failed'));
-      setState({
-        status: notConfigured ? 'not_configured' : 'failed',
-        data: err?.response?.data || null,
-        message: msg,
-        providerConfigured: !notConfigured
-      });
+      const responseData = err?.response?.data || null;
+      if (responseData?.enriched && responseData?.refresh_error) {
+        setState({
+          status: 'success',
+          data: responseData,
+          message: `${msg}. Showing the last successful cached result.`,
+          providerConfigured: true
+        });
+      } else {
+        setState({
+          status: notConfigured ? 'not_configured' : 'failed',
+          data: responseData,
+          message: msg,
+          providerConfigured: !notConfigured
+        });
+      }
     } finally {
       setEnriching(false);
     }
@@ -11166,14 +11250,17 @@ function IpEnrichmentCard({ iocId, iocValue, iocType, active = true, isAdmin = f
             {d.cached ? <span style={{ marginLeft: 8, border: '1px solid #475569', color: '#94a3b8', borderRadius: 999, padding: '2px 8px', fontSize: 11 }}>Cached</span> : null}
           </div>
           {!compact ? (
-          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
-            {d.last_enriched_at ? `Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand IP intelligence'}
-          </div>
+          <>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+              {d.last_enriched_at ? `Last enriched: ${formatUserDateTime(d.last_enriched_at)}` : 'On-demand IP intelligence'}
+            </div>
+            {state.message ? <div style={{ color: '#fcd34d', fontSize: 11, marginTop: 4 }}>{state.message}</div> : null}
+          </>
           ) : null}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={() => enrich(false).catch(() => {})} disabled={enriching}>{enriching ? 'Enriching…' : 'Refresh'}</button>
-          {isAdmin ? <button type="button" onClick={() => enrich(true).catch(() => {})} disabled={enriching} title="Admin force refresh (5 min cooldown)">Force</button> : null}
+          {isAdmin ? <button type="button" onClick={() => enrich(true).catch(() => {})} disabled={enriching} title="Admin force refresh">Force</button> : null}
         </div>
       </div>
 
@@ -11479,7 +11566,92 @@ function dnsmaniaLatestStatusKind(status) {
   return 'nodata';
 }
 
-function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compact = false, onSnapshot }) {
+function AssociatedIpNetworkIcon() {
+  return (
+    <svg className="associated-ip-network-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="3" width="16" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="4" y="15" width="16" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 6h.01M8 18h.01M12 9v6M9 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AssociatedIpEnrichmentCard({
+  ip,
+  result,
+  loading,
+  actionLoading,
+  canWrite,
+  isAdmin,
+  onEnrich,
+  onForce
+}) {
+  const view = compactAssociatedIpViewModel(result, ip);
+  const noData = result?.data?.provider_status === 'unavailable';
+  const showError = view.state === 'provider_error' && Boolean(view.error);
+  const buttonStyle = { fontSize: 10, padding: '3px 7px' };
+
+  return (
+    <div className={`associated-ip-card${showError && !view.hasData ? ' is-error' : ''}`}>
+      <div className="associated-ip-card-header">
+        <div className="associated-ip-card-ip" title={view.ip || ip}>{view.ip || ip}</div>
+        {view.hasData && isAdmin ? (
+          <button type="button" style={buttonStyle} disabled={actionLoading} onClick={onForce}>
+            {actionLoading ? 'Refreshing…' : 'Force'}
+          </button>
+        ) : null}
+      </div>
+      <div className="associated-ip-card-body">
+        <AssociatedIpNetworkIcon />
+        <div>
+          {loading ? (
+            <>
+              <div className="associated-ip-primary">Loading IP intelligence…</div>
+              <div className="associated-ip-muted" style={{ marginTop: 6 }}>Checking the central enrichment cache</div>
+            </>
+          ) : view.hasData ? (
+            <>
+              <div className="associated-ip-primary">{view.asName || '—'}</div>
+              <div className="associated-ip-line">{view.asn || '—'}</div>
+              <div className="associated-ip-line">AS Domain: {view.asDomain || '—'}</div>
+              <div className="associated-ip-line" style={{ marginTop: 5 }}>{view.location || '—'}</div>
+              <div className="associated-ip-muted" style={{ marginTop: 5 }}>{view.provider}</div>
+              <div className="associated-ip-muted">
+                Last checked: {view.lastChecked ? formatUserDateTime(view.lastChecked) : '—'}
+              </div>
+              {showError ? <div className="associated-ip-error">{view.error}. Cached data is still shown.</div> : null}
+            </>
+          ) : (
+            <>
+              <div className="associated-ip-primary">
+                {noData ? 'No IP intelligence available' : (view.state === 'invalid_ip' ? 'Invalid IP' : 'Not enriched')}
+              </div>
+              <div className="associated-ip-muted" style={{ marginTop: 5 }}>
+                {showError ? view.error : 'No central IPinfo Lite record was found.'}
+              </div>
+              {canWrite && view.state !== 'invalid_ip' ? (
+                <button type="button" style={{ ...buttonStyle, marginTop: 8 }} disabled={actionLoading} onClick={onEnrich}>
+                  {actionLoading ? 'Enriching…' : (showError ? 'Retry' : 'Enrich')}
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DnsmaniaEnrichmentCard({
+  iocId,
+  iocValue,
+  iocType,
+  active = true,
+  canWrite = true,
+  isAdmin = false,
+  compact = false,
+  onSnapshot
+}) {
   const type = String(iocType || '').trim().toLowerCase();
   const value = String(iocValue || '').trim();
   const applicable = type === 'domain' || type === 'url' || type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'ip6' || type === 'hostname';
@@ -11489,6 +11661,8 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
   const [enriching, setEnriching] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [associatedIpIntel, setAssociatedIpIntel] = useState({ loading: false, byIp: {}, error: '' });
+  const [associatedIpActions, setAssociatedIpActions] = useState({});
   const enrichInFlight = useRef(false);
   const isUrlIoc = type === 'url';
   const TIMELINE_DEFAULT_LIMIT = 5;
@@ -11586,6 +11760,90 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
   const relationTotal = resolvableRelations.length
     ? relationPresentation.totalCount
     : (nxdomainOnly ? nxRelations.length : 0);
+  const associatedIps = d.lookup_type === 'domain'
+    ? relationList.map((rel) => String(rel?.value || '').trim()).filter(Boolean)
+    : [];
+  const associatedIpsKey = associatedIps.join(',');
+
+  useEffect(() => {
+    if (!active || state.status !== 'completed' || !associatedIpsKey) {
+      setAssociatedIpIntel({ loading: false, byIp: {}, error: '' });
+      return undefined;
+    }
+    let cancelled = false;
+    setAssociatedIpIntel({ loading: true, byIp: {}, error: '' });
+    api.get('/enrichment/ips', { params: { ips: associatedIpsKey } })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setAssociatedIpIntel({
+          loading: false,
+          byIp: indexAssociatedIpResults(data?.results),
+          error: ''
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err?.response?.data?.message || err?.response?.data?.error || 'Failed to load IP intelligence';
+        const failedResults = associatedIps.map((ip) => ({
+          requested_ip: ip,
+          normalized_ip: ip,
+          state: 'provider_error',
+          data: null,
+          error: message
+        }));
+        setAssociatedIpIntel({
+          loading: false,
+          byIp: indexAssociatedIpResults(failedResults),
+          error: message
+        });
+      });
+    return () => { cancelled = true; };
+  }, [active, state.status, associatedIpsKey]);
+
+  async function enrichAssociatedIps(ips, force = false) {
+    const requestedIps = [...new Set((Array.isArray(ips) ? ips : []).filter(Boolean))];
+    if (!requestedIps.length || !canWrite || (force && !isAdmin)) return;
+    setAssociatedIpActions((current) => ({
+      ...current,
+      ...Object.fromEntries(requestedIps.map((ip) => [ip.toLowerCase(), true]))
+    }));
+    try {
+      const { data } = await api.post('/enrichment/ips/enrich', {
+        ips: requestedIps,
+        force: force || undefined,
+        ioc_id: iocId || undefined,
+        value: iocValue || undefined,
+        ioc_type: iocType || undefined
+      });
+      const updated = indexAssociatedIpResults(data?.results);
+      setAssociatedIpIntel((current) => ({
+        loading: false,
+        error: '',
+        byIp: { ...current.byIp, ...updated }
+      }));
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.response?.data?.error || 'IP enrichment failed';
+      setAssociatedIpIntel((current) => {
+        const next = { ...current.byIp };
+        for (const ip of requestedIps) {
+          const key = ip.toLowerCase();
+          next[key] = {
+            requested_ip: ip,
+            normalized_ip: ip,
+            state: 'provider_error',
+            data: next[key]?.data || null,
+            error: message
+          };
+        }
+        return { loading: false, byIp: next, error: message };
+      });
+    } finally {
+      setAssociatedIpActions((current) => ({
+        ...current,
+        ...Object.fromEntries(requestedIps.map((ip) => [ip.toLowerCase(), false]))
+      }));
+    }
+  }
 
   useEffect(() => {
     if (!onSnapshot) return;
@@ -11715,6 +11973,10 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
   const relationHint = relationTotal > relationList.length
     ? `Showing ${relationList.length.toLocaleString('en-US')} of ${relationTotal.toLocaleString('en-US')} relations`
     : null;
+  const bulkCandidateIps = associatedIps.filter((ip) => (
+    isAssociatedIpEnrichmentCandidate(associatedIpIntel.byIp[ip.toLowerCase()])
+  ));
+  const bulkActionLoading = bulkCandidateIps.some((ip) => associatedIpActions[ip.toLowerCase()]);
 
   return (
     <div style={shellStyle}>
@@ -11827,14 +12089,46 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
       {relationList.length ? (
         <div className="enrichment-detail-stack">
           <div>
-            <div className="dnsmania-section-title">
-              {resolvableRelations.length ? associatedLabel : (nxdomainOnly ? 'NXDOMAIN History' : associatedLabel)}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div className="dnsmania-section-title">
+                {resolvableRelations.length ? associatedLabel : (nxdomainOnly ? 'NXDOMAIN History' : associatedLabel)}
+              </div>
+              {associatedIps.length && bulkCandidateIps.length && canWrite ? (
+                <button
+                  type="button"
+                  style={{ fontSize: 11, padding: '4px 8px' }}
+                  disabled={bulkActionLoading || associatedIpIntel.loading}
+                  onClick={() => enrichAssociatedIps(bulkCandidateIps, false).catch(() => {})}
+                >
+                  {bulkActionLoading ? 'Enriching IPs…' : `Enrich IPs (${bulkCandidateIps.length})`}
+                </button>
+              ) : null}
             </div>
             {relationHint ? (
               <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>{relationHint}</div>
             ) : null}
-            <div style={{ display: 'grid', gap: 8 }}>
-              {relationList.map((rel, idx) => {
+            {associatedIps.length ? (
+              <div className="associated-ip-grid">
+                {associatedIps.map((ip) => {
+                  const key = ip.toLowerCase();
+                  return (
+                    <AssociatedIpEnrichmentCard
+                      key={ip}
+                      ip={ip}
+                      result={associatedIpIntel.byIp[key]}
+                      loading={associatedIpIntel.loading || !associatedIpIntel.byIp[key]}
+                      actionLoading={Boolean(associatedIpActions[key])}
+                      canWrite={canWrite}
+                      isAdmin={isAdmin}
+                      onEnrich={() => enrichAssociatedIps([ip], false).catch(() => {})}
+                      onForce={() => enrichAssociatedIps([ip], true).catch(() => {})}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {relationList.map((rel, idx) => {
                 const recordType = rel.record_type || null;
                 const primary = d.lookup_type === 'ip'
                   ? (rel.domain || '—')
@@ -11858,8 +12152,9 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
                     ) : null}
                   </div>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            )}
           </div>
         </div>
       ) : null}
