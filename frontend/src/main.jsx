@@ -1887,7 +1887,6 @@ function SystemStatusPage() {
           <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 14, background: '#0f172a' }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Telemetry</div>
             <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
-              <div><b>Signal events (24h):</b> {telemetry.signal_events_24h ?? '-'}</div>
               <div><b>Total IOCs:</b> {telemetry.ioc_total ?? '-'}</div>
               <div><b>IOCs added today:</b> {telemetry.ioc_today ?? '-'}</div>
               {telemetry.error && <div style={{ color: '#f87171' }}>{telemetry.error}</div>}
