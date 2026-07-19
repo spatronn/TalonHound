@@ -94,10 +94,6 @@ UPDATE ioc_enrichments
    SET ioc_type = 'ipv6'
  WHERE ioc_type = 'ip6';
 
-UPDATE ioc_activity
-   SET ioc_type = 'ipv6'
- WHERE ioc_type = 'ip6';
-
 -- 8. Drop the now-empty ioc_ip6 partition.
 DROP TABLE IF EXISTS ioc_ip6;
 
