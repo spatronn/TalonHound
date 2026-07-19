@@ -8,6 +8,7 @@ import { normalizeDnsmaniaLookup } from '../lib/dnsmaniaTarget.js';
 export const DNSMANIA_PROVIDER = 'dnsmania';
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_LIMIT = 50;
+const DEFAULT_IP_LIMIT = 5;
 const MAX_RAW_JSON_CHARS = 256 * 1024;
 const MAX_CONCURRENCY = 3;
 
@@ -49,7 +50,8 @@ export function getDnsmaniaConfig() {
     timeoutMs,
     enabled,
     configured: Boolean(baseUrl),
-    limit: DEFAULT_LIMIT
+    limit: DEFAULT_LIMIT,
+    ipLimit: DEFAULT_IP_LIMIT
   };
 }
 
@@ -83,6 +85,12 @@ function toEpochMs(value) {
   if (value == null || value === '') return null;
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? ms : null;
+}
+
+function toNonNegativeFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 function isErrorDnsRecordType(recordType) {
@@ -315,12 +323,11 @@ export function normalizeDnsmaniaIpResponse(body, lookupValue) {
     count: Number.isFinite(Number(d?.count)) ? Number(d.count) : null
   }));
 
-  const associatedDomainCount = Number.isFinite(Number(body?.unique_domains))
-    ? Number(body.unique_domains)
-    : relations.filter((r) => r.domain).length;
-  const observationCount = Number.isFinite(Number(body?.total_observations))
-    ? Number(body.total_observations)
-    : null;
+  const associatedDomainCount = toNonNegativeFiniteNumber(body?.unique_domains)
+    ?? toNonNegativeFiniteNumber(body?.pagination?.total);
+  const observationCount = toNonNegativeFiniteNumber(body?.total_observations);
+  const associatedDomainsReturned = toNonNegativeFiniteNumber(body?.pagination?.returned)
+    ?? relations.length;
 
   return {
     provider: DNSMANIA_PROVIDER,
@@ -332,9 +339,11 @@ export function normalizeDnsmaniaIpResponse(body, lookupValue) {
       first_seen: firstSeen,
       last_seen: lastSeen,
       associated_domain_count: associatedDomainCount,
+      associated_domain_count_is_exact: associatedDomainCount != null,
+      associated_domains_returned: associatedDomainsReturned,
       observation_count: observationCount,
       relation_count: relations.length,
-      pagination_returned: body?.pagination?.returned != null ? Number(body.pagination.returned) : relations.length
+      pagination_returned: associatedDomainsReturned
     },
     relations,
     raw: body
@@ -425,7 +434,7 @@ export async function lookupIp(ip, options = {}) {
     err.code = 'disabled';
     throw err;
   }
-  const limit = Number(options.limit ?? cfg.limit) || DEFAULT_LIMIT;
+  const limit = Number(options.limit ?? cfg.ipLimit) || DEFAULT_IP_LIMIT;
   const encoded = encodeURIComponent(ip);
   const url = `${cfg.baseUrl}/api/v1/ip/${encoded}?limit=${limit}&offset=0`;
   await acquireSlot();
@@ -591,7 +600,7 @@ export function rowToApiPayload(row, extra = {}) {
     : (row.relations_json || []);
   const summary = row.lookup_type === 'domain'
     ? mergeLatestDnsFields(summaryRaw, relations)
-    : (summaryRaw || {});
+    : mergeLegacyIpFields(summaryRaw, relations);
 
   return {
     provider: DNSMANIA_PROVIDER,
@@ -613,6 +622,33 @@ export function rowToApiPayload(row, extra = {}) {
     data_source: extra.data_source || null,
     message: extra.message || null,
     ...extra
+  };
+}
+
+function mergeLegacyIpFields(summary, relations) {
+  const existingCount = toNonNegativeFiniteNumber(summary?.associated_domain_count);
+  const returnedCount = toNonNegativeFiniteNumber(summary?.associated_domains_returned)
+    ?? toNonNegativeFiniteNumber(summary?.pagination_returned)
+    ?? (Array.isArray(relations) ? relations.length : 0);
+  if (existingCount != null) {
+    return {
+      ...summary,
+      associated_domain_count: existingCount,
+      associated_domain_count_is_exact: summary?.associated_domain_count_is_exact === true,
+      associated_domains_returned: returnedCount
+    };
+  }
+
+  const distinctPersistedDomains = new Set(
+    (Array.isArray(relations) ? relations : [])
+      .map((relation) => String(relation?.domain || '').trim().toLowerCase())
+      .filter(Boolean)
+  ).size;
+  return {
+    ...summary,
+    associated_domain_count_fallback: distinctPersistedDomains,
+    associated_domain_count_is_exact: false,
+    associated_domains_returned: returnedCount
   };
 }
 

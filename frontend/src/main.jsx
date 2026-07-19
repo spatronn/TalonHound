@@ -14,6 +14,7 @@ import {
 } from './lib/iocConfidenceCard.js';
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
+import { getDnsmaniaPresentation } from './lib/dnsmaniaPresentation.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -11470,13 +11471,18 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
   const nxdomainOnly = Boolean(summary.nxdomain_observed) && resolvableRelations.length === 0 && nxRelations.length > 0;
   const latestDnsStatus = String(summary.latest_dns_status || '').toUpperCase() || null;
   const latestIsErrorStatus = latestDnsStatus === 'NXDOMAIN' || latestDnsStatus === 'SERVFAIL' || latestDnsStatus === 'REFUSED';
-  const associatedCount = d.lookup_type === 'ip'
-    ? (Number.isFinite(Number(summary.associated_domain_count)) ? Number(summary.associated_domain_count) : resolvableRelations.length)
-    : (Number.isFinite(Number(summary.associated_ip_count)) ? Number(summary.associated_ip_count) : resolvableRelations.length);
+  const relationPresentation = getDnsmaniaPresentation({
+    summary,
+    relations: resolvableRelations,
+    lookupType: d.lookup_type
+  });
+  const associatedCount = relationPresentation.formattedTotal;
   // Always prefer historical IP/domain relations for the list; NXDOMAIN-only falls back to NX rows.
-  const relationList = (resolvableRelations.length ? resolvableRelations : (nxdomainOnly ? nxRelations : [])).slice(0, 10);
+  const relationList = resolvableRelations.length
+    ? relationPresentation.shownRelations
+    : (nxdomainOnly ? nxRelations.slice(0, 5) : []);
   const relationTotal = resolvableRelations.length
-    ? resolvableRelations.length
+    ? relationPresentation.totalCount
     : (nxdomainOnly ? nxRelations.length : 0);
 
   useEffect(() => {
@@ -11605,7 +11611,7 @@ function DnsmaniaEnrichmentCard({ iocId, iocValue, iocType, active = true, compa
   const lastCheckedAt = summary.latest_dns_status_last_seen || summary.last_seen;
 
   const relationHint = relationTotal > relationList.length
-    ? `Showing ${relationList.length} of ${relationTotal} relations`
+    ? `Showing ${relationList.length.toLocaleString('en-US')} of ${relationTotal.toLocaleString('en-US')} relations`
     : null;
 
   return (
