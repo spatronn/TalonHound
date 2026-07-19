@@ -15,6 +15,7 @@ import {
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
 import { getDnsmaniaPresentation } from './lib/dnsmaniaPresentation.js';
+import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -12894,7 +12895,10 @@ function IOCDetailsPage() {
                           <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
                             <thead>
                               <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                                <th>Source</th><th>Type</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Policy expires</th><th>Effective expires</th><th>Override</th><th>Actions</th>
+                                <th>Source</th><th>Type</th><th>Status</th>
+                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.first.label}</th>
+                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.last.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.last.label}</th>
+                                <th>Policy expires</th><th>Effective expires</th><th>Override</th><th>Actions</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -12935,7 +12939,10 @@ function IOCDetailsPage() {
                           <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
                             <thead>
                               <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                                <th>Source</th><th>Type</th><th>Status</th><th>First seen</th><th>Last seen</th><th>Purged at</th><th>Reason</th>
+                                <th>Source</th><th>Type</th><th>Status</th>
+                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.first.label}</th>
+                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.last.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.last.label}</th>
+                                <th>Purged at</th><th>Reason</th>
                               </tr>
                             </thead>
                             <tbody>
