@@ -4,6 +4,44 @@ function readPositiveInt(name, fallback, min = 1000) {
   return Math.floor(n);
 }
 
+const SOURCE_JOB_TIMEOUTS = Object.freeze({
+  'phishtank-opendnsrr': { env: 'PHISHTANK_JOB_TIMEOUT_MS', fallback: 3_600_000 },
+  'threatfox-abusech': { env: 'THREATFOX_JOB_TIMEOUT_MS', fallback: 600_000 },
+  'usom-trcert': { env: 'USOM_JOB_TIMEOUT_MS', fallback: 7_200_000 },
+  'urlhaus-abusech': { env: 'URLHAUS_JOB_TIMEOUT_MS', fallback: 600_000 },
+  'malwarebazaar-abusech': { env: 'MALWAREBAZAAR_JOB_TIMEOUT_MS', fallback: 600_000 },
+  'et-blockrules': { env: 'EMERGINGTHREATS_JOB_TIMEOUT_MS', fallback: 2_700_000 },
+  'alienvault-otx': { env: 'ALIENVAULT_OTX_JOB_TIMEOUT_MS', fallback: 600_000 }
+});
+
+export function resolveIntegrationJobTimeoutMs(integrationKey, jobName, globalTimeoutMs = 600_000) {
+  if (jobName === 'feed_data_purge') {
+    return {
+      timeoutMs: readPositiveInt('FEED_PURGE_JOB_TIMEOUT_MS', 86_400_000, 600_000),
+      source: 'FEED_PURGE_JOB_TIMEOUT_MS'
+    };
+  }
+  if (jobName === 'custom-threat-feed-sync') {
+    return {
+      timeoutMs: readPositiveInt('CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS', 600_000, 60_000),
+      source: 'CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS'
+    };
+  }
+  if (jobName === 'spamhaus-drop-sync') {
+    return {
+      timeoutMs: readPositiveInt('SPAMHAUS_DROP_JOB_TIMEOUT_MS', 120_000, 30_000),
+      source: 'SPAMHAUS_DROP_JOB_TIMEOUT_MS'
+    };
+  }
+
+  const spec = SOURCE_JOB_TIMEOUTS[String(integrationKey || '').trim()];
+  if (!spec) return { timeoutMs: globalTimeoutMs, source: 'global' };
+  return {
+    timeoutMs: readPositiveInt(spec.env, spec.fallback, 60_000),
+    source: spec.env
+  };
+}
+
 export const MANUAL_JOB_PRIORITY = 10;
 
 export const QUEUE_HARDENING = {

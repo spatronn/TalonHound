@@ -73,6 +73,11 @@ import {
   sanitizeOtxErrorMessage,
   walkOtxSubscribedPulses
 } from './lib/alienvaultOtx.js';
+import {
+  createUsomApiClient,
+  createUsomRunDetails
+} from './lib/usomOfficialApi.js';
+import { executeUsomImportPipeline } from './lib/usomImportPipeline.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { withPgTransaction } from './lib/pg-transaction.js';
 import { throwIfAborted, fetchWithSignal, isJobAbortedError } from './lib/job-cancellation.js';
@@ -141,14 +146,6 @@ function isCIDR(value) {
   return isIPv4(ip) && Number.isInteger(n) && n >= 0 && n <= 32;
 }
 
-function isIPv6(value) {
-  const v = String(value || '').trim();
-  if (!v.includes(':')) return false;
-  const core = v.split('%')[0];
-  if (!/^[0-9a-f:.]+$/i.test(core)) return false;
-  return core.includes(':');
-}
-
 function extractIPs(text) {
   const found = new Set();
   const ipv4Like = text.match(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\/\d{1,2})?\b/g) || [];
@@ -175,31 +172,6 @@ function inferConfidence(fileName) {
   if (f.includes('threatview') || f.includes('high-confidence')) return 'high';
   if (f.includes('drop') || f.includes('compromised') || f.includes('botcc') || f.includes('ciarmy')) return 'high';
   return 'medium';
-}
-
-function mapUsomConfidence(level) {
-  const n = Number(level);
-  if (Number.isNaN(n)) return 'medium';
-  if (n <= 3) return 'high';
-  if (n <= 6) return 'medium';
-  return 'low';
-}
-
-function classifyUsomObservable(rawObservable) {
-  const observable = String(rawObservable || '').trim();
-  if (!observable || observable.startsWith('#')) return null;
-
-  const normalizedIp = observable.endsWith('/') ? observable.slice(0, -1) : observable;
-
-  let observableType = 'domain';
-  if (/^https?:\/\//i.test(observable) || observable.includes('/')) observableType = 'url';
-  else if (isIPv4(normalizedIp) || isCIDR(normalizedIp)) observableType = 'ip';
-  else if (isIPv6(normalizedIp)) observableType = 'ip6';
-
-  return {
-    observable: observableType === 'ip' ? normalizedIp : observable,
-    observableType
-  };
 }
 
 /** Allowed observable_type values for ioc_observables index (source-agnostic). */
@@ -1476,11 +1448,26 @@ export async function runHourlyImport(options = {}) {
 export async function runUsomImport(options = {}) {
   const { signal } = options;
   const triggeredBy = resolveTriggeredBy(options);
+  const requestedMode = String(
+    options.mode
+      || options.runMode
+      || options.job?.data?.run_mode
+      || options.job?.data?.mode
+      || config.usomImportMode
+      || 'incremental'
+  ).trim().toLowerCase();
+  if (!['incremental', 'full_reconciliation'].includes(requestedMode)) {
+    throw new TypeError(`Unsupported USOM import mode: ${sanitizeUsomLogValue(requestedMode)}`);
+  }
+  if (requestedMode === 'incremental' && !config.usomIncrementalEnabled) {
+    return { skipped: true, reason: 'incremental_disabled' };
+  }
   const client = await pool.connect();
   let runId = null;
-  const suppressionStats = createSuppressionStats();
   const metrics = createImportMetrics();
-  const txMeta = { source_key: 'usom-trcert', signal };
+  const runDetails = createUsomRunDetails();
+  const startedAt = Date.now();
+  const runStartedAt = new Date();
 
   try {
     throwIfAborted(signal);
@@ -1489,120 +1476,57 @@ export async function runUsomImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
-    return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
-      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
-       VALUES ('usom_import', 'running', clock_timestamp(), $1)
+      `INSERT INTO integration_runs (job_type, status, started_at, triggered_by, run_mode)
+       VALUES ('usom_import', 'running', clock_timestamp(), $1, $2)
        RETURNING id`,
-      [triggeredBy]
+      [triggeredBy, requestedMode]
     );
     runId = runInsert.rows[0].id;
 
-    const res = await fetchWithSignal(config.usomApiUrl, {}, signal);
-    if (!res.ok) throw new Error(`USOM URL list request failed: ${res.status}`);
-    const txt = await res.text();
-
-    const rawLines = txt.split(/\r?\n/);
-    metrics.noteSkipped(rawLines.filter((line) => {
-      const c = classifyUsomObservable(line);
-      return !c;
-    }).length);
-
-    const entries = rawLines
-      .map((line) => classifyUsomObservable(line))
-      .filter(Boolean)
-      .sort((a, b) => `${a.observableType}|${a.observable}`.localeCompare(`${b.observableType}|${b.observable}`));
-
-    const currentHash = hashEntries(entries);
-
-    const prevState = await client.query(
-      `SELECT content_hash, items_json
-       FROM integration_source_state
-       WHERE source_name = $1`,
-      [config.usomSourceName]
-    );
-
-    const previousHash = prevState.rows[0]?.content_hash || null;
-    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
-    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
-
-    const mapUsomSnapshotEntry = (entry) => ({
-      observable: entry.observable,
-      observableType: entry.observableType,
-      sourceName: config.usomSourceName,
-      sourceUrl: config.usomApiUrl,
-      category: 'threat-intel'
+    const api = createUsomApiClient({
+      baseUrl: config.usomApiBaseUrl,
+      perPage: config.usomApiPerPage,
+      timeoutMs: config.usomApiTimeoutMs,
+      maxRetries: config.usomApiMaxRetries,
+      requestDelayMs: config.usomApiRequestDelayMs,
+      cursorOverlapHours: config.usomCursorOverlapHours,
+      incrementalMaxRecords: config.usomIncrementalMaxRecords,
+      lookupCacheTtlHours: config.usomLookupCacheTtlHours
     });
-
-    if (previousHash === currentHash) {
-      metrics.noteSkipped(entries.length);
-      throwIfAborted(signal);
-
-      await client.query(
-        `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (source_name)
-         DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-        [config.usomSourceName, `hash:${currentHash}`]
-      );
-
-      await finalizeIntegrationRun(client, runId, metrics);
-      return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
-    }
-
-    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
-    // Entries still in feed but already imported in prior runs.
-    metrics.noteSkipped(entries.length - addedEntries.length);
-    const batchSize = Number(process.env.USOM_BATCH_SIZE || 1000);
-
-    for (let i = 0; i < addedEntries.length; i += batchSize) {
-      throwIfAborted(signal);
-      const batch = addedEntries.slice(i, i + batchSize);
-      await withPgTransaction(client, 'usom_import_batch', async (tx) => {
-        for (const entry of batch) {
-          throwIfAborted(signal);
-          const { observable, observableType } = entry;
-          const okObs = await insertObservable(tx, {
-            observable,
-            observableType,
-            sourceName: config.usomSourceName,
-            sourceUrl: config.usomApiUrl,
-            sourceConfidence: null,
-            category: 'threat-intel',
-            note: 'Auto-imported from USOM URL list'
-          }, suppressionStats, signal);
-          trackInsertResult(metrics, okObs);
-        }
-      }, { ...txMeta, job_id: runId, batch: Math.floor(i / batchSize) + 1 });
-    }
-
-    throwIfAborted(signal);
-    await runSnapshotSync(client, 'usom-trcert', entries, mapUsomSnapshotEntry, { signal });
-    throwIfAborted(signal);
-
-    await client.query(
-      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [config.usomSourceName, currentHash, JSON.stringify(entries)]
-    );
-
-    await client.query(
-      `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
-       VALUES ($1, $2, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET last_cursor = EXCLUDED.last_cursor, updated_at = NOW()`,
-      [config.usomSourceName, `hash:${currentHash}`]
-    );
-
-    await finalizeIntegrationRun(client, runId, metrics);
-    logImportSuppressionSummary('usom_import', runId, suppressionStats, metrics.toJSON());
-    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    const pipeline = await executeUsomImportPipeline({
+      client,
+      api,
+      stats: runDetails,
+      signal,
+      seenAt: runStartedAt,
+      mode: requestedMode,
+      runId,
+      runDetails,
+      statementTimeoutMs: config.usomDbStatementTimeoutMs,
+      idleInTxTimeoutMs: config.usomDbIdleInTxTimeoutMs
     });
+    const { persistence } = pipeline;
+    Object.assign(metrics, {
+      records_inserted: persistence.metrics.records_inserted,
+      records_updated: persistence.metrics.records_updated,
+      records_duplicate: persistence.metrics.records_duplicate,
+      records_skipped: persistence.metrics.records_skipped,
+      records_suppressed: persistence.metrics.records_suppressed,
+      records_failed: persistence.metrics.records_failed
+    });
+    return {
+      ok: true,
+      runId,
+      mode: pipeline.effectiveMode,
+      metrics: persistence.metrics,
+      runDetails: persistence.runDetails
+    };
   } catch (err) {
+    runDetails.duration_ms = Date.now() - startedAt;
+    metrics.noteFailed(1);
     if (runId) {
-      await failIntegrationRun(client, runId, err.message, metrics);
+      await failIntegrationRun(client, runId, err.message, metrics, runDetails);
     }
 
     throw err;

@@ -70,7 +70,7 @@ export function createImportMetrics() {
   };
 }
 
-export async function finalizeIntegrationRun(client, runId, metrics, status = 'success') {
+export async function finalizeIntegrationRun(client, runId, metrics, status = 'success', runDetails = null) {
   if (!runId || !client) return;
   const m = metrics?.toJSON?.() || metrics || {};
   await client.query(
@@ -84,7 +84,8 @@ export async function finalizeIntegrationRun(client, runId, metrics, status = 's
          records_skipped = $7,
          records_suppressed = $8,
          records_failed = $9,
-         error_message = NULL
+         error_message = NULL,
+         run_details = COALESCE($10::jsonb, run_details)
      WHERE id = $1`,
     [
       runId,
@@ -95,12 +96,13 @@ export async function finalizeIntegrationRun(client, runId, metrics, status = 's
       Number(m.records_duplicate || 0),
       Number(m.records_skipped || 0),
       Number(m.records_suppressed || 0),
-      Number(m.records_failed || 0)
+      Number(m.records_failed || 0),
+      runDetails == null ? null : JSON.stringify(runDetails)
     ]
   );
 }
 
-export async function failIntegrationRun(client, runId, errorMessage, metrics = null) {
+export async function failIntegrationRun(client, runId, errorMessage, metrics = null, runDetails = null) {
   if (!runId || !client) return;
   const m = metrics?.toJSON?.() || metrics || {};
   await client.query(
@@ -114,7 +116,8 @@ export async function failIntegrationRun(client, runId, errorMessage, metrics = 
          records_duplicate = $6,
          records_skipped = $7,
          records_suppressed = $8,
-         records_failed = $9
+         records_failed = $9,
+         run_details = COALESCE($10::jsonb, run_details)
      WHERE id = $1`,
     [
       runId,
@@ -125,7 +128,8 @@ export async function failIntegrationRun(client, runId, errorMessage, metrics = 
       Number(m.records_duplicate || 0),
       Number(m.records_skipped || 0),
       Number(m.records_suppressed || 0),
-      Number(m.records_failed || 0)
+      Number(m.records_failed || 0),
+      runDetails == null ? null : JSON.stringify(runDetails)
     ]
   );
 }

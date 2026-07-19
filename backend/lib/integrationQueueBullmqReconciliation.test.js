@@ -106,6 +106,19 @@ test('classifyOrphanSourceLock releases a timed-out job as timeout', () => {
   assert.equal(d.failureType, 'timeout');
 });
 
+test('classifyOrphanSourceLock keeps a live USOM job beyond the global timeout', () => {
+  const row = {
+    integration_key: 'usom-trcert',
+    job_name: 'usom-import',
+    status: 'running',
+    started_at: secsAgo(20 * 60),
+    heartbeat_at: secsAgo(5)
+  };
+  const d = classifyOrphanSourceLock(row, { inLiveBullmq: true, nowMs: NOW });
+  assert.equal(d.release, false);
+  assert.equal(d.reason, 'live_in_bullmq');
+});
+
 test('classifyOrphanSourceLock releases a not-in-bullmq job whose heartbeat is quiet beyond grace', () => {
   // Heartbeat quiet beyond orphan grace (but below staleAfterMs) AND absent from BullMQ => orphan.
   const graceMs = orphanSourceLockGraceMs();

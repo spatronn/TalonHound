@@ -1,8 +1,8 @@
 INSERT INTO integration_feeds (key, name, source_url, schedule_cron, trust_level, active)
 VALUES (
   'usom-trcert',
-  'USOM TR-CERT',
-  'https://www.usom.gov.tr/url-list.txt',
+  'Siber Güvenlik Başkanlığı / USOM',
+  'https://siberguvenlik.gov.tr/api/address/index',
   '0 * * * *',
   'guvenilir',
   TRUE

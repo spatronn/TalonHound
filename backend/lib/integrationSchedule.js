@@ -28,6 +28,7 @@ export function isRecurringScheduleCron(value) {
 
 const DEFAULT_SYSTEM_SCHEDULE_TIMEZONE = 'UTC';
 const HOURLY_AT_MINUTE = /^([0-5]?\d) \* \* \* \*$/;
+const WEEKLY_AT_TIME = /^([0-5]?\d) ([01]?\d|2[0-3]) \* \* ([0-6])$/;
 
 /** Validate IANA timezone; fall back to UTC when missing or invalid. */
 export function normalizeScheduleTimezone(value) {
@@ -56,7 +57,7 @@ function zonedTimeParts(date, timeZone) {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false
+    hourCycle: 'h23'
   }).formatToParts(date);
   const pick = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
   return {
@@ -94,10 +95,68 @@ export function computeNextDailyRunAt(now = new Date()) {
   return next;
 }
 
-export function buildRepeatJobConfig(feedKey, scheduleCron, slotMap = null) {
+export function computeNextWeeklyRunAt(scheduleCron, now = new Date(), timeZone = getSystemScheduleTimezone()) {
+  const match = WEEKLY_AT_TIME.exec(String(scheduleCron || '').trim());
+  if (!match) return null;
+  const minute = Number(match[1]);
+  const hour = Number(match[2]);
+  const weekday = Number(match[3]);
+  const p = zonedTimeParts(now, timeZone);
+  const localNoon = new Date(Date.UTC(p.year, p.month - 1, p.day, 12));
+  const currentWeekday = localNoon.getUTCDay();
+
+  for (let daysAhead = 0; daysAhead <= 7; daysAhead += 1) {
+    if ((currentWeekday + daysAhead) % 7 !== weekday) continue;
+    const targetDay = new Date(Date.UTC(p.year, p.month - 1, p.day + daysAhead, 12));
+    const target = {
+      year: targetDay.getUTCFullYear(),
+      month: targetDay.getUTCMonth() + 1,
+      day: targetDay.getUTCDate(),
+      hour,
+      minute,
+      second: 0
+    };
+    const next = zonedTimeToUtc(target, timeZone);
+    if (next.getTime() > now.getTime()) return next;
+  }
+  return null;
+}
+
+function computeNextHourlyRunAt(slotMinute, now = new Date(), timeZone = getSystemScheduleTimezone()) {
+  const p = zonedTimeParts(now, timeZone);
+  let target = {
+    year: p.year,
+    month: p.month,
+    day: p.day,
+    hour: p.hour,
+    minute: slotMinute,
+    second: 0
+  };
+  let next = zonedTimeToUtc(target, timeZone);
+  if (next.getTime() <= now.getTime()) {
+    const followingHour = new Date(Date.UTC(
+      p.year,
+      p.month - 1,
+      p.day,
+      p.hour + 1
+    ));
+    target = {
+      year: followingHour.getUTCFullYear(),
+      month: followingHour.getUTCMonth() + 1,
+      day: followingHour.getUTCDate(),
+      hour: followingHour.getUTCHours(),
+      minute: slotMinute,
+      second: 0
+    };
+    next = zonedTimeToUtc(target, timeZone);
+  }
+  return next;
+}
+
+export function buildRepeatJobConfig(feedKey, scheduleCron, slotMap = null, timezone = null) {
   const pattern = effectiveCronForFeed(feedKey, scheduleCron, slotMap);
-  if (isDailyScheduleCron(scheduleCron)) {
-    return { pattern, tz: getSystemScheduleTimezone() };
+  if (isDailyScheduleCron(scheduleCron) || isWeeklyScheduleCron(scheduleCron)) {
+    return { pattern, tz: normalizeScheduleTimezone(timezone || getSystemScheduleTimezone()) };
   }
   return { pattern };
 }
@@ -111,6 +170,7 @@ export function sanitizeScheduleCron(value) {
   if (isRunOnceSchedule(v)) return RUN_ONCE_SCHEDULE;
   if (BASE_SCHEDULE_CRONS.includes(v)) return v;
   if (isHourlyAtMinuteCron(v)) return v;
+  if (WEEKLY_AT_TIME.test(v)) return v;
   return '0 * * * *';
 }
 
@@ -120,6 +180,10 @@ export function isHourlyScheduleCron(scheduleCron) {
 
 export function isDailyScheduleCron(scheduleCron) {
   return sanitizeScheduleCron(scheduleCron) === '0 0 * * *';
+}
+
+export function isWeeklyScheduleCron(scheduleCron) {
+  return WEEKLY_AT_TIME.test(String(scheduleCron || '').trim());
 }
 
 /**
@@ -176,7 +240,6 @@ function alignToIntervalMinutes(date, intervalMinutes) {
 export function computeNextRunAt(scheduleCron, feedKey, now = new Date(), slotMap = null) {
   if (isRunOnceSchedule(scheduleCron)) return null;
   const cron = effectiveCronForFeed(feedKey, scheduleCron, slotMap);
-  const ts = now.getTime();
 
   if (cron === '*/5 * * * *') return alignToIntervalMinutes(now, 5);
   if (cron === '*/15 * * * *') return alignToIntervalMinutes(now, 15);
@@ -186,14 +249,13 @@ export function computeNextRunAt(scheduleCron, feedKey, now = new Date(), slotMa
     return computeNextDailyRunAt(now);
   }
 
+  if (isWeeklyScheduleCron(cron)) {
+    return computeNextWeeklyRunAt(cron, now);
+  }
+
   const hourlyMatch = HOURLY_AT_MINUTE.exec(cron);
   if (hourlyMatch) {
-    const slotMin = Number(hourlyMatch[1]);
-    const d = new Date(now);
-    d.setSeconds(0, 0);
-    d.setMinutes(slotMin, 0, 0);
-    if (d.getTime() <= ts) d.setHours(d.getHours() + 1);
-    return d;
+    return computeNextHourlyRunAt(Number(hourlyMatch[1]), now);
   }
 
   const fallback = new Date(now);
@@ -206,10 +268,26 @@ export function buildRepeatableNextRunMap(repeatables = []) {
   const map = new Map();
   for (const row of repeatables) {
     const idRaw = String(row?.id || row?.key || '').trim();
-    const feedKey = idRaw.replace(/-scheduled$/, '');
+    const customPrefix = 'integration-schedule:';
     const nextMs = Number(row?.next);
-    if (!feedKey || !Number.isFinite(nextMs) || nextMs <= 0) continue;
-    map.set(feedKey, new Date(nextMs));
+    if (!Number.isFinite(nextMs) || nextMs <= 0) continue;
+    const next = new Date(nextMs);
+    if (idRaw.startsWith(customPrefix)) {
+      const identity = idRaw.slice(customPrefix.length);
+      const [feedKey, mode = 'incremental'] = identity.split('::');
+      if (!feedKey) continue;
+      map.set(`${feedKey}::${mode}`, next);
+      if (mode === 'incremental') map.set(feedKey, next);
+      continue;
+    }
+    const fullSuffix = '-full-reconciliation-scheduled';
+    const isFull = idRaw.endsWith(fullSuffix);
+    const feedKey = isFull
+      ? idRaw.slice(0, -fullSuffix.length)
+      : idRaw.replace(/-scheduled$/, '');
+    if (!feedKey) continue;
+    map.set(`${feedKey}::${isFull ? 'full_reconciliation' : 'incremental'}`, next);
+    if (!isFull) map.set(feedKey, next);
   }
   return map;
 }

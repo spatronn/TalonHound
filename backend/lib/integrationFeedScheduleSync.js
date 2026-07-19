@@ -19,6 +19,25 @@ export const INTEGRATION_FEED_JOBS = Object.freeze({
 });
 
 export const CUSTOM_THREAT_FEED_JOB = 'custom-threat-feed-sync';
+export const USOM_FEED_KEY = 'usom-trcert';
+export const USOM_RUN_MODES = Object.freeze({
+  INCREMENTAL: 'incremental',
+  FULL_RECONCILIATION: 'full_reconciliation'
+});
+
+function envEnabled(value, fallback = true) {
+  if (value == null || String(value).trim() === '') return fallback;
+  return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
+}
+
+export function getUsomFullReconciliationScheduleConfig(env = process.env) {
+  return {
+    incrementalEnabled: envEnabled(env.USOM_INCREMENTAL_ENABLED, true),
+    enabled: envEnabled(env.USOM_FULL_RECONCILIATION_ENABLED, true),
+    cron: sanitizeScheduleCron(env.USOM_FULL_RECONCILIATION_CRON || '0 3 * * 0'),
+    timezone: String(env.USOM_FULL_RECONCILIATION_TIMEZONE || 'Europe/Istanbul').trim() || 'Europe/Istanbul'
+  };
+}
 
 function deriveFeedKeyFromRepeatable(repeatable, desiredByKey, desiredKeysByJobName) {
   const idRaw = String(repeatable.id || '').trim();
@@ -39,8 +58,8 @@ function repeatConfigKey(repeat) {
   return `${pattern}::${tz}`;
 }
 
-function desiredRepeatConfig(feedKey, scheduleCron, slotMap) {
-  return buildRepeatJobConfig(feedKey, scheduleCron, slotMap);
+function desiredRepeatConfig(feedKey, scheduleCron, slotMap, timezone = null) {
+  return buildRepeatJobConfig(feedKey, scheduleCron, slotMap, timezone);
 }
 
 function repeatableMatchesDesired(repeatable, desiredRepeat) {
@@ -156,14 +175,47 @@ export async function loadActiveFeedSchedules(pool) {
 
 async function ensureFeedSchedule(importQueue, feed, slotMap) {
   const jobName = INTEGRATION_FEED_JOBS[feed.key];
-  const jobId = `${feed.key}-scheduled`;
-  const repeat = desiredRepeatConfig(feed.key, feed.cron, slotMap);
+  const mode = feed.mode || USOM_RUN_MODES.INCREMENTAL;
+  const identity = scheduleIdentity(feed.key, mode);
+  const jobId = mode === USOM_RUN_MODES.FULL_RECONCILIATION
+    ? `${feed.key}-full-reconciliation-scheduled`
+    : `${feed.key}-scheduled`;
+  const repeat = {
+    ...desiredRepeatConfig(feed.key, feed.cron, slotMap, feed.timezone),
+    key: `integration-schedule:${identity}`
+  };
 
   await importQueue.add(
     jobName,
-    { triggeredBy: 'scheduler', integration_key: feed.key },
+    {
+      triggeredBy: `scheduler:${mode}`,
+      integration_key: feed.key,
+      run_mode: mode
+    },
     { jobId, repeat }
   );
+}
+
+function scheduleIdentity(feedKey, mode = USOM_RUN_MODES.INCREMENTAL) {
+  return `${feedKey}::${mode}`;
+}
+
+function deriveFeedScheduleIdentity(repeatable, desiredByIdentity, desiredKeysByJobName) {
+  const repeatKey = String(repeatable?.key || '').trim();
+  if (repeatKey.startsWith('integration-schedule:')) {
+    return repeatKey.slice('integration-schedule:'.length);
+  }
+  const id = String(repeatable?.id || '').trim();
+  if (id.endsWith('-full-reconciliation-scheduled')) {
+    return scheduleIdentity(id.slice(0, -'-full-reconciliation-scheduled'.length), USOM_RUN_MODES.FULL_RECONCILIATION);
+  }
+  if (id.endsWith('-scheduled')) {
+    return scheduleIdentity(id.slice(0, -'-scheduled'.length), USOM_RUN_MODES.INCREMENTAL);
+  }
+  const key = deriveFeedKeyFromRepeatable(repeatable, new Map(
+    [...desiredByIdentity.values()].map((feed) => [feed.key, feed])
+  ), desiredKeysByJobName);
+  return key ? scheduleIdentity(key, USOM_RUN_MODES.INCREMENTAL) : null;
 }
 
 /**
@@ -171,12 +223,24 @@ async function ensureFeedSchedule(importQueue, feed, slotMap) {
  * Removes stale hourly repeatables when a feed is switched to daily (and vice versa).
  */
 export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefix = '[scheduler]' } = {}) {
-  const desired = await loadActiveFeedSchedules(pool);
-  const slotMap = buildHourlySlotMap(desired.map((d) => ({ key: d.key, schedule: d.cron })));
-  const desiredByKey = new Map(desired.map((d) => [d.key, d]));
+  const activeFeeds = await loadActiveFeedSchedules(pool);
+  const fullConfig = getUsomFullReconciliationScheduleConfig();
+  const desired = activeFeeds
+    .filter((feed) => feed.key !== USOM_FEED_KEY || fullConfig.incrementalEnabled)
+    .map((feed) => ({ ...feed, mode: USOM_RUN_MODES.INCREMENTAL }));
+  if (fullConfig.enabled && activeFeeds.some((feed) => feed.key === USOM_FEED_KEY)) {
+    desired.push({
+      key: USOM_FEED_KEY,
+      cron: fullConfig.cron,
+      timezone: fullConfig.timezone,
+      mode: USOM_RUN_MODES.FULL_RECONCILIATION
+    });
+  }
+  const slotMap = buildHourlySlotMap(activeFeeds.map((d) => ({ key: d.key, schedule: d.cron })));
+  const desiredByIdentity = new Map(desired.map((d) => [scheduleIdentity(d.key, d.mode), d]));
   const desiredKeysByJobName = new Map();
 
-  for (const d of desired) {
+  for (const d of activeFeeds) {
     const jobName = INTEGRATION_FEED_JOBS[d.key];
     if (!desiredKeysByJobName.has(jobName)) desiredKeysByJobName.set(jobName, []);
     desiredKeysByJobName.get(jobName).push(d.key);
@@ -190,35 +254,52 @@ export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefi
     const jobName = String(r.name || '').trim();
     if (!knownJobNames.has(jobName)) continue;
 
-    const mappedKey = deriveFeedKeyFromRepeatable(r, desiredByKey, desiredKeysByJobName);
+    const identity = deriveFeedScheduleIdentity(r, desiredByIdentity, desiredKeysByJobName);
     const repeatCron = sanitizeScheduleCron(String(r.pattern || '').trim());
 
-    if (!mappedKey) {
+    if (!identity) {
       await importQueue.removeRepeatableByKey(r.key);
       console.log(`${logPrefix} removed repeat job name=${jobName} key=unknown pattern=${repeatCron || '-'} reason=legacy_or_unmapped`);
       continue;
     }
 
-    const desiredFeed = desiredByKey.get(mappedKey);
+    const desiredFeed = desiredByIdentity.get(identity);
     if (!desiredFeed) {
       await importQueue.removeRepeatableByKey(r.key);
-      console.log(`${logPrefix} removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=inactive_or_missing`);
+      console.log(`${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} reason=inactive_or_missing`);
+      continue;
+    }
+    if (
+      desiredFeed.key === USOM_FEED_KEY
+      && !String(r.key || '').startsWith('integration-schedule:')
+    ) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} reason=legacy_mode_key`);
+      continue;
+    }
+    if (
+      desiredFeed.key === USOM_FEED_KEY
+      && Number.isFinite(Number(r.next))
+      && Number(r.next) < Date.now() - 60_000
+    ) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.log(`${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} reason=overdue_iteration`);
       continue;
     }
 
-    const desiredRepeat = desiredRepeatConfig(mappedKey, desiredFeed.cron, slotMap);
+    const desiredRepeat = desiredRepeatConfig(desiredFeed.key, desiredFeed.cron, slotMap, desiredFeed.timezone);
     if (!repeatableMatchesDesired(r, desiredRepeat)) {
       await importQueue.removeRepeatableByKey(r.key);
       console.log(
-        `${logPrefix} removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} tz=${r.tz || '-'} reason=schedule_changed wanted=${repeatConfigKey(desiredRepeat)}`
+        `${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} tz=${r.tz || '-'} reason=schedule_changed wanted=${repeatConfigKey(desiredRepeat)}`
       );
       continue;
     }
 
-    const dedupKey = `${mappedKey}::${repeatConfigKey(desiredRepeat)}`;
+    const dedupKey = `${identity}::${repeatConfigKey(desiredRepeat)}`;
     if (seenPerFeed.has(dedupKey)) {
       await importQueue.removeRepeatableByKey(r.key);
-      console.log(`${logPrefix} removed repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=duplicate`);
+      console.log(`${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} reason=duplicate`);
       continue;
     }
 
@@ -226,19 +307,20 @@ export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefi
   }
 
   for (const feed of desired) {
-    const repeat = desiredRepeatConfig(feed.key, feed.cron, slotMap);
-    const dedupKey = `${feed.key}::${repeatConfigKey(repeat)}`;
+    const repeat = desiredRepeatConfig(feed.key, feed.cron, slotMap, feed.timezone);
+    const identity = scheduleIdentity(feed.key, feed.mode);
+    const dedupKey = `${identity}::${repeatConfigKey(repeat)}`;
     if (seenPerFeed.has(dedupKey)) continue;
     await ensureFeedSchedule(importQueue, feed, slotMap);
     seenPerFeed.add(dedupKey);
     console.log(
-      `${logPrefix} ensured repeat job key=${feed.key} pattern=${repeat.pattern}${repeat.tz ? ` tz=${repeat.tz}` : ''}`
+      `${logPrefix} ensured repeat job identity=${identity} pattern=${repeat.pattern}${repeat.tz ? ` tz=${repeat.tz}` : ''}`
     );
   }
 
-  console.log(`${logPrefix} schedule sync complete, active=${desired.length}`);
+  console.log(`${logPrefix} schedule sync complete, active=${activeFeeds.length} schedules=${desired.length}`);
   await syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix });
-  return { active: desired.length };
+  return { active: activeFeeds.length, schedules: desired.length };
 }
 
 export async function syncSingleFeedSchedule(pool, importQueue, feedKey, { logPrefix = '[integrations]' } = {}) {

@@ -132,8 +132,16 @@ import { parseThreatClassificationFilterParam } from './lib/iocThreatClassificat
 import { createManualIoc } from './lib/manualIocCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
-import { computeNextRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule } from './lib/integrationSchedule.js';
-import { syncSingleFeedSchedule } from './lib/integrationFeedScheduleSync.js';
+import { computeNextRunAt, computeNextWeeklyRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule } from './lib/integrationSchedule.js';
+import { getUsomFullReconciliationScheduleConfig, syncSingleFeedSchedule } from './lib/integrationFeedScheduleSync.js';
+import {
+  buildUsomReconciliationHealth,
+  decideUsomEnqueue,
+  inferUsomRunMode,
+  normalizeUsomRunMode,
+  USOM_FULL_RECONCILIATION_MODE,
+  USOM_INCREMENTAL_MODE
+} from './lib/usomReconciliation.js';
 import {
   AUTH_KEY_FEED_KEYS,
   formatFeedCredentialsSummary,
@@ -760,7 +768,8 @@ function buildIntegrationHealthSummary(integrations) {
   const activeFeeds = feedRows.filter((i) => i.active !== false);
   const failingFeeds = feedRows.filter((i) => {
     const st = String(i.status || i.last_status || '').toLowerCase();
-    return st === 'failed' || st === 'fail' || Number(i.consecutive_failures || 0) > 0;
+    const health = String(i.health_state || '').toLowerCase();
+    return st === 'failed' || st === 'fail' || health === 'failed' || health === 'degraded' || Number(i.consecutive_failures || 0) > 0;
   });
   const successfulFeeds24h = feedRows.filter((i) => {
     const finished = i.last_success_at || i.last_finished_at;
@@ -788,14 +797,18 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const jobType = feedJobType(feed.key);
   const lr = latestRunByJobType.get(jobType);
   const lq = latestQueueByKey.get(feed.key);
+  const lastSuccess = lastSuccessByJobType.get(jobType);
   const purgeJob = latestPurgeByKey?.get(feed.key);
   const purgeStatusRaw = purgeJob ? String(purgeJob.status || '').toLowerCase() : '';
   const purgeActive = purgeStatusRaw === 'queued' || purgeStatusRaw === 'running';
+  const purgeFinishedAt = Date.parse(purgeJob?.finished_at || purgeJob?.started_at || purgeJob?.queued_at || 0) || 0;
+  const importSucceededAt = Date.parse(lastSuccess?.finished_at || lastSuccess?.started_at || 0) || 0;
+  const completedPurgeIsCurrent = purgeStatusRaw === 'success' && purgeFinishedAt >= importSucceededAt;
   const purgeStatus = purgeStatusRaw === 'queued'
     ? 'queued'
     : purgeStatusRaw === 'running'
       ? 'running'
-      : purgeStatusRaw === 'success'
+      : completedPurgeIsCurrent
         ? 'completed'
         : purgeStatusRaw === 'failed'
           ? 'failed'
@@ -812,7 +825,6 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
   const metricsRow = pickMetricsSourceRow(lr, lq);
   const lastRunMetrics = buildLastRunMetrics(metricsRow);
   const runMetrics = flatMetricsFromLastRun(lastRunMetrics);
-  const lastSuccess = lastSuccessByJobType.get(jobType);
   const feedActive = feed.active !== false;
   const policyRow = expirationByKey?.get(feed.key);
   const expiration_policy = policyRow ? serializeExpirationPolicy(policyRow, policyRow.feed_id) : null;
@@ -865,9 +877,54 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
     last_error: lastError,
     consecutive_failures: consecutive,
     last_run_metrics: lastRunMetrics,
+    last_run_details: lr?.run_details || null,
     metrics_hints: metricsHints,
     ...runMetrics,
     total_records: runMetrics.last_records_processed
+  };
+}
+
+function mergeUsomReconciliationFields(feed, latestByMode, lastSuccessByMode, now = new Date()) {
+  if (feed.key !== 'usom-trcert') return feed;
+  const latestIncremental = latestByMode.get(USOM_INCREMENTAL_MODE) || null;
+  const latestFull = latestByMode.get(USOM_FULL_RECONCILIATION_MODE) || null;
+  const successfulIncremental = lastSuccessByMode.get(USOM_INCREMENTAL_MODE) || null;
+  const successfulFull = lastSuccessByMode.get(USOM_FULL_RECONCILIATION_MODE) || null;
+  const reconciliation = buildUsomReconciliationHealth({
+    latestFullRun: latestFull,
+    lastSuccessfulFullRun: successfulFull,
+    now,
+    warningDays: Number(process.env.USOM_FULL_RECONCILIATION_MAX_AGE_DAYS || 8),
+    degradedDays: Math.max(
+      14,
+      Number(process.env.USOM_FULL_RECONCILIATION_MAX_AGE_DAYS || 8) + 1
+    )
+  });
+  const baseHealth = String(feed.health_state || 'warning');
+  const effectiveHealth = reconciliation.state === 'degraded'
+    ? 'degraded'
+    : reconciliation.state === 'warning' && baseHealth === 'success'
+      ? 'warning'
+      : baseHealth;
+  const latestModeRun = [latestIncremental, latestFull]
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.finished_at || b.started_at || 0) - Date.parse(a.finished_at || a.started_at || 0))[0] || null;
+
+  return {
+    ...feed,
+    health_state: feed.active === false ? 'disabled' : effectiveHealth,
+    reconciliation_health_state: reconciliation.state,
+    reconciliation_warning: reconciliation.warning,
+    full_reconciliation_age_days: reconciliation.age_days,
+    last_incremental_run: latestIncremental,
+    last_incremental_success_at: successfulIncremental?.finished_at || successfulIncremental?.started_at || null,
+    last_full_reconciliation_run: latestFull,
+    last_full_reconciliation_success_at: successfulFull?.finished_at || successfulFull?.started_at || null,
+    last_run_mode: inferUsomRunMode(latestModeRun || {}),
+    last_run_details: feed.last_run_details || latestFull?.run_details || latestIncremental?.run_details || null,
+    last_error: latestFull && ['failed', 'fail'].includes(String(latestFull.status || '').toLowerCase())
+      ? latestFull.error_message
+      : feed.last_error
   };
 }
 
@@ -936,7 +993,14 @@ app.get('/api/integrations', async (req, res) => {
         q.error_message AS failed_reason,
         q.records_processed,
         q.started_at,
-        q.finished_at
+        q.finished_at,
+        q.triggered_by,
+        CASE
+          WHEN q.integration_key = 'usom-trcert' AND COALESCE(q.triggered_by, '') LIKE '%full_reconciliation%'
+            THEN 'full_reconciliation'
+          WHEN q.integration_key = 'usom-trcert' THEN 'incremental'
+          ELSE NULL
+        END AS run_mode
       FROM integration_queue_jobs q
       LEFT JOIN integration_feeds f ON f.key = q.integration_key
       ORDER BY q.queued_at DESC
@@ -969,6 +1033,7 @@ app.get('/api/integrations', async (req, res) => {
       (expirationPoliciesRes.rows || []).map((row) => [String(row.feed_key || '').trim(), row])
     );
     const now = new Date();
+    const usomFullSchedule = getUsomFullReconciliationScheduleConfig();
     const activeFeeds = feedsRes.rows.filter((feed) => feed.active !== false);
     const slotMap = buildHourlySlotMap(activeFeeds.map((feed) => ({ key: feed.key, schedule: feed.schedule })));
     feedsRes.rows = feedsRes.rows.map((feed) => {
@@ -978,15 +1043,34 @@ app.get('/api/integrations', async (req, res) => {
         : null;
       const base = { ...rest, credentials_summary: credentialsSummary, feed_kind: feed.feed_kind || 'built_in' };
       if (feed.archived_at) {
-        return { ...base, next_run_at: null };
+        return { ...base, next_run_at: null, next_incremental_run_at: null, next_full_reconciliation_run_at: null };
       }
       if (feed.active === false) {
-        return { ...base, next_run_at: null };
+        return { ...base, next_run_at: null, next_incremental_run_at: null, next_full_reconciliation_run_at: null };
       }
-      const bullNext = repeatableNextByKey.get(feed.key);
+      const bullNext = repeatableNextByKey.get(`${feed.key}::${USOM_INCREMENTAL_MODE}`) || repeatableNextByKey.get(feed.key);
       const computedNext = computeNextRunAt(feed.schedule, feed.key, now, slotMap);
       const nextRunAt = isRunOnceSchedule(feed.schedule) ? null : (bullNext || computedNext);
-      return { ...base, next_run_at: nextRunAt ? nextRunAt.toISOString() : null };
+      const fullBullNext = feed.key === 'usom-trcert'
+        ? repeatableNextByKey.get(`${feed.key}::${USOM_FULL_RECONCILIATION_MODE}`)
+        : null;
+      const fullComputedNext = feed.key === 'usom-trcert' && usomFullSchedule.enabled
+        ? computeNextWeeklyRunAt(usomFullSchedule.cron, now, usomFullSchedule.timezone)
+        : null;
+      const nextFull = fullBullNext || fullComputedNext;
+      return {
+        ...base,
+        next_run_at: nextRunAt ? nextRunAt.toISOString() : null,
+        next_incremental_run_at: nextRunAt ? nextRunAt.toISOString() : null,
+        next_full_reconciliation_run_at: nextFull ? nextFull.toISOString() : null,
+        full_reconciliation_schedule: feed.key === 'usom-trcert'
+          ? {
+              enabled: usomFullSchedule.enabled,
+              cron: usomFullSchedule.cron,
+              timezone: usomFullSchedule.timezone
+            }
+          : null
+      };
     });
     integrationsTimingLog(timingEnabled, 'integration base query', baseStart);
 
@@ -998,7 +1082,7 @@ app.get('/api/integrations', async (req, res) => {
         job_type, status, started_at, finished_at,
         records_processed, records_inserted, records_updated,
         records_duplicate, records_skipped, records_suppressed, records_failed,
-        error_message
+        error_message, run_details, triggered_by
       FROM integration_runs
       WHERE job_type = ANY($1::text[])
       ORDER BY job_type, started_at DESC
@@ -1011,6 +1095,52 @@ app.get('/api/integrations', async (req, res) => {
       WHERE job_type = ANY($1::text[])
         AND status = 'success'
       ORDER BY job_type, started_at DESC
+    `;
+
+    const usomRunsByModeQ = `
+      SELECT DISTINCT ON (effective_run_mode)
+        job_type, status, started_at, finished_at,
+        records_processed, records_inserted, records_updated,
+        records_duplicate, records_skipped, records_suppressed, records_failed,
+        error_message, run_details, triggered_by, effective_run_mode AS run_mode
+      FROM (
+        SELECT r.*,
+          COALESCE(
+            NULLIF(r.run_mode, ''),
+            CASE
+              WHEN COALESCE(r.run_details->>'run_mode', '') = 'full_reconciliation'
+                OR COALESCE(r.triggered_by, '') LIKE '%full_reconciliation%'
+                THEN 'full_reconciliation'
+              ELSE 'incremental'
+            END
+          ) AS effective_run_mode
+        FROM integration_runs r
+        WHERE r.job_type = 'usom_import'
+      ) mode_runs
+      ORDER BY effective_run_mode, started_at DESC
+    `;
+
+    const usomSuccessRunsByModeQ = `
+      SELECT DISTINCT ON (effective_run_mode)
+        job_type, status, started_at, finished_at, error_message, run_details, triggered_by,
+        effective_run_mode AS run_mode
+      FROM (
+        SELECT r.*,
+          COALESCE(
+            NULLIF(r.run_mode, ''),
+            CASE
+              WHEN COALESCE(r.run_details->>'run_mode', '') = 'full_reconciliation'
+                OR COALESCE(r.triggered_by, '') LIKE '%full_reconciliation%'
+                THEN 'full_reconciliation'
+              ELSE 'incremental'
+            END
+          ) AS effective_run_mode
+        FROM integration_runs r
+        WHERE r.job_type = 'usom_import'
+          AND r.status = 'success'
+          AND COALESCE(r.run_details->>'reconciliation_complete', 'true') <> 'false'
+      ) mode_runs
+      ORDER BY effective_run_mode, started_at DESC
     `;
 
     const recentFailuresQ = `
@@ -1057,7 +1187,7 @@ app.get('/api/integrations', async (req, res) => {
     `;
 
     const latestRunStart = Date.now();
-    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, recentRes] = await Promise.all([
+    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, recentRes, usomRunsByModeRes, usomSuccessRunsByModeRes] = await Promise.all([
       jobTypes.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
         : Promise.resolve({ rows: [] }),
@@ -1076,7 +1206,13 @@ app.get('/api/integrations', async (req, res) => {
       feedKeys.includes('asn_enrichment')
         ? queryIntegrationsMetaWithTimeout(pool.query(asnQ))
         : Promise.resolve({ rows: [{ last_updated_at: null }] }),
-      pool.query(recentQ)
+      pool.query(recentQ),
+      feedKeys.includes('usom-trcert')
+        ? queryIntegrationsMetaWithTimeout(pool.query(usomRunsByModeQ))
+        : Promise.resolve({ rows: [] }),
+      feedKeys.includes('usom-trcert')
+        ? queryIntegrationsMetaWithTimeout(pool.query(usomSuccessRunsByModeQ))
+        : Promise.resolve({ rows: [] })
     ]);
     integrationsTimingLog(timingEnabled, 'latest run query', latestRunStart);
 
@@ -1087,11 +1223,16 @@ app.get('/api/integrations', async (req, res) => {
     );
     const latestQueueByKey = new Map(latestQueueRes.rows.map((r) => [r.integration_key, r]));
     const latestPurgeByKey = new Map(latestPurgeRes.rows.map((r) => [r.integration_key, r]));
+    const latestUsomByMode = new Map(usomRunsByModeRes.rows.map((r) => [r.run_mode, r]));
+    const lastSuccessfulUsomByMode = new Map(usomSuccessRunsByModeRes.rows.map((r) => [r.run_mode, r]));
     const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
 
-    const integrations = feedsRes.rows.map((feed) =>
-      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey)
-    );
+    const integrations = feedsRes.rows.map((feed) => mergeUsomReconciliationFields(
+      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey),
+      latestUsomByMode,
+      lastSuccessfulUsomByMode,
+      now
+    ));
     const healthSummary = buildIntegrationHealthSummary(integrations);
 
     let queue = {
@@ -1287,6 +1428,72 @@ async function assertIntegrationFeedActive(key) {
   return { ok: true };
 }
 
+async function loadActiveUsomQueueRows() {
+  const [result, bullJobs] = await Promise.all([
+    pool.query(
+      `SELECT job_id, status, triggered_by, queued_at, started_at
+       FROM integration_queue_jobs
+       WHERE integration_key = 'usom-trcert'
+         AND status IN ('queued', 'running')
+       ORDER BY COALESCE(started_at, queued_at) ASC`
+    ),
+    importQueue.getJobs(['waiting', 'active', 'delayed'])
+      .catch(() => [])
+  ]);
+  const rows = [...(result.rows || [])];
+  const knownIds = new Set(rows.map((row) => String(row.job_id)));
+  for (const job of bullJobs || []) {
+    if (String(job?.data?.integration_key || '') !== 'usom-trcert') continue;
+    if (knownIds.has(String(job.id))) continue;
+    rows.push({
+      job_id: String(job.id),
+      status: 'queued',
+      run_mode: job.data?.run_mode,
+      triggered_by: job.data?.triggeredBy
+    });
+  }
+  return rows;
+}
+
+async function enqueueUsomRun(mode, triggeredBy) {
+  const decision = decideUsomEnqueue(mode, await loadActiveUsomQueueRows());
+  if (decision.action === 'coalesce') {
+    return {
+      ok: true,
+      queued: false,
+      coalesced: true,
+      run_mode: mode,
+      job_id: decision.existing.job_id,
+      reason: decision.reason
+    };
+  }
+  if (decision.action === 'suppress') {
+    return {
+      ok: false,
+      status: 409,
+      message: `Incremental run suppressed because full reconciliation job ${decision.existing.job_id} is queued or running.`,
+      blocking_job_id: decision.existing.job_id,
+      run_mode: mode
+    };
+  }
+
+  const jobName = INTEGRATION_JOBS['usom-trcert'];
+  const trigger = `${triggeredBy}:${mode}`;
+  const job = await importQueue.add(
+    jobName,
+    { triggeredBy: trigger, integration_key: 'usom-trcert', run_mode: mode },
+    { priority: MANUAL_JOB_PRIORITY }
+  );
+  await pool.query(
+    `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
+     VALUES ($1, 'usom-trcert', $2, 'queued', $3, NOW(), NOW())
+     ON CONFLICT (job_id)
+     DO UPDATE SET status='queued', triggered_by=$3, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+    [String(job.id), jobName, trigger]
+  );
+  return { ok: true, queued: true, coalesced: false, run_mode: mode, job_id: job.id };
+}
+
 app.post('/api/integrations/queue/recover', requireRole(ROLES.ADMIN), async (req, res) => {
   const dryRun = String(req.query?.dry_run || req.query?.dryRun || '').toLowerCase() === 'true';
   try {
@@ -1351,6 +1558,19 @@ app.post('/api/integrations/run-now', async (_req, res) => {
     const skipped = [];
 
     for (const key of keys) {
+      if (key === 'usom-trcert') {
+        const result = await enqueueUsomRun(USOM_INCREMENTAL_MODE, 'manual-ui-all');
+        if (!result.ok || result.coalesced) {
+          skipped.push({
+            key,
+            blocking_job_id: result.blocking_job_id || result.job_id,
+            reason: result.coalesced ? 'duplicate_incremental' : 'full_reconciliation_active'
+          });
+        } else {
+          queued.push({ key, job_id: result.job_id, run_mode: result.run_mode });
+        }
+        continue;
+      }
       const blocking = await findActiveRunningJobForSource(pool, key);
       if (blocking) {
         skipped.push({ key, blocking_job_id: blocking.job_id, reason: 'running' });
@@ -1392,9 +1612,30 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
   }
 
   try {
+    const requestedModeRaw = req.body?.run_mode;
+    if (key !== 'usom-trcert' && requestedModeRaw != null) {
+      return res.status(400).json({ message: 'run_mode is supported only for usom-trcert' });
+    }
+    const runMode = key === 'usom-trcert'
+      ? normalizeUsomRunMode(requestedModeRaw)
+      : USOM_INCREMENTAL_MODE;
+    if (!runMode) {
+      return res.status(400).json({
+        message: 'Invalid run_mode. Expected incremental or full_reconciliation.'
+      });
+    }
+
     const activeCheck = await assertIntegrationFeedActive(key);
     if (!activeCheck.ok) {
       return res.status(activeCheck.status).json({ message: activeCheck.message });
+    }
+
+    if (key === 'usom-trcert') {
+      const result = await enqueueUsomRun(runMode, 'manual-ui-one');
+      if (!result.ok) {
+        return res.status(result.status || 409).json(result);
+      }
+      return res.status(202).json({ ...result, key });
     }
 
     const blocking = await findActiveRunningJobForSource(pool, key);
@@ -1418,7 +1659,7 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
        DO UPDATE SET status='queued', triggered_by='manual-ui-one', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
       [String(job.id), key, jobName]
     );
-    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
+    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id, run_mode: runMode });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
   }
@@ -1475,6 +1716,12 @@ app.patch('/api/integrations/:key/active', async (req, res) => {
     }).catch((e) => {
       console.warn('[audit] integration active toggle log failed', e?.message || e);
     });
+
+    try {
+      await syncSingleFeedSchedule(pool, importQueue, key, { logPrefix: '[integrations]' });
+    } catch (syncErr) {
+      console.warn('[integrations] active state saved but schedule sync failed', syncErr?.message || syncErr);
+    }
 
     return res.json(after);
   } catch (err) {

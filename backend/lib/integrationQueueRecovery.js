@@ -1,4 +1,9 @@
-import { FAILURE_MESSAGES, FAILURE_TYPES, QUEUE_HARDENING } from './integrationQueueConfig.js';
+import {
+  FAILURE_MESSAGES,
+  FAILURE_TYPES,
+  QUEUE_HARDENING,
+  resolveIntegrationJobTimeoutMs
+} from './integrationQueueConfig.js';
 
 export function getJobLastSeenMs(job) {
   const raw = job?.heartbeat_at || job?.updated_at || job?.started_at;
@@ -23,8 +28,19 @@ export function classifyRunningJobForRecovery(job, nowMs = Date.now(), config = 
   if (referenceMs == null) return null;
 
   const runningAgeMs = startedMs != null ? nowMs - startedMs : nowMs - referenceMs;
-  if (runningAgeMs > config.jobTimeoutMs) {
-    return { failureType: FAILURE_TYPES.TIMEOUT, ageMs: runningAgeMs, message: FAILURE_MESSAGES.timeout };
+  const timeout = resolveIntegrationJobTimeoutMs(
+    job?.integration_key,
+    job?.job_name,
+    config.jobTimeoutMs
+  );
+  if (runningAgeMs > timeout.timeoutMs) {
+    return {
+      failureType: FAILURE_TYPES.TIMEOUT,
+      ageMs: runningAgeMs,
+      timeoutMs: timeout.timeoutMs,
+      timeoutSource: timeout.source,
+      message: FAILURE_MESSAGES.timeout
+    };
   }
 
   const staleAgeMs = nowMs - referenceMs;
@@ -51,7 +67,7 @@ export function isSourceActivelyRunning(rows, integrationKey, excludeJobId, nowM
 
 export async function findActiveRunningJobForSource(pool, integrationKey, excludeJobId = null) {
   const q = await pool.query(
-    `SELECT job_id, integration_key, status, started_at, queued_at, heartbeat_at, updated_at, worker_id
+    `SELECT job_id, integration_key, job_name, status, started_at, queued_at, heartbeat_at, updated_at, worker_id
      FROM integration_queue_jobs
      WHERE integration_key = $1
        AND status = 'running'
@@ -77,7 +93,7 @@ export async function markQueueJobFailed(pool, jobId, { message, failureType }) 
 
 export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-worker]', queue = null, dryRun = false } = {}) {
   const runningQ = await pool.query(
-    `SELECT job_id, integration_key, status, started_at, queued_at, heartbeat_at, updated_at, worker_id
+    `SELECT job_id, integration_key, job_name, status, started_at, queued_at, heartbeat_at, updated_at, worker_id
      FROM integration_queue_jobs
      WHERE status = 'running'`
   );
@@ -103,11 +119,13 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
       integration_key: row.integration_key,
       failure_type: classification.failureType,
       age_ms: classification.ageMs,
+      timeout_ms: classification.timeoutMs || null,
+      timeout_source: classification.timeoutSource || null,
       message: classification.message
     });
 
     console.log(
-      `${logPrefix} Marked stale running job as failed job_id=${row.job_id} source=${row.integration_key} failure_type=${classification.failureType} age_ms=${classification.ageMs}`
+      `${logPrefix} Marked stale running job as failed job_id=${row.job_id} source=${row.integration_key} failure_type=${classification.failureType} age_ms=${classification.ageMs} timeout_ms=${classification.timeoutMs || '-'} timeout_source=${classification.timeoutSource || '-'}`
     );
   }
 
@@ -127,6 +145,13 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
          error_message = COALESCE(error_message, $1)
      WHERE status = 'running'
        AND started_at < NOW() - ($2::text || ' milliseconds')::interval
+       AND NOT EXISTS (
+         SELECT 1
+         FROM integration_queue_jobs q
+         WHERE q.status = 'running'
+           AND q.started_at BETWEEN integration_runs.started_at - INTERVAL '2 minutes'
+                                AND integration_runs.started_at + INTERVAL '2 minutes'
+       )
      RETURNING id, job_type`,
     [FAILURE_MESSAGES.stale, String(QUEUE_HARDENING.staleAfterMs)]
   );
@@ -226,6 +251,8 @@ export function enrichIntegrationQueueJobRow(row, nowMs = Date.now()) {
   const runningForMs = state === 'running' && startedMs ? Math.max(0, nowMs - startedMs) : null;
   const possiblyStuck = state === 'running' && classifyRunningJobForRecovery({
     status: 'running',
+    integration_key: row.integration_key,
+    job_name: row.job_name || row.name,
     started_at: row.started_at || row.timestamp,
     heartbeat_at: row.heartbeat_at,
     updated_at: row.updated_at,

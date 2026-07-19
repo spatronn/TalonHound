@@ -7,7 +7,13 @@ import { sanitizeUrlhausErrorMessage } from './lib/urlhaus.js';
 import { sanitizeMalwareBazaarErrorMessage } from './lib/malwarebazaar.js';
 import { sanitizeThreatFoxErrorMessage } from './lib/threatfox.js';
 import { sanitizeOtxErrorMessage } from './lib/alienvaultOtx.js';
-import { QUEUE_HARDENING, FAILURE_MESSAGES, FAILURE_TYPES } from './lib/integrationQueueConfig.js';
+import { sanitizeUsomLogValue } from './lib/usomNormalizer.js';
+import {
+  QUEUE_HARDENING,
+  FAILURE_MESSAGES,
+  FAILURE_TYPES,
+  resolveIntegrationJobTimeoutMs
+} from './lib/integrationQueueConfig.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs, runQueueRecovery } from './lib/integrationQueueRecovery.js';
 import {
   createWorkerIdentity,
@@ -68,6 +74,9 @@ function safeJobErrorMessage(job, err) {
   if (integrationKey === 'alienvault-otx') {
     return sanitizeOtxErrorMessage(raw).slice(0, 4000);
   }
+  if (integrationKey === 'usom-trcert') {
+    return sanitizeUsomLogValue(raw, 4000);
+  }
   return raw.slice(0, 4000);
 }
 
@@ -94,38 +103,12 @@ async function runImportForJob(job, { signal, triggeredBy } = {}) {
   return { skipped: true, reason: 'unknown_job' };
 }
 
-function resolveJobTimeoutMs(integrationKey, jobName) {
-  if (jobName === 'feed_data_purge') {
-    const n = Number(process.env.FEED_PURGE_JOB_TIMEOUT_MS || 86400000);
-    return { timeoutMs: Math.max(n, 600000), source: 'FEED_PURGE_JOB_TIMEOUT_MS' };
-  }
-  const globalTimeout = QUEUE_HARDENING.jobTimeoutMs;
-  const map = {
-    'phishtank-opendnsrr': 'PHISHTANK_JOB_TIMEOUT_MS',
-    'threatfox-abusech': 'THREATFOX_JOB_TIMEOUT_MS',
-    'usom-trcert': 'USOM_JOB_TIMEOUT_MS',
-    'urlhaus-abusech': 'URLHAUS_JOB_TIMEOUT_MS',
-    'malwarebazaar-abusech': 'MALWAREBAZAAR_JOB_TIMEOUT_MS',
-    'et-blockrules': 'EMERGINGTHREATS_JOB_TIMEOUT_MS',
-    'alienvault-otx': 'ALIENVAULT_OTX_JOB_TIMEOUT_MS'
-  };
-  if (jobName === 'custom-threat-feed-sync') {
-    const n = Number(process.env.CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS || 600000);
-    return { timeoutMs: Math.max(n, 60000), source: 'CUSTOM_THREAT_FEED_JOB_TIMEOUT_MS' };
-  }
-  if (jobName === 'spamhaus-drop-sync') {
-    const n = Number(process.env.SPAMHAUS_DROP_JOB_TIMEOUT_MS || 120000);
-    return { timeoutMs: Math.max(n, 30000), source: 'SPAMHAUS_DROP_JOB_TIMEOUT_MS' };
-  }
-  const envName = map[integrationKey];
-  if (!envName) return { timeoutMs: globalTimeout, source: 'global' };
-  const n = Number(process.env[envName]);
-  if (!Number.isFinite(n) || n < 60_000) return { timeoutMs: globalTimeout, source: 'global' };
-  return { timeoutMs: Math.floor(n), source: envName };
-}
-
 async function executeJobWithTimeout(job, integrationKey) {
-  const timeoutInfo = resolveJobTimeoutMs(integrationKey, job?.name);
+  const timeoutInfo = resolveIntegrationJobTimeoutMs(
+    integrationKey,
+    job?.name,
+    QUEUE_HARDENING.jobTimeoutMs
+  );
   const timeoutMs = timeoutInfo.timeoutMs;
   const controller = new AbortController();
   activeJobAbortController = controller;
@@ -190,7 +173,11 @@ const worker = new Worker(
       throw new DelayedError();
     }
 
-    const timeoutInfo = resolveJobTimeoutMs(integrationKey);
+    const timeoutInfo = resolveIntegrationJobTimeoutMs(
+      integrationKey,
+      job.name,
+      QUEUE_HARDENING.jobTimeoutMs
+    );
 
     await markJobRunning(pool, {
       jobId: String(job.id),
@@ -208,7 +195,7 @@ const worker = new Worker(
     const stopHeartbeat = startJobHeartbeat(pool, String(job.id), QUEUE_HARDENING.heartbeatIntervalMs);
 
     try {
-      const result = await executeJobWithTimeout(job);
+      const result = await executeJobWithTimeout(job, integrationKey);
 
       const metrics = result?.metrics || {
         records_processed: Number(result?.metrics?.records_processed ?? result?.records_processed ?? 0),

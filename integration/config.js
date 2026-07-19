@@ -18,8 +18,26 @@ export const config = {
   },
   sourceName: process.env.SOURCE_NAME || 'EmergingThreats:blockrules',
   sourceIndexUrl: process.env.SOURCE_INDEX_URL || 'http://rules.emergingthreats.net/blockrules/',
-  usomSourceName: process.env.USOM_SOURCE_NAME || 'USOM:TR-CERT',
-  usomApiUrl: process.env.USOM_API_URL || 'https://www.usom.gov.tr/url-list.txt',
+  // USOM:TR-CERT is a stable database identity, not a display label.
+  usomSourceName: 'USOM:TR-CERT',
+  usomApiBaseUrl: process.env.USOM_API_BASE_URL || 'https://siberguvenlik.gov.tr/api',
+  usomApiPerPage: Number(process.env.USOM_API_PER_PAGE || 5000),
+  usomApiTimeoutMs: Number(process.env.USOM_API_TIMEOUT_MS || 30000),
+  usomApiMaxRetries: Number(process.env.USOM_API_MAX_RETRIES || 5),
+  usomApiRequestDelayMs: Number(process.env.USOM_API_REQUEST_DELAY_MS || 250),
+  usomImportMode: process.env.USOM_IMPORT_MODE || 'incremental',
+  usomIncrementalEnabled: !['0', 'false', 'no', 'off'].includes(
+    String(process.env.USOM_INCREMENTAL_ENABLED || 'true').trim().toLowerCase()
+  ),
+  usomCursorOverlapHours: Number(
+    process.env.USOM_INCREMENTAL_OVERLAP_HOURS
+      || process.env.USOM_CURSOR_OVERLAP_HOURS
+      || 24
+  ),
+  usomIncrementalMaxRecords: Number(process.env.USOM_INCREMENTAL_MAX_RECORDS || 100000),
+  usomLookupCacheTtlHours: Number(process.env.USOM_LOOKUP_CACHE_TTL_HOURS || 24),
+  usomDbStatementTimeoutMs: Number(process.env.USOM_DB_STATEMENT_TIMEOUT_MS || 1800000),
+  usomDbIdleInTxTimeoutMs: Number(process.env.USOM_DB_IDLE_IN_TX_TIMEOUT_MS || 600000),
   urlhausSourceName: process.env.URLHAUS_SOURCE_NAME || 'URLhaus:abuse.ch',
   urlhausAuthKey: process.env.URLHAUS_AUTH_KEY || '',
   threatfoxSourceName: process.env.THREATFOX_SOURCE_NAME || 'ThreatFox:abuse.ch',

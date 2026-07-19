@@ -167,7 +167,7 @@ describe('syncMembershipAfterIocImport canonical IOC lookup', () => {
       observable: 'http://104.36.229.33',
       observableType: 'url',
       sourceName: 'USOM:TR-CERT',
-      sourceUrl: 'https://www.usom.gov.tr/url-list.txt',
+      sourceUrl: 'https://siberguvenlik.gov.tr/api/address/index',
       category: 'threat-intel'
     });
 

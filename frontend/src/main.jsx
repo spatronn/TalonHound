@@ -143,7 +143,7 @@ function formatDurationSeconds(totalSec) {
 function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
   const byKey = {
     'et-blockrules': 'Blockrules IP import',
-    'usom-trcert': 'USOM URL list import',
+    'usom-trcert': 'Siber Güvenlik Başkanlığı / USOM API import',
     'urlhaus-abusech': 'Recent malicious URLs import',
     'threatfox-abusech': 'Recent IOCs import',
     'malwarebazaar-abusech': 'Recent malware samples import',
@@ -151,7 +151,7 @@ function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
   };
   const byName = {
     'hourly-import': 'Blockrules IP import',
-    'usom-import': 'USOM URL list import',
+    'usom-import': 'Siber Güvenlik Başkanlığı / USOM API import',
     'urlhaus-import': 'Recent malicious URLs import',
     'threatfox-import': 'Recent IOCs import',
     'malwarebazaar-import': 'Recent malware samples import',
@@ -167,6 +167,26 @@ function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
 
 function integrationJobDisplayName(job) {
   return job?.display_name || formatIntegrationJobDisplayName(job?.name || job?.job_name, job?.integration_key);
+}
+
+function integrationRunModeLabel(mode) {
+  if (mode === 'full_reconciliation') return 'Full reconciliation';
+  if (mode === 'incremental') return 'Incremental';
+  return '-';
+}
+
+function usomRunDiagnostics(run) {
+  if (!run) return 'No run recorded';
+  const details = run.run_details || {};
+  const parts = [
+    integrationRunModeLabel(run.run_mode || details.run_mode),
+    String(run.status || '').toLowerCase() || 'unknown'
+  ];
+  const records = details.provider_records ?? run.records_processed;
+  const pages = details.pages_fetched ?? details.page_count;
+  if (records != null) parts.push(`${Number(records).toLocaleString()} records`);
+  if (pages != null) parts.push(`${Number(pages).toLocaleString()} pages`);
+  return parts.filter(Boolean).join(' · ');
 }
 
 function integrationJobReasonLabel(job) {
@@ -2120,6 +2140,8 @@ function FeedSettingsModal({
   onOpenPurge,
   onArchive,
   onRestore,
+  onRunFullReconciliation,
+  runningFullReconciliation,
   purgeActive,
   canWrite
 }) {
@@ -2146,6 +2168,19 @@ function FeedSettingsModal({
           <div style={{ color: '#94a3b8', marginBottom: 4 }}>Feed</div>
           <strong style={{ color: '#e2e8f0' }}>{feed?.name || feed?.key}</strong>
         </div>
+
+        {feed?.source_url ? (
+          <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: '#94a3b8' }}>Source endpoint</span>
+            <input
+              type="url"
+              value={feed.source_url}
+              readOnly
+              aria-label="Source endpoint"
+              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#cbd5e1', fontSize: 12, cursor: 'not-allowed' }}
+            />
+          </label>
+        ) : null}
 
         <div>
           <div style={{ color: '#94a3b8', marginBottom: 6 }}>Current state</div>
@@ -2224,6 +2259,34 @@ function FeedSettingsModal({
             ) : null}
           </div>
         </div>
+
+        {feed?.key === 'usom-trcert' ? (
+          <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+            <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>USOM Reconciliation</div>
+            <div style={{ display: 'grid', gap: 8, color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>
+              <div><b>Incremental:</b> {usomRunDiagnostics(feed.last_incremental_run)}</div>
+              <div><b>Last incremental success:</b> {formatUserDateTime(feed.last_incremental_success_at)}</div>
+              <div><b>Full:</b> {usomRunDiagnostics(feed.last_full_reconciliation_run)}</div>
+              <div><b>Last full success:</b> {formatUserDateTime(feed.last_full_reconciliation_success_at)}</div>
+              <div><b>Next full:</b> {formatUserDateTime(feed.next_full_reconciliation_run_at)}</div>
+              {feed.reconciliation_warning ? (
+                <div style={{ color: feed.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#fcd34d' }}>
+                  {feed.reconciliation_warning}
+                </div>
+              ) : null}
+              {canWrite ? (
+                <button
+                  type="button"
+                  onClick={onRunFullReconciliation}
+                  disabled={!isActive || isArchived || purgeActive || runningFullReconciliation}
+                  style={{ justifySelf: 'start' }}
+                >
+                  {runningFullReconciliation ? 'Queueing...' : 'Run Full Reconciliation'}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {feedSupportsAuthKey(feed?.key) ? (
           <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
@@ -2504,6 +2567,7 @@ function feedHealthPresentation(feed) {
   const state = String(feed?.health_state || '').toLowerCase();
   if (state === 'disabled') return { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
   if (state === 'failed') return { label: 'Failed', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#7f1d1d' };
+  if (state === 'degraded') return { label: 'Degraded', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#7f1d1d' };
   if (state === 'warning') return { label: 'Warning', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' };
   if (state === 'success') return { label: 'Success', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' };
   return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
@@ -2888,6 +2952,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       const f = (list || []).find((i) => i.key === prev.key);
       if (!f) return prev;
       return {
+        ...prev,
+        ...f,
         key: f.key,
         name: f.name,
         schedule: f.schedule || '0 * * * *',
@@ -2925,19 +2991,23 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     }
   }
 
-  async function runNowOne(key, name) {
+  async function runNowOne(key, name, runMode = 'incremental') {
     if (!canWrite) return;
-    const ok = window.confirm(`Queue run for ${name || key} now?`);
-    if (!ok || runningKeys[key]) return;
-    setRunningKeys((prev) => ({ ...prev, [key]: true }));
+    const runningKey = `${key}:${runMode}`;
+    const isFull = runMode === 'full_reconciliation';
+    const ok = window.confirm(isFull
+      ? `Run a FULL reconciliation for ${name || key}? This scans the complete USOM dataset and may take significantly longer.`
+      : `Queue incremental run for ${name || key} now?`);
+    if (!ok || runningKeys[runningKey]) return;
+    setRunningKeys((prev) => ({ ...prev, [runningKey]: true }));
     try {
-      await api.post(`/integrations/${encodeURIComponent(key)}/run-now`);
+      const { data } = await api.post(`/integrations/${encodeURIComponent(key)}/run-now`, { run_mode: runMode });
       await load();
-      alert(`${key} queued`);
+      alert(data?.coalesced ? `${integrationRunModeLabel(runMode)} is already queued or running.` : `${integrationRunModeLabel(runMode)} queued`);
     } catch (err) {
       alert(apiErrorMessage(err, `Failed to queue ${key}`));
     } finally {
-      setRunningKeys((prev) => ({ ...prev, [key]: false }));
+      setRunningKeys((prev) => ({ ...prev, [runningKey]: false }));
     }
   }
 
@@ -2964,6 +3034,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsAuthKeyConfigured(Boolean(credSummary?.auth_key_configured));
     setSettingsDraftRecentDays(String(credSummary?.recent_days ?? 3));
     setEditingFeed({
+      ...feed,
       key: feed.key,
       name: feed.name,
       schedule: feed.schedule || '0 * * * *',
@@ -3262,7 +3333,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     enabled_feeds: visibleIntegrations.filter((i) => i.active !== false).length,
     active_feeds: visibleIntegrations.filter((i) => i.active !== false).length,
     failing_feeds: visibleIntegrations.filter((i) => {
-      return String(i.health_state || '').toLowerCase() === 'failed' || Number(i.consecutive_failures || 0) > 0;
+      return ['failed', 'degraded'].includes(String(i.health_state || '').toLowerCase()) || Number(i.consecutive_failures || 0) > 0;
     }).length,
     last_run_new_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'inserted'), 0),
     last_run_inserted_total: visibleIntegrations.reduce((acc, i) => acc + metricFromFeed(i, 'inserted'), 0),
@@ -3391,6 +3462,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
                           {health.label}
                         </span>
+                        {i.reconciliation_warning ? (
+                          <div style={{ marginTop: 4, maxWidth: 150, color: i.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#fcd34d', fontSize: 10, lineHeight: 1.35 }}>
+                            {i.reconciliation_warning}
+                          </div>
+                        ) : null}
                       </td>
                       <td>
                         <span style={{ fontSize: 11, color: isActive ? '#cbd5e1' : '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -3403,15 +3479,34 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                         </span>
                       </td>
                       <td style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap' }}>{i.expiration_summary ?? 'Disabled'}</td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}</td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>
+                        {i.key === 'usom-trcert' ? (
+                          <>
+                            <div>Incremental: {formatUserDateTime(i.last_incremental_success_at)}</div>
+                            <div style={{ marginTop: 3, color: i.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#94a3b8' }}>Full: {formatUserDateTime(i.last_full_reconciliation_success_at)}</div>
+                          </>
+                        ) : formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}
+                      </td>
                       <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
                       <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{canRunNow ? formatUserDateTime(i.next_run_at) : '-'}</td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>
+                        {canRunNow && i.key === 'usom-trcert' ? (
+                          <>
+                            <div>Incremental: {formatUserDateTime(i.next_incremental_run_at || i.next_run_at)}</div>
+                            <div style={{ marginTop: 3 }}>Full: {formatUserDateTime(i.next_full_reconciliation_run_at)}</div>
+                          </>
+                        ) : (canRunNow ? formatUserDateTime(i.next_run_at) : '-')}
+                      </td>
                       <td className="integrations-feeds-action-cell">
                         <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                          <button type="button" onClick={() => runNowOne(i.key, i.name)} disabled={Boolean(runningKeys[i.key]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
-                            {runningKeys[i.key] ? 'Queueing...' : 'Run now'}
+                          <button type="button" onClick={() => runNowOne(i.key, i.name, 'incremental')} disabled={Boolean(runningKeys[`${i.key}:incremental`]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
+                            {runningKeys[`${i.key}:incremental`] ? 'Queueing...' : (i.key === 'usom-trcert' ? 'Run Incremental' : 'Run now')}
                           </button>
+                          {i.key === 'usom-trcert' ? (
+                            <button type="button" onClick={() => runNowOne(i.key, i.name, 'full_reconciliation')} disabled={Boolean(runningKeys[`${i.key}:full_reconciliation`]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px', borderColor: '#b45309', color: '#fcd34d' }}>
+                              {runningKeys[`${i.key}:full_reconciliation`] ? 'Queueing...' : 'Full Reconciliation'}
+                            </button>
+                          ) : null}
                           {canWrite ? (
                             <button type="button" onClick={() => { setFeedActionSuccess(''); openSettingsModal(i); }} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#93c5fd', cursor: 'pointer' }}>
                               Edit
@@ -3471,6 +3566,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           onOpenPurge={() => openPurgeFromEdit(editingFeed)}
           onArchive={() => archiveFeedFromSettings().catch(() => {})}
           onRestore={() => restoreFeedFromSettings().catch(() => {})}
+          onRunFullReconciliation={() => runNowOne(editingFeed.key, editingFeed.name, 'full_reconciliation').catch(() => {})}
+          runningFullReconciliation={Boolean(runningKeys[`${editingFeed.key}:full_reconciliation`])}
           purgeActive={Boolean(editingFeed?.purge_active)}
           canWrite={canWrite}
         />
@@ -4667,6 +4764,7 @@ function IntegrationsRecentRunsPage() {
     id: 96,
     integration: 150,
     name: 150,
+    mode: 130,
     state: 92,
     queued: 158,
     started: 158,
@@ -4744,6 +4842,7 @@ function IntegrationsRecentRunsPage() {
               <col style={{ width: tableWidths.id }} />
               <col style={{ width: tableWidths.integration }} />
               <col style={{ width: tableWidths.name }} />
+              <col style={{ width: tableWidths.mode }} />
               <col style={{ width: tableWidths.state }} />
               <col style={{ width: tableWidths.queued }} />
               <col style={{ width: tableWidths.started }} />
@@ -4756,6 +4855,7 @@ function IntegrationsRecentRunsPage() {
                 <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Job ID">Job ID<div onMouseDown={(e) => startResize('id', e)} style={resizeHandleStyle} /></th>
                 <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Integration">Integration<div onMouseDown={(e) => startResize('integration', e)} style={resizeHandleStyle} /></th>
                 <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Name">Name<div onMouseDown={(e) => startResize('name', e)} style={resizeHandleStyle} /></th>
+                <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Run mode">Mode<div onMouseDown={(e) => startResize('mode', e)} style={resizeHandleStyle} /></th>
                 <th style={{ position: 'relative', ...ellipsisCellStyle }} title="State">State<div onMouseDown={(e) => startResize('state', e)} style={resizeHandleStyle} /></th>
                 <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Queued At">Queued At<div onMouseDown={(e) => startResize('queued', e)} style={resizeHandleStyle} /></th>
                 <th style={{ position: 'relative', ...ellipsisCellStyle }} title="Started At">Started At<div onMouseDown={(e) => startResize('started', e)} style={resizeHandleStyle} /></th>
@@ -4765,7 +4865,7 @@ function IntegrationsRecentRunsPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={9}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => {
+              {loading ? <tr><td colSpan={10}>Loading...</td></tr> : (recentRuns.length ? recentRuns.map((r) => {
                 const reasonText = integrationJobReasonLabel(r);
                 const startedMs = r.started_at ? Date.parse(r.started_at) : null;
                 const finishedMs = r.finished_at ? Date.parse(r.finished_at) : null;
@@ -4777,6 +4877,7 @@ function IntegrationsRecentRunsPage() {
                   <td style={ellipsisCellStyle} title={r.job_id || '-'}>{r.job_id || '-'}</td>
                   <td style={ellipsisCellStyle} title={r.integration_name || r.integration_key || '-'}>{r.integration_name || r.integration_key || '-'}</td>
                   <td style={ellipsisCellStyle} title={integrationJobDisplayName(r) || r.job_type || '-'}>{integrationJobDisplayName(r) || r.job_type || '-'}</td>
+                  <td style={ellipsisCellStyle} title={integrationRunModeLabel(r.run_mode)}>{integrationRunModeLabel(r.run_mode)}</td>
                   <td style={{ ...ellipsisCellStyle, color: statusColor(r.state || r.status), fontWeight: 700, textTransform: 'capitalize' }} title={statusLabel(r.state || r.status)}>{statusLabel(r.state || r.status)}{r.possibly_stuck ? ' ?' : ''}</td>
                   <td style={ellipsisCellStyle} title={formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}>{formatUserDateTime(r.queued_at || r.timestamp || r.started_at)}</td>
                   <td style={ellipsisCellStyle} title={formatUserDateTime(r.started_at)}>{formatUserDateTime(r.started_at)}</td>
@@ -4794,7 +4895,7 @@ function IntegrationsRecentRunsPage() {
                     ) : null}
                   </td>
                 </tr>
-              );}) : <tr><td colSpan={9} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
+              );}) : <tr><td colSpan={10} style={{ color: '#64748b' }}>No runs yet</td></tr>)}
             </tbody>
           </table>
         </div>

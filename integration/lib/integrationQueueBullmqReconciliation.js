@@ -371,7 +371,7 @@ export async function releaseOrphanDbSourceLocks({
   const nowMs = Date.now();
   const [runningRes, activeJobs, waitingJobs, delayedJobs] = await Promise.all([
     pool.query(
-      `SELECT job_id, integration_key, status, started_at, heartbeat_at, worker_id
+      `SELECT job_id, integration_key, job_name, status, started_at, heartbeat_at, worker_id
        FROM integration_queue_jobs
        WHERE status = 'running'`
     ),

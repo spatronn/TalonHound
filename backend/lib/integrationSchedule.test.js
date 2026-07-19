@@ -6,7 +6,9 @@ import {
   effectiveCronForFeed,
   buildRepeatableNextRunMap,
   buildRepeatJobConfig,
+  computeNextWeeklyRunAt,
   getSystemScheduleTimezone,
+  isWeeklyScheduleCron,
   isRunOnceSchedule,
   isAllowedScheduleCron,
   ALLOWED_SCHEDULE_CRONS,
@@ -58,10 +60,8 @@ test('computeNextRunAt uses dynamic slot map', () => {
   const etNext = computeNextRunAt('0 * * * *', 'et-blockrules', now, slots);
   const urlhausNext = computeNextRunAt('0 * * * *', 'urlhaus-abusech', now, slots);
 
-  assert.equal(etNext.getHours(), 20);
-  assert.equal(etNext.getMinutes(), 0);
-  assert.equal(urlhausNext.getHours(), 20);
-  assert.equal(urlhausNext.getMinutes(), 30);
+  assert.equal(etNext.toISOString(), '2026-05-29T17:00:00.000Z');
+  assert.equal(urlhausNext.toISOString(), '2026-05-29T17:30:00.000Z');
 });
 
 test('daily schedule runs at system midnight UTC and is excluded from hourly slots', () => {
@@ -88,9 +88,34 @@ test('daily repeat config uses system schedule timezone', () => {
 
 test('buildRepeatableNextRunMap maps scheduler ids to feed keys', () => {
   const map = buildRepeatableNextRunMap([
-    { id: 'threatfox-abusech-scheduled', next: 1780070400000 }
+    { id: 'threatfox-abusech-scheduled', next: 1780070400000 },
+    { id: 'usom-trcert-full-reconciliation-scheduled', next: 1780675200000 },
+    { key: 'integration-schedule:usom-trcert::incremental', next: 1780072200000 }
   ]);
   assert.equal(map.get('threatfox-abusech')?.toISOString(), new Date(1780070400000).toISOString());
+  assert.equal(map.get('threatfox-abusech::incremental')?.toISOString(), new Date(1780070400000).toISOString());
+  assert.equal(map.get('usom-trcert::full_reconciliation')?.toISOString(), new Date(1780675200000).toISOString());
+  assert.equal(map.get('usom-trcert::incremental')?.toISOString(), new Date(1780072200000).toISOString());
+});
+
+test('weekly cron is preserved and computes in its IANA timezone', () => {
+  assert.equal(isWeeklyScheduleCron('0 3 * * 0'), true);
+  const repeat = buildRepeatJobConfig('usom-trcert', '0 3 * * 0', null, 'Europe/Istanbul');
+  assert.deepEqual(repeat, { pattern: '0 3 * * 0', tz: 'Europe/Istanbul' });
+
+  const before = computeNextWeeklyRunAt(
+    '0 3 * * 0',
+    new Date('2026-07-18T21:00:00.000Z'),
+    'Europe/Istanbul'
+  );
+  assert.equal(before.toISOString(), '2026-07-19T00:00:00.000Z');
+
+  const after = computeNextWeeklyRunAt(
+    '0 3 * * 0',
+    new Date('2026-07-19T00:00:01.000Z'),
+    'Europe/Istanbul'
+  );
+  assert.equal(after.toISOString(), '2026-07-26T00:00:00.000Z');
 });
 
 test('run_once schedule is allowed and excluded from recurring next run', () => {

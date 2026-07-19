@@ -8,7 +8,7 @@ export const FEED_SOURCE_URL_FALLBACKS = Object.freeze({
   'urlhaus-abusech': 'https://urlhaus-api.abuse.ch/v2/files/exports/***/recent.csv',
   'threatfox-abusech': 'https://threatfox-api.abuse.ch/api/v1/',
   'malwarebazaar-abusech': 'https://bazaar.abuse.ch/export/csv/recent/',
-  'usom-trcert': 'https://www.usom.gov.tr/api/address/index'
+  'usom-trcert': 'https://siberguvenlik.gov.tr/api/address/index'
 });
 
 export const MISSING_MEMBERSHIP_EVIDENCE_NOTE =
@@ -34,15 +34,16 @@ export async function upsertFeedSourceEvidence(client, {
   sourceUrl = null,
   category = null,
   note = null,
-  confidence = null
+  confidence = null,
+  providerMetadata = null
 }) {
   if (!iocItemId || !observableType || !feedId || !sourceName) return null;
 
   const { rows } = await client.query(
     `INSERT INTO ioc_feed_source_evidence (
        ioc_item_id, ioc_observable_type, feed_id,
-       source_name, source_url, category, note, confidence
-     ) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8)
+       source_name, source_url, category, note, confidence, provider_metadata
+     ) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb)
      ON CONFLICT (ioc_item_id, ioc_observable_type, feed_id)
      DO UPDATE SET
        source_name = EXCLUDED.source_name,
@@ -50,9 +51,20 @@ export async function upsertFeedSourceEvidence(client, {
        category = EXCLUDED.category,
        note = EXCLUDED.note,
        confidence = EXCLUDED.confidence,
+       provider_metadata = COALESCE(EXCLUDED.provider_metadata, ioc_feed_source_evidence.provider_metadata),
        updated_at = NOW()
      RETURNING id`,
-    [iocItemId, observableType, feedId, sourceName, sourceUrl, category, note, confidence]
+    [
+      iocItemId,
+      observableType,
+      feedId,
+      sourceName,
+      sourceUrl,
+      category,
+      note,
+      confidence,
+      providerMetadata == null ? null : JSON.stringify(providerMetadata)
+    ]
   );
   return rows[0]?.id || null;
 }
@@ -67,7 +79,8 @@ export async function upsertFeedSourceEvidenceForObservable(client, {
   sourceUrl = null,
   category = null,
   note = null,
-  confidence = null
+  confidence = null,
+  providerMetadata = null
 }) {
   const feedId = await resolveFeedIdBySourceName(client, sourceName);
   if (!feedId) return null;
@@ -92,7 +105,8 @@ export async function upsertFeedSourceEvidenceForObservable(client, {
     sourceUrl,
     category,
     note,
-    confidence
+    confidence,
+    providerMetadata
   });
 }
 
@@ -106,6 +120,7 @@ export async function fetchFeedSourceEvidenceForItems(client, { iocItemIds = [],
   const { rows } = await client.query(
     `SELECT e.id, e.ioc_item_id, e.ioc_observable_type, e.feed_id,
             e.source_name, e.source_url, e.category, e.note, e.confidence,
+            e.provider_metadata,
             e.created_at, e.updated_at,
             f.key AS feed_key, f.name AS feed_name
      FROM ioc_feed_source_evidence e
@@ -153,6 +168,7 @@ export function buildIocDetailsSourceEvidence({ iocRows = [], membershipSummary 
         confidence: evidence.confidence,
         category: evidence.category,
         note: evidence.note,
+        provider_metadata: evidence.provider_metadata || null,
         created_at: evidence.created_at,
         feed_key: feedKey,
         evidence_kind: 'stored'

@@ -48,6 +48,31 @@ describe('classifyRunningJobForRecovery', () => {
     assert.equal(result?.failureType, FAILURE_TYPES.TIMEOUT);
   });
 
+  it('keeps a USOM job with fresh heartbeat beyond the global timeout', () => {
+    const job = {
+      integration_key: 'usom-trcert',
+      job_name: 'usom-import',
+      status: 'running',
+      started_at: '2026-05-27T11:40:00.000Z',
+      heartbeat_at: '2026-05-27T11:59:30.000Z'
+    };
+    assert.equal(classifyRunningJobForRecovery(job, NOW, config), null);
+  });
+
+  it('uses the feed-specific timeout when a USOM job truly times out', () => {
+    const job = {
+      integration_key: 'usom-trcert',
+      job_name: 'usom-import',
+      status: 'running',
+      started_at: '2026-05-27T09:50:00.000Z',
+      heartbeat_at: '2026-05-27T11:59:30.000Z'
+    };
+    const result = classifyRunningJobForRecovery(job, NOW, config);
+    assert.equal(result?.failureType, FAILURE_TYPES.TIMEOUT);
+    assert.equal(result?.timeoutMs, 7_200_000);
+    assert.equal(result?.timeoutSource, 'USOM_JOB_TIMEOUT_MS');
+  });
+
   it('falls back to started_at when heartbeat is missing', () => {
     const job = {
       status: 'running',

@@ -2,7 +2,7 @@
 
 const DISPLAY_BY_INTEGRATION_KEY = {
   'et-blockrules': 'Blockrules IP import',
-  'usom-trcert': 'USOM URL list import',
+  'usom-trcert': 'Siber Güvenlik Başkanlığı / USOM API import',
   'urlhaus-abusech': 'Recent malicious URLs import',
   'threatfox-abusech': 'Recent IOCs import',
   'malwarebazaar-abusech': 'Recent malware samples import',
@@ -11,7 +11,7 @@ const DISPLAY_BY_INTEGRATION_KEY = {
 
 const DISPLAY_BY_JOB_NAME = {
   'hourly-import': 'Blockrules IP import',
-  'usom-import': 'USOM URL list import',
+  'usom-import': 'Siber Güvenlik Başkanlığı / USOM API import',
   'urlhaus-import': 'Recent malicious URLs import',
   'threatfox-import': 'Recent IOCs import',
   'malwarebazaar-import': 'Recent malware samples import',
