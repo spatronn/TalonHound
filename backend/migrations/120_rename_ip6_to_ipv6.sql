@@ -95,18 +95,18 @@ UPDATE ioc_enrichments
  WHERE ioc_type = 'ip6';
 
 -- 8. Drop the now-empty ioc_ip6 partition.
-DROP TABLE IF EXISTS ioc_ip6;
+DROP TABLE IF EXISTS ioc_ip6 CASCADE;
 
--- 9. Update ioc_observables CHECK constraint: replace 'ip6' with 'ipv6'.
+-- 9. Update ioc_observables: rename type first (avoids CHECK violation), then update constraint.
+UPDATE ioc_observables
+   SET observable_type = 'ipv6'
+ WHERE observable_type = 'ip6';
+
 ALTER TABLE ioc_observables DROP CONSTRAINT IF EXISTS chk_observable_type;
 ALTER TABLE ioc_observables ADD CONSTRAINT chk_observable_type CHECK (observable_type IN (
   'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh',
   'ip', 'ipv6', 'domain', 'url'
 ));
-
-UPDATE ioc_observables
-   SET observable_type = 'ipv6'
- WHERE observable_type = 'ip6';
 
 -- 10. Verification.
 DO $$
