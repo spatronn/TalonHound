@@ -18,7 +18,7 @@ import {
 
 export function extractIpFromIoc(iocValue, iocType) {
   const type = String(iocType || '').trim().toLowerCase();
-  if (type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'ip6') {
+  if (type === 'ip' || type === 'ipv4' || type === 'ipv6') {
     return String(iocValue || '').trim().split('/')[0].trim() || null;
   }
   if (type === 'url') {

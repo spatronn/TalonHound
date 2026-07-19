@@ -141,5 +141,5 @@ export function normalizeDnsmaniaLookup(iocType, iocValue) {
 
 export function isDnsmaniaSupportedIocType(iocType) {
   const t = String(iocType || '').trim().toLowerCase();
-  return t === 'domain' || t === 'url' || t === 'ip' || t === 'ipv4' || t === 'ipv6' || t === 'ip6' || t === 'hostname';
+  return t === 'domain' || t === 'url' || t === 'ip' || t === 'ipv4' || t === 'ipv6' || t === 'hostname';
 }

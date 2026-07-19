@@ -429,7 +429,7 @@ export function activeScopedObservablesSql() {
 
 const IOC_LIST_PARTITION_BY_TYPE = {
   ip: 'ioc_ip',
-  ip6: 'ioc_ip6',
+  ipv6: 'ioc_ipv6',
   domain: 'ioc_domain',
   url: 'ioc_url',
   md5: 'ioc_file_hash',

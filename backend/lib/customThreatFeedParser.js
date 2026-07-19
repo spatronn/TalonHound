@@ -80,7 +80,7 @@ function resolveObservableType(value, csvType, iocTypeMode, fixedIocType) {
   if (fromCsv) {
     if (fromCsv === 'file_hash' || fromCsv === 'hash') return normalizeHashType(value);
     if (['domain', 'ip', 'url', 'ipv4', 'ipv6'].includes(fromCsv)) {
-      return fromCsv === 'ipv4' ? 'ip' : fromCsv === 'ipv6' ? 'ip6' : fromCsv;
+      return fromCsv === 'ipv4' ? 'ip' : fromCsv;
     }
   }
   const inferred = inferObservableType(value);
@@ -94,7 +94,7 @@ function validateValueForType(value, observableType) {
   if (!v) return false;
   const t = String(observableType || '').toLowerCase();
   if (t === 'ip') return /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(v);
-  if (t === 'ip6') return v.includes(':');
+  if (t === 'ipv6') return v.includes(':');
   if (t === 'domain') return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(v) || /^[a-z0-9.-]+$/i.test(v);
   if (t === 'url') return /^https?:\/\//i.test(v) || v.includes('/');
   if (['hash', 'md5', 'sha1', 'sha256'].includes(t)) return /^[a-f0-9]{32,128}$/i.test(v);

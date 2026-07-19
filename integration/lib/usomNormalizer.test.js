@@ -52,8 +52,10 @@ test('validates IPv4 and rejects CIDR as a host', () => {
 test('canonicalizes IPv6 hosts and strips bracket/port artifacts', () => {
   const plain = normalizeUsomModel({ url: '2001:0DB8:0:0:0:0:0:1', type: 'ip6' }, 'ip6');
   assert.equal(plain.entry.observable, '2001:db8::1');
+  assert.equal(plain.entry.observableType, 'ipv6');
   const bracketed = normalizeUsomModel({ url: '[2001:db8::1]:443', type: 'ip6' }, 'ip6');
   assert.equal(bracketed.entry.observable, '2001:db8::1');
+  assert.equal(bracketed.entry.observableType, 'ipv6');
 });
 
 test('skips IPv6 networks instead of importing them as host IPs', () => {

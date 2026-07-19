@@ -3207,9 +3207,9 @@ async function handleIocList(req, res) {
         OR (${noteExpr} = $${exactIdx})
       )`);
     } else {
-      const prefixedObs = qv.match(/^(ip|ip6|domain|url)\s*:\s*(.+)$/i);
+      const prefixedObs = qv.match(/^(ip|ip6|ipv6|domain|url)\s*:\s*(.+)$/i);
       if (prefixedObs) {
-        const obsType = prefixedObs[1].toLowerCase();
+        const obsType = prefixedObs[1].toLowerCase() === 'ip6' ? 'ipv6' : prefixedObs[1].toLowerCase();
         let obsValue = String(prefixedObs[2] || '').trim();
         if (obsType === 'domain' || obsType === 'url') obsValue = obsValue.toLowerCase();
         if (obsValue.length < 2) {
@@ -3590,7 +3590,7 @@ async function handleIocList(req, res) {
     if (useObservableOnlyPath) {
       const obsType = params[prefixedObservableSearch.typeIdx - 1];
       const obsValue = params[prefixedObservableSearch.valueIdx - 1];
-      const partitionTable = { ip: 'ioc_ip', ip6: 'ioc_ip6', domain: 'ioc_domain', url: 'ioc_url' }[obsType];
+      const partitionTable = { ip: 'ioc_ip', ipv6: 'ioc_ipv6', domain: 'ioc_domain', url: 'ioc_url' }[obsType];
       const whereClause = (obsType === 'domain' || obsType === 'url') ? 'LOWER(observable) = $1' : 'observable = $1';
       const obsLimit = Math.max(Math.min(limit * 50, 500), 100);
       const partStatusClause = iocStatusSqlClause(statusFilter);
@@ -5010,7 +5010,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     }).catch(() => {});
 
     let endpoint = '';
-    if (iocType === 'ip' || iocType === 'ip6') endpoint = `/ip_addresses/${encodeURIComponent(item.ioc_value)}`;
+    if (iocType === 'ip' || iocType === 'ipv6') endpoint = `/ip_addresses/${encodeURIComponent(item.ioc_value)}`;
     else if (iocType === 'domain') endpoint = `/domains/${encodeURIComponent(item.ioc_value)}`;
     else if (iocType === 'url') endpoint = `/urls/${toVtUrlId(item.ioc_value)}`;
     else if (iocType === 'hash' || iocType === 'sha256' || iocType === 'sha1' || iocType === 'md5') endpoint = `/files/${encodeURIComponent(item.ioc_value)}`;

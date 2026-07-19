@@ -23,7 +23,7 @@ export function buildIocAuditMatchContext(item) {
     entityDisplays.add(observable.toLowerCase());
     exactObservables.add(observable.toLowerCase());
     // Domain/IP IOC values are themselves the technical identity.
-    if (observableType === 'domain' || observableType === 'ip' || observableType === 'ip6') {
+    if (observableType === 'domain' || observableType === 'ip' || observableType === 'ipv6') {
       entityIds.add(observable.toLowerCase());
     }
   }

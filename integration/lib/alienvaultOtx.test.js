@@ -51,10 +51,10 @@ test('normalizeOtxIndicator maps IPv4 and validates', () => {
   assert.equal(normalizeOtxIndicator('IPv4', '999.1.1.1'), null);
 });
 
-test('normalizeOtxIndicator maps IPv6 to ip6 lowercased', () => {
+test('normalizeOtxIndicator maps IPv6 to ipv6 lowercased', () => {
   assert.deepEqual(
     normalizeOtxIndicator('IPv6', '2001:DB8::1'),
-    { observable: '2001:db8::1', observableType: 'ip6' }
+    { observable: '2001:db8::1', observableType: 'ipv6' }
   );
   assert.equal(normalizeOtxIndicator('IPv6', 'not-an-ip'), null);
 });

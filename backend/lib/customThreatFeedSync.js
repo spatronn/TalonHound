@@ -10,7 +10,7 @@ import {
 } from './iocExpiration.js';
 import { normalizeConfidence, resolveImportConfidenceFields } from './iocConfidence.js';
 
-const OBSERVABLE_INDEX_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash', 'ip', 'ip6', 'domain', 'url']);
+const OBSERVABLE_INDEX_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash', 'ip', 'ipv6', 'domain', 'url']);
 
 async function insertObservablesIndex(client, iocPublicId, observableType, observable) {
   const t = String(observableType || '').toLowerCase();

@@ -177,7 +177,7 @@ function inferConfidence(fileName) {
 /** Allowed observable_type values for ioc_observables index (source-agnostic). */
 const OBSERVABLE_INDEX_TYPES = new Set([
   'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh',
-  'ip', 'ip6', 'domain', 'url'
+  'ip', 'ipv6', 'domain', 'url'
 ]);
 
 function parseNoteKeyValues(note) {

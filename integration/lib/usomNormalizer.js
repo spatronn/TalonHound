@@ -240,7 +240,7 @@ export function normalizeUsomModel(model, requestedType, lookups = null) {
 
   const raw = model.url;
   let observable = null;
-  let observableType = apiType;
+  let observableType = apiType === 'ip6' ? 'ipv6' : apiType;
   if (apiType === 'domain') observable = normalizeDomain(raw);
   else if (apiType === 'url') observable = normalizeUrl(raw);
   else if (apiType === 'ip') observable = normalizeIpv4(raw);

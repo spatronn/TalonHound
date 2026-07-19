@@ -87,13 +87,13 @@ export function classifyThreatFoxObservable(iocValue, iocType) {
     const [host] = raw.split(':');
     if (!host) return null;
     if (isIPv4(host)) return { observable: host, observableType: 'ip' };
-    if (isIPv6(host)) return { observable: host, observableType: 'ip6' };
+    if (isIPv6(host)) return { observable: host, observableType: 'ipv6' };
     return { observable: host.toLowerCase(), observableType: 'domain' };
   }
 
   if (type === 'ip') {
     if (isIPv4(raw) || isCIDR(raw)) return { observable: raw, observableType: 'ip' };
-    if (isIPv6(raw)) return { observable: raw, observableType: 'ip6' };
+    if (isIPv6(raw)) return { observable: raw, observableType: 'ipv6' };
     return null;
   }
 

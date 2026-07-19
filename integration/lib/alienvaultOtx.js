@@ -30,7 +30,7 @@ const OTX_API_KEY_HEADER = 'X-OTX-API-KEY';
 /** OTX indicator type -> platform observable_type. Unlisted types are unsupported. */
 export const OTX_SUPPORTED_TYPE_MAP = Object.freeze({
   IPv4: 'ip',
-  IPv6: 'ip6',
+  IPv6: 'ipv6',
   domain: 'domain',
   hostname: 'domain',
   URL: 'url',
@@ -126,8 +126,8 @@ export function normalizeOtxIndicator(rawType, rawValue) {
   if (observableType === 'ip') {
     return isIPv4(value) ? { observable: value, observableType: 'ip' } : null;
   }
-  if (observableType === 'ip6') {
-    return isIPv6(value) ? { observable: value.toLowerCase(), observableType: 'ip6' } : null;
+  if (observableType === 'ipv6') {
+    return isIPv6(value) ? { observable: value.toLowerCase(), observableType: 'ipv6' } : null;
   }
   if (observableType === 'url') {
     return { observable: value.toLowerCase(), observableType: 'url' };

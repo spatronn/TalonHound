@@ -9182,7 +9182,7 @@ function IOCSuppressionsPage() {
               <span style={ui.label}>IOC Type</span>
               <select value={iocType} onChange={(e) => { setIocType(e.target.value); setPage(1); }} style={ui.select}>
                 <option value="all">All</option>
-                {['ip', 'ip6', 'domain', 'url', 'md5', 'sha1', 'sha256'].map((t) => <option key={t} value={t}>{t}</option>)}
+                {['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'].map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
@@ -9620,7 +9620,7 @@ function IOCListPage() {
     ip: summary.by_type?.find((x) => x.observable_type === 'ip')?.count || 0,
     url: summary.by_type?.find((x) => x.observable_type === 'url')?.count || 0,
     domain: summary.by_type?.find((x) => x.observable_type === 'domain')?.count || 0,
-    ip6: summary.by_type?.find((x) => x.observable_type === 'ip6')?.count || 0,
+    ipv6: summary.by_type?.find((x) => x.observable_type === 'ipv6')?.count || 0,
     hash: summary.by_type?.find((x) => x.observable_type === 'hash')?.count
       ?? summary.by_type?.reduce((acc, x) => acc + (FILE_HASH_TYPES.has(x.observable_type) ? Number(x.count || 0) : 0), 0)
       ?? 0
@@ -9661,8 +9661,7 @@ function IOCListPage() {
       };
     }
 
-    const backendPrefix = prefix === 'ipv6' ? 'ip6' : prefix;
-    return { ok: true, value: `${backendPrefix}:${value}` };
+    return { ok: true, value: `${prefix}:${value}` };
   }
 
   function applySearch() {
@@ -9733,7 +9732,7 @@ function IOCListPage() {
           </div>
           <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>IPv6</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.ip6)}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{statsNumber(typeCounts.ipv6)}</div>
           </div>
         </div>
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: 12 }}>
@@ -11653,7 +11652,7 @@ function DnsmaniaEnrichmentCard({
 }) {
   const type = String(iocType || '').trim().toLowerCase();
   const value = String(iocValue || '').trim();
-  const applicable = type === 'domain' || type === 'url' || type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'ip6' || type === 'hostname';
+  const applicable = type === 'domain' || type === 'url' || type === 'ip' || type === 'ipv4' || type === 'ipv6' || type === 'hostname';
   if (!applicable || !value) return null;
 
   const [state, setState] = useState({ status: 'loading', data: null, message: '' });

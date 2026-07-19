@@ -3,7 +3,7 @@ export const IOC_EXPORT_DEFAULT_LIMIT = 500;
 
 const TYPE_ALIASES = new Map([
   ['ip', 'ip'],
-  ['ip6', 'ip'],
+  ['ipv6', 'ip'],
   ['domain', 'domain'],
   ['url', 'url'],
   ['file_hash', 'file_hash'],

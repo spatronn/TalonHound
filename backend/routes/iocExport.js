@@ -20,7 +20,7 @@ export function registerIocExportRoutes(app, pool) {
       if (filters.type === 'file_hash') {
         where.push(`i.observable_type IN ('md5','sha1','sha256','ssdeep','imphash','tlsh')`);
       } else if (filters.type === 'ip') {
-        where.push(`i.observable_type IN ('ip','ip6')`);
+        where.push(`i.observable_type IN ('ip','ipv6')`);
       } else {
         params.push(filters.type);
         where.push(`i.observable_type = $${params.length}`);

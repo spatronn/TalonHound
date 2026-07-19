@@ -37,7 +37,7 @@ export function normalizeIocListStatsPayload(stats) {
     { observable_type: 'ip', count: byTypeMap.get('ip') || 0 },
     { observable_type: 'url', count: byTypeMap.get('url') || 0 },
     { observable_type: 'domain', count: byTypeMap.get('domain') || 0 },
-    { observable_type: 'ip6', count: byTypeMap.get('ip6') || 0 },
+    { observable_type: 'ipv6', count: byTypeMap.get('ipv6') || 0 },
     { observable_type: 'hash', count: byTypeMap.get('hash') || 0 }
   ];
 

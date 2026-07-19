@@ -21,7 +21,7 @@ export const TYPE_POLICY_MODES = Object.freeze(['inherit', 'no_expire', 'fixed_t
 const HASH_OBSERVABLE_TYPES = new Set(['hash', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
 
 /**
- * Map a concrete stored observable_type (e.g. 'md5', 'ip6', 'domain') to the
+ * Map a concrete stored observable_type (e.g. 'md5', 'ipv6', 'domain') to the
  * normalized policy IOC type key used by type overrides. Returns null when the
  * type does not map to a known policy bucket.
  *
