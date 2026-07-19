@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildUsomReconciliationHealth,
   decideUsomEnqueue,
+  isScheduledRepeatIteration,
   normalizeUsomRunMode
 } from './usomReconciliation.js';
 
@@ -25,6 +26,13 @@ test('coalescing gives full reconciliation precedence', () => {
     decideUsomEnqueue('full_reconciliation', [{ job_id: 'inc-1', triggered_by: 'scheduler:incremental' }]),
     { action: 'enqueue', reason: 'retain_after_incremental' }
   );
+});
+
+test('recognizes delayed scheduler iterations without hiding manual delayed jobs', () => {
+  assert.equal(isScheduledRepeatIteration({ id: 'repeat:abc:123' }), true);
+  assert.equal(isScheduledRepeatIteration({ id: 'job-1', repeatJobKey: 'integration-schedule:usom-trcert::incremental' }), true);
+  assert.equal(isScheduledRepeatIteration({ id: 'job-2', opts: { repeat: { pattern: '0 * * * *' } } }), true);
+  assert.equal(isScheduledRepeatIteration({ id: 'manual-1', opts: { delay: 5000 } }), false);
 });
 
 test('full reconciliation health warns after 8 days and degrades after 14', () => {

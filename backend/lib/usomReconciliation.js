@@ -21,6 +21,14 @@ export function inferUsomRunMode(row) {
     : USOM_INCREMENTAL_MODE;
 }
 
+export function isScheduledRepeatIteration(job) {
+  return Boolean(
+    job?.repeatJobKey
+    || job?.opts?.repeat
+    || String(job?.id || '').startsWith('repeat:')
+  );
+}
+
 export function decideUsomEnqueue(requestedMode, activeRows = []) {
   const mode = normalizeUsomRunMode(requestedMode);
   if (!mode) return { action: 'reject', reason: 'invalid_mode' };

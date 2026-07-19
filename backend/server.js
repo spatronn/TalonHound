@@ -138,6 +138,7 @@ import {
   buildUsomReconciliationHealth,
   decideUsomEnqueue,
   inferUsomRunMode,
+  isScheduledRepeatIteration,
   normalizeUsomRunMode,
   USOM_FULL_RECONCILIATION_MODE,
   USOM_INCREMENTAL_MODE
@@ -1429,7 +1430,7 @@ async function assertIntegrationFeedActive(key) {
 }
 
 async function loadActiveUsomQueueRows() {
-  const [result, bullJobs] = await Promise.all([
+  const [result, activeBullJobs, delayedBullJobs] = await Promise.all([
     pool.query(
       `SELECT job_id, status, triggered_by, queued_at, started_at
        FROM integration_queue_jobs
@@ -1437,9 +1438,15 @@ async function loadActiveUsomQueueRows() {
          AND status IN ('queued', 'running')
        ORDER BY COALESCE(started_at, queued_at) ASC`
     ),
-    importQueue.getJobs(['waiting', 'active', 'delayed'])
+    importQueue.getJobs(['waiting', 'active'])
+      .catch(() => []),
+    importQueue.getJobs(['delayed'])
       .catch(() => [])
   ]);
+  const bullJobs = [
+    ...(activeBullJobs || []),
+    ...(delayedBullJobs || []).filter((job) => !isScheduledRepeatIteration(job))
+  ];
   const rows = [...(result.rows || [])];
   const knownIds = new Set(rows.map((row) => String(row.job_id)));
   for (const job of bullJobs || []) {
