@@ -1510,6 +1510,10 @@ export async function runUsomImport(options = {}) {
     Object.assign(metrics, {
       records_inserted: persistence.metrics.records_inserted,
       records_updated: persistence.metrics.records_updated,
+      records_unchanged: persistence.metrics.records_unchanged,
+      records_reactivated: persistence.metrics.records_reactivated,
+      records_removed: persistence.metrics.records_removed,
+      // Deprecated alias of records_unchanged, kept for API backward compatibility.
       records_duplicate: persistence.metrics.records_duplicate,
       records_skipped: persistence.metrics.records_skipped,
       records_suppressed: persistence.metrics.records_suppressed,

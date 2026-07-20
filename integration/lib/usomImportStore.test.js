@@ -88,8 +88,8 @@ test('incremental success atomically merges seen rows, advances non-empty cursor
           }]
         };
       }
-      if (sql.includes('AS inserted') && sql.includes('AS updated')) {
-        return { rows: [{ inserted: 1, updated: 2, duplicate: 3 }] };
+      if (sql.includes('AS created') && sql.includes('AS unchanged')) {
+        return { rows: [{ created: 1, changed: 2, unchanged: 3, reactivated: 0 }] };
       }
       if (sql.includes('AS suppressed FROM removed')) return { rows: [{ suppressed: 0 }] };
       return { rows: [], rowCount: 0 };
@@ -162,8 +162,8 @@ test('unchanged full snapshot still merges seen rows but skips absent reconcilia
           }]
         };
       }
-      if (sql.includes('AS inserted') && sql.includes('AS updated')) {
-        return { rows: [{ inserted: 0, updated: 1, duplicate: 2 }] };
+      if (sql.includes('AS created') && sql.includes('AS unchanged')) {
+        return { rows: [{ created: 0, changed: 1, unchanged: 2, reactivated: 0 }] };
       }
       if (sql.includes('AS suppressed FROM removed')) return { rows: [{ suppressed: 0 }] };
       return { rows: [], rowCount: 0 };
@@ -198,8 +198,8 @@ test('unstable full pagination merges seen rows without absence reconciliation o
           }]
         };
       }
-      if (sql.includes('AS inserted') && sql.includes('AS updated')) {
-        return { rows: [{ inserted: 0, updated: 1, duplicate: 2 }] };
+      if (sql.includes('AS created') && sql.includes('AS unchanged')) {
+        return { rows: [{ created: 0, changed: 1, unchanged: 2, reactivated: 0 }] };
       }
       if (sql.includes('AS suppressed FROM removed')) return { rows: [{ suppressed: 0 }] };
       return { rows: [], rowCount: 0 };

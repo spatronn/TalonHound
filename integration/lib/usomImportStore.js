@@ -253,10 +253,30 @@ export async function saveUsomLookupCache(client, group, {
   }
 }
 
+/**
+ * Classify every staged row against the current membership state.
+ *
+ * The five outcomes are mutually exclusive and evaluated in this precedence order:
+ *
+ *   created     - no membership row exists yet for (ioc, type, feed).
+ *   reactivated - membership exists but is not active (expired / purged / missing).
+ *                 Wins over `changed` on purpose: a returning IOC is a reactivation
+ *                 event even when its payload is byte-identical to what we last saw.
+ *   changed     - active membership whose stored canonical fingerprint differs from
+ *                 the incoming one. Only this outcome may advance last_changed_in_source.
+ *   unchanged   - active membership with an identical fingerprint, OR a NULL stored
+ *                 fingerprint (one-time silent adoption after migration 121 — see the
+ *                 migration header for why this must not count as `changed`).
+ *
+ * `removed` is not classified here: absence is only knowable after a successful full
+ * snapshot reconciliation, so it is counted by markMissingMemberships().
+ *
+ * This runs BEFORE any write, so it observes the pre-run state.
+ */
 async function classifyStageAgainstExisting(client, feedId) {
   const { rows } = await client.query(
     `WITH canonical AS (
-       SELECT s.observable_type, s.observable, s.provider_metadata, s.provider_fingerprint,
+       SELECT s.observable_type, s.observable, s.provider_fingerprint,
               i.id AS ioc_item_id
        FROM ${STAGE_TABLE} s
        LEFT JOIN LATERAL (
@@ -267,42 +287,37 @@ async function classifyStageAgainstExisting(client, feedId) {
          ORDER BY created_at ASC, id ASC
          LIMIT 1
        ) i ON TRUE
+     ),
+     state AS (
+       SELECT
+         CASE
+           WHEN c.ioc_item_id IS NULL OR m.id IS NULL THEN 'created'
+           WHEN m.status IS DISTINCT FROM 'active'
+             OR m.purged_at IS NOT NULL
+             OR m.missing_since IS NOT NULL THEN 'reactivated'
+           WHEN m.content_fingerprint IS NOT NULL
+             AND m.content_fingerprint IS DISTINCT FROM c.provider_fingerprint THEN 'changed'
+           ELSE 'unchanged'
+         END AS outcome
+       FROM canonical c
+       LEFT JOIN ioc_feed_memberships m
+         ON m.ioc_item_id = c.ioc_item_id
+        AND m.ioc_observable_type = c.observable_type
+        AND m.feed_id = $1::uuid
      )
      SELECT
-       COUNT(*) FILTER (WHERE c.ioc_item_id IS NULL)::int AS inserted,
-       COUNT(*) FILTER (
-         WHERE c.ioc_item_id IS NOT NULL
-           AND (
-             m.id IS NULL
-             OR m.status IS DISTINCT FROM 'active'
-             OR m.purged_at IS NOT NULL
-             OR m.missing_since IS NOT NULL
-             OR e.provider_fingerprint IS DISTINCT FROM c.provider_fingerprint
-           )
-       )::int AS updated,
-       COUNT(*) FILTER (
-         WHERE c.ioc_item_id IS NOT NULL
-           AND m.id IS NOT NULL
-           AND m.status = 'active'
-           AND m.purged_at IS NULL
-           AND m.missing_since IS NULL
-           AND e.provider_fingerprint IS NOT DISTINCT FROM c.provider_fingerprint
-       )::int AS duplicate
-     FROM canonical c
-     LEFT JOIN ioc_feed_memberships m
-       ON m.ioc_item_id = c.ioc_item_id
-      AND m.ioc_observable_type = c.observable_type
-      AND m.feed_id = $1::uuid
-     LEFT JOIN ioc_feed_source_evidence e
-       ON e.ioc_item_id = c.ioc_item_id
-      AND e.ioc_observable_type = c.observable_type
-      AND e.feed_id = $1::uuid`,
+       COUNT(*) FILTER (WHERE outcome = 'created')::int AS created,
+       COUNT(*) FILTER (WHERE outcome = 'reactivated')::int AS reactivated,
+       COUNT(*) FILTER (WHERE outcome = 'changed')::int AS changed,
+       COUNT(*) FILTER (WHERE outcome = 'unchanged')::int AS unchanged
+     FROM state`,
     [feedId]
   );
   return {
-    inserted: numberFromRow(rows[0], 'inserted'),
-    updated: numberFromRow(rows[0], 'updated'),
-    duplicate: numberFromRow(rows[0], 'duplicate')
+    created: numberFromRow(rows[0], 'created'),
+    reactivated: numberFromRow(rows[0], 'reactivated'),
+    changed: numberFromRow(rows[0], 'changed'),
+    unchanged: numberFromRow(rows[0], 'unchanged')
   };
 }
 
@@ -358,10 +373,57 @@ async function insertNewIocs(client, feed) {
   );
 }
 
+/**
+ * One-time silent adoption of canonical fingerprints (migration 121 baseline).
+ *
+ * Rows that predate migration 121 have content_fingerprint = NULL. Classification
+ * already reported them as `unchanged`, so we must record the fingerprint WITHOUT
+ * advancing updated_at, last_changed_in_source or emitting audit — otherwise the
+ * first post-deploy run would look like a table-wide change event.
+ *
+ * This writes exactly one column and converges after a single run: once adopted, the
+ * guard in upsertMemberships() can detect genuine changes for these rows. Without
+ * this step content_fingerprint would stay NULL forever and real changes would be
+ * permanently invisible.
+ *
+ * Accepted trade-off (documented in migration 121): if such a row ALSO changed in the
+ * source during this very run, that one change is absorbed silently. The pre-migration
+ * fingerprint does not exist, so it cannot be detected.
+ */
+async function adoptMissingFingerprints(client, feedId) {
+  const { rowCount } = await client.query(
+    `UPDATE ioc_feed_memberships m
+     SET content_fingerprint = s.provider_fingerprint
+     FROM ioc_items i
+     JOIN ${STAGE_TABLE} s
+       ON s.observable_type = i.observable_type
+      AND s.observable = i.observable
+     WHERE m.ioc_item_id = i.id
+       AND m.ioc_observable_type = i.observable_type
+       AND m.feed_id = $1::uuid
+       AND m.content_fingerprint IS NULL`,
+    [feedId]
+  );
+  return Number(rowCount || 0);
+}
+
+/**
+ * Insert new memberships and update ONLY those that genuinely changed or reactivated.
+ *
+ * The DO UPDATE ... WHERE clause is the DB-level no-op guarantee: when the canonical
+ * fingerprint matches and the membership is already active, PostgreSQL produces no
+ * physical UPDATE at all — no dead tuple, no updated_at bump, no analyst-visible
+ * timestamp movement. Comparing in the application layer alone is not sufficient.
+ *
+ * last_changed_in_source advances here for both `changed` and `reactivated`, since a
+ * reactivation is a real source-side lifecycle event. Analyst override fields
+ * (override_*) are never written by this statement, and the expiry/purge resets stay
+ * gated on override_enabled exactly as before.
+ */
 async function upsertMemberships(client, feedId, seenAt) {
-  await client.query(
+  const { rowCount } = await client.query(
     `WITH canonical AS (
-       SELECT s.observable_type, s.observable, i.id AS ioc_item_id
+       SELECT s.observable_type, s.observable, s.provider_fingerprint, i.id AS ioc_item_id
        FROM ${STAGE_TABLE} s
        JOIN LATERAL (
          SELECT id
@@ -374,12 +436,15 @@ async function upsertMemberships(client, feedId, seenAt) {
      )
      INSERT INTO ioc_feed_memberships (
        ioc_item_id, ioc_observable_type, feed_id,
-       first_seen_in_feed, last_seen_in_feed, missing_since, status
+       first_seen_in_feed, last_seen_in_feed,
+       last_changed_in_source, content_fingerprint, missing_since, status
      )
-     SELECT ioc_item_id, observable_type, $1::uuid, $2, $2, NULL, 'active'
+     SELECT ioc_item_id, observable_type, $1::uuid, $2, $2, $2, provider_fingerprint, NULL, 'active'
      FROM canonical
      ON CONFLICT (ioc_item_id, ioc_observable_type, feed_id)
      DO UPDATE SET
+       content_fingerprint = EXCLUDED.content_fingerprint,
+       last_changed_in_source = EXCLUDED.last_changed_in_source,
        last_seen_in_feed = EXCLUDED.last_seen_in_feed,
        missing_since = NULL,
        status = CASE
@@ -410,9 +475,55 @@ async function upsertMemberships(client, feedId, seenAt) {
          WHEN ioc_feed_memberships.override_enabled THEN ioc_feed_memberships.purge_reason
          ELSE NULL
        END,
-       updated_at = NOW()`,
+       updated_at = NOW()
+     WHERE ioc_feed_memberships.content_fingerprint IS DISTINCT FROM EXCLUDED.content_fingerprint
+        OR ioc_feed_memberships.status IS DISTINCT FROM 'active'
+        OR ioc_feed_memberships.missing_since IS NOT NULL
+        OR ioc_feed_memberships.purged_at IS NOT NULL`,
     [feedId, seenAt]
   );
+  return Number(rowCount || 0);
+}
+
+/**
+ * Expiration-driven presence write. Runs ONLY for expiration_mode = 'last_seen_ttl'.
+ *
+ * Snapshot presence is derived transactionally from the staging-table anti-join (see
+ * markMissingMemberships) and needs no per-row write, so in every other configuration
+ * unchanged rows are left completely untouched — no statement is even issued.
+ *
+ * The single exception is last_seen_ttl, where policySql computes expiry as
+ * `last_seen_in_feed + ttl`. There, continued presence MUST be recorded or IOCs that
+ * are still in the feed would silently expire. Note this deliberately writes
+ * last_seen_in_feed itself (the column policySql actually reads) rather than a parallel
+ * column: a second "observed at" field would have to be maintained on the same hundreds
+ * of thousands of rows while changing no behaviour.
+ *
+ * Guarantees: touches exactly one column, never updated_at, never
+ * last_changed_in_source, never an analyst-visible value, and emits no audit or event.
+ */
+async function recordExpirationPresence(client, feedId, seenAt) {
+  let touched = 0;
+  for (const observableType of IOC_TYPES) {
+    const policy = await getFeedPolicy(client, feedId, observableType);
+    if (!policy?.enabled || policy.expiration_mode !== 'last_seen_ttl') continue;
+    const { rowCount } = await client.query(
+      `UPDATE ioc_feed_memberships m
+       SET last_seen_in_feed = $3::timestamptz
+       FROM ioc_items i
+       JOIN ${STAGE_TABLE} s
+         ON s.observable_type = i.observable_type
+        AND s.observable = i.observable
+       WHERE m.ioc_item_id = i.id
+         AND m.ioc_observable_type = i.observable_type
+         AND m.feed_id = $1::uuid
+         AND m.ioc_observable_type = $2
+         AND m.last_seen_in_feed IS DISTINCT FROM $3::timestamptz`,
+      [feedId, observableType, seenAt]
+    );
+    touched += Number(rowCount || 0);
+  }
+  return touched;
 }
 
 async function upsertEvidence(client, feedId) {
@@ -479,7 +590,13 @@ async function applyPoliciesForSeenMemberships(client, feedId, seenAt) {
     await client.query(
       `WITH computed AS (
          SELECT m.id,
-                ${sql.expression} AS policy_expiry
+                ${sql.expression} AS policy_expiry,
+                -- Type anchor for $3. When the policy mode is 'never' (or disabled)
+                -- sql.expression is a bare NULL and never references $3, leaving
+                -- PostgreSQL unable to infer the parameter's type ("could not determine
+                -- data type of parameter $3"). The parameter list is fixed-arity, so
+                -- anchor it here instead of reshuffling placeholders per mode.
+                $3::int AS policy_days
          FROM ioc_feed_memberships m
          JOIN ioc_items i
            ON i.id = m.ioc_item_id
@@ -517,7 +634,36 @@ async function applyPoliciesForSeenMemberships(client, feedId, seenAt) {
            END,
            updated_at = NOW()
        FROM computed c
-       WHERE m.id = c.id`,
+       WHERE m.id = c.id
+         -- Change guard: skip rows whose computed policy state already matches.
+         -- Without this every seen membership took a physical UPDATE (and an
+         -- updated_at bump) each run even when nothing about expiry changed.
+         AND (
+           m.policy_expires_at IS DISTINCT FROM c.policy_expiry
+           OR m.expires_at IS DISTINCT FROM (CASE
+             WHEN m.override_enabled AND m.override_status = 'expired' THEN 'epoch'::timestamptz
+             WHEN m.override_enabled AND m.override_status = 'active' THEN NULL
+             WHEN m.override_enabled THEN m.override_expires_at
+             ELSE c.policy_expiry
+           END)
+           OR m.status IS DISTINCT FROM (CASE
+             WHEN m.override_enabled AND m.override_status IS NOT NULL THEN m.override_status
+             WHEN NOT m.override_enabled AND c.policy_expiry IS NOT NULL AND c.policy_expiry <= $4::timestamptz THEN 'expired'
+             ELSE m.status
+           END)
+           OR m.expired_at IS DISTINCT FROM (CASE
+             WHEN NOT m.override_enabled AND c.policy_expiry IS NOT NULL AND c.policy_expiry <= $4::timestamptz
+               THEN COALESCE(m.expired_at, $4::timestamptz)
+             WHEN NOT m.override_enabled THEN NULL
+             ELSE m.expired_at
+           END)
+           OR m.expiration_reason IS DISTINCT FROM (CASE
+             WHEN NOT m.override_enabled AND c.policy_expiry IS NOT NULL AND c.policy_expiry <= $4::timestamptz
+               THEN $5
+             WHEN NOT m.override_enabled THEN NULL
+             ELSE m.expiration_reason
+           END)
+         )`,
       [
         feedId,
         observableType,
@@ -529,15 +675,53 @@ async function applyPoliciesForSeenMemberships(client, feedId, seenAt) {
   }
 }
 
+/**
+ * Mark memberships absent from a successful full snapshot as missing.
+ *
+ * Scope is intentionally UNCHANGED from the pre-fix behaviour: rows already flagged
+ * missing are still re-evaluated every run, so an administrator editing grace_days
+ * continues to see it applied to currently-missing memberships. That is existing
+ * expiration-policy semantics and deliberately out of scope for the no-op work.
+ *
+ * Because the UPDATE therefore also touches already-missing rows, rowCount is NOT a
+ * valid "removed" counter. `newlyMissing` is counted separately with the same
+ * predicate plus `missing_since IS NULL`, so `records_removed` reflects genuine
+ * active -> missing transitions only.
+ *
+ * @returns {Promise<{markedMissing:number,newlyMissing:number}>}
+ */
 async function markMissingMemberships(client, feedId, seenAt) {
   const { rows: stageRows } = await client.query(`SELECT COUNT(*)::int AS count FROM ${STAGE_TABLE}`);
-  if (numberFromRow(stageRows[0], 'count') === 0) return 0;
+  if (numberFromRow(stageRows[0], 'count') === 0) return { markedMissing: 0, newlyMissing: 0 };
   let markedMissing = 0;
+  let newlyMissing = 0;
   for (const observableType of IOC_TYPES) {
     const policy = await getFeedPolicy(client, feedId, observableType);
     if (!policy?.enabled || policy.expiration_mode !== 'missing_from_feed_ttl') continue;
     const grace = Number(policy.grace_days ?? policy.ttl_days);
     if (!Number.isFinite(grace) || grace <= 0) continue;
+
+    // Count genuine transitions BEFORE the update, while missing_since is still NULL.
+    const { rows: transitionRows } = await client.query(
+      `SELECT COUNT(*)::int AS newly_missing
+       FROM ioc_feed_memberships m
+       WHERE m.feed_id = $1::uuid
+         AND m.ioc_observable_type = $2
+         AND m.status = 'active'
+         AND m.missing_since IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+           FROM ioc_items i
+           JOIN ${STAGE_TABLE} s
+             ON s.observable_type = i.observable_type
+            AND s.observable = i.observable
+           WHERE i.id = m.ioc_item_id
+             AND i.observable_type = m.ioc_observable_type
+         )`,
+      [feedId, observableType]
+    );
+    newlyMissing += numberFromRow(transitionRows[0], 'newly_missing');
+
     const { rowCount } = await client.query(
       `UPDATE ioc_feed_memberships m
        SET missing_since = COALESCE(m.missing_since, $3::timestamptz),
@@ -565,7 +749,7 @@ async function markMissingMemberships(client, feedId, seenAt) {
     );
     markedMissing += Number(rowCount || 0);
   }
-  return markedMissing;
+  return { markedMissing, newlyMissing };
 }
 
 async function refreshGlobalIocStatus(client, seenAt) {
@@ -613,7 +797,15 @@ async function refreshGlobalIocStatus(client, seenAt) {
      WHERE i.observable = s.observable
        AND i.observable_type = s.observable_type
        AND COALESCE(i.manual_status_override, FALSE) = FALSE
-       AND COALESCE(i.status, 'active') NOT IN ('disabled', 'suppressed')`,
+       AND COALESCE(i.status, 'active') NOT IN ('disabled', 'suppressed')
+       -- Change guard: only rewrite ioc_items when the derived status actually moves.
+       -- Previously every touched IOC took a physical UPDATE on every run.
+       AND (
+         i.status IS DISTINCT FROM (CASE WHEN s.has_active_membership THEN 'active' ELSE 'expired' END)
+         OR i.expires_at IS DISTINCT FROM (CASE WHEN s.has_active_membership THEN s.next_expires_at ELSE i.expires_at END)
+         OR i.expired_at IS DISTINCT FROM (CASE WHEN s.has_active_membership THEN NULL ELSE COALESCE(i.expired_at, $1::timestamptz) END)
+         OR i.expiration_reason IS DISTINCT FROM (CASE WHEN s.has_active_membership THEN NULL ELSE COALESCE(i.expiration_reason, 'all_memberships_expired') END)
+       )`,
     [seenAt]
   );
 }
@@ -732,21 +924,29 @@ export async function finalizeUsomImport(client, {
     );
     const feed = await loadFeed(client);
     const suppressed = await removeSuppressedStageEntries(client);
+    // Classification must observe pre-run state, so it runs before any write.
     const classified = await classifyStageAgainstExisting(client, feed.integration_id);
     await insertNewIocs(client, feed);
+    // Adoption runs after classification (so NULL fingerprints were already counted as
+    // unchanged) and before the guarded upsert (so the guard sees a populated value).
+    await adoptMissingFingerprints(client, feed.integration_id);
     await upsertMemberships(client, feed.integration_id, seenAt);
     await upsertEvidence(client, feed.integration_id);
+    await recordExpirationPresence(client, feed.integration_id, seenAt);
     await applyPoliciesForSeenMemberships(client, feed.integration_id, seenAt);
     const snapshotUnchanged = mode === 'full_reconciliation'
       && Boolean(snapshotHash)
       && Boolean(priorSnapshotHash)
       && snapshotHash === priorSnapshotHash;
     const canSkipAbsentReconciliation = snapshotUnchanged && suppressed === 0;
-    const markedMissing = mode === 'full_reconciliation'
+    // markedMissing = every row the absence UPDATE touched (includes rows that were
+    // already missing, so grace_days edits keep applying to them).
+    // newlyMissing  = genuine active -> missing transitions, the only valid `removed`.
+    const { markedMissing, newlyMissing } = mode === 'full_reconciliation'
       && snapshotStable
       && !canSkipAbsentReconciliation
       ? await markMissingMemberships(client, feed.integration_id, seenAt)
-      : 0;
+      : { markedMissing: 0, newlyMissing: 0 };
     await refreshGlobalIocStatus(client, seenAt);
     await saveSuccessfulState(client, {
       feedId: feed.integration_id,
@@ -757,17 +957,30 @@ export async function finalizeUsomImport(client, {
       snapshotHash,
       snapshotStable
     });
+    // Run counters. created / changed / unchanged / reactivated / removed are mutually
+    // exclusive; a row seen again with identical content lands in `unchanged` ONLY and
+    // is deliberately absent from changed/updated/reactivated/removed.
+    //
+    // records_duplicate is DEPRECATED. It is retained as a backward-compatible alias so
+    // existing API consumers keep working, and now mirrors records_unchanged instead of
+    // its old meaning. New consumers must read records_unchanged. In-run duplicates
+    // (the same observable appearing twice inside one payload) are counted as unchanged
+    // because they too result in no additional persisted state.
+    const unchanged = classified.unchanged + Number(inRunDuplicates || 0);
     const metrics = {
-      records_processed: classified.inserted
-        + classified.updated
-        + classified.duplicate
-        + Number(inRunDuplicates || 0)
+      records_processed: classified.created
+        + classified.changed
+        + classified.reactivated
+        + unchanged
         + Number(stats?.skipped_invalid || 0)
         + Number(stats?.skipped_unsupported_ip_network || 0)
         + suppressed,
-      records_inserted: classified.inserted,
-      records_updated: classified.updated,
-      records_duplicate: classified.duplicate + Number(inRunDuplicates || 0),
+      records_inserted: classified.created,
+      records_updated: classified.changed,
+      records_unchanged: unchanged,
+      records_reactivated: classified.reactivated,
+      records_removed: newlyMissing,
+      records_duplicate: unchanged,
       records_skipped: Number(stats?.skipped_invalid || 0)
         + Number(stats?.skipped_unsupported_ip_network || 0),
       records_suppressed: suppressed,
@@ -809,11 +1022,14 @@ export async function finalizeUsomImport(client, {
              records_inserted = $4,
              records_updated = $5,
              records_duplicate = $6,
-             records_skipped = $7,
-             records_suppressed = $8,
+             records_unchanged = $6,
+             records_reactivated = $7,
+             records_removed = $8,
+             records_skipped = $9,
+             records_suppressed = $10,
              records_failed = 0,
              error_message = NULL,
-             run_details = $9::jsonb
+             run_details = $11::jsonb
          WHERE id = $1`,
         [
           runId,
@@ -821,7 +1037,10 @@ export async function finalizeUsomImport(client, {
           metrics.records_processed,
           metrics.records_inserted,
           metrics.records_updated,
-          metrics.records_duplicate,
+          // $6 feeds both records_unchanged (canonical) and records_duplicate (deprecated alias).
+          metrics.records_unchanged,
+          metrics.records_reactivated,
+          metrics.records_removed,
           metrics.records_skipped,
           metrics.records_suppressed,
           JSON.stringify(completedRunDetails)
@@ -831,6 +1050,11 @@ export async function finalizeUsomImport(client, {
     await client.query('COMMIT');
     return {
       ...classified,
+      // Deprecated aliases of the classification counters, retained so existing
+      // callers/tests keep working. Prefer created/changed/unchanged/reactivated.
+      inserted: classified.created,
+      updated: classified.changed,
+      duplicate: unchanged,
       suppressed,
       markedMissing,
       snapshotUnchanged,

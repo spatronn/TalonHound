@@ -46,6 +46,7 @@ import {
 } from './lib/feedLifecycle.js';
 import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
+import { resolveRunCounters } from './lib/integrationRunCounters.js';
 import {
   computeSuppressionEffectiveStatus,
   normalizeSuppressionStatusFilter,
@@ -674,14 +675,12 @@ function buildLastRunMetrics(row) {
     };
   }
 
-  const processed = metricInt(row.records_processed);
-  const inserted = metricInt(row.records_inserted);
-  const updated = metricInt(row.records_updated);
-  const duplicate = metricInt(row.records_duplicate);
-  const skipped = metricInt(row.records_skipped);
-  const suppressed = metricInt(row.records_suppressed);
-  const failed = metricInt(row.records_failed);
-  const breakdownSum = inserted + updated + duplicate + skipped + suppressed + failed;
+  // All counter interpretation lives in resolveRunCounters so that every importer's
+  // rows — migrated or legacy — are read identically. `unchanged` is canonical;
+  // `duplicate` comes back as a deprecated alias of it.
+  const counters = resolveRunCounters(row);
+  const { processed, inserted, updated, unchanged, skipped, suppressed, failed } = counters;
+  const breakdownSum = inserted + updated + unchanged + skipped + suppressed + failed;
 
   // Pre-migration runs stored only records_processed (legacy inserted count).
   const legacyMissing = processed > 0 && breakdownSum === 0;
@@ -692,6 +691,9 @@ function buildLastRunMetrics(row) {
       processed,
       inserted: null,
       updated: null,
+      unchanged: null,
+      reactivated: null,
+      removed: null,
       duplicate: null,
       skipped: null,
       suppressed: null,
@@ -701,13 +703,7 @@ function buildLastRunMetrics(row) {
 
   return {
     available: true,
-    processed,
-    inserted,
-    updated,
-    duplicate,
-    skipped,
-    suppressed,
-    failed
+    ...counters
   };
 }
 
@@ -718,6 +714,9 @@ function flatMetricsFromLastRun(lastRunMetrics) {
       last_records_processed: m.processed,
       last_records_inserted: null,
       last_records_updated: null,
+      last_records_unchanged: null,
+      last_records_reactivated: null,
+      last_records_removed: null,
       last_records_duplicate: null,
       last_records_skipped: null,
       last_records_suppressed: null,
@@ -728,6 +727,10 @@ function flatMetricsFromLastRun(lastRunMetrics) {
     last_records_processed: m.processed,
     last_records_inserted: m.inserted,
     last_records_updated: m.updated,
+    last_records_unchanged: m.unchanged,
+    last_records_reactivated: m.reactivated,
+    last_records_removed: m.removed,
+    // DEPRECATED alias of last_records_unchanged.
     last_records_duplicate: m.duplicate,
     last_records_skipped: m.skipped,
     last_records_suppressed: m.suppressed,
@@ -1082,7 +1085,8 @@ app.get('/api/integrations', async (req, res) => {
       SELECT DISTINCT ON (job_type)
         job_type, status, started_at, finished_at,
         records_processed, records_inserted, records_updated,
-        records_duplicate, records_skipped, records_suppressed, records_failed,
+        records_duplicate, records_unchanged, records_reactivated, records_removed,
+        records_skipped, records_suppressed, records_failed,
         error_message, run_details, triggered_by
       FROM integration_runs
       WHERE job_type = ANY($1::text[])
@@ -1102,7 +1106,8 @@ app.get('/api/integrations', async (req, res) => {
       SELECT DISTINCT ON (effective_run_mode)
         job_type, status, started_at, finished_at,
         records_processed, records_inserted, records_updated,
-        records_duplicate, records_skipped, records_suppressed, records_failed,
+        records_duplicate, records_unchanged, records_reactivated, records_removed,
+        records_skipped, records_suppressed, records_failed,
         error_message, run_details, triggered_by, effective_run_mode AS run_mode
       FROM (
         SELECT r.*,
@@ -1157,7 +1162,8 @@ app.get('/api/integrations', async (req, res) => {
         integration_key_norm AS integration_key,
         status, started_at, queued_at, finished_at,
         records_processed, records_inserted, records_updated,
-        records_duplicate, records_skipped, records_suppressed, records_failed,
+        records_duplicate, records_unchanged, records_reactivated, records_removed,
+        records_skipped, records_suppressed, records_failed,
         error_message
       FROM (
         SELECT
@@ -1167,7 +1173,8 @@ app.get('/api/integrations', async (req, res) => {
           END AS integration_key_norm,
           status, started_at, queued_at, finished_at,
           records_processed, records_inserted, records_updated,
-          records_duplicate, records_skipped, records_suppressed, records_failed,
+          records_duplicate, records_unchanged, records_reactivated, records_removed,
+        records_skipped, records_suppressed, records_failed,
           error_message
         FROM integration_queue_jobs
         WHERE integration_key = ANY($1::text[])
@@ -4549,8 +4556,13 @@ app.get('/api/ioc/details', async (req, res) => {
       return iDates.length ? iDates.reduce((min, d) => new Date(d) < new Date(min) ? d : min) : null;
     })();
 
+    // Analyst-visible "last changed", not "last polled". Uses last_changed_in_source so
+    // an unchanged re-import cannot advance it; falls back to first_seen_in_feed for
+    // rows predating migration 121. Must NOT read last_seen_in_feed (technical presence).
     const globalLastSeenAt = (() => {
-      const mDates = membershipSummary.membershipRows.map((m) => m.last_seen_in_feed).filter(Boolean);
+      const mDates = membershipSummary.membershipRows
+        .map((m) => m.last_changed_in_source || m.first_seen_in_feed)
+        .filter(Boolean);
       if (mDates.length) return mDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max);
       const iDates = rows.map((r) => r.item_last_seen_at || r.created_at).filter(Boolean);
       return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;

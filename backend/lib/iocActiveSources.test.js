@@ -269,6 +269,46 @@ test('formatFeedMembershipSource marks purged memberships as non-actionable', ()
   assert.equal(active.actions_enabled, true);
 });
 
+test('formatFeedMembershipSource exposes last_changed_at and never derives it from presence', () => {
+  const changed = formatFeedMembershipSource({
+    id: 11,
+    feed_name: 'USOM TR-CERT',
+    feed_key: 'usom-trcert',
+    status: 'active',
+    first_seen_in_feed: '2026-07-19T22:48:00.000Z',
+    last_changed_in_source: '2026-07-19T22:48:00.000Z',
+    // A later successful poll advanced the technical presence column only.
+    last_seen_in_feed: '2026-07-20T19:48:00.000Z'
+  });
+  assert.equal(changed.first_seen_at, '2026-07-19T22:48:00.000Z');
+  assert.equal(
+    changed.last_changed_at,
+    '2026-07-19T22:48:00.000Z',
+    'an unchanged re-import must not advance the analyst-visible timestamp'
+  );
+  // Deprecated alias is still emitted for backward compatibility, but must not be the
+  // value the UI renders.
+  assert.equal(changed.last_seen_at, '2026-07-20T19:48:00.000Z');
+  assert.notEqual(changed.last_changed_at, changed.last_seen_at);
+});
+
+test('formatFeedMembershipSource falls back to first_seen_in_feed before migration 121', () => {
+  const legacy = formatFeedMembershipSource({
+    id: 12,
+    feed_name: 'USOM TR-CERT',
+    feed_key: 'usom-trcert',
+    status: 'active',
+    first_seen_in_feed: '2026-07-19T22:48:00.000Z',
+    last_changed_in_source: null,
+    last_seen_in_feed: '2026-07-20T19:48:00.000Z'
+  });
+  assert.equal(
+    legacy.last_changed_at,
+    '2026-07-19T22:48:00.000Z',
+    'NULL must fall back to the documented first_seen baseline, not to last_seen_in_feed'
+  );
+});
+
 test('formatManualIocSource exposes manual active source', () => {
   const manual = formatManualIocSource({
     ioc_item_id: 42,

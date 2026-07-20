@@ -1912,9 +1912,12 @@ const RUN_ONCE_SCHEDULE_HELPER = 'Run once feeds are not executed by the recurri
 const FEED_METRIC_TOOLTIPS = {
   processed: 'Total records/items processed during the last run.',
   inserted: 'New IOC observables or source evidence inserted during the last run.',
-  duplicate: 'Records already known from previous imports.',
-  updated: 'Existing records updated during reconciliation. May be 0 if reconciliation is not enabled for this feed.',
-  skipped: 'Records skipped because they were unchanged, invalid, filtered, old cursor entries, or not importable.',
+  unchanged: 'Records seen again with identical source content. Nothing was written and no analyst-visible date moved.',
+  reactivated: 'Previously removed/expired records that reappeared in the source.',
+  removed: 'Records no longer present in a successful full snapshot of the source.',
+  duplicate: 'Deprecated alias of Unchanged.',
+  updated: 'Records whose source content genuinely changed during this run.',
+  skipped: 'Records skipped because they were invalid, filtered, old cursor entries, or not importable.',
   suppressed: 'Records skipped because an active suppression policy matched them.',
   failed: 'Records that failed to parse or import.'
 };
@@ -2643,16 +2646,20 @@ function LastRunMetricsCell({ metrics, hints = [] }) {
   const parts = [
     { key: 'processed', label: 'Processed', value: processed, always: true },
     { key: 'inserted', label: 'New', value: m.inserted, tone: '#86efac' },
-    { key: 'duplicate', label: 'Duplicate', value: m.duplicate, tone: '#fcd34d' },
-    { key: 'updated', label: 'Updated', value: m.updated },
+    // 'unchanged' replaces the old 'Duplicate' tile. Falls back to the deprecated alias
+    // so runs recorded before migration 121 still render.
+    { key: 'unchanged', label: 'Unchanged', value: m.unchanged ?? m.duplicate, tone: '#fcd34d' },
+    { key: 'updated', label: 'Changed', value: m.updated },
+    { key: 'reactivated', label: 'Reactivated', value: m.reactivated, tone: '#93c5fd', hideZero: true },
+    { key: 'removed', label: 'Removed', value: m.removed, tone: '#f9a8d4', hideZero: true },
     { key: 'skipped', label: 'Skipped', value: m.skipped },
     { key: 'suppressed', label: 'Suppressed', value: m.suppressed, tone: '#fb923c', hideZero: true },
     { key: 'failed', label: 'Failed', value: m.failed, tone: '#fca5a5', hideZero: true }
   ];
 
   const visible = parts.filter((p) => p.always || (Number(p.value || 0) > 0) || (p.key === 'updated' && m.available));
-  const breakdownSum = ['inserted', 'duplicate', 'updated', 'skipped', 'suppressed', 'failed']
-    .reduce((acc, key) => acc + Number(m[key] || 0), 0);
+  const breakdownSum = ['inserted', 'unchanged', 'updated', 'skipped', 'suppressed', 'failed']
+    .reduce((acc, key) => acc + Number((key === 'unchanged' ? (m.unchanged ?? m.duplicate) : m[key]) || 0), 0);
   const missingBreakdown = m.available && processed > 0 && breakdownSum === 0;
 
   return (
@@ -3324,6 +3331,11 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       processed: 'last_records_processed',
       inserted: 'last_records_inserted',
       updated: 'last_records_updated',
+      unchanged: 'last_records_unchanged',
+      reactivated: 'last_records_reactivated',
+      removed: 'last_records_removed',
+      // DEPRECATED: kept only so an old cached API response still resolves. New UI
+      // reads 'unchanged'.
       duplicate: 'last_records_duplicate',
       skipped: 'last_records_skipped',
       suppressed: 'last_records_suppressed',
@@ -13110,7 +13122,7 @@ function IOCDetailsPage() {
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
-                                  <td>{formatUserDateTime(src.last_seen_at)}</td>
+                                  <td>{formatUserDateTime(src.last_changed_at || src.last_seen_at)}</td>
                                   <td>{src.source_type === 'feed' ? formatUserDateTime(src.policy_expires_at) : '—'}</td>
                                   <td>{formatUserDateTime(src.expires_at)}</td>
                                   <td>{src.source_type === 'feed' ? (src.override_enabled ? 'Yes' : 'No') : '—'}</td>
@@ -13154,7 +13166,7 @@ function IOCDetailsPage() {
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
-                                  <td>{formatUserDateTime(src.last_seen_at)}</td>
+                                  <td>{formatUserDateTime(src.last_changed_at || src.last_seen_at)}</td>
                                   <td>{formatUserDateTime(src.purged_at)}</td>
                                   <td>{src.description || src.purge_reason || '—'}</td>
                                 </tr>

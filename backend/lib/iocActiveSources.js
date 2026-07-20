@@ -35,6 +35,13 @@ export function formatFeedMembershipSource(m) {
     feed_name: m.feed_name || null,
     status: displayStatus,
     first_seen_at: m.first_seen_in_feed || null,
+    // Analyst-visible "last changed in source". Advances only on genuine source
+    // content change or reactivation. NULL for rows that predate migration 121, which
+    // fall back to first_seen_in_feed as the documented baseline.
+    last_changed_at: m.last_changed_in_source || m.first_seen_in_feed || null,
+    // DEPRECATED: last_seen_in_feed is technical presence bookkeeping, not an analyst
+    // fact — it advances on every successful poll even when nothing changed. Retained
+    // only for API backward compatibility; do NOT render it. Use last_changed_at.
     last_seen_at: m.last_seen_in_feed || null,
     policy_expires_at: m.policy_expires_at || null,
     expires_at: m.expires_at || null,
@@ -249,27 +256,29 @@ export async function fetchObservableMembershipSummary(pool, { observable, obser
   if (ids.length) {
     const { rows } = await pool.query(
       `SELECT m.id, m.ioc_item_id, m.status, m.purged_at, m.purge_reason,
-              m.first_seen_in_feed, m.last_seen_in_feed, m.policy_expires_at, m.expires_at,
+              m.first_seen_in_feed, m.last_seen_in_feed, m.last_changed_in_source,
+              m.policy_expires_at, m.expires_at,
               m.override_enabled, m.explicit_confidence,
               f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
        FROM ioc_feed_memberships m
        JOIN integration_feeds f ON f.integration_id = m.feed_id
        WHERE m.ioc_item_id = ANY($1::bigint[]) AND m.ioc_observable_type = $2
-       ORDER BY m.last_seen_in_feed DESC NULLS LAST`,
+       ORDER BY COALESCE(m.last_changed_in_source, m.first_seen_in_feed) DESC NULLS LAST`,
       [ids, observableType]
     );
     membershipRows = rows;
   } else {
     const { rows } = await pool.query(
       `SELECT m.id, m.ioc_item_id, m.status, m.purged_at, m.purge_reason,
-              m.first_seen_in_feed, m.last_seen_in_feed, m.policy_expires_at, m.expires_at,
+              m.first_seen_in_feed, m.last_seen_in_feed, m.last_changed_in_source,
+              m.policy_expires_at, m.expires_at,
               m.override_enabled, m.explicit_confidence,
               f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
        FROM ioc_feed_memberships m
        JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
        JOIN integration_feeds f ON f.integration_id = m.feed_id
        WHERE i.observable = $1 AND i.observable_type = $2
-       ORDER BY m.last_seen_in_feed DESC NULLS LAST`,
+       ORDER BY COALESCE(m.last_changed_in_source, m.first_seen_in_feed) DESC NULLS LAST`,
       [observable, observableType]
     );
     membershipRows = rows;
@@ -632,6 +641,12 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
        FROM ioc_feed_memberships m
        WHERE m.status = 'active'
          AND m.purged_at IS NULL
+       -- Deliberately still sorts on last_seen_in_feed, NOT last_changed_in_source.
+       -- This is an internal "most recently active feed" recency sort for list paging,
+       -- never rendered as an analyst timestamp, and it depends on the partial index
+       -- above. COALESCE(last_changed_in_source, ...) is not index-backed and would turn
+       -- this into a seqscan + sort over ~2.3M rows. Switching it would require building
+       -- the CONCURRENTLY index documented in migration 121 first.
        ORDER BY m.last_seen_in_feed DESC NULLS LAST
        LIMIT $1`,
       [scanLimit]
