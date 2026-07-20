@@ -72,3 +72,44 @@ test('parseDomainOrUrlInput wrapper matches normalizeRdapTarget', () => {
   assert.equal(r.ok, true);
   assert.equal(r.root_domain, 'netlify.app');
 });
+
+// Schemeless URL IOC RDAP normalization (USOM-style imports without http/https prefix)
+
+test('schemeless URL with path extracts correct hostname and domain', () => {
+  const r = normalizeRdapTarget('bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url');
+  assert.equal(r.ok, true, `expected ok but got: ${r.message || r.code}`);
+  assert.equal(r.normalized_host, 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(r.rdap_domain, 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(r.ioc_type, 'url');
+});
+
+test('schemeless URL result matches https-prefixed equivalent', () => {
+  const schemeless = normalizeRdapTarget('bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url');
+  const full = normalizeRdapTarget('https://bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url');
+  assert.equal(schemeless.ok, true);
+  assert.equal(full.ok, true);
+  assert.equal(schemeless.normalized_host, full.normalized_host);
+  assert.equal(schemeless.rdap_domain, full.rdap_domain);
+});
+
+test('path is not included in schemeless URL RDAP lookup value', () => {
+  const r = normalizeRdapTarget('example.com/some/very/deep/path?a=1', 'url');
+  assert.equal(r.ok, true);
+  assert.equal(r.normalized_host, 'example.com', 'path must not appear in normalized_host');
+  assert.ok(!r.rdap_domain.includes('/'), 'rdap_domain must not contain a path');
+});
+
+test('invalid schemeless value returns controlled error not a throw', () => {
+  const r = normalizeRdapTarget('/only/a/path', 'url');
+  assert.equal(r.ok, false);
+  assert.ok(r.code, 'error response must have a code');
+  assert.ok(r.message, 'error response must have a message');
+});
+
+test('same root domain resolves to same rdap_domain as cache key', () => {
+  const sub = normalizeRdapTarget('campaign.login.sub.example.co.uk/path', 'url');
+  const root = normalizeRdapTarget('example.co.uk', 'domain');
+  assert.equal(sub.ok, true);
+  assert.equal(root.ok, true);
+  assert.equal(sub.rdap_domain, root.rdap_domain, 'subdomain URL must share cache key with root domain');
+});

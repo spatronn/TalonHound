@@ -44,21 +44,44 @@ export function isIpAddress(value) {
 }
 
 /**
- * Extract hostname from URL IOC values (http/https only).
+ * Extract hostname from URL IOC values.
+ * Supports http://, https://, protocol-relative (//), and schemeless URLs with a path.
+ * When no scheme is present, prepends https:// temporarily for parsing only — never
+ * modifies the stored IOC value.
  * @returns {string|null}
  */
 export function extractHostFromIocValue(iocValue, iocType) {
   if (normalizeIocType(iocType) !== 'url') return null;
   const raw = String(iocValue || '').trim();
   if (!raw) return null;
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-    const host = ipEnrichStripHostPort(u.hostname);
-    return host || null;
-  } catch {
-    return null;
+
+  // Relative paths (single leading slash) are never valid URL IOC values
+  if (raw.startsWith('/') && !raw.startsWith('//')) return null;
+
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || raw.startsWith('//');
+  const looksLikePath = raw.includes('/') && !raw.includes('@');
+  let hostname = '';
+
+  if (hasScheme || looksLikePath) {
+    try {
+      const urlStr = raw.startsWith('//') ? `https:${raw}` : (hasScheme ? raw : `https://${raw}`);
+      const u = new URL(urlStr);
+      // Reject explicit non-http schemes (e.g. ftp://); synthetic https:// is always fine
+      if (hasScheme && !raw.startsWith('//') && u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      hostname = ipEnrichStripHostPort(u.hostname);
+    } catch {
+      if (looksLikePath) {
+        hostname = ipEnrichStripHostPort(raw.split('/')[0].split('?')[0].split('#')[0]);
+      }
+    }
+  } else {
+    // Bare string with no scheme and no path — must look like a hostname (has a dot or is IPv6)
+    hostname = ipEnrichStripHostPort(raw.split('?')[0].split('#')[0]);
+    if (!hostname.includes('.') && !hostname.startsWith('[')) return null;
   }
+
+  if (!hostname || /\s/.test(hostname)) return null;
+  return hostname;
 }
 
 /**

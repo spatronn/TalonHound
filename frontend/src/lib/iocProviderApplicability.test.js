@@ -118,6 +118,96 @@ test('extractHostFromIocValue returns null for malformed URLs', () => {
   assert.equal(extractHostFromIocValue('ftp://example.com/x', 'url'), null);
 });
 
+// Schemeless URL IOC hostname extraction (USOM-style imports without http/https prefix)
+test('extractHostFromIocValue schemeless URL with path', () => {
+  assert.equal(
+    extractHostFromIocValue('bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url'),
+    'bu-haftaninsonkampanyasi.shop'
+  );
+});
+
+test('extractHostFromIocValue https URL with path matches schemeless result', () => {
+  assert.equal(
+    extractHostFromIocValue('https://bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url'),
+    'bu-haftaninsonkampanyasi.shop'
+  );
+});
+
+test('extractHostFromIocValue lowercases host and strips port', () => {
+  assert.equal(extractHostFromIocValue('http://Sub.Example.com:8080/a?b=1#x', 'url'), 'sub.example.com');
+});
+
+test('extractHostFromIocValue protocol-relative URL', () => {
+  assert.equal(extractHostFromIocValue('//example.com/path', 'url'), 'example.com');
+});
+
+test('extractHostFromIocValue bare domain without path (url type)', () => {
+  assert.equal(extractHostFromIocValue('example.com', 'url'), 'example.com');
+});
+
+test('extractHostFromIocValue returns null for relative path', () => {
+  assert.equal(extractHostFromIocValue('/only/path', 'url'), null);
+});
+
+test('extractHostFromIocValue returns null for string with spaces', () => {
+  assert.equal(extractHostFromIocValue('not a valid url', 'url'), null);
+});
+
+test('extractHostFromIocValue returns null for empty value', () => {
+  assert.equal(extractHostFromIocValue('', 'url'), null);
+  assert.equal(extractHostFromIocValue(null, 'url'), null);
+});
+
+test('extractHostFromIocValue handles IPv6 literal in schemeless URL', () => {
+  assert.equal(extractHostFromIocValue('[2001:db8::1]/path', 'url'), '2001:db8::1');
+  assert.equal(extractHostFromIocValue('https://[2001:db8::1]/path', 'url'), '2001:db8::1');
+});
+
+test('extractHostFromIocValue sub.example.com with path and query', () => {
+  assert.equal(extractHostFromIocValue('sub.example.com/path?q=1', 'url'), 'sub.example.com');
+  assert.equal(extractHostFromIocValue('https://sub.example.com:8443/path?q=1', 'url'), 'sub.example.com');
+});
+
+// RDAP card visibility via getDerivedInfrastructureContext
+
+test('schemeless URL IOC yields RDAP in derived context when eligible', () => {
+  const ctx = getDerivedInfrastructureContext(
+    'bu-haftaninsonkampanyasi.shop/sadece-online-ozel/',
+    'url',
+    { rdapEligible: true }
+  );
+  assert.ok(ctx !== null, 'derived context must not be null for schemeless domain URL');
+  assert.equal(ctx.host, 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(ctx.hostKind, 'domain');
+  assert.ok(ctx.providers.includes('rdap'), 'rdap must be in derived providers');
+});
+
+test('scheme-present URL IOC preserves existing RDAP behaviour', () => {
+  const ctx = getDerivedInfrastructureContext('https://example.com/path', 'url', { rdapEligible: true });
+  assert.ok(ctx !== null);
+  assert.equal(ctx.host, 'example.com');
+  assert.ok(ctx.providers.includes('rdap'));
+});
+
+test('schemeless URL without eligible domain has no RDAP in derived context', () => {
+  const ctx = getDerivedInfrastructureContext(
+    'bu-haftaninsonkampanyasi.shop/sadece-online-ozel/',
+    'url',
+    { rdapEligible: false }
+  );
+  assert.equal(ctx, null, 'context must be null when rdapEligible is false');
+});
+
+test('invalid URL IOC yields no derived context', () => {
+  const ctx = getDerivedInfrastructureContext('not a valid url', 'url', { rdapEligible: true });
+  assert.equal(ctx, null);
+});
+
+test('domain IOC does not produce derived context (direct RDAP only)', () => {
+  const ctx = getDerivedInfrastructureContext('example.com', 'domain', { rdapEligible: true });
+  assert.equal(ctx, null);
+});
+
 test('computeProviderCoverage supports explicit providerKeys for derived section', () => {
   const coverage = computeProviderCoverage(
     { ipinfo: { status: 'success' }, abuseipdb: { status: 'not_found' } },
