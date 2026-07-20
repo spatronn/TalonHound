@@ -402,6 +402,73 @@ test('adoption: fingerprint is populated without moving updated_at or last_chang
 });
 
 // ---------------------------------------------------------------------------
+// IPv6 canonical type (migration 120 follow-up)
+// ---------------------------------------------------------------------------
+
+test('ipv6: canonical stored type reaches policy application and absence reconciliation', async () => {
+  const client = makeClient({
+    classification: { created: 0, changed: 0, unchanged: 1, reactivated: 0 },
+    expirationMode: 'missing_from_feed_ttl',
+    enabled: true
+  });
+  await finalizeUsomImport(client, { stats: {}, seenAt: SEEN_AT, mode: 'full_reconciliation', runId: 18 });
+
+  // Migration 120 renamed the stored type ip6 -> ipv6. Looking up 'ip6' matched zero
+  // rows, silently skipping expiration for every USOM IPv6 membership.
+  const missingTypes = find(client.calls, 'SET missing_since = COALESCE').map((c) => c.params[1]);
+  assert.ok(missingTypes.includes('ipv6'), 'ipv6 memberships must enter missing reconciliation');
+  assert.equal(missingTypes.includes('ip6'), false, 'stale pre-migration-120 type must not be used');
+
+  const policyTypes = find(client.calls, 'SET policy_expires_at').map((c) => c.params[1]);
+  assert.ok(policyTypes.includes('ipv6'), 'ipv6 memberships must have expiration policy applied');
+  assert.equal(policyTypes.includes('ip6'), false);
+
+  // All four canonical types must be covered, none dropped.
+  assert.deepEqual([...new Set(policyTypes)].sort(), ['domain', 'ip', 'ipv6', 'url']);
+});
+
+test('ipv6: API stat keys keep the provider vocabulary and totals stay complete', async () => {
+  // STORED_IOC_TYPES ('ipv6') and API_TOTAL_TYPES ('ip6') must not be conflated. The
+  // USOM API names IPv6 'ip6', so the api_total_* lookup must keep that spelling —
+  // renaming it to the canonical form silently drops the IPv6 count from the total.
+  const client = makeClient({ classification: { created: 0, changed: 0, unchanged: 1, reactivated: 0 } });
+  await finalizeUsomImport(client, {
+    stats: {
+      api_total_domain: 10,
+      api_total_url: 20,
+      api_total_ip: 30,
+      api_total_ip6: 40,
+      api_total_ip6net: 5
+    },
+    seenAt: SEEN_AT,
+    mode: 'full_reconciliation',
+    runId: 24
+  });
+
+  const stateWrite = find(client.calls, 'INSERT INTO integration_source_state')[0];
+  const payload = JSON.parse(stateWrite.params[2]);
+  assert.equal(payload.total, 105, 'total must include the ip6 bucket (10+20+30+40+5)');
+  assert.equal(payload.totals.api_total_ip6, 40, 'provider stat key must survive verbatim');
+});
+
+test('ipv6: importer never writes the legacy ip6 type into new rows', async () => {
+  const client = makeClient({ classification: { created: 1, changed: 0, unchanged: 0, reactivated: 0 } });
+  await finalizeUsomImport(client, { stats: {}, seenAt: SEEN_AT, mode: 'full_reconciliation', runId: 19 });
+
+  // Membership/IOC writes derive observable_type from the staging table, which the
+  // normalizer already populates with 'ipv6'. No statement may hardcode 'ip6'.
+  for (const call of client.calls) {
+    assert.equal(
+      /'ip6'/.test(call.sql), false,
+      `no statement may reference the legacy ip6 type: ${call.sql.slice(0, 80)}`
+    );
+  }
+  for (const call of client.calls) {
+    assert.equal((call.params || []).includes('ip6'), false, 'no parameter may bind the legacy type');
+  }
+});
+
+// ---------------------------------------------------------------------------
 // IOC list recency sort
 // ---------------------------------------------------------------------------
 

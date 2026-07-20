@@ -7,7 +7,19 @@ import {
 
 export const USOM_ADDRESS_ENDPOINT = 'https://siberguvenlik.gov.tr/api/address/index';
 const STAGE_TABLE = 'usom_import_stage';
-const IOC_TYPES = Object.freeze(['domain', 'url', 'ip', 'ip6']);
+// Two different vocabularies, deliberately kept apart.
+//
+// STORED_IOC_TYPES: canonical types as persisted in ioc_items / ioc_feed_memberships.
+// Migration 120 renamed 'ip6' -> 'ipv6'. Use these for any lookup against stored rows —
+// querying 'ip6' matches zero rows, which silently skipped expiration and absence
+// reconciliation for every USOM IPv6 membership.
+const STORED_IOC_TYPES = Object.freeze(['domain', 'url', 'ip', 'ipv6']);
+
+// API_TOTAL_TYPES: types as named by the USOM external API, used only to index the
+// api_total_* keys in the collected stats (see USOM_SUPPORTED_TOTAL_KEYS and
+// usom_import_cursors.ioc_type). The provider still calls IPv6 'ip6', so these must NOT
+// be renamed to the canonical form or the totals silently under-count.
+const API_TOTAL_TYPES = Object.freeze(['domain', 'url', 'ip', 'ip6']);
 const DEFAULT_USOM_STATEMENT_TIMEOUT_MS = 1_800_000;
 const DEFAULT_USOM_IDLE_IN_TX_TIMEOUT_MS = 600_000;
 const LOOKUP_GROUPS = Object.freeze(['descriptions', 'sources', 'connectionTypes']);
@@ -504,7 +516,7 @@ async function upsertMemberships(client, feedId, seenAt) {
  */
 async function recordExpirationPresence(client, feedId, seenAt) {
   let touched = 0;
-  for (const observableType of IOC_TYPES) {
+  for (const observableType of STORED_IOC_TYPES) {
     const policy = await getFeedPolicy(client, feedId, observableType);
     if (!policy?.enabled || policy.expiration_mode !== 'last_seen_ttl') continue;
     const { rowCount } = await client.query(
@@ -583,7 +595,7 @@ function policySql(policy) {
 }
 
 async function applyPoliciesForSeenMemberships(client, feedId, seenAt) {
-  for (const observableType of IOC_TYPES) {
+  for (const observableType of STORED_IOC_TYPES) {
     const policy = await getFeedPolicy(client, feedId, observableType);
     const sql = policySql(policy);
     const policyDays = sql.params[0] ?? null;
@@ -695,7 +707,7 @@ async function markMissingMemberships(client, feedId, seenAt) {
   if (numberFromRow(stageRows[0], 'count') === 0) return { markedMissing: 0, newlyMissing: 0 };
   let markedMissing = 0;
   let newlyMissing = 0;
-  for (const observableType of IOC_TYPES) {
+  for (const observableType of STORED_IOC_TYPES) {
     const policy = await getFeedPolicy(client, feedId, observableType);
     if (!policy?.enabled || policy.expiration_mode !== 'missing_from_feed_ttl') continue;
     const grace = Number(policy.grace_days ?? policy.ttl_days);
@@ -819,7 +831,7 @@ async function saveSuccessfulState(client, {
   snapshotHash,
   snapshotStable = true
 }) {
-  const total = IOC_TYPES.reduce((sum, type) => sum + Number(stats?.[`api_total_${type}`] || 0), 0)
+  const total = API_TOTAL_TYPES.reduce((sum, type) => sum + Number(stats?.[`api_total_${type}`] || 0), 0)
     + Number(stats?.api_total_ip6net || 0);
   await client.query(
     `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
