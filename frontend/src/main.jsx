@@ -1,6 +1,5 @@
 ﻿import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { parse as parseTld } from 'tldts';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from './lib/api.js';
@@ -13,6 +12,7 @@ import {
   confidenceLabel
 } from './lib/iocConfidenceCard.js';
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
+import { isRdapEligibleObservable } from './lib/iocProviderApplicability.js';
 import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
 import { getDnsmaniaPresentation } from './lib/dnsmaniaPresentation.js';
 import {
@@ -10172,55 +10172,6 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
   </div>;
 }
 
-const RDAP_IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-const RDAP_IPV6_RE = /^([0-9a-f:]+:+)+[0-9a-f]+$/i;
-const RDAP_HASH_RE = /^(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64})$/i;
-const RDAP_TLD_OPTS = { allowPrivateDomains: false, detectIp: false };
-
-function rdapStripHostPort(host) {
-  let h = String(host || '').trim().toLowerCase();
-  h = h.replace(/\.$/, '').replace(/^\[/, '').replace(/\]$/, '');
-  const portIdx = h.indexOf(':');
-  if (portIdx > 0 && /^\d+$/.test(h.slice(portIdx + 1))) h = h.slice(0, portIdx);
-  return h;
-}
-
-function rdapIsIpHost(host) {
-  const h = rdapStripHostPort(host);
-  return RDAP_IPV4_RE.test(h) || RDAP_IPV6_RE.test(h);
-}
-
-function rdapExtractHost(iocValue, iocType) {
-  const raw = String(iocValue || '').trim();
-  const type = String(iocType || '').toLowerCase();
-  if (!raw) return { ok: false, reason: 'empty' };
-
-  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || raw.startsWith('//');
-  const looksLikePath = raw.includes('/') && !raw.includes('@');
-  let hostname = '';
-
-  if (hasScheme || (looksLikePath && (type === 'url' || raw.includes('://')))) {
-    try {
-      const urlStr = raw.startsWith('//') ? `https:${raw}` : (hasScheme ? raw : `https://${raw}`);
-      hostname = rdapStripHostPort(new URL(urlStr).hostname);
-      if (!hostname) return { ok: false, reason: 'invalid_url' };
-    } catch {
-      return { ok: false, reason: 'invalid_url' };
-    }
-  } else if (looksLikePath) {
-    try {
-      hostname = rdapStripHostPort(new URL(`https://${raw}`).hostname);
-    } catch {
-      hostname = rdapStripHostPort(raw.split('/')[0].split('?')[0].split('#')[0]);
-    }
-  } else {
-    hostname = rdapStripHostPort(raw.split('/')[0].split('?')[0].split('#')[0]);
-  }
-
-  if (!hostname) return { ok: false, reason: 'invalid_host' };
-  return { ok: true, host: hostname };
-}
-
 function isIpEnrichmentEligible(iocValue, iocType) {
   return getIpEnrichmentEligibility(iocValue, iocType);
 }
@@ -10637,48 +10588,6 @@ function SpamhausDropEnrichmentCard({ iocId, iocValue, iocType, active = true, c
 }
 
 
-
-/**
- * UI-only eligibility for RDAP card (backend validation unchanged).
- * @returns {{ eligible: boolean, host: string|null, rdapDomain: string|null, reason: string|null }}
- */
-function isRdapEligibleObservable(iocValue, iocType) {
-  const type = String(iocType || '').toLowerCase();
-  if (type !== 'domain' && type !== 'url') {
-    return { eligible: false, host: null, rdapDomain: null, reason: 'unsupported_type' };
-  }
-
-  const raw = String(iocValue || '').trim();
-  if (!raw) {
-    return { eligible: false, host: null, rdapDomain: null, reason: 'empty' };
-  }
-
-  if (RDAP_HASH_RE.test(raw)) {
-    return { eligible: false, host: null, rdapDomain: null, reason: 'hash' };
-  }
-
-  if (type === 'domain' && rdapIsIpHost(raw)) {
-    return { eligible: false, host: raw, rdapDomain: null, reason: 'ip_observable' };
-  }
-
-  const extracted = rdapExtractHost(raw, type);
-  if (!extracted.ok) {
-    return { eligible: false, host: null, rdapDomain: null, reason: extracted.reason || 'invalid' };
-  }
-
-  const host = extracted.host;
-  if (rdapIsIpHost(host)) {
-    return { eligible: false, host, rdapDomain: null, reason: 'ip_host' };
-  }
-
-  const parsed = parseTld(host, RDAP_TLD_OPTS);
-  const rdapDomain = parsed.domain ? String(parsed.domain).toLowerCase() : null;
-  if (!rdapDomain) {
-    return { eligible: false, host, rdapDomain: null, reason: 'no_registrable_domain' };
-  }
-
-  return { eligible: true, host, rdapDomain, reason: null };
-}
 
 const ENRICHMENT_INTELLIGENCE_LAYOUT_CSS = `
 .enrichment-summary-grid {

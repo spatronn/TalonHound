@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractHostFromIocValue,
+  extractHostFromObservable,
   getApplicableProvidersForIocType,
   getDerivedApplicableProviders,
   getDerivedInfrastructure,
@@ -10,6 +11,7 @@ import {
   getDirectApplicableProviders,
   isIpAddress,
   isProviderApplicable,
+  isRdapEligibleObservable,
   normalizeIocType
 } from './iocProviderApplicability.js';
 import { computeLayeredProviderCoverage, computeProviderCoverage, providerStateStyle } from './intelligenceSummary.js';
@@ -206,6 +208,92 @@ test('invalid URL IOC yields no derived context', () => {
 test('domain IOC does not produce derived context (direct RDAP only)', () => {
   const ctx = getDerivedInfrastructureContext('example.com', 'domain', { rdapEligible: true });
   assert.equal(ctx, null);
+});
+
+// ---------------------------------------------------------------------------
+// Central host extractor — single parsing path shared by RDAP + derived infra
+// ---------------------------------------------------------------------------
+
+test('extractHostFromObservable matches required inputs for url type', () => {
+  assert.equal(extractHostFromObservable('bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url'), 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(extractHostFromObservable('https://bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url'), 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(extractHostFromObservable('//example.com/path', 'url'), 'example.com');
+  assert.equal(extractHostFromObservable('example.com/path', 'url'), 'example.com');
+  assert.equal(extractHostFromObservable('example.com', 'url'), 'example.com');
+  assert.equal(extractHostFromObservable('/only/path', 'url'), null);
+  assert.equal(extractHostFromObservable('not a valid url', 'url'), null);
+  assert.equal(extractHostFromObservable('[2001:db8::1]/path', 'url'), '2001:db8::1');
+});
+
+test('extractHostFromObservable also handles domain type', () => {
+  assert.equal(extractHostFromObservable('example.com', 'domain'), 'example.com');
+  assert.equal(extractHostFromObservable('sub.example.co.uk', 'domain'), 'sub.example.co.uk');
+});
+
+test('extractHostFromObservable returns null for non-domain/url types', () => {
+  assert.equal(extractHostFromObservable('example.com', 'ip'), null);
+  assert.equal(extractHostFromObservable('abc123', 'hash'), null);
+});
+
+test('extractHostFromIocValue delegates to central extractor (url only)', () => {
+  assert.equal(extractHostFromIocValue('bu-haftaninsonkampanyasi.shop/x/', 'url'), 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(extractHostFromIocValue('example.com', 'domain'), null); // wrapper stays url-only
+});
+
+// ---------------------------------------------------------------------------
+// isRdapEligibleObservable — RDAP card visibility (moved from main.jsx)
+// ---------------------------------------------------------------------------
+
+test('isRdapEligibleObservable: schemeless URL domain is eligible', () => {
+  const r = isRdapEligibleObservable('bu-haftaninsonkampanyasi.shop/sadece-online-ozel/', 'url');
+  assert.equal(r.eligible, true);
+  assert.equal(r.host, 'bu-haftaninsonkampanyasi.shop');
+  assert.equal(r.rdapDomain, 'bu-haftaninsonkampanyasi.shop');
+});
+
+test('isRdapEligibleObservable: normal HTTPS URL is eligible', () => {
+  const r = isRdapEligibleObservable('https://sub.example.co.uk/login', 'url');
+  assert.equal(r.eligible, true);
+  assert.equal(r.host, 'sub.example.co.uk');
+  assert.equal(r.rdapDomain, 'example.co.uk');
+});
+
+test('isRdapEligibleObservable: domain IOC is eligible', () => {
+  const r = isRdapEligibleObservable('example.com', 'domain');
+  assert.equal(r.eligible, true);
+  assert.equal(r.rdapDomain, 'example.com');
+});
+
+test('isRdapEligibleObservable: relative path is not eligible', () => {
+  const r = isRdapEligibleObservable('/only/path', 'url');
+  assert.equal(r.eligible, false);
+});
+
+test('isRdapEligibleObservable: whitespace/invalid value is not eligible', () => {
+  assert.equal(isRdapEligibleObservable('not a valid url', 'url').eligible, false);
+  assert.equal(isRdapEligibleObservable('   ', 'url').eligible, false);
+});
+
+test('isRdapEligibleObservable: IPv4 is not eligible for RDAP', () => {
+  assert.equal(isRdapEligibleObservable('1.2.3.4', 'domain').eligible, false);
+  assert.equal(isRdapEligibleObservable('http://1.2.3.4/x', 'url').eligible, false);
+});
+
+test('isRdapEligibleObservable: IPv6 host is not eligible for RDAP', () => {
+  const r = isRdapEligibleObservable('[2001:db8::1]/path', 'url');
+  assert.equal(r.eligible, false);
+  assert.equal(r.host, '2001:db8::1');
+  assert.equal(r.reason, 'ip_host');
+});
+
+test('isRdapEligibleObservable: hash is not eligible', () => {
+  assert.equal(isRdapEligibleObservable('a'.repeat(64), 'url').eligible, false);
+  assert.equal(isRdapEligibleObservable('a'.repeat(32), 'domain').eligible, false);
+});
+
+test('isRdapEligibleObservable: unsupported IOC types are not eligible', () => {
+  assert.equal(isRdapEligibleObservable('example.com', 'ip').eligible, false);
+  assert.equal(isRdapEligibleObservable('abc', 'file_hash').eligible, false);
 });
 
 test('computeProviderCoverage supports explicit providerKeys for derived section', () => {

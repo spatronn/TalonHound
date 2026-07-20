@@ -1,6 +1,11 @@
+import { parse as parseTld } from 'tldts';
 import { ipEnrichStripHostPort } from './ipEnrichmentTarget.js';
 
 export const PROVIDER_KEYS = Object.freeze(['virustotal', 'ipinfo', 'abuseipdb', 'rdap', 'spamhaus_drop', 'dnsmania']);
+
+/** ICANN registrable domain only — private suffixes (e.g. netlify.app) are not treated as the RDAP root. */
+const RDAP_TLD_OPTS = { allowPrivateDomains: false, detectIp: false };
+const RDAP_HASH_RE = /^(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64})$/i;
 
 const HASH_TYPES = new Set([
   'file_hash',
@@ -44,18 +49,23 @@ export function isIpAddress(value) {
 }
 
 /**
- * Extract hostname from URL IOC values.
- * Supports http://, https://, protocol-relative (//), and schemeless URLs with a path.
- * When no scheme is present, prepends https:// temporarily for parsing only — never
- * modifies the stored IOC value.
+ * Central hostname extractor for domain and URL observables — the single source of truth
+ * for frontend host parsing (RDAP eligibility, derived-infrastructure routing).
+ *
+ * Supports http://, https://, protocol-relative (//host), schemeless host/path, and bare
+ * hosts. When no scheme is present, https:// is prepended only for parsing — the input value
+ * is never mutated. Returns the lowercased host (domain or IP literal; port/path/query/
+ * fragment stripped) or null. IP-vs-domain classification and RDAP TLD eligibility are the
+ * caller's responsibility.
  * @returns {string|null}
  */
-export function extractHostFromIocValue(iocValue, iocType) {
-  if (normalizeIocType(iocType) !== 'url') return null;
-  const raw = String(iocValue || '').trim();
+export function extractHostFromObservable(value, iocType) {
+  const type = normalizeIocType(iocType);
+  if (type !== 'url' && type !== 'domain') return null;
+  const raw = String(value || '').trim();
   if (!raw) return null;
 
-  // Relative paths (single leading slash) are never valid URL IOC values
+  // Relative paths (single leading slash) are never valid observable values
   if (raw.startsWith('/') && !raw.startsWith('//')) return null;
 
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || raw.startsWith('//');
@@ -75,13 +85,66 @@ export function extractHostFromIocValue(iocValue, iocType) {
       }
     }
   } else {
-    // Bare string with no scheme and no path — must look like a hostname (has a dot or is IPv6)
+    // Bare host with no scheme/path — require it to look like a hostname or IP literal
     hostname = ipEnrichStripHostPort(raw.split('?')[0].split('#')[0]);
-    if (!hostname.includes('.') && !hostname.startsWith('[')) return null;
+    if (!hostname.includes('.') && !hostname.includes(':')) return null;
   }
 
   if (!hostname || /\s/.test(hostname)) return null;
   return hostname;
+}
+
+/**
+ * Extract hostname from URL IOC values only. Thin wrapper over extractHostFromObservable,
+ * kept for existing callers/tests that operate strictly on url-typed IOCs.
+ * @returns {string|null}
+ */
+export function extractHostFromIocValue(iocValue, iocType) {
+  if (normalizeIocType(iocType) !== 'url') return null;
+  return extractHostFromObservable(iocValue, iocType);
+}
+
+/**
+ * UI-only RDAP eligibility for domain/url observables (backend validation stays independent).
+ * Uses the central host extractor + isIpAddress classifier so the frontend has a single
+ * parsing path. Returns eligibility plus the resolved host and registrable RDAP domain.
+ * @returns {{ eligible: boolean, host: string|null, rdapDomain: string|null, reason: string|null }}
+ */
+export function isRdapEligibleObservable(iocValue, iocType) {
+  const type = normalizeIocType(iocType);
+  if (type !== 'domain' && type !== 'url') {
+    return { eligible: false, host: null, rdapDomain: null, reason: 'unsupported_type' };
+  }
+
+  const raw = String(iocValue || '').trim();
+  if (!raw) {
+    return { eligible: false, host: null, rdapDomain: null, reason: 'empty' };
+  }
+
+  if (RDAP_HASH_RE.test(raw)) {
+    return { eligible: false, host: null, rdapDomain: null, reason: 'hash' };
+  }
+
+  if (type === 'domain' && isIpAddress(raw)) {
+    return { eligible: false, host: raw, rdapDomain: null, reason: 'ip_observable' };
+  }
+
+  const host = extractHostFromObservable(raw, type);
+  if (!host) {
+    return { eligible: false, host: null, rdapDomain: null, reason: 'invalid' };
+  }
+
+  if (isIpAddress(host)) {
+    return { eligible: false, host, rdapDomain: null, reason: 'ip_host' };
+  }
+
+  const parsed = parseTld(host, RDAP_TLD_OPTS);
+  const rdapDomain = parsed.domain ? String(parsed.domain).toLowerCase() : null;
+  if (!rdapDomain) {
+    return { eligible: false, host, rdapDomain: null, reason: 'no_registrable_domain' };
+  }
+
+  return { eligible: true, host, rdapDomain, reason: null };
 }
 
 /**
