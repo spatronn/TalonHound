@@ -251,6 +251,26 @@ function suppressionKey(iocValue, iocType) {
   return `${String(iocType || '').trim().toLowerCase()}\t${String(iocValue || '').trim().toLowerCase()}`;
 }
 
+const SUPPRESSION_IOC_TYPES = ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'];
+
+// Client-side best-effort detection for the manual "Add Suppression" form.
+// The backend re-detects/validates; this is only a UX hint. Kept in sync with
+// backend/lib/suppressionInput.js detectSuppressionType.
+function detectSuppressionTypeUI(rawValue) {
+  const v = String(rawValue || '').trim();
+  if (!v) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return 'url';
+  const core = v.split('/')[0].trim();
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(core) && core.split('.').every((o) => Number(o) <= 255)) return 'ip';
+  if (core.includes(':') && /^[0-9a-f:]+$/i.test(core)) return 'ipv6';
+  if (/^[a-f0-9]{32}$/i.test(v)) return 'md5';
+  if (/^[a-f0-9]{40}$/i.test(v)) return 'sha1';
+  if (/^[a-f0-9]{64}$/i.test(v)) return 'sha256';
+  if (v.includes('/')) return 'url';
+  if (/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\.?$/i.test(v)) return 'domain';
+  return null;
+}
+
 function isSuppressionActiveRow(row) {
   if (!row?.active) return false;
   if (!row?.expires_at) return true;
@@ -8993,6 +9013,7 @@ function IOCSuppressionsPage() {
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState({ active: 0, disabled: 0, expired: 0, total: 0 });
   const [page, setPage] = useState(Math.max(1, Number(searchParams.get('page') || 1)));
   const [pageSize] = useState(25);
   const [loading, setLoading] = useState(false);
@@ -9000,11 +9021,18 @@ function IOCSuppressionsPage() {
   const [searchInput, setSearchInput] = useState(String(searchParams.get('search') || ''));
   const [search, setSearch] = useState(String(searchParams.get('search') || ''));
   const [iocType, setIocType] = useState(String(searchParams.get('ioc_type') || 'all'));
-  const [scope, setScope] = useState(String(searchParams.get('scope') || 'all'));
   const initialStatus = String(searchParams.get('status') || 'all');
   const [statusFilter, setStatusFilter] = useState(initialStatus === 'inactive' ? 'disabled' : initialStatus);
-  const [sourceName, setSourceName] = useState(String(searchParams.get('source_name') || ''));
   const [createdBy, setCreatedBy] = useState(String(searchParams.get('created_by') || ''));
+  const [showAdd, setShowAdd] = useState(false);
+  const [addValue, setAddValue] = useState('');
+  const [addType, setAddType] = useState('auto');
+  const [addTypeTouched, setAddTypeTouched] = useState(false);
+  const [addReason, setAddReason] = useState('');
+  const [addPreset, setAddPreset] = useState('never');
+  const [addCustomDate, setAddCustomDate] = useState('');
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState('');
   const [editItem, setEditItem] = useState(null);
   const [editReason, setEditReason] = useState('');
   const [editEnabled, setEditEnabled] = useState(true);
@@ -9026,30 +9054,32 @@ function IOCSuppressionsPage() {
       const params = { page, pageSize, sort: 'created_at_desc' };
       if (search) params.search = search;
       if (iocType && iocType !== 'all') params.ioc_type = iocType;
-      if (scope && scope !== 'all') params.scope = scope;
       if (createdBy.trim()) params.created_by = createdBy.trim();
       if (statusFilter && statusFilter !== 'all') {
         params.status = statusFilter === 'inactive' ? 'disabled' : statusFilter;
       }
       const { data } = await api.get('/ioc-suppressions', { params });
-      let loaded = Array.isArray(data?.items) ? data.items : [];
-      if (sourceName.trim()) {
-        const q = sourceName.trim().toLowerCase();
-        loaded = loaded.filter((x) => String(x.source_name || '').toLowerCase().includes(q));
-      }
+      const loaded = Array.isArray(data?.items) ? data.items : [];
       const nextTotal = Number(data?.total || 0);
       setItems(loaded);
       setTotal(nextTotal);
+      setStats({
+        active: Number(data?.stats?.active || 0),
+        disabled: Number(data?.stats?.disabled || 0),
+        expired: Number(data?.stats?.expired || 0),
+        total: Number(data?.stats?.total || 0)
+      });
       const nextTotalPages = Math.max(1, Math.ceil(nextTotal / pageSize));
       if (page > nextTotalPages) setPage(nextTotalPages);
     } catch (err) {
       setItems([]);
       setTotal(0);
+      setStats({ active: 0, disabled: 0, expired: 0, total: 0 });
       setError(apiErrorMessage(err, 'Failed to load suppressions'));
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, iocType, scope, statusFilter, sourceName, createdBy]);
+  }, [page, pageSize, search, iocType, statusFilter, createdBy]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -9060,12 +9090,10 @@ function IOCSuppressionsPage() {
     if (search) next.set('search', search);
     if (page > 1) next.set('page', String(page));
     if (iocType !== 'all') next.set('ioc_type', iocType);
-    if (scope !== 'all') next.set('scope', scope);
     if (statusFilter !== 'all') next.set('status', statusFilter);
-    if (sourceName.trim()) next.set('source_name', sourceName.trim());
     if (createdBy.trim()) next.set('created_by', createdBy.trim());
     setSearchParams(next, { replace: true });
-  }, [search, page, iocType, scope, statusFilter, sourceName, createdBy, setSearchParams]);
+  }, [search, page, iocType, statusFilter, createdBy, setSearchParams]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -9073,21 +9101,46 @@ function IOCSuppressionsPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const pageSummary = useMemo(() => {
-    const active = items.filter((x) => String(x.status || '').toLowerCase() === 'active').length;
-    const disabled = items.filter((x) => {
-      const s = String(x.status || '').toLowerCase();
-      return s === 'disabled' || s === 'inactive' || x.active === false;
-    }).length;
-    const expired = items.filter((x) => String(x.status || '').toLowerCase() === 'expired').length;
-    const global = items.filter((x) => String(x.scope || '').toLowerCase() === 'global').length;
-    const sourceScoped = items.filter((x) => String(x.scope || '').toLowerCase() === 'source').length;
-    return { active, disabled, expired, global, sourceScoped };
-  }, [items]);
-
   function applyFilters() {
     setPage(1);
     setSearch(searchInput.trim());
+  }
+
+  function resetAddForm() {
+    setAddValue('');
+    setAddType('auto');
+    setAddTypeTouched(false);
+    setAddReason('');
+    setAddPreset('never');
+    setAddCustomDate('');
+    setAddError('');
+  }
+
+  async function submitAdd() {
+    if (addSaving) return;
+    const value = String(addValue || '').trim();
+    const reason = String(addReason || '').trim();
+    if (!value) { setAddError('IOC value is required'); return; }
+    if (reason.length < 3) { setAddError('Reason is required (min 3 characters)'); return; }
+    const body = { ioc_value: value, reason };
+    if (addTypeTouched && addType && addType !== 'auto') body.ioc_type = addType;
+    const expiresAt = expiresAtFromPreset(addPreset, addCustomDate);
+    if (expiresAt) body.expires_at = expiresAt;
+    setAddSaving(true);
+    setAddError('');
+    try {
+      await api.post('/ioc-suppressions', body);
+      setShowAdd(false);
+      resetAddForm();
+      setToast('Suppression created');
+      setPage(1);
+      await load();
+    } catch (err) {
+      const msg = apiErrorMessage(err, 'Failed to create suppression');
+      setAddError(msg.includes('Forbidden') ? 'You do not have permission to create suppressions' : msg);
+    } finally {
+      setAddSaving(false);
+    }
   }
 
   function openEdit(item) {
@@ -9168,8 +9221,15 @@ function IOCSuppressionsPage() {
   return (
     <AppShell>
       <section className="published-feeds-page" style={ui.section}>
-        <h2 style={ui.pageTitle}>IOC Suppressions</h2>
-        <p style={ui.pageSub}>Manage false positives and suppressed indicators to prevent recurring feed noise.</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h2 style={ui.pageTitle}>IOC Suppressions</h2>
+            <p style={ui.pageSub}>Manage false positives and suppressed indicators to prevent recurring feed noise.</p>
+          </div>
+          {isAdmin ? (
+            <button type="button" style={ui.btnPrimary} onClick={() => { resetAddForm(); setShowAdd(true); }}>Add Suppression</button>
+          ) : null}
+        </div>
 
         {!isAdmin ? (
           <div style={{ ...ui.banner, borderColor: '#475569', background: 'rgba(100,116,139,0.15)', color: '#cbd5e1', marginBottom: 16 }}>
@@ -9180,13 +9240,12 @@ function IOCSuppressionsPage() {
         {toast ? <div style={{ ...ui.banner, marginBottom: 12 }}>{toast}</div> : null}
         {error ? <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.25)', color: '#fca5a5' }}>{error}</div> : null}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
           {[
-            ['Active (page)', pageSummary.active],
-            ['Disabled (page)', pageSummary.disabled],
-            ['Expired (page)', pageSummary.expired],
-            ['Global (page)', pageSummary.global],
-            ['Source-specific (page)', pageSummary.sourceScoped]
+            ['Active', stats.active],
+            ['Disabled', stats.disabled],
+            ['Expired', stats.expired],
+            ['Total', stats.total]
           ].map(([label, val]) => (
             <div key={label} style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
               <div style={{ fontSize: 12, color: '#94a3b8' }}>{label}</div>
@@ -9205,15 +9264,7 @@ function IOCSuppressionsPage() {
               <span style={ui.label}>IOC Type</span>
               <select value={iocType} onChange={(e) => { setIocType(e.target.value); setPage(1); }} style={ui.select}>
                 <option value="all">All</option>
-                {['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'].map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <span style={ui.label}>Scope</span>
-              <select value={scope} onChange={(e) => { setScope(e.target.value); setPage(1); }} style={ui.select}>
-                <option value="all">All</option>
-                <option value="global">Global</option>
-                <option value="source">Source-specific</option>
+                {SUPPRESSION_IOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
@@ -9226,19 +9277,15 @@ function IOCSuppressionsPage() {
               </select>
             </div>
             <div>
-              <span style={ui.label}>Source</span>
-              <input value={sourceName} onChange={(e) => setSourceName(e.target.value)} placeholder="Optional" style={ui.input} />
-            </div>
-            <div>
               <span style={ui.label}>Created by</span>
               <input value={createdBy} onChange={(e) => setCreatedBy(e.target.value)} placeholder="Optional" style={ui.input} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button type="button" style={ui.btnPrimary} onClick={applyFilters}>Apply filters</button>
-            <button type="button" style={ui.btn} onClick={() => { setSearchInput(''); setSearch(''); setIocType('all'); setScope('all'); setStatusFilter('all'); setSourceName(''); setCreatedBy(''); setPage(1); }}>Reset</button>
+            <button type="button" style={ui.btn} onClick={() => { setSearchInput(''); setSearch(''); setIocType('all'); setStatusFilter('all'); setCreatedBy(''); setPage(1); }}>Reset</button>
           </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>Summary cards reflect the current page only. Source filter is client-side on the loaded page (backend has no source_name query param).</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>Summary cards show global totals for the current search/type filters.</div>
         </div>
 
         {loading ? <div style={{ color: '#94a3b8', marginBottom: 12 }}>Loading suppressions…</div> : null}
@@ -9251,10 +9298,10 @@ function IOCSuppressionsPage() {
 
         {items.length ? (
           <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
-            <table className="ioc-table published-feeds-table" width="100%" style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
+            <table className="ioc-table published-feeds-table" width="100%" style={{ borderCollapse: 'collapse', minWidth: 900 }}>
               <thead style={ui.thead}>
                 <tr>
-                  {['IOC', 'Type', 'Scope', 'Source', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Actions'].map((h) => (
+                  {['IOC', 'Type', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Actions'].map((h) => (
                     <th key={h} style={ui.th}>{h}</th>
                   ))}
                 </tr>
@@ -9264,8 +9311,6 @@ function IOCSuppressionsPage() {
                   <tr key={item.id} style={ui.tr}>
                     <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
                     <td style={ui.td}>{item.ioc_type}</td>
-                    <td style={ui.td}><span style={suppressionStatusBadgeStyle('active')}>{String(item.scope || 'global').toLowerCase() === 'source' ? 'Source-specific' : 'Global'}</span></td>
-                    <td style={ui.td}>{item.source_name || '—'}</td>
                     <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
                     <td style={ui.td}>{item.created_by || '—'}</td>
                     <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
@@ -9304,16 +9349,58 @@ function IOCSuppressionsPage() {
         </div>
       </section>
 
+      {showAdd ? (
+        <ModalOverlay onClose={() => !addSaving && setShowAdd(false)}>
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Add suppression</h3>
+          <p style={ui.modalSub}>Creates an active global suppression. The IOC does not need to exist yet — if a feed imports it later, it stays effectively Suppressed / False Positive.</p>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <span style={ui.label}>IOC Value <span style={{ color: '#f87171' }}>*</span></span>
+              <input
+                value={addValue}
+                onChange={(e) => setAddValue(e.target.value)}
+                placeholder="e.g. 1.1.1.1, evil.com, https://bad/x, or a hash"
+                style={ui.input}
+                disabled={addSaving}
+                autoFocus
+              />
+            </div>
+            <div>
+              <span style={ui.label}>IOC Type</span>
+              <select
+                value={addType}
+                onChange={(e) => { setAddType(e.target.value); setAddTypeTouched(e.target.value !== 'auto'); }}
+                style={ui.select}
+                disabled={addSaving}
+              >
+                <option value="auto">Auto-detect{(() => { const d = detectSuppressionTypeUI(addValue); return d ? ` (${d})` : ''; })()}</option>
+                {SUPPRESSION_IOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={ui.label}>Reason <span style={{ color: '#f87171' }}>*</span></span>
+              <textarea value={addReason} onChange={(e) => setAddReason(e.target.value)} style={ui.textarea} disabled={addSaving} maxLength={500} placeholder="Why is this a false positive?" />
+            </div>
+            <SuppressionExpirationFields ui={ui} preset={addPreset} setPreset={setAddPreset} customDate={addCustomDate} setCustomDate={setAddCustomDate} disabled={addSaving} />
+            <div>
+              <span style={ui.label}>Status</span>
+              <input readOnly value="Active" style={ui.input} />
+            </div>
+            {addError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{addError}</div> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" style={ui.btn} onClick={() => { setShowAdd(false); resetAddForm(); }} disabled={addSaving}>Cancel</button>
+              <button type="button" style={ui.btnPrimary} onClick={() => submitAdd().catch(() => {})} disabled={addSaving}>{addSaving ? 'Creating…' : 'Create suppression'}</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
       {editItem ? (
         <ModalOverlay onClose={() => !editSaving && setEditItem(null)}>
           <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit suppression</h3>
           <div style={{ display: 'grid', gap: 12 }}>
             <div><span style={ui.label}>IOC</span><input readOnly value={editItem.ioc_value} style={ui.input} /></div>
             <div><span style={ui.label}>Type</span><input readOnly value={editItem.ioc_type} style={ui.input} /></div>
-            <div><span style={ui.label}>Scope</span><input readOnly value={editItem.scope || 'global'} style={ui.input} /></div>
-            {String(editItem.scope || '').toLowerCase() === 'source' ? (
-              <div><span style={ui.label}>Source</span><input readOnly value={editItem.source_name || '—'} style={ui.input} /></div>
-            ) : null}
             <div>
               <span style={ui.label}>Reason</span>
               <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} style={ui.textarea} disabled={!isAdmin || editSaving} />
@@ -13053,7 +13140,6 @@ function IOCDetailsPage() {
                 <div style={{ fontWeight: 700, color: '#86efac', marginBottom: 8 }}>This IOC is marked as False Positive / Suppressed.</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1' }}>
                   <div><span style={{ color: '#94a3b8' }}>Reason:</span> {suppression.reason || '—'}</div>
-                  <div><span style={{ color: '#94a3b8' }}>Scope:</span> {suppression.scope || 'global'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '—'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Created at:</span> {formatUserDateTime(suppression.created_at)}</div>
                   <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {suppression.expires_at ? formatUserDateTime(suppression.expires_at) : 'Never'}</div>

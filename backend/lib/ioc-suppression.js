@@ -28,13 +28,12 @@ export function buildSuppressionIndex(rows = []) {
     const key = makeSuppressionKey(row.ioc_value, row.ioc_type);
     if (!key) continue;
     const entry = index.get(key) || emptyIndexEntry();
-    const scope = String(row.scope || 'global').trim().toLowerCase();
-    if (scope === 'global') {
-      entry.global = true;
-    } else if (scope === 'source') {
-      const src = String(row.source_name || '').trim().toLowerCase();
-      if (src) entry.sources.add(src);
-    }
+    // Suppressions are effectively global: matching is by (value, type) only and
+    // scope is ignored everywhere else (DB lookup, export, recompute). Any active
+    // row — including legacy source-scoped rows — suppresses the indicator.
+    entry.global = true;
+    const src = String(row.source_name || '').trim().toLowerCase();
+    if (src) entry.sources.add(src);
     index.set(key, entry);
   }
   return index;

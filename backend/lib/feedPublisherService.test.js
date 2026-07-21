@@ -4,7 +4,8 @@ import {
   persistPublishedFeedSnapshot,
   canSkipPublishedFeedRegeneration,
   watermarkKey,
-  filtersHash
+  filtersHash,
+  fetchIocExportFingerprint
 } from './feedPublisherService.js';
 
 function createMockPool(handlers) {
@@ -240,5 +241,19 @@ describe('canSkipPublishedFeedRegeneration', () => {
 
   it('watermarkKey stable for identical values', () => {
     assert.equal(watermarkKey(watermark), watermarkKey({ ...watermark }));
+  });
+});
+
+describe('published feed excludes suppressed IOCs', () => {
+  it('fetchIocExportFingerprint SQL excludes status = suppressed', async () => {
+    let capturedSql = '';
+    const pool = {
+      async query(sql, params = []) {
+        capturedSql = String(sql).replace(/\s+/g, ' ').trim();
+        return { rows: [{ item_count: 0, max_recency: null }] };
+      }
+    };
+    await fetchIocExportFingerprint(pool, { ioc_type: 'ip', exclude_expired: true }, 'all');
+    assert.match(capturedSql, /COALESCE\(i\.status, 'active'\) <> 'suppressed'/);
   });
 });

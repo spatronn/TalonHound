@@ -1,10 +1,7 @@
 import { createHash } from 'node:crypto';
 import { config } from './config.js';
 import {
-  createSuppressionStats,
-  fetchActiveSuppressionIndex,
-  filterSuppressedPairs,
-  isPairSuppressed
+  createSuppressionStats
 } from './lib/ioc-suppression.js';
 import {
   createImportMetrics,
@@ -1010,20 +1007,10 @@ export async function batchInsertIocs(client, entries, observableType = 'ip', su
   for (let i = 0; i < entries.length; i += BATCH_INSERT_CHUNK) {
     throwIfAborted(signal);
     const chunk = entries.slice(i, i + BATCH_INSERT_CHUNK);
-    const pairs = chunk.map((e) => ({
-      iocValue: e.observable ?? e.ip,
-      iocType: observableType,
-      sourceName: e.sourceName ?? null
-    }));
-    const index = await fetchActiveSuppressionIndex(client, pairs, { logTag: 'integration-import' });
-    const { kept, stats } = filterSuppressedPairs(index, chunk, (e) => ({
-      iocValue: e.observable ?? e.ip,
-      iocType: observableType,
-      sourceName: e.sourceName ?? null
-    }));
-    out.suppressed += chunk.length - kept.length;
-    if (suppressionStats) suppressionStats.merge(stats);
-    if (!kept.length) continue;
+    // Suppressed IOCs are imported normally (IOC + membership are created/updated);
+    // recomputeIocGlobalStatus keeps their effective status 'suppressed'. We no
+    // longer filter them out at import time.
+    const kept = chunk;
 
     const resolvedKept = kept.map((e) => ({
       ...e,
@@ -1202,16 +1189,9 @@ export async function updateObservableBySourceOnImport(client, {
 
 async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null, threatClassification = null, firstSeenAt = null }, suppressionStats = null, signal = null) {
   throwIfAborted(signal);
-  const index = await fetchActiveSuppressionIndex(
-    client,
-    [{ iocValue: observable, iocType: observableType, sourceName }],
-    { logTag: 'integration-import' }
-  );
-  const hit = isPairSuppressed(index, { iocValue: observable, iocType: observableType, sourceName });
-  if (hit?.suppressed) {
-    if (suppressionStats) suppressionStats.noteSuppressionSkip({ byGlobal: hit.byGlobal });
-    return 'suppressed';
-  }
+  // Suppressed IOCs are imported normally (IOC + membership are created/updated);
+  // recomputeIocGlobalStatus keeps their effective status 'suppressed'. Import no
+  // longer skips them, so an existing suppression is never silently dropped.
 
   const confFields = resolveImportConfidenceFields({
     parsedSourceConfidence: resolveParsedSourceConfidence(sourceConfidence, confidence),

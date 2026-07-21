@@ -35,7 +35,7 @@ import {
 } from './routes/analystIntelligence.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { registerIocDeleteRoute } from './routes/iocDelete.js';
-import { formatExpirationSummary, buildIocExpirationSummary } from './lib/iocExpiration.js';
+import { formatExpirationSummary, buildIocExpirationSummary, recomputeIocGlobalStatus } from './lib/iocExpiration.js';
 import {
   archiveIntegrationFeed,
   findActivePurgeJobForFeed,
@@ -131,6 +131,7 @@ import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItems
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
 import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
+import { createManualSuppression } from './lib/manualSuppressionCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
 import { computeNextRunAt, computeNextWeeklyRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule } from './lib/integrationSchedule.js';
@@ -2482,6 +2483,30 @@ function isSuppressionActiveRow(row) {
   return Number.isFinite(exp) && exp > Date.now();
 }
 
+/**
+ * Recompute the effective status of every ioc_items row matching a suppression's
+ * (value, type). Called after a suppression is created/enabled/disabled/deleted so
+ * the IOC lifecycle status flips to/from 'suppressed' immediately (req #6/#7).
+ * Best-effort: failures are logged, never fatal to the suppression mutation.
+ */
+async function recomputeIocsForSuppression(iocValue, iocType, actor = { actor_type: 'user', source: 'web' }) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, observable_type FROM ioc_items
+       WHERE lower(observable) = lower($1) AND lower(observable_type) = lower($2)`,
+      [iocValue, iocType]
+    );
+    for (const row of rows || []) {
+      await recomputeIocGlobalStatus(pool, row.id, row.observable_type, {
+        audit: auditLogService,
+        actor
+      }).catch((e) => console.warn('[suppression] recompute failed', e?.message || e));
+    }
+  } catch (e) {
+    console.warn('[suppression] recompute lookup failed', e?.message || e);
+  }
+}
+
 function parsePositiveInt(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return null;
@@ -4086,6 +4111,7 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
       },
       metadata: { ioc_id: iocId, created_by: createdBy }
     }).catch((e) => console.warn('[audit] suppression create log failed', e?.message || e));
+    await recomputeIocsForSuppression(iocValue, iocType);
     return res.json({ status: 'suppressed', suppression });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -4138,10 +4164,21 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
         }
       }).catch((e) => console.warn('[audit] suppression disable log failed', e?.message || e));
     }
+    if (q.rowCount) await recomputeIocsForSuppression(iocValue, iocType);
     return res.json({ ok: true, updated: q.rowCount || 0 });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to disable suppression', detail: err.message });
   }
+});
+
+app.post('/api/ioc-suppressions', async (req, res) => {
+  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  const result = await createManualSuppression(pool, req.body || {}, {
+    req,
+    user: req.user,
+    audit: auditLogService
+  });
+  return res.status(result.status).json(result.body);
 });
 
 app.get('/api/ioc-suppressions', async (req, res) => {
@@ -4156,12 +4193,19 @@ app.get('/api/ioc-suppressions', async (req, res) => {
   const expires = String(req.query?.expires || 'all').trim().toLowerCase();
   const statusFilter = normalizeSuppressionStatusFilter(req.query?.status || '');
   const createdBy = String(req.query?.created_by || '').trim();
-  const where = ['s.deleted_at IS NULL'];
-  const params = [];
-  if (search) { params.push(`%${search.toLowerCase()}%`); where.push(`(lower(s.ioc_value) LIKE $${params.length} OR lower(COALESCE(s.reason,'')) LIKE $${params.length})`); }
-  if (iocType) { params.push(iocType); where.push(`lower(s.ioc_type) = $${params.length}`); }
-  if (scope && scope !== 'all') { params.push(scope); where.push(`lower(s.scope) = $${params.length}`); }
-  if (createdBy) { params.push(`%${createdBy.toLowerCase()}%`); where.push(`lower(COALESCE(s.created_by,'')) LIKE $${params.length}`); }
+
+  // Non-status filters shared by the list, count, and summary-stats queries so
+  // the summary cards show true global counts (not page-level) for the current
+  // search/type filters, independent of the selected status tab.
+  const filterWhere = ['s.deleted_at IS NULL'];
+  const filterParams = [];
+  if (search) { filterParams.push(`%${search.toLowerCase()}%`); filterWhere.push(`(lower(s.ioc_value) LIKE $${filterParams.length} OR lower(COALESCE(s.reason,'')) LIKE $${filterParams.length})`); }
+  if (iocType) { filterParams.push(iocType); filterWhere.push(`lower(s.ioc_type) = $${filterParams.length}`); }
+  if (scope && scope !== 'all') { filterParams.push(scope); filterWhere.push(`lower(s.scope) = $${filterParams.length}`); }
+  if (createdBy) { filterParams.push(`%${createdBy.toLowerCase()}%`); filterWhere.push(`lower(COALESCE(s.created_by,'')) LIKE $${filterParams.length}`); }
+
+  const where = [...filterWhere];
+  const params = [...filterParams];
 
   if (statusFilter === 'active') {
     where.push('s.active = TRUE AND (s.expires_at IS NULL OR s.expires_at > NOW())');
@@ -4195,7 +4239,27 @@ app.get('/api/ioc-suppressions', async (req, res) => {
     );
     const countParams = params.slice(0, -2);
     const cq = await pool.query(`SELECT COUNT(*)::int AS total FROM ioc_suppressions s WHERE ${baseWhere}`, countParams);
-    return res.json({ items: q.rows || [], total: Number(cq.rows?.[0]?.total || 0), page, pageSize });
+
+    // Global summary counts across the current non-status filters.
+    const statsWhere = filterWhere.join(' AND ');
+    const sq = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE s.active = TRUE AND (s.expires_at IS NULL OR s.expires_at > NOW()))::int AS active,
+         COUNT(*) FILTER (WHERE s.active = FALSE)::int AS disabled,
+         COUNT(*) FILTER (WHERE s.active = TRUE AND s.expires_at IS NOT NULL AND s.expires_at <= NOW())::int AS expired,
+         COUNT(*)::int AS total
+       FROM ioc_suppressions s
+       WHERE ${statsWhere}`,
+      filterParams
+    );
+    const statsRow = sq.rows?.[0] || {};
+    const stats = {
+      active: Number(statsRow.active || 0),
+      disabled: Number(statsRow.disabled || 0),
+      expired: Number(statsRow.expired || 0),
+      total: Number(statsRow.total || 0)
+    };
+    return res.json({ items: q.rows || [], total: Number(cq.rows?.[0]?.total || 0), page, pageSize, stats });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC suppressions', detail: err.message });
   }
@@ -4282,6 +4346,9 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
         reason: after.reason
       }
     }).catch((e) => console.warn('[audit] suppression update log failed', e?.message || e));
+    if (activeChanged || prevStatus !== newStatus) {
+      await recomputeIocsForSuppression(after.ioc_value, after.ioc_type);
+    }
     return res.json({ item: { ...after, status: newStatus } });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
@@ -4336,6 +4403,7 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
         reason: reasonCheck.reason
       }
     }).catch((e) => console.warn('[audit] suppression delete log failed', e?.message || e));
+    await recomputeIocsForSuppression(after.ioc_value, after.ioc_type);
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete suppression', detail: err.message });

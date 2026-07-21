@@ -62,6 +62,13 @@ describe('suppression index', () => {
     assert.equal(isIocSuppressedFromIndex(index, 'evil.test', 'domain'), true);
     assert.equal(isIocSuppressedFromIndex(index, 'good.test', 'domain'), false);
   });
+
+  it('suppresses regardless of legacy scope (scope-agnostic matching)', () => {
+    const index = buildSuppressionIndex([
+      { ioc_value: '1.1.1.1', ioc_type: 'ip', scope: 'source', source_name: 'USOM:TR-CERT' }
+    ]);
+    assert.equal(isIocSuppressedFromIndex(index, '1.1.1.1', 'ip'), true);
+  });
 });
 
 describe('upsertMembershipOnImport conditional updates', () => {

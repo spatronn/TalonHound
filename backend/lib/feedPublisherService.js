@@ -135,6 +135,7 @@ async function fetchIocRows(pool, feed, window) {
       COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
     FROM ioc_items i
     WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
   `;
 
   const interval = WINDOW_INTERVALS[window];
@@ -225,6 +226,7 @@ export async function fetchIocExportFingerprint(pool, feed, window) {
            MAX(COALESCE(i.last_seen_log, i.last_seen_at, i.created_at)) AS max_recency
     FROM ioc_items i
     WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
   `;
 
   const interval = WINDOW_INTERVALS[window];

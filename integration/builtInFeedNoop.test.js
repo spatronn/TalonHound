@@ -195,8 +195,8 @@ describe('built-in feed unchanged metadata no-op handling', () => {
     assert.equal(result.inserted, 0);
     assert.equal(result.duplicate, 0);
     assert.equal(result.skipped, 1);
-    assert.equal(client.calls.length, 3, 'count_only same-source duplicate should check suppression, attempt insert, and classify unchanged');
-    assert.ok(client.calls[2].sql.includes('IS DISTINCT FROM'));
+    assert.equal(client.calls.length, 2, 'count_only same-source duplicate should attempt insert and classify unchanged (no suppression skip)');
+    assert.ok(client.calls[1].sql.includes('IS DISTINCT FROM'));
     assert.ok(!client.calls.some((c) => c.sql.includes('ioc_feed_memberships')));
   });
 
