@@ -23,6 +23,15 @@ import {
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
+import {
+  TAG_MANAGER_PAGE_SIZE,
+  TAG_MANAGER_SEARCH_DEBOUNCE_MS,
+  buildTagManagerQueryParams,
+  buildTagManagerUrlSearchParams,
+  clampTagManagerPage,
+  formatTagManagerShowingLabel,
+  parseTagManagerUrlState
+} from './lib/tagManagerList.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -6429,36 +6438,97 @@ const EMPTY_TAG_FORM = {
 
 function TagManagerPage() {
   const { isAdmin } = useSession();
+  const [searchParams, setSearchParams] = useSearchParams();
   const ui = PUBLISHED_FEEDS_UI;
+  const initial = useMemo(() => parseTagManagerUrlState(searchParams), []);
   const [tags, setTags] = useState([]);
+  const [pagination, setPagination] = useState({
+    page: initial.page,
+    page_size: TAG_MANAGER_PAGE_SIZE,
+    total_items: 0,
+    total_pages: 1,
+    has_previous: false,
+    has_next: false
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showInactive, setShowInactive] = useState(true);
+  const [showInactive, setShowInactive] = useState(initial.showInactive);
+  const [page, setPage] = useState(initial.page);
+  const [searchInput, setSearchInput] = useState(initial.search);
+  const [search, setSearch] = useState(initial.search.trim());
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingTag, setEditingTag] = useState(null);
   const [form, setForm] = useState(EMPTY_TAG_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const requestSeqRef = useRef(0);
+  const abortRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
+    const seq = ++requestSeqRef.current;
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError('');
     try {
-      const params = showInactive ? { include_inactive: true } : { include_inactive: false };
-      const { data } = await api.get('/admin/tags', { params });
-      setTags(Array.isArray(data?.tags) ? data.tags : []);
+      const params = buildTagManagerQueryParams({ page, search, showInactive });
+      const { data } = await api.get('/admin/tags', { params, signal: controller.signal });
+      if (seq !== requestSeqRef.current) return;
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const pag = data?.pagination || {
+        page,
+        page_size: TAG_MANAGER_PAGE_SIZE,
+        total_items: items.length,
+        total_pages: 1,
+        has_previous: false,
+        has_next: false
+      };
+      setTags(items);
+      setPagination(pag);
+      const clamped = clampTagManagerPage(page, pag.total_items, TAG_MANAGER_PAGE_SIZE);
+      if (clamped !== page) setPage(clamped);
     } catch (err) {
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
+      if (seq !== requestSeqRef.current) return;
       setTags([]);
+      setPagination({
+        page: 1,
+        page_size: TAG_MANAGER_PAGE_SIZE,
+        total_items: 0,
+        total_pages: 1,
+        has_previous: false,
+        has_next: false
+      });
       setError(apiErrorMessage(err, 'Failed to load tags'));
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [isAdmin, showInactive]);
+  }, [isAdmin, page, search, showInactive]);
 
   useEffect(() => {
     load().catch(() => {});
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
   }, [load]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      setSearch((prev) => {
+        if (prev === next) return prev;
+        setPage(1);
+        return next;
+      });
+    }, TAG_MANAGER_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setSearchParams(buildTagManagerUrlSearchParams({ page, search, showInactive }), { replace: true });
+  }, [page, search, showInactive, setSearchParams]);
 
   function openCreateModal() {
     setEditingTag(null);
@@ -6555,6 +6625,12 @@ function TagManagerPage() {
     }
   }
 
+  const showingLabel = formatTagManagerShowingLabel({
+    page: pagination.page,
+    pageSize: pagination.page_size || TAG_MANAGER_PAGE_SIZE,
+    totalItems: pagination.total_items
+  });
+
   if (!isAdmin) {
     return (
       <AppShell>
@@ -6576,11 +6652,28 @@ function TagManagerPage() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
-              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => {
+                  setShowInactive(e.target.checked);
+                  setPage(1);
+                }}
+              />
               Show inactive
             </label>
             <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Tag</button>
           </div>
+        </div>
+
+        <div style={{ marginTop: 14, maxWidth: 420 }}>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={ui.input}
+            placeholder="Search tags..."
+            aria-label="Search tags"
+          />
         </div>
 
         {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
@@ -6598,14 +6691,14 @@ function TagManagerPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && !tags.length ? (
                 <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : !tags.length ? (
                 <tr><td colSpan={6} style={ui.td}>No tags found.</td></tr>
               ) : tags.map((tag) => {
                 const sourceCell = formatTagSourcesCell(tag.sources || []);
                 return (
-                <tr key={tag.id}>
+                <tr key={tag.id} style={loading ? { opacity: 0.72 } : undefined}>
                   <td style={ui.td}>
                     <div style={{ fontWeight: 600 }}>{tag.name}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{tag.slug || tag.name}</div>
@@ -6637,6 +6730,43 @@ function TagManagerPage() {
             </tbody>
           </table>
         </div>
+
+        {pagination.total_items > 0 ? (
+          <div style={{
+            marginTop: 14,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 10,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            color: '#94a3b8',
+            fontSize: 13
+          }}
+          >
+            <div>{showingLabel}{loading ? ' · Updating…' : ''}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={ui.btn}
+                disabled={!pagination.has_previous || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                Page {pagination.page} of {pagination.total_pages}
+              </span>
+              <button
+                type="button"
+                style={ui.btn}
+                disabled={!pagination.has_next || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {showFormModal ? (

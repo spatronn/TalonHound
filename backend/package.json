@@ -9,7 +9,7 @@
     "start": "node server.js",
     "ioc-expiration-worker": "node ioc-expiration-worker.js",
     "test:audit": "node --test lib/auditRedaction.test.js",
-    "test:tags": "node --test lib/tagHelpers.test.js lib/tagCatalogService.test.js",
+    "test:tags": "node --test lib/tagHelpers.test.js lib/tagCatalogService.test.js lib/tagAdminList.test.js",
     "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js services/rdapEnrichmentService.test.js services/rdapPersistentStore.test.js",
     "test:dnsmania": "node --test lib/dnsmaniaTarget.test.js services/dnsmaniaEnrichmentService.test.js",
     "test:ip-enrichment": "node --test lib/publicIp.test.js services/ipinfoLiteService.test.js routes/ipEnrichment.test.js",

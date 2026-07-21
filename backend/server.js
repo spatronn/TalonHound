@@ -50,9 +50,9 @@ import {
   ensureIocTagAssignment,
   filterFeedIntelligenceByDisabledTags,
   loadDisabledTagNameSet,
-  mapAdminTagRow,
   syncIntegrationTagsFromNote
 } from './lib/tagCatalogService.js';
+import { listAdminTags } from './lib/tagAdminList.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { resolveRunCounters } from './lib/integrationRunCounters.js';
 import {
@@ -2500,27 +2500,12 @@ app.get('/api/tags', async (req, res) => {
 
 app.get('/api/admin/tags', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-  const includeInactive = String(req.query?.include_inactive ?? 'true') !== 'false';
   try {
-    const q = await pool.query(
-      `SELECT
-         t.id, t.name, t.slug, t.description, t.color, t.category, t.type, t.enabled,
-         t.created_origin, t.created_at, t.updated_at,
-         COALESCE(
-           array_agg(DISTINCT it.origin) FILTER (WHERE it.origin IS NOT NULL),
-           '{}'::text[]
-         ) AS assignment_origins,
-         COALESCE(
-           array_agg(DISTINCT it.source_name) FILTER (WHERE it.source_name IS NOT NULL AND btrim(it.source_name) <> ''),
-           '{}'::text[]
-         ) AS assignment_sources
-       FROM tags t
-       LEFT JOIN ioc_tags it ON it.tag_id = t.id
-       ${includeInactive ? '' : 'WHERE t.enabled = TRUE'}
-       GROUP BY t.id
-       ORDER BY t.enabled DESC, t.category ASC NULLS LAST, t.name ASC`
-    );
-    return res.json({ tags: q.rows.map((r) => mapAdminTagRow(r)) });
+    const result = await listAdminTags(pool, req.query || {});
+    return res.json({
+      items: result.items,
+      pagination: result.pagination
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
   }
