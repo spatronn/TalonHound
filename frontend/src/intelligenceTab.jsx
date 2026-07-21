@@ -12,13 +12,10 @@ import {
 } from './lib/analystIntelligenceLabels.js';
 import {
   computeAnalystRefsSummary,
-  computeOverallSignal,
   computeLayeredProviderCoverage,
   computeProviderCoverage,
-  computeReputationSummary,
   providerStateLabel,
-  providerStateStyle,
-  signalToneStyle
+  providerStateStyle
 } from './lib/intelligenceSummary.js';
 import {
   buildAnalystReferencePayload,
@@ -36,6 +33,21 @@ const summaryCardStyle = {
   padding: '10px 12px',
   background: '#0b1220',
   minWidth: 0
+};
+const summaryLayoutStyle = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 10,
+  alignItems: 'stretch'
+};
+const summaryCoverageCardStyle = {
+  ...summaryCardStyle,
+  flex: '2 1 280px'
+};
+const summaryRefsCardStyle = {
+  ...summaryCardStyle,
+  flex: '1 1 140px',
+  maxWidth: '100%'
 };
 
 function badgeEl(label, style) {
@@ -87,28 +99,6 @@ export function IntelligenceSummarySection({
   iocType,
   rdapEligible = false
 }) {
-  const vtSnap = providerSnapshots?.virustotal || {};
-  const abuseSnap = providerSnapshots?.abuseipdb || {};
-  const ipinfoSnap = providerSnapshots?.ipinfo || {};
-  const rdapSnap = providerSnapshots?.rdap || {};
-  const showAbuse = isProviderApplicable('abuseipdb', iocType);
-  const showIpinfo = isProviderApplicable('ipinfo', iocType);
-  const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible });
-
-  const overall = computeOverallSignal({
-    vt: vtSnap.status === 'success' ? {
-      status: 'success',
-      malicious: vtSnap.malicious,
-      suspicious: vtSnap.suspicious,
-      detected: vtSnap.detected,
-      stats: vtSnap.stats
-    } : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
-  });
-  const reputation = computeReputationSummary({
-    vt: vtSnap.status === 'success' ? { status: 'success', detected: vtSnap.detected, total: vtSnap.total } : null,
-    abuseipdb: showAbuse && abuseSnap.status === 'success' ? { status: 'success', score: abuseSnap.score } : null
-  });
   const layeredCoverage = computeLayeredProviderCoverage({
     directSnapshots: providerSnapshots,
     derivedSnapshots: derivedProviderSnapshots,
@@ -117,27 +107,16 @@ export function IntelligenceSummarySection({
     derivedContext
   });
   const analystRefs = computeAnalystRefsSummary(analystSummary);
-  const tone = signalToneStyle(overall.tone);
   const hasDerivedCoverage = Boolean(layeredCoverage.derived?.length);
 
   return (
     <div style={sectionShellStyle}>
       <div style={{ marginBottom: 12 }}>
         <div style={sectionTitleStyle}>Intelligence Summary</div>
-        <div style={sectionDescStyle}>At-a-glance signal from automated enrichment and analyst references.</div>
+        <div style={sectionDescStyle}>At-a-glance provider coverage and analyst references.</div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-        <div style={summaryCardStyle}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Overall signal</div>
-          <div style={{ fontWeight: 700, color: tone.color }}>{overall.label}</div>
-        </div>
-        <div style={summaryCardStyle}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Reputation</div>
-          {reputation.length ? reputation.map((r) => (
-            <div key={r.label} style={{ fontSize: 13, color: '#e2e8f0' }}>{r.label}: <b>{r.value}</b></div>
-          )) : <div style={{ color: '#94a3b8', fontSize: 13 }}>No reputation data</div>}
-        </div>
-        <div style={{ ...summaryCardStyle, gridColumn: hasDerivedCoverage ? 'span 2' : undefined }}>
+      <div style={summaryLayoutStyle}>
+        <div style={summaryCoverageCardStyle}>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Provider coverage</div>
           {hasDerivedCoverage ? (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -159,7 +138,7 @@ export function IntelligenceSummarySection({
             <ProviderCoverageBadges coverage={layeredCoverage.direct} />
           )}
         </div>
-        <div style={summaryCardStyle}>
+        <div style={summaryRefsCardStyle}>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Analyst refs</div>
           <div style={{ fontSize: 13, color: '#e2e8f0', fontWeight: 600 }}>{analystRefs}</div>
         </div>

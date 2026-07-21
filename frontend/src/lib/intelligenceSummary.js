@@ -17,66 +17,6 @@ function providerCoverageStatus(snapshot) {
   return 'not_run';
 }
 
-export function computeOverallSignal({ vt, abuseipdb }) {
-  const vtMal = Number(vt?.malicious ?? vt?.stats?.malicious ?? 0);
-  const vtSusp = Number(vt?.suspicious ?? vt?.stats?.suspicious ?? 0);
-  const vtDetected = Number(vt?.detected ?? vt?.detection_ratio?.detected ?? 0);
-  const abuseScore = abuseipdb?.score != null ? Number(abuseipdb.score) : null;
-
-  const hasVt = vt && vt.status === 'success';
-  const hasAbuse = abuseipdb && abuseipdb.status === 'success';
-
-  if (!hasVt && !hasAbuse) return { label: 'Unknown', tone: 'muted' };
-
-  if ((hasVt && vtMal >= 5) || (hasAbuse && abuseScore >= 75)) {
-    return { label: 'Malicious signal', tone: 'bad' };
-  }
-  if (
-    (hasVt && (vtMal > 0 || vtSusp > 0 || vtDetected > 0)) ||
-    (hasAbuse && abuseScore >= 25)
-  ) {
-    return { label: 'Suspicious', tone: 'warn' };
-  }
-  if (hasVt || hasAbuse) return { label: 'Clean / No reports', tone: 'good' };
-  return { label: 'Unknown', tone: 'muted' };
-}
-
-export function computeReputationSummary({ vt, abuseipdb }) {
-  const parts = [];
-  if (vt?.status === 'success') {
-    const detected = Number(vt.detected ?? vt.detection_ratio?.detected ?? 0);
-    const total = Number(vt.total ?? vt.detection_ratio?.total ?? 0);
-    if (total > 0) parts.push({ label: 'VT', value: `${detected} / ${total}` });
-  }
-  if (abuseipdb?.status === 'success' && abuseipdb.score != null) {
-    parts.push({ label: 'AbuseIPDB', value: `${Number(abuseipdb.score)} / 100` });
-  }
-  return parts.slice(0, 3);
-}
-
-export function computeInfrastructureSummary({ ipinfo, abuseipdb, rdap }) {
-  const parts = [];
-  if (ipinfo?.status === 'success') {
-    const asn = ipinfo.asn || ipinfo.as_number;
-    const country = ipinfo.country || ipinfo.country_code;
-    const provider = ipinfo.provider || ipinfo.org || ipinfo.as_name;
-    if (asn) parts.push(`ASN ${asn}`);
-    if (country) parts.push(String(country));
-    if (provider) parts.push(String(provider));
-  } else if (abuseipdb?.status === 'success') {
-    if (abuseipdb.country) parts.push(String(abuseipdb.country));
-    if (abuseipdb.isp) parts.push(String(abuseipdb.isp));
-    if (abuseipdb.usage_type) parts.push(String(abuseipdb.usage_type));
-  }
-  if (rdap?.status === 'success') {
-    if (rdap.registrar) parts.push(String(rdap.registrar));
-    if (rdap.root_domain) parts.push(String(rdap.root_domain));
-    if (rdap.created) parts.push(`Created ${rdap.created}`);
-  }
-  if (!parts.length) return 'Not enriched yet';
-  return parts.slice(0, 4).join(' · ');
-}
-
 export function computeProviderCoverage(snapshots, { iocType, rdapEligible = false, providerKeys } = {}) {
   const providers = [
     { key: 'virustotal', label: 'VT' },
@@ -150,13 +90,6 @@ export function computeAnalystRefsSummary(summary) {
   if (!total) return '0 refs';
   if (malicious > 0) return `${total} refs / ${malicious} supports malicious`;
   return `${total} ref${total === 1 ? '' : 's'}`;
-}
-
-export function signalToneStyle(tone) {
-  if (tone === 'bad') return { border: '#7f1d1d', bg: 'rgba(220,38,38,0.14)', color: '#fca5a5' };
-  if (tone === 'warn') return { border: '#92400e', bg: 'rgba(217,119,6,0.14)', color: '#fcd34d' };
-  if (tone === 'good') return { border: '#166534', bg: 'rgba(22,163,74,0.14)', color: '#86efac' };
-  return { border: '#475569', bg: 'rgba(71,85,105,0.18)', color: '#94a3b8' };
 }
 
 export function providerStateLabel(state) {

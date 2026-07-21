@@ -11,7 +11,7 @@
     "test:ioc-confidence-card": "node --test src/lib/iocConfidenceCard.test.js",
     "test:ip-enrichment-target": "node --test src/lib/ipEnrichmentTarget.test.js",
     "test:intelligence": "node --test src/lib/ipEnrichmentTarget.test.js src/lib/dnsmaniaPresentation.test.js src/lib/associatedIpEnrichment.test.js",
-    "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js"
+    "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js src/lib/intelligenceSummarySection.test.js"
   },
   "dependencies": {
     "axios": "^1.11.0",

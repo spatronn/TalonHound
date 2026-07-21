@@ -8,9 +8,7 @@ import {
 } from './analystIntelligenceLabels.js';
 import {
   computeAnalystRefsSummary,
-  computeOverallSignal,
-  computeProviderCoverage,
-  computeReputationSummary
+  computeProviderCoverage
 } from './intelligenceSummary.js';
 
 test('assessment impact label mapping', () => {
@@ -28,14 +26,6 @@ test('reference type label mapping', () => {
   assert.equal(referenceTypeLabel('social'), 'Social / X');
 });
 
-test('computeOverallSignal returns suspicious when VT detections exist', () => {
-  const signal = computeOverallSignal({
-    vt: { status: 'success', malicious: 2, suspicious: 0, detected: 2 },
-    abuseipdb: null
-  });
-  assert.equal(signal.label, 'Suspicious');
-});
-
 test('computeAnalystRefsSummary includes malicious count', () => {
   assert.equal(
     computeAnalystRefsSummary({ total_count: 2, supports_malicious_count: 1 }),
@@ -46,12 +36,4 @@ test('computeAnalystRefsSummary includes malicious count', () => {
 test('provider coverage maps api_key_missing to not configured', () => {
   const coverage = computeProviderCoverage({ virustotal: { status: 'api_key_missing' } });
   assert.equal(coverage.find((p) => p.key === 'virustotal')?.state, 'not_configured');
-});
-
-test('computeReputationSummary shows VT ratio', () => {
-  const rep = computeReputationSummary({
-    vt: { status: 'success', detected: 13, total: 92 },
-    abuseipdb: null
-  });
-  assert.deepEqual(rep, [{ label: 'VT', value: '13 / 92' }]);
 });
