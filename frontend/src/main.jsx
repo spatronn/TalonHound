@@ -21,6 +21,7 @@ import {
   isAssociatedIpEnrichmentCandidate
 } from './lib/associatedIpEnrichment.js';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
+import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -3005,17 +3006,27 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   async function runNowOne(key, name, runMode = 'incremental') {
     if (!canWrite) return;
-    const runningKey = `${key}:${runMode}`;
-    const isFull = runMode === 'full_reconciliation';
+    const isUsom = key === 'usom-trcert';
+    const runningKey = isUsom ? `${key}:${runMode}` : key;
+    const isFull = isUsom && runMode === 'full_reconciliation';
     const ok = window.confirm(isFull
       ? `Run a FULL reconciliation for ${name || key}? This scans the complete USOM dataset and may take significantly longer.`
-      : `Queue incremental run for ${name || key} now?`);
+      : isUsom
+        ? `Queue incremental run for ${name || key} now?`
+        : `Queue ${name || key} now?`);
     if (!ok || runningKeys[runningKey]) return;
     setRunningKeys((prev) => ({ ...prev, [runningKey]: true }));
     try {
-      const { data } = await api.post(`/integrations/${encodeURIComponent(key)}/run-now`, { run_mode: runMode });
+      const payload = buildIntegrationRunNowPayload(key, runMode);
+      const { data } = await api.post(`/integrations/${encodeURIComponent(key)}/run-now`, payload);
       await load();
-      alert(data?.coalesced ? `${integrationRunModeLabel(runMode)} is already queued or running.` : `${integrationRunModeLabel(runMode)} queued`);
+      if (isUsom) {
+        alert(data?.coalesced
+          ? `${integrationRunModeLabel(runMode)} is already queued or running.`
+          : `${integrationRunModeLabel(runMode)} queued`);
+      } else {
+        alert('Run queued');
+      }
     } catch (err) {
       alert(apiErrorMessage(err, `Failed to queue ${key}`));
     } finally {
@@ -3516,8 +3527,8 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       </td>
                       <td className="integrations-feeds-action-cell">
                         <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                          <button type="button" onClick={() => runNowOne(i.key, i.name, 'incremental')} disabled={Boolean(runningKeys[`${i.key}:incremental`]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
-                            {runningKeys[`${i.key}:incremental`] ? 'Queueing...' : (i.key === 'usom-trcert' ? 'Run Incremental' : 'Run now')}
+                          <button type="button" onClick={() => runNowOne(i.key, i.name, 'incremental')} disabled={Boolean(runningKeys[i.key === 'usom-trcert' ? `${i.key}:incremental` : i.key]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
+                            {runningKeys[i.key === 'usom-trcert' ? `${i.key}:incremental` : i.key] ? 'Queueing...' : (i.key === 'usom-trcert' ? 'Run Incremental' : 'Run now')}
                           </button>
                           {i.key === 'usom-trcert' ? (
                             <button type="button" onClick={() => runNowOne(i.key, i.name, 'full_reconciliation')} disabled={Boolean(runningKeys[`${i.key}:full_reconciliation`]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px', borderColor: '#b45309', color: '#fcd34d' }}>

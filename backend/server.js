@@ -144,6 +144,7 @@ import {
   USOM_FULL_RECONCILIATION_MODE,
   USOM_INCREMENTAL_MODE
 } from './lib/usomReconciliation.js';
+import { resolveManualIntegrationRunMode } from './lib/integrationManualRun.js';
 import {
   AUTH_KEY_FEED_KEYS,
   formatFeedCredentialsSummary,
@@ -1626,18 +1627,11 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
   }
 
   try {
-    const requestedModeRaw = req.body?.run_mode;
-    if (key !== 'usom-trcert' && requestedModeRaw != null) {
-      return res.status(400).json({ message: 'run_mode is supported only for usom-trcert' });
+    const modeResult = resolveManualIntegrationRunMode(key, req.body?.run_mode);
+    if (!modeResult.ok) {
+      return res.status(modeResult.status).json({ message: modeResult.message });
     }
-    const runMode = key === 'usom-trcert'
-      ? normalizeUsomRunMode(requestedModeRaw)
-      : USOM_INCREMENTAL_MODE;
-    if (!runMode) {
-      return res.status(400).json({
-        message: 'Invalid run_mode. Expected incremental or full_reconciliation.'
-      });
-    }
+    const runMode = modeResult.runMode;
 
     const activeCheck = await assertIntegrationFeedActive(key);
     if (!activeCheck.ok) {
@@ -1673,7 +1667,7 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
        DO UPDATE SET status='queued', triggered_by='manual-ui-one', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
       [String(job.id), key, jobName]
     );
-    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id, run_mode: runMode });
+    return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to queue integration run', detail: err.message });
   }
