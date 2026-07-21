@@ -322,47 +322,6 @@ function parseNoteKeyValues(note) {
   return out;
 }
 
-/** Squid / explicit HTTP proxy evidence in a raw syslog line (shared list + detail context). */
-function rawLooksLikeSquidOrHttpProxy(raw) {
-  return /\bsquid[_\s-]?proxy\b|\bTCP_(?:TUNNEL|MISS|HIT|DENIED|REFRESH|MEM_HIT|CLIENT_REFRESH)\/[0-9-]{3}|\bCONNECT\s+[^\s]+:[0-9]+|\bHIER_DIRECT\//i.test(String(raw || ''));
-}
-
-function mergeIncidentEventsPageEvidence(pgRow, relEv, bulkHit) {
-  const id = Number(pgRow?.id || 0);
-  const relRaw = String(relEv?.raw_message_sample || '').trim();
-  const bulkRaw = String(bulkHit?.raw_message || '').trim();
-  const relSquid = rawLooksLikeSquidOrHttpProxy(relRaw);
-  const bulkSquid = rawLooksLikeSquidOrHttpProxy(bulkRaw);
-  if (bulkSquid && !relSquid) {
-    return {
-      match_event_id: id,
-      raw_message_sample: bulkRaw,
-      parser_source: String(bulkHit?.parser_source || relEv?.parser_source || ''),
-      source_type: String(bulkHit?.source_type || relEv?.source_type || ''),
-      evidence_lane: 'bulk_squid_over_related'
-    };
-  }
-  if (relRaw) {
-    return {
-      match_event_id: Number(relEv?.match_event_id || id),
-      raw_message_sample: relRaw,
-      parser_source: String(relEv?.parser_source || ''),
-      source_type: String(relEv?.source_type || ''),
-      evidence_lane: 'incident_related_logs'
-    };
-  }
-  if (bulkRaw) {
-    return {
-      match_event_id: id,
-      raw_message_sample: bulkRaw,
-      parser_source: String(bulkHit?.parser_source || ''),
-      source_type: String(bulkHit?.source_type || ''),
-      evidence_lane: 'syslog_logs_bulk'
-    };
-  }
-  return null;
-}
-
 async function refreshGeoCache(limit = 20000) {
   if (geoCacheRefreshInProgress) return;
   geoCacheRefreshInProgress = true;
@@ -4419,11 +4378,10 @@ app.get('/api/ioc/details', async (req, res) => {
 
   const startedAt = Date.now();
   let pgMs = 0;
-  let chMs = 0;
 
   const cached = iocDetailsCache.get(requestedPublicId);
   if (cached && cached.expiresAt > Date.now()) {
-    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=hit total_ms=${Date.now() - startedAt} pg_ms=0 ch_ms=0`);
+    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=hit total_ms=${Date.now() - startedAt} pg_ms=0`);
     return res.json(cached.payload);
   }
   if (cached) iocDetailsCache.delete(requestedPublicId);
@@ -4486,7 +4444,7 @@ app.get('/api/ioc/details', async (req, res) => {
     if (!rows.length) {
       const payload = { summary: null, sources: [], matches: [], incidents: [], impact: null };
       iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
-      console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=0 matches=0`);
+      console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} rows=0 matches=0`);
       return res.json(payload);
     }
 
@@ -4793,7 +4751,7 @@ app.get('/api/ioc/details', async (req, res) => {
     };
 
     iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
-    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} ch_ms=${chMs} rows=${rows.length} incidents=${incidents.length}`);
+    console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} rows=${rows.length} incidents=${incidents.length}`);
 
     return res.json(payload);
   } catch (err) {

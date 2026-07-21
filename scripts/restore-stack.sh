@@ -1,11 +1,9 @@
 #!/usr/bin/env sh
-# Restore a demo-runbook backup bundle created by backup-stack.sh (CLI-only; overwrites data).
+# Restore a TalonHound backup bundle created by backup-stack.sh (CLI-only; overwrites data).
 #
 # Usage:
-#   ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --dry-run
-#   ./scripts/restore-stack.sh --backup backups/demo-runbook-YYYYMMDDTHHMMSSZ --confirm
-#   ./scripts/restore-stack.sh --backup <dir> --confirm --postgres-only
-#   ./scripts/restore-stack.sh --backup <dir> --confirm --restore-clickhouse
+#   ./scripts/restore-stack.sh --backup backups/talonhound-YYYYMMDDTHHMMSSZ --dry-run
+#   ./scripts/restore-stack.sh --backup backups/talonhound-YYYYMMDDTHHMMSSZ --confirm
 #   ./scripts/restore-stack.sh --backup <dir> --confirm --skip-checksum
 #
 # Requires --confirm for mutating restore (except --dry-run).
@@ -19,12 +17,10 @@ cd "$ROOT"
 BACKUP_DIR=""
 DRY_RUN=0
 CONFIRM=0
-POSTGRES_ONLY=0
 SKIP_CHECKSUM=0
-RESTORE_CLICKHOUSE=0
 
 usage() {
-  echo "Usage: $0 --backup <bundle-dir> [--dry-run | --confirm] [--restore-clickhouse] [--postgres-only] [--skip-checksum]"
+  echo "Usage: $0 --backup <bundle-dir> [--dry-run | --confirm] [--skip-checksum]"
   exit 1
 }
 
@@ -36,8 +32,6 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run) DRY_RUN=1 ;;
     --confirm) CONFIRM=1 ;;
-    --restore-clickhouse) RESTORE_CLICKHOUSE=1 ;;
-    --postgres-only) POSTGRES_ONLY=1 ;;
     --skip-checksum) SKIP_CHECKSUM=1 ;;
     -h|--help) usage ;;
     *)
@@ -86,28 +80,8 @@ else
   echo "[restore] checksum verification skipped"
 fi
 
-if [ "$RESTORE_CLICKHOUSE" -eq 1 ] && [ ! -d "${BACKUP_DIR}/clickhouse" ]; then
-  echo "[restore] warning: --restore-clickhouse set but clickhouse/ missing in bundle" >&2
-fi
-
-CH_FILES=""
-if [ "$POSTGRES_ONLY" -eq 0 ] && [ "$RESTORE_CLICKHOUSE" -eq 1 ]; then
-  for f in "${BACKUP_DIR}"/clickhouse/*.native; do
-    [ -f "$f" ] || continue
-    CH_FILES="${CH_FILES}${f} "
-  done
-fi
-
 echo "[restore] plan:"
 echo "  - PostgreSQL pg_restore (destructive overwrite)"
-if [ -n "$CH_FILES" ]; then
-  echo "  - ClickHouse native import:"
-  for f in $CH_FILES; do
-    echo "      $(basename "$f")"
-  done
-else
-  echo "  - ClickHouse: skip"
-fi
 echo "  - Redis: not restored (restart implied)"
 echo "  - post-step: npm run migrate + start writers"
 
@@ -129,17 +103,6 @@ docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists < "$PG_
 
 echo "[restore] running migrations (forward-only safety net)..."
 docker compose run --rm backend npm run migrate
-
-if [ -n "$CH_FILES" ]; then
-  echo "[restore] ClickHouse import..."
-  :
-  for f in $CH_FILES; do
-    table=$(basename "$f" .native)
-    echo "[restore]   TRUNCATE + INSERT ${table}"
-    ch_client --query "TRUNCATE TABLE ${table}"
-    ch_client --query "INSERT INTO ${table} FORMAT Native" < "$f"
-  done
-fi
 
 start_writers
 
