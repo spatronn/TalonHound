@@ -22,6 +22,7 @@ import {
 } from './lib/associatedIpEnrichment.js';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
+import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -6485,24 +6486,44 @@ function TagManagerPage() {
     setSaving(true);
     setFormError('');
     try {
-      const payload = {
-        name: form.name,
-        category: form.category,
-        description: form.description,
-        color: form.color,
-        is_active: form.is_active
-      };
       if (editingTag?.id) {
+        const payload = {
+          category: form.category,
+          description: form.description,
+          color: form.color,
+          is_active: form.is_active
+        };
         await api.put(`/admin/tags/${editingTag.id}`, payload);
       } else {
-        await api.post('/admin/tags', payload);
+        const payload = {
+          name: form.name,
+          category: form.category,
+          description: form.description,
+          color: form.color,
+          is_active: form.is_active
+        };
+        const { data, status } = await api.post('/admin/tags', payload);
+        if (status === 200 && data?.existing) {
+          setFormError(`Tag "${data?.tag?.name || form.name}" already exists and will be reused.`);
+          await load();
+          setShowFormModal(false);
+          setEditingTag(null);
+          setForm(EMPTY_TAG_FORM);
+          setSaving(false);
+          return;
+        }
       }
       setShowFormModal(false);
       setEditingTag(null);
       setForm(EMPTY_TAG_FORM);
       await load();
     } catch (err) {
-      setFormError(apiErrorMessage(err, editingTag ? 'Update failed' : 'Create failed'));
+      const code = err?.response?.data?.code;
+      if (code === 'TAG_INACTIVE') {
+        setFormError(err?.response?.data?.message || 'A disabled tag with this name already exists. Enable it instead.');
+      } else {
+        setFormError(apiErrorMessage(err, editingTag ? 'Update failed' : 'Create failed'));
+      }
     } finally {
       setSaving(false);
     }
@@ -6510,7 +6531,9 @@ function TagManagerPage() {
 
   async function disableTag(tag) {
     if (!tag?.id || !isAdmin) return;
-    const ok = window.confirm(`Disable tag "${tag.name}"? Existing IOC assignments will remain visible, but the tag will no longer appear in pickers.`);
+    const ok = window.confirm(
+      `Disable tag "${tag.name}"? It will be hidden on IOC details and removed from pickers. Existing assignments are kept and will reappear if you enable the tag again.`
+    );
     if (!ok) return;
     setError('');
     try {
@@ -6567,24 +6590,28 @@ function TagManagerPage() {
             <thead>
               <tr>
                 <th style={ui.th}>Name</th>
+                <th style={ui.th}>Source</th>
                 <th style={ui.th}>Category</th>
                 <th style={ui.th}>Description</th>
-                <th style={ui.th}>Color</th>
                 <th style={ui.th}>Active</th>
-                <th style={ui.th}>Created At</th>
                 <th style={ui.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : !tags.length ? (
-                <tr><td colSpan={7} style={ui.td}>No tags found.</td></tr>
-              ) : tags.map((tag) => (
+                <tr><td colSpan={6} style={ui.td}>No tags found.</td></tr>
+              ) : tags.map((tag) => {
+                const sourceCell = formatTagSourcesCell(tag.sources || []);
+                return (
                 <tr key={tag.id}>
                   <td style={ui.td}>
                     <div style={{ fontWeight: 600 }}>{tag.name}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{tag.slug || tag.name}</div>
+                  </td>
+                  <td style={{ ...ui.td, maxWidth: 220, whiteSpace: 'normal' }} title={sourceCell.title}>
+                    {sourceCell.text}
                   </td>
                   <td style={ui.td}>{tag.category || '—'}</td>
                   <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>
@@ -6595,16 +6622,7 @@ function TagManagerPage() {
                       </div>
                     ) : null}
                   </td>
-                  <td style={ui.td}>
-                    {tag.color ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 14, height: 14, borderRadius: 4, background: tag.color, border: '1px solid #475569' }} />
-                        {tag.color}
-                      </span>
-                    ) : '—'}
-                  </td>
                   <td style={ui.td}>{tag.is_active ? 'Yes' : 'No'}</td>
-                  <td style={ui.td}>{formatUserDateTime(tag.created_at)}</td>
                   <td style={ui.td}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(tag)}>Edit</button>
                     {tag.is_active ? (
@@ -6614,7 +6632,8 @@ function TagManagerPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -6625,7 +6644,20 @@ function TagManagerPage() {
           <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingTag ? 'Edit Tag' : 'Add Tag'}</h3>
           <form onSubmit={submitForm}>
             <FeedFormField ui={ui} label="Name" fullWidth>
-              <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. ransomware" />
+              <input
+                required={!editingTag}
+                value={form.name}
+                onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))}
+                style={{ ...ui.input, ...(editingTag ? { opacity: 0.75, cursor: 'not-allowed' } : null) }}
+                placeholder="e.g. ransomware"
+                readOnly={Boolean(editingTag)}
+                disabled={Boolean(editingTag)}
+              />
+              {editingTag ? (
+                <span style={{ ...ui.helper, display: 'block', marginTop: 6 }}>
+                  Tag name cannot be renamed here. Disable and create a new tag if needed.
+                </span>
+              ) : null}
             </FeedFormField>
             <FeedFormField ui={ui} label="Category" fullWidth>
               <select value={form.category} onChange={(e) => setForm((x) => ({ ...x, category: e.target.value }))} style={ui.select}>
@@ -12671,9 +12703,16 @@ function IOCDetailsPage() {
   async function hideSourceTag(ft) {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0 || !ft) return;
-    const tag = String(ft.tag || '').trim();
-    const source = String(ft.source_name || '').trim();
-    if (!tag || !source) return;
+    const tag = String(ft.tag || ft.label || '').trim();
+    const normalized = String(ft.normalized || tag).trim().toLowerCase();
+    const explicitSources = Array.isArray(ft.sources)
+      ? ft.sources.map((s) => String(s || '').trim()).filter(Boolean)
+      : [];
+    const singleSource = String(ft.source_name || '').trim();
+    const sources = explicitSources.length
+      ? [...new Set(explicitSources)]
+      : (singleSource ? [singleSource] : []);
+    if (!tag || !sources.length) return;
 
     const ok = window.confirm('Remove this source tag from this IOC? It will not affect other IOCs.');
     if (!ok) return;
@@ -12681,14 +12720,18 @@ function IOCDetailsPage() {
     const prevTags = Array.isArray(data?.summary?.feed_intelligence?.tags)
       ? data.summary.feed_intelligence.tags
       : [];
-    const nextTags = prevTags.filter(
-      (t) => !(String(t.normalized || '').toLowerCase() === String(ft.normalized || '').toLowerCase()
-        && String(t.source_name || '').toLowerCase() === source.toLowerCase())
-    );
+    const sourceSet = new Set(sources.map((s) => s.toLowerCase()));
+    const nextTags = prevTags.filter((t) => {
+      const sameNorm = String(t.normalized || '').toLowerCase() === normalized;
+      if (!sameNorm) return true;
+      return !sourceSet.has(String(t.source_name || '').toLowerCase());
+    });
     patchFeedIntelligenceTags(nextTags);
     setTagsSaving(true);
     try {
-      await api.post(`/ioc/${iocId}/tags/source/hide`, { tag, source });
+      for (const source of sources) {
+        await api.post(`/ioc/${iocId}/tags/source/hide`, { tag, source });
+      }
       await loadHiddenSourceTags(iocId);
     } catch (err) {
       console.log('[ioc-tags] hide source failed', err);
@@ -13404,50 +13447,45 @@ function IOCDetailsPage() {
                   <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(() => {
-                      const analystTagNorms = new Set(iocTags.map((t) => (t.name || '').toLowerCase()));
-                      const feedOnlyTags = (summary?.feed_intelligence?.tags || []).filter(
-                        (ft) => !analystTagNorms.has(ft.normalized)
-                      );
-                      const hasTags = iocTags.length > 0 || feedOnlyTags.length > 0;
+                      const { manual, feed, hasTags } = buildIocTagBadges({
+                        manualTags: iocTags,
+                        feedTags: summary?.feed_intelligence?.tags || []
+                      });
                       return (
                         <>
-                          {iocTags.map((tag) => {
-                            const inactive = tag.is_active === false;
-                            return (
+                          {manual.map((tag) => (
                               <span
-                                key={`tag-${tag.id}`}
-                                title={inactive ? 'Inactive tag (no longer available for new assignments)' : 'Added by analyst'}
+                                key={tag.key}
+                                title={tag.title}
                                 style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 5,
                                   padding: '3px 8px',
                                   borderRadius: 999,
-                                  border: `1px solid ${inactive ? '#44403c' : '#92400e'}`,
+                                  border: '1px solid #92400e',
                                   fontSize: 12,
-                                  color: inactive ? '#78716c' : '#fbbf24',
-                                  background: inactive ? 'transparent' : 'rgba(146,64,14,0.12)',
-                                  opacity: inactive ? 0.75 : 1
+                                  color: '#fbbf24',
+                                  background: 'rgba(146,64,14,0.12)'
                                 }}
                               >
-                                {tag.name}
+                                {tag.label}
                                 <button
                                   type="button"
-                                  onClick={() => removeIocTag(tag).catch(() => {})}
+                                  onClick={() => removeIocTag({ id: tag.id, name: tag.label }).catch(() => {})}
                                   title="Remove tag"
-                                  aria-label={`Remove ${tag.name}`}
-                                  style={{ padding: 0, border: 'none', background: 'transparent', color: inactive ? '#57534e' : '#a16207', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
+                                  aria-label={`Remove ${tag.label}`}
+                                  style={{ padding: 0, border: 'none', background: 'transparent', color: '#a16207', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
                                   disabled={tagsSaving}
                                 >
                                   ×
                                 </button>
                               </span>
-                            );
-                          })}
-                          {feedOnlyTags.map((ft) => (
+                          ))}
+                          {feed.map((ft) => (
                             <span
-                              key={`feedtag-${ft.normalized}-${ft.source_name || ''}`}
-                              title={ft.source_name ? `Imported from ${ft.source_name}` : 'Imported from feed'}
+                              key={ft.key}
+                              title={ft.title}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -13460,13 +13498,18 @@ function IOCDetailsPage() {
                                 background: 'rgba(30,64,175,0.12)'
                               }}
                             >
-                              {ft.tag}
+                              {ft.label}
                               {canWrite ? (
                                 <button
                                   type="button"
-                                  onClick={() => hideSourceTag(ft).catch(() => {})}
+                                  onClick={() => hideSourceTag({
+                                    tag: ft.label,
+                                    label: ft.label,
+                                    normalized: ft.normalized,
+                                    sources: ft.sources
+                                  }).catch(() => {})}
                                   title="Remove this source tag from this IOC"
-                                  aria-label={`Hide source tag ${ft.tag}`}
+                                  aria-label={`Hide source tag ${ft.label}`}
                                   style={{ padding: 0, border: 'none', background: 'transparent', color: '#60a5fa', cursor: tagsSaving ? 'wait' : 'pointer', lineHeight: 1, fontSize: 14 }}
                                   disabled={tagsSaving}
                                 >

@@ -3,6 +3,7 @@
  */
 
 import { FEED_SOURCE_RULES, sourceNameMatchesFeed, resolveFeedIdBySourceName } from './iocExpiration.js';
+import { syncIntegrationTagsFromNote } from './tagCatalogService.js';
 
 export const FEED_SOURCE_URL_FALLBACKS = Object.freeze({
   'urlhaus-abusech': 'https://urlhaus-api.abuse.ch/v2/files/exports/***/recent.csv',
@@ -66,6 +67,18 @@ export async function upsertFeedSourceEvidence(client, {
       providerMetadata == null ? null : JSON.stringify(providerMetadata)
     ]
   );
+
+  try {
+    await syncIntegrationTagsFromNote(client, {
+      iocId: iocItemId,
+      observableType,
+      sourceName,
+      note
+    });
+  } catch (err) {
+    console.warn('[feed-source-evidence] tag catalog sync skipped:', err.message);
+  }
+
   return rows[0]?.id || null;
 }
 

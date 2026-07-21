@@ -44,7 +44,15 @@ import {
   restoreIntegrationFeed,
   validatePurgeConfirmName
 } from './lib/feedLifecycle.js';
-import { categoryToLegacyType, isValidCategory } from './lib/tagHelpers.js';
+import { categoryToLegacyType, isValidCategory, parseNormalizedTagName, toPublicTag } from './lib/tagHelpers.js';
+import {
+  ensureCatalogTag,
+  ensureIocTagAssignment,
+  filterFeedIntelligenceByDisabledTags,
+  loadDisabledTagNameSet,
+  mapAdminTagRow,
+  syncIntegrationTagsFromNote
+} from './lib/tagCatalogService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { resolveRunCounters } from './lib/integrationRunCounters.js';
 import {
@@ -2472,10 +2480,6 @@ function parsePositiveInt(value) {
   return n;
 }
 
-function normalizeTagName(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
 const TAG_TYPES = new Set(['threat', 'actor', 'technique', 'context']);
 
 app.get('/api/tags', async (req, res) => {
@@ -2499,22 +2503,24 @@ app.get('/api/admin/tags', async (req, res) => {
   const includeInactive = String(req.query?.include_inactive ?? 'true') !== 'false';
   try {
     const q = await pool.query(
-      `SELECT id, name, slug, description, color, category, type, enabled, created_at, updated_at
-       FROM tags
-       ${includeInactive ? '' : 'WHERE enabled = TRUE'}
-       ORDER BY enabled DESC, category ASC NULLS LAST, name ASC`
+      `SELECT
+         t.id, t.name, t.slug, t.description, t.color, t.category, t.type, t.enabled,
+         t.created_origin, t.created_at, t.updated_at,
+         COALESCE(
+           array_agg(DISTINCT it.origin) FILTER (WHERE it.origin IS NOT NULL),
+           '{}'::text[]
+         ) AS assignment_origins,
+         COALESCE(
+           array_agg(DISTINCT it.source_name) FILTER (WHERE it.source_name IS NOT NULL AND btrim(it.source_name) <> ''),
+           '{}'::text[]
+         ) AS assignment_sources
+       FROM tags t
+       LEFT JOIN ioc_tags it ON it.tag_id = t.id
+       ${includeInactive ? '' : 'WHERE t.enabled = TRUE'}
+       GROUP BY t.id
+       ORDER BY t.enabled DESC, t.category ASC NULLS LAST, t.name ASC`
     );
-    return res.json({ tags: q.rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      slug: r.slug,
-      description: r.description,
-      color: r.color,
-      category: r.category || r.type || 'custom',
-      is_active: Boolean(r.enabled),
-      created_at: r.created_at,
-      updated_at: r.updated_at
-    })) });
+    return res.json({ tags: q.rows.map((r) => mapAdminTagRow(r)) });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch tags', detail: err.message });
   }
@@ -2522,37 +2528,59 @@ app.get('/api/admin/tags', async (req, res) => {
 
 app.post('/api/admin/tags', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
-  const name = String(req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ message: 'name is required' });
-  const slug = String(req.body?.slug || name).trim().toLowerCase().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
+  const parsed = parseNormalizedTagName(req.body?.name);
+  if (!parsed.ok) {
+    if (parsed.error === 'too_long') return res.status(400).json({ message: 'Tag name is too long', code: 'TAG_TOO_LONG' });
+    return res.status(400).json({ message: 'name is required', code: 'TAG_EMPTY' });
+  }
   const category = String(req.body?.category || 'custom').trim().toLowerCase();
   if (!isValidCategory(category)) {
     return res.status(400).json({ message: `category must be one of: behavior, campaign, theme, targeting, source-context, review-state, vulnerability, custom` });
   }
-  const legacyType = categoryToLegacyType(category);
   const enabled = req.body?.is_active !== false;
   try {
-    const q = await pool.query(
-      `INSERT INTO tags (name, slug, type, category, description, color, enabled, updated_at)
-       VALUES ($1, $2, $3::tag_type, $4, $5, $6, $7, NOW())
-       RETURNING id, name, slug, description, color, category, type, enabled, created_at, updated_at`,
-      [name.toLowerCase(), slug, legacyType, category, req.body?.description || null, req.body?.color || null, enabled]
-    );
-    const tag = q.rows[0];
+    const result = await ensureCatalogTag(pool, {
+      name: parsed.name,
+      createdOrigin: 'manual',
+      category,
+      description: req.body?.description || null,
+      color: req.body?.color || null,
+      enabled
+    });
+    const tag = toPublicTag(result.tag, {
+      sources: result.tag.created_origin === 'manual' || !result.existing
+        ? ['Manual']
+        : undefined
+    });
+    if (!tag.sources) {
+      tag.sources = result.tag.created_origin === 'manual' ? ['Manual'] : [];
+    }
+
+    if (result.existing) {
+      if (!result.tag.enabled) {
+        return res.status(409).json({
+          message: 'A disabled tag with this name already exists. Enable it instead of creating a duplicate.',
+          code: 'TAG_INACTIVE',
+          tag
+        });
+      }
+      return res.status(200).json({ tag, existing: true });
+    }
+
     await auditLogService.auditSuccess({
       req,
       action: AUDIT_ACTION.TAG_CREATED,
       entityType: AUDIT_ENTITY.TAG,
       entityId: String(tag.id),
       entityDisplay: tag.name,
-      after: { name: tag.name, category: tag.category, is_active: Boolean(tag.enabled) }
+      after: { name: tag.name, category: tag.category, is_active: Boolean(tag.is_active) }
     });
-    return res.status(201).json({ tag: {
-      id: q.rows[0].id, name: q.rows[0].name, slug: q.rows[0].slug, description: q.rows[0].description, color: q.rows[0].color,
-      category: q.rows[0].category || q.rows[0].type || 'custom', is_active: Boolean(q.rows[0].enabled), created_at: q.rows[0].created_at, updated_at: q.rows[0].updated_at
-    } });
+    return res.status(201).json({ tag, existing: false });
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ message: 'Tag already exists' });
+    if (err.code === '23505') return res.status(409).json({ message: 'Tag already exists', code: 'TAG_DUPLICATE' });
+    if (err.code === 'TAG_EMPTY' || err.code === 'TAG_TOO_LONG') {
+      return res.status(400).json({ message: err.message, code: err.code });
+    }
     return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
   }
 });
@@ -2563,7 +2591,7 @@ app.put('/api/admin/tags/:id', async (req, res) => {
   if (!id) return res.status(400).json({ message: 'Invalid id' });
   const fields = [];
   const params = [id];
-  if (req.body?.name != null) { params.push(String(req.body.name).trim().toLowerCase()); fields.push(`name = $${params.length}`); }
+  // Rename is intentionally unsupported in this phase (feed re-ingest would recreate aliases).
   if (req.body?.category != null) {
     const c = String(req.body.category).trim().toLowerCase();
     if (!isValidCategory(c)) {
@@ -2583,7 +2611,11 @@ app.put('/api/admin/tags/:id', async (req, res) => {
     const prevQ = await pool.query('SELECT * FROM tags WHERE id = $1', [id]);
     const prev = prevQ.rows[0];
     if (!prev) return res.status(404).json({ message: 'Tag not found' });
-    const q = await pool.query(`UPDATE tags SET ${fields.join(', ')} WHERE id = $1 RETURNING id,name,slug,description,color,category,type,enabled,created_at,updated_at`, params);
+    const q = await pool.query(
+      `UPDATE tags SET ${fields.join(', ')} WHERE id = $1
+       RETURNING id, name, slug, description, color, category, type, enabled, created_origin, created_at, updated_at`,
+      params
+    );
     const r = q.rows[0];
     const action = prev.enabled !== false && r.enabled === false
       ? AUDIT_ACTION.TAG_DISABLED
@@ -2597,7 +2629,7 @@ app.put('/api/admin/tags/:id', async (req, res) => {
       before: { name: prev.name, category: prev.category, is_active: Boolean(prev.enabled) },
       after: { name: r.name, category: r.category, is_active: Boolean(r.enabled) }
     });
-    return res.json({ tag: { id:r.id,name:r.name,slug:r.slug,description:r.description,color:r.color,category:r.category||r.type||'custom',is_active:Boolean(r.enabled),created_at:r.created_at,updated_at:r.updated_at } });
+    return res.json({ tag: toPublicTag(r) });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update tag', detail: err.message });
   }
@@ -2611,7 +2643,7 @@ app.delete('/api/admin/tags/:id', async (req, res) => {
     const prevQ = await pool.query('SELECT * FROM tags WHERE id = $1', [id]);
     const prev = prevQ.rows[0];
     if (!prev) return res.status(404).json({ message: 'Tag not found' });
-    const q = await pool.query('UPDATE tags SET enabled = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id, name, enabled', [id]);
+    await pool.query('UPDATE tags SET enabled = FALSE, updated_at = NOW() WHERE id = $1 RETURNING id, name, enabled', [id]);
     await auditLogService.auditSuccess({
       req,
       action: AUDIT_ACTION.TAG_DISABLED,
@@ -2630,25 +2662,24 @@ app.delete('/api/admin/tags/:id', async (req, res) => {
 app.post('/api/tags', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
 
-  const name = normalizeTagName(req.body?.name);
+  const parsed = parseNormalizedTagName(req.body?.name);
   const type = String(req.body?.type || '').trim().toLowerCase();
 
-  if (!name) return res.status(400).json({ message: 'name is required' });
+  if (!parsed.ok) return res.status(400).json({ message: 'name is required' });
   if (!TAG_TYPES.has(type)) return res.status(400).json({ message: 'Invalid type' });
 
   try {
     const q = await pool.query(
-      `INSERT INTO tags (name, type)
-       VALUES ($1, $2::tag_type)
+      `INSERT INTO tags (name, type, slug, category, created_origin)
+       VALUES ($1, $2::tag_type, $1, 'custom', 'manual')
        ON CONFLICT (name) DO NOTHING
        RETURNING id, name, type, enabled`,
-      [name, type]
+      [parsed.name, type]
     );
 
     if (!q.rowCount) {
       return res.status(409).json({ message: 'Tag already exists' });
     }
-
     return res.status(201).json(q.rows[0]);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to create tag', detail: err.message });
@@ -2690,12 +2721,14 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
          i.id AS ioc_id,
          t.id,
          t.name,
-         t.type
+         t.type,
+         t.enabled
        FROM ioc_items i
        LEFT JOIN ioc_tags it
          ON it.ioc_id = i.id
         AND it.ioc_observable_type = i.observable_type
-       LEFT JOIN tags t ON t.id = it.tag_id
+        AND it.origin = 'manual'
+       LEFT JOIN tags t ON t.id = it.tag_id AND t.enabled = TRUE
        WHERE i.id = $1
        ORDER BY t.type ASC NULLS LAST, t.name ASC NULLS LAST`,
       [iocId]
@@ -2706,7 +2739,8 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
     return res.json(q.rows.filter((row) => row.id != null).map((row) => ({
       id: row.id,
       name: row.name,
-      type: row.type
+      type: row.type,
+      is_active: true
     })));
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC tags', detail: err.message });
@@ -2738,15 +2772,15 @@ app.post('/api/ioc/:id/tags', async (req, res) => {
     if (!tagExists.rowCount) return res.status(404).json({ message: 'Tag not found or disabled' });
     const tag = tagExists.rows[0];
 
-    const insertQ = await pool.query(
-      `INSERT INTO ioc_tags (ioc_id, ioc_observable_type, tag_id, created_by)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (ioc_id, tag_id) DO NOTHING
-       RETURNING tag_id`,
-      [iocId, iocObservableType, tagId, req.user?.id ?? null]
-    );
+    const insertResult = await ensureIocTagAssignment(pool, {
+      iocId,
+      observableType: iocObservableType,
+      tagId,
+      origin: 'manual',
+      createdBy: req.user?.id ?? null
+    });
 
-    if (insertQ.rowCount) {
+    if (insertResult.inserted) {
       await auditLogService.auditSuccess({
         req,
         action: AUDIT_ACTION.IOC_TAG_ADDED,
@@ -2802,6 +2836,7 @@ app.delete('/api/ioc/:id/tags/:tagId', async (req, res) => {
       `DELETE FROM ioc_tags
        WHERE ioc_id = $1
          AND tag_id = $2
+         AND origin = 'manual'
          AND ioc_observable_type = (
            SELECT observable_type FROM ioc_items WHERE id = $1 LIMIT 1
          )
@@ -4599,6 +4634,13 @@ app.get('/api/ioc/details', async (req, res) => {
       } else {
         throw err;
       }
+    }
+    try {
+      const feedTagNames = (feedIntelligence?.tags || []).map((t) => t?.normalized || t?.tag).filter(Boolean);
+      const disabledNames = await loadDisabledTagNameSet(pool, feedTagNames);
+      feedIntelligence = filterFeedIntelligenceByDisabledTags(feedIntelligence, disabledNames);
+    } catch (err) {
+      console.warn('[ioc-details] disabled catalog tag filter skipped:', err.message);
     }
 
     const summary = {
