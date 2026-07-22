@@ -594,6 +594,18 @@ async function applyMembershipComputedFields(client, membershipId, policy, now =
   return { membershipId, ...patch, updated: Number(upd.rowCount || 0) > 0 };
 }
 
+/**
+ * @returns {Promise<null | { membershipId: number, outcome: string, touched: boolean }>}
+ * outcome: created | changed | reactivated | unchanged | adopted
+ *
+ * When `contentFingerprint` is provided (Custom Threat Feeds / shared membership FP path):
+ * - identical fingerprint + healthy membership => no analyst-visible timestamp writes
+ * - NULL stored fingerprint => one-time silent adoption (no last_changed / updated_at bump)
+ * - fingerprint change or reactivation => write fingerprint + last_changed_in_source + last_seen
+ * - last_seen_ttl presence-only write still allowed on unchanged rows (no updated_at)
+ *
+ * Callers that only need the id can use result?.membershipId.
+ */
 export async function upsertMembershipOnImport(client, {
   iocItemId,
   observableType,
@@ -601,6 +613,7 @@ export async function upsertMembershipOnImport(client, {
   seenAt = new Date(),
   firstSeenAt = null,
   explicitConfidence = null,
+  contentFingerprint = null,
   audit = null,
   actor = { actor_type: 'feed_import', source: 'integration' },
   reactivateOnly = false
@@ -611,6 +624,12 @@ export async function upsertMembershipOnImport(client, {
   const policy = await getFeedPolicy(client, feedId, observableType, { importContext: importCtx });
   const now = seenAt instanceof Date ? seenAt : new Date(seenAt);
   const firstNow = firstSeenAt ? (firstSeenAt instanceof Date ? firstSeenAt : new Date(firstSeenAt)) : now;
+  const fp = contentFingerprint != null && String(contentFingerprint).trim()
+    ? String(contentFingerprint).trim()
+    : null;
+  const needsPresenceWrite = Boolean(
+    policy?.enabled && String(policy.expiration_mode || '') === 'last_seen_ttl'
+  );
 
   const existing = await client.query(
     `SELECT * FROM ioc_feed_memberships
@@ -622,85 +641,227 @@ export async function upsertMembershipOnImport(client, {
   let reactivated = false;
   let membershipRow = null;
   let membershipTouched = false;
+  let outcome = 'unchanged';
 
   if (!existing.rowCount) {
-    const ins = await client.query(
-      `INSERT INTO ioc_feed_memberships (
-         ioc_item_id, ioc_observable_type, feed_id,
-         first_seen_in_feed, last_seen_in_feed, missing_since, status
-       ) VALUES ($1, $2, $3::uuid, $4, $5, NULL, 'active')
-       RETURNING *`,
-      [iocItemId, observableType, feedId, firstNow, now]
-    );
+    const ins = fp
+      ? await client.query(
+        `INSERT INTO ioc_feed_memberships (
+           ioc_item_id, ioc_observable_type, feed_id,
+           first_seen_in_feed, last_seen_in_feed, last_changed_in_source,
+           content_fingerprint, missing_since, status
+         ) VALUES ($1, $2, $3::uuid, $4, $5, $5, $6, NULL, 'active')
+         RETURNING *`,
+        [iocItemId, observableType, feedId, firstNow, now, fp]
+      )
+      : await client.query(
+        `INSERT INTO ioc_feed_memberships (
+           ioc_item_id, ioc_observable_type, feed_id,
+           first_seen_in_feed, last_seen_in_feed, missing_since, status
+         ) VALUES ($1, $2, $3::uuid, $4, $5, NULL, 'active')
+         RETURNING *`,
+        [iocItemId, observableType, feedId, firstNow, now]
+      );
     membershipRow = ins.rows[0];
     membershipId = membershipRow.id;
     membershipTouched = true;
+    outcome = 'created';
   } else {
     const row = existing.rows[0];
     membershipId = row.id;
     const wasExpired = row.status === 'expired';
     const wasPurged = row.status === 'purged';
     const clearMissing = true;
+    const healthyActive = row.status === 'active'
+      && !row.missing_since
+      && !row.expired_at
+      && !row.purged_at;
 
     // reactivateOnly: membership is healthy — skip all DB writes, return early.
     // For inactive/expired memberships the condition below does NOT hold, so we fall through
     // to the normal reactivation path (because feed re-appearance is semantically meaningful).
-    if (reactivateOnly && row.status === 'active' && !row.missing_since && !row.expired_at && !row.purged_at) {
-      return row.id;
+    if (reactivateOnly && healthyActive) {
+      return { membershipId: row.id, outcome: 'unchanged', touched: false };
+    }
+
+    if (fp && healthyActive) {
+      const storedFp = row.content_fingerprint || null;
+      const fingerprintMatches = storedFp != null && storedFp === fp;
+      const needsAdoption = storedFp == null;
+
+      if (fingerprintMatches || needsAdoption) {
+        if (needsAdoption) {
+          const adopt = await client.query(
+            `UPDATE ioc_feed_memberships
+             SET content_fingerprint = $2
+             WHERE id = $1
+               AND content_fingerprint IS NULL
+             RETURNING *`,
+            [membershipId, fp]
+          );
+          if (adopt.rowCount) {
+            membershipRow = adopt.rows[0];
+            outcome = 'adopted';
+          } else {
+            membershipRow = row;
+            outcome = 'unchanged';
+          }
+        } else {
+          membershipRow = row;
+          outcome = 'unchanged';
+        }
+
+        if (needsPresenceWrite) {
+          const presence = await client.query(
+            `UPDATE ioc_feed_memberships
+             SET last_seen_in_feed = $2
+             WHERE id = $1
+               AND last_seen_in_feed IS DISTINCT FROM $2
+             RETURNING *`,
+            [membershipId, now]
+          );
+          if (presence.rowCount) {
+            membershipRow = presence.rows[0];
+          }
+          // last_seen_ttl expiry depends on last_seen_in_feed — recompute only then.
+          const computedPresence = await applyMembershipComputedFields(
+            client, membershipId, policy, now, membershipRow
+          );
+          if (computedPresence?.updated) membershipTouched = true;
+        }
+
+        // fixed_ttl / never: first_seen-based policy fields cannot change on unchanged/adopt.
+        // Skip applyMembershipComputedFields to avoid spurious updated_at bumps from
+        // Date vs timestamptz string inequality in the no-op detector.
+
+        if (reactivated || !importCtx) {
+          if (membershipTouched) {
+            await recomputeIocGlobalStatus(client, iocItemId, observableType, {
+              audit,
+              actor,
+              importContext: importCtx
+            });
+          }
+        } else if (membershipTouched) {
+          scheduleDeferredIocRecompute(importCtx, { iocItemId, observableType, audit, actor });
+        }
+
+        return { membershipId, outcome, touched: membershipTouched };
+      }
     }
 
     if (row.override_enabled) {
-      const upd = await client.query(
-        `UPDATE ioc_feed_memberships
-         SET last_seen_in_feed = $2,
-             missing_since = CASE WHEN $3 THEN NULL ELSE missing_since END,
-             updated_at = NOW()
-         WHERE id = $1
-           AND (
-             last_seen_in_feed IS DISTINCT FROM $2
-             OR ($3 AND missing_since IS NOT NULL)
-           )
-         RETURNING *`,
-        [membershipId, now, clearMissing]
-      );
+      const upd = fp
+        ? await client.query(
+          `UPDATE ioc_feed_memberships
+           SET last_seen_in_feed = $2,
+               last_changed_in_source = $2,
+               content_fingerprint = $4,
+               missing_since = CASE WHEN $3 THEN NULL ELSE missing_since END,
+               updated_at = NOW()
+           WHERE id = $1
+             AND (
+               last_seen_in_feed IS DISTINCT FROM $2
+               OR content_fingerprint IS DISTINCT FROM $4
+               OR ($3 AND missing_since IS NOT NULL)
+             )
+           RETURNING *`,
+          [membershipId, now, clearMissing, fp]
+        )
+        : await client.query(
+          `UPDATE ioc_feed_memberships
+           SET last_seen_in_feed = $2,
+               missing_since = CASE WHEN $3 THEN NULL ELSE missing_since END,
+               updated_at = NOW()
+           WHERE id = $1
+             AND (
+               last_seen_in_feed IS DISTINCT FROM $2
+               OR ($3 AND missing_since IS NOT NULL)
+             )
+           RETURNING *`,
+          [membershipId, now, clearMissing]
+        );
       if (upd.rowCount) {
         membershipRow = upd.rows[0];
         membershipTouched = true;
+        if (!healthyActive) {
+          reactivated = true;
+          outcome = 'reactivated';
+        } else if (fp) {
+          outcome = 'changed';
+        } else {
+          outcome = 'changed';
+        }
       } else {
         membershipRow = row;
       }
     } else {
-      const upd = await client.query(
-        `UPDATE ioc_feed_memberships
-         SET last_seen_in_feed = $2,
-             missing_since = NULL,
-             status = 'active',
-             expired_at = NULL,
-             expiration_reason = NULL,
-             purged_at = NULL,
-             purged_by = NULL,
-             purged_by_username = NULL,
-             purge_reason = NULL,
-             updated_at = NOW()
-         WHERE id = $1
-           AND (
-             last_seen_in_feed IS DISTINCT FROM $2
-             OR missing_since IS NOT NULL
-             OR status IS DISTINCT FROM 'active'
-             OR expired_at IS NOT NULL
-             OR expiration_reason IS NOT NULL
-             OR purged_at IS NOT NULL
-             OR purged_by IS NOT NULL
-             OR purged_by_username IS NOT NULL
-             OR purge_reason IS NOT NULL
-           )
-         RETURNING *`,
-        [membershipId, now]
-      );
+      const upd = fp
+        ? await client.query(
+          `UPDATE ioc_feed_memberships
+           SET last_seen_in_feed = $2,
+               last_changed_in_source = $2,
+               content_fingerprint = $3,
+               missing_since = NULL,
+               status = 'active',
+               expired_at = NULL,
+               expiration_reason = NULL,
+               purged_at = NULL,
+               purged_by = NULL,
+               purged_by_username = NULL,
+               purge_reason = NULL,
+               updated_at = NOW()
+           WHERE id = $1
+             AND (
+               content_fingerprint IS DISTINCT FROM $3
+               OR missing_since IS NOT NULL
+               OR status IS DISTINCT FROM 'active'
+               OR expired_at IS NOT NULL
+               OR expiration_reason IS NOT NULL
+               OR purged_at IS NOT NULL
+               OR purged_by IS NOT NULL
+               OR purged_by_username IS NOT NULL
+               OR purge_reason IS NOT NULL
+             )
+           RETURNING *`,
+          [membershipId, now, fp]
+        )
+        : await client.query(
+          `UPDATE ioc_feed_memberships
+           SET last_seen_in_feed = $2,
+               missing_since = NULL,
+               status = 'active',
+               expired_at = NULL,
+               expiration_reason = NULL,
+               purged_at = NULL,
+               purged_by = NULL,
+               purged_by_username = NULL,
+               purge_reason = NULL,
+               updated_at = NOW()
+           WHERE id = $1
+             AND (
+               last_seen_in_feed IS DISTINCT FROM $2
+               OR missing_since IS NOT NULL
+               OR status IS DISTINCT FROM 'active'
+               OR expired_at IS NOT NULL
+               OR expiration_reason IS NOT NULL
+               OR purged_at IS NOT NULL
+               OR purged_by IS NOT NULL
+               OR purged_by_username IS NOT NULL
+               OR purge_reason IS NOT NULL
+             )
+           RETURNING *`,
+          [membershipId, now]
+        );
       if (upd.rowCount) {
         membershipRow = upd.rows[0];
         membershipTouched = true;
-        if (wasExpired || wasPurged) reactivated = true;
+        if (wasExpired || wasPurged || !healthyActive) {
+          reactivated = true;
+          outcome = 'reactivated';
+        } else {
+          outcome = 'changed';
+        }
       } else {
         membershipRow = row;
       }
@@ -746,7 +907,7 @@ export async function upsertMembershipOnImport(client, {
     scheduleDeferredIocRecompute(importCtx, { iocItemId, observableType, audit, actor });
   }
 
-  return membershipId;
+  return { membershipId, outcome, touched: membershipTouched };
 }
 
 export async function finalizeSnapshotFeedRun(client, {
@@ -951,7 +1112,7 @@ export async function syncMembershipAfterIocImport(client, {
   const row = rows[0];
   if (!row) return null;
 
-  const membershipId = await upsertMembershipOnImport(client, {
+  const result = await upsertMembershipOnImport(client, {
     iocItemId: row.id,
     observableType: row.observable_type,
     feedId,
@@ -960,7 +1121,7 @@ export async function syncMembershipAfterIocImport(client, {
     explicitConfidence: resolvedConfidence,
     reactivateOnly
   });
-  return membershipId;
+  return result?.membershipId ?? null;
 }
 
 function normIocStatus(status) {

@@ -2,9 +2,9 @@ import { fetchFeedUrl } from './customThreatFeedFetch.js';
 import { parseFeedContent } from './customThreatFeedParser.js';
 import { sanitizeUrlForDisplay } from './customThreatFeedUtils.js';
 import { redactCustomFeedSecrets } from './customThreatFeedAuth.js';
+import { computeCustomThreatFeedContentFingerprint } from './customThreatFeedFingerprint.js';
 import {
   upsertMembershipOnImport,
-  recomputeIocGlobalStatus,
   finalizeSnapshotFeedRun,
   withImportOptimizationContext
 } from './iocExpiration.js';
@@ -29,6 +29,12 @@ function resolveRowConfidence(rowConfidence, feedDefaultConfidence) {
   return normalizeConfidence(feedDefaultConfidence) || 'medium';
 }
 
+/**
+ * Import one normalized custom-feed row.
+ *
+ * Uses membership content_fingerprint (migration 121) so unchanged re-imports do not
+ * bump last_seen_in_feed / updated_at / last_changed_in_source — same semantics as USOM.
+ */
 async function upsertIocRow(client, {
   observable,
   observableType,
@@ -41,6 +47,11 @@ async function upsertIocRow(client, {
 }) {
   const explicitConfidence = resolveRowConfidence(rowConfidence, defaultConfidence);
   const confFields = resolveImportConfidenceFields({ parsedSourceConfidence: explicitConfidence });
+  const contentFingerprint = computeCustomThreatFeedContentFingerprint({
+    observable,
+    observableType,
+    confidence: explicitConfidence
+  });
   const category = 'custom-threat-feed';
   const note = `Imported from Custom Threat Feed: ${sourceName}`;
 
@@ -54,10 +65,7 @@ async function upsertIocRow(client, {
   );
 
   let iocItemId;
-  let inserted = false;
-  let updated = false;
-  let duplicate = false;
-  let refreshed = false;
+  let iocCreated = false;
 
   if (!existing.rowCount) {
     const ins = await client.query(
@@ -82,54 +90,52 @@ async function upsertIocRow(client, {
     );
     iocItemId = ins.rows[0].id;
     await insertObservablesIndex(client, ins.rows[0].public_id, observableType, observable);
-    inserted = true;
+    iocCreated = true;
   } else {
     iocItemId = existing.rows[0].id;
-    const upd = await client.query(
-      `UPDATE ioc_items
-       SET last_seen_at = GREATEST(COALESCE(last_seen_at, $3::timestamptz), $3::timestamptz),
-           note = COALESCE(note, $4),
-           category = COALESCE(category, $5)
-       WHERE id = $1 AND observable_type = $2
-       RETURNING public_id`,
-      [iocItemId, observableType, seenAt, note, category]
-    );
-    if (upd.rowCount) {
-      updated = true;
-      await insertObservablesIndex(client, upd.rows[0].public_id, observableType, observable);
-    } else {
-      duplicate = true;
-    }
   }
 
-  const membershipBefore = await client.query(
-    `SELECT id, status FROM ioc_feed_memberships
-     WHERE ioc_item_id = $1 AND ioc_observable_type = $2 AND feed_id = $3::uuid`,
-    [iocItemId, observableType, feedId]
-  );
-  const prev = membershipBefore.rows[0];
-
-  await upsertMembershipOnImport(client, {
+  const membershipResult = await upsertMembershipOnImport(client, {
     iocItemId,
     observableType,
     feedId,
     seenAt,
-    explicitConfidence
+    explicitConfidence,
+    contentFingerprint
   });
 
-  if (prev && prev.status === 'active') {
-    refreshed = !inserted && !updated;
-  } else if (prev && prev.status !== 'active') {
-    refreshed = true;
+  const outcome = membershipResult?.outcome || 'unchanged';
+
+  // Fill sparse note/category only when membership content actually changed or is new.
+  // Never advance ioc_items.last_seen_at on unchanged/adopted rows — list Timestamp is
+  // driven by membership last_seen_in_feed, which the fingerprint guard already protects.
+  if (!iocCreated && (outcome === 'changed' || outcome === 'reactivated' || outcome === 'created')) {
+    await client.query(
+      `UPDATE ioc_items
+       SET note = COALESCE(note, $3),
+           category = COALESCE(category, $4)
+       WHERE id = $1 AND observable_type = $2
+         AND (
+           note IS NULL
+           OR category IS NULL
+         )`,
+      [iocItemId, observableType, note, category]
+    );
+    if (existing.rowCount) {
+      await insertObservablesIndex(client, existing.rows[0].public_id, observableType, observable);
+    }
   }
 
   return {
     iocItemId,
     observableType,
-    inserted,
-    updated,
-    duplicate: duplicate && !refreshed,
-    refreshed: refreshed && !inserted && !updated
+    outcome,
+    inserted: outcome === 'created' || iocCreated,
+    updated: outcome === 'changed',
+    refreshed: outcome === 'reactivated',
+    unchanged: outcome === 'unchanged' || outcome === 'adopted',
+    adopted: outcome === 'adopted',
+    duplicate: false
   };
 }
 
@@ -171,6 +177,8 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     inserted: 0,
     updated: 0,
     refreshed: 0,
+    unchanged: 0,
+    adopted: 0,
     duplicate_rows: 0,
     expired_missing: 0,
     fetched_bytes: 0,
@@ -209,8 +217,16 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
 
     await withImportOptimizationContext(client, async () => {
       const seenKeys = new Set();
+      const seenObservables = new Set();
       for (const row of parsed.valid) {
         if (signal?.aborted) throw new Error('Sync aborted');
+        const obsKey = `${row.observableType}|${row.observable}`;
+        if (seenObservables.has(obsKey)) {
+          counters.duplicate_rows += 1;
+          continue;
+        }
+        seenObservables.add(obsKey);
+
         const result = await upsertIocRow(client, {
           observable: row.observable,
           observableType: row.observableType,
@@ -224,7 +240,14 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
         if (result.inserted) counters.inserted += 1;
         else if (result.updated) counters.updated += 1;
         else if (result.refreshed) counters.refreshed += 1;
-        else if (result.duplicate) counters.duplicate_rows += 1;
+        else if (result.adopted) {
+          counters.adopted += 1;
+          counters.unchanged += 1;
+          counters.duplicate_rows += 1;
+        } else if (result.unchanged) {
+          counters.unchanged += 1;
+          counters.duplicate_rows += 1;
+        }
         seenKeys.add(`${result.observableType}|${result.iocItemId}`);
       }
 
@@ -282,10 +305,11 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     `INSERT INTO integration_runs (
        job_type, status, started_at, finished_at, triggered_by,
        records_processed, records_inserted, records_updated,
-       records_duplicate, records_skipped, records_failed, error_message
+       records_duplicate, records_unchanged, records_reactivated, records_removed,
+       records_skipped, records_failed, error_message
      ) VALUES (
        'custom_threat_feed_sync', $1, to_timestamp($2 / 1000.0), NOW(), $3,
-       $4, $5, $6, $7, $8, $9, $10
+       $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
      )`,
     [
       status === 'failed' ? 'failed' : 'success',
@@ -293,8 +317,11 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
       triggeredBy,
       counters.total_rows,
       counters.inserted,
-      counters.updated + counters.refreshed,
+      counters.updated,
       counters.duplicate_rows,
+      counters.unchanged,
+      counters.refreshed,
+      counters.expired_missing,
       counters.invalid_rows,
       status === 'failed' ? 1 : 0,
       errorMessage
