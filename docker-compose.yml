@@ -60,11 +60,14 @@ services:
       - DNSMANIA_BASE_URL=${DNSMANIA_BASE_URL:-}
       - DNSMANIA_TIMEOUT_MS=${DNSMANIA_TIMEOUT_MS:-10000}
       - DNSMANIA_ENABLED=${DNSMANIA_ENABLED:-true}
+      - IOC_EXPORT_QUEUE_NAME=ioc-search-export
+      - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
     depends_on:
       - db
       - redis
     volumes:
       - ./backups:/backups
+      - ioc_export_data:/data/ioc-search-exports
     healthcheck:
       test:
         [
@@ -195,6 +198,32 @@ services:
       - db
     restart: unless-stopped
 
+  ioc-search-export-worker:
+    build: ./backend
+    container_name: demo-ioc-search-export-worker
+    command: ["npm", "run", "ioc-search-export-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=demo
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - IOC_EXPORT_QUEUE_NAME=ioc-search-export
+      - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
+      - IOC_EXPORT_BATCH_SIZE=${IOC_EXPORT_BATCH_SIZE:-5000}
+      - IOC_EXPORT_RETENTION_HOURS=${IOC_EXPORT_RETENTION_HOURS:-24}
+      - IOC_EXPORT_HARD_LIMIT=${IOC_EXPORT_HARD_LIMIT:-2000000}
+      - IOC_EXPORT_WORKER_CONCURRENCY=${IOC_EXPORT_WORKER_CONCURRENCY:-2}
+    volumes:
+      - ioc_export_data:/data/ioc-search-exports
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
   loadgen:
     build: ./tools/loadgen
     container_name: demo-loadgen
@@ -240,3 +269,4 @@ services:
 
 volumes:
   postgres_data:
+  ioc_export_data:

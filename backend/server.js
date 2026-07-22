@@ -23,6 +23,15 @@ import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
+import { registerIocSearchExportRoutes } from './routes/iocSearchExports.js';
+import { EXPORT_QUEUE_NAME } from './lib/iocSearchExport/exportConfig.js';
+import {
+  parseSearchQuery,
+  buildWhereClause,
+  getPreviewLimit,
+  getQueryTimeoutMs,
+  isDslError
+} from './lib/iocSearchDsl/index.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerDnsmaniaEnrichmentRoutes } from './routes/dnsmaniaEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
@@ -207,6 +216,7 @@ const redisUrl = getRedisUrl();
 const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
+const iocSearchExportQueue = new Queue(EXPORT_QUEUE_NAME, { connection: redis });
 const auditLogService = createAuditLogService(pool);
 
 // Geo cache refresh tuning (local/kÄ±sÄ±tlÄ± ortam iÃ§in dÃ¼ÅŸÃ¼rÃ¼lebilir)
@@ -2387,6 +2397,7 @@ registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
 registerIocExportRoutes(app, pool);
+registerIocSearchExportRoutes(app, pool, { exportQueue: iocSearchExportQueue, auditLogService });
 registerRouteModule('audit');
 
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
@@ -3889,6 +3900,207 @@ async function handleIocList(req, res) {
 }
 
 app.get('/api/ioc/list', handleIocList);
+
+// ---------------------------------------------------------------------------
+// Advanced DSL search (structured query language; no free-text fallback).
+// ---------------------------------------------------------------------------
+
+function encodeSearchCursor(cursor) {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeSearchCursor(raw) {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(Buffer.from(String(raw), 'base64url').toString('utf8'));
+    if (obj && typeof obj.t === 'string' && obj.id != null) {
+      return { t: obj.t, id: String(obj.id), seen: Math.max(0, Number(obj.seen) || 0) };
+    }
+  } catch {
+    /* fall through to invalid cursor */
+  }
+  return null;
+}
+
+function clampSearchPageSize(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 25;
+  return Math.min(Math.max(Math.trunc(n), 1), 100);
+}
+
+async function handleIocSearch(req, res) {
+  const startedAt = Date.now();
+  // DSL query + cursor travel in the POST body: the query can be up to
+  // IOC_SEARCH_MAX_QUERY_LENGTH (4000) chars, which would risk URL/proxy length limits
+  // as a query string, and keeping it out of the URL avoids logging the raw DSL in
+  // access logs.
+  const body = req.body || {};
+  const rawQuery = body.query ?? '';
+
+  let parsed;
+  try {
+    parsed = parseSearchQuery(rawQuery);
+  } catch (err) {
+    if (isDslError(err)) {
+      return res.status(400).json({ error: err.toJSON(), message: err.message });
+    }
+    return res.status(400).json({ message: 'Invalid search query', detail: err.message });
+  }
+
+  const previewLimit = getPreviewLimit();
+  const timeoutMs = getQueryTimeoutMs();
+  const pageSize = clampSearchPageSize(body.page_size);
+  const cursor = decodeSearchCursor(body.cursor);
+  const seen = cursor ? cursor.seen : 0;
+  const remaining = Math.max(previewLimit - seen, 0);
+
+  if (remaining <= 0) {
+    return res.json({
+      normalized_query: parsed.normalizedQuery,
+      conditions: parsed.conditions,
+      items: [],
+      preview_limit: previewLimit,
+      has_more: false,
+      next_cursor: null,
+      exact_count: null,
+      count_display: `${previewLimit.toLocaleString('en-US')}+`,
+      query_duration_ms: Date.now() - startedAt,
+      warnings: ['Preview capped at the maximum number of records. Export all matching IOCs to retrieve the full result set.']
+    });
+  }
+
+  const built = buildWhereClause(parsed.ast);
+  const whereSql = built.sql;
+  const params = [...built.params];
+  const dslParamCount = params.length;
+
+  const effectivePageSize = Math.min(pageSize, remaining);
+  const fetchLimit = effectivePageSize + 1;
+
+  let keysetClause = '';
+  if (cursor) {
+    params.push(cursor.t);
+    params.push(cursor.id);
+    keysetClause = ` AND (i.created_at, i.id) < ($${dslParamCount + 1}::timestamptz, $${dslParamCount + 2}::bigint)`;
+  }
+  params.push(fetchLimit);
+  const limitIdx = params.length;
+
+  const pageSql = `
+    SELECT i.id, i.public_id, i.observable, i.observable_type,
+           COALESCE(i.status, 'active') AS status,
+           i.first_seen_at, i.last_seen_at, i.created_at
+    FROM ioc_items i
+    WHERE ${whereSql}${keysetClause}
+    ORDER BY i.created_at DESC, i.id DESC
+    LIMIT $${limitIdx}`;
+
+  // Probe (first page only) to derive an exact count for small result sets or the
+  // "N+" indicator for large ones, without a full COUNT. Bounded by previewLimit+1.
+  const probeLimit = previewLimit + 1;
+  const probeSql = `SELECT 1 FROM ioc_items i WHERE ${whereSql} LIMIT ${probeLimit}`;
+  const probeParams = built.params;
+
+  const safeTimeout = Math.max(100, Math.min(Math.trunc(timeoutMs), 120000));
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL statement_timeout = ${safeTimeout}`);
+
+    let exactCount = null;
+    let countDisplay = null;
+    if (!cursor) {
+      const probe = await client.query(probeSql, probeParams);
+      if (probe.rowCount > previewLimit) {
+        exactCount = null;
+        countDisplay = `${previewLimit.toLocaleString('en-US')}+`;
+      } else {
+        exactCount = probe.rowCount;
+        countDisplay = probe.rowCount.toLocaleString('en-US');
+      }
+    }
+
+    const pageRes = await client.query(pageSql, params);
+    await client.query('COMMIT');
+
+    const hasMoreRows = pageRes.rows.length > effectivePageSize;
+    const pageRows = pageRes.rows.slice(0, effectivePageSize);
+    const newSeen = seen + pageRows.length;
+    const capReached = newSeen >= previewLimit;
+    const hasMore = hasMoreRows && !capReached;
+
+    const pageItems = pageRows.map((row) => ({
+      id: row.id,
+      public_id: row.public_id,
+      observable: row.observable,
+      observable_type: row.observable_type,
+      ip: row.observable,
+      status: row.status || 'active',
+      first_seen_at: row.first_seen_at || row.created_at,
+      last_seen_at: row.last_seen_at || row.created_at,
+      source_count: 0,
+      source_names: [],
+      confidence_set: [],
+      category_set: []
+    }));
+
+    const items = await mapIocListPageItems(pool, pageItems, {
+      statusFilter: 'all',
+      hasSearch: true,
+      byItemIds: true
+    });
+
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && lastRow
+      ? encodeSearchCursor({
+          t: new Date(lastRow.created_at).toISOString(),
+          id: String(lastRow.id),
+          seen: newSeen
+        })
+      : null;
+
+    const warnings = [];
+    if (capReached && hasMoreRows) {
+      warnings.push('More results exist beyond the preview limit. Export all matching IOCs to retrieve the full result set.');
+    }
+
+    return res.json({
+      normalized_query: parsed.normalizedQuery,
+      conditions: parsed.conditions,
+      items,
+      preview_limit: previewLimit,
+      has_more: hasMore,
+      next_cursor: nextCursor,
+      exact_count: exactCount,
+      count_display: countDisplay,
+      query_duration_ms: Date.now() - startedAt,
+      warnings
+    });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    if (err && err.code === '57014') {
+      return res.status(200).json({
+        normalized_query: parsed.normalizedQuery,
+        conditions: parsed.conditions,
+        items: [],
+        preview_limit: previewLimit,
+        has_more: false,
+        next_cursor: null,
+        exact_count: null,
+        count_display: null,
+        timed_out: true,
+        query_duration_ms: Date.now() - startedAt,
+        warnings: [],
+        message: 'Search timed out because the query is too broad. Refine the query or create an asynchronous export.'
+      });
+    }
+    return res.status(500).json({ message: 'Search failed', detail: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+app.post('/api/iocs/search', handleIocSearch);
 
 app.get('/api/ioc/ip/sources', async (req, res) => {
   const { ip } = req.query;

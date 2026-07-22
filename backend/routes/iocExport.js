@@ -8,7 +8,14 @@ import { loadIocThreatClassificationDetails } from '../lib/iocThreatClassificati
  * @param {import('pg').Pool} pool
  */
 export function registerIocExportRoutes(app, pool) {
+  // DEPRECATED: synchronous, page-bounded (max 5000/page) admin export retained for
+  // backward compatibility. New UI uses the asynchronous DSL export
+  // (POST /api/iocs/search-exports). This endpoint stays RBAC-locked (admin only),
+  // row-bounded per page, and CSV formula-injection safe (see csvEscape); it does not
+  // provide an unbounded second export path.
   app.get('/api/iocs/export', requireRole(ROLES.ADMIN), async (req, res) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Link', '</api/iocs/search-exports>; rel="successor-version"');
     const parsed = parseIocExportQuery(req.query);
     if (!parsed.ok) return res.status(400).json({ message: parsed.message });
 

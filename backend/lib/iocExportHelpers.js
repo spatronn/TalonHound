@@ -79,7 +79,10 @@ export function parseIocExportQuery(query = {}) {
 }
 
 export function csvEscape(value) {
-  const s = value == null ? '' : String(value);
+  let s = value == null ? '' : String(value);
+  // Formula-injection guard: neutralize leading =, +, -, @ (and tab/CR that Excel
+  // strips before evaluation) so spreadsheet software never treats a cell as a formula.
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

@@ -3,6 +3,17 @@ import { createPortal } from 'react-dom';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from './lib/api.js';
+import {
+  SEARCH_FIELDS,
+  FIELD_BY_NAME,
+  EXPORT_COLUMN_OPTIONS,
+  DEFAULT_EXPORT_COLUMNS,
+  OPERATOR_LABELS,
+  buildDslFromConditions,
+  defaultOperatorFor,
+  newCondition,
+  chipLabel
+} from './lib/iocSearchDslClient.js';
 import { getIocStatusCardPresentation, IOC_STATUS_ACTION_BUTTONS } from './lib/iocStatusCard.js';
 import {
   CONFIDENCE_OPTIONS,
@@ -9640,6 +9651,27 @@ function IOCListPage() {
   const [listLoading, setListLoading] = useState(false);
   const [listStatusText, setListStatusText] = useState('');
   const [searchError, setSearchError] = useState('');
+  // --- DSL search + async export state ---
+  const [dslActive, setDslActive] = useState(false);
+  const [dslLoading, setDslLoading] = useState(false);
+  const [dslResult, setDslResult] = useState(null); // { normalized_query, conditions, count_display, has_more, next_cursor, warnings, timed_out }
+  const [appliedQuery, setAppliedQuery] = useState('');
+  const [dslCursorStack, setDslCursorStack] = useState([]); // cursors for previous pages
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advMatch, setAdvMatch] = useState('all');
+  const [advConditions, setAdvConditions] = useState([newCondition('ioc')]);
+  const [syntaxHelpOpen, setSyntaxHelpOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState('csv');
+  const [exportScope, setExportScope] = useState('all');
+  const [exportColumns, setExportColumns] = useState([...DEFAULT_EXPORT_COLUMNS]);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportsOpen, setExportsOpen] = useState(false);
+  const [exportsList, setExportsList] = useState([]);
+  const [exportsLoading, setExportsLoading] = useState(false);
+  const dslSearchInputRef = useRef(null);
+  const readyExportIdsRef = useRef(new Set());
+  const exportsInitRef = useRef(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [statsRefreshBusy, setStatsRefreshBusy] = useState(false);
   const [statsToast, setStatsToast] = useState('');
@@ -9729,6 +9761,9 @@ function IOCListPage() {
   }
 
   const loadData = useCallback(async (targetPage, targetSize) => {
+    // When DSL search results are active, the numeric browse pager is disabled and the
+    // rows come from /api/iocs/search; do not overwrite them with a browse fetch.
+    if (dslActive) return;
     setListLoading(true);
     setListStatusText('Query is running. Please wait while IOC results are being processed...');
     try {
@@ -9736,7 +9771,6 @@ function IOCListPage() {
         page: targetPage,
         page_size: targetSize,
       };
-      if (search) params.q = search;
       const listRes = await api.get('/ioc/list', { params });
       const items = listRes.data.items || [];
       setRows(items);
@@ -9748,7 +9782,7 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }, [search]);
+  }, [dslActive]);
 
   useEffect(() => {
     loadSummary().catch(() => {});
@@ -9912,44 +9946,204 @@ function IOCListPage() {
     color: confidence === 'high' ? '#991b1b' : confidence === 'medium' ? '#92400e' : '#166534'
   });
 
-  function normalizeSearchQuery(rawInput) {
-    const trimmed = String(rawInput || '').trim();
-    if (!trimmed) return { ok: true, value: '' };
+  // Structural parse errors map to the single friendly hint; field/operator-level
+  // errors (Unknown field, unsupported operator, invalid date, ...) surface verbatim.
+  const STRUCTURAL_ERROR_CODES = new Set([
+    'empty_query', 'no_conditions', 'expected_field', 'expected_operator',
+    'unexpected_token', 'unexpected_character', 'unclosed_quote', 'unclosed_parenthesis'
+  ]);
+  const INVALID_SYNTAX_HINT = 'Invalid search syntax. Example: ioc contains "example.com"';
 
-    const match = trimmed.match(/^(ip|sha1|sha256|md5|domain|ipv6|url)\s*:\s*(.+)$/i);
-    if (!match) {
-      return {
-        ok: false,
-        message: 'Syntax error. Use one of: ip:, sha1:, sha256:, md5:, domain:, ipv6:, url:'
-      };
+  const runDsl = useCallback(async (query, cursor, { prevStack } = {}) => {
+    setDslLoading(true);
+    setSearchError('');
+    try {
+      const { data } = await api.post('/iocs/search', { query, page_size: pageSize, cursor: cursor || null });
+      if (data.timed_out) {
+        setSearchError(data.message || 'Search timed out because the query is too broad. Refine the query or create an asynchronous export.');
+        setRows([]);
+      } else {
+        setRows(data.items || []);
+      }
+      setDslResult((prev) => ({
+        normalized_query: data.normalized_query,
+        conditions: data.conditions || [],
+        // The count is computed on the first page only; preserve it while paging.
+        count_display: cursor ? (prev?.count_display ?? data.count_display) : data.count_display,
+        exact_count: cursor ? (prev?.exact_count ?? data.exact_count) : data.exact_count,
+        has_more: Boolean(data.has_more),
+        next_cursor: data.next_cursor || null,
+        warnings: data.warnings || [],
+        timed_out: Boolean(data.timed_out)
+      }));
+      setDslActive(true);
+      setAppliedQuery(query);
+      if (prevStack) setDslCursorStack(prevStack);
+    } catch (err) {
+      const payload = err?.response?.data;
+      const code = payload?.error?.code;
+      const msg = STRUCTURAL_ERROR_CODES.has(code)
+        ? INVALID_SYNTAX_HINT
+        : (payload?.message || INVALID_SYNTAX_HINT);
+      setSearchError(msg);
+    } finally {
+      setDslLoading(false);
     }
+  }, [pageSize]);
 
-    const prefix = match[1].toLowerCase();
-    const value = String(match[2] || '').trim();
-    if (!value) {
-      return {
-        ok: false,
-        message: 'Syntax error. Query value cannot be empty.'
-      };
-    }
-
-    return { ok: true, value: `${prefix}:${value}` };
-  }
-
-  function applySearch() {
-    const parsed = normalizeSearchQuery(searchInput);
-    if (!parsed.ok) {
-      setSearchError(parsed.message || 'Syntax error.');
+  function applyDsl() {
+    const query = String(searchInput || '').trim();
+    if (!query) {
+      setSearchError(INVALID_SYNTAX_HINT);
       return;
     }
-
-    setSearchError('');
-    setPage(1);
-    setSearch(parsed.value);
+    setDslCursorStack([]);
+    runDsl(query, null, { prevStack: [] });
   }
 
+  function clearDsl() {
+    setSearchInput('');
+    setSearchError('');
+    setAppliedQuery('');
+    setDslResult(null);
+    setDslCursorStack([]);
+    setDslActive(false);
+    setPage(1);
+  }
+
+  function dslNextPage() {
+    if (!dslResult?.next_cursor) return;
+    setDslCursorStack((stack) => [...stack, dslResult.next_cursor]);
+    runDsl(appliedQuery, dslResult.next_cursor);
+  }
+
+  function dslPrevPage() {
+    setDslCursorStack((stack) => {
+      const next = stack.slice(0, -1);
+      const cursor = next.length ? next[next.length - 1] : null;
+      runDsl(appliedQuery, cursor, { prevStack: next });
+      return next;
+    });
+  }
+
+  function addAdvCondition() {
+    setAdvConditions((list) => [...list, newCondition('ioc')]);
+  }
+  function removeAdvCondition(idx) {
+    setAdvConditions((list) => (list.length <= 1 ? list : list.filter((_, i) => i !== idx)));
+  }
+  function updateAdvCondition(idx, patch) {
+    setAdvConditions((list) => list.map((c, i) => {
+      if (i !== idx) return c;
+      const next = { ...c, ...patch };
+      if (patch.field && patch.field !== c.field) {
+        next.operator = defaultOperatorFor(patch.field);
+        next.value = '';
+        next.value2 = '';
+      }
+      return next;
+    }));
+  }
+  function resetAdvanced() {
+    setAdvMatch('all');
+    setAdvConditions([newCondition('ioc')]);
+  }
+  function applyAdvancedSearch() {
+    const dsl = buildDslFromConditions(advMatch, advConditions);
+    if (!dsl) {
+      setSearchError('Add at least one complete condition.');
+      return;
+    }
+    setSearchInput(dsl);
+    setDslCursorStack([]);
+    runDsl(dsl, null, { prevStack: [] });
+  }
+
+  // Remove a single active-condition chip: rebuild the query from the remaining
+  // conditions (Match All / AND) and re-run, or clear when none remain.
+  function removeChip(idx) {
+    const remaining = (dslResult?.conditions || []).filter((_, i) => i !== idx);
+    if (!remaining.length) { clearDsl(); return; }
+    const dsl = remaining.map((c) => {
+      const field = c.field;
+      const op = c.operator;
+      const q = (v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+      if (op === 'in' || op === 'not_in') return `${field} ${op} (${(c.values || []).map(q).join(', ')})`;
+      if (op === 'between') return `${field} between ${q(c.dates[0])} AND ${q(c.dates[1])}`;
+      if (op === 'before' || op === 'after') return `${field} ${op} ${q(c.dates[0])}`;
+      return `${field} ${op} ${q((c.values || [])[0] ?? '')}`;
+    }).join(' AND ');
+    setSearchInput(dsl);
+    setDslCursorStack([]);
+    runDsl(dsl, null, { prevStack: [] });
+  }
+
+  const loadExports = useCallback(async ({ silent } = {}) => {
+    if (!silent) setExportsLoading(true);
+    try {
+      const { data } = await api.get('/iocs/search-exports', { params: { limit: 50 } });
+      const items = Array.isArray(data?.items) ? data.items : [];
+      // In-app "ready" notification only for exports that become ready after the first
+      // load (avoid toasting for pre-existing ready exports on initial render).
+      for (const it of items) {
+        if (it.status === 'ready') {
+          if (exportsInitRef.current && !readyExportIdsRef.current.has(it.id)) {
+            setStatsToast(`Your IOC export is ready: ${Number(it.record_count || 0).toLocaleString('en-US')} records`);
+          }
+          readyExportIdsRef.current.add(it.id);
+        }
+      }
+      exportsInitRef.current = true;
+      setExportsList(items);
+    } catch {
+      /* keep previous list */
+    } finally {
+      if (!silent) setExportsLoading(false);
+    }
+  }, []);
+
+  async function createExport() {
+    if (!appliedQuery) return;
+    setExportBusy(true);
+    try {
+      await api.post('/iocs/search-exports', {
+        query: appliedQuery,
+        format: exportFormat,
+        scope: exportScope,
+        columns: exportColumns
+      });
+      setExportModalOpen(false);
+      setExportsOpen(true);
+      setStatsToast('Export queued. It will continue in the background.');
+      await loadExports({ silent: true });
+    } catch (err) {
+      setSearchError(apiErrorMessage(err, 'Failed to create export'));
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function cancelExport(id) {
+    try { await api.post(`/iocs/search-exports/${id}/cancel`); await loadExports({ silent: true }); } catch { /* noop */ }
+  }
+  async function retryExport(id) {
+    try { await api.post(`/iocs/search-exports/${id}/retry`); await loadExports({ silent: true }); } catch { /* noop */ }
+  }
+
+  // Seed the export list once on mount so pre-existing jobs are known (and polled).
+  useEffect(() => { loadExports({ silent: true }).catch(() => {}); }, [loadExports]);
+
+  // Poll while the drawer is open OR any export is still in-flight, so the in-app
+  // "ready" notification fires even when the drawer is closed.
+  useEffect(() => {
+    const hasActive = exportsList.some((e) => e.status === 'queued' || e.status === 'processing');
+    if (!exportsOpen && !hasActive) return undefined;
+    const interval = setInterval(() => { loadExports({ silent: true }).catch(() => {}); }, hasActive ? 3000 : 8000);
+    return () => clearInterval(interval);
+  }, [exportsOpen, exportsList, loadExports]);
+
   const paginationLabel = formatIocListPaginationText(pagination, summary.total, search);
-  const isSearchMode = Boolean(search);
+  const isSearchMode = Boolean(search) || dslActive;
 
   return (
     <AppShell>
@@ -10024,9 +10218,10 @@ function IOCListPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
         <input
-          placeholder="Search (ip:, sha1:, sha256:, md5:, domain:, ipv6:, url:)"
+          ref={dslSearchInputRef}
+          placeholder='Example: ioc contains "example.com" AND tag contains "mirai"'
           value={searchInput}
           onChange={(e) => {
             setSearchInput(e.target.value);
@@ -10035,29 +10230,226 @@ function IOCListPage() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              applySearch();
+              applyDsl();
             }
           }}
         />
-        <button onClick={applySearch}>
-          Search
-        </button>
-        <button
-          onClick={() => {
-            setSearchInput('');
-            setSearchError('');
-            setSearch('');
-            setPage(1);
-          }}
-        >
-          Clear
-        </button>
+        <button onClick={applyDsl} disabled={dslLoading}>{dslLoading ? 'Searching…' : 'Search'}</button>
+        <button onClick={() => setAdvancedOpen((v) => !v)} style={advancedOpen ? { borderColor: '#3b82f6', color: '#93c5fd' } : undefined}>Advanced Search</button>
+        <button onClick={clearDsl}>Clear</button>
+        <button onClick={() => setSyntaxHelpOpen((v) => !v)}>Syntax Help</button>
       </div>
 
       {searchError && (
         <div style={{ marginBottom: 10, padding: 10, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, color: '#991b1b', fontWeight: 600 }}>
           {searchError}
         </div>
+      )}
+
+      {advancedOpen && (
+        <div style={{ marginBottom: 10, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, color: '#cbd5e1', fontWeight: 600 }}>Match:</span>
+            <label style={{ color: '#e2e8f0', fontSize: 13 }}>
+              <input type="radio" name="advMatch" checked={advMatch === 'all'} onChange={() => setAdvMatch('all')} /> All conditions (AND)
+            </label>
+            <label style={{ color: '#e2e8f0', fontSize: 13 }}>
+              <input type="radio" name="advMatch" checked={advMatch === 'any'} onChange={() => setAdvMatch('any')} /> Any condition (OR)
+            </label>
+          </div>
+          {advConditions.map((cond, idx) => {
+            const spec = FIELD_BY_NAME[cond.field] || SEARCH_FIELDS[0];
+            const inCell = { padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', fontSize: 13 };
+            return (
+              <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select style={inCell} value={cond.field} onChange={(e) => updateAdvCondition(idx, { field: e.target.value })}>
+                  {SEARCH_FIELDS.map((f) => <option key={f.name} value={f.name}>{f.label}</option>)}
+                </select>
+                <select style={inCell} value={cond.operator} onChange={(e) => updateAdvCondition(idx, { operator: e.target.value })}>
+                  {spec.operators.map((op) => <option key={op} value={op}>{OPERATOR_LABELS[op] || op}</option>)}
+                </select>
+                {cond.operator === 'between' ? (
+                  <>
+                    <input style={inCell} placeholder="YYYY-MM-DD" value={cond.value} onChange={(e) => updateAdvCondition(idx, { value: e.target.value })} />
+                    <span style={{ color: '#94a3b8', fontSize: 13 }}>and</span>
+                    <input style={inCell} placeholder="YYYY-MM-DD" value={cond.value2} onChange={(e) => updateAdvCondition(idx, { value2: e.target.value })} />
+                  </>
+                ) : (cond.operator === 'in' || cond.operator === 'not_in') ? (
+                  <input style={{ ...inCell, minWidth: 260 }} placeholder="comma,separated,values" value={cond.value} onChange={(e) => updateAdvCondition(idx, { value: e.target.value })} />
+                ) : spec.kind === 'enum' && spec.values ? (
+                  <select style={inCell} value={cond.value} onChange={(e) => updateAdvCondition(idx, { value: e.target.value })}>
+                    <option value="">— select —</option>
+                    {spec.values.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                ) : (
+                  <input style={{ ...inCell, minWidth: 220 }} placeholder={spec.kind === 'date' ? 'YYYY-MM-DD' : 'value'} value={cond.value} onChange={(e) => updateAdvCondition(idx, { value: e.target.value })} />
+                )}
+                <button onClick={() => removeAdvCondition(idx)} disabled={advConditions.length <= 1} title="Remove condition">✕</button>
+              </div>
+            );
+          })}
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={addAdvCondition}>Add condition</button>
+            <button onClick={resetAdvanced}>Reset</button>
+            <button onClick={applyAdvancedSearch} style={{ borderColor: '#16a34a', color: '#86efac' }}>Apply Search</button>
+            <code style={{ marginLeft: 'auto', fontSize: 12, color: '#7dd3fc', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {buildDslFromConditions(advMatch, advConditions) || '—'}
+            </code>
+          </div>
+        </div>
+      )}
+
+      {syntaxHelpOpen && (
+        <div style={{ marginBottom: 10, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0b1120', color: '#cbd5e1', fontSize: 13, lineHeight: 1.6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <b style={{ color: '#e2e8f0' }}>Search Syntax</b>
+            <button onClick={() => setSyntaxHelpOpen(false)}>Close</button>
+          </div>
+          <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, first_seen, last_changed, created_at</p>
+          <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
+          <p><b>List operators:</b> in, not_in</p>
+          <p><b>Date operators:</b> before, after, between</p>
+          <p><b>Logical:</b> AND, OR, NOT, ( )</p>
+          <pre style={{ background: '#111827', padding: 10, borderRadius: 8, overflowX: 'auto', color: '#93c5fd' }}>{`ioc contains "example.com"
+ioc contains "example" AND tag contains "mirai"
+type in ("domain", "url") AND status equals "active"
+(source equals "USOM" OR source equals "URLHaus") AND confidence equals "high"
+last_changed after "2026-07-01"
+first_seen between "2026-07-01" AND "2026-07-22"
+tag equals "mirai" AND tag equals "botnet"`}</pre>
+        </div>
+      )}
+
+      {dslActive && dslResult && (
+        <div style={{ marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+            {(dslResult.conditions || []).map((c, idx) => (
+              <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 999, background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', fontSize: 12 }}>
+                {chipLabel(c)}
+                <button onClick={() => removeChip(idx)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0 }}>✕</button>
+              </span>
+            ))}
+            <button onClick={clearDsl} style={{ fontSize: 12 }}>Clear all</button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+            <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+              {dslResult.timed_out ? '—' : `${dslResult.count_display || '0'} matching IOCs`}
+            </span>
+            {dslResult.exact_count == null && !dslResult.timed_out && dslResult.count_display && String(dslResult.count_display).includes('+') ? (
+              <span style={{ color: '#94a3b8', fontSize: 12 }}>Showing the latest {pageSize} · More results exist. Refine the search or export all matching IOCs.</span>
+            ) : null}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={dslPrevPage} disabled={dslCursorStack.length === 0 || dslLoading}>Prev</button>
+              <button onClick={dslNextPage} disabled={!dslResult.has_more || dslLoading}>Next</button>
+              <button onClick={() => { setAdvancedOpen(true); if (dslSearchInputRef.current) dslSearchInputRef.current.focus(); }}>Refine search</button>
+              <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} style={{ borderColor: '#16a34a', color: '#86efac' }}>Export matching IOCs</button>
+              <button onClick={() => setExportsOpen(true)}>Search Exports</button>
+            </div>
+          </div>
+          {(dslResult.warnings || []).map((w, i) => (
+            <div key={i} style={{ marginTop: 6, color: '#fbbf24', fontSize: 12 }}>{w}</div>
+          ))}
+        </div>
+      )}
+
+      {!dslActive && (
+        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={() => setExportsOpen(true)}>Search Exports</button>
+        </div>
+      )}
+
+      {exportModalOpen && (
+        <ModalOverlay onClose={() => setExportModalOpen(false)}>
+          <h3 style={{ marginTop: 0 }}>Export matching IOCs</h3>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8' }}>Query</div>
+            <code style={{ display: 'block', padding: 8, background: '#0b1120', borderRadius: 8, color: '#7dd3fc', fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{dslResult?.normalized_query || appliedQuery}</code>
+          </div>
+          <div style={{ marginBottom: 10, fontSize: 13, color: '#cbd5e1' }}>
+            Estimated records: <b>{dslResult ? (dslResult.count_display || 'Calculating…') : 'Calculating…'}</b>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Format</div>
+            <label style={{ marginRight: 14, color: '#e2e8f0', fontSize: 13 }}><input type="radio" checked={exportFormat === 'csv'} onChange={() => setExportFormat('csv')} /> CSV</label>
+            <label style={{ color: '#e2e8f0', fontSize: 13 }}><input type="radio" checked={exportFormat === 'csv_gz'} onChange={() => setExportFormat('csv_gz')} /> Compressed CSV (.csv.gz)</label>
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Columns</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+              {EXPORT_COLUMN_OPTIONS.map((col) => (
+                <label key={col.key} style={{ color: '#e2e8f0', fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={exportColumns.includes(col.key)}
+                    onChange={(e) => setExportColumns((cols) => e.target.checked ? [...cols, col.key] : cols.filter((k) => k !== col.key))}
+                  /> {col.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>Export scope</div>
+            <label style={{ marginRight: 14, color: '#e2e8f0', fontSize: 13 }}><input type="radio" checked={exportScope === 'all'} onChange={() => setExportScope('all')} /> All matching IOCs</label>
+            <label style={{ color: '#e2e8f0', fontSize: 13 }}><input type="radio" checked={exportScope === 'preview'} onChange={() => setExportScope('preview')} /> Latest {pageSize > 0 ? 2000 : 2000} preview records</label>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button onClick={() => setExportModalOpen(false)} disabled={exportBusy}>Cancel</button>
+            <button onClick={createExport} disabled={exportBusy || exportColumns.length === 0} style={{ borderColor: '#16a34a', color: '#86efac' }}>{exportBusy ? 'Creating…' : 'Create Export'}</button>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {exportsOpen && (
+        <ModalOverlay onClose={() => setExportsOpen(false)}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ marginTop: 0 }}>Search Exports</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => loadExports()} disabled={exportsLoading}>Refresh</button>
+              <button onClick={() => setExportsOpen(false)}>Close</button>
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: '#94a3b8', textAlign: 'left' }}>
+                  <th style={{ padding: 6 }}>Created</th>
+                  <th style={{ padding: 6 }}>Query</th>
+                  <th style={{ padding: 6 }}>Records</th>
+                  <th style={{ padding: 6 }}>Size</th>
+                  <th style={{ padding: 6 }}>Status</th>
+                  <th style={{ padding: 6 }}>Expires</th>
+                  <th style={{ padding: 6 }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {exportsList.length === 0 ? (
+                  <tr><td colSpan={7} style={{ padding: 10, color: '#94a3b8' }}>{exportsLoading ? 'Loading…' : 'No exports yet.'}</td></tr>
+                ) : exportsList.map((e) => (
+                  <tr key={e.id} style={{ borderTop: '1px solid #1e293b', color: '#e2e8f0' }}>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td>
+                    <td style={{ padding: 6, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.normalized_query}>{e.normalized_query}</td>
+                    <td style={{ padding: 6 }}>{e.record_count == null ? '—' : Number(e.record_count).toLocaleString('en-US')}</td>
+                    <td style={{ padding: 6 }}>{e.file_size == null ? '—' : `${(Number(e.file_size) / 1024).toFixed(1)} KB`}</td>
+                    <td style={{ padding: 6 }}>
+                      {e.status === 'processing' ? `Processing ${e.progress || 0}%` : e.status.charAt(0).toUpperCase() + e.status.slice(1)}
+                      {e.status === 'failed' && e.failure_reason ? <div style={{ color: '#fca5a5', fontSize: 11 }}>{e.failure_reason}</div> : null}
+                    </td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{e.expires_at ? new Date(e.expires_at).toLocaleString() : '—'}</td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
+                      {e.status === 'ready' ? (
+                        <a href={`/api/iocs/search-exports/${e.id}/download`} style={{ color: '#86efac' }}>Download</a>
+                      ) : (e.status === 'queued' || e.status === 'processing') ? (
+                        <button onClick={() => cancelExport(e.id)}>Cancel</button>
+                      ) : e.status === 'failed' ? (
+                        <button onClick={() => retryExport(e.id)}>Retry</button>
+                      ) : <span style={{ color: '#64748b' }}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ModalOverlay>
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
@@ -10078,7 +10470,7 @@ function IOCListPage() {
           </select>
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
-          {paginationLabel}
+          {dslActive ? (dslResult?.timed_out ? '' : `${dslResult?.count_display || '0'} matching IOCs`) : paginationLabel}
         </div>
       </div>
 
@@ -10199,16 +10591,18 @@ function IOCListPage() {
         </table>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-        <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
-        <button
-          style={{ minWidth: 92, fontWeight: 600 }}
-          disabled={pagination.page >= (pagination.page_count ?? pagination.total_pages ?? 1)}
-          onClick={() => setPage((p) => Math.min(p + 1, pagination.page_count ?? pagination.total_pages ?? 1))}
-        >
-          Next
-        </button>
-      </div>
+      {!dslActive && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+          <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
+          <button
+            style={{ minWidth: 92, fontWeight: 600 }}
+            disabled={pagination.page >= (pagination.page_count ?? pagination.total_pages ?? 1)}
+            onClick={() => setPage((p) => Math.min(p + 1, pagination.page_count ?? pagination.total_pages ?? 1))}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {detailObservable && (
         <div style={{ marginTop: 14, border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#0f172a' }}>
