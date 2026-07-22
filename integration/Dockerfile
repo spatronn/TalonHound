@@ -23,6 +23,7 @@ COPY backend/lib/customThreatFeedParser.js ./lib/customThreatFeedParser.js
 COPY backend/lib/customThreatFeedAuth.js ./lib/customThreatFeedAuth.js
 COPY backend/lib/customThreatFeedFetch.js ./lib/customThreatFeedFetch.js
 COPY backend/lib/customThreatFeedSync.js ./lib/customThreatFeedSync.js
+COPY backend/lib/customThreatFeedFingerprint.js ./lib/customThreatFeedFingerprint.js
 COPY backend/lib/customThreatFeedWorkerAudit.js ./lib/customThreatFeedWorkerAudit.js
 COPY backend/lib/observable-normalization.js ./lib/observable-normalization.js
 COPY backend/lib/feedFormatter.js ./lib/feedFormatter.js
