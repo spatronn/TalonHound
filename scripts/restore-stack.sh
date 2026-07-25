@@ -1,12 +1,13 @@
 #!/usr/bin/env sh
-# Restore a TalonHound backup bundle created by backup-stack.sh (CLI-only; overwrites data).
+# Restore a TalonHound backup (CLI-only; overwrites PostgreSQL).
 #
 # Usage:
-#   ./scripts/restore-stack.sh --backup backups/talonhound-YYYYMMDDTHHMMSSZ --dry-run
+#   ./scripts/restore-stack.sh --backup-id backup-YYYYMMDD-HHMMSS-hex --dry-run
+#   ./scripts/restore-stack.sh --backup-id backup-YYYYMMDD-HHMMSS-hex --confirm
 #   ./scripts/restore-stack.sh --backup backups/talonhound-YYYYMMDDTHHMMSSZ --confirm
-#   ./scripts/restore-stack.sh --backup <dir> --confirm --skip-checksum
 #
 # Requires --confirm for mutating restore (except --dry-run).
+# Creates a safety backup of the live DB before pg_restore; aborts if safety fails.
 
 set -eu
 
@@ -14,25 +15,31 @@ ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 . "$ROOT/scripts/lib/backup-common.sh"
 
-BACKUP_DIR=""
+BACKUP_REF=""
 DRY_RUN=0
 CONFIRM=0
 SKIP_CHECKSUM=0
+SKIP_SAFETY=0
 
 usage() {
-  echo "Usage: $0 --backup <bundle-dir> [--dry-run | --confirm] [--skip-checksum]"
+  echo "Usage: $0 (--backup-id <id> | --backup <path>) [--dry-run | --confirm] [--skip-checksum] [--skip-safety]"
   exit 1
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --backup-id)
+      shift
+      BACKUP_REF="${1:-}"
+      ;;
     --backup)
       shift
-      BACKUP_DIR="${1:-}"
+      BACKUP_REF="${1:-}"
       ;;
     --dry-run) DRY_RUN=1 ;;
     --confirm) CONFIRM=1 ;;
     --skip-checksum) SKIP_CHECKSUM=1 ;;
+    --skip-safety) SKIP_SAFETY=1 ;;
     -h|--help) usage ;;
     *)
       echo "Unknown option: $1" >&2
@@ -42,37 +49,32 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-[ -n "$BACKUP_DIR" ] || usage
+[ -n "$BACKUP_REF" ] || usage
 
-# Resolve relative paths from repo root.
-case "$BACKUP_DIR" in
-  /*) ;;
-  *) BACKUP_DIR="$ROOT/$BACKUP_DIR" ;;
-esac
+load_dotenv
+BACKUP_ROOT="${BACKUP_ROOT:-$ROOT/backups}"
+mkdir -p "$BACKUP_ROOT"
 
-if [ ! -d "$BACKUP_DIR" ]; then
-  echo "[restore] backup directory not found: $BACKUP_DIR" >&2
+echo "[restore] resolving backup: $BACKUP_REF"
+resolve_backup_bundle "$BACKUP_REF"
+BUNDLE_DIR="${BUNDLE_DIR:?}"
+
+PG_DUMP="$(find_postgres_dump "$BUNDLE_DIR")" || {
+  echo "[restore] missing postgres.dump in $BUNDLE_DIR" >&2
   exit 1
-fi
+}
 
-PG_DUMP="${BACKUP_DIR}/postgres.dump"
-if [ ! -f "$PG_DUMP" ]; then
-  echo "[restore] missing postgres.dump in $BACKUP_DIR" >&2
-  exit 1
-fi
-
-if [ ! -f "${BACKUP_DIR}/manifest.json" ]; then
+if [ ! -f "${BUNDLE_DIR}/manifest.json" ]; then
   echo "[restore] warning: manifest.json missing (legacy or incomplete bundle)" >&2
 fi
 
-load_dotenv
-
-echo "[restore] bundle: $BACKUP_DIR"
+echo "[restore] bundle: $BUNDLE_DIR"
+echo "[restore] dump: $PG_DUMP"
 
 if [ "$SKIP_CHECKSUM" -eq 0 ]; then
-  if [ -f "${BACKUP_DIR}/checksums.sha256" ]; then
+  if [ -f "${BUNDLE_DIR}/checksums.sha256" ]; then
     echo "[restore] verifying checksums..."
-    verify_checksums "$BACKUP_DIR"
+    verify_checksums "$BUNDLE_DIR"
   else
     echo "[restore] warning: checksums.sha256 missing; use --skip-checksum to silence" >&2
   fi
@@ -81,9 +83,12 @@ else
 fi
 
 echo "[restore] plan:"
-echo "  - PostgreSQL pg_restore (destructive overwrite)"
-echo "  - Redis: not restored (restart implied)"
-echo "  - post-step: npm run migrate + start writers"
+echo "  - safety backup of current DB (unless --skip-safety)"
+echo "  - stop writer services"
+echo "  - PostgreSQL pg_restore --clean --if-exists (destructive)"
+echo "  - npm run migrate"
+echo "  - start writers"
+echo "  - Redis: not restored"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[restore] dry-run complete (no changes made)"
@@ -96,10 +101,20 @@ if [ "$CONFIRM" -eq 0 ]; then
 fi
 
 echo "[restore] WARNING: this overwrites current PostgreSQL data."
+
+if [ "$SKIP_SAFETY" -eq 0 ]; then
+  create_safety_backup || exit 1
+else
+  echo "[restore] safety backup skipped (--skip-safety)"
+fi
+
 stop_writers
 
 echo "[restore] PostgreSQL pg_restore..."
-docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists < "$PG_DUMP"
+if ! docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists < "$PG_DUMP"; then
+  echo "[restore] pg_restore reported errors (some warnings are normal with --clean)." >&2
+  echo "[restore] continuing to migrate; verify application health carefully." >&2
+fi
 
 echo "[restore] running migrations (forward-only safety net)..."
 docker compose run --rm backend npm run migrate
@@ -110,3 +125,6 @@ echo "[restore] done. Verify:"
 echo "  docker compose exec backend wget -qO- http://127.0.0.1:3000/readyz"
 echo "  docker compose run --rm backend npm run migrate:list"
 echo "  Integration queue recover via UI if needed"
+if [ -n "${SAFETY_BACKUP_DIR:-}" ]; then
+  echo "  Safety backup kept at: $SAFETY_BACKUP_DIR"
+fi

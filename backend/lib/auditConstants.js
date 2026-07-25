@@ -145,6 +145,19 @@ export const AUDIT_ACTION = Object.freeze({
   CUSTOM_FEED_CLEANUP_DELETED: 'custom_feed.cleanup_delete',
   SPAMHAUS_DROP_SYNC_TRIGGERED: 'enrichment.spamhaus_drop.sync_triggered',
   SPAMHAUS_DROP_ENRICHMENT_REFRESH: 'enrichment.spamhaus_drop.refresh',
+  BACKUP_REQUESTED: 'backup.requested',
+  BACKUP_STARTED: 'backup.started',
+  BACKUP_COMPLETED: 'backup.completed',
+  BACKUP_FAILED: 'backup.failed',
+  BACKUP_VERIFIED: 'backup.verified',
+  BACKUP_DOWNLOADED: 'backup.downloaded',
+  BACKUP_DELETED: 'backup.deleted',
+  RESTORE_PREPARED: 'restore.prepared',
+  RESTORE_CONFIRMED: 'restore.confirmed',
+  RESTORE_STARTED: 'restore.started',
+  RESTORE_COMPLETED: 'restore.completed',
+  RESTORE_FAILED: 'restore.failed',
+  SAFETY_BACKUP_CREATED: 'backup.safety_created',
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -162,7 +175,9 @@ export const AUDIT_ENTITY = Object.freeze({
   SETTINGS: 'settings',
   ENRICHMENT: 'enrichment',
   AUTH: 'auth',
-  CUSTOM_THREAT_FEED: 'custom_threat_feed'
+  CUSTOM_THREAT_FEED: 'custom_threat_feed',
+  SYSTEM_BACKUP: 'system_backup',
+  SYSTEM_RESTORE: 'system_restore'
 });
 
 /** Human-readable labels for UI */
@@ -284,7 +299,20 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.CUSTOM_FEED_SYNC_FAILED]: 'Custom Threat Feed Sync Failed',
   [AUDIT_ACTION.CUSTOM_FEED_DELETED]: 'Custom Threat Feed Deleted',
   [AUDIT_ACTION.CUSTOM_FEED_UNLINKED_FROM_PUBLISHED]: 'Custom Threat Feed Unlinked from Published Feeds',
-  [AUDIT_ACTION.CUSTOM_FEED_CLEANUP_DELETED]: 'Custom Threat Feed Deleted (with Published Feed Cleanup)'
+  [AUDIT_ACTION.CUSTOM_FEED_CLEANUP_DELETED]: 'Custom Threat Feed Deleted (with Published Feed Cleanup)',
+  [AUDIT_ACTION.BACKUP_REQUESTED]: 'Backup Requested',
+  [AUDIT_ACTION.BACKUP_STARTED]: 'Backup Started',
+  [AUDIT_ACTION.BACKUP_COMPLETED]: 'Backup Completed',
+  [AUDIT_ACTION.BACKUP_FAILED]: 'Backup Failed',
+  [AUDIT_ACTION.BACKUP_VERIFIED]: 'Backup Verified',
+  [AUDIT_ACTION.BACKUP_DOWNLOADED]: 'Backup Downloaded',
+  [AUDIT_ACTION.BACKUP_DELETED]: 'Backup Deleted',
+  [AUDIT_ACTION.RESTORE_PREPARED]: 'Restore Prepared',
+  [AUDIT_ACTION.RESTORE_CONFIRMED]: 'Restore Confirmed',
+  [AUDIT_ACTION.RESTORE_STARTED]: 'Restore Started',
+  [AUDIT_ACTION.RESTORE_COMPLETED]: 'Restore Completed',
+  [AUDIT_ACTION.RESTORE_FAILED]: 'Restore Failed',
+  [AUDIT_ACTION.SAFETY_BACKUP_CREATED]: 'Safety Backup Created'
 });
 
 export function auditActionLabel(action) {

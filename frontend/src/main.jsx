@@ -44,6 +44,7 @@ import {
   resolveSourceBadgeStyle
 } from './lib/sourceBadge.js';
 import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.jsx';
+import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
 import './components/enrichmentProviders/enrichmentProviders.css';
 import {
@@ -1655,6 +1656,7 @@ function AppShell({ children }) {
     && !isActive('/administration/api-keys')
     && !isActive('/administration/audit-logs')
     && !isActive('/administration/enrichment-providers')
+    && !isActive('/administration/backup-restore')
     && !isActive('/administration/tags')
     && !isActive('/administration/threat-classifications')
     && !isActive('/administration/threat-actors')
@@ -1711,6 +1713,7 @@ function AppShell({ children }) {
             {isAdmin ? <Link to="/administration/ioc-sources" className={navLinkClass(isActive('/administration/ioc-sources'))}>{NavIcons.iocSources}<span>IOC Sources</span></Link> : null}
             <Link to="/administration/api-keys" className={navLinkClass(isActive('/administration/api-keys'))}>{NavIcons.apiKeys}<span>API Keys</span></Link>
             <Link to="/administration/enrichment-providers" className={navLinkClass(isActive('/administration/enrichment-providers'))}>{NavIcons.enrichmentProviders}<span>Enrichment Providers</span></Link>
+            {isAdmin ? <Link to="/administration/backup-restore" className={navLinkClass(isActive('/administration/backup-restore'))}>{NavIcons.backupRestore}<span>Backup &amp; Restore</span></Link> : null}
           </div>
         </nav>
 
@@ -8168,6 +8171,15 @@ function EnrichmentProvidersPage() {
       AppShell={AppShell}
       useSession={useSession}
       useReasonPrompt={useReasonPrompt}
+    />
+  );
+}
+
+function BackupRestorePage() {
+  return (
+    <BackupRestorePageView
+      AppShell={AppShell}
+      useSession={useSession}
     />
   );
 }
@@ -15174,6 +15186,7 @@ function App() {
           <Route path="/administration/ioc-sources" element={<Protected><IocSourcesPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
+          <Route path="/administration/backup-restore" element={<Protected><BackupRestorePage /></Protected>} />
           <Route path="/administration/users" element={<Protected><UsersPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationSettingsPage /></Protected>} />
           <Route path="/settings" element={<Navigate to="/administration" replace />} />

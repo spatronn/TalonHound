@@ -25,6 +25,8 @@ import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerIocSearchExportRoutes } from './routes/iocSearchExports.js';
 import { EXPORT_QUEUE_NAME } from './lib/iocSearchExport/exportConfig.js';
+import { registerBackupRoutes } from './routes/backups.js';
+import { BACKUP_QUEUE_NAME } from './lib/backup/config.js';
 import {
   parseSearchQuery,
   buildWhereClause,
@@ -218,6 +220,7 @@ const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const iocSearchExportQueue = new Queue(EXPORT_QUEUE_NAME, { connection: redis });
+const systemBackupQueue = new Queue(BACKUP_QUEUE_NAME, { connection: redis });
 const auditLogService = createAuditLogService(pool);
 
 // Geo cache refresh tuning (local/kÄ±sÄ±tlÄ± ortam iÃ§in dÃ¼ÅŸÃ¼rÃ¼lebilir)
@@ -2415,6 +2418,7 @@ registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
 registerIocExportRoutes(app, pool);
 registerIocSearchExportRoutes(app, pool, { exportQueue: iocSearchExportQueue, auditLogService });
+registerBackupRoutes(app, pool, { backupQueue: systemBackupQueue, auditLogService });
 registerRouteModule('audit');
 
 registerRdapEnrichmentRoutes(app, pool, auditLogService);

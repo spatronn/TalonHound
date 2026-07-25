@@ -62,11 +62,19 @@ services:
       - DNSMANIA_ENABLED=${DNSMANIA_ENABLED:-true}
       - IOC_EXPORT_QUEUE_NAME=ioc-search-export
       - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_CRON=${BACKUP_CRON:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENCRYPTION_ENABLED=${BACKUP_ENCRYPTION_ENABLED:-false}
+      - BACKUP_ENCRYPTION_KEY_FILE=${BACKUP_ENCRYPTION_KEY_FILE:-}
+      - BACKUP_MAX_CONCURRENT=1
+      - BACKUP_QUEUE_NAME=system-backup
     depends_on:
       - db
       - redis
     volumes:
-      - ./backups:/backups
+      - backup_data:/data/backups
       - ioc_export_data:/data/ioc-search-exports
     healthcheck:
       test:
@@ -224,6 +232,34 @@ services:
       - redis
     restart: unless-stopped
 
+  backup-worker:
+    build: ./backend
+    container_name: demo-backup-worker
+    command: ["npm", "run", "backup-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=demo
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=demo
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_CRON=${BACKUP_CRON:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENCRYPTION_ENABLED=${BACKUP_ENCRYPTION_ENABLED:-false}
+      - BACKUP_ENCRYPTION_KEY_FILE=${BACKUP_ENCRYPTION_KEY_FILE:-}
+      - BACKUP_MAX_CONCURRENT=1
+      - BACKUP_QUEUE_NAME=system-backup
+    volumes:
+      - backup_data:/data/backups
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
   loadgen:
     build: ./tools/loadgen
     container_name: demo-loadgen
@@ -270,3 +306,4 @@ services:
 volumes:
   postgres_data:
   ioc_export_data:
+  backup_data:

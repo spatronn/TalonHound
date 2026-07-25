@@ -150,7 +150,7 @@ export const NavIcons = {
       <path d="M18.5 3 21 5.5" />
     </Icon>
   ),
-  enrichmentProviders: (
+      enrichmentProviders: (
     <Icon>
       <path d="M4 21v-7" />
       <path d="M4 10V3" />
@@ -161,6 +161,13 @@ export const NavIcons = {
       <path d="M2 14h4" />
       <path d="M10 8h4" />
       <path d="M18 16h4" />
+    </Icon>
+  ),
+  backupRestore: (
+    <Icon>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 10 12 15 17 10" />
+      <path d="M12 15V3" />
     </Icon>
   )
 };
