@@ -6,7 +6,7 @@ export { createStorageProvider, LocalFilesystemStorage } from './storage/local.j
 export { selectRetentionCandidates } from './retention.js';
 export { executeBackupJob } from './runBackup.js';
 export { verifyBackupArchive } from './verify.js';
-export { cronMatchesUtc, nextCronFireUtc } from './scheduler.js';
+export { cronMatchesUtc, nextCronFireUtc, minuteKeyUtc } from './scheduler.js';
 export {
   canStartBackup,
   assertCanStartBackup,
