@@ -961,35 +961,6 @@ app.get('/api/integrations', async (req, res) => {
       ORDER BY f.archived_at NULLS FIRST, f.active DESC, f.created_at ASC, f.name ASC
     `;
 
-    const recentQ = `
-      SELECT
-        q.job_id,
-        q.integration_key,
-        COALESCE(
-          f.name,
-          CASE WHEN q.integration_key = 'unknown' AND q.job_name = 'phishtank-import' THEN 'PhishTank online-valid' END,
-          q.integration_key
-        ) AS integration_name,
-        q.job_name AS name,
-        q.status AS state,
-        COALESCE(q.started_at, q.queued_at) AS timestamp,
-        q.error_message AS failed_reason,
-        q.records_processed,
-        q.started_at,
-        q.finished_at,
-        q.triggered_by,
-        CASE
-          WHEN q.integration_key = 'usom-trcert' AND COALESCE(q.triggered_by, '') LIKE '%full_reconciliation%'
-            THEN 'full_reconciliation'
-          WHEN q.integration_key = 'usom-trcert' THEN 'incremental'
-          ELSE NULL
-        END AS run_mode
-      FROM integration_queue_jobs q
-      LEFT JOIN integration_feeds f ON f.key = q.integration_key
-      ORDER BY q.queued_at DESC
-      LIMIT 20
-    `;
-
     const baseStart = Date.now();
     const expirationPoliciesQ = `
       SELECT
@@ -1174,7 +1145,7 @@ app.get('/api/integrations', async (req, res) => {
     `;
 
     const latestRunStart = Date.now();
-    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, recentRes, usomRunsByModeRes, usomSuccessRunsByModeRes] = await Promise.all([
+    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, usomRunsByModeRes, usomSuccessRunsByModeRes] = await Promise.all([
       jobTypes.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
         : Promise.resolve({ rows: [] }),
@@ -1193,7 +1164,6 @@ app.get('/api/integrations', async (req, res) => {
       feedKeys.includes('asn_enrichment')
         ? queryIntegrationsMetaWithTimeout(pool.query(asnQ))
         : Promise.resolve({ rows: [{ last_updated_at: null }] }),
-      pool.query(recentQ),
       feedKeys.includes('usom-trcert')
         ? queryIntegrationsMetaWithTimeout(pool.query(usomRunsByModeQ))
         : Promise.resolve({ rows: [] }),
@@ -1354,7 +1324,6 @@ app.get('/api/integrations', async (req, res) => {
       integrations,
       health_summary: healthSummary,
       schedule_reference_timezone: getSystemScheduleTimezone(),
-      recent_runs: recentRes.rows.map(withIntegrationJobDisplayName),
       queue
     });
   } catch (err) {

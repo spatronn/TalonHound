@@ -13,7 +13,8 @@
     "test:intelligence": "node --test src/lib/ipEnrichmentTarget.test.js src/lib/dnsmaniaPresentation.test.js src/lib/associatedIpEnrichment.test.js",
     "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js src/lib/intelligenceSummarySection.test.js",
     "test:tags": "node --test src/lib/iocTagBadges.test.js src/lib/tagManagerList.test.js",
-    "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js"
+    "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js",
+    "test:integration-queue": "node --test src/lib/integrationJobDuration.test.js src/lib/integrationQueueStatusView.test.js"
   },
   "dependencies": {
     "axios": "^1.11.0",
