@@ -733,13 +733,13 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             ) : (
               <table className="br-table">
                 <colgroup>
-                  <col className="br-col-created" />
-                  <col className="br-col-id" />
-                  <col className="br-col-status" />
-                  <col className="br-col-size" />
-                  <col className="br-col-verify" />
-                  <col className="br-col-by" />
-                  <col className="br-col-actions" />
+                  <col className="br-col-created" style={{ width: '12%' }} />
+                  <col className="br-col-id" style={{ width: '24%' }} />
+                  <col className="br-col-status" style={{ width: '10%' }} />
+                  <col className="br-col-size" style={{ width: '8%' }} />
+                  <col className="br-col-verify" style={{ width: '12%' }} />
+                  <col className="br-col-by" style={{ width: '14%' }} />
+                  <col className="br-col-actions" style={{ width: '20%' }} />
                 </colgroup>
                 <thead>
                   <tr>
