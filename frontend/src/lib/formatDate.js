@@ -23,14 +23,9 @@ export function notifyTimezoneChanged() {
   window.dispatchEvent(new Event(TIMEZONE_CHANGED_EVENT));
 }
 
-/**
- * Format a timestamp in the user's timezone (en-GB, 24h). No "UTC" suffix.
- * @param {string|number|Date|null|undefined} value
- * @param {string} [timeZone]
- */
-export function formatUserDateTime(value, timeZone) {
-  if (!value && value !== 0) return '-';
-  const tz = normalizeUserTimezone(timeZone || getUserTimezone());
+/** Parse API/UTC timestamps into a Date; null when invalid. */
+export function parseUserInstant(value) {
+  if (!value && value !== 0) return null;
 
   let dt;
   if (value instanceof Date) {
@@ -40,7 +35,7 @@ export function formatUserDateTime(value, timeZone) {
     dt = new Date(ms);
   } else {
     const raw = String(value).trim();
-    if (!raw) return '-';
+    if (!raw) return null;
 
     if (/^\d+$/.test(raw)) {
       const num = Number(raw);
@@ -53,7 +48,19 @@ export function formatUserDateTime(value, timeZone) {
     }
   }
 
-  if (Number.isNaN(dt.getTime())) return '-';
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+/**
+ * Format a timestamp in the user's timezone (en-GB, 24h). No "UTC" suffix.
+ * @param {string|number|Date|null|undefined} value
+ * @param {string} [timeZone]
+ */
+export function formatUserDateTime(value, timeZone) {
+  const dt = parseUserInstant(value);
+  if (!dt) return '-';
+  const tz = normalizeUserTimezone(timeZone || getUserTimezone());
 
   return dt.toLocaleString('en-GB', {
     timeZone: tz,
@@ -67,10 +74,34 @@ export function formatUserDateTime(value, timeZone) {
   });
 }
 
+/**
+ * Split date + time for stacked table cells (user timezone).
+ * @returns {{ date: string, time: string } | null}
+ */
+export function formatUserDateParts(value, timeZone) {
+  const dt = parseUserInstant(value);
+  if (!dt) return null;
+  const tz = normalizeUserTimezone(timeZone || getUserTimezone());
+
+  const date = dt.toLocaleDateString('en-GB', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const time = dt.toLocaleTimeString('en-GB', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  return { date, time };
+}
+
 /** Raw UTC ISO string for tooltips; empty string when invalid. */
 export function utcIsoTooltip(value) {
-  if (!value && value !== 0) return '';
-  const dt = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(dt.getTime())) return '';
+  const dt = parseUserInstant(value);
+  if (!dt) return '';
   return dt.toISOString();
 }

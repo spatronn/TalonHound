@@ -255,23 +255,24 @@
   font-size: 13px;
 }
 
-.br-col-created { width: 11%; }
-.br-col-id { width: 15%; }
-.br-col-trigger { width: 6%; }
-.br-col-status { width: 8%; }
-.br-col-size { width: 6%; }
-.br-col-enc { width: 7%; }
-.br-col-verify { width: 8%; }
-.br-col-duration { width: 6%; }
-.br-col-by { width: 11%; }
-.br-col-actions { width: 22%; }
+/* ~user guidance, Actions bumped so Download/Verify/⋯ stay fully visible */
+.br-col-created { width: 14%; }
+.br-col-id { width: 23%; }
+.br-col-status { width: 11%; }
+.br-col-size { width: 8%; }
+.br-col-verify { width: 12%; }
+.br-col-by { width: 12%; }
+.br-col-actions { width: 20%; }
 
 .br-table th,
 .br-table td {
-  padding: 10px 8px;
+  padding: 10px 10px;
   text-align: left;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   vertical-align: middle;
+}
+
+.br-table td {
   overflow: hidden;
 }
 
@@ -282,7 +283,8 @@
   color: rgba(148, 163, 184, 0.85);
   font-weight: 650;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   background: rgba(8, 11, 18, 0.45);
 }
 
@@ -300,6 +302,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.br-cell-created {
+  overflow: visible;
+  vertical-align: middle;
+}
+
+.br-date-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.br-date-day {
+  color: #f1f5f9;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.br-date-time {
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .br-cell-actions {
@@ -333,13 +360,13 @@
 .br-id-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.5rem;
   min-width: 0;
   max-width: 100%;
 }
 
 .br-id-text {
-  flex: 1 1 auto;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

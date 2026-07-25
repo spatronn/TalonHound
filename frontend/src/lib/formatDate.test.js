@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   formatUserDateTime,
+  formatUserDateParts,
   normalizeUserTimezone,
   utcIsoTooltip
 } from './formatDate.js';
@@ -30,5 +31,10 @@ describe('formatDate', () => {
   it('provides UTC tooltip', () => {
     assert.equal(utcIsoTooltip('2026-07-25T18:10:55.000Z'), '2026-07-25T18:10:55.000Z');
     assert.equal(utcIsoTooltip(null), '');
+  });
+
+  it('splits date and time parts in user timezone', () => {
+    const parts = formatUserDateParts('2026-07-25T18:10:55.000Z', 'Europe/Istanbul');
+    assert.deepEqual(parts, { date: '25/07/2026', time: '21:10:55' });
   });
 });

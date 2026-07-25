@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api.js';
 import {
   formatUserDateTime,
+  formatUserDateParts,
   getUserTimezone,
   utcIsoTooltip,
   TIMEZONE_CHANGED_EVENT
@@ -175,6 +176,17 @@ function DateCell({ value, timezone }) {
   return (
     <span title={utcIsoTooltip(value) || undefined}>
       {formatUserDateTime(value, timezone)}
+    </span>
+  );
+}
+
+function StackedDateCell({ value, timezone }) {
+  const parts = formatUserDateParts(value, timezone);
+  if (!parts) return <span className="br-muted">—</span>;
+  return (
+    <span className="br-date-stack" title={utcIsoTooltip(value) || undefined}>
+      <span className="br-date-day">{parts.date}</span>
+      <span className="br-date-time">{parts.time}</span>
     </span>
   );
 }
@@ -621,12 +633,9 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                 <colgroup>
                   <col className="br-col-created" />
                   <col className="br-col-id" />
-                  <col className="br-col-trigger" />
                   <col className="br-col-status" />
                   <col className="br-col-size" />
-                  <col className="br-col-enc" />
                   <col className="br-col-verify" />
-                  <col className="br-col-duration" />
                   <col className="br-col-by" />
                   <col className="br-col-actions" />
                 </colgroup>
@@ -634,12 +643,9 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                   <tr>
                     <th scope="col">Created</th>
                     <th scope="col">Backup ID</th>
-                    <th scope="col">Trigger</th>
                     <th scope="col">Status</th>
                     <th scope="col">Size</th>
-                    <th scope="col">Encryption</th>
                     <th scope="col">Verification</th>
-                    <th scope="col">Duration</th>
                     <th scope="col">Created By</th>
                     <th scope="col">Actions</th>
                   </tr>
@@ -652,7 +658,9 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                     const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
                     return (
                       <tr key={row.id}>
-                        <td className="br-cell-clip"><DateCell value={row.created_at} timezone={timezone} /></td>
+                        <td className="br-cell-created">
+                          <StackedDateCell value={row.created_at} timezone={timezone} />
+                        </td>
                         <td>
                           <div className="br-id-cell">
                             <code className="br-id-text" title={row.backup_id}>{row.backup_id}</code>
@@ -667,15 +675,8 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                             </button>
                           </div>
                         </td>
-                        <td className="br-cell-clip">{row.trigger_type}</td>
                         <td><StatusBadge status={row.status} /></td>
                         <td className="br-cell-clip">{formatBytes(row.archive_size_bytes)}</td>
-                        <td>
-                          <StatusBadge
-                            status={row.encrypted ? 'passed' : 'muted'}
-                            label={row.encrypted ? 'Encrypted' : 'Plain'}
-                          />
-                        </td>
                         <td>
                           <StatusBadge
                             status={row.verify_status}
@@ -683,7 +684,6 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                             withCheck
                           />
                         </td>
-                        <td className="br-cell-clip">{formatDuration(row.duration_ms)}</td>
                         <td>
                           <span className="br-cell-clip" title={row.created_by_email || undefined}>
                             {row.created_by_email || '—'}
