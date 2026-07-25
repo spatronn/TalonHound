@@ -766,7 +766,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                         </div>
                       </div>
                       <div role="cell"><StatusBadge status={row.status} /></div>
-                      <div role="cell" className="br-cell-clip">{formatBytes(row.archive_size_bytes)}</div>
+                      <div role="cell">{formatBytes(row.archive_size_bytes)}</div>
                       <div role="cell">
                         <StatusBadge
                           status={row.verify_status}
