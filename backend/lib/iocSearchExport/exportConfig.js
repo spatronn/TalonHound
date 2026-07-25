@@ -15,7 +15,10 @@ function intFromEnv(name, fallback, { min, max } = {}) {
 export function getExportConfig() {
   return {
     batchSize: intFromEnv('IOC_EXPORT_BATCH_SIZE', 5000, { min: 100, max: 50_000 }),
+    // File / download link retention starts when the artifact becomes ready.
     retentionHours: intFromEnv('IOC_EXPORT_RETENTION_HOURS', 24, { min: 1, max: 24 * 30 }),
+    // Terminal Action Center rows (expired/failed/cancelled) are deleted after this many days.
+    metadataRetentionDays: intFromEnv('IOC_EXPORT_METADATA_RETENTION_DAYS', 7, { min: 1, max: 90 }),
     maxConcurrentPerUser: intFromEnv('IOC_EXPORT_MAX_CONCURRENT_PER_USER', 2, { min: 1, max: 20 }),
     softLimit: intFromEnv('IOC_EXPORT_SOFT_LIMIT', 100_000, { min: 1000, max: 100_000_000 }),
     hardLimit: intFromEnv('IOC_EXPORT_HARD_LIMIT', 2_000_000, { min: 1000, max: 1_000_000_000 }),

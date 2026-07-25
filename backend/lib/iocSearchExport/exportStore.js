@@ -45,13 +45,44 @@ export async function getExportById(db, id) {
   return rows[0] || null;
 }
 
-export async function listExports(db, { email, includeAll = false, limit = 50, offset = 0 }) {
+/**
+ * Build WHERE clause fragments for list/count. statuses is null (all) or a non-empty
+ * array of concrete statuses. When filtering "ready", also exclude rows whose
+ * expires_at has elapsed so they surface under the expired bucket instead.
+ * When filtering "expired", include both stored-expired and ready-past-expiry rows.
+ */
+function buildListWhere({ email, includeAll, statuses }) {
   const params = [];
-  let where = '';
+  const clauses = [];
   if (!includeAll) {
     params.push(email);
-    where = `WHERE requested_by_email = $${params.length}`;
+    clauses.push(`requested_by_email = $${params.length}`);
   }
+  if (Array.isArray(statuses) && statuses.length) {
+    const onlyExpired = statuses.length === 1 && statuses[0] === 'expired';
+    const onlyReady = statuses.length === 1 && statuses[0] === 'ready';
+    if (onlyExpired) {
+      clauses.push(`(status = 'expired' OR (status = 'ready' AND expires_at IS NOT NULL AND expires_at <= NOW()))`);
+    } else if (onlyReady) {
+      clauses.push(`status = 'ready' AND (expires_at IS NULL OR expires_at > NOW())`);
+    } else if (statuses.includes('expired') && statuses.includes('ready')) {
+      params.push(statuses);
+      clauses.push(`status = ANY($${params.length}::text[])`);
+    } else {
+      params.push(statuses);
+      clauses.push(`status = ANY($${params.length}::text[])`);
+      if (statuses.includes('ready') && !statuses.includes('expired')) {
+        // Keep ready filter free of already-elapsed artifacts when mixed with others.
+        clauses.push(`NOT (status = 'ready' AND expires_at IS NOT NULL AND expires_at <= NOW())`);
+      }
+    }
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  return { where, params };
+}
+
+export async function listExports(db, { email, includeAll = false, limit = 50, offset = 0, statuses = null } = {}) {
+  const { where, params } = buildListWhere({ email, includeAll, statuses });
   params.push(Math.min(Math.max(limit, 1), 200));
   const limitIdx = params.length;
   params.push(Math.max(offset, 0));
@@ -64,6 +95,15 @@ export async function listExports(db, { email, includeAll = false, limit = 50, o
     params
   );
   return rows;
+}
+
+export async function countExports(db, { email, includeAll = false, statuses = null } = {}) {
+  const { where, params } = buildListWhere({ email, includeAll, statuses });
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS n FROM ioc_search_exports ${where}`,
+    params
+  );
+  return rows[0]?.n || 0;
 }
 
 export async function countActiveForUser(db, email) {
@@ -157,19 +197,6 @@ export async function isCancelRequested(db, id) {
   return Boolean(rows[0]?.cancel_requested);
 }
 
-export async function prepareRetry(db, id, maxRetries) {
-  const { rows } = await db.query(
-    `UPDATE ioc_search_exports
-        SET status = 'queued', progress = 0, failure_reason = NULL, cancel_requested = FALSE,
-            started_at = NULL, completed_at = NULL, storage_path = NULL, file_size = NULL,
-            snapshot_cutoff = NULL, retry_count = retry_count + 1, updated_at = NOW()
-      WHERE id = $1 AND status = 'failed' AND retry_count < $2
-      RETURNING ${SELECT_COLUMNS}`,
-    [id, maxRetries]
-  );
-  return rows[0] || null;
-}
-
 // Find ready exports whose retention window has elapsed.
 export async function findExpiredReady(db, limit = 100) {
   const { rows } = await db.query(
@@ -183,10 +210,44 @@ export async function findExpiredReady(db, limit = 100) {
 }
 
 export async function markExpired(db, id) {
-  await db.query(
+  const { rows } = await db.query(
     `UPDATE ioc_search_exports
         SET status = 'expired', storage_path = NULL, updated_at = NOW()
-      WHERE id = $1`,
+      WHERE id = $1 AND status IN ('ready', 'expired')
+      RETURNING ${SELECT_COLUMNS}`,
     [id]
   );
+  return rows[0] || null;
+}
+
+/**
+ * Find terminal metadata rows older than the retention window for hard deletion.
+ * Idempotent: only expired/failed/cancelled rows are candidates; ready/active are never deleted here.
+ */
+export async function findStaleMetadata(db, { olderThanDays = 7, limit = 200 } = {}) {
+  const days = Math.min(Math.max(Math.trunc(Number(olderThanDays) || 7), 1), 90);
+  const { rows } = await db.query(
+    `SELECT ${SELECT_COLUMNS} FROM ioc_search_exports
+      WHERE status IN ('expired', 'failed', 'cancelled')
+        AND COALESCE(completed_at, cancelled_at, updated_at, created_at)
+            <= NOW() - ($1::int * INTERVAL '1 day')
+      ORDER BY created_at ASC
+      LIMIT $2`,
+    [days, Math.min(Math.max(limit, 1), 500)]
+  );
+  return rows;
+}
+
+/**
+ * Hard-delete a terminal metadata row. Returns the deleted row, or null if already gone /
+ * still non-terminal (so the cleanup job stays idempotent and race-safe).
+ */
+export async function deleteMetadataRow(db, id) {
+  const { rows } = await db.query(
+    `DELETE FROM ioc_search_exports
+      WHERE id = $1 AND status IN ('expired', 'failed', 'cancelled')
+      RETURNING ${SELECT_COLUMNS}`,
+    [id]
+  );
+  return rows[0] || null;
 }

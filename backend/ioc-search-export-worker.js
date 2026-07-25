@@ -21,7 +21,9 @@ import {
   markCancelled,
   isCancelRequested,
   findExpiredReady,
-  markExpired
+  markExpired,
+  findStaleMetadata,
+  deleteMetadataRow
 } from './lib/iocSearchExport/exportStore.js';
 
 const { Pool } = pg;
@@ -229,7 +231,9 @@ async function waitForExportTable() {
 let worker = null;
 let cleanupTimer = null;
 
-// Retention sweep: delete expired ready files and flip status to 'expired'.
+// Retention sweep:
+// 1) Delete ready artifacts past expires_at and flip status to 'expired'.
+// 2) Hard-delete terminal metadata rows older than metadataRetentionDays (default 7).
 const CLEANUP_INTERVAL_MS = Math.max(Number(process.env.IOC_EXPORT_CLEANUP_INTERVAL_MS || 300000), 60000);
 let cleanupRunning = false;
 async function cleanupExpired() {
@@ -237,16 +241,38 @@ async function cleanupExpired() {
   cleanupRunning = true;
   try {
     if (!(await exportTableExists())) return; // quietly skip until migration applied
+
     const expired = await findExpiredReady(pool, 100);
     for (const row of expired) {
       if (row.storage_path) {
         const p = path.resolve(cfg.storageDir, path.basename(String(row.storage_path)));
         await cleanupFile(p);
       }
-      await markExpired(pool, row.id);
-      await auditExport(AUDIT_ACTION.IOC_SEARCH_EXPORT_EXPIRED, row, { extra: { expired_at: new Date().toISOString() } });
+      const marked = await markExpired(pool, row.id);
+      if (marked) {
+        await auditExport(AUDIT_ACTION.IOC_SEARCH_EXPORT_EXPIRED, marked, {
+          extra: { expired_at: new Date().toISOString() }
+        });
+      }
     }
     if (expired.length) console.log(`[ioc-search-export] expired ${expired.length} export(s)`);
+
+    // Metadata cleanup is independent of file cleanup and must tolerate missing files.
+    const stale = await findStaleMetadata(pool, {
+      olderThanDays: cfg.metadataRetentionDays,
+      limit: 200
+    });
+    let deleted = 0;
+    for (const row of stale) {
+      // Best-effort unlink if a path somehow remains on a terminal row.
+      if (row.storage_path) {
+        const p = path.resolve(cfg.storageDir, path.basename(String(row.storage_path)));
+        await cleanupFile(p);
+      }
+      const gone = await deleteMetadataRow(pool, row.id);
+      if (gone) deleted += 1;
+    }
+    if (deleted) console.log(`[ioc-search-export] purged ${deleted} stale metadata row(s)`);
   } catch (err) {
     console.warn('[ioc-search-export] cleanup failed:', err.message);
   } finally {

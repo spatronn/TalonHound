@@ -52,6 +52,18 @@ import {
   formatTagManagerShowingLabel,
   parseTagManagerUrlState
 } from './lib/tagManagerList.js';
+import {
+  ACTION_CENTER_FILTERS,
+  ACTION_CENTER_PAGE_SIZE,
+  actionCenterPollIntervalMs,
+  actionCenterStatusBadgeStyle,
+  buildActionCenterListParams,
+  formatActionCenterStatus,
+  formatExpiresIn,
+  formatFileSize,
+  taskTypeLabel,
+  truncateQuery
+} from './lib/actionCenter.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
@@ -1635,7 +1647,9 @@ function AppShell({ children }) {
   }
 
   const isActive = (path) => location.pathname === path;
-  const isOpsActive = location.pathname.startsWith('/ioc') || location.pathname.startsWith('/operations/ioc-suppressions');
+  const isOpsActive = location.pathname.startsWith('/ioc')
+    || location.pathname.startsWith('/operations/ioc-suppressions')
+    || location.pathname.startsWith('/action-center');
   const isIntegrationsActive = location.pathname.startsWith('/threat-intelligence');
 
   const menuStyle = (active) => ({
@@ -1682,6 +1696,7 @@ function AppShell({ children }) {
               <span style={{ ...subMenuStyle(false), opacity: 0.45, cursor: 'not-allowed' }} title="Read-only role">Add IOC</span>
             )}
             <Link to="/operations/ioc-suppressions" style={subMenuStyle(location.pathname.startsWith('/operations/ioc-suppressions'))}>IOC Suppressions</Link>
+            <Link to="/action-center" style={subMenuStyle(location.pathname.startsWith('/action-center'))}>Action Center</Link>
           </div>
 
           <div style={{ marginTop: 8 }}>
@@ -9708,6 +9723,263 @@ function IOCSuppressionsPage() {
   );
 }
 
+function ActionCenterPage() {
+  const navigate = useNavigate();
+  const { canWrite } = useSession();
+  const ui = PUBLISHED_FEEDS_UI;
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [actionBusyId, setActionBusyId] = useState('');
+  const [nowTick, setNowTick] = useState(Date.now());
+  const mountedRef = useRef(true);
+
+  const totalPages = Math.max(1, Math.ceil(total / ACTION_CENTER_PAGE_SIZE));
+
+  const load = useCallback(async ({ silent, page: pageOverride, status: statusOverride } = {}) => {
+    if (!silent) setLoading(true);
+    if (!silent) setError('');
+    try {
+      const params = buildActionCenterListParams({
+        page: pageOverride ?? page,
+        pageSize: ACTION_CENTER_PAGE_SIZE,
+        status: statusOverride ?? statusFilter
+      });
+      const { data } = await api.get('/iocs/search-exports', { params });
+      if (!mountedRef.current) return;
+      setItems(Array.isArray(data?.items) ? data.items : []);
+      setTotal(Number(data?.total || 0));
+    } catch (err) {
+      if (!mountedRef.current) return;
+      if (!silent) {
+        setItems([]);
+        setTotal(0);
+        setError(apiErrorMessage(err, 'Failed to load Action Center tasks'));
+      }
+    } finally {
+      if (mountedRef.current && !silent) setLoading(false);
+    }
+  }, [page, statusFilter]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    load().catch(() => {});
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [load]);
+
+  // Controlled polling while this page is mounted; clears on unmount.
+  useEffect(() => {
+    const intervalMs = actionCenterPollIntervalMs(items);
+    const timer = setInterval(() => {
+      load({ silent: true }).catch(() => {});
+      setNowTick(Date.now());
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [items, load]);
+
+  async function cancelTask(id) {
+    setActionBusyId(id);
+    try {
+      await api.post(`/iocs/search-exports/${id}/cancel`);
+      await load({ silent: true });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to cancel export'));
+    } finally {
+      setActionBusyId('');
+    }
+  }
+
+  async function retryTask(id) {
+    setActionBusyId(id);
+    try {
+      await api.post(`/iocs/search-exports/${id}/retry`);
+      setStatusFilter('all');
+      setPage(1);
+      await load({ silent: true, page: 1, status: 'all' });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to retry export'));
+    } finally {
+      setActionBusyId('');
+    }
+  }
+
+  async function createAgain(id) {
+    setActionBusyId(id);
+    try {
+      await api.post(`/iocs/search-exports/${id}/create-again`);
+      setStatusFilter('all');
+      setPage(1);
+      await load({ silent: true, page: 1, status: 'all' });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to recreate export'));
+    } finally {
+      setActionBusyId('');
+    }
+  }
+
+  function renderActions(row) {
+    const busy = actionBusyId === row.id;
+    if (row.status === 'ready') {
+      return (
+        <a href={`/api/iocs/search-exports/${row.id}/download`} style={{ color: '#86efac', fontWeight: 600 }}>
+          Download
+        </a>
+      );
+    }
+    if (row.status === 'queued' || row.status === 'processing') {
+      return (
+        <button type="button" style={ui.btn} disabled={busy} onClick={() => cancelTask(row.id)}>
+          {busy ? '…' : 'Cancel'}
+        </button>
+      );
+    }
+    if (row.status === 'failed') {
+      if (!canWrite) return <span style={{ color: '#64748b' }}>—</span>;
+      return (
+        <button type="button" style={ui.btn} disabled={busy} onClick={() => retryTask(row.id)}>
+          {busy ? '…' : 'Retry'}
+        </button>
+      );
+    }
+    if (row.status === 'expired') {
+      if (!canWrite) return <span style={{ color: '#64748b' }}>—</span>;
+      return (
+        <button type="button" style={ui.btn} disabled={busy} onClick={() => createAgain(row.id)}>
+          {busy ? '…' : 'Create again'}
+        </button>
+      );
+    }
+    return <span style={{ color: '#64748b' }}>—</span>;
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Action Center</h1>
+            <p style={ui.pageSub}>Track asynchronous jobs such as IOC Search exports. More task types can appear here over time.</p>
+          </div>
+          <button type="button" style={ui.btn} onClick={() => load().catch(() => {})} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+          {ACTION_CENTER_FILTERS.map((f) => {
+            const active = statusFilter === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => { setStatusFilter(f.key); setPage(1); }}
+                style={{
+                  ...ui.btn,
+                  ...(active ? { borderColor: '#2563eb', color: '#93c5fd', background: '#1e293b' } : {})
+                }}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {error ? (
+          <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div>
+        ) : null}
+
+        <div style={{ marginTop: 16, overflowX: 'auto' }}>
+          <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>Task type</th>
+                <th style={ui.th}>Query</th>
+                <th style={ui.th}>Status</th>
+                <th style={ui.th}>Created</th>
+                <th style={ui.th}>Ready</th>
+                <th style={ui.th}>Records</th>
+                <th style={ui.th}>Size</th>
+                <th style={ui.th}>Expiration</th>
+                <th style={ui.th}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && items.length === 0 ? (
+                <tr><td colSpan={9} style={ui.td}>Loading…</td></tr>
+              ) : !items.length ? (
+                <tr>
+                  <td colSpan={9} style={ui.td}>
+                    No tasks yet. Start an IOC Search export from the IOC List page.
+                    {' '}
+                    <button type="button" style={ui.linkBtn} onClick={() => navigate('/ioc')}>Open IOC List</button>
+                  </td>
+                </tr>
+              ) : items.map((row) => {
+                const queryText = row.normalized_query || row.original_query || '';
+                return (
+                  <tr key={row.id} style={ui.tr}>
+                    <td style={ui.td}>{taskTypeLabel(row.task_type)}</td>
+                    <td style={{ ...ui.td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={queryText}>
+                      {truncateQuery(queryText, 80)}
+                    </td>
+                    <td style={ui.td}>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        ...actionCenterStatusBadgeStyle(row.status)
+                      }}
+                      >
+                        {formatActionCenterStatus(row)}
+                      </span>
+                      {row.status === 'failed' && row.failure_reason ? (
+                        <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 4, maxWidth: 220 }} title={row.failure_reason}>
+                          {truncateQuery(row.failure_reason, 120)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                      {row.created_at ? new Date(row.created_at).toLocaleString() : '—'}
+                    </td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                      {(row.ready_at || row.completed_at)
+                        ? new Date(row.ready_at || row.completed_at).toLocaleString()
+                        : '—'}
+                    </td>
+                    <td style={ui.td}>
+                      {row.record_count == null ? '—' : Number(row.record_count).toLocaleString('en-US')}
+                    </td>
+                    <td style={ui.td}>{formatFileSize(row.file_size)}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }} title={row.expires_at || ''}>
+                      {row.status === 'ready' ? formatExpiresIn(row.expires_at, nowTick) : (row.status === 'expired' ? 'Expired' : '—')}
+                    </td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{renderActions(row)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>{total} total · page {page} / {totalPages}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" style={ui.btn} disabled={page <= 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
+            <button type="button" style={ui.btn} disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>Next</button>
+          </div>
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
 function IOCListPage() {
   const navigate = useNavigate();
   const { canWrite } = useSession();
@@ -9756,12 +10028,8 @@ function IOCListPage() {
   const [exportScope, setExportScope] = useState('all');
   const [exportColumns, setExportColumns] = useState([...DEFAULT_EXPORT_COLUMNS]);
   const [exportBusy, setExportBusy] = useState(false);
-  const [exportsOpen, setExportsOpen] = useState(false);
-  const [exportsList, setExportsList] = useState([]);
-  const [exportsLoading, setExportsLoading] = useState(false);
+  const [exportToast, setExportToast] = useState('');
   const dslSearchInputRef = useRef(null);
-  const readyExportIdsRef = useRef(new Set());
-  const exportsInitRef = useRef(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [statsRefreshBusy, setStatsRefreshBusy] = useState(false);
   const [statsToast, setStatsToast] = useState('');
@@ -10168,32 +10436,14 @@ function IOCListPage() {
     runDsl(dsl, null, { prevStack: [] });
   }
 
-  const loadExports = useCallback(async ({ silent } = {}) => {
-    if (!silent) setExportsLoading(true);
-    try {
-      const { data } = await api.get('/iocs/search-exports', { params: { limit: 50 } });
-      const items = Array.isArray(data?.items) ? data.items : [];
-      // In-app "ready" notification only for exports that become ready after the first
-      // load (avoid toasting for pre-existing ready exports on initial render).
-      for (const it of items) {
-        if (it.status === 'ready') {
-          if (exportsInitRef.current && !readyExportIdsRef.current.has(it.id)) {
-            setStatsToast(`Your IOC export is ready: ${Number(it.record_count || 0).toLocaleString('en-US')} records`);
-          }
-          readyExportIdsRef.current.add(it.id);
-        }
-      }
-      exportsInitRef.current = true;
-      setExportsList(items);
-    } catch {
-      /* keep previous list */
-    } finally {
-      if (!silent) setExportsLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    if (!exportToast) return undefined;
+    const t = setTimeout(() => setExportToast(''), 8000);
+    return () => clearTimeout(t);
+  }, [exportToast]);
 
   async function createExport() {
-    if (!appliedQuery) return;
+    if (!appliedQuery || exportBusy) return;
     setExportBusy(true);
     try {
       await api.post('/iocs/search-exports', {
@@ -10203,34 +10453,13 @@ function IOCListPage() {
         columns: exportColumns
       });
       setExportModalOpen(false);
-      setExportsOpen(true);
-      setStatsToast('Export queued. It will continue in the background.');
-      await loadExports({ silent: true });
+      setExportToast('Export task created. Track its progress in Action Center.');
     } catch (err) {
       setSearchError(apiErrorMessage(err, 'Failed to create export'));
     } finally {
       setExportBusy(false);
     }
   }
-
-  async function cancelExport(id) {
-    try { await api.post(`/iocs/search-exports/${id}/cancel`); await loadExports({ silent: true }); } catch { /* noop */ }
-  }
-  async function retryExport(id) {
-    try { await api.post(`/iocs/search-exports/${id}/retry`); await loadExports({ silent: true }); } catch { /* noop */ }
-  }
-
-  // Seed the export list once on mount so pre-existing jobs are known (and polled).
-  useEffect(() => { loadExports({ silent: true }).catch(() => {}); }, [loadExports]);
-
-  // Poll while the drawer is open OR any export is still in-flight, so the in-app
-  // "ready" notification fires even when the drawer is closed.
-  useEffect(() => {
-    const hasActive = exportsList.some((e) => e.status === 'queued' || e.status === 'processing');
-    if (!exportsOpen && !hasActive) return undefined;
-    const interval = setInterval(() => { loadExports({ silent: true }).catch(() => {}); }, hasActive ? 3000 : 8000);
-    return () => clearInterval(interval);
-  }, [exportsOpen, exportsList, loadExports]);
 
   const paginationLabel = formatIocListPaginationText(pagination, summary.total, search);
   const isSearchMode = Boolean(search) || dslActive;
@@ -10264,6 +10493,41 @@ function IOCListPage() {
         </div>
         {statsToast ? (
           <div style={{ marginBottom: 10, fontSize: 12, color: '#93c5fd' }}>{statsToast}</div>
+        ) : null}
+        {exportToast ? (
+          <div style={{
+            marginBottom: 10,
+            padding: '10px 12px',
+            borderRadius: 8,
+            border: '1px solid #1d4ed8',
+            background: 'rgba(37, 99, 235, 0.12)',
+            color: '#93c5fd',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap'
+          }}
+          >
+            <span>{exportToast}</span>
+            <button
+              type="button"
+              onClick={() => navigate('/action-center')}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 8,
+                border: '1px solid #2563eb',
+                background: '#1e293b',
+                color: '#93c5fd',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Open Action Center
+            </button>
+          </div>
         ) : null}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(120px, 1fr))', gap: 10, marginBottom: 14 }}>
           <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827', opacity: summaryLoading ? 0.72 : 1 }}>
@@ -10432,8 +10696,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
               <button onClick={dslPrevPage} disabled={dslCursorStack.length === 0 || dslLoading}>Prev</button>
               <button onClick={dslNextPage} disabled={!dslResult.has_more || dslLoading}>Next</button>
               <button onClick={() => { setAdvancedOpen(true); if (dslSearchInputRef.current) dslSearchInputRef.current.focus(); }}>Refine search</button>
-              <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} style={{ borderColor: '#16a34a', color: '#86efac' }}>Export matching IOCs</button>
-              <button onClick={() => setExportsOpen(true)}>Search Exports</button>
+              <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} style={{ borderColor: '#16a34a', color: '#86efac' }} disabled={exportBusy}>Export matching IOCs</button>
             </div>
           </div>
           {(dslResult.warnings || []).map((w, i) => (
@@ -10442,14 +10705,8 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
         </div>
       )}
 
-      {!dslActive && (
-        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={() => setExportsOpen(true)}>Search Exports</button>
-        </div>
-      )}
-
       {exportModalOpen && (
-        <ModalOverlay onClose={() => setExportModalOpen(false)}>
+        <ModalOverlay onClose={() => { if (!exportBusy) setExportModalOpen(false); }}>
           <h3 style={{ marginTop: 0 }}>Export matching IOCs</h3>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>Query</div>
@@ -10485,59 +10742,6 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={() => setExportModalOpen(false)} disabled={exportBusy}>Cancel</button>
             <button onClick={createExport} disabled={exportBusy || exportColumns.length === 0} style={{ borderColor: '#16a34a', color: '#86efac' }}>{exportBusy ? 'Creating…' : 'Create Export'}</button>
-          </div>
-        </ModalOverlay>
-      )}
-
-      {exportsOpen && (
-        <ModalOverlay onClose={() => setExportsOpen(false)}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ marginTop: 0 }}>Search Exports</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => loadExports()} disabled={exportsLoading}>Refresh</button>
-              <button onClick={() => setExportsOpen(false)}>Close</button>
-            </div>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ color: '#94a3b8', textAlign: 'left' }}>
-                  <th style={{ padding: 6 }}>Created</th>
-                  <th style={{ padding: 6 }}>Query</th>
-                  <th style={{ padding: 6 }}>Records</th>
-                  <th style={{ padding: 6 }}>Size</th>
-                  <th style={{ padding: 6 }}>Status</th>
-                  <th style={{ padding: 6 }}>Expires</th>
-                  <th style={{ padding: 6 }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {exportsList.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 10, color: '#94a3b8' }}>{exportsLoading ? 'Loading…' : 'No exports yet.'}</td></tr>
-                ) : exportsList.map((e) => (
-                  <tr key={e.id} style={{ borderTop: '1px solid #1e293b', color: '#e2e8f0' }}>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{e.created_at ? new Date(e.created_at).toLocaleString() : '—'}</td>
-                    <td style={{ padding: 6, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.normalized_query}>{e.normalized_query}</td>
-                    <td style={{ padding: 6 }}>{e.record_count == null ? '—' : Number(e.record_count).toLocaleString('en-US')}</td>
-                    <td style={{ padding: 6 }}>{e.file_size == null ? '—' : `${(Number(e.file_size) / 1024).toFixed(1)} KB`}</td>
-                    <td style={{ padding: 6 }}>
-                      {e.status === 'processing' ? `Processing ${e.progress || 0}%` : e.status.charAt(0).toUpperCase() + e.status.slice(1)}
-                      {e.status === 'failed' && e.failure_reason ? <div style={{ color: '#fca5a5', fontSize: 11 }}>{e.failure_reason}</div> : null}
-                    </td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{e.expires_at ? new Date(e.expires_at).toLocaleString() : '—'}</td>
-                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
-                      {e.status === 'ready' ? (
-                        <a href={`/api/iocs/search-exports/${e.id}/download`} style={{ color: '#86efac' }}>Download</a>
-                      ) : (e.status === 'queued' || e.status === 'processing') ? (
-                        <button onClick={() => cancelExport(e.id)}>Cancel</button>
-                      ) : e.status === 'failed' ? (
-                        <button onClick={() => retryExport(e.id)}>Retry</button>
-                      ) : <span style={{ color: '#64748b' }}>—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         </ModalOverlay>
       )}
@@ -15398,6 +15602,7 @@ function App() {
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />
           <Route path="/operations/ioc-suppressions" element={<Protected><IOCSuppressionsPage /></Protected>} />
+          <Route path="/action-center" element={<Protected><ActionCenterPage /></Protected>} />
           <Route path="/threat-intelligence" element={<Navigate to="/threat-intelligence/feeds" replace />} />
           <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/threat-intelligence/enrichment" element={<Navigate to="/administration/enrichment-providers" replace />} />
