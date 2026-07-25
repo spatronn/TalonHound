@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/api.js';
 import {
   formatUserDateTime,
@@ -7,9 +8,11 @@ import {
   utcIsoTooltip,
   TIMEZONE_CHANGED_EVENT
 } from '../lib/formatDate.js';
+import { computeOverflowMenuPosition } from '../lib/backupMenuPosition.js';
 import './BackupRestorePage.css';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
+const ROW_MENU_EVENT = 'br-backup-row-menu';
 
 function formatBytes(n) {
   const v = Number(n);
@@ -214,54 +217,153 @@ function RowActionsMenu({
   canDelete
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 168 });
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const updatePosition = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const menuRect = menuRef.current?.getBoundingClientRect();
+    const pos = computeOverflowMenuPosition({
+      trigger: rect,
+      menuWidth: menuRect?.width || 168,
+      menuHeight: menuRect?.height || 132,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight
+    });
+    setCoords({ top: pos.top, left: pos.left, width: pos.width });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    updatePosition();
+    const onReposition = () => updatePosition();
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [open, updatePosition]);
 
   useEffect(() => {
     if (!open) return undefined;
+
     function onDoc(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      const t = e.target;
+      if (triggerRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
+
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+
+    function onOtherMenu(e) {
+      if (e.detail !== row.id) setOpen(false);
+    }
+
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener(ROW_MENU_EVENT, onOtherMenu);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener(ROW_MENU_EVENT, onOtherMenu);
+    };
+  }, [open, row.id]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const id = requestAnimationFrame(() => {
+      const first = menuRef.current?.querySelector('[role="menuitem"]:not([disabled])')
+        || menuRef.current?.querySelector('[role="menuitem"]');
+      first?.focus();
+    });
+    return () => cancelAnimationFrame(id);
   }, [open]);
 
+  function toggleMenu() {
+    setOpen((wasOpen) => {
+      const next = !wasOpen;
+      if (next) {
+        window.dispatchEvent(new CustomEvent(ROW_MENU_EVENT, { detail: row.id }));
+      }
+      return next;
+    });
+  }
+
+  function pick(action) {
+    setOpen(false);
+    triggerRef.current?.focus();
+    action();
+  }
+
   return (
-    <div className="br-menu" ref={ref}>
+    <div className="br-menu">
       <button
         type="button"
-        className="br-btn br-btn-ghost br-btn-icon"
+        ref={triggerRef}
+        className="br-btn br-btn-ghost br-overflow-btn"
         disabled={busy}
         aria-label="More actions"
+        aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleMenu}
       >
         ⋯
       </button>
-      {open ? (
-        <div className="br-menu-panel" role="menu">
-          <button type="button" role="menuitem" className="br-menu-item" onClick={() => { setOpen(false); onDetails(row); }}>
-            Details
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="br-menu-item br-menu-caution"
-            disabled={!canRestore}
-            onClick={() => { setOpen(false); onRestore(row); }}
+      {open && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            ref={menuRef}
+            className="br-menu-panel br-menu-panel-portal"
+            role="menu"
+            style={{ top: coords.top, left: coords.left, minWidth: coords.width }}
           >
-            Restore…
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="br-menu-item br-menu-danger"
-            disabled={!canDelete}
-            onClick={() => { setOpen(false); onDelete(row); }}
-          >
-            Delete…
-          </button>
-        </div>
-      ) : null}
+            <button
+              type="button"
+              role="menuitem"
+              className="br-menu-item"
+              onClick={() => pick(() => onDetails(row))}
+            >
+              Details
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="br-menu-item br-menu-caution"
+              disabled={!canRestore}
+              onClick={() => {
+                if (!canRestore) return;
+                pick(() => onRestore(row));
+              }}
+            >
+              Restore…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="br-menu-item br-menu-danger"
+              disabled={!canDelete}
+              onClick={() => {
+                if (!canDelete) return;
+                pick(() => onDelete(row));
+              }}
+            >
+              Delete…
+            </button>
+          </div>,
+          document.body
+        )
+        : null}
     </div>
   );
 }
@@ -647,7 +749,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                     <th scope="col">Size</th>
                     <th scope="col">Verification</th>
                     <th scope="col">Created By</th>
-                    <th scope="col">Actions</th>
+                    <th scope="col" className="br-th-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -693,7 +795,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                           <div className="br-actions">
                             <button
                               type="button"
-                              className="br-btn br-btn-outline"
+                              className="br-btn br-btn-outline br-action-btn"
                               disabled={busy || !canDownload}
                               onClick={() => onDownload(row)}
                             >
@@ -702,7 +804,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                             </button>
                             <button
                               type="button"
-                              className="br-btn br-btn-outline"
+                              className="br-btn br-btn-outline br-action-btn"
                               disabled={busy || !completed}
                               onClick={() => onVerify(row)}
                             >
@@ -729,7 +831,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
           </div>
 
           {!loading && items.length > 0 ? (
-            <div className="br-pager">
+            <footer className="br-history-footer">
               <label className="br-pager-size">
                 Rows per page:
                 <select
@@ -767,7 +869,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                   {Icons.chevronRight}
                 </button>
               </div>
-            </div>
+            </footer>
           ) : null}
         </section>
       </div>

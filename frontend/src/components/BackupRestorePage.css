@@ -234,6 +234,10 @@
   word-break: break-all;
 }
 
+.br-history {
+  padding-bottom: 0;
+}
+
 .br-history .br-panel-head {
   margin-bottom: 10px;
 }
@@ -243,8 +247,9 @@
   min-width: 0;
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.1);
-  /* Scroll only as a last resort on very narrow viewports; fixed layout removes desktop overflow. */
-  overflow-x: auto;
+  /* Fixed layout fits desktop; keep visible so we do not clip non-portal content.
+     Row overflow menus are portaled to document.body and are not affected. */
+  overflow: visible;
 }
 
 .br-table {
@@ -255,14 +260,13 @@
   font-size: 13px;
 }
 
-/* ~user guidance, Actions bumped so Download/Verify/⋯ stay fully visible */
 .br-col-created { width: 14%; }
 .br-col-id { width: 23%; }
 .br-col-status { width: 11%; }
-.br-col-size { width: 8%; }
+.br-col-size { width: 9%; }
 .br-col-verify { width: 12%; }
-.br-col-by { width: 12%; }
-.br-col-actions { width: 20%; }
+.br-col-by { width: 13%; }
+.br-col-actions { width: 18%; }
 
 .br-table th,
 .br-table td {
@@ -286,6 +290,10 @@
   overflow: visible;
   text-overflow: clip;
   background: rgba(8, 11, 18, 0.45);
+}
+
+.br-th-actions {
+  text-align: right;
 }
 
 .br-table tbody tr:last-child td {
@@ -331,6 +339,7 @@
 
 .br-cell-actions {
   overflow: visible;
+  text-align: right;
 }
 
 .br-empty {
@@ -344,17 +353,28 @@
   flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 0.375rem;
+  min-width: 0;
+  white-space: nowrap;
   max-width: 100%;
 }
 
-.br-actions .br-btn-outline {
-  padding: 5px 8px;
-  flex-shrink: 0;
+.br-action-btn {
+  flex: 0 0 auto;
+  padding: 5px 0.625rem;
+  gap: 4px;
 }
 
-.br-actions .br-btn-icon {
-  flex-shrink: 0;
+.br-overflow-btn {
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .br-id-cell {
@@ -574,13 +594,14 @@
   to { opacity: 1; transform: none; }
 }
 
-.br-pager {
+.br-history-footer {
   display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 14px;
-  margin-top: 12px;
-  padding-top: 4px;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  margin: 0 -20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
   flex-wrap: wrap;
   color: rgba(148, 163, 184, 0.95);
   font-size: 12px;
@@ -612,20 +633,24 @@
 
 .br-menu {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
+  flex-shrink: 0;
 }
 
 .br-menu-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  min-width: 150px;
+  min-width: 168px;
   background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   padding: 6px;
-  z-index: 20;
+  z-index: 70;
+}
+
+.br-menu-panel-portal {
+  position: fixed;
+  /* Below BackupRestore modals (80) and app modals (~1000); above table chrome. */
+  z-index: 70;
 }
 
 .br-menu-item {
@@ -644,6 +669,11 @@
 
 .br-menu-item:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.br-menu-item:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.7);
+  outline-offset: 1px;
 }
 
 .br-menu-item:disabled {
