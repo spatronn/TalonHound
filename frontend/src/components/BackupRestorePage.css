@@ -264,11 +264,12 @@
   overflow: hidden; /* radius clip; row menus are portaled to body */
 }
 
-/* Shared tracks for header + body — identical fr tracks; no min-width sum overflow. */
+/* Shared tracks for header + body. Actions gets the largest share so
+   Download/Verify/⋯ never spill into Created By. */
 .br-history-grid-head,
 .br-history-grid-row {
   display: grid;
-  grid-template-columns: 0.9fr 1.9fr 1fr 0.75fr 1fr 1.1fr 1.65fr;
+  grid-template-columns: 0.75fr 1.55fr 1.05fr 0.7fr 0.95fr 0.9fr 2.35fr;
   width: 100%;
   align-items: center;
   box-sizing: border-box;
@@ -285,6 +286,7 @@
   padding: 0.75rem;
   border-right: 1px solid rgba(148, 163, 184, 0.1);
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  overflow: hidden;
 }
 
 .br-history-grid-head > *:last-child,
@@ -314,6 +316,22 @@
 .br-th-actions,
 .br-cell-actions {
   text-align: right;
+  overflow: hidden;
+}
+
+.br-action-label {
+  display: inline;
+}
+
+@media (max-width: 1100px) {
+  .br-action-label {
+    display: none;
+  }
+
+  .br-history-grid-head,
+  .br-history-grid-row {
+    grid-template-columns: 0.85fr 1.5fr 1fr 0.75fr 0.95fr 0.95fr 1.5fr;
+  }
 }
 
 .br-cell-clip {

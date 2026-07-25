@@ -786,18 +786,20 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                             className="br-btn br-btn-outline br-action-btn"
                             disabled={busy || !canDownload}
                             onClick={() => onDownload(row)}
+                            title="Download"
                           >
                             <span className="br-btn-leading">{Icons.download}</span>
-                            Download
+                            <span className="br-action-label">Download</span>
                           </button>
                           <button
                             type="button"
                             className="br-btn br-btn-outline br-action-btn"
                             disabled={busy || !completed}
                             onClick={() => onVerify(row)}
+                            title="Verify"
                           >
                             <span className="br-btn-leading">{Icons.verify}</span>
-                            Verify
+                            <span className="br-action-label">Verify</span>
                           </button>
                           <RowActionsMenu
                             row={row}
