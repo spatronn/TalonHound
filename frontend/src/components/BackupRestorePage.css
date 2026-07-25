@@ -261,48 +261,64 @@
   min-width: 0;
   border-radius: 10px;
   border: 1px solid rgba(148, 163, 184, 0.1);
-  /* Fixed layout fits desktop; keep visible so we do not clip non-portal content.
-     Row overflow menus are portaled to document.body and are not affected. */
-  overflow: visible;
+  overflow: hidden; /* radius clip; row menus are portaled to body */
 }
 
-.br-table {
+@media (max-width: 1100px) {
+  .br-table-wrap {
+    overflow-x: auto;
+  }
+
+  .br-history-grid-head,
+  .br-history-grid-row {
+    min-width: 58rem;
+  }
+}
+
+/* Shared tracks for header + body — eliminates HTML table col/header drift. */
+.br-history-grid-head,
+.br-history-grid-row {
+  display: grid;
+  grid-template-columns:
+    minmax(5.75rem, 0.95fr)
+    minmax(11rem, 1.9fr)
+    minmax(7.25rem, 0.9fr)
+    minmax(5.5rem, 0.75fr)
+    minmax(7.25rem, 0.95fr)
+    minmax(7.5rem, 1.05fr)
+    minmax(13.75rem, 1.6fr);
   width: 100%;
-  max-width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 13px;
+  align-items: center;
+  box-sizing: border-box;
 }
 
-/* Balanced 7-column layout (colgroup widths must match; no stale Trigger/Encryption/Duration cols). */
-.br-col-created { width: 12%; }
-.br-col-id { width: 24%; }
-.br-col-status { width: 10%; }
-.br-col-size { width: 8%; }
-.br-col-verify { width: 12%; }
-.br-col-by { width: 14%; }
-.br-col-actions { width: 20%; }
+.br-history-grid-head {
+  background: rgba(8, 11, 18, 0.45);
+}
 
-.br-table th,
-.br-table td {
+.br-history-grid-head > *,
+.br-history-grid-row > * {
+  min-width: 0;
   box-sizing: border-box;
   padding: 0.75rem;
-  text-align: left;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  border-right: 1px solid rgba(148, 163, 184, 0.08);
-  vertical-align: middle;
 }
 
-.br-table th:last-child,
-.br-table td:last-child {
+.br-history-grid-head > *:last-child,
+.br-history-grid-row > *:last-child {
   border-right: 0;
 }
 
-.br-table td {
-  overflow: hidden;
+.br-history-grid-row:last-child > * {
+  border-bottom: 0;
 }
 
-.br-table th {
+.br-history-grid-row:hover > * {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.br-history-grid-head > * {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -311,19 +327,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
-  background: rgba(8, 11, 18, 0.45);
 }
 
-.br-th-actions {
+.br-th-actions,
+.br-cell-actions {
   text-align: right;
-}
-
-.br-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.br-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.025);
 }
 
 .br-cell-clip {
@@ -358,11 +366,6 @@
   color: rgba(148, 163, 184, 0.92);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-
-.br-cell-actions {
-  overflow: visible;
-  text-align: right;
 }
 
 .br-empty {
@@ -514,6 +517,11 @@
   border-radius: 999px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.08);
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .br-badge-dot {

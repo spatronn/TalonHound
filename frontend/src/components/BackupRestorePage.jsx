@@ -722,7 +722,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             </div>
           </div>
 
-          <div className="br-table-wrap">
+          <div className="br-table-wrap" role="table" aria-label="Backup history">
             {loading ? (
               <p className="br-empty">Loading…</p>
             ) : items.length === 0 ? (
@@ -731,102 +731,89 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                 <p className="br-muted">Create a backup to protect PostgreSQL data.</p>
               </div>
             ) : (
-              <table className="br-table">
-                <colgroup>
-                  <col className="br-col-created" style={{ width: '12%' }} />
-                  <col className="br-col-id" style={{ width: '24%' }} />
-                  <col className="br-col-status" style={{ width: '10%' }} />
-                  <col className="br-col-size" style={{ width: '8%' }} />
-                  <col className="br-col-verify" style={{ width: '12%' }} />
-                  <col className="br-col-by" style={{ width: '14%' }} />
-                  <col className="br-col-actions" style={{ width: '20%' }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th scope="col">Created</th>
-                    <th scope="col">Backup ID</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Size</th>
-                    <th scope="col">Verification</th>
-                    <th scope="col">Created By</th>
-                    <th scope="col" className="br-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map((row) => {
-                    const completed = row.status === 'completed';
-                    const canDownload = completed;
-                    const canRestore = completed && row.verify_status !== 'failed';
-                    const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
-                    return (
-                      <tr key={row.id}>
-                        <td className="br-cell-created">
-                          <StackedDateCell value={row.created_at} timezone={timezone} />
-                        </td>
-                        <td>
-                          <div className="br-id-cell">
-                            <code className="br-id-text" title={row.backup_id}>{row.backup_id}</code>
-                            <button
-                              type="button"
-                              className="br-btn br-btn-ghost br-btn-icon br-btn-xs"
-                              onClick={() => copyBackupId(row.backup_id)}
-                              title="Copy ID"
-                              aria-label="Copy backup ID"
-                            >
-                              {Icons.copy}
-                            </button>
-                          </div>
-                        </td>
-                        <td><StatusBadge status={row.status} /></td>
-                        <td className="br-cell-clip">{formatBytes(row.archive_size_bytes)}</td>
-                        <td>
-                          <StatusBadge
-                            status={row.verify_status}
-                            label={row.verify_status || '—'}
-                            withCheck
+              <>
+                <div className="br-history-grid-head" role="row">
+                  <div role="columnheader">Created</div>
+                  <div role="columnheader">Backup ID</div>
+                  <div role="columnheader">Status</div>
+                  <div role="columnheader">Size</div>
+                  <div role="columnheader">Verification</div>
+                  <div role="columnheader">Created By</div>
+                  <div role="columnheader" className="br-th-actions">Actions</div>
+                </div>
+                {pageItems.map((row) => {
+                  const completed = row.status === 'completed';
+                  const canDownload = completed;
+                  const canRestore = completed && row.verify_status !== 'failed';
+                  const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
+                  return (
+                    <div className="br-history-grid-row" role="row" key={row.id}>
+                      <div role="cell" className="br-cell-created">
+                        <StackedDateCell value={row.created_at} timezone={timezone} />
+                      </div>
+                      <div role="cell">
+                        <div className="br-id-cell">
+                          <code className="br-id-text" title={row.backup_id}>{row.backup_id}</code>
+                          <button
+                            type="button"
+                            className="br-btn br-btn-ghost br-btn-icon br-btn-xs"
+                            onClick={() => copyBackupId(row.backup_id)}
+                            title="Copy ID"
+                            aria-label="Copy backup ID"
+                          >
+                            {Icons.copy}
+                          </button>
+                        </div>
+                      </div>
+                      <div role="cell"><StatusBadge status={row.status} /></div>
+                      <div role="cell" className="br-cell-clip">{formatBytes(row.archive_size_bytes)}</div>
+                      <div role="cell">
+                        <StatusBadge
+                          status={row.verify_status}
+                          label={row.verify_status || '—'}
+                          withCheck
+                        />
+                      </div>
+                      <div role="cell">
+                        <span className="br-cell-clip" title={row.created_by_email || undefined}>
+                          {row.created_by_email || '—'}
+                        </span>
+                      </div>
+                      <div role="cell" className="br-cell-actions">
+                        <div className="br-actions">
+                          <button
+                            type="button"
+                            className="br-btn br-btn-outline br-action-btn"
+                            disabled={busy || !canDownload}
+                            onClick={() => onDownload(row)}
+                          >
+                            <span className="br-btn-leading">{Icons.download}</span>
+                            Download
+                          </button>
+                          <button
+                            type="button"
+                            className="br-btn br-btn-outline br-action-btn"
+                            disabled={busy || !completed}
+                            onClick={() => onVerify(row)}
+                          >
+                            <span className="br-btn-leading">{Icons.verify}</span>
+                            Verify
+                          </button>
+                          <RowActionsMenu
+                            row={row}
+                            busy={busy}
+                            canRestore={canRestore}
+                            canDelete={canDelete}
+                            onDetails={setDetailsTarget}
+                            onRestore={openRestore}
+                            onDelete={setDeleteTarget}
                           />
-                        </td>
-                        <td>
-                          <span className="br-cell-clip" title={row.created_by_email || undefined}>
-                            {row.created_by_email || '—'}
-                          </span>
-                        </td>
-                        <td className="br-cell-actions">
-                          <div className="br-actions">
-                            <button
-                              type="button"
-                              className="br-btn br-btn-outline br-action-btn"
-                              disabled={busy || !canDownload}
-                              onClick={() => onDownload(row)}
-                            >
-                              <span className="br-btn-leading">{Icons.download}</span>
-                              Download
-                            </button>
-                            <button
-                              type="button"
-                              className="br-btn br-btn-outline br-action-btn"
-                              disabled={busy || !completed}
-                              onClick={() => onVerify(row)}
-                            >
-                              <span className="br-btn-leading">{Icons.verify}</span>
-                              Verify
-                            </button>
-                            <RowActionsMenu
-                              row={row}
-                              busy={busy}
-                              canRestore={canRestore}
-                              canDelete={canDelete}
-                              onDetails={setDetailsTarget}
-                              onRestore={openRestore}
-                              onDelete={setDeleteTarget}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
             )}
           </div>
 
