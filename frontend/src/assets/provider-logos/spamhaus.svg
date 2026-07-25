@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Spamhaus">
+  <circle cx="32" cy="32" r="32" fill="#7C3AED"/>
+  <path fill="#fff" d="M32 12l16 6v12.5c0 10.4-6.8 19.7-16 22.5-9.2-2.8-16-12.1-16-22.5V18l16-6zm0 6.2L20 22.4v8.1c0 7.7 4.9 14.7 12 17.2 7.1-2.5 12-9.5 12-17.2v-8.1L32 18.2z"/>
+  <path fill="#fff" d="M29.2 38.8l-5.4-5.4 2.5-2.5 2.9 2.9 8.1-8.1 2.5 2.5-10.6 10.6z"/>
+</svg>
