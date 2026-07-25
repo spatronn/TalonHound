@@ -8,6 +8,8 @@ import {
 } from '../lib/formatDate.js';
 import './BackupRestorePage.css';
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50];
+
 function formatBytes(n) {
   const v = Number(n);
   if (!Number.isFinite(v) || v < 0) return '—';
@@ -25,18 +27,147 @@ function formatDuration(ms) {
   return `${Math.floor(v / 60_000)}m ${Math.round((v % 60_000) / 1000)}s`;
 }
 
-function truncateId(id, head = 18, tail = 6) {
+function truncateId(id, head = 22, tail = 6) {
   const s = String(id || '');
   if (s.length <= head + tail + 1) return s;
   return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
-function statusBadgeClass(status) {
+function statusTone(status) {
   const s = String(status || '').toLowerCase();
-  if (['completed', 'passed', 'ready'].includes(s)) return 'br-badge br-badge-ok';
-  if (['failed', 'interrupted'].includes(s)) return 'br-badge br-badge-bad';
-  if (['running', 'verifying', 'queued', 'pending'].includes(s)) return 'br-badge br-badge-run';
-  return 'br-badge br-badge-muted';
+  if (['completed', 'passed', 'ready', 'ok'].includes(s)) return 'ok';
+  if (['failed', 'interrupted'].includes(s)) return 'bad';
+  if (['running', 'verifying', 'queued', 'pending'].includes(s)) return 'run';
+  if (['disabled', 'warn', 'warning'].includes(s)) return 'warn';
+  return 'muted';
+}
+
+function Svg({ children, size = 16, className = '' }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const Icons = {
+  create: (
+    <Svg size={18}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 10 12 15 17 10" />
+      <path d="M12 15V3" />
+    </Svg>
+  ),
+  warn: (
+    <Svg size={18}>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Svg>
+  ),
+  shield: (
+    <Svg size={18}>
+      <path d="M12 3 4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-3Z" />
+    </Svg>
+  ),
+  calendarCheck: (
+    <Svg size={18}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="M3 11h18" />
+      <path d="m9 16 2 2 4-4" />
+    </Svg>
+  ),
+  calendar: (
+    <Svg size={18}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="M3 11h18" />
+    </Svg>
+  ),
+  database: (
+    <Svg size={18}>
+      <ellipse cx="12" cy="6" rx="7" ry="3" />
+      <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+      <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+    </Svg>
+  ),
+  chart: (
+    <Svg size={18}>
+      <path d="M21.2 8.4A9 9 0 1 0 12 21" />
+      <path d="M12 3v9l7 4" />
+    </Svg>
+  ),
+  history: (
+    <Svg size={18}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h8" />
+      <path d="M8 17h6" />
+    </Svg>
+  ),
+  copy: (
+    <Svg size={14}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </Svg>
+  ),
+  download: (
+    <Svg size={14}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="M7 10 12 15 17 10" />
+      <path d="M12 15V3" />
+    </Svg>
+  ),
+  verify: (
+    <Svg size={14}>
+      <path d="M12 3 4 6v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V6l-8-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </Svg>
+  ),
+  check: (
+    <Svg size={12}>
+      <path d="M20 6 9 17l-5-5" />
+    </Svg>
+  ),
+  chevronLeft: (
+    <Svg size={16}>
+      <path d="m15 18-6-6 6-6" />
+    </Svg>
+  ),
+  chevronRight: (
+    <Svg size={16}>
+      <path d="m9 18 6-6-6-6" />
+    </Svg>
+  )
+};
+
+function StatusBadge({ status, label, withCheck = false }) {
+  const tone = statusTone(status);
+  const text = label ?? status ?? '—';
+  return (
+    <span className={`br-badge br-badge-${tone}`}>
+      {withCheck && tone === 'ok' ? (
+        <span className="br-badge-icon">{Icons.check}</span>
+      ) : (
+        <span className="br-badge-dot" />
+      )}
+      {text}
+    </span>
+  );
 }
 
 function DateCell({ value, timezone }) {
@@ -48,13 +179,25 @@ function DateCell({ value, timezone }) {
   );
 }
 
+function MetricCard({ tone, icon, label, value, sub }) {
+  return (
+    <div className={`br-card br-card-${tone}`}>
+      <div className="br-card-top">
+        <div className="br-card-label">{label}</div>
+        <div className={`br-card-icon br-card-icon-${tone}`}>{icon}</div>
+      </div>
+      <div className="br-card-value">{value}</div>
+      <div className="br-card-sub">{sub}</div>
+    </div>
+  );
+}
+
 function RowActionsMenu({
   row,
   busy,
   onDetails,
   onRestore,
   onDelete,
-  canDownload,
   canRestore,
   canDelete
 }) {
@@ -126,6 +269,8 @@ export default function BackupRestorePage({ AppShell, useSession }) {
   const [restoreConfirm, setRestoreConfirm] = useState('');
   const [restoreResult, setRestoreResult] = useState(null);
   const [restorePhase, setRestorePhase] = useState('idle');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const infoTimer = useRef(null);
 
   useEffect(() => {
@@ -153,7 +298,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
   const load = useCallback(async () => {
     const [st, list] = await Promise.all([
       api.get('/backups/status'),
-      api.get('/backups', { params: { limit: 50 } })
+      api.get('/backups', { params: { limit: 100 } })
     ]);
     setStatus(st.data);
     setItems(list.data?.items || []);
@@ -188,6 +333,20 @@ export default function BackupRestorePage({ AppShell, useSession }) {
     }, 3000);
     return () => clearInterval(t);
   }, [isAdmin, hasActive, refresh]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize) || 1);
+  const safePage = Math.min(page, totalPages);
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, safePage, pageSize]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const rangeStart = items.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(safePage * pageSize, items.length);
 
   async function onCreate() {
     setBusy(true);
@@ -310,6 +469,13 @@ export default function BackupRestorePage({ AppShell, useSession }) {
   const encryptionOn = Boolean(status?.encryption_enabled);
   const scheduleSummary = status?.schedule_summary || '—';
   const scheduleTz = status?.timezone || 'UTC';
+  const storageLabel = status?.storage_provider === 'local' || !status?.storage_provider
+    ? 'Local persistent volume'
+    : String(status.storage_provider);
+  const historySub = [
+    `${status?.total_stored ?? items.length} backup${(status?.total_stored ?? items.length) === 1 ? '' : 's'} stored`,
+    status?.last_verification?.status ? `verification ${status.last_verification.status}` : null
+  ].filter(Boolean).join(' · ');
 
   return (
     <AppShell>
@@ -317,8 +483,9 @@ export default function BackupRestorePage({ AppShell, useSession }) {
         <div className="br-header">
           <div className="br-header-text">
             <h1 className="br-title">Backup &amp; Restore</h1>
-            <p className="br-subtitle">Secure PostgreSQL backups with checksum verification.</p>
-            <p className="br-note">Restores are prepared in the UI and executed safely through the host CLI.</p>
+            <p className="br-subtitle">
+              Secure PostgreSQL backups with checksum verification. Restores are executed via the host CLI.
+            </p>
           </div>
           <button
             type="button"
@@ -327,16 +494,20 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             onClick={onCreate}
             title={hasActive ? 'A backup is already running' : 'Create backup'}
           >
+            <span className="br-btn-leading">{Icons.create}</span>
             {hasActive ? 'Backup running…' : 'Create Backup'}
           </button>
         </div>
 
         {!encryptionOn && status ? (
           <div className="br-banner br-banner-warn" role="status">
-            <strong>Backup encryption is disabled.</strong>
-            {' '}
-            Backup archives may contain API keys and other sensitive configuration.
-            Enable <code>BACKUP_ENCRYPTION_ENABLED</code> and configure <code>BACKUP_ENCRYPTION_KEY_FILE</code>.
+            <span className="br-banner-icon">{Icons.warn}</span>
+            <div>
+              <strong>Backup encryption is disabled.</strong>
+              {' '}
+              Backup archives may contain API keys and other sensitive configuration.
+              Enable <code>BACKUP_ENCRYPTION_ENABLED</code> and configure <code>BACKUP_ENCRYPTION_KEY_FILE</code>.
+            </div>
           </div>
         ) : null}
 
@@ -345,9 +516,12 @@ export default function BackupRestorePage({ AppShell, useSession }) {
 
         <section className="br-panel">
           <div className="br-panel-head">
-            <h2 className="br-panel-title">Backup Policy</h2>
+            <h2 className="br-panel-title">
+              <span className="br-panel-icon">{Icons.shield}</span>
+              Backup Policy
+            </h2>
             {status?.last_verification ? (
-              <span className={statusBadgeClass(status.last_verification.status)}>
+              <span className={`br-verify-pill br-verify-${statusTone(status.last_verification.status)}`}>
                 Last verification: {status.last_verification.status || '—'}
                 {status.last_verification.at ? (
                   <> · <DateCell value={status.last_verification.at} timezone={timezone} /></>
@@ -371,65 +545,66 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             <div className="br-policy-item">
               <div className="br-policy-label">Encryption</div>
               <div className="br-policy-value">
-                <span className={encryptionOn ? 'br-badge br-badge-ok' : 'br-badge br-badge-warn'}>
-                  {encryptionOn ? 'Enabled' : 'Disabled'}
-                </span>
+                <StatusBadge
+                  status={encryptionOn ? 'passed' : 'warn'}
+                  label={encryptionOn ? 'Enabled' : 'Disabled'}
+                />
               </div>
             </div>
             <div className="br-policy-item">
               <div className="br-policy-label">Storage</div>
-              <div className="br-policy-value">
-                {status?.storage_provider === 'local' || !status?.storage_provider
-                  ? 'Local persistent volume'
-                  : String(status.storage_provider)}
-              </div>
+              <div className="br-policy-value">{storageLabel}</div>
             </div>
           </div>
         </section>
 
         <div className="br-cards">
-          <div className="br-card">
-            <div className="br-card-label">Last Successful Backup</div>
-            <div className="br-card-value">
-              {status?.last_successful
-                ? <DateCell value={status.last_successful.completed_at} timezone={timezone} />
-                : 'None yet'}
-            </div>
-            <div className="br-card-sub br-mono" title={status?.last_successful?.backup_id || undefined}>
-              {status?.last_successful ? truncateId(status.last_successful.backup_id) : '—'}
-            </div>
-          </div>
-          <div className="br-card">
-            <div className="br-card-label">Next Scheduled Backup</div>
-            <div className="br-card-value">
-              {status?.enabled
-                ? <DateCell value={status.next_scheduled_at} timezone={timezone} />
-                : 'Disabled'}
-            </div>
-            <div className="br-card-sub">{scheduleSummary}</div>
-          </div>
-          <div className="br-card">
-            <div className="br-card-label">Stored Backups</div>
-            <div className="br-card-value">{status?.total_stored ?? '—'}</div>
-            <div className="br-card-sub">Retention {status?.retention_days ?? '—'} days</div>
-          </div>
-          <div className="br-card">
-            <div className="br-card-label">Storage Used</div>
-            <div className="br-card-value">{formatBytes(status?.storage_used_bytes)}</div>
-            <div className="br-card-sub">Local volume</div>
-          </div>
+          <MetricCard
+            tone="green"
+            icon={Icons.calendarCheck}
+            label="Last Successful Backup"
+            value={status?.last_successful
+              ? <DateCell value={status.last_successful.completed_at} timezone={timezone} />
+              : 'None yet'}
+            sub={(
+              <span className="br-mono" title={status?.last_successful?.backup_id || undefined}>
+                {status?.last_successful ? truncateId(status.last_successful.backup_id) : '—'}
+              </span>
+            )}
+          />
+          <MetricCard
+            tone="blue"
+            icon={Icons.calendar}
+            label="Next Scheduled Backup"
+            value={status?.enabled
+              ? <DateCell value={status.next_scheduled_at} timezone={timezone} />
+              : 'Disabled'}
+            sub={scheduleSummary}
+          />
+          <MetricCard
+            tone="purple"
+            icon={Icons.database}
+            label="Stored Backups"
+            value={status?.total_stored ?? '—'}
+            sub={`Retention ${status?.retention_days ?? '—'} days`}
+          />
+          <MetricCard
+            tone="teal"
+            icon={Icons.chart}
+            label="Storage Used"
+            value={formatBytes(status?.storage_used_bytes)}
+            sub={storageLabel}
+          />
         </div>
 
-        <section className="br-panel">
+        <section className="br-panel br-history">
           <div className="br-panel-head">
             <div>
-              <h2 className="br-panel-title">Backup History</h2>
-              <p className="br-muted">
-                {items.length} shown
-                {status?.last_verification?.status
-                  ? ` · Last verification ${status.last_verification.status}`
-                  : ''}
-              </p>
+              <h2 className="br-panel-title">
+                <span className="br-panel-icon">{Icons.history}</span>
+                Backup History
+              </h2>
+              <p className="br-muted">{historySub}</p>
             </div>
           </div>
 
@@ -458,39 +633,69 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((row) => {
+                  {pageItems.map((row) => {
                     const completed = row.status === 'completed';
                     const canDownload = completed;
                     const canRestore = completed && row.verify_status !== 'failed';
                     const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
                     return (
                       <tr key={row.id}>
-                        <td><DateCell value={row.created_at} timezone={timezone} /></td>
+                        <td className="br-nowrap"><DateCell value={row.created_at} timezone={timezone} /></td>
                         <td>
                           <div className="br-id-cell">
-                            <code className="br-mono" title={row.backup_id}>{truncateId(row.backup_id)}</code>
-                            <button type="button" className="br-btn br-btn-ghost br-btn-xs" onClick={() => copyBackupId(row.backup_id)} title="Copy ID">Copy</button>
+                            <code className="br-id-chip" title={row.backup_id}>{truncateId(row.backup_id)}</code>
+                            <button
+                              type="button"
+                              className="br-btn br-btn-ghost br-btn-icon br-btn-xs"
+                              onClick={() => copyBackupId(row.backup_id)}
+                              title="Copy ID"
+                              aria-label="Copy backup ID"
+                            >
+                              {Icons.copy}
+                            </button>
                           </div>
                         </td>
                         <td>{row.trigger_type}</td>
-                        <td><span className={statusBadgeClass(row.status)}>{row.status}</span></td>
-                        <td>{formatBytes(row.archive_size_bytes)}</td>
+                        <td><StatusBadge status={row.status} /></td>
+                        <td className="br-nowrap">{formatBytes(row.archive_size_bytes)}</td>
                         <td>
-                          <span className={row.encrypted ? 'br-badge br-badge-ok' : 'br-badge br-badge-muted'}>
-                            {row.encrypted ? 'Encrypted' : 'Plain'}
-                          </span>
+                          <StatusBadge
+                            status={row.encrypted ? 'passed' : 'muted'}
+                            label={row.encrypted ? 'Encrypted' : 'Plain'}
+                          />
                         </td>
-                        <td><span className={statusBadgeClass(row.verify_status)}>{row.verify_status || '—'}</span></td>
-                        <td>{formatDuration(row.duration_ms)}</td>
+                        <td>
+                          <StatusBadge
+                            status={row.verify_status}
+                            label={row.verify_status || '—'}
+                            withCheck
+                          />
+                        </td>
+                        <td className="br-nowrap">{formatDuration(row.duration_ms)}</td>
                         <td>{row.created_by_email || '—'}</td>
                         <td>
                           <div className="br-actions">
-                            <button type="button" className="br-btn br-btn-ghost" disabled={busy || !canDownload} onClick={() => onDownload(row)}>Download</button>
-                            <button type="button" className="br-btn br-btn-ghost" disabled={busy || !completed} onClick={() => onVerify(row)}>Verify</button>
+                            <button
+                              type="button"
+                              className="br-btn br-btn-outline"
+                              disabled={busy || !canDownload}
+                              onClick={() => onDownload(row)}
+                            >
+                              <span className="br-btn-leading">{Icons.download}</span>
+                              Download
+                            </button>
+                            <button
+                              type="button"
+                              className="br-btn br-btn-outline"
+                              disabled={busy || !completed}
+                              onClick={() => onVerify(row)}
+                            >
+                              <span className="br-btn-leading">{Icons.verify}</span>
+                              Verify
+                            </button>
                             <RowActionsMenu
                               row={row}
                               busy={busy}
-                              canDownload={canDownload}
                               canRestore={canRestore}
                               canDelete={canDelete}
                               onDetails={setDetailsTarget}
@@ -506,6 +711,48 @@ export default function BackupRestorePage({ AppShell, useSession }) {
               </table>
             )}
           </div>
+
+          {!loading && items.length > 0 ? (
+            <div className="br-pager">
+              <label className="br-pager-size">
+                Rows per page:
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="br-pager-range">
+                {rangeStart}-{rangeEnd} of {items.length}
+              </div>
+              <div className="br-pager-nav">
+                <button
+                  type="button"
+                  className="br-btn br-btn-ghost br-btn-icon"
+                  disabled={safePage <= 1}
+                  aria-label="Previous page"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  {Icons.chevronLeft}
+                </button>
+                <button
+                  type="button"
+                  className="br-btn br-btn-ghost br-btn-icon"
+                  disabled={safePage >= totalPages}
+                  aria-label="Next page"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  {Icons.chevronRight}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
 
@@ -531,7 +778,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                 <h3>General</h3>
                 <dl className="br-dl">
                   <dt>Backup ID</dt><dd className="br-mono">{detailsTarget.backup_id}</dd>
-                  <dt>Status</dt><dd><span className={statusBadgeClass(detailsTarget.status)}>{detailsTarget.status}</span></dd>
+                  <dt>Status</dt><dd><StatusBadge status={detailsTarget.status} /></dd>
                   <dt>Trigger</dt><dd>{detailsTarget.trigger_type}</dd>
                   <dt>Created</dt><dd><DateCell value={detailsTarget.created_at} timezone={timezone} /></dd>
                   <dt>Started</dt><dd><DateCell value={detailsTarget.started_at} timezone={timezone} /></dd>
@@ -553,7 +800,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
               <section>
                 <h3>Verification</h3>
                 <dl className="br-dl">
-                  <dt>Status</dt><dd><span className={statusBadgeClass(detailsTarget.verify_status)}>{detailsTarget.verify_status || '—'}</span></dd>
+                  <dt>Status</dt><dd><StatusBadge status={detailsTarget.verify_status} withCheck /></dd>
                   <dt>Verified at</dt><dd><DateCell value={detailsTarget.verified_at} timezone={timezone} /></dd>
                   {detailsTarget.verify_error ? (
                     <><dt>Error</dt><dd>{detailsTarget.verify_error}</dd></>
@@ -590,7 +837,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
               <dt>Created</dt><dd><DateCell value={restoreTarget.created_at || restoreTarget.completed_at} timezone={timezone} /></dd>
               <dt>Size</dt><dd>{formatBytes(restoreTarget.archive_size_bytes)}</dd>
               <dt>Verification</dt>
-              <dd><span className={statusBadgeClass(restoreTarget.verify_status)}>{restoreTarget.verify_status || '—'}</span></dd>
+              <dd><StatusBadge status={restoreTarget.verify_status} withCheck /></dd>
             </dl>
             <ul className="br-impact-list">
               <li>A safety backup of the current database will be taken first.</li>
