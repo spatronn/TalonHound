@@ -618,18 +618,30 @@ export default function BackupRestorePage({ AppShell, useSession }) {
               </div>
             ) : (
               <table className="br-table">
+                <colgroup>
+                  <col className="br-col-created" />
+                  <col className="br-col-id" />
+                  <col className="br-col-trigger" />
+                  <col className="br-col-status" />
+                  <col className="br-col-size" />
+                  <col className="br-col-enc" />
+                  <col className="br-col-verify" />
+                  <col className="br-col-duration" />
+                  <col className="br-col-by" />
+                  <col className="br-col-actions" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Created</th>
-                    <th>Backup ID</th>
-                    <th>Trigger</th>
-                    <th>Status</th>
-                    <th>Size</th>
-                    <th>Encryption</th>
-                    <th>Verification</th>
-                    <th>Duration</th>
-                    <th>Created By</th>
-                    <th>Actions</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Backup ID</th>
+                    <th scope="col">Trigger</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Encryption</th>
+                    <th scope="col">Verification</th>
+                    <th scope="col">Duration</th>
+                    <th scope="col">Created By</th>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -640,10 +652,10 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                     const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
                     return (
                       <tr key={row.id}>
-                        <td className="br-nowrap"><DateCell value={row.created_at} timezone={timezone} /></td>
+                        <td className="br-cell-clip"><DateCell value={row.created_at} timezone={timezone} /></td>
                         <td>
                           <div className="br-id-cell">
-                            <code className="br-id-chip" title={row.backup_id}>{truncateId(row.backup_id)}</code>
+                            <code className="br-id-text" title={row.backup_id}>{row.backup_id}</code>
                             <button
                               type="button"
                               className="br-btn br-btn-ghost br-btn-icon br-btn-xs"
@@ -655,9 +667,9 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                             </button>
                           </div>
                         </td>
-                        <td>{row.trigger_type}</td>
+                        <td className="br-cell-clip">{row.trigger_type}</td>
                         <td><StatusBadge status={row.status} /></td>
-                        <td className="br-nowrap">{formatBytes(row.archive_size_bytes)}</td>
+                        <td className="br-cell-clip">{formatBytes(row.archive_size_bytes)}</td>
                         <td>
                           <StatusBadge
                             status={row.encrypted ? 'passed' : 'muted'}
@@ -671,9 +683,13 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                             withCheck
                           />
                         </td>
-                        <td className="br-nowrap">{formatDuration(row.duration_ms)}</td>
-                        <td>{row.created_by_email || '—'}</td>
+                        <td className="br-cell-clip">{formatDuration(row.duration_ms)}</td>
                         <td>
+                          <span className="br-cell-clip" title={row.created_by_email || undefined}>
+                            {row.created_by_email || '—'}
+                          </span>
+                        </td>
+                        <td className="br-cell-actions">
                           <div className="br-actions">
                             <button
                               type="button"
