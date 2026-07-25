@@ -68,9 +68,11 @@ Contents:
 
 Redis, .env, TLS certs, and regenerable IOC search exports are excluded.
 
-Restore (destructive; stops writer services):
+Restore (destructive; host CLI only — stops writer services):
 
   ./scripts/restore-stack.sh --backup-id ${backupId} --confirm
+  # or from an external archive:
+  # ./scripts/restore-stack.sh --file /path/to/${backupId}.tar.gz --confirm
 `;
   return fs.promises.writeFile(path.join(bundleDir, 'README.txt'), text, 'utf8');
 }

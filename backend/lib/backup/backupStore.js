@@ -255,14 +255,7 @@ export async function listCompletedForRetention(db) {
   return rows;
 }
 
-export async function getProtectedBackupIds(db) {
-  const { rows } = await db.query(
-    `SELECT DISTINCT backup_id FROM system_restores
-     WHERE status IN ('pending_confirmation', 'ready', 'running')
-     UNION
-     SELECT DISTINCT safety_backup_id FROM system_restores
-     WHERE safety_backup_id IS NOT NULL
-       AND status IN ('pending_confirmation', 'ready', 'running')`
-  );
-  return new Set(rows.map((r) => r.backup_id || r.safety_backup_id).filter(Boolean));
+export async function getProtectedBackupIds(_db) {
+  // GUI restore prepare/confirm (system_restores) removed; no restore-hold protection.
+  return new Set();
 }

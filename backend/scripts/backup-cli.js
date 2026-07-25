@@ -18,7 +18,7 @@ import {
   countActiveBackups
 } from '../lib/backup/backupStore.js';
 import { assertCanStartBackup } from '../lib/backup/operationLock.js';
-import { isValidRestoreConfirmation, buildRestoreCliCommand } from '../lib/backup/restoreStore.js';
+import { buildRestoreCliCommand } from '../lib/backup/restoreCli.js';
 import { runRetentionSweep } from '../routes/backups.js';
 import { createAuditLogService } from '../lib/auditLogService.js';
 

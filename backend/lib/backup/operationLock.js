@@ -62,17 +62,3 @@ export function assertTransition(from, to) {
     throw err;
   }
 }
-
-const RESTORE_TRANSITIONS = {
-  pending_confirmation: new Set(['ready', 'cancelled', 'failed']),
-  ready: new Set(['running', 'cancelled', 'failed']),
-  running: new Set(['completed', 'failed']),
-  completed: new Set(),
-  failed: new Set(),
-  cancelled: new Set()
-};
-
-export function canRestoreTransition(from, to) {
-  const set = RESTORE_TRANSITIONS[from];
-  return Boolean(set && set.has(to));
-}

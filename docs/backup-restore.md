@@ -1,8 +1,13 @@
 # Backup and restore runbook
 
-TalonHound system backups cover **PostgreSQL** (transaction-consistent `pg_dump -Fc`) with manifest + SHA-256 verification, Admin UI, scheduled retention, and a **CLI-only destructive restore**.
+TalonHound system backups cover **PostgreSQL** (transaction-consistent `pg_dump -Fc`) with manifest + SHA-256 verification, Admin UI management, scheduled retention, and a **host CLI-only destructive restore**.
 
-Restore never runs `pg_restore` inside the live API process. The UI prepares/confirms a restore request and shows the exact host command.
+## Product decision
+
+- **Backup** operations (create, verify, download, delete, schedule, retention) are managed from **Administration → Backup & Restore**.
+- **Restore** operations are performed **only through the host CLI** (`scripts/restore-stack.sh`).
+- There is **no restore feature in the GUI**. This is intentional: real disaster recovery assumes the old UI may be unavailable, and restore must run with host privileges outside the live API process.
+- The API never executes `pg_restore`.
 
 ## What is backed up
 
@@ -19,6 +24,13 @@ Restore never runs `pg_restore` inside the live API process. The UI prepares/con
 
 **Sensitive note:** Feed credentials and enrichment API keys stored in PostgreSQL are included in the dump (currently plaintext columns). Treat backup archives like secrets. Prefer `BACKUP_ENCRYPTION_ENABLED=true`.
 
+**Critical secrets (not in the archive):**
+
+- `.env` is **not** inside the backup archive.
+- The backup encryption key is **not** inside the archive.
+- If the encryption key is lost, encrypted backups **cannot** be restored.
+- Keep offsite copies of archives **and** keys on separate media.
+
 ## Archive layout (format version 2)
 
 ```text
@@ -34,11 +46,15 @@ Archives are written atomically (temp → rename). Incomplete files never use th
 
 Legacy Faz-1 directories (`talonhound-*/postgres.dump`) remain readable by `scripts/restore-stack.sh`.
 
+Restore does **not** require a `system_backups` database registry row. An external archive can be restored with `--file` using only the archive’s own manifest and checksums.
+
 ## Storage
 
 - Docker named volume: `backup_data` → `/data/backups` (separate from `postgres_data`)
 - Env: `BACKUP_DIR=/data/backups`
 - Provider: local filesystem (`LocalFilesystemStorage`). S3-compatible storage is intentionally not shipped (interface reserved for a later release).
+
+Store production archives **outside** the production server when possible (USB, offsite host, object storage).
 
 ## Schedule and retention
 
@@ -61,14 +77,14 @@ BACKUP_CRON_TIMEZONE=Europe/Istanbul
 
 Weekly default implies a worst-case **RPO of about 7 days**. Take a **manual backup** before important deployments or migrations.
 
-Retention never deletes: active (`queued`/`running`/`verifying`), restore-protected, or pending-verify backups. Deletion is audited.
+Retention never deletes active (`queued`/`running`/`verifying`) backups. Deletion is audited.
 
 ## Encryption
 
 1. Generate a key: `openssl rand -hex 32 > /secure/backup.key`
 2. Mount the key into `backend` and `backup-worker` (read-only).
 3. Set `BACKUP_ENCRYPTION_ENABLED=true` and `BACKUP_ENCRYPTION_KEY_FILE=/path/to/key`.
-4. Keep the key **off** the backup volume and **out** of git. Restore requires the same key.
+4. Keep the key **off** the backup volume and **out** of git. Restore requires the same key on the target host.
 
 ## Manual backup (Admin UI)
 
@@ -76,9 +92,11 @@ Retention never deletes: active (`queued`/`running`/`verifying`), restore-protec
 2. Open **Administration → Backup & Restore**.
 3. Click **Create Backup** (disabled while another backup runs).
 4. Wait until status is `completed` and verify status is `passed`.
-5. Optionally **Download** or **Verify** again.
+5. Use **Download**, **Verify**, **Details**, or **Delete** as needed.
 
-## CLI
+There is no Restore button or restore modal in the UI.
+
+## CLI backup helpers
 
 ```bash
 # Inside backup-worker / backend container
@@ -87,49 +105,103 @@ docker compose exec backup-worker npm run backup:list
 docker compose exec backup-worker npm run backup:verify -- --backup-id <id>
 docker compose exec backup-worker npm run backup:retention
 
-# Host scripts
+# Host backup script
 ./scripts/backup-stack.sh
-./scripts/restore-stack.sh --backup-id <id> --dry-run
-./scripts/restore-stack.sh --backup-id <id> --confirm
 ```
 
-`npm run backup:restore -- --backup-id <id> --confirm` prints the host command; it does **not** execute `pg_restore`.
+`npm run backup:restore -- --backup-id <id> --confirm` only **prints** the host command; it does **not** execute `pg_restore`.
 
-## Restore flow (safe architecture)
+## Scenario A — Restore on a running system
 
-1. Admin opens Restore on a completed backup.
-2. UI calls `POST /api/backups/:id/restore/prepare` → queues a **safety** backup and creates a restore record.
-3. Admin types `RESTORE` or the `backup_id` and confirms (`POST .../restore/confirm`).
-4. Confirm is rejected until the safety backup is `completed` (or fails → restore aborted).
-5. UI shows:
+Use this when the Compose stack is healthy enough to stop writers and overwrite PostgreSQL in place.
+
+**Access required**
+
+- SSH / shell on the Docker Compose host
+- Ability to run `docker compose`
+- Encryption key file mounted/available if the archive is encrypted
+
+**Steps**
+
+1. Prefer verifying the chosen backup in the UI (or CLI verify) before restore.
+2. Preview without mutating:
 
    ```bash
-   ./scripts/restore-stack.sh --backup-id <id> --confirm
+   ./scripts/restore-stack.sh --backup-id backup-YYYYMMDD-HHMMSS-hex --dry-run
+   # or
+   ./scripts/restore-stack.sh --file /path/to/archive.tar.gz --dry-run
    ```
 
-6. Operator runs that command on the Compose host. The script:
-   - verifies checksums
-   - creates another safety dump of the live DB (aborts if it fails)
-   - stops writer services (backend, workers, backup-worker, …)
-   - `pg_restore --clean --if-exists`
-   - `npm run migrate`
+3. Execute (expect **downtime** while writers are stopped):
+
+   ```bash
+   ./scripts/restore-stack.sh --backup-id backup-YYYYMMDD-HHMMSS-hex --confirm
+   ```
+
+4. The script:
+   - resolves and validates the archive (checksums; rejects unsafe tar members)
+   - takes a **safety backup** of the live DB when the target looks populated (skipped automatically on empty/fresh DB; override with `--skip-safety`)
+   - stops writer services
+   - runs `pg_restore --clean --if-exists`
+   - runs `npm run migrate`
    - starts services again
+5. Healthcheck:
 
-Expected downtime: on the order of minutes for small DBs; larger IOC datasets may need 30–120+ minutes (see RTO).
+   ```bash
+   docker compose exec backend wget -qO- http://127.0.0.1:3000/readyz
+   docker compose run --rm backend npm run migrate:list
+   ```
 
-## Disaster recovery — new server
+6. Spot-check login, IOC list, feeds, suppressions, audit logs. Redis queues are **not** restored — reconcile Job Queue Status if needed.
 
-1. Provision VM with Docker + Compose; clone/deploy the TalonHound bundle.
-2. Place `.env` and (if used) the backup encryption key securely on the host.
-3. Create volumes (`docker compose up -d db redis` once is enough to create them).
-4. Copy the chosen archive into the `backup_data` volume (or host path readable by the restore script / `docker compose cp`).
-5. Start PostgreSQL: `docker compose up -d db`.
-6. Verify archive: `docker compose exec backup-worker npm run backup:verify -- --backup-id <id>` (after backend image build + migrate if listing from DB) **or** extract and `sha256sum -c`.
-7. Run restore: `./scripts/restore-stack.sh --backup-id <id> --confirm`.
-8. Confirm migrations: `docker compose run --rm backend npm run migrate:list`.
-9. Start app: `docker compose up -d`.
-10. Health: `docker compose exec backend wget -qO- http://127.0.0.1:3000/readyz`.
-11. Spot-check login, IOC list, feeds, audit logs; recover integration queue if needed.
+**Flags**
+
+| Flag | Meaning |
+|------|---------|
+| `--file <path>` | Preferred for external archives (no DB registry required) |
+| `--backup-id <id>` | Resolve from backup volume / `backups/` |
+| `--backup <path>` | Legacy alias for `--file` |
+| `--dry-run` | Validate + print plan only |
+| `--confirm` | Required to mutate |
+| `--skip-checksum` | Skip `checksums.sha256` check |
+| `--skip-safety` | Skip live-DB safety dump even if populated |
+
+Do not invent extra bypass flags. Missing `--confirm` aborts without changes.
+
+## Scenario B — Full disaster recovery (new server)
+
+Typical failure mode: the old system is gone or unusable. A new host is built from scratch and an **offsite archive** is restored.
+
+1. Prepare the TalonHound repository / deployment bundle on the new host (Docker + Compose).
+2. Create `.env` securely on the new host (it is **not** in the backup archive).
+3. Install the backup encryption key on the new host if archives are encrypted (key is **not** in the archive).
+4. Bring up PostgreSQL and base services as needed (`docker compose up -d db redis` is enough to create volumes).
+5. Copy the external archive onto the host, for example:
+
+   ```bash
+   cp /mnt/usb/talonhound-backup-20260725.tar.gz /opt/TalonHound/backups/
+   ```
+
+6. Dry-run, then restore **by file** (no backup registry required):
+
+   ```bash
+   ./scripts/restore-stack.sh \
+     --file /opt/TalonHound/backups/talonhound-backup-20260725.tar.gz \
+     --dry-run
+
+   ./scripts/restore-stack.sh \
+     --file /opt/TalonHound/backups/talonhound-backup-20260725.tar.gz \
+     --confirm
+   ```
+
+7. Archive is validated (manifest when present, checksums, path-safe extract into staging).
+8. PostgreSQL is restored; migrations run.
+9. Start the full stack: `docker compose up -d`.
+10. Healthcheck: `docker compose exec backend wget -qO- http://127.0.0.1:3000/readyz`.
+11. Verify sample IOC, feed, user, suppression, and audit records.
+12. Reconcile integration queues if the UI reports recovery needed.
+
+On a **new/empty** database, the script skips the safety backup automatically and logs that decision. On a **populated** database, safety backup runs unless `--skip-safety` is passed.
 
 ## Offsite copy
 
@@ -165,8 +237,5 @@ Run a restore drill at least quarterly: `./scripts/test-backup-restore-e2e.sh` (
 | POST | `/api/backups/:id/verify` |
 | GET | `/api/backups/:id/download` |
 | DELETE | `/api/backups/:id` |
-| POST | `/api/backups/:id/restore/prepare` |
-| POST | `/api/backups/:id/restore/confirm` |
-| GET | `/api/backups/restores/:restoreId` |
 
-All mutating routes are audited (`backup.*` / `restore.*` actions).
+Mutating backup routes are audited (`backup.*` actions). Historical `restore.*` audit labels may still appear in old logs; the GUI prepare/confirm flow that emitted them has been removed.

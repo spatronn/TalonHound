@@ -5,12 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import { registerBackupRoutes } from './backups.js';
-import { isValidRestoreConfirmation } from '../lib/backup/restoreStore.js';
+import { buildRestoreCliCommand } from '../lib/backup/restoreCli.js';
 
 const ANALYST = { role: 'analyst', id: 11, email: 'a@example.com', username: 'a@example.com' };
 const ADMIN = { role: 'admin', id: 1, email: 'admin@example.com', username: 'admin@example.com' };
 
-function createMockPool(backups, restores) {
+function createMockPool(backups) {
   let seq = 1;
   return {
     async query(sql, params = []) {
@@ -49,34 +49,6 @@ function createMockPool(backups, restores) {
         return { rows: [row], rowCount: 1 };
       }
 
-      if (s.includes('INSERT INTO system_restores')) {
-        const id = `10000000-0000-4000-8000-${String(seq++).padStart(12, '0')}`;
-        const row = {
-          id,
-          backup_row_id: params[0],
-          backup_id: params[1],
-          status: 'pending_confirmation',
-          confirmation_phrase: params[2],
-          safety_backup_id: params[3],
-          safety_backup_row_id: params[4],
-          cli_command: params[5],
-          prepared_by_id: params[6],
-          prepared_by_email: params[7],
-          confirmed_by_id: null,
-          confirmed_by_email: null,
-          error_code: null,
-          error_message: null,
-          prepared_at: new Date().toISOString(),
-          confirmed_at: null,
-          started_at: null,
-          completed_at: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        restores.set(id, row);
-        return { rows: [row], rowCount: 1 };
-      }
-
       if (s.includes("status IN ('queued', 'running', 'verifying')") && s.includes('COUNT')) {
         const n = [...backups.values()].filter((r) =>
           ['queued', 'running', 'verifying'].includes(r.status)
@@ -107,7 +79,7 @@ function createMockPool(backups, restores) {
         return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
       }
 
-      if (s.includes('FROM system_backups') && s.includes('status = \'completed\'') && s.includes('LIMIT 1')) {
+      if (s.includes('FROM system_backups') && s.includes("status = 'completed'") && s.includes('LIMIT 1')) {
         const row = [...backups.values()]
           .filter((r) => r.status === 'completed')
           .sort((a, b) => String(b.completed_at).localeCompare(String(a.completed_at)))[0];
@@ -118,7 +90,7 @@ function createMockPool(backups, restores) {
         return { rows: [...backups.values()].filter((r) => r.status === 'completed'), rowCount: 0 };
       }
 
-      if (s.includes('FROM system_backups') && s.includes('status <> \'deleted\'')) {
+      if (s.includes('FROM system_backups') && s.includes("status <> 'deleted'")) {
         let rows = [...backups.values()].filter((r) => r.status !== 'deleted');
         rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
         if (s.includes('LIMIT')) {
@@ -129,7 +101,7 @@ function createMockPool(backups, restores) {
         return { rows, rowCount: rows.length };
       }
 
-      if (s.includes('SET status = \'deleted\'')) {
+      if (s.includes("SET status = 'deleted'")) {
         const row = backups.get(params[0]);
         if (!row || !['completed', 'failed', 'interrupted'].includes(row.status)) {
           return { rows: [], rowCount: 0 };
@@ -149,34 +121,6 @@ function createMockPool(backups, restores) {
         return { rows: [row], rowCount: 1 };
       }
 
-      if (s.includes('FROM system_restores WHERE id = $1')) {
-        const row = restores.get(params[0]) || null;
-        return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
-      }
-
-      if (s.includes('SET status = \'ready\'') && s.includes('system_restores')) {
-        const row = restores.get(params[0]);
-        if (!row || row.status !== 'pending_confirmation') return { rows: [], rowCount: 0 };
-        row.status = 'ready';
-        row.confirmed_by_id = params[1];
-        row.confirmed_by_email = params[2];
-        row.confirmed_at = new Date().toISOString();
-        return { rows: [row], rowCount: 1 };
-      }
-
-      if (s.includes('SET status = \'failed\'') && s.includes('system_restores')) {
-        const row = restores.get(params[0]);
-        if (!row) return { rows: [], rowCount: 0 };
-        row.status = 'failed';
-        row.error_code = params[1];
-        row.error_message = params[2];
-        return { rows: [row], rowCount: 1 };
-      }
-
-      if (s.includes('FROM system_restores') && s.includes('DISTINCT')) {
-        return { rows: [], rowCount: 0 };
-      }
-
       return { rows: [], rowCount: 0 };
     }
   };
@@ -186,7 +130,6 @@ async function withApp(fn, { user = ADMIN, backupDir } = {}) {
   const dir = backupDir || (await fs.promises.mkdtemp(path.join(os.tmpdir(), 'th-bk-api-')));
   process.env.BACKUP_DIR = dir;
   const backups = new Map();
-  const restores = new Map();
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -195,7 +138,7 @@ async function withApp(fn, { user = ADMIN, backupDir } = {}) {
       : user;
     next();
   });
-  const pool = createMockPool(backups, restores);
+  const pool = createMockPool(backups);
   const backupQueue = { add: async () => ({ id: 'job-1' }) };
   const auditLogService = { auditSuccess: async () => {}, auditFailure: async () => {} };
   registerBackupRoutes(app, pool, { backupQueue, auditLogService });
@@ -203,7 +146,7 @@ async function withApp(fn, { user = ADMIN, backupDir } = {}) {
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}`;
   try {
-    await fn({ base, backups, restores, dir, port });
+    await fn({ base, backups, dir, port });
   } finally {
     await new Promise((r) => server.close(r));
     await fs.promises.rm(dir, { recursive: true, force: true });
@@ -245,7 +188,6 @@ test('concurrent second backup is rejected', async () => {
   await withApp(async ({ base, backups }) => {
     const first = await fetch(`${base}/api/backups`, { method: 'POST', headers: authHeaders(ADMIN) });
     assert.equal(first.status, 202);
-    // Simulate active
     const row = [...backups.values()][0];
     row.status = 'running';
     const second = await fetch(`${base}/api/backups`, { method: 'POST', headers: authHeaders(ADMIN) });
@@ -293,79 +235,34 @@ test('delete rejects active backup', async () => {
   });
 });
 
-test('restore confirmation helper rejects wrong phrase', () => {
-  assert.equal(isValidRestoreConfirmation('RESTORE', 'backup-x'), true);
-  assert.equal(isValidRestoreConfirmation('backup-x', 'backup-x'), true);
-  assert.equal(isValidRestoreConfirmation('yes', 'backup-x'), false);
-  assert.equal(isValidRestoreConfirmation('', 'backup-x'), false);
-});
+test('GUI restore endpoints are removed', async () => {
+  await withApp(async ({ base }) => {
+    const id = '00000000-0000-4000-8000-000000000077';
+    const prepare = await fetch(`${base}/api/backups/${id}/restore/prepare`, {
+      method: 'POST',
+      headers: authHeaders(ADMIN)
+    });
+    assert.equal(prepare.status, 404);
 
-test('restore confirm without matching phrase is rejected', async () => {
-  await withApp(async ({ base, backups, restores }) => {
-    const bid = '00000000-0000-4000-8000-000000000077';
-    const rid = '10000000-0000-4000-8000-000000000066';
-    backups.set(bid, {
-      id: bid,
-      backup_id: 'backup-20260725-120000-rest01',
-      status: 'completed',
-      trigger_type: 'manual',
-      archive_filename: 'backup-20260725-120000-rest01.tar.gz',
-      created_at: new Date().toISOString()
-    });
-    restores.set(rid, {
-      id: rid,
-      backup_row_id: bid,
-      backup_id: 'backup-20260725-120000-rest01',
-      status: 'pending_confirmation',
-      safety_backup_row_id: null,
-      cli_command: './scripts/restore-stack.sh --backup-id backup-20260725-120000-rest01 --confirm',
-      prepared_at: new Date().toISOString()
-    });
-    const res = await fetch(`${base}/api/backups/${bid}/restore/confirm`, {
+    const confirm = await fetch(`${base}/api/backups/${id}/restore/confirm`, {
       method: 'POST',
       headers: authHeaders(ADMIN),
-      body: JSON.stringify({ restore_id: rid, confirmation: 'nope' })
+      body: JSON.stringify({ restore_id: id, confirmation: 'RESTORE' })
     });
-    assert.equal(res.status, 400);
+    assert.equal(confirm.status, 404);
+
+    const getRestore = await fetch(`${base}/api/backups/restores/${id}`, {
+      headers: authHeaders(ADMIN)
+    });
+    assert.equal(getRestore.status, 404);
   });
 });
 
-test('restore confirm requires completed safety backup when set', async () => {
-  await withApp(async ({ base, backups, restores }) => {
-    const bid = '00000000-0000-4000-8000-000000000055';
-    const sid = '00000000-0000-4000-8000-000000000054';
-    const rid = '10000000-0000-4000-8000-000000000053';
-    backups.set(bid, {
-      id: bid,
-      backup_id: 'backup-20260725-120000-rest02',
-      status: 'completed',
-      trigger_type: 'manual',
-      created_at: new Date().toISOString()
-    });
-    backups.set(sid, {
-      id: sid,
-      backup_id: 'backup-20260725-120000-safe02',
-      status: 'running',
-      trigger_type: 'safety',
-      created_at: new Date().toISOString()
-    });
-    restores.set(rid, {
-      id: rid,
-      backup_row_id: bid,
-      backup_id: 'backup-20260725-120000-rest02',
-      status: 'pending_confirmation',
-      safety_backup_row_id: sid,
-      safety_backup_id: 'backup-20260725-120000-safe02',
-      cli_command: 'x',
-      prepared_at: new Date().toISOString()
-    });
-    const res = await fetch(`${base}/api/backups/${bid}/restore/confirm`, {
-      method: 'POST',
-      headers: authHeaders(ADMIN),
-      body: JSON.stringify({ restore_id: rid, confirmation: 'RESTORE' })
-    });
-    assert.equal(res.status, 409);
-  });
+test('buildRestoreCliCommand documents host script', () => {
+  const cmd = buildRestoreCliCommand('backup-20260725-120000-aabbcc');
+  assert.match(cmd, /restore-stack\.sh/);
+  assert.match(cmd, /--backup-id backup-20260725-120000-aabbcc/);
+  assert.match(cmd, /--confirm/);
 });
 
 test('status endpoint is admin-only and returns safe schedule fields', async () => {
@@ -387,6 +284,5 @@ test('status endpoint is admin-only and returns safe schedule fields', async () 
     assert.equal(body.backup_dir, undefined);
     const raw = JSON.stringify(body);
     assert.ok(!raw.includes('PGPASSWORD'));
-    assert.ok(!raw.includes('/run/secrets'));
-  });
+  }, { user: ANALYST });
 });

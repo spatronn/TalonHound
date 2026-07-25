@@ -3,6 +3,9 @@
 # Writer services stopped during restore to avoid concurrent writes.
 WRITER_SERVICES="backend integration-scheduler integration-worker ioc-expiration-worker ioc-search-export-worker backup-worker"
 
+# Staging dirs created during resolve; cleaned on failure via cleanup_restore_work.
+RESTORE_WORK_DIRS=""
+
 load_dotenv() {
   if [ -f "$ROOT/.env" ]; then
     set -a
@@ -20,9 +23,54 @@ git_sha_short() {
   git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "unknown"
 }
 
+register_restore_work() {
+  RESTORE_WORK_DIRS="${RESTORE_WORK_DIRS} $1"
+}
+
+cleanup_restore_work() {
+  for _d in $RESTORE_WORK_DIRS; do
+    [ -n "$_d" ] || continue
+    rm -rf "$_d" 2>/dev/null || true
+  done
+  RESTORE_WORK_DIRS=""
+}
+
+# Reject tar members with absolute paths, .., or symlink/hardlink entries.
+validate_tar_members() {
+  _archive="$1"
+  _members_file=$(mktemp)
+  if ! tar -tzf "$_archive" > "$_members_file" 2>/dev/null; then
+    rm -f "$_members_file"
+    echo "[restore] cannot list archive members" >&2
+    return 1
+  fi
+  _unsafe=0
+  while IFS= read -r _member; do
+    [ -n "$_member" ] || continue
+    case "$_member" in
+      /*|*".."*)
+        echo "[restore] unsafe archive member rejected: $_member" >&2
+        _unsafe=1
+        break
+        ;;
+    esac
+  done < "$_members_file"
+  rm -f "$_members_file"
+  if [ "$_unsafe" -ne 0 ]; then
+    return 1
+  fi
+
+  if tar -tvzf "$_archive" 2>/dev/null | grep -E '^[lh]' >/dev/null 2>&1; then
+    echo "[restore] archive contains symlink or hardlink entries — rejected" >&2
+    return 1
+  fi
+  return 0
+}
+
 resolve_backup_bundle() {
   # Sets BUNDLE_DIR to an extracted/legacy directory containing postgres.dump or database/postgres.dump
   # Input: BACKUP_REF (path to dir, .tar.gz, .tar.gz.enc, or backup_id)
+  # Does NOT require a system_backups DB registry row.
   _ref="$1"
   if [ -z "$_ref" ]; then
     echo "[restore] missing backup reference" >&2
@@ -57,6 +105,7 @@ resolve_backup_bundle() {
     echo "[restore] looking up archive in backup_data volume for ${_id}..."
     _tmp="$ROOT/backups/.restore-work/$$"
     mkdir -p "$_tmp"
+    register_restore_work "$_tmp"
     if docker compose exec -T backup-worker sh -c "test -f /data/backups/${_id}.tar.gz" 2>/dev/null; then
       docker compose exec -T backup-worker cat "/data/backups/${_id}.tar.gz" > "${_tmp}/${_id}.tar.gz"
       _ref="${_tmp}/${_id}.tar.gz"
@@ -91,7 +140,6 @@ resolve_backup_bundle() {
         -e BACKUP_ENCRYPTION_ENABLED=true \
         -e BACKUP_ENCRYPTION_KEY_FILE=/key \
         backend node -e "
-          import { readFileSync } from 'fs';
           import { decryptFile } from './lib/backup/encryption.js';
           import { loadEncryptionKey } from './lib/backup/config.js';
           const key = loadEncryptionKey();
@@ -103,10 +151,17 @@ resolve_backup_bundle() {
 
   case "$_ref" in
     *.tar.gz)
+      echo "[restore] validating archive members..."
+      validate_tar_members "$_ref" || return 1
       _extract="$ROOT/backups/.restore-work/extract-$$"
       mkdir -p "$_extract"
+      register_restore_work "$_extract"
       tar -xzf "$_ref" -C "$_extract"
       _top=$(ls "$_extract" | head -n 1)
+      if [ -z "$_top" ]; then
+        echo "[restore] archive extracted empty" >&2
+        return 1
+      fi
       BUNDLE_DIR="$_extract/$_top"
       ;;
     *)
@@ -127,6 +182,38 @@ find_postgres_dump() {
   fi
 }
 
+# Returns 0 when target DB looks empty/fresh (skip safety); 1 when populated.
+target_db_is_empty() {
+  # Prefer live tuple estimate across user tables; fall back to ioc_items/users if present.
+  _count=$(docker compose exec -T db psql -U demo -d demo -Atc \
+    "SELECT COALESCE(SUM(n_live_tup), 0)::bigint
+     FROM pg_stat_user_tables
+     WHERE schemaname = 'public'" 2>/dev/null | tr -d '[:space:]') || _count=""
+
+  if [ -z "$_count" ]; then
+    echo "[restore] could not probe target DB emptiness — treating as populated" >&2
+    return 1
+  fi
+
+  if [ "$_count" -le 50 ]; then
+    # Fresh installs after migrate have schema + seed rows but little app data.
+    # Double-check meaningful tables when they exist.
+    _app=$(docker compose exec -T db psql -U demo -d demo -Atc \
+      "SELECT
+         (CASE WHEN to_regclass('public.ioc_items') IS NOT NULL
+               THEN (SELECT COUNT(*) FROM ioc_items) ELSE 0 END)
+       + (CASE WHEN to_regclass('public.users') IS NOT NULL
+               THEN (SELECT COUNT(*) FROM users) ELSE 0 END)" 2>/dev/null | tr -d '[:space:]') || _app="1"
+    if [ "${_app:-1}" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$_count" -eq 0 ]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 write_readme() {
   out="$1"
   stamp="$2"
@@ -140,8 +227,9 @@ Components:
 - PostgreSQL: postgres.dump (pg_dump custom format, required)
 - Redis: excluded (runtime/queue state; not restored)
 
-Restore:
+Restore (host CLI only — no GUI restore):
 
+  ./scripts/restore-stack.sh --file /path/to/archive.tar.gz --confirm
   ./scripts/restore-stack.sh --backup-id <backup_id> --confirm
 
 After restore, reconcile integration queues from Threat Intelligence > Job Queue Status

@@ -211,9 +211,7 @@ function RowActionsMenu({
   row,
   busy,
   onDetails,
-  onRestore,
   onDelete,
-  canRestore,
   canDelete
 }) {
   const [open, setOpen] = useState(false);
@@ -339,18 +337,6 @@ function RowActionsMenu({
             <button
               type="button"
               role="menuitem"
-              className="br-menu-item br-menu-caution"
-              disabled={!canRestore}
-              onClick={() => {
-                if (!canRestore) return;
-                pick(() => onRestore(row));
-              }}
-            >
-              Restore…
-            </button>
-            <button
-              type="button"
-              role="menuitem"
               className="br-menu-item br-menu-danger"
               disabled={!canDelete}
               onClick={() => {
@@ -379,10 +365,6 @@ export default function BackupRestorePage({ AppShell, useSession }) {
   const [info, setInfo] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [detailsTarget, setDetailsTarget] = useState(null);
-  const [restoreTarget, setRestoreTarget] = useState(null);
-  const [restoreConfirm, setRestoreConfirm] = useState('');
-  const [restoreResult, setRestoreResult] = useState(null);
-  const [restorePhase, setRestorePhase] = useState('idle');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const infoTimer = useRef(null);
@@ -527,48 +509,6 @@ export default function BackupRestorePage({ AppShell, useSession }) {
     }
   }
 
-  async function onRestorePrepare() {
-    if (!restoreTarget) return;
-    setBusy(true);
-    setError('');
-    try {
-      const { data } = await api.post(`/backups/${restoreTarget.id}/restore/prepare`);
-      setRestoreResult(data);
-      setRestorePhase('prepared');
-      flashInfo('Restore prepared. Confirm after the safety backup completes.');
-      await refresh();
-    } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to prepare restore');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onRestoreConfirm() {
-    if (!restoreTarget || !restoreResult?.restore?.id) return;
-    setBusy(true);
-    setError('');
-    try {
-      const { data } = await api.post(`/backups/${restoreTarget.id}/restore/confirm`, {
-        restore_id: restoreResult.restore.id,
-        confirmation: restoreConfirm
-      });
-      setRestoreResult((prev) => ({ ...prev, ...data, restore: data.restore }));
-      setRestorePhase('ready');
-    } catch (err) {
-      setError(err?.response?.data?.message || 'Confirmation failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function openRestore(row) {
-    setRestoreTarget(row);
-    setRestoreConfirm('');
-    setRestoreResult(null);
-    setRestorePhase('idle');
-  }
-
   if (!isAdmin) {
     return (
       <AppShell>
@@ -598,7 +538,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
           <div className="br-header-text">
             <h1 className="br-title">Backup &amp; Restore</h1>
             <p className="br-subtitle">
-              Secure PostgreSQL backups with checksum verification. Restores are executed via the host CLI.
+              Create, verify and download PostgreSQL backups. Restore operations are performed through the host CLI.
             </p>
           </div>
           <button
@@ -744,7 +684,6 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                 {pageItems.map((row) => {
                   const completed = row.status === 'completed';
                   const canDownload = completed;
-                  const canRestore = completed && row.verify_status !== 'failed';
                   const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
                   return (
                     <div className="br-history-grid-row" role="row" key={row.id}>
@@ -804,10 +743,8 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                           <RowActionsMenu
                             row={row}
                             busy={busy}
-                            canRestore={canRestore}
                             canDelete={canDelete}
                             onDetails={setDetailsTarget}
-                            onRestore={openRestore}
                             onDelete={setDeleteTarget}
                           />
                         </div>
@@ -927,79 +864,6 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             <div className="br-modal-actions">
               <button type="button" className="br-btn br-btn-primary" onClick={() => setDetailsTarget(null)}>Close</button>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {restoreTarget ? (
-        <div className="br-modal-backdrop" role="presentation">
-          <div className="br-modal br-modal-wide" role="dialog">
-            <h2>Restore from backup</h2>
-            <p className="br-warn">
-              This overwrites the live PostgreSQL database. The web app does <strong>not</strong> run{' '}
-              <code>pg_restore</code> — after confirmation you must run the host CLI command.
-            </p>
-            <dl className="br-dl">
-              <dt>Backup ID</dt><dd className="br-mono">{restoreTarget.backup_id}</dd>
-              <dt>Created</dt><dd><DateCell value={restoreTarget.created_at || restoreTarget.completed_at} timezone={timezone} /></dd>
-              <dt>Size</dt><dd>{formatBytes(restoreTarget.archive_size_bytes)}</dd>
-              <dt>Verification</dt>
-              <dd><StatusBadge status={restoreTarget.verify_status} withCheck /></dd>
-            </dl>
-            <ul className="br-impact-list">
-              <li>A safety backup of the current database will be taken first.</li>
-              <li>Writer services will be stopped temporarily during restore.</li>
-              <li>Expect application downtime until services restart.</li>
-              <li>Redis queues are not restored; reconcile after restore if needed.</li>
-            </ul>
-
-            {restorePhase === 'idle' ? (
-              <div className="br-modal-actions">
-                <button type="button" className="br-btn br-btn-ghost" disabled={busy} onClick={() => setRestoreTarget(null)}>Cancel</button>
-                <button type="button" className="br-btn br-btn-danger" disabled={busy} onClick={onRestorePrepare}>
-                  Prepare restore (starts safety backup)
-                </button>
-              </div>
-            ) : null}
-
-            {restorePhase === 'prepared' || restorePhase === 'ready' ? (
-              <>
-                <p className="br-muted">
-                  Safety backup:{' '}
-                  <span className="br-mono">
-                    {restoreResult?.safety_backup?.backup_id || restoreResult?.restore?.safety_backup_id}
-                  </span>
-                  {' '}({restoreResult?.safety_backup?.status || 'queued'})
-                </p>
-                <label className="br-label">
-                  Type <code>RESTORE</code> or the backup ID to confirm
-                  <input
-                    className="br-input"
-                    value={restoreConfirm}
-                    onChange={(e) => setRestoreConfirm(e.target.value)}
-                    disabled={busy || restorePhase === 'ready'}
-                    autoComplete="off"
-                  />
-                </label>
-                {restorePhase === 'prepared' ? (
-                  <div className="br-modal-actions">
-                    <button type="button" className="br-btn br-btn-ghost" disabled={busy} onClick={() => setRestoreTarget(null)}>Close</button>
-                    <button type="button" className="br-btn br-btn-danger" disabled={busy || !restoreConfirm} onClick={onRestoreConfirm}>
-                      Confirm restore request
-                    </button>
-                  </div>
-                ) : null}
-                {restorePhase === 'ready' ? (
-                  <div className="br-cli-box">
-                    <div className="br-card-label">Run on the Docker Compose host</div>
-                    <pre className="br-mono">{restoreResult?.restore?.cli_command || restoreResult?.next_step}</pre>
-                    <div className="br-modal-actions">
-                      <button type="button" className="br-btn br-btn-primary" onClick={() => setRestoreTarget(null)}>Done</button>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
           </div>
         </div>
       ) : null}
