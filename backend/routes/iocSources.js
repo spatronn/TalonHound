@@ -18,10 +18,11 @@ import {
 import { executeIocSourceMove, previewIocSourceMove, resolveApplyTargetDefaults } from '../lib/iocSourceMove.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { validateHexColor } from '../lib/sourceColor.js';
 
 const SOURCE_AUDIT_FIELDS = [
   'name', 'description', 'default_confidence', 'default_threat_classification',
-  'default_expire_policy', 'default_expire_days', 'active'
+  'default_expire_policy', 'default_expire_days', 'color', 'active'
 ];
 
 function isAdmin(req) {
@@ -88,6 +89,11 @@ function validateSourcePayload(body, partial = false) {
 
   if (policy === 'expire_after_days' && body.default_expire_days == null) {
     errors.push('default_expire_days is required when default_expire_policy is expire_after_days');
+  }
+
+  if (body.color !== undefined) {
+    const colorCheck = validateHexColor(body.color);
+    if (!colorCheck.ok) errors.push(colorCheck.error);
   }
 
   return errors;
@@ -170,6 +176,8 @@ export function registerIocSourceRoutes(app, pool, audit) {
     const polCheck = validateDefaultExpirePolicy(body.default_expire_policy);
     const daysCheck = resolveExpireDays(body, polCheck.value);
     if (!daysCheck.ok) return res.status(400).json({ message: daysCheck.error });
+    const colorCheck = validateHexColor(body.color);
+    if (!colorCheck.ok) return res.status(400).json({ message: colorCheck.error });
 
     let createTypePoliciesCheck = { ok: true, value: [] };
     if (Array.isArray(body.expiration_type_policies)) {
@@ -186,8 +194,8 @@ export function registerIocSourceRoutes(app, pool, audit) {
         `INSERT INTO ioc_sources (
            name, display_name, description, source_type,
            default_confidence, default_threat_classification, default_expire_policy, default_expire_days,
-           active, created_by
-         ) VALUES ($1, $1, $2, 'manual', $3, $4, $5, $6, COALESCE($7, TRUE), $8::uuid)
+           color, active, created_by
+         ) VALUES ($1, $1, $2, 'manual', $3, $4, $5, $6, $7, COALESCE($8, TRUE), $9::uuid)
          RETURNING *`,
         [
           nameCheck.value,
@@ -196,6 +204,7 @@ export function registerIocSourceRoutes(app, pool, audit) {
           threatClassCheck.value,
           polCheck.value,
           daysCheck.value,
+          colorCheck.value,
           body.active,
           userId
         ]
@@ -273,6 +282,11 @@ export function registerIocSourceRoutes(app, pool, audit) {
       const daysCheck = validateExpireDays(body.default_expire_days, false);
       if (!daysCheck.ok) return res.status(400).json({ message: daysCheck.error });
       setField('default_expire_days', daysCheck.value);
+    }
+    if (body.color !== undefined) {
+      const colorCheck = validateHexColor(body.color);
+      if (!colorCheck.ok) return res.status(400).json({ message: colorCheck.error });
+      setField('color', colorCheck.value);
     }
     if (body.active !== undefined) setField('active', Boolean(body.active));
 

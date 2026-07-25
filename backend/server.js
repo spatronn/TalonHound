@@ -63,6 +63,7 @@ import {
 } from './lib/tagCatalogService.js';
 import { listAdminTags } from './lib/tagAdminList.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './lib/auditConstants.js';
+import { validateHexColor } from './lib/sourceColor.js';
 import { resolveRunCounters } from './lib/integrationRunCounters.js';
 import {
   computeSuppressionEffectiveStatus,
@@ -953,6 +954,7 @@ app.get('/api/integrations', async (req, res) => {
         f.feed_kind,
         f.archived_at,
         f.default_confidence,
+        f.color,
         f.credentials,
         f.created_at
       FROM integration_feeds f
@@ -1891,6 +1893,52 @@ app.put('/api/integrations/:key/trust-level', async (req, res) => {
   }
 });
 
+app.put('/api/integrations/:key/color', requireRole(ROLES.ADMIN), async (req, res) => {
+  const { key } = req.params;
+  const colorCheck = validateHexColor(req.body?.color);
+  if (!colorCheck.ok) {
+    return res.status(400).json({ message: colorCheck.error });
+  }
+
+  try {
+    const prevQ = await pool.query(
+      'SELECT key, integration_id, name, color FROM integration_feeds WHERE key = $1 LIMIT 1',
+      [key]
+    );
+    if (!prevQ.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+    const prev = prevQ.rows[0];
+
+    const result = await pool.query(
+      `UPDATE integration_feeds
+       SET color = $2, updated_at = NOW()
+       WHERE key = $1
+       RETURNING key, integration_id, name, color`,
+      [key, colorCheck.value]
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.INTEGRATION_COLOR_CHANGED,
+      entityType: AUDIT_ENTITY.INTEGRATION,
+      entityId: String(result.rows[0].integration_id || key),
+      entityDisplay: result.rows[0].name,
+      before: { color: prev.color },
+      after: { color: result.rows[0].color },
+      metadata: { feed_key: key }
+    }).catch((e) => console.warn('[audit] color log failed', e?.message || e));
+
+    return res.json(result.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to update badge color', detail: err.message });
+  }
+});
+
 app.put('/api/integrations/:key/schedule', async (req, res) => {
   const { key } = req.params;
   if (!assertCustomFeedSettingsAllowed(req, key, res)) return;
@@ -2386,6 +2434,43 @@ registerIocConfidenceRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache
 });
 registerRouteModule('ioc_confidence');
+// Flat name -> color catalog used by the frontend to paint source badges
+// consistently across every screen. Merges feed names (integration_feeds,
+// covers built-in + custom feeds) with manual IOC source names/display names.
+// The same display name can legitimately exist in both integration_feeds and
+// ioc_sources (e.g. a manual source whose display_name coincides with a feed
+// name). To avoid a silent, scan-order-dependent winner we assign an explicit
+// precedence (feed=0 wins over source=1) and a deterministic ORDER BY. The
+// `type`/`key` metadata is additive; existing clients only read name+color.
+app.get('/api/source-colors', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT name, color, source_type AS type, source_key AS key
+       FROM (
+         SELECT name, color, 'feed'::text AS source_type, key AS source_key, 0 AS priority
+           FROM integration_feeds
+           WHERE color IS NOT NULL
+         UNION ALL
+         SELECT name, color, 'source'::text AS source_type, id::text AS source_key, 1 AS priority
+           FROM ioc_sources
+           WHERE color IS NOT NULL AND archived_at IS NULL
+         UNION ALL
+         SELECT display_name AS name, color, 'source'::text AS source_type, id::text AS source_key, 2 AS priority
+           FROM ioc_sources
+           WHERE color IS NOT NULL AND archived_at IS NULL
+             AND display_name IS NOT NULL AND display_name <> name
+       ) t
+       ORDER BY lower(name), priority, source_key`
+    );
+    const colors = rows
+      .filter((r) => r.name && r.color)
+      .map((r) => ({ name: r.name, color: r.color, type: r.type, key: r.key }));
+    return res.json({ colors });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to load source colors', detail: err.message });
+  }
+});
+
 registerIocSourceRoutes(app, pool, auditLogService);
 registerCustomThreatFeedRoutes(app, pool, auditLogService, {
   importQueue,

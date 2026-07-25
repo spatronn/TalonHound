@@ -36,6 +36,14 @@ import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import {
+  DEFAULT_SOURCE_COLOR,
+  isValidHexColor,
+  normalizeHexColor,
+  sourceBadgeStyle as sourceColorBadgeStyle,
+  buildSourceColorIndex,
+  resolveSourceBadgeStyle
+} from './lib/sourceBadge.js';
+import {
   TAG_MANAGER_PAGE_SIZE,
   TAG_MANAGER_SEARCH_DEBOUNCE_MS,
   buildTagManagerQueryParams,
@@ -46,6 +54,123 @@ import {
 } from './lib/tagManagerList.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
+
+// Shared, process-wide cache for the source-color catalog so the many screens
+// that render source badges resolve identical colors without each refetching.
+let sourceColorCatalogCache = null;
+let sourceColorCatalogPromise = null;
+
+async function fetchSourceColorCatalog(force = false) {
+  if (!force && Array.isArray(sourceColorCatalogCache)) return sourceColorCatalogCache;
+  if (!force && sourceColorCatalogPromise) return sourceColorCatalogPromise;
+  sourceColorCatalogPromise = api.get('/source-colors')
+    .then((res) => {
+      sourceColorCatalogCache = Array.isArray(res.data?.colors) ? res.data.colors : [];
+      return sourceColorCatalogCache;
+    })
+    .catch(() => {
+      sourceColorCatalogCache = sourceColorCatalogCache || [];
+      return sourceColorCatalogCache;
+    })
+    .finally(() => { sourceColorCatalogPromise = null; });
+  return sourceColorCatalogPromise;
+}
+
+/** Invalidate the cached catalog after a color edit so badges refresh. */
+function invalidateSourceColorCatalog() {
+  sourceColorCatalogCache = null;
+  sourceColorCatalogPromise = null;
+}
+
+/** React hook returning a name->color index for source badges. */
+function useSourceColorIndex() {
+  const [entries, setEntries] = useState(sourceColorCatalogCache || []);
+  useEffect(() => {
+    let alive = true;
+    fetchSourceColorCatalog().then((list) => { if (alive) setEntries(list); });
+    return () => { alive = false; };
+  }, []);
+  return useMemo(() => buildSourceColorIndex(entries), [entries]);
+}
+
+/**
+ * Shared color picker used by every source/feed edit form: native color input +
+ * editable hex text field + live badge preview. Empty means "use fallback".
+ * Reports validity so callers can block invalid saves.
+ *
+ * @param {{ value: string, onChange: (next: string) => void, previewLabel?: string,
+ *   disabled?: boolean, label?: string, helper?: string, ui?: object }} props
+ */
+function SourceColorField({ value, onChange, previewLabel = 'Source', disabled = false, label = 'Badge color', helper }) {
+  const raw = value == null ? '' : String(value);
+  const trimmed = raw.trim();
+  const isEmpty = trimmed === '';
+  const valid = isEmpty || isValidHexColor(trimmed);
+  const effectiveColor = valid && !isEmpty ? normalizeHexColor(trimmed) : DEFAULT_SOURCE_COLOR;
+  const previewStyle = sourceColorBadgeStyle(effectiveColor);
+  const colorInputValue = isValidHexColor(trimmed) ? normalizeHexColor(trimmed) : DEFAULT_SOURCE_COLOR;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {label ? <span style={{ fontSize: 12, color: '#94a3b8' }}>{label}</span> : null}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <input
+          type="color"
+          aria-label={`${label} color picker`}
+          value={colorInputValue}
+          disabled={disabled}
+          onChange={(e) => onChange(String(e.target.value || '').toLowerCase())}
+          style={{ width: 42, height: 32, padding: 0, border: '1px solid #334155', borderRadius: 6, background: 'transparent', cursor: disabled ? 'not-allowed' : 'pointer' }}
+        />
+        <input
+          type="text"
+          value={raw}
+          disabled={disabled}
+          placeholder={DEFAULT_SOURCE_COLOR}
+          spellCheck={false}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            width: 120,
+            padding: '6px 8px',
+            borderRadius: 6,
+            border: `1px solid ${valid ? '#334155' : '#b91c1c'}`,
+            background: '#0b1220',
+            color: '#e2e8f0',
+            fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+            fontSize: 13
+          }}
+        />
+        <span style={{ display: 'inline-flex', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, ...previewStyle }}>
+          {previewLabel || 'Source'}
+        </span>
+        {isEmpty ? <span style={{ fontSize: 11, color: '#64748b' }}>Default</span> : null}
+      </div>
+      {!valid ? (
+        <span style={{ fontSize: 11, color: '#fca5a5' }}>Enter a hex color like #7c3aed, or leave blank for the default.</span>
+      ) : (helper ? <span style={{ fontSize: 11, color: '#64748b' }}>{helper}</span> : null)}
+    </div>
+  );
+}
+
+/** True when a color value is acceptable to save (empty or valid hex). */
+function isSavableColor(value) {
+  const t = value == null ? '' : String(value).trim();
+  return t === '' || isValidHexColor(t);
+}
+
+/**
+ * Rounded source badge whose color comes from the managed catalog (falling back
+ * to the neutral default). Used wherever a single source/feed name is shown.
+ */
+function SourceBadge({ index, label, style }) {
+  const text = label == null ? '' : String(label);
+  const badge = resolveSourceBadgeStyle(index, text);
+  return (
+    <span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', ...badge, ...style }}>
+      {text || '-'}
+    </span>
+  );
+}
 
 const SessionContext = React.createContext({
   authState: 'loading',
@@ -2163,6 +2288,12 @@ function FeedSettingsModal({
   confidenceError,
   confidenceSuccess,
   onSaveConfidence,
+  draftColor,
+  onColorChange,
+  savingColor,
+  colorError,
+  colorSuccess,
+  onSaveColor,
   draftAuthKey,
   onAuthKeyChange,
   maskedAuthKey,
@@ -2305,6 +2436,27 @@ function FeedSettingsModal({
             {canWrite ? (
               <button type="button" onClick={onSaveSchedule} disabled={savingSchedule || scheduleUnchanged}>
                 {savingSchedule ? 'Saving...' : 'Save Schedule'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+          <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Badge Color</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <SourceColorField
+              value={draftColor || ''}
+              onChange={onColorChange}
+              previewLabel={feed?.name || 'Feed'}
+              disabled={!canWrite || savingColor}
+              label=""
+              helper="Leave blank to use the default badge color."
+            />
+            {colorError ? <span style={{ color: '#fca5a5', fontSize: 12 }}>{colorError}</span> : null}
+            {colorSuccess ? <span style={{ color: '#86efac', fontSize: 12 }}>{colorSuccess}</span> : null}
+            {canWrite ? (
+              <button type="button" onClick={onSaveColor} disabled={savingColor || !isSavableColor(draftColor)} style={{ justifySelf: 'start' }}>
+                {savingColor ? 'Saving...' : 'Save Color'}
               </button>
             ) : null}
           </div>
@@ -2976,6 +3128,10 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [settingsConfidenceError, setSettingsConfidenceError] = useState('');
   const [settingsConfidenceSuccess, setSettingsConfidenceSuccess] = useState('');
   const [savingConfidenceKey, setSavingConfidenceKey] = useState('');
+  const [settingsDraftColor, setSettingsDraftColor] = useState('');
+  const [settingsColorError, setSettingsColorError] = useState('');
+  const [settingsColorSuccess, setSettingsColorSuccess] = useState('');
+  const [savingColorKey, setSavingColorKey] = useState('');
   const [purgeFeed, setPurgeFeed] = useState(null);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [feedActionSuccess, setFeedActionSuccess] = useState('');
@@ -3089,6 +3245,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsCredentialsTestOk(false);
     setSettingsConfidenceError('');
     setSettingsConfidenceSuccess('');
+    setSettingsColorError('');
+    setSettingsColorSuccess('');
+    setSettingsDraftColor(feed.color || '');
     setSettingsDraftAuthKey('');
     setSettingsDraftCron(feed.schedule || '0 * * * *');
     setSettingsDraftConfidence(String(feed.default_confidence || '').trim().toLowerCase());
@@ -3154,6 +3313,33 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       setSettingsConfidenceError(apiErrorMessage(err, 'Failed to update default confidence'));
     } finally {
       setSavingConfidenceKey('');
+    }
+  }
+
+  async function saveSettingsColor() {
+    if (!canWrite || !editingFeed) return;
+    const { key } = editingFeed;
+    if (savingColorKey) return;
+    if (!isSavableColor(settingsDraftColor)) {
+      setSettingsColorError('Badge color must be a hex value like #7c3aed, or left blank.');
+      return;
+    }
+
+    setSettingsColorError('');
+    setSettingsColorSuccess('');
+    setSavingColorKey(key);
+    try {
+      await api.put(`/integrations/${encodeURIComponent(key)}/color`, {
+        color: String(settingsDraftColor || '').trim() || null
+      });
+      setSettingsColorSuccess('Badge color updated.');
+      invalidateSourceColorCatalog();
+      const list = await load();
+      syncEditingFeed(list);
+    } catch (err) {
+      setSettingsColorError(apiErrorMessage(err, 'Failed to update badge color'));
+    } finally {
+      setSavingColorKey('');
     }
   }
 
@@ -3518,7 +3704,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                         </span>
                       </td>
                       <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>
-                        {i.name}
+                        <span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, ...sourceColorBadgeStyle(i.color || DEFAULT_SOURCE_COLOR) }}>{i.name}</span>
                         {i.purge_status_label ? (
                           <div style={{ marginTop: 4 }}>
                             <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, color: i.purge_status === 'failed' ? '#fca5a5' : '#fcd34d', background: i.purge_status === 'failed' ? 'rgba(127,29,29,0.25)' : 'rgba(120,53,15,0.25)', border: `1px solid ${i.purge_status === 'failed' ? '#7f1d1d' : '#854d0e'}` }}>
@@ -3608,6 +3794,12 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           confidenceError={settingsConfidenceError}
           confidenceSuccess={settingsConfidenceSuccess}
           onSaveConfidence={() => saveSettingsConfidence().catch(() => {})}
+          draftColor={settingsDraftColor}
+          onColorChange={setSettingsDraftColor}
+          savingColor={Boolean(savingColorKey)}
+          colorError={settingsColorError}
+          colorSuccess={settingsColorSuccess}
+          onSaveColor={() => saveSettingsColor().catch(() => {})}
           draftAuthKey={settingsDraftAuthKey}
           onAuthKeyChange={setSettingsDraftAuthKey}
           maskedAuthKey={settingsMaskedAuthKey}
@@ -4255,7 +4447,7 @@ function CustomThreatFeedsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingFeed, setEditingFeed] = useState(null);
   const [form, setForm] = useState({
-    name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: ''
+    name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: '', color: ''
   });
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -4276,7 +4468,7 @@ function CustomThreatFeedsPage() {
   const [draftAuth, setDraftAuth] = useState({ auth_type: 'none' });
 
   const emptyForm = {
-    name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: ''
+    name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: '', color: ''
   };
 
   const emptyAuth = { auth_type: 'none' };
@@ -4319,7 +4511,8 @@ function CustomThreatFeedsPage() {
       format: feed.format || 'auto',
       ioc_type_mode: feed.ioc_type_mode || 'auto',
       fixed_ioc_type: feed.fixed_ioc_type || 'domain',
-      description: feed.description || ''
+      description: feed.description || '',
+      color: feed.color || ''
     });
     setEditUrlMissing(urlMissing);
     setDraftCron(feed.schedule || '0 * * * *');
@@ -4348,6 +4541,11 @@ function CustomThreatFeedsPage() {
       const name = String(form.name || '').trim();
       if (!name) {
         setFormError('Name is required');
+        setSaving(false);
+        return;
+      }
+      if (!isSavableColor(form.color)) {
+        setFormError('Badge color must be a hex value like #16a34a, or left blank.');
         setSaving(false);
         return;
       }
@@ -4392,6 +4590,7 @@ function CustomThreatFeedsPage() {
         setShowModal(false);
         setToast('Custom Threat Feed created');
       }
+      invalidateSourceColorCatalog();
       await loadFeeds();
     } catch (err) {
       setFormError(apiErrorMessage(err, editingFeed ? 'Failed to update Custom Threat Feed' : 'Failed to create Custom Threat Feed'));
@@ -4559,7 +4758,7 @@ function CustomThreatFeedsPage() {
                   {feeds.map((feed) => (
                     <tr key={feed.id} style={{ borderTop: '1px solid #334155', color: '#e2e8f0' }}>
                       <td style={{ padding: 8 }}>{renderStateBadge(feed)}</td>
-                      <td style={{ padding: 8 }}>{feed.name}</td>
+                      <td style={{ padding: 8 }}><span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, ...sourceColorBadgeStyle(feed.color || DEFAULT_SOURCE_COLOR) }}>{feed.name}</span></td>
                       <td style={{ padding: 8 }}>{feed.url_host || feed.url_display}</td>
                       <td style={{ padding: 8 }}>{feed.format}</td>
                       <td style={{ padding: 8 }}>{feed.ioc_type_mode}{feed.fixed_ioc_type ? ` (${feed.fixed_ioc_type})` : ''}</td>
@@ -4684,6 +4883,16 @@ function CustomThreatFeedsPage() {
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>Description</span>
                     <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...CTF_INPUT_STYLE, minHeight: 72, resize: 'vertical' }} rows={3} />
                   </label>
+                  <div style={CTF_FIELD_LABEL}>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Badge color</span>
+                    <SourceColorField
+                      value={form.color}
+                      onChange={(next) => setForm({ ...form, color: next })}
+                      previewLabel={form.name || 'Feed'}
+                      label=""
+                      helper="Leave blank to use the default badge color."
+                    />
+                  </div>
                 </CustomFeedModalSection>
 
                 <CustomFeedModalSection title="Authentication">
@@ -6297,6 +6506,7 @@ const EMPTY_IOC_SOURCE_FORM = {
   default_threat_classification: '',
   default_expire_policy: 'never',
   default_expire_days: '',
+  color: '',
   active: true
 };
 
@@ -7278,6 +7488,7 @@ function IocSourcesPage() {
 	      default_threat_classification: source?.default_threat_classification || '',
 	      default_expire_policy: source?.default_expire_policy || 'never',
       default_expire_days: source?.default_expire_days ?? '',
+      color: source?.color || '',
       active: source?.active !== false
     });
     setTypeOverridesDraft(defaultTypeOverridesDraft(source?.expiration_type_policies || []));
@@ -7300,6 +7511,10 @@ function IocSourcesPage() {
   async function submitForm(e) {
     e.preventDefault();
     if (!isAdmin) return;
+    if (!isSavableColor(form.color)) {
+      setFormError('Badge color must be a hex value like #7c3aed, or left blank.');
+      return;
+    }
     setSaving(true);
     setFormError('');
     try {
@@ -7311,6 +7526,7 @@ function IocSourcesPage() {
         default_expire_days: form.default_expire_policy === 'expire_after_days'
           ? Number(form.default_expire_days) || null
           : null,
+        color: form.color.trim() || null,
         active: form.active,
         expiration_type_policies: buildExpirationTypePoliciesPayload(typeOverridesDraft)
       };
@@ -7324,6 +7540,7 @@ function IocSourcesPage() {
         }
         await api.post('/ioc-sources', { ...payload, name: normalizedName });
       }
+      invalidateSourceColorCatalog();
       closeFormModal();
       setForm(EMPTY_IOC_SOURCE_FORM);
       await load();
@@ -7548,7 +7765,9 @@ function IocSourcesPage() {
                 const isArchived = state === 'archived';
                 return (
                 <tr key={s.id} style={{ ...ui.tr, opacity: state === 'active' ? 1 : 0.72 }}>
-	                  <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', monospace" }}>{s.name}</td>
+	                  <td style={ui.td}>
+	                    <span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", ...sourceColorBadgeStyle(s.color || DEFAULT_SOURCE_COLOR) }}>{s.name}</span>
+	                  </td>
 	                  <td style={ui.td}>{s.default_confidence || '—'}</td>
 	                  <td style={ui.td}>{String(s.default_threat_classification || '—').replaceAll('_', ' ')}</td>
 	                  <td style={ui.td}>{formatDefaultExpire(s)}</td>
@@ -7622,6 +7841,15 @@ function IocSourcesPage() {
               )}
               <FeedFormField ui={ui} label="Description" fullWidth>
                 <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} placeholder="Optional" />
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Badge Color" fullWidth>
+                <SourceColorField
+                  value={form.color}
+                  onChange={(next) => setForm((x) => ({ ...x, color: next }))}
+                  previewLabel={form.name || editing?.name || 'Source'}
+                  label=""
+                  helper="Leave blank to use the default badge color."
+                />
               </FeedFormField>
 	              <FeedFormField ui={ui} label="Default Confidence" fullWidth>
                 <select value={form.default_confidence} onChange={(e) => setForm((x) => ({ ...x, default_confidence: e.target.value }))} style={ui.select}>
@@ -9483,6 +9711,7 @@ function IOCSuppressionsPage() {
 function IOCListPage() {
   const navigate = useNavigate();
   const { canWrite } = useSession();
+  const sourceColorIndex = useSourceColorIndex();
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_type: [] });
   const [statsMeta, setStatsMeta] = useState({ calculated_at: null, stale: true, missing: true, refresh_in_progress: false });
@@ -10384,6 +10613,12 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
               const lifecycleStatus = String(r.lifecycle_status || r.status || 'active').toLowerCase();
               const sourceLabel = iocListSourceLabel(r);
               const sourceExtra = Number(r.display_source_extra || 0) || Math.max(0, Number(r.source_count || 0) - 1);
+              const sourceBadgeColors = r.display_source_kind === 'none'
+                ? null
+                : resolveSourceBadgeStyle(sourceColorIndex, sourceLabel);
+              const sourceBadgeInline = sourceBadgeColors
+                ? { background: sourceBadgeColors.background, color: sourceBadgeColors.color, border: sourceBadgeColors.border }
+                : undefined;
               const classVisible = normalizeVisibleClassifications(r.threat_classifications);
               const classExtra = classVisible.length - 1;
               const classTitle = classVisible.length
@@ -10436,12 +10671,12 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
                 </td>
                 <td title={sourceLabel} className="ioc-list-source-cell" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   {sourceExtra > 0 ? (
-                    <button type="button" className="ioc-list-source-link" onClick={() => openSourceDetails(r)}>
+                    <button type="button" className="ioc-list-source-link" onClick={() => openSourceDetails(r)} style={sourceBadgeInline}>
                       <span className="ioc-list-source-badge-text">{sourceLabel}</span>
                       <span className="ioc-list-source-extra"> +{sourceExtra}</span>
                     </button>
                   ) : (
-                    <span className={r.display_source_kind === 'none' ? 'ioc-list-source-muted' : 'ioc-list-source-badge'}>{sourceLabel}</span>
+                    <span className={r.display_source_kind === 'none' ? 'ioc-list-source-muted' : 'ioc-list-source-badge'} style={sourceBadgeInline}>{sourceLabel}</span>
                   )}
                 </td>
                 <td><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>
@@ -10481,7 +10716,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
               <tbody>
                 {detailSources.map((s) => (
                   <tr key={s.id} style={{ borderBottom: '1px solid #334155' }}>
-                    <td>{s.source_name}</td>
+                    <td><SourceBadge index={sourceColorIndex} label={s.source_name} /></td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{s.source_url || '-'}</td>
                     <td>{s.confidence || '-'}</td>
                     <td>{s.category || '-'}</td>
@@ -12751,6 +12986,7 @@ function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
   const { isAdmin, canWrite } = useSession();
+  const sourceColorIndex = useSourceColorIndex();
   const requestRequiredReason = useReasonPrompt();
   const detailsPublicId = String(publicId || '').trim();
   const ui = PUBLISHED_FEEDS_UI;
@@ -13643,7 +13879,7 @@ function IOCDetailsPage() {
                             <tbody>
                               {activeSources.map((src) => (
                                 <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                                  <td>{src.name}</td>
+                                  <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
@@ -13687,7 +13923,7 @@ function IOCDetailsPage() {
                             <tbody>
                               {historicalSources.map((src) => (
                                 <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                                  <td>{src.name}</td>
+                                  <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatUserDateTime(src.first_seen_at)}</td>
@@ -14287,6 +14523,7 @@ function IOCAddPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [recentRows, setRecentRows] = useState([]);
+  const sourceColorIndex = useSourceColorIndex();
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
   const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 420, type: 110, source: 220, confidence: 110, ts: 170 });
   const [recentResize, setRecentResize] = useState(null);
@@ -14394,16 +14631,6 @@ function IOCAddPage() {
     if (value === 'high') return { color: '#991b1b', bg: '#fee2e2' };
     if (value === 'medium') return { color: '#92400e', bg: '#fef3c7' };
     return { color: '#166534', bg: '#dcfce7' };
-  }
-
-  function sourceBadgeStyle(source) {
-    const seed = String(source || 'source').length;
-    const hue = (seed * 23) % 360;
-    return {
-      color: '#cbd5e1',
-      border: `1px solid hsl(${hue} 60% 35%)`,
-      background: `hsla(${hue}, 75%, 20%, 0.45)`
-    };
   }
 
   function relativeTime(dateVal) {
@@ -14688,7 +14915,7 @@ function IOCAddPage() {
                 {sortedRecentRows.map((r, idx) => {
                   const conf = confidencePillStyle(r.confidence);
                   const sourceLabel = r.source_label || r.source_name;
-                  const sourceStyle = sourceBadgeStyle(sourceLabel);
+                  const sourceStyle = resolveSourceBadgeStyle(sourceColorIndex, sourceLabel);
                   return (
                     <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #1f2937', transition: 'background 0.15s ease-in-out' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#111827'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                       <td>{idx + 1}</td>
@@ -14895,11 +15122,11 @@ function App() {
         .ioc-list-page button.ioc-list-source-link {
           display: inline;
           max-width: 100%;
-          background: rgba(148, 163, 184, 0.12) !important;
-          border: 1px solid rgba(148, 163, 184, 0.25) !important;
-          color: #e2e8f0 !important;
+          background: rgba(148, 163, 184, 0.12);
+          border: 1px solid rgba(148, 163, 184, 0.25);
+          color: #e2e8f0;
           border-radius: 6px;
-          padding: 2px 8px !important;
+          padding: 2px 8px;
           font: inherit;
           text-align: left;
           cursor: pointer;
@@ -14909,16 +15136,15 @@ function App() {
           overflow-wrap: anywhere;
         }
         .ioc-list-page button.ioc-list-source-link:hover {
-          background: rgba(148, 163, 184, 0.2) !important;
-          border-color: rgba(148, 163, 184, 0.4) !important;
-          color: #f8fafc !important;
+          filter: brightness(1.12);
         }
         .ioc-list-page button.ioc-list-source-link:focus-visible {
           outline: 2px solid #93c5fd;
           outline-offset: 2px;
         }
         .ioc-list-page button.ioc-list-source-link .ioc-list-source-extra {
-          color: #94a3b8;
+          color: currentColor;
+          opacity: 0.75;
           font-weight: 600;
         }
         .integrations-feeds-table-scroll {

@@ -1,6 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { validateHexColor } from '../lib/sourceColor.js';
 import {
   validateCustomFeedAuth,
   normalizeCustomFeedAuth,
@@ -31,12 +32,13 @@ import { isAllowedScheduleCron, isRunOnceSchedule } from '../lib/integrationSche
 const DEFAULT_SCHEDULE_CRON = '0 * * * *';
 const DEFAULT_CONFIDENCE = 'medium';
 
-const FEED_AUDIT_FIELDS = ['name', 'format', 'ioc_type_mode', 'fixed_ioc_type', 'description'];
+const FEED_AUDIT_FIELDS = ['name', 'format', 'ioc_type_mode', 'fixed_ioc_type', 'description', 'color'];
 
 const FEED_ROW_SELECT = `
   SELECT c.*,
          f.key AS integration_key,
          f.name AS feed_name,
+         f.color AS feed_color,
          f.schedule_cron AS schedule,
          f.default_confidence,
          f.active AS integration_active,
@@ -112,6 +114,10 @@ function validateFeedPayload(body, partial = false) {
     const authCheck = validateCustomFeedAuth(body.auth);
     if (!authCheck.ok) errors.push(`auth: ${authCheck.error}`);
   }
+  if (body?.color !== undefined) {
+    const colorCheck = validateHexColor(body.color);
+    if (!colorCheck.ok) errors.push(colorCheck.error);
+  }
   return errors;
 }
 
@@ -144,6 +150,7 @@ function serializeFeedRow(row) {
     integration_key: row.integration_key,
     key: row.integration_key,
     name: row.feed_name,
+    color: row.feed_color || null,
     url_host: row.url_host,
     url_display: sanitizeUrlForDisplay(row.url),
     format: row.format,
@@ -343,11 +350,12 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
       const authValidated = validateCustomFeedAuth(body.auth ?? null);
       const newCredentials = normalizeCustomFeedAuth(authValidated.value, {});
 
+      const colorCheck = validateHexColor(body.color);
       const integrationInsert = await client.query(
         `INSERT INTO integration_feeds (
            key, name, source_url, schedule_cron, trust_level, active,
-           feed_kind, feed_update_mode, default_confidence, credentials, integration_id
-         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5, $6::jsonb, gen_random_uuid())
+           feed_kind, feed_update_mode, default_confidence, credentials, color, integration_id
+         ) VALUES ($1, $2, $3, $4, 'not_categorized', TRUE, 'custom', 'snapshot', $5, $6::jsonb, $7, gen_random_uuid())
          RETURNING integration_id, key, name`,
         [
           feedKey,
@@ -355,7 +363,8 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
           sanitizeUrlForDisplay(body.url),
           scheduleCron,
           DEFAULT_CONFIDENCE,
-          JSON.stringify(newCredentials)
+          JSON.stringify(newCredentials),
+          colorCheck.value
         ]
       );
       const integration = integrationInsert.rows[0];
@@ -481,6 +490,14 @@ export function registerCustomThreatFeedRoutes(app, pool, audit, deps) {
             [existing.feed_id, JSON.stringify(updatedCredentials)]
           );
         }
+      }
+
+      if (body.color !== undefined) {
+        const colorCheck = validateHexColor(body.color);
+        await client.query(
+          `UPDATE integration_feeds SET color = $2, updated_at = NOW() WHERE integration_id = $1::uuid`,
+          [existing.feed_id, colorCheck.value]
+        );
       }
 
       const scheduleChanged = body.schedule_cron !== undefined;

@@ -154,6 +154,7 @@ export function serializeIocSourceRow(row) {
     default_threat_classification: row.default_threat_classification || null,
     default_expire_policy: row.default_expire_policy || null,
     default_expire_days: row.default_expire_days != null ? Number(row.default_expire_days) : null,
+    color: row.color || null,
     active,
     state,
     archived_at: archivedAt,
