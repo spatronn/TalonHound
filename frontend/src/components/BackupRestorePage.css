@@ -264,18 +264,11 @@
   overflow: hidden; /* radius clip; row menus are portaled to body */
 }
 
-/* Shared tracks for header + body — eliminates HTML table col/header drift. */
+/* Shared tracks for header + body — identical fr tracks; no min-width sum overflow. */
 .br-history-grid-head,
 .br-history-grid-row {
   display: grid;
-  grid-template-columns:
-    minmax(6rem, 0.9fr)
-    minmax(10rem, 1.85fr)
-    minmax(8rem, 0.95fr)
-    minmax(6.75rem, 0.7fr)
-    minmax(7.5rem, 0.95fr)
-    minmax(7rem, 1fr)
-    minmax(14rem, 1.55fr);
+  grid-template-columns: 0.9fr 1.9fr 1fr 0.75fr 1fr 1.1fr 1.65fr;
   width: 100%;
   align-items: center;
   box-sizing: border-box;
