@@ -46,6 +46,7 @@ import {
 import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.jsx';
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
+import { formatUserDateTime, notifyTimezoneChanged } from './lib/formatDate.js';
 import './components/enrichmentProviders/enrichmentProviders.css';
 import {
   TAG_MANAGER_PAGE_SIZE,
@@ -253,45 +254,6 @@ const COMMON_TIMEZONES = [
 ];
 
 const FILE_HASH_TYPES = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
-
-function formatUserDateTime(value) {
-  if (!value && value !== 0) return '-';
-  const timeZone = localStorage.getItem('demo_timezone') || 'UTC';
-
-  let dt;
-  if (value instanceof Date) {
-    dt = value;
-  } else if (typeof value === 'number') {
-    const ms = value > 1e12 ? value : value * 1000;
-    dt = new Date(ms);
-  } else {
-    const raw = String(value).trim();
-    if (!raw) return '-';
-
-    if (/^\d+$/.test(raw)) {
-      const num = Number(raw);
-      const ms = num > 1e12 ? num : num * 1000;
-      dt = new Date(ms);
-    } else {
-      const hasTz = /([zZ]|[+\-]\d{2}:?\d{2})$/.test(raw);
-      const normalized = raw.includes(' ') ? raw.replace(' ', 'T') : raw;
-      dt = new Date(hasTz ? normalized : `${normalized}Z`);
-    }
-  }
-
-  if (Number.isNaN(dt.getTime())) return '-';
-
-  return dt.toLocaleString('en-GB', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-}
 
 function formatDurationMs(ms) {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '-';
@@ -1635,6 +1597,7 @@ function AppShell({ children }) {
       localStorage.setItem('demo_timezone', tz);
       setTimezone(tz);
       setNeedsTimezoneSelection(false);
+      notifyTimezoneChanged();
     } catch {
       alert('Failed to save timezone');
     }
@@ -8375,6 +8338,7 @@ function AdministrationSettingsPage() {
       localStorage.setItem('demo_timezone', tz);
       setTimezone(tz);
       setTimezoneSuccess('Timezone updated.');
+      notifyTimezoneChanged();
     } catch (err) {
       setTimezoneError(apiErrorMessage(err, 'Failed to update timezone'));
     } finally {

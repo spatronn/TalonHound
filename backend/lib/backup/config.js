@@ -2,6 +2,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  getSystemScheduleTimezone,
+  normalizeScheduleTimezone
+} from '../integrationSchedule.js';
 
 export const BACKUP_FORMAT_VERSION = 2;
 export const APPLICATION_NAME = 'TalonHound';
@@ -23,13 +27,18 @@ function boolFromEnv(name, fallback = false) {
 export function getBackupConfig() {
   const encryptionEnabled = boolFromEnv('BACKUP_ENCRYPTION_ENABLED', false);
   const keyFile = String(process.env.BACKUP_ENCRYPTION_KEY_FILE || '').trim() || null;
+  const timezone = normalizeScheduleTimezone(
+    process.env.BACKUP_CRON_TIMEZONE || getSystemScheduleTimezone()
+  );
   return {
     enabled: boolFromEnv('BACKUP_ENABLED', true),
-    cron: String(process.env.BACKUP_CRON || '0 2 * * *').trim(),
+    cron: String(process.env.BACKUP_CRON || '0 0 * * 0').trim(),
+    timezone,
     retentionDays: intFromEnv('BACKUP_RETENTION_DAYS', 30, { min: 1, max: 3650 }),
     backupDir: String(process.env.BACKUP_DIR || '/data/backups'),
     encryptionEnabled,
     encryptionKeyFile: keyFile,
+    storageProvider: 'local',
     maxConcurrent: intFromEnv('BACKUP_MAX_CONCURRENT', 1, { min: 1, max: 1 }),
     queueName: String(process.env.BACKUP_QUEUE_NAME || 'system-backup'),
     staleRunningMinutes: intFromEnv('BACKUP_STALE_RUNNING_MINUTES', 180, { min: 30, max: 24 * 60 }),

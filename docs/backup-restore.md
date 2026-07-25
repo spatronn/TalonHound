@@ -45,11 +45,21 @@ Legacy Faz-1 directories (`talonhound-*/postgres.dump`) remain readable by `scri
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `BACKUP_ENABLED` | `true` | Enable scheduled backups |
-| `BACKUP_CRON` | `0 2 * * *` | Daily 02:00 UTC |
+| `BACKUP_CRON` | `0 0 * * 0` | Every Sunday at 00:00 in the schedule timezone |
+| `BACKUP_CRON_TIMEZONE` | _(unset)_ | IANA zone for cron wall-clock; falls back to `INTEGRATION_SCHEDULE_TIMEZONE` (default `UTC`) |
 | `BACKUP_RETENTION_DAYS` | `30` | Delete completed backups older than N days |
 | `BACKUP_MAX_CONCURRENT` | `1` | Only one backup at a time |
 | `BACKUP_ENCRYPTION_ENABLED` | `false` | AES-256-GCM envelope |
 | `BACKUP_ENCRYPTION_KEY_FILE` | _(empty)_ | Path to 32-byte or 64-hex key file |
+
+Cron is evaluated in the **schedule timezone** (not silently as UTC). Example override for Istanbul Sundays at midnight:
+
+```bash
+BACKUP_CRON=0 0 * * 0
+BACKUP_CRON_TIMEZONE=Europe/Istanbul
+```
+
+Weekly default implies a worst-case **RPO of about 7 days**. Take a **manual backup** before important deployments or migrations.
 
 Retention never deletes: active (`queued`/`running`/`verifying`), restore-protected, or pending-verify backups. Deletion is audited.
 
@@ -140,7 +150,7 @@ Keep free space ≥ **2×** the PostgreSQL data directory size (dump + safety du
 
 | Metric | Target |
 |--------|--------|
-| RPO | 24h with default daily cron (or tighter via `BACKUP_CRON`) |
+| RPO | ~7 days with default weekly Sunday cron (tighten via `BACKUP_CRON`; always take a manual backup before major changes) |
 | RTO | 1–2h typical manual restore on a single VM |
 
 Run a restore drill at least quarterly: `./scripts/test-backup-restore-e2e.sh` (disposable DB) plus a full stack restore in a staging environment.

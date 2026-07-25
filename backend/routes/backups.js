@@ -10,7 +10,8 @@ import {
   createStorageProvider,
   verifyBackupArchive,
   selectRetentionCandidates,
-  nextCronFireUtc,
+  nextBackupFireAt,
+  describeBackupSchedule,
   assertCanStartBackup,
   publicErrorMessage,
   generateBackupId
@@ -145,16 +146,20 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
       const lastVerify = last
         ? { status: last.verify_status, at: last.verified_at, backup_id: last.backup_id }
         : null;
+      const schedule = describeBackupSchedule(cfg.cron, cfg.timezone);
       return res.json({
         enabled: cfg.enabled,
         cron: cfg.cron,
+        timezone: cfg.timezone,
+        schedule_summary: schedule.summary,
         retention_days: cfg.retentionDays,
         encryption_enabled: cfg.encryptionEnabled,
+        storage_provider: cfg.storageProvider || 'local',
         max_concurrent: cfg.maxConcurrent,
         active_backups: active,
         backup_running: active > 0,
         last_successful: serializeBackup(last),
-        next_scheduled_at: cfg.enabled ? nextCronFireUtc(cfg.cron) : null,
+        next_scheduled_at: cfg.enabled ? nextBackupFireAt(cfg.cron, new Date(), cfg.timezone) : null,
         total_stored: total,
         storage_used_bytes: storageUsed,
         last_verification: lastVerify

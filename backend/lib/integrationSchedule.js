@@ -48,7 +48,7 @@ export function getSystemScheduleTimezone() {
   return normalizeScheduleTimezone(tz);
 }
 
-function zonedTimeParts(date, timeZone) {
+export function zonedTimeParts(date, timeZone) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',

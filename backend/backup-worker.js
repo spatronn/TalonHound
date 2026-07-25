@@ -10,7 +10,7 @@ import {
   getBackupConfig,
   BACKUP_QUEUE_NAME,
   executeBackupJob,
-  cronMatchesUtc,
+  cronMatchesInTimezone,
   minuteKeyUtc
 } from './lib/backup/index.js';
 import {
@@ -107,7 +107,7 @@ async function processBackupJob(job) {
 async function maybeEnqueueScheduled() {
   if (!cfg.enabled || stopping) return;
   const now = new Date();
-  if (!cronMatchesUtc(cfg.cron, now)) return;
+  if (!cronMatchesInTimezone(cfg.cron, now, cfg.timezone)) return;
   const key = minuteKeyUtc(now);
   if (lastScheduledMinute === key) return;
   lastScheduledMinute = key;
@@ -174,7 +174,7 @@ async function main() {
   runRetentionSweep(pool, audit, { logger: console }).catch(() => {});
 
   console.log(
-    `[backup-worker] started queue=${BACKUP_QUEUE_NAME} dir=${cfg.backupDir} cron=${cfg.cron} enabled=${cfg.enabled}`
+    `[backup-worker] started queue=${BACKUP_QUEUE_NAME} dir=${cfg.backupDir} cron=${cfg.cron} tz=${cfg.timezone} enabled=${cfg.enabled}`
   );
 
   const shutdown = async (signal) => {

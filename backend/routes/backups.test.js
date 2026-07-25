@@ -367,3 +367,26 @@ test('restore confirm requires completed safety backup when set', async () => {
     assert.equal(res.status, 409);
   });
 });
+
+test('status endpoint is admin-only and returns safe schedule fields', async () => {
+  await withApp(async ({ base }) => {
+    const denied = await fetch(`${base}/api/backups/status`, { headers: authHeaders(ANALYST) });
+    assert.equal(denied.status, 403);
+
+    const res = await fetch(`${base}/api/backups/status`, { headers: authHeaders(ADMIN) });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(typeof body.enabled, 'boolean');
+    assert.ok(body.cron);
+    assert.ok(body.timezone);
+    assert.ok(body.schedule_summary);
+    assert.equal(body.storage_provider, 'local');
+    assert.equal(typeof body.encryption_enabled, 'boolean');
+    assert.equal(typeof body.retention_days, 'number');
+    assert.equal(body.encryption_key_file, undefined);
+    assert.equal(body.backup_dir, undefined);
+    const raw = JSON.stringify(body);
+    assert.ok(!raw.includes('PGPASSWORD'));
+    assert.ok(!raw.includes('/run/secrets'));
+  });
+});
