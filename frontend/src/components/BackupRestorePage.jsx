@@ -122,20 +122,15 @@ export default function BackupRestorePage({ AppShell, useSession }) {
 
   async function onDownload(row) {
     setError('');
-    try {
-      const res = await api.get(`/backups/${row.id}/download`, { responseType: 'blob' });
-      const blob = new Blob([res.data], { type: 'application/gzip' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = row.archive_filename || `${row.backup_id}.tar.gz`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err?.response?.data?.message || 'Download failed');
-    }
+    // Stream via browser download manager — do NOT axios-blob (~hundreds of MB).
+    const href = `/api/backups/${row.id}/download`;
+    const a = document.createElement('a');
+    a.href = href;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setInfo(`Download started for ${row.backup_id}`);
   }
 
   async function onDeleteConfirm() {

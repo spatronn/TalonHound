@@ -289,15 +289,19 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
         'Content-Disposition',
         `attachment; filename="${row.archive_filename.replace(/"/g, '')}"`
       );
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'no-store');
       if (row.archive_size_bytes) {
         res.setHeader('Content-Length', String(row.archive_size_bytes));
       }
+      // Hint reverse proxies not to buffer the whole archive in memory.
+      res.setHeader('X-Accel-Buffering', 'no');
       const stream = createReadStream(abs);
       stream.on('error', () => {
         if (!res.headersSent) res.status(500).json({ message: 'Download failed' });
         else res.destroy();
       });
-      stream.pipe(res);
+      return stream.pipe(res);
     } catch (err) {
       if (err.code === 'INVALID_FILENAME') {
         return res.status(400).json({ message: publicErrorMessage('INVALID_FILENAME') });
