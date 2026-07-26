@@ -575,7 +575,8 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
         confidence: null
       });
     }
-    metrics.noteSkipped();
+    // Existing same-source no-op / observation-only refresh — not a reject.
+    metrics.noteUnchanged();
     return;
   }
 
@@ -611,7 +612,7 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
     } else if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
     } else if (existingAfterDuplicate.status === 'unchanged' || existingAfterDuplicate.status === 'observation_updated') {
-      metrics.noteSkipped();
+      metrics.noteUnchanged();
     } else {
       metrics.noteDuplicate();
     }
@@ -690,7 +691,8 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     return;
   }
   if (existing.status === 'unchanged') {
-    metrics.noteSkipped();
+    // Existing same-source content — not a reject/filter.
+    metrics.noteUnchanged();
     return;
   }
 
@@ -726,7 +728,7 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
     } else {
       // 'unchanged' or 'not_found' (different source owns the ioc_items row):
       // source evidence and feed membership were already stored by insertObservable.
-      metrics.noteSkipped();
+      metrics.noteUnchanged();
     }
     return;
   }
@@ -932,7 +934,8 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
         confidence: entry.confidence
       });
     }
-    metrics.noteSkipped();
+    // Existing same-source no-op / observation-only refresh — not a reject.
+    metrics.noteUnchanged();
     return;
   }
 
@@ -968,7 +971,7 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
     } else if (existingAfterDuplicate.status === 'updated') {
       metrics.noteUpdated();
     } else if (existingAfterDuplicate.status === 'unchanged' || existingAfterDuplicate.status === 'observation_updated') {
-      metrics.noteSkipped();
+      metrics.noteUnchanged();
     } else {
       metrics.noteDuplicate();
     }
@@ -1618,7 +1621,8 @@ export async function runUrlhausImport(options = {}) {
         raw_content_hash: exportFetch.rawContentHash ?? null,
         canonical_ioc_hash: canonicalIocHash
       });
-      metrics.noteSkipped(parsed);
+      // Feed-level noop: every parsed row is existing/unchanged content.
+      metrics.noteUnchanged(parsed);
       await finalizeIntegrationRun(client, runId, metrics, 'skipped_unchanged');
       console.log(
         `[integration-import] job=urlhaus_import runId=${runId} skipped unchanged reason=${canonicalSkip.reason} export=${URLHAUS_EXPORT_URL_MASKED} parsed=${parsed}`
@@ -1630,7 +1634,8 @@ export async function runUrlhausImport(options = {}) {
       );
     }
 
-    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
+    // Parser already counts unmapped rows in `skipped` (= fetched - parsed). Do not add both.
+    metrics.noteSkipped(skipped);
 
     const urlhausFeedDefault = await fetchFeedDefaultConfidence(client, URLHAUS_FEED_KEY);
     const batchSize = Number(process.env.URLHAUS_BATCH_SIZE || 1000);
@@ -1736,7 +1741,8 @@ export async function runThreatfoxImport(options = {}) {
       signal,
       fetchFn: (url, init) => fetchWithSignal(url, init, signal)
     });
-    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
+    // Parser already counts unmapped rows in `skipped` (= fetched - parsed). Do not add both.
+    metrics.noteSkipped(skipped);
 
     const currentHash = hashEntries(entries.map((e) => ({
       o: e.observable,
@@ -1853,7 +1859,8 @@ export async function runMalwareBazaarImport(options = {}) {
     const txt = await res.text();
 
     const { entries, fetched, parsed, skipped } = parseMalwareBazaarRecentCsv(txt);
-    metrics.noteSkipped(skipped + Math.max(0, fetched - parsed));
+    // Parser already counts unmapped rows in `skipped` (= fetched - parsed). Do not add both.
+    metrics.noteSkipped(skipped);
 
     const currentHash = hashEntries(entries.map((e) => ({
       o: e.observable,

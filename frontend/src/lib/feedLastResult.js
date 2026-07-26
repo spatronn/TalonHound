@@ -9,8 +9,10 @@ export const FEED_RESULT_METRIC_TOOLTIPS = Object.freeze({
   checked: 'Checked: records evaluated from the provider during the last run.',
   new: 'New: records that did not previously exist in the system.',
   updated: 'Updated: existing records whose source content changed.',
-  unchanged: 'Unchanged: previously known records with identical source content.',
-  rejected: 'Rejected: records that could not be imported due to validation or technical issues.',
+  unchanged: 'Unchanged: Existing record whose semantic source content did not change',
+  filtered: 'Filtered: Record intentionally not imported because it was unsupported, invalid for this importer, or outside accepted scope',
+  rejected: 'Rejected/Failed: Record that could not be processed because of validation, persistence, or technical failure',
+  failed: 'Rejected/Failed: Record that could not be processed because of validation, persistence, or technical failure',
   expired: 'Expired/removed: records no longer present in a successful full snapshot.',
   suppressed: 'Suppressed: matched an active suppression policy.',
   reactivated: 'Reactivated: previously removed/expired records that reappeared.'
@@ -32,6 +34,8 @@ function fmt(value) {
 export function resolveFeedLastResult(feed) {
   const raw = feed?.last_result;
   if (raw && typeof raw === 'object' && raw.status) {
+    const failed = n(raw.failed ?? raw.rejected);
+    const filtered = n(raw.filtered);
     return {
       status: String(raw.status),
       outcome: raw.outcome || null,
@@ -39,7 +43,9 @@ export function resolveFeedLastResult(feed) {
       new: n(raw.new),
       updated: n(raw.updated),
       unchanged: n(raw.unchanged),
-      rejected: n(raw.rejected),
+      filtered,
+      rejected: n(raw.rejected ?? raw.failed),
+      failed,
       expired: n(raw.expired),
       suppressed: n(raw.suppressed),
       reactivated: n(raw.reactivated),
@@ -54,13 +60,41 @@ export function resolveFeedLastResult(feed) {
   // Fallback for older API payloads without last_result.
   const m = feed?.last_run_metrics || {};
   const statusRaw = String(feed?.last_status || feed?.status || 'never').toLowerCase();
+  const jobType = String(feed?.job_type || feed?.integration_job_type || '').toLowerCase();
   const checked = n(m.processed);
   const neu = n(m.inserted);
   const updated = n(m.updated);
-  const unchanged = n(m.unchanged ?? m.duplicate);
+  const unchangedRaw = n(m.unchanged ?? m.duplicate);
   const skipped = n(m.skipped);
   const failed = n(m.failed);
   const errorMessage = feed?.last_error || null;
+
+  const legacyNoopJobs = jobType === 'urlhaus_import' || jobType === 'malwarebazaar_import';
+  const healthy = ['success', 'skipped', 'skipped_unchanged'].includes(statusRaw)
+    || (statusRaw !== 'failed' && statusRaw !== 'fail' && statusRaw !== 'never' && statusRaw !== 'running' && statusRaw !== 'queued');
+
+  let unchanged = unchangedRaw;
+  let filtered = 0;
+  let rejected = failed;
+
+  if (statusRaw === 'skipped_unchanged') {
+    unchanged = unchangedRaw + skipped;
+  } else if (
+    healthy
+    && failed === 0
+    && unchangedRaw === 0
+    && skipped > 0
+    && (
+      (neu === 0 && updated === 0)
+      || (legacyNoopJobs && (checked > 0 ? skipped / checked >= 0.5 : true))
+    )
+  ) {
+    // Legacy existing/no-op parked in skipped — present as unchanged, never rejected.
+    unchanged = skipped;
+  } else {
+    filtered = skipped;
+    rejected = failed;
+  }
 
   if (statusRaw === 'running' || statusRaw === 'queued') {
     return {
@@ -70,7 +104,9 @@ export function resolveFeedLastResult(feed) {
       new: neu,
       updated,
       unchanged,
-      rejected: skipped + failed,
+      filtered,
+      rejected,
+      failed,
       expired: n(m.removed),
       suppressed: n(m.suppressed),
       reactivated: n(m.reactivated),
@@ -88,8 +124,10 @@ export function resolveFeedLastResult(feed) {
       checked,
       new: neu,
       updated,
-      unchanged,
-      rejected: skipped + failed,
+      unchanged: unchangedRaw,
+      filtered: skipped,
+      rejected: failed,
+      failed,
       expired: n(m.removed),
       suppressed: n(m.suppressed),
       reactivated: n(m.reactivated),
@@ -108,7 +146,9 @@ export function resolveFeedLastResult(feed) {
       new: 0,
       updated: 0,
       unchanged: 0,
+      filtered: 0,
       rejected: 0,
+      failed: 0,
       expired: 0,
       suppressed: 0,
       reactivated: 0,
@@ -120,7 +160,7 @@ export function resolveFeedLastResult(feed) {
     };
   }
 
-  // Healthy terminal runs: never escalate on legacy skipped/rejected alone.
+  // Healthy terminal runs: never escalate on legacy skipped/filtered alone.
   let outcome = 'changes';
   let message = null;
   if (checked === 0 && neu === 0 && updated === 0) {
@@ -129,6 +169,8 @@ export function resolveFeedLastResult(feed) {
   } else if (neu === 0 && updated === 0) {
     outcome = 'no_changes';
     message = 'No changes';
+  } else if (unchangedRaw === 0 && skipped > 0 && failed === 0 && filtered === 0) {
+    message = 'Legacy skipped counts presented as unchanged';
   }
 
   return {
@@ -137,8 +179,10 @@ export function resolveFeedLastResult(feed) {
     checked,
     new: neu,
     updated,
-    unchanged: unchanged || (neu === 0 && updated === 0 && failed === 0 ? skipped : unchanged),
-    rejected: skipped + failed,
+    unchanged,
+    filtered,
+    rejected,
+    failed,
     expired: n(m.removed),
     suppressed: n(m.suppressed),
     reactivated: n(m.reactivated),

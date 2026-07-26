@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createImportMetrics } from './lib/import-metrics.js';
-import { buildUrlhausNote, mapUrlhausRow, splitCsvLine } from './lib/urlhaus.js';
+import { buildUrlhausNote, computeUrlhausProviderFingerprint, mapUrlhausRow, splitCsvLine } from './lib/urlhaus.js';
 import {
   updateUrlhausExistingIocBySource,
   updateUrlhausObservableBySource,
@@ -96,7 +96,8 @@ describe('upsertUrlhausObservable unchanged metadata handling', () => {
         note,
         category: entry.threat || 'malware-url',
         first_seen_at: entry.dateAdded,
-        last_seen_at: null
+        last_seen_at: null,
+        provider_fingerprint: computeUrlhausProviderFingerprint(entry)
       }
     });
     const metrics = createImportMetrics();
@@ -104,7 +105,8 @@ describe('upsertUrlhausObservable unchanged metadata handling', () => {
     await upsertUrlhausObservable(client, entry, 'URLhaus:abuse.ch', null, metrics, 'high');
 
     assert.equal(metrics.records_updated, 0);
-    assert.equal(metrics.records_skipped, 1);
+    assert.equal(metrics.records_unchanged, 1);
+    assert.equal(metrics.records_skipped, 0);
     assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'unchanged active URLhaus row must not rewrite feed membership');
     assert.ok(!client.calls.some((c) => c.sql.startsWith('UPDATE ioc_items')), 'unchanged row must not rewrite ioc_items');
   });
@@ -131,7 +133,8 @@ describe('upsertUrlhausObservable unchanged metadata handling', () => {
     await upsertUrlhausObservable(client, entry, 'URLhaus:abuse.ch', null, metrics, 'high');
 
     assert.equal(metrics.records_updated, 0);
-    assert.equal(metrics.records_skipped, 1);
+    assert.equal(metrics.records_unchanged, 1);
+    assert.equal(metrics.records_skipped, 0);
     assert.ok(client.calls.some((c) => c.sql.includes('SET note = $2') && c.sql.includes('last_seen_at = $4')));
     assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'last_online-only row must not refresh active membership last_seen_in_feed');
   });

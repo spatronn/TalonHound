@@ -2064,16 +2064,16 @@ const FEED_METRIC_TOOLTIPS = {
   removed: FEED_RESULT_METRIC_TOOLTIPS.expired,
   duplicate: 'Deprecated alias of Unchanged.',
   updated: FEED_RESULT_METRIC_TOOLTIPS.updated,
-  skipped: FEED_RESULT_METRIC_TOOLTIPS.rejected,
+  skipped: FEED_RESULT_METRIC_TOOLTIPS.filtered,
   suppressed: FEED_RESULT_METRIC_TOOLTIPS.suppressed,
-  failed: 'Records that failed to parse or import.'
+  failed: FEED_RESULT_METRIC_TOOLTIPS.failed
 };
 
 function feedMetricsHintPresentation(hint) {
   const map = {
     legacy_metrics: { label: 'Legacy metrics', color: '#fcd34d', title: 'Import breakdown unavailable until the feed runs again with granular metrics.' },
     no_delta: { label: 'No changes', color: '#94a3b8', title: 'Last run checked records but did not insert or update IOCs — normal when feed content is unchanged.' },
-    high_skipped: { label: 'High skipped', color: '#fdba74', title: 'Most records were rejected (filtered or not importable). Review if unexpected.' },
+    high_skipped: { label: 'High filtered', color: '#fdba74', title: 'Most records were filtered (unsupported or outside importer scope). Informational only.' },
     high_failed: { label: 'High failed', color: '#fca5a5', title: 'A significant share of records failed to import.' },
     partial_fetch: { label: 'Partial fetch', color: '#fcd34d', title: 'Provider returned a truncated or partial result; some pages may be missing.' }
   };
@@ -2391,11 +2391,17 @@ function FeedSettingsModal({
                 <div title={FEED_RESULT_METRIC_TOOLTIPS.new}>New: {Number(result.new || 0).toLocaleString()}</div>
                 <div title={FEED_RESULT_METRIC_TOOLTIPS.updated}>Updated: {Number(result.updated || 0).toLocaleString()}</div>
                 <div title={FEED_RESULT_METRIC_TOOLTIPS.unchanged}>Unchanged: {Number(result.unchanged || 0).toLocaleString()}</div>
-                <div title={FEED_RESULT_METRIC_TOOLTIPS.rejected}>Rejected: {Number(result.rejected || 0).toLocaleString()}</div>
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.filtered}>Filtered: {Number(result.filtered || 0).toLocaleString()}</div>
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.rejected}>Failed/Rejected: {Number(result.failed || result.rejected || 0).toLocaleString()}</div>
                 {result.expired > 0 ? <div title={FEED_RESULT_METRIC_TOOLTIPS.expired}>Removed: {Number(result.expired).toLocaleString()}</div> : null}
                 {result.suppressed > 0 ? <div title={FEED_RESULT_METRIC_TOOLTIPS.suppressed}>Suppressed: {Number(result.suppressed).toLocaleString()}</div> : null}
                 {result.started_at ? <div>Started at: {formatUserDateTime(result.started_at)}</div> : null}
                 {result.finished_at ? <div>Finished at: {formatUserDateTime(result.finished_at)}</div> : null}
+                {result.message && /legacy skipped/i.test(String(result.message)) ? (
+                  <div style={{ color: '#94a3b8' }} title="Older runs stored existing/no-op rows in skipped; shown as Unchanged.">
+                    Legacy skipped / unchanged fallback
+                  </div>
+                ) : null}
                 {result.message && result.status === 'failed' ? <div style={{ color: '#fca5a5' }}>{result.message}</div> : null}
               </div>
             </div>

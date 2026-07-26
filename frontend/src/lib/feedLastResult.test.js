@@ -200,6 +200,7 @@ test('reconcile prevents Healthy + Completed with warnings', () => {
 test('fallback legacy payload with high skipped stays completed', () => {
   const result = resolveFeedLastResult({
     last_status: 'success',
+    job_type: 'urlhaus_import',
     last_run_metrics: {
       available: true,
       processed: 1000,
@@ -211,6 +212,17 @@ test('fallback legacy payload with high skipped stays completed', () => {
     }
   });
   assert.equal(result.status, 'completed');
+  assert.equal(result.unchanged, 984);
+  assert.equal(result.filtered, 0);
+  assert.equal(result.rejected, 0);
   const view = presentFeedLastResult(result, { healthState: 'success' });
   assert.equal(view.primary, 'Completed · 10 new · 6 updated');
+});
+
+test('tooltips distinguish unchanged / filtered / rejected', async () => {
+  const { FEED_RESULT_METRIC_TOOLTIPS: tips } = await import('./feedLastResult.js');
+  assert.match(tips.unchanged, /semantic source content did not change/i);
+  assert.match(tips.filtered, /unsupported|outside accepted scope/i);
+  assert.match(tips.rejected, /validation|persistence|technical failure/i);
+  assert.equal(/records_skipped/i.test(tips.rejected), false);
 });

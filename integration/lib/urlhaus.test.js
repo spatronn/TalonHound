@@ -72,6 +72,17 @@ describe('parseUrlhausRecentCsv', () => {
     assert.equal(row.reporter, 'GAYINT_DOT_ORG');
     assert.ok(row.dateAdded instanceof Date);
   });
+
+  it('counts invalid rows once in skipped (= fetched - parsed)', () => {
+    const csv = `${SAMPLE_CSV}
+"bad","","","","","","","",""
+`;
+    const { fetched, parsed, skipped } = parseUrlhausRecentCsv(csv);
+    assert.equal(skipped, fetched - parsed);
+    assert.ok(skipped >= 1);
+    // Importer must call noteSkipped(skipped) only — never skipped + (fetched - parsed).
+    assert.equal(skipped + Math.max(0, fetched - parsed), skipped * 2);
+  });
 });
 
 describe('buildUrlhausRecentCsvUrl', () => {

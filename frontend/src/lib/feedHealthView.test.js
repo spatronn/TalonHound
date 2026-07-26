@@ -35,6 +35,13 @@ test('Feeds wires feedLastResult helpers', () => {
   assert.ok(mainSrc.includes('resolveFeedLastResult'));
 });
 
+test('Edit detail distinguishes Filtered from Failed/Rejected', () => {
+  assert.ok(mainSrc.includes('Filtered:'));
+  assert.ok(mainSrc.includes('Failed/Rejected:'));
+  assert.ok(mainSrc.includes('FEED_RESULT_METRIC_TOOLTIPS.filtered'));
+  assert.equal(mainSrc.includes('title={FEED_RESULT_METRIC_TOOLTIPS.rejected}>Rejected:'), false);
+});
+
 test('USOM compact last/next run helpers remain', () => {
   assert.ok(mainSrc.includes('formatFeedLastRunCell'));
   assert.ok(mainSrc.includes('Incremental ·'));

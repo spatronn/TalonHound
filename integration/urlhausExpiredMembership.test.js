@@ -62,10 +62,15 @@ const HANDLERS = [
           note,
           category: entry.threat || 'malware-url',
           first_seen_at: entry.dateAdded,
-          last_seen_at: null
+          last_seen_at: null,
+          provider_fingerprint: null
         }]
       };
     }
+  },
+  {
+    match: (s) => s.includes('UPDATE ioc_items') && s.includes('SET provider_fingerprint'),
+    result: () => ({ rowCount: 1, rows: [{ public_id: 'pub-1' }] })
   },
   {
     match: (s) => s.includes('FROM integration_feeds'),
@@ -79,6 +84,10 @@ const HANDLERS = [
   },
   {
     match: (s) => s.includes('FROM threat_feed_expiration_policies'),
+    result: () => ({ rows: [] })
+  },
+  {
+    match: (s) => s.includes('FROM integration_feed_expiration_type_policies'),
     result: () => ({ rows: [] })
   },
   {
@@ -167,7 +176,8 @@ describe('upsertUrlhausObservable expired membership reactivation', () => {
     // ioc_items was NOT updated (unchanged metadata → no records_updated)
     assert.equal(metrics.records_updated, 0, 'ioc_items must not be updated for unchanged metadata');
     assert.equal(metrics.records_inserted, 0, 'no insert for existing IOC');
-    assert.equal(metrics.records_skipped, 1, 'counted as skipped (not updated)');
+    assert.equal(metrics.records_unchanged, 1, 'counted as unchanged (not skipped/rejected)');
+    assert.equal(metrics.records_skipped, 0, 'existing/no-op must not increment skipped');
 
     // Membership WAS reactivated
     assert.ok(

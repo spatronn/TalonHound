@@ -2,6 +2,13 @@
  * Normalize last-run metrics into a shared operational result model for the Feeds UI.
  *
  * Provider-specific counters remain on last_run_metrics; this layer is for display.
+ *
+ * Semantics:
+ * - records_unchanged → unchanged
+ * - records_skipped (parse/map/unsupported) → filtered
+ * - records_failed → failed / rejected
+ * - Legacy URLHaus/MalwareBazaar runs that parked existing/no-op rows in skipped
+ *   are remapped to unchanged (not rejected).
  */
 
 import { resolveRunCounters } from './integrationRunCounters.js';
@@ -18,18 +25,24 @@ function finiteOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+const LEGACY_SKIPPED_AS_UNCHANGED_JOBS = new Set([
+  'urlhaus_import',
+  'malwarebazaar_import'
+]);
+
 /**
- * Decide whether legacy `records_skipped` should display as Unchanged vs Rejected.
- *
- * Evidence:
- * - USOM writes true rejects into skipped and persists unchanged separately → never remap.
- * - Fingerprint importers historically bumped skipped via noteUnchanged without persisting
- *   unchanged → remap when the run looks like a pure no-delta success.
- * - AlienVault historically used noteSkipped for same-source unchanged.
+ * Split legacy/modern skip counters into unchanged / filtered / rejected / failed.
  *
  * @param {object} counters
  * @param {string} status
  * @param {string|null} jobType
+ * @returns {{
+ *   unchanged: number,
+ *   filtered: number,
+ *   rejected: number,
+ *   failed: number,
+ *   legacySkippedRemapped: boolean
+ * }}
  */
 export function splitSkippedSemantics(counters, status, jobType = null) {
   const skipped = metricInt(counters.skipped);
@@ -37,20 +50,34 @@ export function splitSkippedSemantics(counters, status, jobType = null) {
   const failed = metricInt(counters.failed);
   const inserted = metricInt(counters.inserted);
   const updated = metricInt(counters.updated);
+  const processed = metricInt(counters.processed);
   const st = String(status || '').toLowerCase();
   const jt = String(jobType || '').toLowerCase();
 
+  // USOM: skipped are validated rejects / unsupported-for-USOM — keep as rejected.
   if (jt === 'usom_import') {
-    return { unchanged, rejected: skipped + failed };
+    return {
+      unchanged,
+      filtered: 0,
+      rejected: skipped + failed,
+      failed,
+      legacySkippedRemapped: false
+    };
   }
 
   // Explicit feed-level noop.
   if (st === 'skipped_unchanged') {
-    return { unchanged: unchanged + skipped, rejected: failed };
+    return {
+      unchanged: unchanged + skipped,
+      filtered: 0,
+      rejected: failed,
+      failed,
+      legacySkippedRemapped: skipped > 0
+    };
   }
 
   // Pure no-delta success: everything landed in skipped, nothing else moved.
-  // Treat skipped as unchanged (legacy fingerprint / OTX unchanged path).
+  // Treat skipped as unchanged (legacy fingerprint / OTX / pre-fix writers).
   if (
     FEED_HEALTHY_STATUSES.includes(st)
     && inserted === 0
@@ -59,11 +86,48 @@ export function splitSkippedSemantics(counters, status, jobType = null) {
     && unchanged === 0
     && skipped > 0
   ) {
-    return { unchanged: skipped, rejected: 0 };
+    return {
+      unchanged: skipped,
+      filtered: 0,
+      rejected: 0,
+      failed: 0,
+      legacySkippedRemapped: true
+    };
   }
 
-  // Mixed run: keep skipped as rejected (invalid / unsupported / filtered).
-  return { unchanged, rejected: skipped + failed };
+  // Legacy URLHaus / MalwareBazaar: writers used noteSkipped for existing/no-op.
+  // When unchanged was never persisted and skipped dominates a successful run,
+  // present skipped as unchanged — never as rejected. True parse/invalid counts
+  // cannot be separated retrospectively.
+  if (
+    LEGACY_SKIPPED_AS_UNCHANGED_JOBS.has(jt)
+    && FEED_HEALTHY_STATUSES.includes(st)
+    && failed === 0
+    && unchanged === 0
+    && skipped > 0
+  ) {
+    const checked = processed > 0 ? processed : (inserted + updated + skipped);
+    const skippedDominant = checked > 0 ? skipped / checked >= 0.5 : true;
+    if (skippedDominant) {
+      return {
+        unchanged: skipped,
+        filtered: 0,
+        rejected: 0,
+        failed: 0,
+        legacySkippedRemapped: true
+      };
+    }
+  }
+
+  // Modern / default: skipped = filtered (unsupported/invalid-for-importer);
+  // failed = technical reject.
+  return {
+    unchanged,
+    filtered: skipped,
+    rejected: failed,
+    failed,
+    legacySkippedRemapped: false
+  };
 }
 
 /**
@@ -101,7 +165,8 @@ export function normalizeLastRunResult(row, opts = {}) {
       }
     : resolveRunCounters(row);
 
-  const { unchanged, rejected } = splitSkippedSemantics(counters, statusRaw, jobType);
+  const split = splitSkippedSemantics(counters, statusRaw, jobType);
+  const { unchanged, filtered, rejected, failed, legacySkippedRemapped } = split;
   const checked = metricInt(counters.processed);
   const neu = metricInt(counters.inserted);
   const updated = metricInt(counters.updated);
@@ -137,9 +202,8 @@ export function normalizeLastRunResult(row, opts = {}) {
     message = 'No successful run';
   } else if (FEED_HEALTHY_STATUSES.includes(statusRaw)) {
     const failedOnly = metricInt(counters.failed);
-    // Align with feed health: warn only on verifiable technical problems
-    // (truncated/partial provider result, or a significant share of record failures).
-    // High legacy skipped/rejected alone is NOT a warning — those are often unchanged/filtered.
+    // Warn only on verifiable technical problems (partial fetch, meaningful failures).
+    // filtered / unchanged alone never escalate to warning.
     const failRatio = checked > 0 ? failedOnly / checked : (failedOnly > 0 ? 1 : 0);
     const technicalWarning = partial || (failedOnly > 0 && failRatio >= 0.1);
 
@@ -158,6 +222,10 @@ export function normalizeLastRunResult(row, opts = {}) {
     } else {
       status = 'completed';
       outcome = 'changes';
+      if (legacySkippedRemapped && filtered === 0 && failedOnly === 0) {
+        // Detail-only hint; main Feeds table ignores this message.
+        message = 'Legacy skipped counts presented as unchanged';
+      }
     }
   } else {
     status = 'completed_with_warnings';
@@ -177,7 +245,9 @@ export function normalizeLastRunResult(row, opts = {}) {
     new: finiteOrNull(neu) ?? 0,
     updated: finiteOrNull(updated) ?? 0,
     unchanged: finiteOrNull(unchanged) ?? 0,
+    filtered: finiteOrNull(filtered) ?? 0,
     rejected: finiteOrNull(rejected) ?? 0,
+    failed: finiteOrNull(failed) ?? 0,
     expired: finiteOrNull(expired) ?? 0,
     suppressed: finiteOrNull(suppressed) ?? 0,
     reactivated: finiteOrNull(reactivated) ?? 0,
