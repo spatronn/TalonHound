@@ -1,6 +1,8 @@
 /**
- * Presentational helpers for Feeds "Last Result" column.
- * Pure functions — unit-tested without loading the React app.
+ * Presentational helpers for Feeds table "Last Result" column.
+ *
+ * Table summary shows only operator-meaningful change signals (new/updated)
+ * or short success/failure messages — not technical counters.
  */
 
 export const FEED_RESULT_METRIC_TOOLTIPS = Object.freeze({
@@ -58,47 +60,70 @@ export function resolveFeedLastResult(feed) {
   const unchanged = n(m.unchanged ?? m.duplicate);
   const skipped = n(m.skipped);
   const failed = n(m.failed);
-  const rejected = skipped + failed;
   const errorMessage = feed?.last_error || null;
 
   if (statusRaw === 'running' || statusRaw === 'queued') {
     return {
       status: statusRaw,
       outcome: null,
-      checked, new: neu, updated, unchanged, rejected,
-      expired: n(m.removed), suppressed: n(m.suppressed), reactivated: n(m.reactivated),
-      message: null, available: m.available !== false, duration_ms: null, started_at: null, finished_at: null
+      checked,
+      new: neu,
+      updated,
+      unchanged,
+      rejected: skipped + failed,
+      expired: n(m.removed),
+      suppressed: n(m.suppressed),
+      reactivated: n(m.reactivated),
+      message: null,
+      available: m.available !== false,
+      duration_ms: null,
+      started_at: null,
+      finished_at: null
     };
   }
   if (statusRaw === 'failed' || statusRaw === 'fail') {
     return {
       status: 'failed',
       outcome: null,
-      checked, new: neu, updated, unchanged, rejected,
-      expired: n(m.removed), suppressed: n(m.suppressed), reactivated: n(m.reactivated),
+      checked,
+      new: neu,
+      updated,
+      unchanged,
+      rejected: skipped + failed,
+      expired: n(m.removed),
+      suppressed: n(m.suppressed),
+      reactivated: n(m.reactivated),
       message: errorMessage || 'Sync failed',
-      available: m.available !== false, duration_ms: null, started_at: null, finished_at: null
+      available: m.available !== false,
+      duration_ms: null,
+      started_at: null,
+      finished_at: null
     };
   }
   if (statusRaw === 'never' || !statusRaw) {
     return {
       status: 'never',
       outcome: null,
-      checked: 0, new: 0, updated: 0, unchanged: 0, rejected: 0,
-      expired: 0, suppressed: 0, reactivated: 0,
+      checked: 0,
+      new: 0,
+      updated: 0,
+      unchanged: 0,
+      rejected: 0,
+      expired: 0,
+      suppressed: 0,
+      reactivated: 0,
       message: 'No successful run',
-      available: false, duration_ms: null, started_at: null, finished_at: null
+      available: false,
+      duration_ms: null,
+      started_at: null,
+      finished_at: null
     };
   }
 
-  let status = 'completed';
+  // Healthy terminal runs: never escalate on legacy skipped/rejected alone.
   let outcome = 'changes';
   let message = null;
-  if (rejected > 0) {
-    status = 'completed_with_warnings';
-    outcome = 'partial';
-    message = `${rejected.toLocaleString()} rejected`;
-  } else if (checked === 0 && neu === 0 && updated === 0) {
+  if (checked === 0 && neu === 0 && updated === 0) {
     outcome = 'no_new_data';
     message = 'No new data';
   } else if (neu === 0 && updated === 0) {
@@ -107,13 +132,13 @@ export function resolveFeedLastResult(feed) {
   }
 
   return {
-    status,
+    status: 'completed',
     outcome,
     checked,
     new: neu,
     updated,
     unchanged: unchanged || (neu === 0 && updated === 0 && failed === 0 ? skipped : unchanged),
-    rejected: unchanged === 0 && neu === 0 && updated === 0 && failed === 0 ? 0 : rejected,
+    rejected: skipped + failed,
     expired: n(m.removed),
     suppressed: n(m.suppressed),
     reactivated: n(m.reactivated),
@@ -126,12 +151,131 @@ export function resolveFeedLastResult(feed) {
 }
 
 /**
- * Build primary + secondary presentation lines for the Last Result cell.
- * @param {object} result  from resolveFeedLastResult
+ * Align Last Result presentation with feed health_state.
+ * Healthy feeds must not render as "Completed with warnings".
+ * @param {object} result
+ * @param {string|null|undefined} healthState
  */
-export function presentFeedLastResult(result) {
-  const r = result || resolveFeedLastResult(null);
+export function reconcileLastResultWithHealth(result, healthState) {
+  const r = result && typeof result === 'object'
+    ? { ...result }
+    : resolveFeedLastResult(null);
+  const health = String(healthState || '').toLowerCase();
 
+  if (health === 'failed' || health === 'degraded') {
+    if (r.status !== 'failed') {
+      return {
+        ...r,
+        status: 'failed',
+        outcome: null,
+        message: r.message || 'Sync failed'
+      };
+    }
+    return r;
+  }
+
+  if (health === 'warning') {
+    if (r.status === 'completed' || r.status === 'completed_with_warnings') {
+      return {
+        ...r,
+        status: 'completed_with_warnings',
+        outcome: 'partial',
+        message: summarizeWarningMessage(r.message)
+      };
+    }
+    return r;
+  }
+
+  if (health === 'success' || health === 'healthy' || health === '') {
+    if (r.status === 'completed_with_warnings') {
+      if (n(r.new) === 0 && n(r.updated) === 0 && n(r.checked) === 0) {
+        return {
+          ...r,
+          status: 'completed',
+          outcome: 'no_new_data',
+          message: 'No new data'
+        };
+      }
+      if (n(r.new) === 0 && n(r.updated) === 0) {
+        return {
+          ...r,
+          status: 'completed',
+          outcome: 'no_changes',
+          message: 'No changes'
+        };
+      }
+      return {
+        ...r,
+        status: 'completed',
+        outcome: 'changes',
+        message: null
+      };
+    }
+  }
+
+  if (health === 'never') {
+    return {
+      ...r,
+      status: 'never',
+      outcome: null,
+      message: 'No successful run'
+    };
+  }
+
+  if (health === 'disabled') {
+    return {
+      ...r,
+      status: 'disabled',
+      outcome: null,
+      message: null
+    };
+  }
+
+  return r;
+}
+
+function summarizeWarningMessage(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return 'Partial result';
+  const lower = raw.toLowerCase();
+  if (lower.includes('partial fetch') || lower.includes('truncated')) return 'Partial fetch';
+  if (lower.includes('partial')) return 'Partial result';
+  if (lower.includes('rate limit')) return 'Rate limited';
+  if (/^[\d,]+\s+rejected$/i.test(raw)) return 'Partial result';
+  return truncate(raw, 42);
+}
+
+function shortenFailureMessage(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return 'Sync failed';
+  const lower = raw.toLowerCase();
+  if (lower.includes('auth')) return truncate(raw.includes('Authentication') ? raw : 'Authentication error', 42);
+  if (lower.includes('timeout') || lower.includes('timed out')) return 'Provider request timed out';
+  if (lower.includes('database') || lower.includes('persist')) return 'Database write failed';
+  return truncate(raw, 42);
+}
+
+/**
+ * Build compact Last Result lines for the Feeds table.
+ * @param {object} result  from resolveFeedLastResult
+ * @param {{ healthState?: string|null }} [opts]
+ */
+export function presentFeedLastResult(result, opts = {}) {
+  const reconciled = reconcileLastResultWithHealth(
+    result || resolveFeedLastResult(null),
+    opts.healthState
+  );
+  const r = reconciled;
+
+  if (r.status === 'disabled') {
+    return {
+      primary: 'Disabled',
+      primaryTone: 'neutral',
+      secondary: null,
+      secondaryTone: 'neutral',
+      title: 'Feed is disabled'
+    };
+  }
   if (r.status === 'running') {
     return {
       primary: 'Running',
@@ -160,26 +304,24 @@ export function presentFeedLastResult(result) {
     };
   }
   if (r.status === 'failed') {
+    const short = shortenFailureMessage(r.message);
     return {
-      primary: `Failed${r.message ? ` · ${truncate(r.message, 42)}` : ''}`,
+      primary: `Failed · ${short}`,
       primaryTone: 'danger',
       secondary: null,
       secondaryTone: 'neutral',
-      title: r.message || 'Sync failed'
+      title: r.message || short
     };
   }
 
   if (r.status === 'completed_with_warnings') {
-    const primaryBits = ['Completed with warnings'];
-    if (r.rejected > 0) primaryBits.push(`${fmt(r.rejected)} rejected`);
-    else if (r.message) primaryBits.push(truncate(r.message, 36));
-    const secondary = buildSecondaryLine(r, { includeRejected: false });
+    const detail = summarizeWarningMessage(r.message);
     return {
-      primary: primaryBits.join(' · '),
+      primary: `Completed with warnings · ${detail}`,
       primaryTone: 'warning',
-      secondary,
+      secondary: null,
       secondaryTone: 'neutral',
-      title: buildTitle(r)
+      title: r.message || detail
     };
   }
 
@@ -188,55 +330,35 @@ export function presentFeedLastResult(result) {
     return {
       primary: 'Completed · No new data',
       primaryTone: 'success',
-      secondary: r.checked > 0 ? `${fmt(r.checked)} checked` : null,
+      secondary: null,
       secondaryTone: 'neutral',
-      title: buildTitle(r)
+      title: 'Provider returned no importable records'
     };
   }
-  if (r.outcome === 'no_changes') {
+  if (r.outcome === 'no_changes' || (n(r.new) === 0 && n(r.updated) === 0)) {
     return {
       primary: 'Completed · No changes',
       primaryTone: 'success',
-      secondary: buildSecondaryLine(r),
+      secondary: null,
       secondaryTone: 'neutral',
-      title: buildTitle(r)
+      title: 'Sync completed with no new or updated records'
     };
   }
 
   const primaryBits = ['Completed'];
-  if (r.new > 0) primaryBits.push(`${fmt(r.new)} new`);
-  if (r.updated > 0) primaryBits.push(`${fmt(r.updated)} updated`);
-  if (r.reactivated > 0) primaryBits.push(`${fmt(r.reactivated)} reactivated`);
+  if (n(r.new) > 0) primaryBits.push(`${fmt(r.new)} new`);
+  if (n(r.updated) > 0) primaryBits.push(`${fmt(r.updated)} updated`);
 
   return {
     primary: primaryBits.join(' · '),
     primaryTone: 'success',
-    secondary: buildSecondaryLine(r),
+    secondary: null,
     secondaryTone: 'neutral',
-    title: buildTitle(r)
+    title: [
+      n(r.new) > 0 ? `${fmt(r.new)} new` : null,
+      n(r.updated) > 0 ? `${fmt(r.updated)} updated` : null
+    ].filter(Boolean).join(' · ') || 'Sync completed'
   };
-}
-
-function buildSecondaryLine(r, { includeRejected = true } = {}) {
-  const parts = [];
-  if (r.checked > 0) parts.push(`${fmt(r.checked)} checked`);
-  if (r.unchanged > 0) parts.push(`${fmt(r.unchanged)} unchanged`);
-  if (includeRejected && r.rejected > 0) parts.push(`${fmt(r.rejected)} rejected`);
-  if (r.suppressed > 0) parts.push(`${fmt(r.suppressed)} suppressed`);
-  if (r.expired > 0) parts.push(`${fmt(r.expired)} removed`);
-  return parts.length ? parts.join(' · ') : null;
-}
-
-function buildTitle(r) {
-  const lines = [
-    FEED_RESULT_METRIC_TOOLTIPS.checked,
-    FEED_RESULT_METRIC_TOOLTIPS.new,
-    FEED_RESULT_METRIC_TOOLTIPS.updated,
-    FEED_RESULT_METRIC_TOOLTIPS.unchanged,
-    FEED_RESULT_METRIC_TOOLTIPS.rejected
-  ];
-  if (r.message) lines.unshift(r.message);
-  return lines.join('\n');
 }
 
 function truncate(text, max) {

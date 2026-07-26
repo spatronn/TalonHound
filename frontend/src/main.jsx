@@ -2380,14 +2380,13 @@ function FeedSettingsModal({
 
         {(() => {
           const result = resolveFeedLastResult(feed);
-          const view = presentFeedLastResult(result);
+          const view = presentFeedLastResult(result, { healthState: feed?.health_state });
           if (result.status === 'never' && !result.checked) return null;
           return (
             <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
               <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Last result</div>
               <div style={{ display: 'grid', gap: 6, color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>
                 <div style={{ color: FEED_RESULT_TONE_COLORS[view.primaryTone] || '#cbd5e1', fontWeight: 650 }}>{view.primary}</div>
-                {view.secondary ? <div style={{ color: '#94a3b8' }}>{view.secondary}</div> : null}
                 <div title={FEED_RESULT_METRIC_TOOLTIPS.checked}>Checked: {Number(result.checked || 0).toLocaleString()}</div>
                 <div title={FEED_RESULT_METRIC_TOOLTIPS.new}>New: {Number(result.new || 0).toLocaleString()}</div>
                 <div title={FEED_RESULT_METRIC_TOOLTIPS.updated}>Updated: {Number(result.updated || 0).toLocaleString()}</div>
@@ -2899,20 +2898,14 @@ function formatFeedNextRunCell(feed, canRunNow) {
 
 function LastRunMetricsCell({ feed }) {
   const result = resolveFeedLastResult(feed);
-  const view = presentFeedLastResult(result);
+  const view = presentFeedLastResult(result, { healthState: feed?.health_state });
   const primaryColor = FEED_RESULT_TONE_COLORS[view.primaryTone] || FEED_RESULT_TONE_COLORS.neutral;
-  const secondaryColor = FEED_RESULT_TONE_COLORS[view.secondaryTone] || FEED_RESULT_TONE_COLORS.neutral;
 
   return (
-    <div style={{ display: 'grid', gap: 3, maxWidth: 280 }} title={view.title}>
-      <div style={{ color: primaryColor, fontSize: 12, fontWeight: 650, lineHeight: 1.35 }}>
+    <div style={{ maxWidth: 280 }} title={view.title}>
+      <div style={{ color: primaryColor, fontSize: 12, fontWeight: 650, lineHeight: 1.35, whiteSpace: 'normal' }}>
         {view.primary}
       </div>
-      {view.secondary ? (
-        <div style={{ color: secondaryColor, fontSize: 11, lineHeight: 1.35 }}>
-          {view.secondary}
-        </div>
-      ) : null}
     </div>
   );
 }

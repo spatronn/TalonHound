@@ -18,10 +18,6 @@ function finiteOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function jtIsUsom(jobType) {
-  return String(jobType || '').toLowerCase() === 'usom_import';
-}
-
 /**
  * Decide whether legacy `records_skipped` should display as Unchanged vs Rejected.
  *
@@ -141,17 +137,16 @@ export function normalizeLastRunResult(row, opts = {}) {
     message = 'No successful run';
   } else if (FEED_HEALTHY_STATUSES.includes(statusRaw)) {
     const failedOnly = metricInt(counters.failed);
-    const rejectRatio = checked > 0 ? rejected / checked : (rejected > 0 ? 1 : 0);
-    const meaningfulRejects = failedOnly > 0
-      || partial
-      || (jtIsUsom(jobType) && rejected > 0)
-      || (rejected > 0 && rejectRatio >= 0.1);
+    // Align with feed health: warn only on verifiable technical problems
+    // (truncated/partial provider result, or a significant share of record failures).
+    // High legacy skipped/rejected alone is NOT a warning — those are often unchanged/filtered.
+    const failRatio = checked > 0 ? failedOnly / checked : (failedOnly > 0 ? 1 : 0);
+    const technicalWarning = partial || (failedOnly > 0 && failRatio >= 0.1);
 
-    if (meaningfulRejects) {
+    if (technicalWarning) {
       status = 'completed_with_warnings';
       outcome = 'partial';
-      if (partial) message = 'Provider returned a partial result';
-      else if (rejected > 0) message = `${rejected.toLocaleString()} rejected`;
+      message = partial ? 'Partial fetch' : 'Partial result';
     } else if (checked === 0 && neu === 0 && updated === 0) {
       status = 'completed';
       outcome = 'no_new_data';

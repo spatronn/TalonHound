@@ -61,7 +61,7 @@ test('USOM skipped stays rejected', () => {
   assert.equal(split.rejected, 5);
 });
 
-test('rejected records → completed_with_warnings', () => {
+test('USOM skipped stays rejected counter but does not force warning status', () => {
   const result = normalizeLastRunResult(
     {
       status: 'success',
@@ -74,27 +74,64 @@ test('rejected records → completed_with_warnings', () => {
     },
     { status: 'success', jobType: 'usom_import' }
   );
-  assert.equal(result.status, 'completed_with_warnings');
+  assert.equal(result.status, 'completed');
+  assert.equal(result.outcome, 'changes');
   assert.equal(result.rejected, 12);
-  assert.match(result.message, /12 rejected/);
+  assert.equal(result.new, 10);
 });
 
-test('small unsupported/skipped share on non-USOM stays completed', () => {
+test('high legacy skipped/rejected ratio stays completed', () => {
   const result = normalizeLastRunResult(
     {
       status: 'success',
-      records_processed: 1000,
-      records_inserted: 50,
-      records_updated: 0,
-      records_unchanged: 940,
-      records_skipped: 10,
+      records_processed: 14877,
+      records_inserted: 69,
+      records_updated: 46,
+      records_unchanged: 0,
+      records_skipped: 14716,
       records_failed: 0
     },
-    { status: 'success', jobType: 'alienvault_otx_import' }
+    { status: 'success', jobType: 'urlhaus_import' }
   );
   assert.equal(result.status, 'completed');
   assert.equal(result.outcome, 'changes');
-  assert.equal(result.rejected, 10);
+  assert.equal(result.new, 69);
+  assert.equal(result.updated, 46);
+});
+
+test('truncated partial fetch → completed_with_warnings', () => {
+  const result = normalizeLastRunResult(
+    {
+      status: 'success',
+      records_processed: 100,
+      records_inserted: 5,
+      records_updated: 0,
+      records_unchanged: 95,
+      records_skipped: 0,
+      records_failed: 0,
+      run_details: { truncated: true }
+    },
+    { status: 'success', runDetails: { truncated: true } }
+  );
+  assert.equal(result.status, 'completed_with_warnings');
+  assert.equal(result.message, 'Partial fetch');
+});
+
+test('significant records_failed share → completed_with_warnings', () => {
+  const result = normalizeLastRunResult(
+    {
+      status: 'success',
+      records_processed: 100,
+      records_inserted: 50,
+      records_updated: 0,
+      records_unchanged: 30,
+      records_skipped: 0,
+      records_failed: 20
+    },
+    { status: 'success' }
+  );
+  assert.equal(result.status, 'completed_with_warnings');
+  assert.equal(result.message, 'Partial result');
 });
 
 test('auth/network failure → failed with message', () => {
