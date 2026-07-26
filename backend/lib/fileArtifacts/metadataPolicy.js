@@ -2,7 +2,13 @@
  * Metadata merge policy for file artifacts.
  */
 
-import { pickFileMetadataValue } from '../iocFileInformation.js';
+const FILE_METADATA_PLACEHOLDERS = new Set(['', '-', 'n/a', 'na', 'null', 'none', 'unknown']);
+
+function pickFileMetadataValue(current, next) {
+  if (current && !FILE_METADATA_PLACEHOLDERS.has(String(current).trim().toLowerCase())) return current;
+  if (next && !FILE_METADATA_PLACEHOLDERS.has(String(next).trim().toLowerCase())) return next;
+  return current || next || null;
+}
 
 /**
  * @param {object} canonical
