@@ -1,10 +1,10 @@
 import React from 'react';
 import abuseipdbLogo from '../../assets/provider-logos/abuseipdb.png';
-import virustotalLogo from '../../assets/provider-logos/virustotal.svg';
-import ipinfoLogo from '../../assets/provider-logos/ipinfo.svg';
-import rdapLogo from '../../assets/provider-logos/rdap.svg';
+import virustotalLogo from '../../assets/provider-logos/virustotal.png';
+import ipinfoLogo from '../../assets/provider-logos/ipinfo.png';
+import rdapLogo from '../../assets/provider-logos/rdap.png';
 import dnsmaniaLogo from '../../assets/provider-logos/dnsmania.svg';
-import spamhausLogo from '../../assets/provider-logos/spamhaus.svg';
+import spamhausLogo from '../../assets/provider-logos/spamhaus.png';
 
 const LOGO_BY_KEY = {
   virustotal: virustotalLogo,
