@@ -3784,7 +3784,7 @@ function IntegrationsQueueStatusPage() {
   const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
   const [integrations, setIntegrations] = useState([]);
   const [tableWidths, setTableWidths] = useState({
-    id: 110, integration: 160, name: 130, state: 90, queued: 150, started: 150, finished: 150, duration: 90, result: 180, reason: 220
+    id: 120, integration: 180, name: 160, state: 100, queued: 160, started: 160, finished: 160, duration: 100, result: 240
   });
   const [resizeState, setResizeState] = useState(null);
   const [page, setPage] = useState(1);
@@ -3907,7 +3907,7 @@ function IntegrationsQueueStatusPage() {
   }
 
   const qh = queue.queue_health || {};
-  const colCount = 10;
+  const colCount = 9;
   const resultToneColor = {
     success: '#86efac',
     danger: '#fca5a5',
@@ -4072,7 +4072,6 @@ function IntegrationsQueueStatusPage() {
               <col style={{ width: tableWidths.finished }} />
               <col style={{ width: tableWidths.duration }} />
               <col style={{ width: tableWidths.result }} />
-              <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#e2e8f0' }}>
@@ -4085,7 +4084,6 @@ function IntegrationsQueueStatusPage() {
                 <th style={{ position: 'relative' }}>Finished At<div onMouseDown={(e) => startResize('finished', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Duration<div onMouseDown={(e) => startResize('duration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Result<div onMouseDown={(e) => startResize('result', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
@@ -4110,7 +4108,6 @@ function IntegrationsQueueStatusPage() {
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.finished_at)}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={durationText}>{durationText}</td>
                     <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: resultToneColor[resultView.tone] || '#cbd5e1', fontWeight: 600 }} title={resultView.title}>{resultView.text}</td>
-                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#fcd34d' : '#cbd5e1' }} title={reasonText}>{reasonText}</td>
                   </tr>
                 );
                 if (!isExpanded) return [mainRow];

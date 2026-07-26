@@ -39,6 +39,18 @@ test('Job Queue Status table exposes Finished At, Duration, and Result columns',
   assert.ok(mainSrc.includes('>Result<'));
 });
 
+test('Job Queue Status main table does not expose a Reason column', () => {
+  assert.equal(mainSrc.includes("startResize('reason'"), false);
+  assert.equal(mainSrc.includes(">Reason<div onMouseDown={(e) => startResize('reason'"), false);
+  assert.equal(/\breason:\s*\d+/.test(mainSrc.match(/function IntegrationsQueueStatusPage[\s\S]*?setTableWidths\([\s\S]*?\}\);/)?.[0] || ''), false);
+});
+
+test('Job Queue Status details still show Reason', () => {
+  assert.ok(mainSrc.includes("color: '#94a3b8' }}>Reason</b>"));
+  assert.ok(mainSrc.includes('presentQueueJobReason'));
+  assert.ok(mainSrc.includes('integrationJobReasonLabel'));
+});
+
 test('Job Queue Status wires the duration helpers', () => {
   assert.ok(mainSrc.includes("from './lib/integrationJobDuration.js'"));
   assert.ok(mainSrc.includes('formatJobDuration(computeJobDurationMs(j))'));
