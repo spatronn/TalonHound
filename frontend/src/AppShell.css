@@ -3,18 +3,20 @@
 .sidebar-brand {
   display: flex;
   align-items: center;
-  padding: 14px 16px 12px;
+  padding: 16px 14px 14px;
+  background: transparent;
   border-bottom: 1px solid #1e293b;
 }
 
 .sidebar-brand-logo {
   display: block;
-  height: 28px;
+  height: 34px;
   width: auto;
   max-width: 100%;
   object-fit: contain;
   object-position: left center;
   user-select: none;
+  background: transparent;
 }
 
 .sidebar-user-panel {
