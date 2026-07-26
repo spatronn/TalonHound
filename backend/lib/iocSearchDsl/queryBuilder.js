@@ -1,5 +1,6 @@
 import { getSearchTimezone } from './config.js';
 import { likeEscape, normalizeIocValue } from './normalize.js';
+import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 
 // Compiles a validated AST into a single boolean SQL expression plus a positional
 // parameter array. EVERY user-derived value is bound as a parameter — no DSL token is
@@ -11,14 +12,25 @@ import { likeEscape, normalizeIocValue } from './normalize.js';
 
 const IOC_ALIAS = 'i';
 
+/** Resolved active artifact id from a link row (follows merge tombstones). */
+const RESOLVED_ARTIFACT_ID_SQL = `COALESCE(
+  CASE
+    WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+      THEN fa.merged_into_artifact_id
+    ELSE fa.id
+  END,
+  fa.id
+)`;
+
 function normalizeTagValue(value) {
   return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 class Builder {
-  constructor(tz) {
+  constructor(tz, { fileArtifactsReadEnabled = false } = {}) {
     this.params = [];
     this.tz = tz;
+    this.fileArtifactsReadEnabled = Boolean(fileArtifactsReadEnabled);
   }
 
   bind(value) {
@@ -66,7 +78,9 @@ class Builder {
       case 'classification':
         return this.buildClassification(node);
       case 'type':
-        return this.buildSimpleEnum(node, `${IOC_ALIAS}.observable_type`, { lower: false });
+        return this.buildType(node);
+      case 'known_hash_type':
+        return this.buildKnownHashType(node);
       case 'status':
         return this.buildSimpleEnum(node, `COALESCE(${IOC_ALIAS}.status, 'active')`, { lower: false });
       case 'confidence':
@@ -241,6 +255,76 @@ class Builder {
     }
   }
 
+  /**
+   * type: when FILE_ARTIFACTS_READ_ENABLED, match canonical displayed type
+   * (primary hash type on linked artifact; otherwise raw observable_type).
+   * When read is off, keep raw i.observable_type (legacy).
+   */
+  buildType(node) {
+    if (!this.fileArtifactsReadEnabled) {
+      return this.buildSimpleEnum(node, `${IOC_ALIAS}.observable_type`, { lower: false });
+    }
+    return this.buildArtifactHashTypeEnum(node, { primaryOnly: true });
+  }
+
+  /**
+   * known_hash_type: any known exact hash on the linked artifact (alias/forensic),
+   * or raw observable_type when the IOC is not linked.
+   */
+  buildKnownHashType(node) {
+    return this.buildArtifactHashTypeEnum(node, { primaryOnly: false });
+  }
+
+  buildArtifactHashTypeEnum(node, { primaryOnly }) {
+    const values = (node.values || []).map((v) => String(v).toLowerCase());
+    const hashMatch = primaryOnly
+      ? `ph.is_primary = TRUE AND ph.hash_type = __PH__`
+      : `h.hash_type = __PH__`;
+    const hashJoin = primaryOnly
+      ? `JOIN file_artifact_hashes ph
+           ON ph.artifact_id = ${RESOLVED_ARTIFACT_ID_SQL}
+          AND ph.is_primary = TRUE`
+      : `JOIN file_artifact_hashes h
+           ON h.artifact_id = ${RESOLVED_ARTIFACT_ID_SQL}`;
+
+    const oneValue = (typeValue) => {
+      const ph = this.bind(typeValue);
+      const matchSql = hashMatch.replace('__PH__', ph);
+      return `(
+        EXISTS (
+          SELECT 1
+          FROM file_artifact_ioc_links fal
+          JOIN file_artifacts fa ON fa.id = fal.artifact_id
+          ${hashJoin}
+          WHERE fal.ioc_item_id = ${IOC_ALIAS}.id
+            AND fal.ioc_observable_type = ${IOC_ALIAS}.observable_type
+            AND ${matchSql}
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1 FROM file_artifact_ioc_links fal2
+            WHERE fal2.ioc_item_id = ${IOC_ALIAS}.id
+              AND fal2.ioc_observable_type = ${IOC_ALIAS}.observable_type
+          )
+          AND ${IOC_ALIAS}.observable_type = ${ph}
+        )
+      )`;
+    };
+
+    switch (node.operator) {
+      case 'equals':
+        return oneValue(values[0]);
+      case 'not_equals':
+        return `(NOT ${oneValue(values[0])})`;
+      case 'in':
+        return `(${values.map((v) => oneValue(v)).join(' OR ')})`;
+      case 'not_in':
+        return `(${values.map((v) => `(NOT ${oneValue(v)})`).join(' AND ')})`;
+      default:
+        throw new Error(`Unsupported operator for hash type enum: ${node.operator}`);
+    }
+  }
+
   // ---- date: item-level columns -----------------------------------------
   buildItemDate(node, col) {
     switch (node.operator) {
@@ -306,8 +390,11 @@ class Builder {
 
 // Build the WHERE expression + params for an AST.
 // Returns { sql, params }. `sql` is a single boolean expression referencing alias `i`.
-export function buildWhereClause(ast, { timezone = getSearchTimezone() } = {}) {
-  const builder = new Builder(timezone);
+export function buildWhereClause(ast, {
+  timezone = getSearchTimezone(),
+  fileArtifactsReadEnabled = isFileArtifactsReadEnabled()
+} = {}) {
+  const builder = new Builder(timezone, { fileArtifactsReadEnabled });
   const sql = builder.build(ast);
   return { sql, params: builder.params };
 }

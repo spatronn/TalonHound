@@ -53,6 +53,12 @@ export const FIELD_REGISTRY = Object.freeze({
     operators: ENUM_OPERATORS,
     allowedValues: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']
   },
+  // Forensic / alias: any known exact hash on the linked file artifact (or raw type when unlinked).
+  known_hash_type: {
+    kind: 'enum',
+    operators: ENUM_OPERATORS,
+    allowedValues: ['md5', 'sha1', 'sha256']
+  },
   status: {
     kind: 'enum',
     operators: ENUM_OPERATORS,
@@ -77,6 +83,7 @@ const FIELD_ALIASES = Object.freeze({
   value: 'ioc',
   ioc_type: 'type',
   observable_type: 'type',
+  observed_type: 'known_hash_type',
   threat_classification: 'classification',
   actor: 'threat_actor'
 });

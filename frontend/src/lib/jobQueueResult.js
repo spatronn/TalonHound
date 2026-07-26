@@ -121,6 +121,14 @@ export function buildQueueJobDetailMetrics(job) {
     push('Reactivated', details.reactivated, { hideZero: true });
     push('Fetched', details.fetched, { hideNull: true, hideZero: false });
     push('Parsed', details.parsed, { hideNull: true, hideZero: false });
+    // File Artifact reconciliation
+    push('Scanned', details.scanned, { hideNull: true });
+    push('Mappings found', details.mappings_found, { hideNull: true });
+    push('Merged', details.merged, { hideZero: true });
+    push('Promoted to SHA256', details.promoted_to_sha256, { hideZero: true });
+    push('Conflicts', details.conflicts, { hideZero: true });
+    push('Skipped', details.skipped, { hideZero: true });
+    push('Errors', details.errors, { hideZero: true });
   } else if (job?.records_processed != null || job?.records_inserted != null) {
     // Legacy counters without snapshot
     push('Processed', job.records_processed);

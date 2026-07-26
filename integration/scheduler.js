@@ -2,12 +2,14 @@ import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
 import { syncIntegrationFeedSchedules } from './lib/integrationFeedScheduleSync.js';
 import { syncSpamhausDropSchedule } from './lib/spamhausDropScheduleSync.js';
+import { syncFileArtifactReconciliationSchedule } from './lib/fileArtifactReconciliationScheduleSync.js';
 
 const pool = createIntegrationPool();
 
 async function syncSchedules() {
   await syncIntegrationFeedSchedules(pool, importQueue, { logPrefix: '[scheduler]' });
   await syncSpamhausDropSchedule(pool, importQueue, { logPrefix: '[scheduler]' });
+  await syncFileArtifactReconciliationSchedule(pool, importQueue, { logPrefix: '[scheduler]' });
 }
 
 async function main() {

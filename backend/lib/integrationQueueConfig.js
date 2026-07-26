@@ -33,6 +33,12 @@ export function resolveIntegrationJobTimeoutMs(integrationKey, jobName, globalTi
       source: 'SPAMHAUS_DROP_JOB_TIMEOUT_MS'
     };
   }
+  if (jobName === 'file-artifact-reconciliation') {
+    return {
+      timeoutMs: readPositiveInt('FILE_ARTIFACT_RECON_JOB_TIMEOUT_MS', 3_600_000, 120_000),
+      source: 'FILE_ARTIFACT_RECON_JOB_TIMEOUT_MS'
+    };
+  }
 
   const spec = SOURCE_JOB_TIMEOUTS[String(integrationKey || '').trim()];
   if (!spec) return { timeoutMs: globalTimeoutMs, source: 'global' };

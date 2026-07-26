@@ -36,7 +36,18 @@ const RESULT_DETAILS_KEYS = Object.freeze([
   'failed',
   'suppressed',
   'reactivated',
-  'result_code'
+  'result_code',
+  // File Artifact reconciliation (additive)
+  'scanned',
+  'mappings_found',
+  'merged',
+  'promoted_to_sha256',
+  'conflicts',
+  'skipped',
+  'errors',
+  'created_hashes',
+  'created_source_observations',
+  'duration_ms'
 ]);
 
 const UNCHANGED_SKIP_REASONS = new Set([
@@ -267,6 +278,24 @@ export function buildJobResultSnapshot(input = {}) {
     reactivated: metricInt(normalized.reactivated),
     result_code: resultCode
   };
+
+  const runDetails = input.runDetails && typeof input.runDetails === 'object' ? input.runDetails : null;
+  if (runDetails) {
+    for (const key of [
+      'scanned',
+      'mappings_found',
+      'merged',
+      'promoted_to_sha256',
+      'conflicts',
+      'skipped',
+      'errors',
+      'created_hashes',
+      'created_source_observations',
+      'duration_ms'
+    ]) {
+      if (runDetails[key] != null) details[key] = metricInt(runDetails[key]);
+    }
+  }
 
   return {
     result_code: resultCode,

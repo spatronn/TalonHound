@@ -36,7 +36,8 @@ import {
   isExactFileHashIocType,
   withSavepoint,
   isControlledFileArtifactDbError,
-  formatProviderError
+  formatProviderError,
+  recomputePrimaryHash
 } from './lib/fileArtifacts.js';
 
 const { Pool } = pg;
@@ -53,7 +54,22 @@ const MAX_ERRORS = Math.max(Number(process.env.FILE_ARTIFACT_BACKFILL_MAX_ERRORS
 const RESUME_PUBLIC_ID = process.env.FILE_ARTIFACT_BACKFILL_RESUME_PUBLIC_ID || null;
 const PROVIDER_FILTER = String(process.env.FILE_ARTIFACT_BACKFILL_PROVIDER || 'all').toLowerCase();
 
+/** Optional override for queued reconciliation / tests (see runFileArtifactBackfill). */
+let runtimeOverride = null;
+
+function cfg() {
+  return runtimeOverride || {
+    batchSize: BATCH_SIZE,
+    dryRun: DRY_RUN,
+    maxErrors: MAX_ERRORS,
+    providerFilter: PROVIDER_FILTER,
+    resumePublicId: RESUME_PUBLIC_ID,
+    phase: PHASE
+  };
+}
+
 function emptySummary() {
+  const c = cfg();
   return {
     scanned_iocs: 0,
     created_artifacts: 0,
@@ -67,11 +83,12 @@ function emptySummary() {
     unmatched_provider_records: 0,
     provider_mapped: 0,
     controlled_errors: 0,
+    promoted_to_sha256: 0,
     validation_errors: [],
     batch_count: 0,
     errors: 0,
-    dry_run: DRY_RUN,
-    phase: PHASE,
+    dry_run: c.dryRun,
+    phase: c.phase,
     duration_ms: 0
   };
 }
@@ -92,7 +109,7 @@ async function seedBatch(client, lastPublicId, summary) {
     params.push(lastPublicId);
     where += ` AND public_id > $${params.length}`;
   }
-  params.push(BATCH_SIZE);
+  params.push(cfg().batchSize);
   const { rows } = await client.query(
     `SELECT id, public_id, observable, observable_type, source_name, note,
             first_seen_at, last_seen_at, created_at, confidence
@@ -111,7 +128,7 @@ async function seedBatch(client, lastPublicId, summary) {
       summary.invalid_hashes += 1;
       continue;
     }
-    if (DRY_RUN) {
+    if (cfg().dryRun) {
       const existing = await findArtifactByHash(client, row.observable_type, row.observable);
       if (existing?.artifact_id) summary.skipped_existing += 1;
       else summary.created_artifacts += 1;
@@ -150,7 +167,7 @@ async function seedBatch(client, lastPublicId, summary) {
       await client.query('ROLLBACK').catch(() => {});
       summary.errors += 1;
       console.error('[backfill-file-artifacts] seed error', row.public_id, err.message);
-      if (summary.errors >= MAX_ERRORS) throw err;
+      if (summary.errors >= cfg().maxErrors) throw err;
     }
   }
   return { rows, lastPublicId: rows[rows.length - 1].public_id };
@@ -205,7 +222,7 @@ async function applyProviderHashSet(client, hashes, meta, summary) {
     }
     for (const id of artifactIds) {
       if (id === canonicalId) continue;
-      if (!DRY_RUN) {
+      if (!cfg().dryRun) {
         const merged = await mergeFileArtifacts(client, {
           canonicalArtifactId: canonicalId,
           duplicateArtifactId: id,
@@ -228,7 +245,7 @@ async function applyProviderHashSet(client, hashes, meta, summary) {
     return;
   }
 
-  if (DRY_RUN) {
+  if (cfg().dryRun) {
     summary.provider_mapped += 1;
     return;
   }
@@ -294,7 +311,7 @@ async function applyProviderHashSet(client, hashes, meta, summary) {
 }
 
 async function providerMalwareBazaar(client, summary) {
-  if (PROVIDER_FILTER !== 'all' && PROVIDER_FILTER !== 'malwarebazaar') return;
+  if (cfg().providerFilter !== 'all' && cfg().providerFilter !== 'malwarebazaar') return;
   let lastId = 0;
   for (;;) {
     const { rows } = await client.query(
@@ -305,7 +322,7 @@ async function providerMalwareBazaar(client, summary) {
          AND note ILIKE '%md5=%'
        ORDER BY id
        LIMIT $2`,
-      [lastId, BATCH_SIZE]
+      [lastId, cfg().batchSize]
     );
     if (!rows.length) break;
     summary.batch_count += 1;
@@ -323,7 +340,7 @@ async function providerMalwareBazaar(client, summary) {
         note: row.note
       });
       try {
-        if (!DRY_RUN) await client.query('BEGIN');
+        if (!cfg().dryRun) await client.query('BEGIN');
         await withSavepoint(client, 'fa_provider_rec', async () => {
           await applyProviderHashSet(client, hashes, {
             provider: 'malwarebazaar',
@@ -334,9 +351,9 @@ async function providerMalwareBazaar(client, summary) {
             relation_method: RELATION_METHOD.PROVIDER_EXACT_HASH_SET
           }, summary);
         });
-        if (!DRY_RUN) await client.query('COMMIT');
+        if (!cfg().dryRun) await client.query('COMMIT');
       } catch (err) {
-        if (!DRY_RUN) await client.query('ROLLBACK').catch(() => {});
+        if (!cfg().dryRun) await client.query('ROLLBACK').catch(() => {});
         if (isControlledFileArtifactDbError(err)) {
           noteControlled(summary, err, { provider: 'malwarebazaar', evidence_id: row.id });
           continue;
@@ -346,7 +363,7 @@ async function providerMalwareBazaar(client, summary) {
           '[backfill-file-artifacts] MB provider error',
           formatProviderError(err, { evidence_id: row.id })
         );
-        if (summary.errors >= MAX_ERRORS) throw err;
+        if (summary.errors >= cfg().maxErrors) throw err;
       }
     }
     lastId = rows[rows.length - 1].id;
@@ -354,7 +371,7 @@ async function providerMalwareBazaar(client, summary) {
 }
 
 async function providerVirusTotal(client, summary) {
-  if (PROVIDER_FILTER !== 'all' && PROVIDER_FILTER !== 'virustotal') return;
+  if (cfg().providerFilter !== 'all' && cfg().providerFilter !== 'virustotal') return;
   let lastId = 0;
   for (;;) {
     const { rows } = await client.query(
@@ -367,7 +384,7 @@ async function providerVirusTotal(client, summary) {
          AND ioc_type IN ('md5','sha1','sha256','hash')
        ORDER BY id
        LIMIT $2`,
-      [lastId, BATCH_SIZE]
+      [lastId, cfg().batchSize]
     );
     if (!rows.length) break;
     summary.batch_count += 1;
@@ -375,7 +392,7 @@ async function providerVirusTotal(client, summary) {
       const hashes = extractExactHashesFromVtRaw(row.raw_response);
       if (hashes.length < 2) continue;
       try {
-        if (!DRY_RUN) await client.query('BEGIN');
+        if (!cfg().dryRun) await client.query('BEGIN');
         await withSavepoint(client, 'fa_provider_rec', async () => {
           await applyProviderHashSet(client, hashes, {
             provider: 'virustotal',
@@ -386,9 +403,9 @@ async function providerVirusTotal(client, summary) {
             relation_method: RELATION_METHOD.ENRICHMENT_RESULT
           }, summary);
         });
-        if (!DRY_RUN) await client.query('COMMIT');
+        if (!cfg().dryRun) await client.query('COMMIT');
       } catch (err) {
-        if (!DRY_RUN) await client.query('ROLLBACK').catch(() => {});
+        if (!cfg().dryRun) await client.query('ROLLBACK').catch(() => {});
         if (isControlledFileArtifactDbError(err)) {
           noteControlled(summary, err, { provider: 'virustotal', enrichment_id: row.id });
           continue;
@@ -398,7 +415,7 @@ async function providerVirusTotal(client, summary) {
           '[backfill-file-artifacts] VT provider error',
           formatProviderError(err, { enrichment_id: row.id })
         );
-        if (summary.errors >= MAX_ERRORS) throw err;
+        if (summary.errors >= cfg().maxErrors) throw err;
       }
     }
     lastId = rows[rows.length - 1].id;
@@ -498,58 +515,139 @@ async function validate(client, summary) {
   summary.validation_errors = checks.filter((c) => c.ok === false);
 }
 
-async function run() {
+async function promoteSha256Primaries(client, summary) {
+  if (cfg().dryRun) return;
+  await client.query(`SET max_parallel_workers_per_gather = 0`);
+  await client.query(`SET work_mem = '8MB'`);
+  const { rows } = await client.query(
+    `SELECT a.id
+     FROM file_artifacts a
+     WHERE a.status = 'active'
+       AND EXISTS (
+         SELECT 1 FROM file_artifact_hashes hsha
+         WHERE hsha.artifact_id = a.id AND hsha.hash_type = 'sha256'
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM file_artifact_hashes hp
+         WHERE hp.artifact_id = a.id AND hp.is_primary = TRUE AND hp.hash_type = 'sha256'
+       )
+     LIMIT 5000`
+  );
+  for (const row of rows) {
+    await client.query('BEGIN');
+    try {
+      await withSavepoint(client, 'fa_promote_sha256', async () => {
+        await recomputePrimaryHash(client, row.id);
+      });
+      await client.query('COMMIT');
+      summary.promoted_to_sha256 += 1;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      summary.errors += 1;
+      console.error('[backfill-file-artifacts] promote error', row.id, err.message);
+      if (summary.errors >= cfg().maxErrors) throw err;
+    }
+  }
+}
+
+/**
+ * Programmatic entry for CLI and queued reconciliation.
+ * @param {{
+ *   pool?: import('pg').Pool,
+ *   dryRun?: boolean,
+ *   phase?: string,
+ *   batchSize?: number,
+ *   maxErrors?: number,
+ *   providerFilter?: string,
+ *   resumePublicId?: string|null,
+ *   endPool?: boolean,
+ *   promotePrimaries?: boolean,
+ *   log?: Function
+ * }} [options]
+ */
+export async function runFileArtifactBackfill(options = {}) {
+  const ownPool = options.pool || pool;
+  const endPool = options.endPool != null ? options.endPool : !options.pool;
+  const log = options.log || console.log.bind(console);
+  const prev = runtimeOverride;
+  runtimeOverride = {
+    batchSize: options.batchSize ?? BATCH_SIZE,
+    dryRun: options.dryRun ?? DRY_RUN,
+    maxErrors: options.maxErrors ?? MAX_ERRORS,
+    providerFilter: String(options.providerFilter || PROVIDER_FILTER).toLowerCase(),
+    resumePublicId: options.resumePublicId !== undefined ? options.resumePublicId : RESUME_PUBLIC_ID,
+    phase: String(options.phase || PHASE).toLowerCase()
+  };
+
   const summary = emptySummary();
   const started = Date.now();
-  const client = await pool.connect();
-  console.log('[backfill-file-artifacts] start', {
-    dry_run: DRY_RUN,
-    batch_size: BATCH_SIZE,
-    phase: PHASE,
-    resume: RESUME_PUBLIC_ID
+  const client = await ownPool.connect();
+  log('[backfill-file-artifacts] start', {
+    dry_run: cfg().dryRun,
+    batch_size: cfg().batchSize,
+    phase: cfg().phase,
+    resume: cfg().resumePublicId
   });
 
   try {
-    // Ensure schema exists
     await client.query(`SELECT 1 FROM file_artifacts LIMIT 1`);
   } catch (err) {
-    console.error('[backfill-file-artifacts] schema missing — run migration 131 first', err.message);
     client.release();
-    await pool.end();
-    process.exit(2);
+    if (endPool) await ownPool.end();
+    runtimeOverride = prev;
+    const e = new Error(`schema missing — run migration 131 first: ${err.message}`);
+    e.code = 'schema_missing';
+    throw e;
   }
 
   try {
-    if (PHASE === 'all' || PHASE === 'seed') {
-      let lastPublicId = RESUME_PUBLIC_ID;
+    if (cfg().phase === 'all' || cfg().phase === 'seed') {
+      let lastPublicId = cfg().resumePublicId;
       for (;;) {
         const { rows, lastPublicId: next } = await seedBatch(client, lastPublicId, summary);
         if (!rows.length) break;
         lastPublicId = next;
-        if (rows.length < BATCH_SIZE) break;
+        if (rows.length < cfg().batchSize) break;
       }
     }
 
-    if (PHASE === 'all' || PHASE === 'provider') {
+    if (cfg().phase === 'all' || cfg().phase === 'provider') {
       await providerMalwareBazaar(client, summary);
       await providerVirusTotal(client, summary);
     }
 
-    if (PHASE === 'all' || PHASE === 'validate') {
+    if (options.promotePrimaries !== false
+      && (cfg().phase === 'all' || cfg().phase === 'provider' || cfg().phase === 'promote')) {
+      await promoteSha256Primaries(client, summary);
+    }
+
+    if (cfg().phase === 'all' || cfg().phase === 'validate') {
       await validate(client, summary);
     }
   } finally {
     summary.duration_ms = Date.now() - started;
     client.release();
-    await pool.end();
+    if (endPool) await ownPool.end();
+    runtimeOverride = prev;
   }
 
-  console.log(JSON.stringify(summary, null, 2));
-  if (summary.validation_errors?.length) process.exitCode = 1;
-  if (summary.errors >= MAX_ERRORS) process.exitCode = 1;
+  return summary;
 }
 
-run().catch((err) => {
-  console.error('[backfill-file-artifacts] fatal', err);
-  process.exit(1);
-});
+async function runCli() {
+  try {
+    const summary = await runFileArtifactBackfill({ endPool: true });
+    console.log(JSON.stringify(summary, null, 2));
+    if (summary.validation_errors?.length) process.exitCode = 1;
+    if (summary.errors >= cfg().maxErrors) process.exitCode = 1;
+  } catch (err) {
+    console.error('[backfill-file-artifacts] fatal', err);
+    process.exit(err.code === 'schema_missing' ? 2 : 1);
+  }
+}
+
+const isDirectCli = process.argv[1]
+  && String(process.argv[1]).replace(/\\/g, '/').endsWith('backfill-file-artifacts.js');
+if (isDirectCli) {
+  runCli();
+}

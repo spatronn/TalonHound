@@ -42,6 +42,7 @@ COPY backend/lib/systemTime.js ./lib/systemTime.js
 COPY backend/lib/appLogger.js ./lib/appLogger.js
 COPY backend/lib/spamhausDropSync.js ./lib/spamhausDropSync.js
 COPY backend/lib/spamhausDropScheduleSync.js ./lib/spamhausDropScheduleSync.js
+COPY backend/lib/fileArtifactReconciliationScheduleSync.js ./lib/fileArtifactReconciliationScheduleSync.js
 COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 COPY backend/lib/tagHelpers.js ./lib/tagHelpers.js
 COPY backend/lib/tagCatalogService.js ./lib/tagCatalogService.js

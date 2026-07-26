@@ -68,6 +68,36 @@ test('type in maps to observable_type ANY (partition prunable)', () => {
   assert.deepEqual(params, [['domain', 'url']]);
 });
 
+test('type equals md5 stays raw when file-artifact read is off', () => {
+  const { sql, params } = build('type equals "md5"', { fileArtifactsReadEnabled: false });
+  assert.match(sql, /i\.observable_type = \$1/);
+  assert.deepEqual(params, ['md5']);
+  assert.doesNotMatch(sql, /file_artifact_hashes/);
+});
+
+test('type equals md5 uses canonical primary when file-artifact read is on', () => {
+  const { sql, params } = build('type equals "md5"', { fileArtifactsReadEnabled: true });
+  assert.match(sql, /file_artifact_ioc_links/);
+  assert.match(sql, /ph\.is_primary = TRUE/);
+  assert.match(sql, /ph\.hash_type = \$1/);
+  assert.equal(params[0], 'md5');
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('known_hash_type equals md5 matches any known hash on artifact', () => {
+  const { sql, params } = build('known_hash_type equals "md5"', { fileArtifactsReadEnabled: true });
+  assert.match(sql, /file_artifact_hashes h/);
+  assert.match(sql, /h\.hash_type = \$1/);
+  assert.doesNotMatch(sql, /h\.is_primary/);
+  assert.equal(params[0], 'md5');
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('observed_type alias maps to known_hash_type', () => {
+  const { ast } = parseSearchQuery('observed_type equals "sha256"');
+  assert.equal(ast.children?.[0]?.field || ast.field, 'known_hash_type');
+});
+
 test('status equals uses COALESCE default active', () => {
   const { sql } = build('status equals "active"');
   assert.match(sql, /COALESCE\(i\.status, 'active'\) = \$1/);

@@ -27,6 +27,7 @@ import {
 import { runFeedDataPurgeJob } from './lib/feedLifecycle.js';
 import { runCustomThreatFeedImport } from './lib/customThreatFeedImport.js';
 import { runSpamhausDropSync } from './lib/spamhausDropSync.js';
+import { runFileArtifactReconciliation } from './runFileArtifactReconciliation.js';
 import { resolveWorkerJobFailureType } from './lib/job-cancellation.js';
 
 const pool = createIntegrationPool();
@@ -49,6 +50,7 @@ function resolveIntegrationKey(job) {
   if (job?.name === 'feed_data_purge') return job.data.integration_key || job.data.feed_key || 'unknown';
   if (job?.name === 'custom-threat-feed-sync') return job.data.integration_key || 'unknown';
   if (job?.name === 'spamhaus-drop-sync') return 'spamhaus-drop';
+  if (job?.name === 'file-artifact-reconciliation') return 'file-artifact';
   if (job?.name === 'hourly-import') return 'et-blockrules';
   if (job?.name === 'usom-import') return 'usom-trcert';
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
@@ -69,7 +71,8 @@ const JOB_TYPE_BY_NAME = Object.freeze({
   'alienvault-otx-import': 'alienvault_otx_import',
   'custom-threat-feed-sync': 'custom_threat_feed_sync',
   'feed_data_purge': 'feed_data_purge',
-  'spamhaus-drop-sync': 'spamhaus_drop_sync'
+  'spamhaus-drop-sync': 'spamhaus_drop_sync',
+  'file-artifact-reconciliation': 'file_artifact_reconciliation'
 });
 
 function resolveJobType(job, result) {
@@ -112,6 +115,9 @@ async function runImportForJob(job, { signal, triggeredBy } = {}) {
   }
   if (job.name === 'spamhaus-drop-sync') {
     return runSpamhausDropSync(pool, opts);
+  }
+  if (job.name === 'file-artifact-reconciliation') {
+    return runFileArtifactReconciliation(pool, opts);
   }
   if (job.name === 'hourly-import') return runHourlyImport(opts);
   if (job.name === 'usom-import') return runUsomImport(opts);

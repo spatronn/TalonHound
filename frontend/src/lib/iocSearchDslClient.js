@@ -15,6 +15,7 @@ export const DATE_OPERATORS = ['before', 'after', 'between'];
 export const SEARCH_FIELDS = [
   { name: 'ioc', label: 'IOC', kind: 'text', operators: TEXT_OPERATORS },
   { name: 'type', label: 'Type', kind: 'enum', operators: ENUM_OPERATORS, values: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'] },
+  { name: 'known_hash_type', label: 'Known hash type', kind: 'enum', operators: ENUM_OPERATORS, values: ['md5', 'sha1', 'sha256'] },
   { name: 'tag', label: 'Tag', kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   { name: 'source', label: 'Source', kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   { name: 'classification', label: 'Classification', kind: 'enum', operators: ENUM_OPERATORS },
