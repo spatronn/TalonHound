@@ -5,6 +5,8 @@ import {
   resolveSourceChangeTimestamps,
   resolveCanonicalIocTimestamps,
   attachCanonicalIocListTimestamps,
+  resolveDetailPlatformImportTimestamp,
+  resolveDetailLastConfirmedAt,
   IOC_LIST_TIMESTAMP_COLUMN,
   CANONICAL_LAST_CHANGED_AGG_SQL,
   CANONICAL_FIRST_SEEN_AGG_SQL
@@ -129,4 +131,52 @@ test('null platform Timestamp only when created_at missing', () => {
   const out = resolvePlatformImportTimestamp({});
   assert.equal(out.imported_at, null);
   assert.equal(out.list_timestamp_field, null);
+});
+
+test('detail imported_at maps from earliest created_at across rows', () => {
+  const out = resolveDetailPlatformImportTimestamp([
+    { created_at: '2026-07-26T12:00:00.000Z' },
+    { created_at: '2026-07-26T10:00:00.000Z' },
+    { created_at: '2026-07-26T11:00:00.000Z' }
+  ]);
+  assert.equal(out.imported_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(out.created_at, '2026-07-26T10:00:00.000Z');
+});
+
+test('detail imported_at stays fixed when later rows appear (re-import / multi-source)', () => {
+  const first = resolveDetailPlatformImportTimestamp([
+    { created_at: '2026-07-26T10:00:00.000Z' }
+  ]);
+  const afterExtraSource = resolveDetailPlatformImportTimestamp([
+    { created_at: '2026-07-26T10:00:00.000Z' },
+    { created_at: '2026-07-27T15:00:00.000Z' }
+  ]);
+  assert.equal(first.imported_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(afterExtraSource.imported_at, first.imported_at);
+});
+
+test('detail imported_at is null for legacy rows without created_at (no silent fallback)', () => {
+  const out = resolveDetailPlatformImportTimestamp([
+    { created_at: null },
+    { first_seen_at: '2026-01-01T00:00:00.000Z' },
+    {}
+  ]);
+  assert.equal(out.imported_at, null);
+  assert.equal(out.created_at, null);
+});
+
+test('detail last_confirmed_at uses max last_seen_in_feed only', () => {
+  assert.equal(
+    resolveDetailLastConfirmedAt([
+      { last_seen_in_feed: '2026-07-26T10:00:00.000Z' },
+      { last_seen_in_feed: '2026-07-26T12:00:00.000Z', last_changed_in_source: '2026-07-26T11:00:00.000Z' }
+    ]),
+    '2026-07-26T12:00:00.000Z'
+  );
+  assert.equal(
+    resolveDetailLastConfirmedAt([
+      { last_changed_in_source: '2026-07-26T11:00:00.000Z', first_seen_in_feed: '2026-07-26T10:00:00.000Z' }
+    ]),
+    null
+  );
 });

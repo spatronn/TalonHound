@@ -87,7 +87,11 @@ import {
   adoptSystemTimezoneFromBootstrap,
   isTimezoneRuntimeReady
 } from './lib/systemTime.js';
-import { attachCanonicalIocListTimestamps } from './lib/iocListTimestamps.js';
+import {
+  attachCanonicalIocListTimestamps,
+  resolveDetailPlatformImportTimestamp,
+  resolveDetailLastConfirmedAt
+} from './lib/iocListTimestamps.js';
 import { applySessionTimezoneToPool } from './lib/pgSessionTimezone.js';
 import { registerSetupRoutes, createSetupGate } from './routes/setup.js';
 import { createServiceLogger } from './lib/appLogger.js';
@@ -5329,8 +5333,19 @@ app.get('/api/ioc/details', async (req, res) => {
       ...(await buildThreatMetadataFields(pool, lifecycleRow)),
       manual_status_override: Boolean(lifecycleRow.manual_status_override),
       manual_status: lifecycleRow.manual_status || null,
+      // Platform insert = earliest ioc_items.created_at (immutable). API alias: imported_at.
+      ...(() => {
+        const platform = resolveDetailPlatformImportTimestamp(rows);
+        return {
+          created_at: platform.created_at,
+          imported_at: platform.imported_at
+        };
+      })(),
       first_seen_at: globalFirstSeenAt,
+      // Analyst "last changed in source" aggregate (legacy field name kept for clients).
       last_seen_at: globalLastSeenAt,
+      // Presence confirmation across feeds — null when no last_seen_in_feed (no silent fallback).
+      last_confirmed_at: resolveDetailLastConfirmedAt(membershipSummary.membershipRows),
       // source_count kept for backward compat but now equals total_source_membership_count
       source_count: totalSourceMembershipCount,
       total_source_membership_count: totalSourceMembershipCount,

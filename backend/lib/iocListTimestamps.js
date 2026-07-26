@@ -148,3 +148,32 @@ export const IOC_LIST_TIMESTAMP_COLUMN = Object.freeze({
   orderBySql: 'ioc_items.created_at DESC',
   fallback: Object.freeze(['ioc_items.created_at'])
 });
+
+/**
+ * IOC detail platform insert time = earliest ioc_items.created_at across related rows.
+ * Never invents a value from source/membership timestamps.
+ * @param {Array<{ created_at?: Date|string|null }>} rows
+ */
+export function resolveDetailPlatformImportTimestamp(rows = []) {
+  const createdDates = (Array.isArray(rows) ? rows : [])
+    .map((r) => r?.created_at)
+    .filter((d) => d != null && d !== '');
+  if (!createdDates.length) {
+    return resolvePlatformImportTimestamp({});
+  }
+  const earliest = createdDates.reduce((min, d) => (new Date(d) < new Date(min) ? d : min));
+  return resolvePlatformImportTimestamp({ created_at: earliest });
+}
+
+/**
+ * Presence / last-confirmed across feed memberships (`last_seen_in_feed`).
+ * Returns null when unavailable — does not fall back to last_changed or created_at.
+ * @param {Array<{ last_seen_in_feed?: Date|string|null }>} membershipRows
+ */
+export function resolveDetailLastConfirmedAt(membershipRows = []) {
+  const dates = (Array.isArray(membershipRows) ? membershipRows : [])
+    .map((m) => m?.last_seen_in_feed)
+    .filter((d) => d != null && d !== '');
+  if (!dates.length) return null;
+  return dates.reduce((max, d) => (new Date(d) > new Date(max) ? d : max));
+}

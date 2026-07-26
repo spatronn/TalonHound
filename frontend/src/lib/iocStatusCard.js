@@ -8,6 +8,14 @@ export function normalizeIocLifecycleStatus(status, { suppressionActive } = {}) 
   return s || 'unknown';
 }
 
+function splitExpirationSummaryLabel(label) {
+  const raw = String(label || '').trim();
+  if (!raw) return { primary: null, secondary: null };
+  const parts = raw.split(/\s·\s/);
+  if (parts.length < 2) return { primary: raw, secondary: null };
+  return { primary: parts[0], secondary: parts.slice(1).join(' · ') };
+}
+
 /**
  * @param {object|null} summary IOC details summary
  * @param {{ suppressionActive?: boolean }} opts
@@ -20,47 +28,102 @@ export function getIocStatusCardPresentation(summary, { suppressionActive } = {}
   const buttons = [];
 
   const statusForBadge = lifecycle === 'false_positive' ? 'false_positive' : (summary?.status || 'active');
-  fields.push({ key: 'status', label: 'Current status:', kind: 'badge', status: statusForBadge });
+  fields.push({
+    key: 'status',
+    label: 'Current Status',
+    kind: 'badge',
+    status: statusForBadge,
+    icon: 'status'
+  });
 
   if (lifecycle === 'active' && summary?.expires_at) {
-    fields.push({ key: 'expires_at', label: 'Global expires at:', kind: 'datetime', raw: summary.expires_at });
-    if (summary?.next_expiration_at && summary.next_expiration_at !== summary.expires_at) {
-      fields.push({ key: 'next_expiration_at', label: 'Next source expires:', kind: 'datetime', raw: summary.next_expiration_at });
-    }
+    fields.push({
+      key: 'expires_at',
+      label: 'Global Expires At',
+      kind: 'datetime',
+      raw: summary.expires_at,
+      icon: 'calendar'
+    });
   } else if (lifecycle === 'active' && !summary?.expires_at) {
-    fields.push({ key: 'expires_at', label: 'Global expires at:', kind: 'text', value: 'No expiration' });
+    fields.push({
+      key: 'expires_at',
+      label: 'Global Expires At',
+      kind: 'text',
+      value: 'No expiration',
+      icon: 'calendar'
+    });
   } else if (lifecycle === 'expired' && summary?.expired_at) {
-    fields.push({ key: 'expired_at', label: 'Expired at:', kind: 'datetime', raw: summary.expired_at });
+    fields.push({
+      key: 'expired_at',
+      label: 'Expired At',
+      kind: 'datetime',
+      raw: summary.expired_at,
+      icon: 'calendar'
+    });
+  } else if (lifecycle === 'expired') {
+    fields.push({
+      key: 'expired_at',
+      label: 'Expired At',
+      kind: 'text',
+      value: '—',
+      icon: 'calendar'
+    });
   }
 
+  const activeCount = Number(summary?.active_source_count ?? 0);
+  const sourcesValue = activeCount === 1
+    ? '1 active source'
+    : `${activeCount} active sources`;
+  fields.push({
+    key: 'sources',
+    label: 'Sources',
+    kind: 'text',
+    value: sourcesValue,
+    icon: 'sources'
+  });
+
   if (summary?.expiration_summary?.label && lifecycle === 'active') {
-    fields.push({ key: 'expiration_summary', label: 'Expiration summary:', kind: 'text', value: summary.expiration_summary.label });
+    const { primary, secondary } = splitExpirationSummaryLabel(summary.expiration_summary.label);
+    const expirationReason = String(summary?.expiration_reason || '').trim();
+    fields.push({
+      key: 'expiration_summary',
+      label: 'Expiration Summary',
+      kind: 'text',
+      value: primary || summary.expiration_summary.label,
+      secondary: expirationReason || secondary || null,
+      icon: 'clock'
+    });
+  } else if (lifecycle !== 'false_positive') {
+    const expirationReason = String(summary?.expiration_reason || '').trim();
+    if (expirationReason) {
+      fields.push({
+        key: 'expiration_summary',
+        label: 'Expiration Summary',
+        kind: 'text',
+        value: '—',
+        secondary: expirationReason,
+        icon: 'clock'
+      });
+    }
   }
 
   if (summary?.reactivated_by_match_at) {
     fields.push({
       key: 'reactivated_by_match_at',
-      label: 'Reactivated by match:',
+      label: 'Reactivated by match',
       kind: 'datetime',
-      raw: summary.reactivated_by_match_at
-    });
-  }
-
-  const expirationReason = String(summary?.expiration_reason || '').trim();
-  if (lifecycle !== 'false_positive' || expirationReason) {
-    fields.push({
-      key: 'expiration_reason',
-      label: 'Expiration reason:',
-      kind: 'text',
-      value: expirationReason || '—'
+      raw: summary.reactivated_by_match_at,
+      icon: 'clock'
     });
   }
 
   fields.push({
     key: 'manual_override',
-    label: 'Manual override:',
+    label: 'Manual Override',
     kind: 'text',
-    value: hasOverride ? `Yes (${summary.manual_status || '—'})` : 'No'
+    value: hasOverride ? 'Yes' : 'No',
+    secondary: hasOverride ? `Status: ${summary.manual_status || '—'}` : 'No override set',
+    icon: 'user'
   });
 
   if (!suppressionActive) {
@@ -83,7 +146,7 @@ export function getIocStatusCardPresentation(summary, { suppressionActive } = {}
 
 export const IOC_STATUS_ACTION_BUTTONS = {
   reactivate_ioc: { label: 'Reactivate IOC', danger: false },
-  custom_expire_ioc: { label: 'Set custom expire date', danger: false },
+  custom_expire_ioc: { label: 'Set custom expiry', danger: false },
   expire_ioc: { label: 'Expire IOC now', danger: true },
   clear_ioc_override: { label: 'Clear override', danger: false }
 };

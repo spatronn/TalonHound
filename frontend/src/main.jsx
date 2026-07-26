@@ -14,7 +14,7 @@ import {
   newCondition,
   chipLabel
 } from './lib/iocSearchDslClient.js';
-import { getIocStatusCardPresentation, IOC_STATUS_ACTION_BUTTONS } from './lib/iocStatusCard.js';
+import { getIocStatusCardPresentation } from './lib/iocStatusCard.js';
 import {
   CONFIDENCE_OPTIONS,
   getIocConfidencePresentation,
@@ -33,6 +33,7 @@ import {
 } from './lib/associatedIpEnrichment.js';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/iocListTimestampPresentation.js';
+import { formatIocDetailDateTime, resolveIocDetailImportedAt } from './lib/iocDetailTimestamps.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
 import {
@@ -55,6 +56,11 @@ import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.js
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import InitialSetupPage from './components/InitialSetupPage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
+import { IocHeader } from './components/iocDetails/IocHeader.jsx';
+import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
+import { ActiveSourcesTable, IocSummaryStrip } from './components/iocDetails/ActiveSourcesTable.jsx';
+import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx';
+import { IocMetadataCards } from './components/iocDetails/IocMetadataCards.jsx';
 import {
   formatUserDateTime,
   notifyTimezoneChanged,
@@ -2053,7 +2059,8 @@ function iocStatusBadge(status) {
   };
   const hit = map[s] || map.active;
   return (
-    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: hit.color, background: hit.bg, border: `1px solid ${hit.border}`, whiteSpace: 'nowrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: hit.color, background: hit.bg, border: `1px solid ${hit.border}`, whiteSpace: 'nowrap' }}>
+      <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 999, background: hit.color, flexShrink: 0 }} />
       {hit.label}
     </span>
   );
@@ -12759,25 +12766,37 @@ const IOC_DETAIL_TABS = [
 
 function IocDetailTabBar({ tabs, activeTab, onChange }) {
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, borderBottom: '1px solid #334155', paddingBottom: 10 }}>
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          onClick={() => onChange(t.id)}
-          style={{
-            padding: '8px 14px',
-            borderRadius: 8,
-            border: `1px solid ${activeTab === t.id ? '#93c5fd' : '#475569'}`,
-            background: activeTab === t.id ? 'rgba(59,130,246,0.15)' : '#0f172a',
-            color: activeTab === t.id ? '#93c5fd' : '#cbd5e1',
-            fontWeight: activeTab === t.id ? 700 : 500,
-            cursor: 'pointer'
-          }}
-        >
-          {t.label}
-        </button>
-      ))}
+    <div
+      role="tablist"
+      aria-label="IOC detail sections"
+      style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14, borderBottom: '1px solid #334155' }}
+    >
+      {tabs.map((t) => {
+        const active = activeTab === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.id)}
+            style={{
+              padding: '8px 12px',
+              border: 'none',
+              borderBottom: active ? '2px solid #93c5fd' : '2px solid transparent',
+              marginBottom: -1,
+              borderRadius: 0,
+              background: 'transparent',
+              color: active ? '#e2e8f0' : '#94a3b8',
+              fontWeight: active ? 700 : 500,
+              fontSize: 13,
+              cursor: 'pointer'
+            }}
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -13673,22 +13692,17 @@ function IOCDetailsPage() {
   return (
     <AppShell>
       <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#0f172a', padding: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <div>
-            <h2 style={{ margin: 0, color: '#f1f5f9' }}>IOC Details</h2>
-            <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 13 }}>Analyst-focused detail page for faster triage</div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {summary && !suppressionActive && isAdmin ? (
-              <button type="button" style={ui.btnPrimary} onClick={() => { setShowSuppressModal(true); setSuppressError(''); }}>Mark as False Positive</button>
-            ) : null}
-            {summary && isAdmin ? (
-              <button type="button" style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: 'pointer' }} onClick={() => { setShowDeleteModal(true); setDeleteConfirmText(''); setDeleteError(''); }}>Delete IOC</button>
-            ) : null}
-            <button onClick={() => navigate('/ioc')}>Back to IOC List</button>
-            <button onClick={() => load().catch(() => {})}>Refresh</button>
-          </div>
-        </div>
+        <IocHeader
+          observable={displayObservable}
+          statusBadge={summary ? iocStatusBadge(suppressionActive ? 'false_positive' : summary.status) : null}
+          ui={ui}
+          showMarkFalsePositive={Boolean(summary && !suppressionActive && isAdmin)}
+          showDelete={Boolean(summary && isAdmin)}
+          onMarkFalsePositive={() => { setShowSuppressModal(true); setSuppressError(''); }}
+          onDelete={() => { setShowDeleteModal(true); setDeleteConfirmText(''); setDeleteError(''); }}
+          onBack={() => navigate('/ioc')}
+          onRefresh={() => load().catch(() => {})}
+        />
 
         {!isAdmin ? (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #475569', color: '#cbd5e1', background: 'rgba(100,116,139,0.15)', fontSize: 13 }}>
@@ -13702,14 +13716,6 @@ function IOCDetailsPage() {
             {actionRefreshWarn}
           </div>
         ) : null}
-
-        <div style={{ marginBottom: 14, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>IOC</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace", fontSize: 15, overflowWrap: 'anywhere' }}><b>{displayObservable}</b></div>
-            {summary ? iocStatusBadge(summary.status) : null}
-          </div>
-        </div>
 
         {loading ? <div>Loading...</div> : !summary ? (
           <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10 }}>No IOC detail found.</div>
@@ -13737,91 +13743,28 @@ function IOCDetailsPage() {
 
             {activeTab === 'overview' ? (
               <div style={{ display: 'grid', gap: 14 }}>
-                {summary && iocStatusCard ? (
-                  <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                    <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>IOC Status</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, fontSize: 13, color: '#cbd5e1' }}>
-                      {iocStatusCard.fields.map((field) => (
-                        <div key={field.key}>
-                          <span style={{ color: '#94a3b8' }}>{field.label}</span>{' '}
-                          {field.kind === 'badge'
-                            ? iocStatusBadge(field.status)
-                            : field.kind === 'datetime'
-                              ? formatUserDateTime(field.raw)
-                              : field.value}
-                        </div>
-                      ))}
-                    </div>
-                    {isAdmin && iocStatusCard.buttons.length ? (
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                        {iocStatusCard.buttons.map((actionType) => {
-                          const def = IOC_STATUS_ACTION_BUTTONS[actionType];
-                          if (!def) return null;
-                          const btnStyle = def.danger
-                            ? { ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }
-                            : ui.btn;
-                          return (
-                            <button
-                              key={actionType}
-                              type="button"
-                              style={btnStyle}
-                              disabled={actionLoading}
-                              onClick={() => openExpirationAction(actionType)}
-                            >
-                              {def.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
+                <IocStatusSummary
+                  presentation={iocStatusCard}
+                  renderBadge={iocStatusBadge}
+                  ui={ui}
+                  isAdmin={isAdmin}
+                  actionLoading={actionLoading}
+                  onAction={openExpirationAction}
+                />
 
                 {activeSources.length || historicalSources.length ? (
                   <div style={{ display: 'grid', gap: 14 }}>
-                    <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                      <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Active Sources</div>
-                      {activeSources.length ? (
-                        <div style={{ overflowX: 'auto' }}>
-                          <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
-                            <thead>
-                              <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                                <th>Source</th><th>Type</th><th>Status</th>
-                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.first.label}</th>
-                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.last.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.last.label}</th>
-                                <th>Policy expires</th><th>Effective expires</th><th>Override</th><th>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {activeSources.map((src) => (
-                                <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                                  <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
-                                  <td>{iocSourceTypeLabel(src)}</td>
-                                  <td>{iocSourceStatusBadge(src)}</td>
-                                  <td>{formatUserDateTime(src.first_seen_at)}</td>
-                                  <td>{formatUserDateTime(src.last_changed_at || src.last_seen_at)}</td>
-                                  <td>{src.source_type === 'feed' ? formatUserDateTime(src.policy_expires_at) : '—'}</td>
-                                  <td>{formatUserDateTime(src.expires_at)}</td>
-                                  <td>{src.source_type === 'feed' ? (src.override_enabled ? 'Yes' : 'No') : '—'}</td>
-                                  <td>
-                                    {isAdmin && src.actions_enabled && src.source_type === 'feed' ? (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('reactivate_membership', src.membership_id)}>Reactivate source</button>
-                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('custom_expire_membership', src.membership_id)}>Custom expire</button>
-                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('expire_membership', src.membership_id)}>Expire source</button>
-                                        <button type="button" style={{ fontSize: 11 }} disabled={actionLoading} onClick={() => openExpirationAction('clear_membership_override', src.membership_id)}>Clear override</button>
-                                      </div>
-                                    ) : '—'}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 13, color: '#94a3b8' }}>No active sources.</div>
-                      )}
-                    </div>
+                    <ActiveSourcesTable
+                      activeSources={activeSources}
+                      importedAt={resolveIocDetailImportedAt(summary)}
+                      sourceColorIndex={sourceColorIndex}
+                      SourceBadge={SourceBadge}
+                      iocSourceTypeLabel={iocSourceTypeLabel}
+                      iocSourceStatusBadge={iocSourceStatusBadge}
+                      isAdmin={isAdmin}
+                      actionLoading={actionLoading}
+                      onMembershipAction={(type, membershipId) => openExpirationAction(type, membershipId)}
+                    />
 
                     {historicalSources.length ? (
                       <div style={{ padding: 14, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
@@ -13842,9 +13785,9 @@ function IOCDetailsPage() {
                                   <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
-                                  <td>{formatUserDateTime(src.first_seen_at)}</td>
-                                  <td>{formatUserDateTime(src.last_changed_at || src.last_seen_at)}</td>
-                                  <td>{formatUserDateTime(src.purged_at)}</td>
+                                  <td>{formatIocDetailDateTime(src.first_seen_at)}</td>
+                                  <td>{formatIocDetailDateTime(src.last_changed_at)}</td>
+                                  <td>{formatIocDetailDateTime(src.purged_at)}</td>
                                   <td>{src.description || src.purge_reason || '—'}</td>
                                 </tr>
                               ))}
@@ -13861,124 +13804,23 @@ function IOCDetailsPage() {
                   </div>
                 ) : null}
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Type</div><div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>{summary.observable_type || '-'}</div></div>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}>
-                    <div style={{ fontSize: 12, color: '#94a3b8' }}>Sources</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0' }}>
-                      {summary.active_source_count ?? 0}
-                      <span style={{ fontSize: 12, fontWeight: 400, color: '#64748b' }}>
-                        {' '}/ {summary.total_source_membership_count ?? summary.source_count ?? summary.active_source_count ?? 0} total
-                      </span>
-                    </div>
-                    {Number(summary.expired_source_count || 0) > 0 ? (
-                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
-                        {summary.expired_source_count} expired
-                      </div>
-                    ) : null}
-                    {Number(summary.historical_source_count || 0) > 0 && !summary.expired_source_count ? (
-                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{summary.historical_source_count} historical</div>
-                    ) : null}
-                  </div>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>First Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.first_seen_at)}</div></div>
-                  <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#111827' }}><div style={{ fontSize: 12, color: '#94a3b8' }}>Last Seen</div><div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0' }}>{formatUserDateTime(summary.last_seen_at)}</div></div>
-                </div>
+                <IocSummaryStrip summary={summary} />
 
-                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Confidence</div>
-                    {canWrite ? (
-                      <button type="button" onClick={openConfidenceEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
-                        Edit
-                      </button>
-                    ) : null}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      padding: '4px 10px',
-                      borderRadius: 999,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      background: confidenceCard.badgeStyle.bg,
-                      color: confidenceCard.badgeStyle.color,
-                      border: `1px solid ${confidenceCard.badgeStyle.border}`
-                    }}>
-                      {confidenceCard.effectiveLabel}
-                    </span>
-                    {confidenceCard.hasOverride ? (
-                      <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: '#312e81', color: '#c7d2fe', border: '1px solid #4338ca' }}>
-                        Manual override
-                      </span>
-                    ) : null}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
-                    {confidenceCard.hasOverride ? confidenceCard.overrideLine : `Source: ${confidenceCard.sourceLine.replace(/^Source: /, '')}`}
-                  </div>
-                  {confidenceCard.reasonLine ? (
-                    <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 6 }}>{confidenceCard.reasonLine}</div>
-                  ) : null}
-                  {confidenceCard.hasOverride && confidenceCard.highestActiveSourceConfidence ? (
-                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>Feeds independently:</span>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '2px 8px',
-                        borderRadius: 999,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: confidenceCard.highestActiveBadgeStyle.bg,
-                        color: confidenceCard.highestActiveBadgeStyle.color,
-                        border: `1px solid ${confidenceCard.highestActiveBadgeStyle.border}`
-                      }}>
-                        {confidenceCard.highestActiveLabel}
-                      </span>
-                    </div>
-                  ) : null}
-                  {(summary.confidence_set || []).length > 1 ? (
-                    <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>All sources:</span>
-                      {summary.confidence_set.map((c) => (
-                        <span key={c} style={{ padding: '2px 8px', borderRadius: 999, border: '1px solid #475569', color: '#e2e8f0', fontSize: 11 }}>{c}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                <IocTimestampCards
+                  summary={summary}
+                  activeSources={activeSources}
+                  historicalSources={historicalSources}
+                />
 
-                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Classifications</div>
-                    {canWrite ? (
-                      <button type="button" onClick={openThreatClassEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
-                        Edit
-                      </button>
-                    ) : null}
-                  </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <ThreatClassificationBadges classifications={(() => {
-                      const analyst = summary.threat_classifications || [];
-                      const existing = new Set(analyst.map((c) => c.value));
-                      const feed = (summary.feed_intelligence?.classifications || []).filter((c) => !existing.has(c.value));
-                      return [...analyst, ...feed];
-                    })()} />
-                  </div>
-                </div>
-
-                <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Actor</div>
-                    {canWrite ? (
-                      <button type="button" onClick={openThreatActorEditor} style={{ fontSize: 12, padding: '4px 10px' }}>
-                        Edit
-                      </button>
-                    ) : null}
-                  </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>
-                    {summary.threat_actor_name || 'Not selected'}
-                  </div>
-                </div>
+                <IocMetadataCards
+                  confidenceCard={confidenceCard}
+                  summary={summary}
+                  canWrite={canWrite}
+                  onEditConfidence={openConfidenceEditor}
+                  onEditThreatClass={openThreatClassEditor}
+                  onEditThreatActor={openThreatActorEditor}
+                  ThreatClassificationBadges={ThreatClassificationBadges}
+                />
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
                   <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
