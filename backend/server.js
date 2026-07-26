@@ -138,6 +138,14 @@ import {
   fetchFeedSourceEvidenceForItems
 } from './lib/iocFeedSourceEvidence.js';
 import { buildFileInformation } from './lib/iocFileInformation.js';
+import {
+  buildFileArtifactDetailBlock,
+  loadArtifactDetail,
+  isFileArtifactsReadEnabled,
+  buildGroupedCteBody,
+  canonicalizeRowsByIdentity,
+  loadArtifactMapsForPublicIds
+} from './lib/fileArtifacts/index.js';
 import { buildFeedIntelligence } from './lib/feedTagNormalization.js';
 import {
   applySourceTagOverrides,
@@ -3847,8 +3855,7 @@ async function handleIocList(req, res) {
     // Exact observable lookups are fastest via ioc_observables index; use this
     // path for both plain and prefixed queries (including url:/domain:/ip:).
     if (exactObservableValue != null) {
-      const obsLimit = Math.min(limit, 100);
-      // ioc_observables (025): observable_value, ioc_public_id; join ioc_items for full row
+      const obsLimit = Math.min(Math.max(limit * 20, 200), 2000);
       const obsStatusClause = iocStatusSqlClause(statusFilter, 'i');
       const obsQ = `
         SELECT i.id, i.public_id, i.observable, i.observable_type, i.source_name, i.source_url, i.confidence, i.category, i.note, i.created_at, i.status
@@ -3863,6 +3870,66 @@ async function handleIocList(req, res) {
       if (t) t.dbQueryEnd = Date.now();
       const rows = obsRes.rows;
       if (rows.length > 0) {
+        let pageItems;
+        if (isFileArtifactsReadEnabled()) {
+          const { artifactByPublicId, primaryByArtifact } = await loadArtifactMapsForPublicIds(
+            pool,
+            rows.map((r) => r.public_id)
+          );
+          const canonical = canonicalizeRowsByIdentity(rows, artifactByPublicId, primaryByArtifact);
+          pageItems = canonical.slice(0, limit).map((g) => ({
+            id: g.id,
+            public_id: g.public_id,
+            observable: g.observable,
+            observable_type: g.observable_type,
+            ip: g.observable,
+            status: g.status || 'active',
+            created_at: g.created_at || g.imported_at,
+            imported_at: g.imported_at || g.created_at,
+            first_seen_at: g.first_seen_at,
+            last_seen_at: g.imported_at || g.created_at || g.last_seen_at,
+            source_count: g.source_count,
+            source_names: g.source_names,
+            confidence_set: g.confidence_set,
+            category_set: g.category_set,
+            artifact_id: g.artifact_id || null,
+            asn: null,
+            country_code: null,
+            as_name: null
+          }));
+          const matchCount = canonical.length;
+          const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
+          const payload = {
+            items: finalItems,
+            pagination: buildIocListPagination({
+              mode: 'search',
+              matchCount,
+              page: 1,
+              pageSize: limit,
+              statusFilter
+            })
+          };
+          if (t) {
+            t.beforeJsonStringify = Date.now();
+            const payloadStr = JSON.stringify(payload);
+            t.afterJsonStringify = Date.now();
+            t.responseBytes = Buffer.byteLength(payloadStr, 'utf8');
+            res.on('finish', () => {
+              t.responseSent = Date.now();
+              const d = (name, start, end) => (end != null && start != null ? `${name}=${end - start}ms` : '');
+              console.log('[perf][ioc-list]', [
+                d('total', t.requestStart, t.responseSent),
+                d('db', t.dbQueryStart, t.dbQueryEnd),
+                `rows=${finalItems.length}`,
+                `path=observables-canonical`
+              ].filter(Boolean).join(' '));
+            });
+            res.setHeader('Content-Type', 'application/json');
+            return res.send(payloadStr);
+          }
+          return res.json(payload);
+        }
+
         const grouped = new Map();
         for (const r of rows) {
           const key = `${r.observable_type}::${r.observable}`;
@@ -3884,7 +3951,6 @@ async function handleIocList(req, res) {
             });
           }
           const g = grouped.get(key);
-          // Platform import Timestamp = earliest created_at (stable across duplicate rows / re-imports).
           if (r.created_at < g.imported_at) {
             g.imported_at = r.created_at;
             g.created_at = r.created_at;
@@ -3899,7 +3965,7 @@ async function handleIocList(req, res) {
           if (r.category) g._cat.add(r.category);
         }
 
-        const pageItems = Array.from(grouped.values()).map((g) => ({
+        pageItems = Array.from(grouped.values()).map((g) => ({
           id: g.id,
           public_id: g.public_id,
           observable: g.observable,
@@ -3969,8 +4035,35 @@ async function handleIocList(req, res) {
         t.beforeResultMapping = Date.now();
         t.beforePagination = Date.now();
       }
-      const pageItems = (() => {
+      const pageItems = await (async () => {
         if (rows.length === 0) return [];
+        if (isFileArtifactsReadEnabled()) {
+          const { artifactByPublicId, primaryByArtifact } = await loadArtifactMapsForPublicIds(
+            pool,
+            rows.map((r) => r.public_id)
+          );
+          const canonical = canonicalizeRowsByIdentity(rows, artifactByPublicId, primaryByArtifact);
+          return canonical.slice(0, limit).map((g) => ({
+            id: g.id,
+            public_id: g.public_id,
+            observable: g.observable,
+            observable_type: g.observable_type,
+            ip: g.observable,
+            status: g.status || 'active',
+            created_at: g.created_at || g.imported_at,
+            imported_at: g.imported_at || g.created_at,
+            first_seen_at: g.first_seen_at,
+            last_seen_at: g.imported_at || g.created_at || g.last_seen_at,
+            source_count: g.source_count,
+            source_names: g.source_names,
+            confidence_set: g.confidence_set,
+            category_set: g.category_set,
+            artifact_id: g.artifact_id || null,
+            asn: null,
+            country_code: null,
+            as_name: null
+          }));
+        }
         const grouped = new Map();
         for (const r of rows) {
           const key = `${r.observable_type}::${r.observable}`;
@@ -3992,7 +4085,6 @@ async function handleIocList(req, res) {
             });
           }
           const g = grouped.get(key);
-          // Platform import Timestamp = earliest created_at (stable across duplicate rows / re-imports).
           if (r.created_at < g.imported_at) {
             g.imported_at = r.created_at;
             g.created_at = r.created_at;
@@ -4211,6 +4303,7 @@ async function handleIocList(req, res) {
         )`
       : ', scoped AS (SELECT * FROM grouped g)';
 
+    const groupedBody = buildGroupedCteBody();
     const base = `
       WITH combined AS (
         ${sourceSql}
@@ -4218,22 +4311,7 @@ async function handleIocList(req, res) {
         SELECT * FROM combined
         ${where}
       ), grouped AS (
-        SELECT
-          MIN(id)::int AS id,
-          (ARRAY_AGG(public_id ORDER BY id ASC))[1]::text AS public_id,
-          observable,
-          observable_type,
-          MIN(created_at) AS first_seen_at,
-          MAX(created_at) AS last_seen_at,
-          (ARRAY_AGG(COALESCE(status, 'active') ORDER BY created_at DESC))[1] AS status,
-          COUNT(*)::int AS source_count,
-          ARRAY_AGG(DISTINCT source_name ORDER BY source_name) AS source_names,
-          ARRAY_AGG(DISTINCT confidence ORDER BY confidence) AS confidence_set,
-          ARRAY_AGG(DISTINCT COALESCE(category, '') ORDER BY COALESCE(category, '')) FILTER (WHERE category IS NOT NULL AND category <> '') AS category_set,
-          (ARRAY_AGG(threat_classification ORDER BY id ASC))[1] AS threat_classification,
-          (ARRAY_AGG(threat_actor_id ORDER BY id ASC))[1] AS threat_actor_id
-        FROM filtered
-        GROUP BY observable, observable_type
+        ${groupedBody}
       )${scopedGroupSql}
     `;
 
@@ -4249,13 +4327,19 @@ async function handleIocList(req, res) {
     const listQ = useHashFastPath
       ? `
       ${base}
-      SELECT g.id, g.public_id, g.observable, g.observable_type, g.observable AS ip, g.first_seen_at, g.last_seen_at, g.status,
+      SELECT g.id, g.public_id, g.observable, g.observable_type, g.observable AS ip,
+             g.platform_imported_at AS created_at,
+             g.platform_imported_at AS imported_at,
+             g.platform_imported_at AS first_seen_at,
+             g.platform_imported_at AS last_seen_at,
+             g.status,
              g.source_count,
              g.source_names, g.confidence_set, g.category_set, g.threat_classification, g.threat_actor_id,
+             g.artifact_id,
              NULL::bigint AS asn, NULL::text AS country_code, NULL::text AS as_name,
              COUNT(*) OVER()::int AS total
       FROM scoped g
-      ORDER BY g.last_seen_at DESC
+      ORDER BY g.platform_imported_at DESC, g.identity_key ASC
       LIMIT $${hashLiteralParams ? 2 : params.length + 1}
       OFFSET $${hashLiteralParams ? 3 : params.length + 2}
     `
@@ -4268,11 +4352,17 @@ async function handleIocList(req, res) {
         ${geoJoin}
         WHERE ${geoWhere}
       )
-      SELECT id, public_id, observable, observable_type, ip, first_seen_at, last_seen_at, status, source_count,
+      SELECT id, public_id, observable, observable_type, ip,
+             platform_imported_at AS created_at,
+             platform_imported_at AS imported_at,
+             platform_imported_at AS first_seen_at,
+             platform_imported_at AS last_seen_at,
+             status, source_count,
              source_names, confidence_set, category_set, threat_classification, threat_actor_id,
+             artifact_id,
              asn, country_code, as_name, total
       FROM with_geo
-      ORDER BY last_seen_at DESC
+      ORDER BY platform_imported_at DESC, identity_key ASC
       LIMIT $${numBase + 3}
       OFFSET $${numBase + 4}
     `;
@@ -4458,7 +4548,79 @@ async function handleIocSearch(req, res) {
   params.push(fetchLimit);
   const limitIdx = params.length;
 
-  const pageSql = `
+  const pageSql = isFileArtifactsReadEnabled()
+    ? `
+    WITH matched AS (
+      SELECT i.id, i.public_id, i.observable, i.observable_type,
+             COALESCE(i.status, 'active') AS status,
+             i.first_seen_at, i.last_seen_at, i.created_at,
+             i.source_name, i.confidence, i.category,
+             i.threat_classification, i.threat_actor_id
+      FROM ioc_items i
+      WHERE ${whereSql}
+    ),
+    ann AS (
+      SELECT m.*,
+             CASE
+               WHEN fa.id IS NULL THEN NULL
+               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL THEN fa.merged_into_artifact_id
+               ELSE fa.id
+             END AS artifact_id,
+             faph.hash_type AS primary_hash_type,
+             faph.normalized_hash_value AS primary_hash_value,
+             CASE
+               WHEN fa.id IS NULL THEN 'o:' || m.observable_type || ':' || LOWER(m.observable)
+               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                 THEN 'a:' || fa.merged_into_artifact_id::text
+               ELSE 'a:' || fa.id::text
+             END AS identity_key
+      FROM matched m
+      LEFT JOIN file_artifact_ioc_links fal
+        ON fal.ioc_item_id = m.id AND fal.ioc_observable_type = m.observable_type
+      LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
+      LEFT JOIN file_artifact_hashes faph
+        ON faph.artifact_id = COALESCE(
+             CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END,
+             fa.id
+           )
+       AND faph.is_primary = TRUE
+    ),
+    grouped AS (
+      SELECT
+        identity_key,
+        MIN(created_at) AS platform_imported_at,
+        (ARRAY_AGG(id ORDER BY
+          CASE WHEN primary_hash_value IS NOT NULL
+            AND LOWER(observable) = LOWER(primary_hash_value)
+            AND LOWER(observable_type) = LOWER(primary_hash_type) THEN 0 ELSE 1 END,
+          CASE LOWER(observable_type) WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END,
+          created_at ASC, id ASC
+        ))[1]::bigint AS id,
+        (ARRAY_AGG(public_id::text ORDER BY created_at ASC, id ASC))[1] AS public_id,
+        COALESCE(
+          (ARRAY_AGG(primary_hash_value) FILTER (WHERE primary_hash_value IS NOT NULL))[1],
+          (ARRAY_AGG(observable ORDER BY created_at ASC, id ASC))[1]
+        ) AS observable,
+        COALESCE(
+          (ARRAY_AGG(primary_hash_type) FILTER (WHERE primary_hash_type IS NOT NULL))[1],
+          (ARRAY_AGG(observable_type ORDER BY created_at ASC, id ASC))[1]
+        ) AS observable_type,
+        (ARRAY_AGG(status ORDER BY created_at DESC))[1] AS status,
+        MIN(first_seen_at) AS first_seen_at,
+        MAX(last_seen_at) AS last_seen_at,
+        (ARRAY_AGG(artifact_id) FILTER (WHERE artifact_id IS NOT NULL))[1] AS artifact_id
+      FROM ann
+      GROUP BY identity_key
+    )
+    SELECT id, public_id, observable, observable_type, status,
+           first_seen_at, last_seen_at, platform_imported_at AS created_at, artifact_id, identity_key
+    FROM grouped
+    WHERE TRUE${cursor
+      ? ` AND (platform_imported_at, id) < ($${dslParamCount + 1}::timestamptz, $${dslParamCount + 2}::bigint)`
+      : ''}
+    ORDER BY platform_imported_at DESC, id DESC
+    LIMIT $${limitIdx}`
+    : `
     SELECT i.id, i.public_id, i.observable, i.observable_type,
            COALESCE(i.status, 'active') AS status,
            i.first_seen_at, i.last_seen_at, i.created_at
@@ -4470,7 +4632,29 @@ async function handleIocSearch(req, res) {
   // Probe (first page only) to derive an exact count for small result sets or the
   // "N+" indicator for large ones, without a full COUNT. Bounded by previewLimit+1.
   const probeLimit = previewLimit + 1;
-  const probeSql = `SELECT 1 FROM ioc_items i WHERE ${whereSql} LIMIT ${probeLimit}`;
+  const probeSql = isFileArtifactsReadEnabled()
+    ? `
+    WITH matched AS (
+      SELECT i.id, i.observable, i.observable_type
+      FROM ioc_items i
+      WHERE ${whereSql}
+      LIMIT ${Math.max(probeLimit * 5, probeLimit)}
+    ),
+    ann AS (
+      SELECT m.*,
+             CASE
+               WHEN fa.id IS NULL THEN 'o:' || m.observable_type || ':' || LOWER(m.observable)
+               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                 THEN 'a:' || fa.merged_into_artifact_id::text
+               ELSE 'a:' || fa.id::text
+             END AS identity_key
+      FROM matched m
+      LEFT JOIN file_artifact_ioc_links fal
+        ON fal.ioc_item_id = m.id AND fal.ioc_observable_type = m.observable_type
+      LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
+    )
+    SELECT 1 FROM (SELECT DISTINCT identity_key FROM ann) d LIMIT ${probeLimit}`
+    : `SELECT 1 FROM ioc_items i WHERE ${whereSql} LIMIT ${probeLimit}`;
   const probeParams = built.params;
 
   const safeTimeout = Math.max(100, Math.min(Math.trunc(timeoutMs), 120000));
@@ -4512,6 +4696,7 @@ async function handleIocSearch(req, res) {
       imported_at: row.created_at,
       first_seen_at: row.first_seen_at || row.created_at,
       last_seen_at: row.created_at,
+      artifact_id: row.artifact_id || null,
       source_count: 0,
       source_names: [],
       confidence_set: [],
@@ -5440,7 +5625,8 @@ app.get('/api/ioc/details', async (req, res) => {
       || [...new Set(rows.map((r) => r.confidence).filter(Boolean))];
 
     const suppressionQ = await pool.query(
-      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at
+      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at,
+              ioc_value, ioc_type
        FROM ioc_suppressions
        WHERE lower(ioc_value) = lower($1)
          AND lower(ioc_type) = lower($2)
@@ -5451,7 +5637,39 @@ app.get('/api/ioc/details', async (req, res) => {
        LIMIT 1`,
       [observable, observableType]
     );
-    const activeSuppression = suppressionQ.rowCount ? suppressionQ.rows[0] : null;
+    let activeSuppression = suppressionQ.rowCount ? suppressionQ.rows[0] : null;
+    let artifactSuppressionHits = [];
+
+    const fileArtifact = await buildFileArtifactDetailBlock(pool, requestedPublicId);
+    if (fileArtifact?.known_hashes?.length) {
+      // Enrich file_information with artifact known hashes (additive)
+      const fi = summary.file_information || {};
+      for (const h of fileArtifact.known_hashes) {
+        if (h.hash_type === 'md5' && !fi.md5) fi.md5 = h.value;
+        if (h.hash_type === 'sha1' && !fi.sha1) fi.sha1 = h.value;
+        if (h.hash_type === 'sha256' && !fi.sha256) fi.sha256 = h.value;
+      }
+      summary.file_information = fi;
+
+      // Aggregate suppressions across linked exact hashes (do not rewrite rows)
+      const vals = fileArtifact.known_hashes.map((h) => h.value);
+      const types = fileArtifact.known_hashes.map((h) => h.hash_type);
+      const aggSup = await pool.query(
+        `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at,
+                ioc_value, ioc_type
+         FROM ioc_suppressions
+         WHERE active = TRUE
+           AND deleted_at IS NULL
+           AND (expires_at IS NULL OR expires_at > NOW())
+           AND lower(ioc_value) = ANY($1::text[])
+           AND lower(ioc_type) = ANY($2::text[])`,
+        [vals.map((v) => String(v).toLowerCase()), types.map((t) => String(t).toLowerCase())]
+      );
+      artifactSuppressionHits = aggSup.rows;
+      if (!activeSuppression && artifactSuppressionHits.length) {
+        activeSuppression = artifactSuppressionHits[0];
+      }
+    }
 
     // Augment confidence detail with highest_active_source_confidence so the UI
     // can show provenance separately from the effective value when analyst override is active.
@@ -5471,7 +5689,14 @@ app.get('/api/ioc/details', async (req, res) => {
       incidents,
       impact,
       analyst_intelligence_summary: analystIntelligenceSummary,
-      suppression: activeSuppression ? { ...activeSuppression, active: true } : { active: false }
+      suppression: activeSuppression
+        ? {
+            ...activeSuppression,
+            active: true,
+            artifact_suppressions: artifactSuppressionHits.length ? artifactSuppressionHits : undefined
+          }
+        : { active: false },
+      file_artifact: fileArtifact || null
     };
 
     iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
@@ -5480,6 +5705,27 @@ app.get('/api/ioc/details', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC details', detail: err.message });
+  }
+});
+
+/** File artifact detail by artifact UUID (feature-flagged). */
+app.get('/api/file-artifacts/:artifactId', async (req, res) => {
+  try {
+    if (!isFileArtifactsReadEnabled()) {
+      return res.status(404).json({ message: 'File artifacts read path is disabled' });
+    }
+    const artifactId = String(req.params.artifactId || '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(artifactId)) {
+      return res.status(400).json({ message: 'Invalid artifact id' });
+    }
+    const detail = await loadArtifactDetail(pool, artifactId);
+    if (!detail) return res.status(404).json({ message: 'File artifact not found' });
+    return res.json(detail);
+  } catch (err) {
+    if (err?.code === '42P01') {
+      return res.status(404).json({ message: 'File artifacts schema not migrated' });
+    }
+    return res.status(500).json({ message: 'Failed to fetch file artifact', detail: err.message });
   }
 });
 
@@ -5704,7 +5950,13 @@ function normalizeVtSummary(iocValue, iocType, payload) {
     domain: { registrar: attr.registrar || null, categories: Object.values(attr.categories || {}) },
     ip: { asn: attr.asn || null, country: attr.country || null, network: attr.network || null, owner: attr.as_owner || null },
     url: { final_url: attr.last_final_url || null, title: attr.title || null, last_final_url: attr.last_final_url || null },
-    file: { sha256: attr.sha256 || null, names: Array.isArray(attr.names) ? attr.names.slice(0, 10) : [], type_description: attr.type_description || null }
+    file: {
+      md5: attr.md5 || null,
+      sha1: attr.sha1 || null,
+      sha256: attr.sha256 || null,
+      names: Array.isArray(attr.names) ? attr.names.slice(0, 10) : [],
+      type_description: attr.type_description || null
+    }
   };
 }
 
@@ -5873,6 +6125,32 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       VALUES ($1,$2,$3,$4,'success',$5,$6,NULL,$7,$8,NOW())
       ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET ioc_id=EXCLUDED.ioc_id,status='success',normalized_summary=EXCLUDED.normalized_summary,raw_response=EXCLUDED.raw_response,error_message=NULL,fetched_at=EXCLUDED.fetched_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()`,
       [iocId, item.ioc_value, iocType, VT_PROVIDER, summary, raw, fetchedAt.toISOString(), expiresAt.toISOString()]);
+
+    // Dual-write: attach VT exact hash set to file artifact when enabled
+    try {
+      const { dualWriteFileArtifactForObservable, extractExactHashesFromVtRaw, isFileArtifactsDualWriteEnabled } = await import('./lib/fileArtifacts/index.js');
+      if (isFileArtifactsDualWriteEnabled() && extractExactHashesFromVtRaw(raw).length >= 1) {
+        const noteParts = [];
+        const attr = raw?.data?.attributes || {};
+        if (attr.md5) noteParts.push(`md5=${String(attr.md5).toLowerCase()}`);
+        if (attr.sha1) noteParts.push(`sha1=${String(attr.sha1).toLowerCase()}`);
+        if (attr.sha256) noteParts.push(`sha256=${String(attr.sha256).toLowerCase()}`);
+        await dualWriteFileArtifactForObservable(pool, {
+          observable: item.ioc_value,
+          observableType: iocType === 'hash'
+            ? (attr.sha256 ? 'sha256' : (attr.sha1 ? 'sha1' : 'md5'))
+            : iocType,
+          sourceName: 'VirusTotal',
+          note: noteParts.join(' | '),
+          attachNoteSiblings: true,
+          providerMapping: true,
+          observationType: 'enrichment_derived',
+          relationMethod: 'enrichment_result'
+        });
+      }
+    } catch {
+      // never fail VT enrichment on artifact dual-write
+    }
 
     await auditLogService.auditSuccess({
       req,

@@ -484,7 +484,53 @@ async function resolveIocPartitionRows(pool, candidates = []) {
 }
 
 function statusObservablesCte(mode) {
+  // Dynamic require of flag would be circular at module load; check env directly here
+  // to match isFileArtifactsReadEnabled without importing flags into hot path cycles.
+  const v = String(process.env.FILE_ARTIFACTS_READ_ENABLED || '').trim().toLowerCase();
+  const readOn = v === '1' || v === 'true' || v === 'yes' || v === 'on';
+
   if (mode === 'active') {
+    if (readOn) {
+      return `
+      WITH active_items AS (
+        SELECT i.id, i.observable, i.observable_type, i.public_id
+        FROM ioc_feed_memberships m
+        INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+        INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+        WHERE m.status = 'active'
+          AND m.purged_at IS NULL
+          AND f.archived_at IS NULL
+          AND COALESCE(i.status, 'active') = 'active'
+        UNION
+        SELECT i.id, i.observable, i.observable_type, i.public_id
+        FROM ioc_items i
+        WHERE COALESCE(i.status, 'active') = 'active'
+          AND i.ioc_source_id IS NOT NULL
+      ), scoped_obs AS (
+        SELECT DISTINCT
+          CASE
+            WHEN COALESCE(
+              CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END,
+              NULL
+            ) IS NOT NULL
+              THEN 'a:' || COALESCE(
+                CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END
+              )::text
+            ELSE 'o:' || ai.observable_type || ':' || LOWER(ai.observable)
+          END AS identity_key,
+          COALESCE(faph.hash_type, ai.observable_type) AS observable_type
+        FROM active_items ai
+        LEFT JOIN file_artifact_ioc_links fal
+          ON fal.ioc_item_id = ai.id AND fal.ioc_observable_type = ai.observable_type
+        LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
+        LEFT JOIN file_artifact_hashes faph
+          ON faph.artifact_id = COALESCE(
+               CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END,
+               fa.id
+             )
+         AND faph.is_primary = TRUE
+      )`;
+    }
     return `
       WITH scoped_obs AS (
         ${activeScopedObservablesSql()}
@@ -621,8 +667,10 @@ export async function fetchIocStatsLastUpdate(pool) {
  *   walks and forces full partition scans (~1.5–3.8s). `created_at` is NOT NULL.
  * - Do NOT drive from `ioc_feed_memberships` then sort by item created_at — planner
  *   nested-loops ~2.7M membership lookups (~3.8s).
- * - Prefer: index walk newest ioc_items (oversample) → filter active membership/manual
- *   → LIMIT need → JS page slice. Page 1 ~sub-ms SQL; full 2k window ~7ms warm.
+ * - READ off: index walk newest ioc_items (oversample) → filter active → LIMIT need →
+ *   JS (type|value) slice. Pagination correctness is type|value grain.
+ * - READ on: candidate index walk → SQL identity GROUP BY → browseCap → LIMIT/OFFSET
+ *   on canonical rows. JS canonicalize is NOT used for page slicing.
  *
  * @param {import('pg').Pool} pool
  * @param {{ limit: number, offset: number, browseCap?: number }} opts
@@ -632,30 +680,39 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   if (offset >= cap) return [];
 
   const cappedLimit = Math.min(limit, cap - offset);
-  const need = Math.min(offset + cappedLimit, cap);
-  // Oversample newest rows so inactive / no-active-membership items among the head
-  // do not under-fill the browse window. Cap keeps the index walk bounded.
-  let oversample = Math.min(Math.max(need * 3, need + 100), Math.max(cap * 2, 4000));
+  const { isFileArtifactsReadEnabled } = await import('./fileArtifacts/flags.js');
+  const readOn = isFileArtifactsReadEnabled();
 
-  let ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
-  if (ranked.length < need && oversample < cap * 3) {
-    oversample = Math.min(Math.max(oversample * 2, need * 5), cap * 3);
-    ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
+  let pageSlice;
+  if (readOn) {
+    pageSlice = await queryActiveIocCanonicalBrowsePage(pool, {
+      limit: cappedLimit,
+      offset,
+      browseCap: cap
+    });
+  } else {
+    const need = Math.min(offset + cappedLimit, cap);
+    // Oversample newest rows so inactive / no-active-membership items among the head
+    // do not under-fill the browse window. Cap keeps the index walk bounded.
+    let oversample = Math.min(Math.max(need * 3, need + 100), Math.max(cap * 2, 4000));
+
+    let ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
+    if (ranked.length < need && oversample < cap * 3) {
+      oversample = Math.min(Math.max(oversample * 2, need * 5), cap * 3);
+      ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
+    }
+
+    const seenObs = new Set();
+    const unique = [];
+    for (const row of ranked) {
+      const key = `${row.observable_type}|${row.observable}`;
+      if (seenObs.has(key)) continue;
+      seenObs.add(key);
+      unique.push(row);
+      if (unique.length >= need) break;
+    }
+    pageSlice = unique.slice(offset, offset + cappedLimit);
   }
-
-  // Deduplicate by observable (duplicate typed rows can share the same observable).
-  const seenObs = new Set();
-  /** @type {typeof ranked} */
-  const unique = [];
-  for (const row of ranked) {
-    const key = `${row.observable_type}|${row.observable}`;
-    if (seenObs.has(key)) continue;
-    seenObs.add(key);
-    unique.push(row);
-    if (unique.length >= need) break;
-  }
-
-  const pageSlice = unique.slice(offset, offset + cappedLimit);
 
   const ipObservables = pageSlice.filter((i) => i.observable_type === 'ip').map((i) => i.observable);
   const geoMap = new Map();
@@ -672,7 +729,7 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   const out = [];
   for (const item of pageSlice) {
     const geo = item.observable_type === 'ip' ? geoMap.get(item.observable) : null;
-    const importedAt = item.created_at || null;
+    const importedAt = item.created_at || item.imported_at || null;
     out.push({
       id: item.id,
       public_id: item.public_id,
@@ -682,14 +739,34 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
       created_at: importedAt,
       imported_at: importedAt,
       first_seen_at: importedAt,
-      // Legacy list field — same as platform import time (not feed presence).
       last_seen_at: importedAt,
+      artifact_id: item.artifact_id || null,
+      identity_key: item.identity_key || null,
       asn: geo?.asn ?? null,
       country_code: geo?.country_code ?? null,
       as_name: geo?.as_name ?? null
     });
   }
   return out;
+}
+
+/**
+ * SQL-before-pagination canonical browse (READ flag on).
+ * Candidate window is an index walk bound only; LIMIT/OFFSET apply after identity GROUP BY.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ limit: number, offset: number, browseCap: number }} opts
+ */
+export async function queryActiveIocCanonicalBrowsePage(pool, { limit, offset, browseCap }) {
+  const { buildCanonicalActiveBrowsePageSql } = await import('./fileArtifacts/canonicalListSql.js');
+  const sql = buildCanonicalActiveBrowsePageSql();
+  // Candidate must cover browseCap identities after collapse; inflate for sibling hashes.
+  const candidateLimit = Math.min(
+    Math.max(browseCap * 8, (offset + limit) * 16, 2000),
+    50000
+  );
+  const { rows } = await pool.query(sql, [candidateLimit, browseCap, limit, offset]);
+  return rows;
 }
 
 /**
@@ -732,7 +809,10 @@ export const IOC_LIST_BROWSE_SQL_CONTRACT = Object.freeze({
   requiresOrderByCreatedAtDesc: 'ORDER BY created_at DESC',
   forbidsNullsLast: 'NULLS LAST',
   requiresOversampleCte: 'WITH recent AS',
-  forbidsMembershipDrivenSort: 'FROM ioc_feed_memberships m\n       INNER JOIN ioc_items'
+  forbidsMembershipDrivenSort: 'FROM ioc_feed_memberships m\n       INNER JOIN ioc_items',
+  /** READ-on path: identity GROUP BY must precede page LIMIT/OFFSET */
+  requiresCanonicalIdentityGroup: 'GROUP BY',
+  requiresCanonicalPageLimitOffset: 'LIMIT $3 OFFSET $4'
 });
 
 /**

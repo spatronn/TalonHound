@@ -32,6 +32,36 @@ export const EXPORT_COLUMNS = Object.freeze({
   imported_at: {
     header: 'Imported at',
     format: (r, tz) => csvTimestamp(r.imported_at || r.created_at, tz)
+  },
+  artifact_id: {
+    header: 'Artifact ID',
+    format: (r, _tz) => r.artifact_id || ''
+  },
+  primary_hash_type: {
+    header: 'Primary hash type',
+    format: (r, _tz) => r.primary_hash_type || r.observable_type || ''
+  },
+  primary_hash_value: {
+    header: 'Primary hash value',
+    format: (r, _tz) => r.primary_hash_value || r.observable || ''
+  },
+  linked_ioc_public_ids: {
+    header: 'Linked IOC public IDs',
+    format: (r, _tz) => Array.isArray(r.linked_ioc_public_ids)
+      ? r.linked_ioc_public_ids.join('|')
+      : (r.linked_ioc_public_ids || '')
+  },
+  known_hashes: {
+    header: 'Known hashes',
+    format: (r, _tz) => {
+      if (Array.isArray(r.known_hashes)) {
+        return r.known_hashes
+          .map((h) => `${h.hash_type || h.type || ''}:${h.value || h.normalized_hash_value || ''}`)
+          .filter((s) => s !== ':')
+          .join('|');
+      }
+      return r.known_hashes || '';
+    }
   }
 });
 

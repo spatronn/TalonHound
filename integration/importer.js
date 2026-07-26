@@ -78,9 +78,35 @@ import { executeUsomImportPipeline } from './lib/usomImportPipeline.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { withPgTransaction } from './lib/pg-transaction.js';
 import { throwIfAborted, fetchWithSignal, isJobAbortedError } from './lib/job-cancellation.js';
+import { dualWriteFileArtifactForObservable } from './lib/fileArtifacts.js';
 
 const pool = createIntegrationPool();
 const IMPORT_LOG = '[integration-import]';
+
+async function maybeDualWriteFileArtifact(client, {
+  observable,
+  observableType,
+  sourceName,
+  note = null,
+  confidence = null,
+  firstSeenAt = null,
+  lastSeenAt = null,
+  attachNoteSiblings = false,
+  providerMapping = false
+}) {
+  await dualWriteFileArtifactForObservable(client, {
+    observable,
+    observableType,
+    sourceName,
+    note,
+    confidence,
+    firstSeenAt,
+    lastSeenAt,
+    attachNoteSiblings,
+    providerMapping,
+    logger: { warn: (...args) => console.warn(IMPORT_LOG, ...args) }
+  });
+}
 
 function resolveTriggeredBy(options) {
   return String(options?.triggeredBy || 'scheduler').trim() || 'scheduler';
@@ -688,6 +714,16 @@ async function upsertMalwareBazaarObservable(client, entry, sourceName, suppress
       note,
       confidence: entry.confidence
     });
+    await maybeDualWriteFileArtifact(client, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName,
+      note,
+      confidence: entry.confidence,
+      firstSeenAt: entry.firstSeenUtc || null,
+      attachNoteSiblings: true,
+      providerMapping: true
+    });
     return;
   }
   if (existing.status === 'unchanged') {
@@ -1248,6 +1284,15 @@ async function insertObservable(client, { observable, observableType, sourceName
         note,
         confidence: confFields.confidence
       });
+      await maybeDualWriteFileArtifact(client, {
+        observable,
+        observableType,
+        sourceName,
+        note,
+        confidence: confFields.confidence,
+        attachNoteSiblings: true,
+        providerMapping: true
+      });
       return 'unchanged';
     }
     if (existing.status === 'updated') {
@@ -1277,6 +1322,16 @@ async function insertObservable(client, { observable, observableType, sourceName
       firstSeenAt,
       reactivateOnly: true
     }));
+    await maybeDualWriteFileArtifact(client, {
+      observable,
+      observableType,
+      sourceName,
+      note,
+      confidence: confFields.confidence,
+      firstSeenAt,
+      attachNoteSiblings: true,
+      providerMapping: true
+    });
     return 'duplicate';
   }
 
@@ -1301,6 +1356,16 @@ async function insertObservable(client, { observable, observableType, sourceName
     category,
     firstSeenAt
   }));
+  await maybeDualWriteFileArtifact(client, {
+    observable,
+    observableType,
+    sourceName,
+    note,
+    confidence: confFields.confidence,
+    firstSeenAt,
+    attachNoteSiblings: true,
+    providerMapping: true
+  });
   return true;
 }
 

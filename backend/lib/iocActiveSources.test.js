@@ -169,6 +169,8 @@ test('fetchActiveIocListPage excludes inactive rows returned by SQL filter', asy
 });
 
 test('fetchActiveIocListPage SQL contract: oversample CTE, no NULLS LAST, created_at DESC', async () => {
+  const prev = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  delete process.env.FILE_ARTIFACTS_READ_ENABLED;
   const queries = [];
   const pool = {
     async query(sql) {
@@ -177,17 +179,60 @@ test('fetchActiveIocListPage SQL contract: oversample CTE, no NULLS LAST, create
     }
   };
   await fetchActiveIocListPage(pool, { limit: 5, offset: 0 });
-  const browseSql = queries.find((q) => q.includes('WITH recent AS'));
-  assert.ok(browseSql, 'must use oversample CTE');
+  const browseSql = queries.find((q) => q.includes('WITH recent AS') && q.includes('LIMIT $2'));
+  assert.ok(browseSql, 'must use oversample CTE when READ off');
   assert.match(browseSql, /ORDER BY created_at DESC/);
   assert.match(browseSql, /ORDER BY r\.created_at DESC/);
   assert.equal(browseSql.includes('NULLS LAST'), false);
   assert.match(browseSql, /COALESCE\(r\.status, 'active'\) = 'active'/);
   assert.match(browseSql, /ioc_source_id IS NOT NULL/);
   assert.match(browseSql, /FROM ioc_feed_memberships m/);
+  if (prev == null) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+  else process.env.FILE_ARTIFACTS_READ_ENABLED = prev;
+});
+
+test('fetchActiveIocListPage READ on: SQL canonicalize before LIMIT/OFFSET', async () => {
+  const prev = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push({ sql: String(sql), params });
+      if (String(sql).includes('identity_key') && String(sql).includes('LIMIT $3 OFFSET $4')) {
+        assert.equal(params[2], 5);
+        assert.equal(params[3], 0);
+        return {
+          rows: [{
+            id: 1,
+            public_id: 'p1',
+            observable: 'aa'.repeat(32),
+            observable_type: 'sha256',
+            created_at: '2026-07-01T00:00:00Z',
+            artifact_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            identity_key: 'a:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+          }]
+        };
+      }
+      return { rows: [] };
+    }
+  };
+  const rows = await fetchActiveIocListPage(pool, { limit: 5, offset: 0 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].identity_key, 'a:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  const browse = queries.find((q) => q.sql.includes('LIMIT $3 OFFSET $4'));
+  assert.ok(browse, 'canonical browse must page with LIMIT/OFFSET after group');
+  assert.match(browse.sql, /GROUP BY/);
+  assert.match(browse.sql, /identity_key/);
+  assert.equal(browse.sql.includes('NULLS LAST'), false);
+  // Must not run JS oversample window path (LIMIT $2 need)
+  assert.ok(!queries.some((q) => q.sql.includes('WITH recent AS') && q.sql.includes('LIMIT $2') && !q.sql.includes('LIMIT $3 OFFSET $4')));
+  if (prev == null) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+  else process.env.FILE_ARTIFACTS_READ_ENABLED = prev;
 });
 
 test('fetchActiveIocListPage page_size slices after window (offset pagination)', async () => {
+  const prev = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  delete process.env.FILE_ARTIFACTS_READ_ENABLED;
   const pool = {
     async query(sql, params) {
       if (String(sql).includes('WITH recent AS')) {
@@ -211,6 +256,8 @@ test('fetchActiveIocListPage page_size slices after window (offset pagination)',
   assert.equal(rows.length, 5);
   assert.equal(rows[0].observable, 'o5.test');
   assert.equal(rows[4].observable, 'o9.test');
+  if (prev == null) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+  else process.env.FILE_ARTIFACTS_READ_ENABLED = prev;
 });
 
 test('queryActiveIocBrowseWindow preserves imported_at semantics fields', async () => {

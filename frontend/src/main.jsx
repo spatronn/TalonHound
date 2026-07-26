@@ -13750,6 +13750,17 @@ function IOCDetailsPage() {
             {actionRefreshWarn}
           </div>
         ) : null}
+        {(!loading && summary && data?.file_artifact?.is_legacy_alias) ? (
+          <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #1e3a5f', color: '#bfdbfe', background: 'rgba(30,58,95,0.35)', fontSize: 13 }}>
+            This {String(summary?.observable_type || 'hash').toUpperCase()} is an identifier of the canonical{' '}
+            {String(data.file_artifact.primary_hash?.hash_type || 'SHA256').toUpperCase()} file artifact.
+            {data.file_artifact.primary_hash?.value ? (
+              <span style={{ display: 'block', marginTop: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflowWrap: 'anywhere' }}>
+                {data.file_artifact.primary_hash.value}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
         {loading ? <div>Loading...</div> : !summary ? (
           <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10 }}>No IOC detail found.</div>
@@ -14085,6 +14096,7 @@ function IOCDetailsPage() {
                 isHashObservable={isHashObservable}
                 hasMeaningfulFileInfo={hasMeaningfulFileInfo}
                 fileInformation={summary.file_information}
+                fileArtifact={data.file_artifact || null}
                 VirusTotalEnrichmentCard={VirusTotalEnrichmentCard}
                 IpEnrichmentCard={IpEnrichmentCard}
                 AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}

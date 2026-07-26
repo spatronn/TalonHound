@@ -45,5 +45,7 @@ COPY backend/lib/spamhausDropScheduleSync.js ./lib/spamhausDropScheduleSync.js
 COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 COPY backend/lib/tagHelpers.js ./lib/tagHelpers.js
 COPY backend/lib/tagCatalogService.js ./lib/tagCatalogService.js
+# File Artifacts: preserve integration/lib/fileArtifacts.js → ../../backend/lib/fileArtifacts
+COPY backend/lib/fileArtifacts /backend/lib/fileArtifacts
 
 CMD ["npm", "run", "worker"]

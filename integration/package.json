@@ -7,6 +7,7 @@
     "scheduler": "node scheduler.js",
     "worker": "node worker.js",
     "backfill-ioc-observables": "node backfill-ioc-observables.js",
+    "backfill-file-artifacts": "node backfill-file-artifacts.js",
     "dry-run:usom": "node scripts/usom-dry-run.js",
     "test:usom": "node --test lib/usomNormalizer.test.js lib/usomOfficialApi.test.js lib/usomImportStore.test.js lib/usomImportPipeline.test.js",
     "test:urlhaus": "node --test lib/urlhaus.test.js lib/urlhausSkip.test.js",

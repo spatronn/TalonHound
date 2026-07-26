@@ -23,6 +23,7 @@ import {
   toAnalystReferenceForm
 } from './lib/analystIntelligenceForm.js';
 import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
+import { groupFileArtifactObservations } from './lib/groupFileArtifactObservations.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -536,7 +537,65 @@ function SourceNoteDisplay({ note }) {
   );
 }
 
-export function SourceEvidenceSection({ sources, formatUserDateTime, sanitizeSourceNote }) {
+export function SourceEvidenceSection({ sources, formatUserDateTime, sanitizeSourceNote, sourceObservations }) {
+  const observations = Array.isArray(sourceObservations) ? sourceObservations : [];
+  const grouped = useMemo(() => groupFileArtifactObservations(observations), [observations]);
+  const hasObservedAs = grouped.length > 0;
+
+  // Prefer artifact observations when present; fall back to legacy source evidence rows.
+  if (hasObservedAs) {
+    return (
+      <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
+        <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
+        <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 860, fontSize: 12 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', background: '#111827' }}>
+              <th>Source</th>
+              <th>Observed As</th>
+              <th>Observed Value</th>
+              <th>Evidence</th>
+              <th>Additional Known Hashes</th>
+              <th>Confidence</th>
+              <th>First Seen</th>
+              <th>Last Confirmed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grouped.map((o) => (
+              <tr key={`obs-${o.id || `${o.source_name}-${o.observed_hash_type}-${o.observed_hash_value}`}`} style={{ borderTop: '1px solid #334155' }}>
+                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{o.source_name || '-'}</td>
+                <td style={{ textTransform: 'uppercase' }}>{o.observed_as || o.observed_hash_type || '-'}</td>
+                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                  {o.observed_hash_value || '-'}
+                </td>
+                <td style={{ whiteSpace: 'normal' }}>
+                  <div>{o.evidence_label || o.observation_type || '-'}</div>
+                  {o.mapping_evidence ? (
+                    <div style={{ color: '#94a3b8', marginTop: 4 }}>{o.mapping_evidence}</div>
+                  ) : null}
+                </td>
+                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                  {(o.additional_known_hashes || []).length
+                    ? o.additional_known_hashes.map((h) => (
+                      <div key={`${h.hash_type}-${h.value}`} style={{ marginBottom: 4 }}>
+                        <span style={{ textTransform: 'uppercase', color: '#94a3b8' }}>{h.hash_type}</span>
+                        {' '}
+                        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{h.value}</span>
+                      </div>
+                    ))
+                    : '-'}
+                </td>
+                <td>{o.confidence || '-'}</td>
+                <td>{formatUserDateTime(o.first_seen_in_source)}</td>
+                <td>{formatUserDateTime(o.last_seen_in_source)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
       <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
@@ -563,6 +622,76 @@ export function SourceEvidenceSection({ sources, formatUserDateTime, sanitizeSou
   );
 }
 
+function FileArtifactInformationCard({ fileInformation, fileArtifact }) {
+  const primary = fileArtifact?.primary_hash || null;
+  const known = Array.isArray(fileArtifact?.known_hashes) ? fileArtifact.known_hashes : [];
+  const fi = fileInformation || {};
+
+  const hashRows = known.length
+    ? known
+    : [
+        fi.md5 ? { hash_type: 'md5', value: fi.md5, is_primary: false } : null,
+        fi.sha1 ? { hash_type: 'sha1', value: fi.sha1, is_primary: false } : null,
+        fi.sha256 ? { hash_type: 'sha256', value: fi.sha256, is_primary: true } : null
+      ].filter(Boolean);
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>File Information</div>
+      <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}>
+        <tbody>
+          {primary ? (
+            <>
+              <tr style={{ borderTop: '1px solid #334155' }}>
+                <th style={{ width: 180, textAlign: 'left', background: '#111827' }}>Primary Identifier</th>
+                <td style={{ textTransform: 'uppercase', fontWeight: 700, color: '#93c5fd' }}>{primary.hash_type}</td>
+              </tr>
+              <tr style={{ borderTop: '1px solid #334155' }}>
+                <th style={{ width: 180, textAlign: 'left', background: '#111827' }}>Primary Value</th>
+                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                  {primary.value}
+                </td>
+              </tr>
+            </>
+          ) : null}
+          {hashRows.length ? (
+            <tr style={{ borderTop: '1px solid #334155' }}>
+              <th style={{ width: 180, textAlign: 'left', background: '#111827', verticalAlign: 'top' }}>Known Hashes</th>
+              <td>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {hashRows.map((h) => (
+                    <div key={`${h.hash_type}-${h.value}`} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 8 }}>
+                      <span style={{ textTransform: 'uppercase', color: h.is_primary ? '#93c5fd' : '#94a3b8', fontWeight: h.is_primary ? 700 : 500 }}>
+                        {h.hash_type}
+                      </span>
+                      <span style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                        {h.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ) : null}
+          <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Name</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.file_name || fileArtifact?.file_name || '-'}</td></tr>
+          <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Type</th><td>{fi.file_type || fileArtifact?.file_type || '-'}</td></tr>
+          <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MIME</th><td>{fi.mime || fileArtifact?.mime_type || '-'}</td></tr>
+          {!known.length ? (
+            <>
+              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MD5</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.md5 || '-'}</td></tr>
+              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA1</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.sha1 || '-'}</td></tr>
+              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA256</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.sha256 || '-'}</td></tr>
+            </>
+          ) : null}
+          <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>IMPHASH</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.imphash || '-'}</td></tr>
+          <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>TLSH</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.tlsh || '-'}</td></tr>
+          <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SSDEEP</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.ssdeep || '-'}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function IntelligenceTabPanel({
   iocId,
   iocValue,
@@ -577,6 +706,7 @@ export function IntelligenceTabPanel({
   isHashObservable,
   hasMeaningfulFileInfo,
   fileInformation,
+  fileArtifact,
   VirusTotalEnrichmentCard,
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
@@ -619,6 +749,8 @@ export function IntelligenceTabPanel({
     gap: 12,
     alignItems: 'start'
   }), []);
+
+  const showFileInfo = isHashObservable && (hasMeaningfulFileInfo || Boolean(fileArtifact?.known_hashes?.length));
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -683,26 +815,16 @@ export function IntelligenceTabPanel({
         formatUserDateTime={formatUserDateTime}
       />
 
-      {isHashObservable && hasMeaningfulFileInfo ? (
-        <div style={{ border: '1px solid #334155', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>File Information</div>
-          <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 13 }}>
-            <tbody>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Name</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.file_name || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Type</th><td>{fileInformation.file_type || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MIME</th><td>{fileInformation.mime || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MD5</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.md5 || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA1</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.sha1 || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SHA256</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.sha256 || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>IMPHASH</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.imphash || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>TLSH</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.tlsh || '-'}</td></tr>
-              <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>SSDEEP</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fileInformation.ssdeep || '-'}</td></tr>
-            </tbody>
-          </table>
-        </div>
+      {showFileInfo ? (
+        <FileArtifactInformationCard fileInformation={fileInformation} fileArtifact={fileArtifact} />
       ) : null}
 
-      <SourceEvidenceSection sources={sources} formatUserDateTime={formatUserDateTime} sanitizeSourceNote={sanitizeSourceNote} />
+      <SourceEvidenceSection
+        sources={sources}
+        formatUserDateTime={formatUserDateTime}
+        sanitizeSourceNote={sanitizeSourceNote}
+        sourceObservations={fileArtifact?.source_observations}
+      />
     </div>
   );
 }

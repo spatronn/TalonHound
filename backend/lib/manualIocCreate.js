@@ -227,6 +227,23 @@ export async function createManualIoc(pool, body, opts = {}) {
     [row.public_id, row.observable_type, String(row.observable || '').toLowerCase()]
   ).catch(() => {});
 
+  try {
+    const { dualWriteFileArtifactForObservable } = await import('./fileArtifacts/dualWrite.js');
+    await dualWriteFileArtifactForObservable(pool, {
+      observable: row.observable,
+      observableType: row.observable_type,
+      sourceName,
+      note: row.note,
+      confidence: row.confidence,
+      firstSeenAt: row.created_at,
+      lastSeenAt: row.created_at,
+      attachNoteSiblings: false,
+      providerMapping: false
+    });
+  } catch {
+    // dual-write must never fail manual IOC create
+  }
+
   await recomputeIocGlobalStatus(pool, row.id, row.observable_type, {
     audit: opts.audit,
     actor: { actor_type: 'user', source: 'web' }

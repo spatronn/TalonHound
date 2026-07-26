@@ -158,6 +158,14 @@ export const AUDIT_ACTION = Object.freeze({
   RESTORE_COMPLETED: 'restore.completed',
   RESTORE_FAILED: 'restore.failed',
   SAFETY_BACKUP_CREATED: 'backup.safety_created',
+  FILE_ARTIFACT_CREATED: 'file_artifact.created',
+  FILE_ARTIFACT_HASH_ATTACHED: 'file_artifact.hash_attached',
+  FILE_ARTIFACT_PRIMARY_PROMOTED: 'file_artifact.primary_promoted',
+  FILE_ARTIFACT_MERGED: 'file_artifact.merged',
+  FILE_ARTIFACT_MANUAL_MERGE: 'file_artifact.manual_merge',
+  FILE_ARTIFACT_PROVIDER_MERGE: 'file_artifact.provider_merge',
+  FILE_ARTIFACT_CONFLICT_DETECTED: 'file_artifact.conflict_detected',
+  FILE_ARTIFACT_OBSERVATION_ATTACHED: 'file_artifact.observation_attached',
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -177,7 +185,8 @@ export const AUDIT_ENTITY = Object.freeze({
   AUTH: 'auth',
   CUSTOM_THREAT_FEED: 'custom_threat_feed',
   SYSTEM_BACKUP: 'system_backup',
-  SYSTEM_RESTORE: 'system_restore'
+  SYSTEM_RESTORE: 'system_restore',
+  FILE_ARTIFACT: 'file_artifact'
 });
 
 /** Human-readable labels for UI */
@@ -312,7 +321,15 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.RESTORE_STARTED]: 'Restore Started',
   [AUDIT_ACTION.RESTORE_COMPLETED]: 'Restore Completed',
   [AUDIT_ACTION.RESTORE_FAILED]: 'Restore Failed',
-  [AUDIT_ACTION.SAFETY_BACKUP_CREATED]: 'Safety Backup Created'
+  [AUDIT_ACTION.SAFETY_BACKUP_CREATED]: 'Safety Backup Created',
+  [AUDIT_ACTION.FILE_ARTIFACT_CREATED]: 'File Artifact Created',
+  [AUDIT_ACTION.FILE_ARTIFACT_HASH_ATTACHED]: 'File Artifact Hash Attached',
+  [AUDIT_ACTION.FILE_ARTIFACT_PRIMARY_PROMOTED]: 'File Artifact Primary Promoted',
+  [AUDIT_ACTION.FILE_ARTIFACT_MERGED]: 'File Artifacts Merged',
+  [AUDIT_ACTION.FILE_ARTIFACT_MANUAL_MERGE]: 'File Artifact Manual Merge',
+  [AUDIT_ACTION.FILE_ARTIFACT_PROVIDER_MERGE]: 'File Artifact Provider Merge',
+  [AUDIT_ACTION.FILE_ARTIFACT_CONFLICT_DETECTED]: 'File Artifact Conflict Detected',
+  [AUDIT_ACTION.FILE_ARTIFACT_OBSERVATION_ATTACHED]: 'File Artifact Observation Attached'
 });
 
 export function auditActionLabel(action) {

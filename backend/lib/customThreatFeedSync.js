@@ -126,6 +126,33 @@ async function upsertIocRow(client, {
     }
   }
 
+  // File artifact dual-write: Custom Feed observed-as = the hash type it actually sent.
+  try {
+    const { dualWriteFileArtifactForObservable } = await import('./fileArtifacts/dualWrite.js');
+    const publicId = existing.rowCount
+      ? existing.rows[0].public_id
+      : (await client.query(
+          `SELECT public_id FROM ioc_items WHERE id = $1 AND observable_type = $2`,
+          [iocItemId, observableType]
+        )).rows[0]?.public_id;
+    if (publicId) {
+      await dualWriteFileArtifactForObservable(client, {
+        observable,
+        observableType,
+        sourceName,
+        feedId,
+        note,
+        confidence: confFields.confidence,
+        firstSeenAt: seenAt,
+        lastSeenAt: seenAt,
+        attachNoteSiblings: false,
+        providerMapping: false
+      });
+    }
+  } catch {
+    // dual-write must never fail custom feed sync
+  }
+
   return {
     iocItemId,
     observableType,
