@@ -13,7 +13,7 @@ import { ensureArtifactForFileHashIoc } from './attach.js';
 import { mergeFileArtifacts } from './merge.js';
 import { selectCanonicalArtifact } from './metadataPolicy.js';
 import { OBSERVATION_TYPE, RELATION_METHOD } from './observations.js';
-import { resolveFeedIdBySourceName } from '../iocExpiration.js';
+import { resolveFeedIdBySourceName } from './feedResolve.js';
 import {
   withSavepoint,
   isControlledFileArtifactDbError,

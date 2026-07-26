@@ -8,7 +8,7 @@ import {
   shouldRethrowDualWriteError
 } from './dualWrite.js';
 import { withSavepoint, isControlledFileArtifactDbError, formatProviderError } from './txSavepoint.js';
-import { feedKeyForSourceName } from '../iocExpiration.js';
+import { feedKeyForSourceName } from './feedResolve.js';
 
 const SHA256 = '094fa6d0cb7ead6c425ad9d25d5619c322445f6a32578c973a668322d0f8ba8a';
 const MD5 = 'dce9ad6317ce147f1f3f74bc93d9252a';
@@ -81,6 +81,7 @@ function feedMetaResult() {
       {
         key: 'threatfox-abusech',
         feed_id: TF_FEED_ID,
+        integration_id: TF_FEED_ID,
         feed_update_mode: 'incremental',
         name: 'ThreatFox',
         feed_kind: 'built_in'
@@ -88,6 +89,7 @@ function feedMetaResult() {
       {
         key: 'malwarebazaar-abusech',
         feed_id: MB_FEED_ID,
+        integration_id: MB_FEED_ID,
         feed_update_mode: 'incremental',
         name: 'MalwareBazaar',
         feed_kind: 'built_in'
@@ -123,8 +125,15 @@ function ensureArtifactHandlers({ observable, observableType, sourceName, note =
       result: () => iocRow({ observable, observableType, sourceName, note })
     },
     {
-      match: (sql) => sql.includes('FROM integration_feeds'),
-      result: () => feedMetaResult()
+      match: (sql) => sql.includes('FROM integration_feeds') && /WHERE key/i.test(sql),
+      result: (_sql, params) => {
+        const key = params?.[0];
+        const row = feedMetaResult().rows.find((r) => r.key === key);
+        return {
+          rowCount: row ? 1 : 0,
+          rows: row ? [{ integration_id: row.feed_id }] : []
+        };
+      }
     },
     {
       match: (sql) => /pg_advisory_xact_lock/i.test(sql),
@@ -414,8 +423,15 @@ describe('fileArtifacts/dualWrite transaction safety', () => {
         })
       },
       {
-        match: (sql) => sql.includes('FROM integration_feeds'),
-        result: () => feedMetaResult()
+        match: (sql) => sql.includes('FROM integration_feeds') && /WHERE key/i.test(sql),
+        result: (_sql, params) => {
+          const key = params?.[0];
+          const row = feedMetaResult().rows.find((r) => r.key === key);
+          return {
+            rowCount: row ? 1 : 0,
+            rows: row ? [{ integration_id: row.feed_id }] : []
+          };
+        }
       },
       {
         match: (sql) => /pg_advisory_xact_lock/i.test(sql),
@@ -456,8 +472,15 @@ describe('fileArtifacts/dualWrite transaction safety', () => {
         })
       },
       {
-        match: (sql) => sql.includes('FROM integration_feeds'),
-        result: () => feedMetaResult()
+        match: (sql) => sql.includes('FROM integration_feeds') && /WHERE key/i.test(sql),
+        result: (_sql, params) => {
+          const key = params?.[0];
+          const row = feedMetaResult().rows.find((r) => r.key === key);
+          return {
+            rowCount: row ? 1 : 0,
+            rows: row ? [{ integration_id: row.feed_id }] : []
+          };
+        }
       },
       {
         match: (sql) => /pg_advisory_xact_lock/i.test(sql),

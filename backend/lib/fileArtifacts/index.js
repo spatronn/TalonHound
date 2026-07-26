@@ -86,6 +86,12 @@ export {
 export { dualWriteFileArtifact, dualWriteFileArtifactForObservable, shouldRethrowDualWriteError } from './dualWrite.js';
 
 export {
+  feedKeyForSourceName,
+  sourceNameMatchesFeed,
+  resolveFeedIdBySourceName
+} from './feedResolve.js';
+
+export {
   EMPTY_ORPHAN_ARTIFACTS_SQL,
   countEmptyOrphanArtifacts,
   collectFileArtifactValidationMetrics
