@@ -1432,36 +1432,6 @@ function BulkActionConfirmModal({
   );
 }
 
-function sanitizeSourceNote(note) {
-  const raw = String(note || '').trim();
-  if (!raw) return '-';
-
-  const duplicateFileInfoKeys = new Set([
-    'file_name',
-    'file_type',
-    'mime',
-    'md5',
-    'sha1',
-    'sha256',
-    'imphash',
-    'tlsh',
-    'ssdeep'
-  ]);
-
-  const filtered = raw
-    .split('|')
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .filter((part) => {
-      const idx = part.indexOf('=');
-      if (idx <= 0) return true;
-      const key = part.slice(0, idx).trim().toLowerCase();
-      return !duplicateFileInfoKeys.has(key);
-    });
-
-  return filtered.length ? filtered.join(' | ') : '-';
-}
-
 function normalizeEventContext(event) {
   const sourceType = String(event?.source_type || '').toLowerCase();
   const parserSource = String(event?.parser_source || '').toLowerCase();
@@ -14109,9 +14079,7 @@ function IOCDetailsPage() {
                 active={intelligenceTabActive}
                 canWrite={canWrite}
                 isAdmin={isAdmin}
-                sources={data.sources}
                 formatUserDateTime={formatUserDateTime}
-                sanitizeSourceNote={sanitizeSourceNote}
                 isRdapEligible={isRdapEligibleObservable(summary.observable, summary.observable_type).eligible}
                 isHashObservable={isHashObservable}
                 hasMeaningfulFileInfo={hasMeaningfulFileInfo}

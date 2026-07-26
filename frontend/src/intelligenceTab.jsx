@@ -23,7 +23,6 @@ import {
   toAnalystReferenceForm
 } from './lib/analystIntelligenceForm.js';
 import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
-import { groupFileArtifactObservations } from './lib/groupFileArtifactObservations.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -473,155 +472,6 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
   );
 }
 
-const NOTE_SKIP_KEYS = new Set([
-  'file_name', 'file_type', 'mime', 'md5', 'sha1', 'sha256', 'imphash', 'tlsh', 'ssdeep'
-]);
-
-const NOTE_KEY_LABELS = {
-  external_id: 'External ID',
-  reference_url: 'Reference',
-  url_status: 'URL Status',
-  reporter: 'Reporter',
-  date_added: 'Date Added',
-  last_online: 'Last Online',
-  ioc_id: 'IOC ID',
-  threat_type: 'Threat Type',
-  malware: 'Malware',
-  malware_alias: 'Aliases',
-  confidence: 'Confidence',
-  reference: 'Reference',
-  first_seen: 'First Seen',
-  last_seen: 'Last Seen',
-  signature: 'Signature',
-  vtpercent: 'VT %',
-  pulse_id: 'Pulse ID',
-  pulse_name: 'Pulse',
-  adversary: 'Adversary',
-  tlp: 'TLP',
-  tags: 'Tags',
-};
-
-function SourceNoteDisplay({ note }) {
-  const raw = String(note || '').trim();
-  if (!raw) return <span style={{ color: '#64748b' }}>—</span>;
-
-  const parts = raw.split(' | ').map((p) => p.trim()).filter(Boolean);
-  const header = parts[0] && !parts[0].includes('=') ? parts[0] : null;
-  const pairs = parts
-    .slice(header ? 1 : 0)
-    .map((p) => {
-      const eq = p.indexOf('=');
-      if (eq <= 0) return null;
-      const key = p.slice(0, eq).trim().toLowerCase();
-      const val = p.slice(eq + 1).trim();
-      return NOTE_SKIP_KEYS.has(key) ? null : { key, val };
-    })
-    .filter(Boolean);
-
-  if (!header && !pairs.length) return <span style={{ color: '#64748b' }}>—</span>;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {header ? <span style={{ color: '#94a3b8', fontSize: 11 }}>{header}</span> : null}
-      {pairs.map(({ key, val }) => (
-        <div key={key} style={{ display: 'flex', gap: 6, lineHeight: 1.4 }}>
-          <span style={{ color: '#64748b', flexShrink: 0, minWidth: 80 }}>{NOTE_KEY_LABELS[key] || key}:</span>
-          {key === 'reference_url' || key === 'reference' ? (
-            <a href={val} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', overflowWrap: 'anywhere' }}>{val}</a>
-          ) : (
-            <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{val}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function SourceEvidenceSection({ sources, formatUserDateTime, sanitizeSourceNote, sourceObservations }) {
-  const observations = Array.isArray(sourceObservations) ? sourceObservations : [];
-  const grouped = useMemo(() => groupFileArtifactObservations(observations), [observations]);
-  const hasObservedAs = grouped.length > 0;
-
-  // Prefer artifact observations when present; fall back to legacy source evidence rows.
-  if (hasObservedAs) {
-    return (
-      <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-        <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
-        <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 860, fontSize: 12 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', background: '#111827' }}>
-              <th>Source</th>
-              <th>Observed As</th>
-              <th>Observed Value</th>
-              <th>Evidence</th>
-              <th>Additional Known Hashes</th>
-              <th>Confidence</th>
-              <th>First Seen</th>
-              <th>Last Confirmed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {grouped.map((o) => (
-              <tr key={`obs-${o.id || `${o.source_name}-${o.observed_hash_type}-${o.observed_hash_value}`}`} style={{ borderTop: '1px solid #334155' }}>
-                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{o.source_name || '-'}</td>
-                <td style={{ textTransform: 'uppercase' }}>{o.observed_as || o.observed_hash_type || '-'}</td>
-                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
-                  {o.observed_hash_value || '-'}
-                </td>
-                <td style={{ whiteSpace: 'normal' }}>
-                  <div>{o.evidence_label || o.observation_type || '-'}</div>
-                  {o.mapping_evidence ? (
-                    <div style={{ color: '#94a3b8', marginTop: 4 }}>{o.mapping_evidence}</div>
-                  ) : null}
-                </td>
-                <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
-                  {(o.additional_known_hashes || []).length
-                    ? o.additional_known_hashes.map((h) => (
-                      <div key={`${h.hash_type}-${h.value}`} style={{ marginBottom: 4 }}>
-                        <span style={{ textTransform: 'uppercase', color: '#94a3b8' }}>{h.hash_type}</span>
-                        {' '}
-                        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{h.value}</span>
-                      </div>
-                    ))
-                    : '-'}
-                </td>
-                <td>{o.confidence || '-'}</td>
-                <td>{formatUserDateTime(o.first_seen_in_source)}</td>
-                <td>{formatUserDateTime(o.last_seen_in_source)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ border: '1px solid #334155', borderRadius: 10, overflowX: 'auto' }}>
-      <div style={{ padding: 10, borderBottom: '1px solid #334155', background: '#1f2937', fontWeight: 700 }}>Source Evidence</div>
-      <table className="ioc-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 760, fontSize: 12 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', background: '#111827' }}>
-            <th>Source</th><th>URL</th><th>Confidence</th><th>Category</th><th>Note</th><th>Created At</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(sources || []).map((s) => (
-            <tr key={`${s.id}-${s.created_at}`} style={{ borderTop: '1px solid #334155' }}>
-              <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_name || '-'}</td>
-              <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{s.source_url || '-'}</td>
-              <td>{s.confidence || '-'}</td>
-              <td>{s.category || '-'}</td>
-              <td style={{ whiteSpace: 'normal' }}><SourceNoteDisplay note={s.note} /></td>
-              <td>{formatUserDateTime(s.created_at)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function FileArtifactInformationCard({ fileInformation, fileArtifact }) {
   const primary = fileArtifact?.primary_hash || null;
   const known = Array.isArray(fileArtifact?.known_hashes) ? fileArtifact.known_hashes : [];
@@ -699,9 +549,7 @@ export function IntelligenceTabPanel({
   active,
   canWrite,
   isAdmin,
-  sources,
   formatUserDateTime,
-  sanitizeSourceNote,
   isRdapEligible,
   isHashObservable,
   hasMeaningfulFileInfo,
@@ -818,13 +666,6 @@ export function IntelligenceTabPanel({
       {showFileInfo ? (
         <FileArtifactInformationCard fileInformation={fileInformation} fileArtifact={fileArtifact} />
       ) : null}
-
-      <SourceEvidenceSection
-        sources={sources}
-        formatUserDateTime={formatUserDateTime}
-        sanitizeSourceNote={sanitizeSourceNote}
-        sourceObservations={fileArtifact?.source_observations}
-      />
     </div>
   );
 }

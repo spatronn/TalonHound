@@ -5418,11 +5418,6 @@ app.get('/api/ioc/details', async (req, res) => {
       iocItemIds,
       observableType
     });
-    const sourceEvidence = buildIocDetailsSourceEvidence({
-      iocRows: rows,
-      membershipSummary,
-      evidenceRows
-    });
 
     // Global expiration = MAX effective expires_at across active sources.
     // Each active source's expires_at is already the effective value (policy or custom override,
@@ -5710,7 +5705,8 @@ app.get('/api/ioc/details', async (req, res) => {
     const payload = {
       summary,
       confidence: enrichedConfidenceDetail,
-      sources: sourceEvidence,
+      // Legacy Source Evidence projection removed; use active_sources / feed_memberships.
+      sources: [],
       historical_ioc_rows: rows.filter((r) => String(r.status || 'active') !== 'active'),
       active_sources: membershipSummary.activeSources,
       historical_sources: membershipSummary.historicalSources,

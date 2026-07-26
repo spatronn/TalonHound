@@ -149,7 +149,7 @@ const KNOWN_METADATA_FIELDS = [
  * Returns:
  *   classifications — feed-derived classification entries (shape: { value, label, active, origin, source_name })
  *   tags            — feed-derived context tags ({ tag, normalized, origin, source_name })
- *   source_metadata — structured metadata per source for Source Evidence display
+ *   source_metadata — structured metadata per source for feed/tag consumers
  */
 export function buildFeedIntelligence(evidenceRows = []) {
   const allClassifications = [];

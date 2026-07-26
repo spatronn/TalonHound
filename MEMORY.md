@@ -10,6 +10,8 @@
 
 - **Aktif proje:** TalonHound — threat intel & enrichment odaklı.
 - **Arşiv:** demo-runbook (2026-07 geçişi).
+- **File Artifacts:** Additive md5/sha1/sha256 identity layer (migration `131`). Flags `FILE_ARTIFACTS_DUAL_WRITE_ENABLED` / `FILE_ARTIFACTS_READ_ENABLED`. Docs: `docs/file-artifacts.md`.
+- **IOC Details:** Legacy Source Evidence UI section removed (Intelligence tab); memberships / feed evidence / hash canonicalization kept.
 - **Entegrasyon (devam):** TalonHound ↔ DNSMania DNS enrichment.
   - DNSMania local path: `C:\Proje\DNSMania`
   - API readiness raporu: `C:\Proje\DNSMania\docs\api-reference.html`

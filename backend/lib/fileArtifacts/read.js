@@ -2,7 +2,6 @@
  * Read-path helpers for artifact-aware IOC detail / list.
  */
 
-import { formatObservationForApi } from './observations.js';
 import { selectPrimaryHash } from './hashNormalize.js';
 import { isFileArtifactsReadEnabled } from './flags.js';
 
@@ -75,13 +74,6 @@ export async function loadArtifactDetail(db, artifactId, opts = {}) {
   );
   const canonicalLink = links.find((l) => l.is_canonical_ioc) || links[0] || null;
 
-  const { rows: observations } = await db.query(
-    `SELECT * FROM file_artifact_source_observations
-     WHERE artifact_id = $1
-     ORDER BY source_name, observed_hash_type`,
-    [artifactId]
-  );
-
   const { rows: nonIdentity } = await db.query(
     `SELECT attr_type, attr_value, source_name
      FROM file_artifact_non_identity_attrs
@@ -127,7 +119,6 @@ export async function loadArtifactDetail(db, artifactId, opts = {}) {
     first_seen_at: artifact.first_seen_at,
     last_seen_at: artifact.last_seen_at,
     non_identity_attrs: nonIdentity,
-    source_observations: observations.map(formatObservationForApi),
     metadata: artifact.metadata || {}
   };
 }

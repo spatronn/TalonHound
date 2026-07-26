@@ -104,7 +104,8 @@ Auto-merge / attach sibling hashes only when:
 - MalwareBazaar sending SHA256 → `observed_as=sha256`; sibling hashes get `provider_hash_mapping`
 - Never attribute a hash a source did not send as a direct observation
 
-UI Source Evidence groups by `feed_id || source_record_id || source_name` (not name alone). Provider mappings collapse into **Additional Known Hashes** on the direct observation row.
+Observations are stored in `file_artifact_source_observations` for dual-write / merge integrity.
+They are not rendered as a dedicated IOC Details "Source Evidence" UI section.
 
 ## Backfill
 

@@ -127,7 +127,8 @@ export async function upsertSourceObservation(db, input) {
 }
 
 /**
- * Format observation for API/UI (Observed As semantics).
+ * Format observation for API consumers (observed-as semantics).
+ * Kept for dual-write tooling/tests; not projected on IOC Details responses.
  * @param {object} row
  */
 export function formatObservationForApi(row) {

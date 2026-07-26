@@ -147,7 +147,8 @@ export async function fetchFeedSourceEvidenceForItems(client, { iocItemIds = [],
 }
 
 /**
- * Build Source Evidence rows aligned with active feed/manual memberships.
+ * Build feed/manual provenance rows for the IOC List source-details modal
+ * (`GET /api/ioc/observable/sources`). Not used by IOC Details UI.
  * @param {{ iocRows: object[], membershipSummary: object, evidenceRows: object[] }} input
  */
 export function buildIocDetailsSourceEvidence({ iocRows = [], membershipSummary = {}, evidenceRows = [] } = {}) {
