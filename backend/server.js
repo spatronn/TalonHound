@@ -3635,10 +3635,12 @@ async function handleIocList(req, res) {
             d('jsonStringify', t.beforeJsonStringify, t.afterJsonStringify),
             d('responseSent', t.beforeSend, t.responseSent),
             `total=${t.responseSent - t.requestReceived}ms`,
-            'queries=2',
+            // Browse: 1 oversample CTE window (+optional retry) + enrich fan-out inside resultMapping.
+            'path=browse',
             `rows=${browseRows.length}`,
             `responseBytes=${t.responseBytes}`,
-            'path=browse'
+            `page=${currentPage}`,
+            `pageSize=${limit}`
           ].filter(Boolean);
           console.log('[ioc/list timing]', parts.join(' '), 'q=' + (req.query?.q ?? ''));
         });

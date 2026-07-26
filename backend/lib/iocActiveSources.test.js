@@ -13,7 +13,9 @@ import {
   enrichItemsWithActiveSourceCounts,
   fetchIocListStats,
   fetchActiveIocListPage,
-  activeScopedObservablesSql
+  queryActiveIocBrowseWindow,
+  activeScopedObservablesSql,
+  IOC_LIST_BROWSE_SQL_CONTRACT
 } from './iocActiveSources.js';
 import {
   buildIocInheritedConfidenceSummary,
@@ -85,24 +87,19 @@ test('activeScopedObservablesSql uses feed membership union not correlated exist
 
 test('fetchActiveIocListPage includes feed-based active IOC', async () => {
   const pool = {
-    connect: async () => ({
-      query: async (sql, params) => pool.query(sql, params),
-      release: () => {}
-    }),
-    async query(sql, params) {
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
-        return { rows: [] };
+    async query(sql) {
+      if (String(sql).includes('WITH recent AS')) {
+        return {
+          rows: [{
+            id: 42,
+            public_id: '11111111-1111-1111-1111-111111111111',
+            observable: 'evil.example',
+            observable_type: 'domain',
+            created_at: '2026-01-01T00:00:00Z'
+          }]
+        };
       }
-      if (sql.includes('FROM ioc_feed_memberships m')) {
-        return { rows: [{ ioc_item_id: 42, ioc_observable_type: 'domain', sort_ts: '2026-01-02T00:00:00Z' }] };
-      }
-      if (sql.includes('ioc_source_id IS NOT NULL')) {
-        return { rows: [] };
-      }
-      if (sql.includes('FROM ioc_domain') && sql.includes('id = ANY')) {
-        return { rows: [{ id: 42, public_id: '11111111-1111-1111-1111-111111111111', observable: 'evil.example', observable_type: 'domain', created_at: '2026-01-01T00:00:00Z' }] };
-      }
-      if (sql.includes('FROM ioc_ip_geo_cache')) return { rows: [] };
+      if (String(sql).includes('FROM ioc_ip_geo_cache')) return { rows: [] };
       return { rows: [] };
     }
   };
@@ -116,24 +113,19 @@ test('fetchActiveIocListPage includes feed-based active IOC', async () => {
 
 test('fetchActiveIocListPage includes manual active IOC without feed membership', async () => {
   const pool = {
-    connect: async () => ({
-      query: async (sql, params) => pool.query(sql, params),
-      release: () => {}
-    }),
-    async query(sql, params) {
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
-        return { rows: [] };
+    async query(sql) {
+      if (String(sql).includes('WITH recent AS')) {
+        return {
+          rows: [{
+            id: 99,
+            public_id: '22222222-2222-2222-2222-222222222222',
+            observable: '31.76.32.249',
+            observable_type: 'ip',
+            created_at: '2026-07-05T18:35:30Z'
+          }]
+        };
       }
-      if (sql.includes('FROM ioc_feed_memberships m')) {
-        return { rows: [] };
-      }
-      if (sql.includes('ioc_source_id IS NOT NULL')) {
-        return { rows: [{ ioc_item_id: 99, ioc_observable_type: 'ip', sort_ts: '2026-07-05T18:35:30Z' }] };
-      }
-      if (sql.includes('FROM ioc_ip') && sql.includes('id = ANY')) {
-        return { rows: [{ id: 99, public_id: '22222222-2222-2222-2222-222222222222', observable: '31.76.32.249', observable_type: 'ip', created_at: '2026-07-05T18:35:30Z' }] };
-      }
-      if (sql.includes('FROM ioc_ip_geo_cache')) return { rows: [] };
+      if (String(sql).includes('FROM ioc_ip_geo_cache')) return { rows: [] };
       return { rows: [] };
     }
   };
@@ -143,57 +135,32 @@ test('fetchActiveIocListPage includes manual active IOC without feed membership'
   assert.equal(rows[0].observable_type, 'ip');
 });
 
-test('fetchActiveIocListPage interleaves feed and manual IOCs by sort_ts descending', async () => {
+test('fetchActiveIocListPage orders by created_at descending (platform import)', async () => {
   const pool = {
-    connect: async () => ({
-      query: async (sql, params) => pool.query(sql, params),
-      release: () => {}
-    }),
-    async query(sql, params) {
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
-        return { rows: [] };
+    async query(sql) {
+      if (String(sql).includes('WITH recent AS')) {
+        return {
+          rows: [
+            { id: 20, public_id: 'aaaa', observable: '31.76.32.249', observable_type: 'ip', created_at: '2026-07-05T18:35:30Z' },
+            { id: 10, public_id: 'bbbb', observable: '1.1.1.1', observable_type: 'ip', created_at: '2026-06-01T00:00:00Z' }
+          ]
+        };
       }
-      if (sql.includes('FROM ioc_feed_memberships m')) {
-        return { rows: [{ ioc_item_id: 10, ioc_observable_type: 'ip', sort_ts: '2026-06-01T00:00:00Z' }] };
-      }
-      if (sql.includes('ioc_source_id IS NOT NULL')) {
-        // manual IOC is newer than the feed IOC
-        return { rows: [{ ioc_item_id: 20, ioc_observable_type: 'ip', sort_ts: '2026-07-05T18:35:30Z' }] };
-      }
-      if (sql.includes('FROM ioc_ip') && sql.includes('id = ANY')) {
-        const ids = params[0];
-        const rows = [];
-        if (ids.includes(20)) rows.push({ id: 20, public_id: 'aaaa', observable: '31.76.32.249', observable_type: 'ip', created_at: '2026-07-05T18:35:30Z' });
-        if (ids.includes(10)) rows.push({ id: 10, public_id: 'bbbb', observable: '1.1.1.1', observable_type: 'ip', created_at: '2026-06-01T00:00:00Z' });
-        return { rows };
-      }
-      if (sql.includes('FROM ioc_ip_geo_cache')) return { rows: [] };
+      if (String(sql).includes('FROM ioc_ip_geo_cache')) return { rows: [] };
       return { rows: [] };
     }
   };
   const rows = await fetchActiveIocListPage(pool, { limit: 10, offset: 0 });
   assert.equal(rows.length, 2);
-  // Newer manual IOC should appear first
   assert.equal(rows[0].observable, '31.76.32.249');
   assert.equal(rows[1].observable, '1.1.1.1');
 });
 
-test('fetchActiveIocListPage excludes inactive manual IOC from default list', async () => {
+test('fetchActiveIocListPage excludes inactive rows returned by SQL filter', async () => {
   const pool = {
-    connect: async () => ({
-      query: async (sql, params) => pool.query(sql, params),
-      release: () => {}
-    }),
-    async query(sql, params) {
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
-        return { rows: [] };
-      }
-      if (sql.includes('FROM ioc_feed_memberships m')) return { rows: [] };
-      if (sql.includes('ioc_source_id IS NOT NULL')) {
-        // The SQL WHERE clause filters status='active', so expired IOC won't be returned
-        return { rows: [] };
-      }
-      if (sql.includes('FROM ioc_ip_geo_cache')) return { rows: [] };
+    async query(sql) {
+      if (String(sql).includes('WITH recent AS')) return { rows: [] };
+      if (String(sql).includes('FROM ioc_ip_geo_cache')) return { rows: [] };
       return { rows: [] };
     }
   };
@@ -201,26 +168,72 @@ test('fetchActiveIocListPage excludes inactive manual IOC from default list', as
   assert.equal(rows.length, 0);
 });
 
-test('fetchActiveIocListPage manual query uses COALESCE status active filter', async () => {
+test('fetchActiveIocListPage SQL contract: oversample CTE, no NULLS LAST, created_at DESC', async () => {
   const queries = [];
   const pool = {
-    connect: async () => ({
-      query: async (sql, params) => pool.query(sql, params),
-      release: () => {}
-    }),
-    async query(sql, params) {
+    async query(sql) {
       queries.push(String(sql));
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK' || sql.startsWith('SET LOCAL')) {
-        return { rows: [] };
-      }
       return { rows: [] };
     }
   };
   await fetchActiveIocListPage(pool, { limit: 5, offset: 0 });
-  const manualQuery = queries.find((q) => q.includes('ioc_source_id IS NOT NULL'));
-  assert.ok(manualQuery, 'must query manual IOCs');
-  assert.match(manualQuery, /COALESCE\(status, 'active'\) = 'active'/);
-  assert.match(manualQuery, /ORDER BY created_at DESC/);
+  const browseSql = queries.find((q) => q.includes('WITH recent AS'));
+  assert.ok(browseSql, 'must use oversample CTE');
+  assert.match(browseSql, /ORDER BY created_at DESC/);
+  assert.match(browseSql, /ORDER BY r\.created_at DESC/);
+  assert.equal(browseSql.includes('NULLS LAST'), false);
+  assert.match(browseSql, /COALESCE\(r\.status, 'active'\) = 'active'/);
+  assert.match(browseSql, /ioc_source_id IS NOT NULL/);
+  assert.match(browseSql, /FROM ioc_feed_memberships m/);
+});
+
+test('fetchActiveIocListPage page_size slices after window (offset pagination)', async () => {
+  const pool = {
+    async query(sql, params) {
+      if (String(sql).includes('WITH recent AS')) {
+        assert.equal(params[1], 10); // need = offset(5)+limit(5)
+        const rows = [];
+        for (let i = 0; i < 10; i += 1) {
+          rows.push({
+            id: 100 - i,
+            public_id: `p${i}`,
+            observable: `o${i}.test`,
+            observable_type: 'domain',
+            created_at: `2026-07-${String(26 - i).padStart(2, '0')}T00:00:00Z`
+          });
+        }
+        return { rows };
+      }
+      return { rows: [] };
+    }
+  };
+  const rows = await fetchActiveIocListPage(pool, { limit: 5, offset: 5 });
+  assert.equal(rows.length, 5);
+  assert.equal(rows[0].observable, 'o5.test');
+  assert.equal(rows[4].observable, 'o9.test');
+});
+
+test('queryActiveIocBrowseWindow preserves imported_at semantics fields', async () => {
+  const pool = {
+    async query() {
+      return {
+        rows: [{
+          id: 1,
+          public_id: 'x',
+          observable: 'a.test',
+          observable_type: 'domain',
+          created_at: '2026-07-26T10:00:00.000Z'
+        }]
+      };
+    }
+  };
+  const rows = await queryActiveIocBrowseWindow(pool, { oversample: 50, need: 25 });
+  assert.equal(rows[0].created_at, '2026-07-26T10:00:00.000Z');
+});
+
+test('IOC_LIST_BROWSE_SQL_CONTRACT documents anti-patterns', () => {
+  assert.equal(IOC_LIST_BROWSE_SQL_CONTRACT.forbidsNullsLast, 'NULLS LAST');
+  assert.match(IOC_LIST_BROWSE_SQL_CONTRACT.requiresOrderByCreatedAtDesc, /created_at DESC/);
 });
 
 test('enrichItemsWithActiveSourceCounts byItemIds path counts manual IOC as active source', async () => {

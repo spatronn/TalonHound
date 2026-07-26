@@ -614,7 +614,16 @@ export async function fetchIocStatsLastUpdate(pool) {
 }
 
 /**
- * Paginated active IOC browse via recent membership index + typed partition lookups.
+ * Paginated active IOC browse ordered by platform import time (`ioc_items.created_at`).
+ *
+ * Performance notes (prod EXPLAIN ANALYZE, ~3M items / ~3.2M memberships):
+ * - Do NOT use `ORDER BY created_at DESC NULLS LAST` — it disables Merge Append index
+ *   walks and forces full partition scans (~1.5–3.8s). `created_at` is NOT NULL.
+ * - Do NOT drive from `ioc_feed_memberships` then sort by item created_at — planner
+ *   nested-loops ~2.7M membership lookups (~3.8s).
+ * - Prefer: index walk newest ioc_items (oversample) → filter active membership/manual
+ *   → LIMIT need → JS page slice. Page 1 ~sub-ms SQL; full 2k window ~7ms warm.
+ *
  * @param {import('pg').Pool} pool
  * @param {{ limit: number, offset: number, browseCap?: number }} opts
  */
@@ -624,72 +633,29 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
 
   const cappedLimit = Math.min(limit, cap - offset);
   const need = Math.min(offset + cappedLimit, cap);
-  // 20% buffer covers the ~0.3% membership duplication rate with room to spare.
-  // Previously need*20 was required because GROUP BY + resolvePartitionRows were called on
-  // all combined rows; now we pre-dedup by ioc_item_id before resolution.
-  const scanLimit = Math.min(Math.ceil(need * 1.2) + 20, cap);
+  // Oversample newest rows so inactive / no-active-membership items among the head
+  // do not under-fill the browse window. Cap keeps the index walk bounded.
+  let oversample = Math.min(Math.max(need * 3, need + 100), Math.max(cap * 2, 4000));
 
-  const [memRes, manualRes] = await Promise.all([
-    // List paging sorts by platform import time (ioc_items.created_at), using
-    // idx_ioc_items_created_at / covering indexes. Membership filter keeps only
-    // actively-present feed IOCs; sort_ts is NEVER last_seen_in_feed / last_changed.
-    pool.query(
-      `SELECT m.ioc_item_id, m.ioc_observable_type, i.created_at AS sort_ts
-       FROM ioc_feed_memberships m
-       INNER JOIN ioc_items i ON i.id = m.ioc_item_id
-         AND i.observable_type = m.ioc_observable_type
-       WHERE m.status = 'active'
-         AND m.purged_at IS NULL
-         AND COALESCE(i.status, 'active') = 'active'
-       ORDER BY i.created_at DESC NULLS LAST
-       LIMIT $1`,
-      [scanLimit]
-    ),
-    pool.query(
-      `SELECT id AS ioc_item_id, observable_type AS ioc_observable_type, created_at AS sort_ts
-       FROM ioc_items
-       WHERE ioc_source_id IS NOT NULL
-         AND COALESCE(status, 'active') = 'active'
-       ORDER BY created_at DESC NULLS LAST
-       LIMIT $1`,
-      [scanLimit]
-    )
-  ]);
-
-  const combined = [...memRes.rows, ...manualRes.rows].sort(
-    (a, b) => new Date(b.sort_ts || 0).getTime() - new Date(a.sort_ts || 0).getTime()
-  );
-
-  // Deduplicate by (ioc_item_id, ioc_observable_type) before calling resolveIocPartitionRows.
-  // Same IOC may appear once per feed; first occurrence keeps the highest created_at
-  // (identical across memberships). Only ≤ need+20 IDs are resolved.
-  const seenItemKeys = new Set();
-  const candidates = [];
-  for (const c of combined) {
-    const k = `${c.ioc_item_id}:${c.ioc_observable_type}`;
-    if (!seenItemKeys.has(k)) {
-      seenItemKeys.add(k);
-      candidates.push(c);
-    }
-    if (candidates.length >= need + 20) break;
+  let ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
+  if (ranked.length < need && oversample < cap * 3) {
+    oversample = Math.min(Math.max(oversample * 2, need * 5), cap * 3);
+    ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
   }
 
-  const resolved = await resolveIocPartitionRows(pool, candidates);
-
+  // Deduplicate by observable (duplicate typed rows can share the same observable).
   const seenObs = new Set();
-  /** @type {Array<{ id: number, public_id: string, observable: string, observable_type: string, created_at: string, sort_ts: string }>} */
-  const ranked = [];
-  for (const c of candidates) {
-    const row = resolved.get(`${c.ioc_item_id}:${c.ioc_observable_type}`);
-    if (!row) continue;
+  /** @type {typeof ranked} */
+  const unique = [];
+  for (const row of ranked) {
     const key = `${row.observable_type}|${row.observable}`;
     if (seenObs.has(key)) continue;
     seenObs.add(key);
-    ranked.push({ ...row, sort_ts: c.sort_ts });
-    if (ranked.length >= cap) break;
+    unique.push(row);
+    if (unique.length >= need) break;
   }
 
-  const pageSlice = ranked.slice(offset, offset + cappedLimit);
+  const pageSlice = unique.slice(offset, offset + cappedLimit);
 
   const ipObservables = pageSlice.filter((i) => i.observable_type === 'ip').map((i) => i.observable);
   const geoMap = new Map();
@@ -706,7 +672,7 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   const out = [];
   for (const item of pageSlice) {
     const geo = item.observable_type === 'ip' ? geoMap.get(item.observable) : null;
-    const importedAt = item.created_at || item.sort_ts || null;
+    const importedAt = item.created_at || null;
     out.push({
       id: item.id,
       public_id: item.public_id,
@@ -725,6 +691,49 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   }
   return out;
 }
+
+/**
+ * Newest-first active browse window (index walk + membership/manual filter).
+ * Exported for SQL contract tests.
+ * @param {import('pg').Pool} pool
+ * @param {{ oversample: number, need: number }} opts
+ */
+export async function queryActiveIocBrowseWindow(pool, { oversample, need }) {
+  const { rows } = await pool.query(
+    `WITH recent AS (
+       SELECT id, public_id, observable, observable_type, created_at, status, ioc_source_id
+         FROM ioc_items
+        ORDER BY created_at DESC
+        LIMIT $1
+     )
+     SELECT r.id, r.public_id, r.observable, r.observable_type, r.created_at
+       FROM recent r
+      WHERE COALESCE(r.status, 'active') = 'active'
+        AND (
+          r.ioc_source_id IS NOT NULL
+          OR EXISTS (
+            SELECT 1
+              FROM ioc_feed_memberships m
+             WHERE m.ioc_item_id = r.id
+               AND m.ioc_observable_type = r.observable_type
+               AND m.status = 'active'
+               AND m.purged_at IS NULL
+          )
+        )
+      ORDER BY r.created_at DESC
+      LIMIT $2`,
+    [oversample, need]
+  );
+  return rows;
+}
+
+/** SQL fragment markers for contract tests (browse must not use NULLS LAST / membership-driven sort). */
+export const IOC_LIST_BROWSE_SQL_CONTRACT = Object.freeze({
+  requiresOrderByCreatedAtDesc: 'ORDER BY created_at DESC',
+  forbidsNullsLast: 'NULLS LAST',
+  requiresOversampleCte: 'WITH recent AS',
+  forbidsMembershipDrivenSort: 'FROM ioc_feed_memberships m\n       INNER JOIN ioc_items'
+});
 
 /**
  * @param {import('pg').Pool} pool
