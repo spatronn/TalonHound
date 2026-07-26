@@ -3701,6 +3701,8 @@ async function handleIocList(req, res) {
               observable: r.observable,
               observable_type: r.observable_type,
               ip: r.observable,
+              created_at: r.created_at,
+              imported_at: r.created_at,
               first_seen_at: r.created_at,
               last_seen_at: r.created_at,
               status: r.status || 'active',
@@ -3710,11 +3712,16 @@ async function handleIocList(req, res) {
             });
           }
           const g = grouped.get(key);
-          if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
-          if (r.created_at > g.last_seen_at) {
+          // Platform import Timestamp = earliest created_at (stable across duplicate rows / re-imports).
+          if (r.created_at < g.imported_at) {
+            g.imported_at = r.created_at;
+            g.created_at = r.created_at;
+            g.first_seen_at = r.created_at;
             g.last_seen_at = r.created_at;
-            g.status = r.status || g.status || 'active';
+            g.id = r.id;
+            g.public_id = r.public_id;
           }
+          if (r.status) g.status = r.status || g.status || 'active';
           if (r.source_name) g._sources.add(r.source_name);
           if (r.confidence) g._conf.add(r.confidence);
           if (r.category) g._cat.add(r.category);
@@ -3727,8 +3734,10 @@ async function handleIocList(req, res) {
           observable_type: g.observable_type,
           ip: g.ip,
           status: g.status || 'active',
+          created_at: g.created_at || g.imported_at,
+          imported_at: g.imported_at || g.created_at,
           first_seen_at: g.first_seen_at,
-          last_seen_at: g.last_seen_at,
+          last_seen_at: g.imported_at || g.created_at || g.last_seen_at,
           source_count: g._sources.size,
           source_names: Array.from(g._sources).sort(),
           confidence_set: Array.from(g._conf).sort(),
@@ -3800,6 +3809,8 @@ async function handleIocList(req, res) {
               observable: r.observable,
               observable_type: r.observable_type,
               ip: r.observable,
+              created_at: r.created_at,
+              imported_at: r.created_at,
               first_seen_at: r.created_at,
               last_seen_at: r.created_at,
               status: r.status || 'active',
@@ -3809,11 +3820,16 @@ async function handleIocList(req, res) {
             });
           }
           const g = grouped.get(key);
-          if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
-          if (r.created_at > g.last_seen_at) {
+          // Platform import Timestamp = earliest created_at (stable across duplicate rows / re-imports).
+          if (r.created_at < g.imported_at) {
+            g.imported_at = r.created_at;
+            g.created_at = r.created_at;
+            g.first_seen_at = r.created_at;
             g.last_seen_at = r.created_at;
-            g.status = r.status || g.status || 'active';
+            g.id = r.id;
+            g.public_id = r.public_id;
           }
+          if (r.status) g.status = r.status || g.status || 'active';
           if (r.source_name) g._sources.add(r.source_name);
           if (r.confidence) g._conf.add(r.confidence);
           if (r.category) g._cat.add(r.category);
@@ -3825,8 +3841,10 @@ async function handleIocList(req, res) {
           observable_type: g.observable_type,
           ip: g.ip,
           status: g.status || 'active',
+          created_at: g.created_at || g.imported_at,
+          imported_at: g.imported_at || g.created_at,
           first_seen_at: g.first_seen_at,
-          last_seen_at: g.last_seen_at,
+          last_seen_at: g.imported_at || g.created_at || g.last_seen_at,
           source_count: g._sources.size,
           source_names: Array.from(g._sources).sort(),
           confidence_set: Array.from(g._conf).sort(),
@@ -3913,6 +3931,8 @@ async function handleIocList(req, res) {
               observable: r.observable,
               observable_type: r.observable_type,
               ip: r.observable,
+              created_at: r.created_at,
+              imported_at: r.created_at,
               first_seen_at: r.created_at,
               last_seen_at: r.created_at,
               status: r.status || 'active',
@@ -3922,11 +3942,16 @@ async function handleIocList(req, res) {
             });
           }
           const g = grouped.get(key);
-          if (r.created_at < g.first_seen_at) g.first_seen_at = r.created_at;
-          if (r.created_at > g.last_seen_at) {
+          // Platform import Timestamp = earliest created_at (stable across duplicate rows / re-imports).
+          if (r.created_at < g.imported_at) {
+            g.imported_at = r.created_at;
+            g.created_at = r.created_at;
+            g.first_seen_at = r.created_at;
             g.last_seen_at = r.created_at;
-            g.status = r.status || g.status || 'active';
+            g.id = r.id;
+            g.public_id = r.public_id;
           }
+          if (r.status) g.status = r.status || g.status || 'active';
           if (r.source_name) g._sources.add(r.source_name);
           if (r.confidence) g._conf.add(r.confidence);
           if (r.category) g._cat.add(r.category);
@@ -3938,8 +3963,10 @@ async function handleIocList(req, res) {
           observable_type: g.observable_type,
           ip: g.ip,
           status: g.status || 'active',
+          created_at: g.created_at || g.imported_at,
+          imported_at: g.imported_at || g.created_at,
           first_seen_at: g.first_seen_at,
-          last_seen_at: g.last_seen_at,
+          last_seen_at: g.imported_at || g.created_at || g.last_seen_at,
           source_count: g._sources.size,
           source_names: Array.from(g._sources).sort(),
           confidence_set: Array.from(g._conf).sort(),
@@ -4309,8 +4336,10 @@ async function handleIocSearch(req, res) {
       observable_type: row.observable_type,
       ip: row.observable,
       status: row.status || 'active',
+      created_at: row.created_at,
+      imported_at: row.created_at,
       first_seen_at: row.first_seen_at || row.created_at,
-      last_seen_at: row.last_seen_at || row.created_at,
+      last_seen_at: row.created_at,
       source_count: 0,
       source_names: [],
       confidence_set: [],

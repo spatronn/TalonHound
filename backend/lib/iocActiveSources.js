@@ -630,24 +630,18 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   const scanLimit = Math.min(Math.ceil(need * 1.2) + 20, cap);
 
   const [memRes, manualRes] = await Promise.all([
-    // Uses idx_ioc_feed_memberships_active_last_seen (last_seen_in_feed DESC partial index).
-    // Replaces GROUP BY + MIN(first_seen_in_feed) which caused a 2.3M-row HashAggregate
-    // with disk spill (~1900ms). Each ioc_item_id may appear once per feed; JS dedup below
-    // keeps the row with the highest last_seen_in_feed (= most recently active feed).
-    // The integration_feeds JOIN (archived_at filter) is omitted: all 14 current feeds are
-    // active, so it filtered 0 rows while preventing index use.
+    // List paging sorts by platform import time (ioc_items.created_at), using
+    // idx_ioc_items_created_at / covering indexes. Membership filter keeps only
+    // actively-present feed IOCs; sort_ts is NEVER last_seen_in_feed / last_changed.
     pool.query(
-      `SELECT m.ioc_item_id, m.ioc_observable_type, m.last_seen_in_feed AS sort_ts
+      `SELECT m.ioc_item_id, m.ioc_observable_type, i.created_at AS sort_ts
        FROM ioc_feed_memberships m
+       INNER JOIN ioc_items i ON i.id = m.ioc_item_id
+         AND i.observable_type = m.ioc_observable_type
        WHERE m.status = 'active'
          AND m.purged_at IS NULL
-       -- Deliberately still sorts on last_seen_in_feed, NOT last_changed_in_source.
-       -- This is an internal "most recently active feed" recency sort for list paging,
-       -- never rendered as an analyst timestamp, and it depends on the partial index
-       -- above. COALESCE(last_changed_in_source, ...) is not index-backed and would turn
-       -- this into a seqscan + sort over ~2.3M rows. Switching it would require building
-       -- the CONCURRENTLY index documented in migration 121 first.
-       ORDER BY m.last_seen_in_feed DESC NULLS LAST
+         AND COALESCE(i.status, 'active') = 'active'
+       ORDER BY i.created_at DESC NULLS LAST
        LIMIT $1`,
       [scanLimit]
     ),
@@ -667,10 +661,8 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   );
 
   // Deduplicate by (ioc_item_id, ioc_observable_type) before calling resolveIocPartitionRows.
-  // Without GROUP BY the same IOC may appear once per feed; keeping the first occurrence
-  // retains the highest sort_ts (= most recently active feed appearance).
-  // Only pass the candidates we actually need to the resolver — previously all scanLimit*2
-  // rows were resolved even for page=40 (up to 16K IDs). Now ≤ need+20 IDs are resolved.
+  // Same IOC may appear once per feed; first occurrence keeps the highest created_at
+  // (identical across memberships). Only ≤ need+20 IDs are resolved.
   const seenItemKeys = new Set();
   const candidates = [];
   for (const c of combined) {
@@ -714,14 +706,18 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
   const out = [];
   for (const item of pageSlice) {
     const geo = item.observable_type === 'ip' ? geoMap.get(item.observable) : null;
+    const importedAt = item.created_at || item.sort_ts || null;
     out.push({
       id: item.id,
       public_id: item.public_id,
       observable: item.observable,
       observable_type: item.observable_type,
       ip: item.observable,
-      first_seen_at: item.created_at,
-      last_seen_at: item.sort_ts || item.created_at,
+      created_at: importedAt,
+      imported_at: importedAt,
+      first_seen_at: importedAt,
+      // Legacy list field — same as platform import time (not feed presence).
+      last_seen_at: importedAt,
       asn: geo?.asn ?? null,
       country_code: geo?.country_code ?? null,
       as_name: geo?.as_name ?? null

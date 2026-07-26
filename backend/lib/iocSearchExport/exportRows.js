@@ -8,7 +8,8 @@
 import {
   CANONICAL_FIRST_SEEN_AGG_SQL,
   CANONICAL_LAST_CHANGED_AGG_SQL,
-  resolveCanonicalIocTimestamps
+  resolvePlatformImportTimestamp,
+  resolveSourceChangeTimestamps
 } from '../iocListTimestamps.js';
 
 // Build one keyset batch of base rows.
@@ -94,7 +95,8 @@ export async function enrichExportBatch(db, baseRows) {
   return baseRows.map((row) => {
     const id = Number(row.id);
     const ts = tsMap.get(id) || {};
-    const resolved = resolveCanonicalIocTimestamps({
+    const platform = resolvePlatformImportTimestamp({ item_created_at: row.created_at });
+    const source = resolveSourceChangeTimestamps({
       first_seen_in_source: ts.first_seen_in_source,
       last_changed_in_source: ts.last_changed_in_source,
       item_created_at: row.created_at
@@ -107,11 +109,12 @@ export async function enrichExportBatch(db, baseRows) {
       confidence: row.confidence,
       threat_actor_name: row.threat_actor_name,
       first_seen_at: row.first_seen_at,
-      created_at: row.created_at,
+      created_at: platform.created_at,
+      imported_at: platform.imported_at,
       tags: tagMap.get(id) || [],
       classifications: classMap.get(id) || [],
-      first_seen_in_source: resolved.first_seen_in_source,
-      last_changed_in_source: resolved.last_changed_in_source
+      first_seen_in_source: source.first_seen_in_source || row.first_seen_at || row.created_at,
+      last_changed_in_source: source.last_changed_in_source
     };
   });
 }

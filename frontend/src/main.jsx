@@ -32,6 +32,7 @@ import {
   isAssociatedIpEnrichmentCandidate
 } from './lib/associatedIpEnrichment.js';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
+import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/iocListTimestampPresentation.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
@@ -9760,7 +9761,7 @@ function IOCListPage() {
       if (sortState.key === 'status') return String(r.lifecycle_status || r.status || '');
       if (sortState.key === 'confidence') return String(r.confidence_effective || (r.confidence_set && r.confidence_set[0]) || '');
       if (sortState.key === 'category') return String(r.observable_type || 'ip');
-      if (sortState.key === 'timestamp') return new Date(r.last_seen_at || 0).getTime();
+      if (sortState.key === 'timestamp') return new Date(resolveIocListTimestamp(r) || 0).getTime();
       return '';
     };
 
@@ -10352,7 +10353,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
               <th onClick={() => nextSort('status')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Status{sortIndicator('status')}<div onMouseDown={(e) => startResize('status', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Last changed in source{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>{IOC_LIST_TIMESTAMP_PRESENTATION.label}{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
@@ -10430,7 +10431,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
                   )}
                 </td>
                 <td><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(r.last_seen_at)}</td>
+                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(resolveIocListTimestamp(r))}</td>
               </tr>
             );})}
           </tbody>

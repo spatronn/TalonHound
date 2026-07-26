@@ -1,74 +1,132 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  resolvePlatformImportTimestamp,
+  resolveSourceChangeTimestamps,
   resolveCanonicalIocTimestamps,
+  attachCanonicalIocListTimestamps,
   IOC_LIST_TIMESTAMP_COLUMN,
   CANONICAL_LAST_CHANGED_AGG_SQL,
   CANONICAL_FIRST_SEEN_AGG_SQL
 } from './iocListTimestamps.js';
 
-test('uses last_changed_in_source when present', () => {
-  const out = resolveCanonicalIocTimestamps({
-    first_seen_in_source: '2026-01-01T00:00:00.000Z',
-    last_changed_in_source: '2026-07-01T12:00:00.000Z',
-    item_created_at: '2025-01-01T00:00:00.000Z'
+test('new IOC Timestamp is platform created/imported time', () => {
+  const out = resolvePlatformImportTimestamp({
+    item_created_at: '2026-07-26T10:00:00.000Z'
   });
-  assert.equal(out.last_changed_in_source, '2026-07-01T12:00:00.000Z');
-  assert.equal(out.last_seen_at, '2026-07-01T12:00:00.000Z');
-  assert.equal(out.display_timestamp_field, 'last_changed_in_source');
+  assert.equal(out.imported_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(out.created_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(out.last_seen_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(out.list_timestamp_field, 'created_at');
 });
 
-test('falls back to first_seen_in_feed aggregate when last_changed null', () => {
+test('re-sync / later membership times do not change platform Timestamp', () => {
+  const created = '2026-07-26T10:00:00.000Z';
+  const first = resolvePlatformImportTimestamp({ item_created_at: created });
+  const afterResync = resolvePlatformImportTimestamp({ item_created_at: created });
+  assert.equal(first.imported_at, afterResync.imported_at);
+
+  // Source-change fields may move; list Timestamp must not.
+  const source = resolveSourceChangeTimestamps({
+    item_created_at: created,
+    first_seen_in_source: '2026-07-26T10:00:00.000Z',
+    last_changed_in_source: '2026-07-27T12:00:00.000Z'
+  });
+  const platform = resolvePlatformImportTimestamp({ item_created_at: created });
+  assert.equal(platform.imported_at, created);
+  assert.equal(source.last_changed_in_source, '2026-07-27T12:00:00.000Z');
+  assert.notEqual(platform.imported_at, source.last_changed_in_source);
+});
+
+test('second feed seeing same IOC later does not change Timestamp', () => {
+  const created = '2026-07-26T10:00:00.000Z';
   const out = resolveCanonicalIocTimestamps({
+    item_created_at: created,
+    first_seen_in_source: '2026-07-26T10:00:00.000Z',
+    last_changed_in_source: '2026-07-26T12:00:00.000Z'
+  });
+  assert.equal(out.imported_at, created);
+  assert.equal(out.display_timestamp, created);
+  assert.equal(out.last_changed_in_source, '2026-07-26T12:00:00.000Z');
+});
+
+test('list Timestamp never uses last_seen_in_feed or updated_at', () => {
+  const out = resolvePlatformImportTimestamp({
+    item_created_at: '2026-01-01T00:00:00.000Z'
+  });
+  assert.equal(out.imported_at, '2026-01-01T00:00:00.000Z');
+  assert.equal(IOC_LIST_TIMESTAMP_COLUMN.canonicalField, 'created_at');
+  assert.equal(IOC_LIST_TIMESTAMP_COLUMN.apiField, 'imported_at');
+  assert.equal(IOC_LIST_TIMESTAMP_COLUMN.label, 'Timestamp');
+  assert.deepEqual(IOC_LIST_TIMESTAMP_COLUMN.fallback, ['ioc_items.created_at']);
+  assert.equal(String(IOC_LIST_TIMESTAMP_COLUMN.description).includes('last_seen_in_feed'), false);
+});
+
+test('source-change fallback uses first_seen_in_feed when last_changed null', () => {
+  const out = resolveSourceChangeTimestamps({
     first_seen_in_source: '2026-03-01T00:00:00.000Z',
     last_changed_in_source: null,
     item_created_at: '2026-02-01T00:00:00.000Z'
   });
-  assert.equal(out.last_seen_at, '2026-03-01T00:00:00.000Z');
   assert.equal(out.last_changed_in_source, '2026-03-01T00:00:00.000Z');
-  assert.equal(out.display_timestamp_field, 'first_seen_in_feed');
+  assert.equal(out.last_changed_in_source_raw, null);
 });
 
-test('falls back to created_at when membership timestamps missing', () => {
-  const out = resolveCanonicalIocTimestamps({
+test('source-change does not fall back to created_at as last_changed', () => {
+  const out = resolveSourceChangeTimestamps({
     item_created_at: '2026-02-01T00:00:00.000Z'
   });
-  assert.equal(out.last_seen_at, '2026-02-01T00:00:00.000Z');
-  assert.equal(out.display_timestamp_field, 'created_at');
+  assert.equal(out.last_changed_in_source, null);
 });
 
-test('null only when all sources are null', () => {
-  const out = resolveCanonicalIocTimestamps({});
-  assert.equal(out.last_seen_at, null);
-  assert.equal(out.display_timestamp_field, null);
-});
-
-test('browse and search share identical resolver output', () => {
-  const membership = {
+test('browse and search share identical platform Timestamp', () => {
+  const input = {
+    item_created_at: '2026-01-01T00:00:00.000Z',
     first_seen_in_source: '2026-01-10T08:00:00.000Z',
     last_changed_in_source: '2026-06-15T09:30:00.000Z'
   };
-  const browse = resolveCanonicalIocTimestamps({
-    ...membership,
-    item_created_at: '2026-01-01T00:00:00.000Z'
-  });
-  const search = resolveCanonicalIocTimestamps({
-    ...membership,
-    item_created_at: '2026-01-01T00:00:00.000Z'
-  });
-  assert.equal(browse.last_seen_at, search.last_seen_at);
+  const browse = resolveCanonicalIocTimestamps(input);
+  const search = resolveCanonicalIocTimestamps(input);
+  assert.equal(browse.imported_at, search.imported_at);
+  assert.equal(browse.imported_at, '2026-01-01T00:00:00.000Z');
   assert.equal(browse.last_changed_in_source, search.last_changed_in_source);
 });
 
-test('multi-membership aggregate SQL is shared and excludes technical last_seen_in_feed', () => {
+test('attach loads created_at when omitted and sets imported_at', async () => {
+  const db = {
+    async query(sql) {
+      if (String(sql).includes('FROM ioc_feed_memberships')) {
+        return {
+          rows: [{
+            ioc_item_id: 7,
+            first_seen_in_source: '2026-07-26T11:00:00.000Z',
+            last_changed_in_source: '2026-07-26T12:00:00.000Z'
+          }]
+        };
+      }
+      if (String(sql).includes('FROM ioc_items')) {
+        return { rows: [{ id: 7, created_at: '2026-07-26T10:00:00.000Z' }] };
+      }
+      return { rows: [] };
+    }
+  };
+  const [item] = await attachCanonicalIocListTimestamps(db, [{ id: 7, observable: 'evil.test' }]);
+  assert.equal(item.imported_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(item.created_at, '2026-07-26T10:00:00.000Z');
+  assert.equal(item.last_changed_in_source, '2026-07-26T12:00:00.000Z');
+  assert.notEqual(item.imported_at, item.last_changed_in_source);
+});
+
+test('multi-membership aggregate SQL is for source-change only', () => {
   assert.match(CANONICAL_LAST_CHANGED_AGG_SQL, /last_changed_in_source/);
   assert.match(CANONICAL_LAST_CHANGED_AGG_SQL, /first_seen_in_feed/);
   assert.equal(CANONICAL_LAST_CHANGED_AGG_SQL.includes('last_seen_in_feed'), false);
   assert.equal(CANONICAL_FIRST_SEEN_AGG_SQL, 'MIN(m.first_seen_in_feed)');
-  assert.equal(IOC_LIST_TIMESTAMP_COLUMN.label, 'Last changed in source');
-  assert.deepEqual(IOC_LIST_TIMESTAMP_COLUMN.fallback, [
-    'ioc_feed_memberships.last_changed_in_source',
-    'ioc_feed_memberships.first_seen_in_feed',
-    'ioc_items.created_at'
-  ]);
+  assert.equal(IOC_LIST_TIMESTAMP_COLUMN.orderBySql, 'ioc_items.created_at DESC');
+});
+
+test('null platform Timestamp only when created_at missing', () => {
+  const out = resolvePlatformImportTimestamp({});
+  assert.equal(out.imported_at, null);
+  assert.equal(out.list_timestamp_field, null);
 });

@@ -119,22 +119,11 @@ All timestamp columns remain **`TIMESTAMPTZ`**. Absolute instants are preserved.
 
 ## IOC List vs Search timestamps
 
-Display column: **Last changed in source** (`last_changed_in_source`).
+IOC List **Timestamp** column = platform first-import time (`ioc_items.created_at` / API `imported_at`). Stable across re-syncs and extra feed memberships. Sorted `ORDER BY created_at DESC`.
 
-Canonical fallback (shared by browse, quick search, advanced search, export):
+Source-change fields (`first_seen_in_source`, `last_changed_in_source`) remain for IOC detail, DSL filters, and export — they do **not** drive the list Timestamp. Technical `last_seen_in_feed` is never shown as Timestamp.
 
-1. Membership `last_changed_in_source`
-2. Membership `first_seen_in_feed`
-3. `ioc_items.created_at`
-
-Multi-membership aggregate (product semantic):  
-`MAX(COALESCE(m.last_changed_in_source, m.first_seen_in_feed))`, then coalesce with item `created_at`.
-
-Technical presence field `last_seen_in_feed` is **never** shown as “Last changed in source”.  
-`last_seen_at` may appear as a compatibility alias of the same canonical value.  
-Frontend must not invent its own fallback; it displays the backend field only.
-
-Shared helper: `backend/lib/iocListTimestamps.js`.
+Shared helpers: `backend/lib/iocListTimestamps.js`.
 
 ## Docker Compose example
 

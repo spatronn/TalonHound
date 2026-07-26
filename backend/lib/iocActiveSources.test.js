@@ -109,6 +109,9 @@ test('fetchActiveIocListPage includes feed-based active IOC', async () => {
   const rows = await fetchActiveIocListPage(pool, { limit: 5, offset: 0 });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].observable, 'evil.example');
+  assert.equal(rows[0].imported_at, '2026-01-01T00:00:00Z');
+  assert.equal(rows[0].created_at, '2026-01-01T00:00:00Z');
+  assert.equal(rows[0].last_seen_at, rows[0].imported_at);
 });
 
 test('fetchActiveIocListPage includes manual active IOC without feed membership', async () => {

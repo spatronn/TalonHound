@@ -1,110 +1,150 @@
 /**
- * Canonical IOC list/search/export timestamp resolver.
+ * IOC list Timestamp = platform first-import time (`ioc_items.created_at`).
  *
- * Aggregate (multi-membership), shared by list + export SQL:
- *   first_seen_in_source   = MIN(first_seen_in_feed)
- *   last_changed_raw       = MAX(COALESCE(last_changed_in_source, first_seen_in_feed))
- *                            — never uses technical last_seen_in_feed alone as "last changed"
+ * This is set once on INSERT (DEFAULT NOW / omitted column) and is never rewritten
+ * on re-import, re-sync, or additional feed memberships.
  *
- * Display / API fallback for the "Last changed in source" column:
- *   1. last_changed_raw (membership aggregate above)
- *   2. first_seen_in_source aggregate
- *   3. ioc_items.created_at
- *
- * last_seen_at is a backward-compat alias of the same display value.
+ * Source-change aggregates (first_seen / last_changed in source) remain available for
+ * IOC detail, DSL filters, and export columns — they must NOT drive the list Timestamp.
  */
 
-/** Shared SQL fragment for membership aggregate (alias `m`). */
+/** Shared SQL fragment for membership aggregate (alias `m`) — source semantics only. */
 export const CANONICAL_FIRST_SEEN_AGG_SQL = 'MIN(m.first_seen_in_feed)';
 export const CANONICAL_LAST_CHANGED_AGG_SQL =
   'MAX(COALESCE(m.last_changed_in_source, m.first_seen_in_feed))';
 
 /**
- * Pure resolver used by tests and callers that already have membership aggregates.
- * @param {{
- *   first_seen_in_source?: Date|string|null,
- *   last_changed_in_source?: Date|string|null,
- *   item_created_at?: Date|string|null
- * }} input
+ * Platform import / IOC List Timestamp resolver.
+ * @param {{ item_created_at?: Date|string|null, created_at?: Date|string|null }} input
  */
-export function resolveCanonicalIocTimestamps(input = {}) {
-  const created = input.item_created_at || null;
-  const firstSeenInSource = input.first_seen_in_source || null;
-  // Aggregate already coalesces per-membership last_changed → first_seen_in_feed.
-  const lastChangedInSource = input.last_changed_in_source || null;
-
-  const displayTimestamp = lastChangedInSource || firstSeenInSource || created || null;
-  let displayField = 'created_at';
-  if (lastChangedInSource) displayField = 'last_changed_in_source';
-  else if (firstSeenInSource) displayField = 'first_seen_in_feed';
-  else if (created) displayField = 'created_at';
-  else displayField = null;
-
+export function resolvePlatformImportTimestamp(input = {}) {
+  const created = input.item_created_at || input.created_at || null;
   return {
-    first_seen_in_source: firstSeenInSource || created || null,
-    // Canonical column value after fallback (may equal first_seen or created).
-    last_changed_in_source: displayTimestamp,
-    last_changed_in_source_raw: lastChangedInSource,
-    first_seen_at: firstSeenInSource || created || null,
-    last_seen_at: displayTimestamp,
-    display_timestamp: displayTimestamp,
-    display_timestamp_field: displayField
+    created_at: created,
+    imported_at: created,
+    // Legacy list field name still emitted for older clients — same value as imported_at.
+    last_seen_at: created,
+    list_timestamp: created,
+    list_timestamp_field: created ? 'created_at' : null
   };
 }
 
 /**
- * Batch-attach canonical timestamps onto IOC list/search page items.
+ * Source-change timestamps for detail / DSL / export (not the list Timestamp column).
+ * last_changed falls back to first_seen_in_feed only — never to created_at or last_seen_in_feed alone.
+ * @param {{
+ *   first_seen_in_source?: Date|string|null,
+ *   last_changed_in_source?: Date|string|null,
+ *   item_created_at?: Date|string|null,
+ *   created_at?: Date|string|null
+ * }} input
+ */
+export function resolveSourceChangeTimestamps(input = {}) {
+  const created = input.item_created_at || input.created_at || null;
+  const firstSeenInSource = input.first_seen_in_source || null;
+  const lastChangedRaw = input.last_changed_in_source || null;
+  const lastChangedDisplay = lastChangedRaw || firstSeenInSource || null;
+
+  return {
+    first_seen_in_source: firstSeenInSource || null,
+    last_changed_in_source: lastChangedDisplay,
+    last_changed_in_source_raw: lastChangedRaw,
+    // Item-level first_seen_at is not the list Timestamp; keep for consumers that need it.
+    first_seen_at: firstSeenInSource || created || null
+  };
+}
+
+/**
+ * Combined resolver (list import + source-change fields). Prefer the specific helpers.
+ * @deprecated Prefer resolvePlatformImportTimestamp / resolveSourceChangeTimestamps
+ */
+export function resolveCanonicalIocTimestamps(input = {}) {
+  const platform = resolvePlatformImportTimestamp(input);
+  const source = resolveSourceChangeTimestamps(input);
+  return {
+    ...source,
+    ...platform,
+    // Keep an explicit display_timestamp aligned with list Timestamp (platform import).
+    display_timestamp: platform.imported_at,
+    display_timestamp_field: platform.list_timestamp_field
+  };
+}
+
+/**
+ * Attach platform import Timestamp (+ optional source-change fields) onto list/search items.
+ * Ensures created_at is loaded from DB when page builders omitted it.
  * @param {import('pg').Pool|import('pg').PoolClient} db
  * @param {Array<object>} items
  */
 export async function attachCanonicalIocListTimestamps(db, items = []) {
   if (!items.length) return items;
   const ids = [...new Set(items.map((it) => Number(it.id)).filter((id) => Number.isFinite(id) && id > 0))];
+
+  /** @type {Map<number, Date|string>} */
+  const createdMap = new Map();
   /** @type {Map<number, { first_seen_in_source: any, last_changed_in_source: any }>} */
-  const tsMap = new Map();
+  const sourceTsMap = new Map();
 
   if (ids.length) {
-    const { rows } = await db.query(
-      `SELECT m.ioc_item_id,
-              ${CANONICAL_FIRST_SEEN_AGG_SQL} AS first_seen_in_source,
-              ${CANONICAL_LAST_CHANGED_AGG_SQL} AS last_changed_in_source
-         FROM ioc_feed_memberships m
-        WHERE m.ioc_item_id = ANY($1::bigint[])
-        GROUP BY m.ioc_item_id`,
-      [ids]
-    );
-    for (const row of rows) {
-      tsMap.set(Number(row.ioc_item_id), {
+    const needCreated = items.some((it) => !(it.created_at || it.item_created_at));
+    const queries = [
+      db.query(
+        `SELECT m.ioc_item_id,
+                ${CANONICAL_FIRST_SEEN_AGG_SQL} AS first_seen_in_source,
+                ${CANONICAL_LAST_CHANGED_AGG_SQL} AS last_changed_in_source
+           FROM ioc_feed_memberships m
+          WHERE m.ioc_item_id = ANY($1::bigint[])
+          GROUP BY m.ioc_item_id`,
+        [ids]
+      )
+    ];
+    if (needCreated) {
+      queries.push(
+        db.query(
+          `SELECT id, created_at FROM ioc_items WHERE id = ANY($1::bigint[])`,
+          [ids]
+        )
+      );
+    }
+
+    const results = await Promise.all(queries);
+    for (const row of results[0].rows) {
+      sourceTsMap.set(Number(row.ioc_item_id), {
         first_seen_in_source: row.first_seen_in_source,
         last_changed_in_source: row.last_changed_in_source
       });
     }
+    if (needCreated && results[1]) {
+      for (const row of results[1].rows) {
+        createdMap.set(Number(row.id), row.created_at);
+      }
+    }
   }
 
   return items.map((it) => {
-    const agg = tsMap.get(Number(it.id)) || {};
-    const resolved = resolveCanonicalIocTimestamps({
+    const id = Number(it.id);
+    const created = it.created_at || it.item_created_at || createdMap.get(id) || null;
+    const agg = sourceTsMap.get(id) || {};
+    const platform = resolvePlatformImportTimestamp({ item_created_at: created });
+    const source = resolveSourceChangeTimestamps({
       first_seen_in_source: agg.first_seen_in_source,
       last_changed_in_source: agg.last_changed_in_source,
-      item_created_at: it.created_at || it.item_created_at
+      item_created_at: created
     });
     return {
       ...it,
-      ...resolved
+      ...source,
+      ...platform
     };
   });
 }
 
 export const IOC_LIST_TIMESTAMP_COLUMN = Object.freeze({
-  apiField: 'last_seen_at',
-  canonicalField: 'last_changed_in_source',
-  label: 'Last changed in source',
+  apiField: 'imported_at',
+  canonicalField: 'created_at',
+  label: 'Timestamp',
   description:
-    'Latest time source content actually changed for this IOC (not feed poll presence). Falls back to first_seen_in_feed, then created_at.',
-  aggregateSql: CANONICAL_LAST_CHANGED_AGG_SQL,
-  fallback: Object.freeze([
-    'ioc_feed_memberships.last_changed_in_source',
-    'ioc_feed_memberships.first_seen_in_feed',
-    'ioc_items.created_at'
-  ])
+    'When this IOC was first added to TalonHound (ioc_items.created_at). Stable across re-syncs and extra feed memberships.',
+  orderBySql: 'ioc_items.created_at DESC',
+  fallback: Object.freeze(['ioc_items.created_at'])
 });
