@@ -34,6 +34,7 @@ import {
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/iocListTimestampPresentation.js';
 import { formatIocDetailDateTime } from './lib/iocDetailTimestamps.js';
+import { resolveCanonicalDetailRedirect } from './lib/fileArtifactDetailRedirect.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
 import {
@@ -12954,11 +12955,13 @@ function IocAuditHistoryPanel({ iocId, enabled }) {
 function IOCDetailsPage() {
   const { publicId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isAdmin, canWrite } = useSession();
   const sourceColorIndex = useSourceColorIndex();
   const requestRequiredReason = useReasonPrompt();
   const detailsPublicId = String(publicId || '').trim();
   const ui = PUBLISHED_FEEDS_UI;
+  const aliasNotice = String(searchParams.get('alias_notice') || '').trim();
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [], suppression: { active: false } });
@@ -13019,7 +13022,19 @@ function IOCDetailsPage() {
     }
     try {
       const res = await api.get('/ioc/details', { params: { public_id: detailsPublicId } });
-      setData(res.data || { summary: null, sources: [], matches: [], suppression: { active: false } });
+      const payload = res.data || { summary: null, sources: [], matches: [], suppression: { active: false } };
+      const redirect = resolveCanonicalDetailRedirect({
+        requestedPublicId: detailsPublicId,
+        summary: payload.summary,
+        fileArtifact: payload.file_artifact
+      });
+      if (redirect?.toPublicId) {
+        const next = new URLSearchParams();
+        next.set('alias_notice', redirect.message);
+        navigate(`/ioc/details/${redirect.toPublicId}?${next.toString()}`, { replace: true });
+        return { ok: true, redirected: true };
+      }
+      setData(payload);
       return { ok: true };
     } catch {
       setData({ summary: null, sources: [], matches: [] });
@@ -13750,15 +13765,20 @@ function IOCDetailsPage() {
             {actionRefreshWarn}
           </div>
         ) : null}
-        {(!loading && summary && data?.file_artifact?.is_legacy_alias) ? (
+        {(!loading && summary && aliasNotice) ? (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #1e3a5f', color: '#bfdbfe', background: 'rgba(30,58,95,0.35)', fontSize: 13 }}>
-            This {String(summary?.observable_type || 'hash').toUpperCase()} is an identifier of the canonical{' '}
-            {String(data.file_artifact.primary_hash?.hash_type || 'SHA256').toUpperCase()} file artifact.
-            {data.file_artifact.primary_hash?.value ? (
-              <span style={{ display: 'block', marginTop: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflowWrap: 'anywhere' }}>
-                {data.file_artifact.primary_hash.value}
-              </span>
-            ) : null}
+            {aliasNotice}
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete('alias_notice');
+                setSearchParams(next, { replace: true });
+              }}
+              style={{ marginLeft: 10, border: 'none', background: 'transparent', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}
+            >
+              Dismiss
+            </button>
           </div>
         ) : null}
 

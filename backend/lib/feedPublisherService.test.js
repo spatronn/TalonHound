@@ -1,11 +1,13 @@
-import { describe, it } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   persistPublishedFeedSnapshot,
   canSkipPublishedFeedRegeneration,
   watermarkKey,
   filtersHash,
-  fetchIocExportFingerprint
+  fetchIocExportFingerprint,
+  fetchIocRows,
+  shouldCanonicalizePublishedHashFeed
 } from './feedPublisherService.js';
 
 function createMockPool(handlers) {
@@ -255,5 +257,89 @@ describe('published feed excludes suppressed IOCs', () => {
     };
     await fetchIocExportFingerprint(pool, { ioc_type: 'ip', exclude_expired: true }, 'all');
     assert.match(capturedSql, /COALESCE\(i\.status, 'active'\) <> 'suppressed'/);
+  });
+});
+
+describe('published hash feed artifact canonicalization', () => {
+  let prevRead;
+  before(() => {
+    prevRead = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  });
+  after(() => {
+    if (prevRead == null) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    else process.env.FILE_ARTIFACTS_READ_ENABLED = prevRead;
+  });
+
+  it('enables canonicalize only for hash feeds when READ on', () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_type: 'hash' }), true);
+    assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_type: 'ip' }), false);
+    delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_type: 'hash' }), false);
+  });
+
+  it('filtersHash changes when artifact canonicalization toggles', () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    const on = filtersHash({ ioc_type: 'hash' }, 'all');
+    delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    const off = filtersHash({ ioc_type: 'hash' }, 'all');
+    assert.notEqual(on, off);
+  });
+
+  it('fingerprint counts distinct artifact identity when READ on', async () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    let capturedSql = '';
+    const pool = {
+      async query(sql) {
+        capturedSql = String(sql).replace(/\s+/g, ' ').trim();
+        return { rows: [{ item_count: 1, max_recency: null }] };
+      }
+    };
+    const fp = await fetchIocExportFingerprint(pool, { ioc_type: 'hash', exclude_expired: true }, 'all');
+    assert.equal(fp.itemCount, 1);
+    assert.match(capturedSql, /file_artifact_ioc_links/);
+    assert.match(capturedSql, /COUNT\(DISTINCT/);
+    assert.match(capturedSql, /'a:' \|\|/);
+    assert.doesNotMatch(capturedSql, /COUNT\(DISTINCT lower\(i\.observable\)\)/);
+  });
+
+  it('fetchIocRows projects primary hash and groups by artifact identity', async () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    let capturedSql = '';
+    const pool = {
+      async query(sql) {
+        capturedSql = String(sql).replace(/\s+/g, ' ').trim();
+        return {
+          rows: [{
+            observable: 'aa'.repeat(32),
+            observable_type: 'sha256',
+            confidence: 'high',
+            category: null,
+            source_name: 'MalwareBazaar',
+            recency_ts: new Date()
+          }]
+        };
+      }
+    };
+    const rows = await fetchIocRows(pool, { ioc_type: 'hash', exclude_expired: true }, 'all');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].observable_type, 'sha256');
+    assert.match(capturedSql, /DISTINCT ON \(identity_key\)/);
+    assert.match(capturedSql, /primary_hash_value/);
+    assert.match(capturedSql, /GROUP BY|identity_key/);
+  });
+
+  it('legacy hash fingerprint stays raw when READ off', async () => {
+    delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    let capturedSql = '';
+    const pool = {
+      async query(sql) {
+        capturedSql = String(sql).replace(/\s+/g, ' ').trim();
+        return { rows: [{ item_count: 2, max_recency: null }] };
+      }
+    };
+    await fetchIocExportFingerprint(pool, { ioc_type: 'hash', exclude_expired: true }, 'all');
+    assert.match(capturedSql, /COUNT\(DISTINCT lower\(i\.observable\)\)/);
+    assert.doesNotMatch(capturedSql, /file_artifact_ioc_links/);
   });
 });

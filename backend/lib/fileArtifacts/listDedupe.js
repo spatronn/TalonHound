@@ -27,8 +27,21 @@ export async function applyFileArtifactListDedupe(db, items) {
   const primaryByArtifact = new Map();
   if (artifactIds.length) {
     const { rows } = await db.query(
-      `SELECT h.artifact_id, h.hash_type, h.normalized_hash_value
+      `SELECT h.artifact_id, h.hash_type, h.normalized_hash_value,
+              cl.ioc_public_id AS canonical_public_id,
+              cl.ioc_item_id AS canonical_ioc_id
        FROM file_artifact_hashes h
+       LEFT JOIN LATERAL (
+         SELECT l.ioc_public_id, l.ioc_item_id
+         FROM file_artifact_ioc_links l
+         WHERE l.artifact_id = h.artifact_id
+         ORDER BY l.is_canonical_ioc DESC NULLS LAST,
+           CASE l.ioc_observable_type
+             WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9
+           END,
+           l.ioc_item_id ASC
+         LIMIT 1
+       ) cl ON TRUE
        WHERE h.artifact_id = ANY($1::uuid[]) AND h.is_primary = TRUE`,
       [artifactIds]
     );
@@ -56,6 +69,8 @@ export async function applyFileArtifactListDedupe(db, items) {
       out.observable = primary.normalized_hash_value;
       out.observable_type = primary.hash_type;
       out.ip = primary.normalized_hash_value;
+      if (primary.canonical_public_id) out.public_id = String(primary.canonical_public_id);
+      if (primary.canonical_ioc_id != null) out.id = Number(primary.canonical_ioc_id);
     }
     return out;
   });

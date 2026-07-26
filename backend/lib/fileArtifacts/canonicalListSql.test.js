@@ -69,11 +69,52 @@ describe('canonicalListSql', () => {
     assert.equal(out.length, 1);
     assert.equal(out[0].observable_type, 'sha256');
     assert.equal(out[0].observable, SHA256);
+    assert.equal(out[0].public_id, 'p-sha');
     assert.equal(out[0].created_at, '2024-01-01T00:00:00Z');
     assert.ok(out[0].source_names.includes('Custom'));
     assert.ok(out[0].source_names.includes('MalwareBazaar'));
   });
 
+  it('MD5-only match still emits SHA256 public_id via canonical map', () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    const map = new Map([['p-md5', 'art-1']]);
+    const primary = new Map([
+      ['art-1', {
+        hash_type: 'sha256',
+        normalized_hash_value: SHA256,
+        canonical_public_id: 'p-sha',
+        canonical_ioc_id: 99
+      }]
+    ]);
+    const rows = [{
+      id: 1,
+      public_id: 'p-md5',
+      observable: MD5,
+      observable_type: 'md5',
+      created_at: '2024-01-02T00:00:00Z',
+      source_name: 'ThreatFox'
+    }];
+    const out = canonicalizeRowsByIdentity(rows, map, primary);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].observable_type, 'sha256');
+    assert.equal(out[0].observable, SHA256);
+    assert.equal(out[0].public_id, 'p-sha');
+    assert.equal(out[0].id, 99);
+  });
+
+  it('unlinked MD5 stays MD5 (no artifact map)', () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    const out = canonicalizeRowsByIdentity([{
+      id: 3,
+      public_id: 'p-lonely',
+      observable: MD5,
+      observable_type: 'md5',
+      created_at: '2024-01-02T00:00:00Z'
+    }], new Map(), new Map());
+    assert.equal(out.length, 1);
+    assert.equal(out[0].observable_type, 'md5');
+    assert.equal(out[0].public_id, 'p-lonely');
+  });
   it('legacy grouped SQL still available', () => {
     assert.ok(buildLegacyGroupedSelectSql('filtered').includes('GROUP BY observable, observable_type'));
   });

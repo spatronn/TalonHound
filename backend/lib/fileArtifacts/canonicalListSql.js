@@ -347,12 +347,24 @@ export function canonicalizeRowsByIdentity(rows, artifactByPublicId, primaryByAr
       return Number(a.id) - Number(b.id);
     });
     const rep = sorted[0];
+    const primaryMatch = g.primary
+      ? sorted.find((r) =>
+        String(r.observable).toLowerCase() === String(g.primary.normalized_hash_value).toLowerCase()
+        && String(r.observable_type).toLowerCase() === String(g.primary.hash_type).toLowerCase()
+      )
+      : null;
     const observable = g.primary?.normalized_hash_value || rep.observable;
     const observable_type = g.primary?.hash_type || rep.observable_type;
+    const public_id = primaryMatch?.public_id
+      || g.primary?.canonical_public_id
+      || rep.public_id;
+    const id = primaryMatch?.id
+      || g.primary?.canonical_ioc_id
+      || rep.id;
     out.push({
       ...rep,
-      id: rep.id,
-      public_id: rep.public_id,
+      id,
+      public_id,
       observable,
       observable_type,
       ip: observable,
@@ -392,13 +404,31 @@ export async function loadArtifactMapsForPublicIds(db, publicIds) {
   const primaryByArtifact = new Map();
   if (artifactIds.length && isFileArtifactsReadEnabled()) {
     const { rows } = await db.query(
-      `SELECT artifact_id, hash_type, normalized_hash_value
-       FROM file_artifact_hashes
-       WHERE artifact_id = ANY($1::uuid[]) AND is_primary = TRUE`,
+      `SELECT h.artifact_id, h.hash_type, h.normalized_hash_value,
+              cl.ioc_public_id AS canonical_public_id,
+              cl.ioc_item_id AS canonical_ioc_id
+       FROM file_artifact_hashes h
+       LEFT JOIN LATERAL (
+         SELECT l.ioc_public_id, l.ioc_item_id
+         FROM file_artifact_ioc_links l
+         WHERE l.artifact_id = h.artifact_id
+         ORDER BY l.is_canonical_ioc DESC NULLS LAST,
+           CASE l.ioc_observable_type
+             WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9
+           END,
+           l.ioc_item_id ASC
+         LIMIT 1
+       ) cl ON TRUE
+       WHERE h.artifact_id = ANY($1::uuid[]) AND h.is_primary = TRUE`,
       [artifactIds]
     );
     for (const r of rows) {
-      primaryByArtifact.set(String(r.artifact_id), r);
+      primaryByArtifact.set(String(r.artifact_id), {
+        hash_type: r.hash_type,
+        normalized_hash_value: r.normalized_hash_value,
+        canonical_public_id: r.canonical_public_id ? String(r.canonical_public_id) : null,
+        canonical_ioc_id: r.canonical_ioc_id != null ? Number(r.canonical_ioc_id) : null
+      });
     }
   }
   return { artifactByPublicId: map, primaryByArtifact };

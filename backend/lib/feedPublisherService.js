@@ -12,6 +12,7 @@ import {
   isManualFeedKey,
   resolveKnownFeedKeysForSnapshot
 } from './publishedFeedSources.js';
+import { isFileArtifactsReadEnabled } from './fileArtifacts/flags.js';
 
 export { buildFeedKeySourceSql };
 
@@ -26,6 +27,18 @@ const WINDOW_INTERVALS = {
   '7d': '7 days',
   all: null
 };
+
+/** Exact file hashes that participate in File Artifact identity. */
+const ARTIFACT_HASH_TYPES_SQL = `'md5','sha1','sha256'`;
+
+/**
+ * Hash published feeds collapse MD5/SHA1 siblings onto primary (usually SHA256)
+ * when File Artifact read path is enabled.
+ */
+export function shouldCanonicalizePublishedHashFeed(feed) {
+  return isFileArtifactsReadEnabled()
+    && String(feed?.ioc_type || '').trim().toLowerCase() === 'hash';
+}
 
 function parseJsonArray(val) {
   if (val == null) return null;
@@ -72,7 +85,9 @@ export function filtersHash(feed, window) {
     exclude_tags: feed.exclude_tags,
     exclude_false_positive: feed.exclude_false_positive,
     exclude_expired: feed.exclude_expired,
-    max_items: feed.max_items
+    max_items: feed.max_items,
+    // Bump hash-feed snapshots when artifact canonicalization is active.
+    artifact_canonical: shouldCanonicalizePublishedHashFeed(feed) ? 1 : 0
   };
   return crypto.createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex').slice(0, 16);
 }
@@ -115,29 +130,12 @@ async function fetchLatestIntegrationFinishedAt(pool, feed = null) {
   return timestamps.sort().at(-1) || null;
 }
 
-async function fetchIocRows(pool, feed, window) {
-  const types = observableTypesForFeedIocType(feed.ioc_type);
-  if (!types.length) return [];
-
-  const params = [];
-  const typePlaceholders = types.map((t) => {
-    params.push(t);
-    return `$${params.length}`;
-  });
-
-  let sql = `
-    SELECT DISTINCT ON (lower(i.observable))
-      i.observable,
-      i.observable_type,
-      i.confidence,
-      i.category,
-      i.source_name,
-      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
-    FROM ioc_items i
-    WHERE i.observable_type IN (${typePlaceholders.join(', ')})
-      AND COALESCE(i.status, 'active') <> 'suppressed'
-  `;
-
+/**
+ * Append shared feed filter SQL fragments (mutates params).
+ * @returns {string} SQL AND-clauses (may be empty string)
+ */
+function buildFeedFilterSql(feed, window, params) {
+  let sql = '';
   const interval = WINDOW_INTERVALS[window];
   if (interval) {
     params.push(interval);
@@ -197,12 +195,129 @@ async function fetchIocRows(pool, feed, window) {
     `;
   }
 
-  sql += `
+  return sql;
+}
+
+const ARTIFACT_IDENTITY_SQL = `
+      CASE
+        WHEN i.observable_type IN (${ARTIFACT_HASH_TYPES_SQL}) AND fa.id IS NOT NULL THEN
+          'a:' || COALESCE(
+            CASE
+              WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                THEN fa.merged_into_artifact_id
+              ELSE fa.id
+            END,
+            fa.id
+          )::text
+        ELSE 'o:' || i.observable_type || ':' || LOWER(i.observable)
+      END
+`;
+
+const ARTIFACT_ANNOTATE_JOINS = `
+      LEFT JOIN file_artifact_ioc_links fal
+        ON fal.ioc_item_id = i.id
+       AND fal.ioc_observable_type = i.observable_type
+       AND i.observable_type IN (${ARTIFACT_HASH_TYPES_SQL})
+      LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
+      LEFT JOIN file_artifact_hashes faph
+        ON faph.artifact_id = COALESCE(
+             CASE
+               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                 THEN fa.merged_into_artifact_id
+               ELSE fa.id
+             END,
+             fa.id
+           )
+       AND faph.is_primary = TRUE
+`;
+
+export async function fetchIocRows(pool, feed, window) {
+  const types = observableTypesForFeedIocType(feed.ioc_type);
+  if (!types.length) return [];
+
+  const params = [];
+  const typePlaceholders = types.map((t) => {
+    params.push(t);
+    return `$${params.length}`;
+  });
+  const filterSql = buildFeedFilterSql(feed, window, params);
+  const canonicalize = shouldCanonicalizePublishedHashFeed(feed);
+
+  let sql;
+  if (canonicalize) {
+    sql = `
+    WITH matched AS (
+      SELECT
+        i.observable,
+        i.observable_type,
+        i.confidence,
+        i.category,
+        i.source_name,
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts,
+        (${ARTIFACT_IDENTITY_SQL}) AS identity_key,
+        faph.hash_type AS primary_hash_type,
+        faph.normalized_hash_value AS primary_hash_value,
+        CASE
+          WHEN i.observable_type IN (${ARTIFACT_HASH_TYPES_SQL}) AND fa.id IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END AS has_artifact
+      FROM ioc_items i
+      ${ARTIFACT_ANNOTATE_JOINS}
+      WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+        AND COALESCE(i.status, 'active') <> 'suppressed'
+        ${filterSql}
+    ),
+    picked AS (
+      SELECT DISTINCT ON (identity_key)
+        COALESCE(
+          CASE WHEN has_artifact THEN primary_hash_value END,
+          observable
+        ) AS observable,
+        COALESCE(
+          CASE WHEN has_artifact THEN primary_hash_type END,
+          observable_type
+        ) AS observable_type,
+        confidence,
+        category,
+        source_name,
+        recency_ts
+      FROM matched
+      ORDER BY identity_key,
+        CASE
+          WHEN has_artifact
+            AND primary_hash_value IS NOT NULL
+            AND LOWER(observable) = LOWER(primary_hash_value)
+            AND LOWER(observable_type) = LOWER(primary_hash_type)
+            THEN 0 ELSE 1
+        END,
+        CASE LOWER(observable_type)
+          WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9
+        END,
+        recency_ts DESC NULLS LAST,
+        observable ASC
+    )
+    SELECT observable, observable_type, confidence, category, source_name, recency_ts
+    FROM picked
+    `;
+  } else {
+    sql = `
+    SELECT DISTINCT ON (lower(i.observable))
+      i.observable,
+      i.observable_type,
+      i.confidence,
+      i.category,
+      i.source_name,
+      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
+    FROM ioc_items i
+    WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
+      ${filterSql}
     ORDER BY lower(i.observable),
       COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
       CASE LOWER(COALESCE(i.confidence, '')) WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC,
       i.observable ASC
-  `;
+    `;
+  }
 
   const { rows } = await pool.query(sql, params);
   return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
@@ -220,71 +335,28 @@ export async function fetchIocExportFingerprint(pool, feed, window) {
     params.push(t);
     return `$${params.length}`;
   });
+  const filterSql = buildFeedFilterSql(feed, window, params);
+  const canonicalize = shouldCanonicalizePublishedHashFeed(feed);
 
-  let sql = `
+  let sql;
+  if (canonicalize) {
+    sql = `
+    SELECT COUNT(DISTINCT (${ARTIFACT_IDENTITY_SQL}))::bigint AS item_count,
+           MAX(COALESCE(i.last_seen_log, i.last_seen_at, i.created_at)) AS max_recency
+    FROM ioc_items i
+    ${ARTIFACT_ANNOTATE_JOINS}
+    WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
+      ${filterSql}
+    `;
+  } else {
+    sql = `
     SELECT COUNT(DISTINCT lower(i.observable))::bigint AS item_count,
            MAX(COALESCE(i.last_seen_log, i.last_seen_at, i.created_at)) AS max_recency
     FROM ioc_items i
     WHERE i.observable_type IN (${typePlaceholders.join(', ')})
       AND COALESCE(i.status, 'active') <> 'suppressed'
-  `;
-
-  const interval = WINDOW_INTERVALS[window];
-  if (interval) {
-    params.push(interval);
-    sql += ` AND COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) >= NOW() - $${params.length}::interval `;
-  }
-
-  if (feed.min_confidence != null && Number.isFinite(Number(feed.min_confidence))) {
-    sql += ` AND (
-      CASE LOWER(COALESCE(i.confidence, ''))
-        WHEN 'high' THEN 100
-        WHEN 'medium' THEN 50
-        WHEN 'low' THEN 25
-        ELSE 0
-      END
-    ) >= ${Number(feed.min_confidence)} `;
-  }
-
-  sql += buildFeedKeySourceSql(feed.include_feed_keys, params);
-
-  if (feed.exclude_false_positive) {
-    sql += `
-      AND COALESCE(i.category, '') NOT ILIKE '%false%positive%'
-      AND lower(COALESCE(i.category, '')) <> 'fp'
-    `;
-  }
-
-  if (feed.exclude_expired !== false) {
-    sql += ` AND COALESCE(i.status, 'active') = 'active' `;
-  }
-
-  if (feed.include_tags?.length) {
-    params.push(feed.include_tags.map((t) => t.toLowerCase()));
-    sql += `
-      AND EXISTS (
-        SELECT 1
-        FROM ioc_tags it
-        JOIN tags tg ON tg.id = it.tag_id
-        WHERE it.ioc_id = i.id
-          AND it.ioc_observable_type = i.observable_type
-          AND tg.enabled = TRUE
-          AND lower(tg.name) = ANY($${params.length}::text[])
-      )
-    `;
-  }
-
-  if (feed.exclude_tags?.length) {
-    params.push(feed.exclude_tags.map((t) => t.toLowerCase()));
-    sql += `
-      AND NOT EXISTS (
-        SELECT 1
-        FROM ioc_tags it
-        JOIN tags tg ON tg.id = it.tag_id
-        WHERE it.ioc_id = i.id
-          AND it.ioc_observable_type = i.observable_type
-          AND lower(tg.name) = ANY($${params.length}::text[])
-      )
+      ${filterSql}
     `;
   }
 

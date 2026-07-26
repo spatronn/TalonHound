@@ -4596,7 +4596,13 @@ async function handleIocSearch(req, res) {
           CASE LOWER(observable_type) WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END,
           created_at ASC, id ASC
         ))[1]::bigint AS id,
-        (ARRAY_AGG(public_id::text ORDER BY created_at ASC, id ASC))[1] AS public_id,
+        (ARRAY_AGG(public_id::text ORDER BY
+          CASE WHEN primary_hash_value IS NOT NULL
+            AND LOWER(observable) = LOWER(primary_hash_value)
+            AND LOWER(observable_type) = LOWER(primary_hash_type) THEN 0 ELSE 1 END,
+          CASE LOWER(observable_type) WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END,
+          created_at ASC, id ASC
+        ))[1] AS public_id,
         COALESCE(
           (ARRAY_AGG(primary_hash_value) FILTER (WHERE primary_hash_value IS NOT NULL))[1],
           (ARRAY_AGG(observable ORDER BY created_at ASC, id ASC))[1]
@@ -4865,7 +4871,31 @@ app.get('/api/ioc/details/resolve', async (req, res) => {
       ${typeFilter}
     `;
     const { rows } = await pool.query(q, params);
-    const publicId = rows[0]?.public_id || null;
+    let publicId = rows[0]?.public_id || null;
+
+    // When File Artifact read is on, prefer canonical IOC for alias hashes.
+    if (publicId && isFileArtifactsReadEnabled()) {
+      try {
+        const fa = await buildFileArtifactDetailBlock(pool, publicId);
+        const canonical = fa?.canonical_ioc_public_id ? String(fa.canonical_ioc_public_id).trim() : '';
+        if (
+          fa?.is_legacy_alias
+          && canonical
+          && canonical !== publicId
+          && fa?.primary_hash?.hash_type
+        ) {
+          const reqType = String(observableType || rows[0]?.observable_type || '').toLowerCase();
+          const pri = String(fa.primary_hash.hash_type).toLowerCase();
+          const rank = (t) => (t === 'sha256' ? 0 : t === 'sha1' ? 1 : t === 'md5' ? 2 : 9);
+          if ((reqType === 'md5' || reqType === 'sha1') && rank(pri) < rank(reqType)) {
+            publicId = canonical;
+          }
+        }
+      } catch {
+        /* keep resolved public_id */
+      }
+    }
+
     return res.json({ public_id: publicId });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to resolve IOC detail id', detail: err.message });
