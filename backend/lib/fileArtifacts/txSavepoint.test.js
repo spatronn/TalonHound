@@ -59,12 +59,29 @@ describe('fileArtifacts/txSavepoint', () => {
 
   it('formatProviderError keeps SQL code (not only message)', () => {
     const formatted = formatProviderError(
-      { code: '23505', message: 'duplicate key', constraint: 'uq_file_artifact_hashes' },
+      { code: '23505', message: 'duplicate key', constraint: 'uq_file_artifact_hashes', table: 'file_artifact_hashes' },
       { evidence_id: 3101 }
     );
     assert.equal(formatted.code, '23505');
+    assert.equal(formatted.sqlState, '23505');
     assert.equal(formatted.evidence_id, 3101);
     assert.equal(formatted.constraint, 'uq_file_artifact_hashes');
+    assert.equal(formatted.table, 'file_artifact_hashes');
+  });
+
+  it('withSavepoint falls back when SAVEPOINT is unavailable (no active transaction)', async () => {
+    const client = {
+      async query(sql) {
+        if (/^SAVEPOINT\b/i.test(String(sql))) {
+          const err = new Error('SAVEPOINT can only be used in transaction blocks');
+          err.code = '25P01';
+          throw err;
+        }
+        return { rows: [{ ok: true }] };
+      }
+    };
+    const result = await withSavepoint(client, 'fa_no_tx', async () => ({ ran: true }));
+    assert.deepEqual(result, { ran: true });
   });
 
   it('without savepoint: first unique error then next query becomes 25P02', async () => {

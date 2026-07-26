@@ -83,7 +83,7 @@ export {
   loadArtifactMapsForPublicIds
 } from './canonicalListSql.js';
 
-export { dualWriteFileArtifact, dualWriteFileArtifactForObservable } from './dualWrite.js';
+export { dualWriteFileArtifact, dualWriteFileArtifactForObservable, shouldRethrowDualWriteError } from './dualWrite.js';
 
 export {
   EMPTY_ORPHAN_ARTIFACTS_SQL,

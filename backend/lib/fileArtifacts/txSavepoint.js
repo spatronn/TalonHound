@@ -4,13 +4,25 @@
  */
 
 /**
- * @param {import('pg').PoolClient} client
+ * Run fn under a SAVEPOINT when the client is inside an open transaction.
+ * Falls back to bare fn when SAVEPOINT is unavailable (autocommit / pool.query),
+ * so dual-write callers can share one helper for both TX and non-TX paths.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} client
  * @param {string} name
  * @param {() => Promise<any>} fn
  */
 export async function withSavepoint(client, name, fn) {
   const sp = String(name || 'fa_sp').replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 60) || 'fa_sp';
-  await client.query(`SAVEPOINT ${sp}`);
+  try {
+    await client.query(`SAVEPOINT ${sp}`);
+  } catch (err) {
+    // 25P01: no_active_sql_transaction — e.g. pool.query autocommit
+    if (err?.code === '25P01' || /no transaction/i.test(String(err?.message || ''))) {
+      return fn();
+    }
+    throw err;
+  }
   try {
     const result = await fn();
     await client.query(`RELEASE SAVEPOINT ${sp}`);
@@ -49,6 +61,9 @@ export function formatProviderError(err, extra = {}) {
     reason: err?.reason || null,
     message: err?.message || String(err),
     constraint: err?.constraint || null,
-    detail: err?.detail || null
+    detail: err?.detail || null,
+    table: err?.table || null,
+    column: err?.column || null,
+    sqlState: err?.code || null
   };
 }
