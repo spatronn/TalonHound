@@ -1,7 +1,11 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { IocDetailIcons, InfoTip } from './IocDetailIcons.jsx';
-import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from '../../lib/iocSourceTimestampPresentation.js';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { IocDetailIcons } from './IocDetailIcons.jsx';
 import { formatIocDetailDateTime, listSourceMembershipActions } from '../../lib/iocDetailTimestamps.js';
+import { ACTIVE_SOURCES_COLUMNS, buildIocSummaryStripItems } from '../../lib/iocOverviewLayout.js';
+import { computeOverflowMenuPosition } from '../../lib/backupMenuPosition.js';
+
+const SOURCE_MENU_EVENT = 'ioc-source-actions-menu';
 
 function SourceActionsMenu({
   src,
@@ -10,39 +14,113 @@ function SourceActionsMenu({
   onAction
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 180 });
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
   const rootRef = useRef(null);
   const menuId = useId();
   const actions = listSourceMembershipActions(src);
   const canShow = isAdmin && src.source_type === 'feed' && src.actions_enabled;
+  const menuKey = String(src.membership_id || src.id || '');
+
+  const updatePosition = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const menuRect = menuRef.current?.getBoundingClientRect();
+    const pos = computeOverflowMenuPosition({
+      trigger: rect,
+      menuWidth: menuRect?.width || 180,
+      menuHeight: menuRect?.height || 168,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight
+    });
+    setCoords({ top: pos.top, left: pos.left, width: pos.width });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    updatePosition();
+    const onReposition = () => updatePosition();
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [open, updatePosition]);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDoc = (evt) => {
-      if (!rootRef.current?.contains(evt.target)) setOpen(false);
-    };
-    const onKey = (evt) => {
-      if (evt.key === 'Escape') setOpen(false);
-    };
+
+    function onDoc(e) {
+      const t = e.target;
+      if (triggerRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+
+    function onOtherMenu(e) {
+      if (String(e.detail) !== menuKey) setOpen(false);
+    }
+
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
+    window.addEventListener(SOURCE_MENU_EVENT, onOtherMenu);
     return () => {
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener(SOURCE_MENU_EVENT, onOtherMenu);
     };
+  }, [open, menuKey]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const id = requestAnimationFrame(() => {
+      const first = menuRef.current?.querySelector('[role="menuitem"]:not([disabled])')
+        || menuRef.current?.querySelector('[role="menuitem"]');
+      first?.focus();
+    });
+    return () => cancelAnimationFrame(id);
   }, [open]);
 
   if (!canShow) return '—';
+
+  function toggleMenu() {
+    setOpen((wasOpen) => {
+      const next = !wasOpen;
+      if (next) {
+        window.dispatchEvent(new CustomEvent(SOURCE_MENU_EVENT, { detail: menuKey }));
+      }
+      return next;
+    });
+  }
+
+  function pick(actionType) {
+    setOpen(false);
+    triggerRef.current?.focus();
+    onAction(actionType, src.membership_id);
+  }
 
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex' }}>
       <button
         type="button"
+        ref={triggerRef}
         aria-label={`Actions for ${src.name || 'source'}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         disabled={actionLoading}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleMenu}
         style={{
           width: 30,
           height: 30,
@@ -58,71 +136,64 @@ function SourceActionsMenu({
       >
         <IocDetailIcons.more size={14} />
       </button>
-      {open ? (
-        <div
-          id={menuId}
-          role="menu"
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 'calc(100% + 4px)',
-            minWidth: 180,
-            border: '1px solid #334155',
-            borderRadius: 8,
-            background: '#0b1220',
-            zIndex: 40,
-            padding: 4,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.35)'
-          }}
-        >
-          {actions.map((action) => (
-            <button
-              key={action.type}
-              type="button"
-              role="menuitem"
-              disabled={!action.enabled || actionLoading}
-              onClick={() => {
-                if (!action.enabled) return;
-                setOpen(false);
-                onAction(action.type, src.membership_id);
-              }}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 10px',
-                border: 'none',
-                borderRadius: 6,
-                background: 'transparent',
-                color: !action.enabled
-                  ? '#475569'
-                  : (action.danger ? '#fca5a5' : '#e2e8f0'),
-                fontSize: 12,
-                cursor: action.enabled && !actionLoading ? 'pointer' : 'not-allowed',
-                opacity: action.enabled ? 1 : 0.55
-              }}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {open && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            id={menuId}
+            ref={menuRef}
+            role="menu"
+            style={{
+              position: 'fixed',
+              top: coords.top,
+              left: coords.left,
+              minWidth: coords.width,
+              zIndex: 10050,
+              border: '1px solid #334155',
+              borderRadius: 8,
+              background: '#0b1220',
+              padding: 4,
+              boxShadow: '0 12px 28px rgba(0,0,0,0.45)'
+            }}
+          >
+            {actions.map((action) => (
+              <button
+                key={action.type}
+                type="button"
+                role="menuitem"
+                disabled={!action.enabled || actionLoading}
+                onClick={() => {
+                  if (!action.enabled) return;
+                  pick(action.type);
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  border: 'none',
+                  borderRadius: 6,
+                  background: 'transparent',
+                  color: !action.enabled
+                    ? '#475569'
+                    : (action.danger ? '#fca5a5' : '#e2e8f0'),
+                  fontSize: 12,
+                  cursor: action.enabled && !actionLoading ? 'pointer' : 'not-allowed',
+                  opacity: action.enabled ? 1 : 0.55
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+        : null}
     </div>
-  );
-}
-
-function TimestampHeader({ presentation }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-      {presentation.label}
-      <InfoTip text={presentation.tooltip} />
-    </span>
   );
 }
 
 export function ActiveSourcesTable({
   activeSources,
-  importedAt,
   sourceColorIndex,
   SourceBadge,
   iocSourceTypeLabel,
@@ -136,19 +207,12 @@ export function ActiveSourcesTable({
       <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 10 }}>Active Sources</div>
       {activeSources.length ? (
         <div style={{ overflowX: 'auto' }}>
-          <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0', minWidth: 980 }}>
+          <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0', minWidth: 640 }}>
             <thead>
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                <th>Source</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th><TimestampHeader presentation={IOC_SOURCE_TIMESTAMP_PRESENTATION.first} /></th>
-                <th><TimestampHeader presentation={IOC_SOURCE_TIMESTAMP_PRESENTATION.imported} /></th>
-                <th><TimestampHeader presentation={IOC_SOURCE_TIMESTAMP_PRESENTATION.last} /></th>
-                <th>Policy expires</th>
-                <th>Effective expires</th>
-                <th>Override</th>
-                <th>Actions</th>
+                {ACTIVE_SOURCES_COLUMNS.map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -157,9 +221,6 @@ export function ActiveSourcesTable({
                   <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
                   <td>{iocSourceTypeLabel(src)}</td>
                   <td>{iocSourceStatusBadge(src)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatIocDetailDateTime(src.first_seen_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatIocDetailDateTime(importedAt)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{formatIocDetailDateTime(src.last_changed_at)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{src.source_type === 'feed' ? formatIocDetailDateTime(src.policy_expires_at) : '—'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{formatIocDetailDateTime(src.expires_at)}</td>
                   <td>{src.source_type === 'feed' ? (src.override_enabled ? 'Yes' : 'No') : '—'}</td>
@@ -184,16 +245,8 @@ export function ActiveSourcesTable({
 }
 
 export function IocSummaryStrip({ summary }) {
-  if (!summary) return null;
-  const items = [
-    { label: 'Type', value: summary.observable_type || '—' },
-    {
-      label: 'Sources',
-      value: `${summary.active_source_count ?? 0} / ${summary.total_source_membership_count ?? summary.source_count ?? summary.active_source_count ?? 0} total`
-    },
-    { label: 'First Seen', value: formatIocDetailDateTime(summary.first_seen_at) },
-    { label: 'Last Seen', value: formatIocDetailDateTime(summary.last_seen_at) }
-  ];
+  const items = buildIocSummaryStripItems(summary);
+  if (!items.length) return null;
 
   return (
     <div style={{

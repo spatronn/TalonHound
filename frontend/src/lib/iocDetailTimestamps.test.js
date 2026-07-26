@@ -94,4 +94,8 @@ test('source action states keep invalid actions disabled', () => {
     override_enabled: true
   });
   assert.equal(actions.length, 4);
+  assert.deepEqual(
+    actions.map((a) => a.label),
+    ['Reactivate source', 'Custom expire', 'Expire source', 'Clear override']
+  );
 });

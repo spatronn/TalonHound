@@ -33,7 +33,7 @@ import {
 } from './lib/associatedIpEnrichment.js';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/iocListTimestampPresentation.js';
-import { formatIocDetailDateTime, resolveIocDetailImportedAt } from './lib/iocDetailTimestamps.js';
+import { formatIocDetailDateTime } from './lib/iocDetailTimestamps.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
 import {
@@ -61,6 +61,8 @@ import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
 import { ActiveSourcesTable, IocSummaryStrip } from './components/iocDetails/ActiveSourcesTable.jsx';
 import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx';
 import { IocMetadataCards } from './components/iocDetails/IocMetadataCards.jsx';
+import talonHoundLogo from './assets/talonhound-logo.png';
+import { formatSidebarRoleLabel, userInitialsFromEmail } from './lib/sidebarAccount.js';
 import {
   formatUserDateTime,
   notifyTimezoneChanged,
@@ -75,6 +77,7 @@ import {
   FEED_RESULT_TONE_COLORS,
   FEED_RESULT_METRIC_TOOLTIPS
 } from './lib/feedLastResult.js';
+import './AppShell.css';
 import './components/enrichmentProviders/enrichmentProviders.css';
 import {
   TAG_MANAGER_PAGE_SIZE,
@@ -1624,20 +1627,40 @@ function AppShell({ children }) {
     && !isActive('/administration/ioc-sources');
 
   const navLinkClass = (active) => `sidebar-nav-link${active ? ' is-active' : ''}`;
+  const roleLabel = formatSidebarRoleLabel(role);
+  const initials = userInitialsFromEmail(userEmail);
+  const displayName = userEmail || 'demo user';
 
   return (
     <div className="app-shell" style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
       <div className="mobile-topbar">
         <button className="mobile-menu-btn" onClick={() => setIsMobileNavOpen((v) => !v)} aria-label="Toggle navigation menu">?</button>
-        <span className="mobile-topbar-title">demo-runbook</span>
+        <span className="mobile-topbar-title">TalonHound</span>
         <span className="mobile-topbar-user">{userEmail ? userEmail.split('@')[0] : 'user'}</span>
       </div>
       {isMobileNavOpen && <div className="mobile-backdrop" onClick={() => setIsMobileNavOpen(false)} />}
-      <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 250px', border: '1px solid #e5e5e5', borderRadius: 10, padding: 12, height: 'fit-content', position: 'sticky', top: 16, background: '#fff' }}>
+      <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 260px', border: '1px solid #334155', borderRadius: 10, padding: 0, height: 'fit-content', position: 'sticky', top: 16, background: '#0f172a', overflow: 'hidden' }}>
         <div className="mobile-sidebar-close"><button onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu">?</button></div>
-        <div style={{ marginBottom: 14, fontSize: 14 }}>User: <b>{userEmail || 'demo user'}</b> <span style={{ color: '#94a3b8' }}>({role})</span></div>
 
-        <nav>
+        <div className="sidebar-brand">
+          <img
+            src={talonHoundLogo}
+            alt="TalonHound"
+            className="sidebar-brand-logo"
+            draggable={false}
+          />
+        </div>
+
+        <div className="sidebar-user-panel" title={displayName}>
+          <div className="sidebar-user-avatar" aria-hidden="true">{initials}</div>
+          <div className="sidebar-user-meta">
+            <div className="sidebar-user-email">{displayName}</div>
+            <div className="sidebar-user-role">{roleLabel}</div>
+          </div>
+          <span className="sidebar-user-chevron" aria-hidden="true">▾</span>
+        </div>
+
+        <nav className="sidebar-nav">
           <div className="sidebar-nav-section">
             <div className="sidebar-nav-section-label">System</div>
             <Link to="/system" className={navLinkClass(isActive('/system'))}>{NavIcons.system}<span>System</span></Link>
@@ -1678,8 +1701,19 @@ function AppShell({ children }) {
           </div>
         </nav>
 
-        <div style={{ marginTop: 16, fontSize: 12, color: '#475569' }}>Timezone: <b>{timezone}</b></div>
-        <button onClick={logout} style={{ marginTop: 10, width: '100%', padding: 9 }}>Logout</button>
+        <div className="sidebar-footer">
+          <div className="sidebar-timezone">Timezone: <b>{timezone}</b></div>
+          <button type="button" className="sidebar-logout-btn" onClick={logout} aria-label="Logout">
+            <span aria-hidden="true" style={{ display: 'inline-flex', width: 16, height: 16 }}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <path d="M16 17l5-5-5-5" />
+                <path d="M21 12H9" />
+              </svg>
+            </span>
+            Logout
+          </button>
+        </div>
       </aside>
 
       <main className="main-content" style={{ flex: 1, minWidth: 0 }}>
@@ -13756,7 +13790,6 @@ function IOCDetailsPage() {
                   <div style={{ display: 'grid', gap: 14 }}>
                     <ActiveSourcesTable
                       activeSources={activeSources}
-                      importedAt={resolveIocDetailImportedAt(summary)}
                       sourceColorIndex={sourceColorIndex}
                       SourceBadge={SourceBadge}
                       iocSourceTypeLabel={iocSourceTypeLabel}
