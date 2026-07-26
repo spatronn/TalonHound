@@ -31,7 +31,7 @@
     "test:ioc-sources": "node --test lib/iocSourceLifecycle.test.js lib/manualIocCreate.test.js",
     "test:custom-threat-feeds": "node --test lib/customThreatFeed.test.js lib/customThreatFeedFingerprint.test.js lib/iocExpiration.customFeedFingerprint.test.js lib/integrationSchedule.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",
-    "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js",
+    "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/jobResultSnapshot.test.js lib/feedLastRunResult.test.js",
     "test:rbac": "node --test lib/rbac.test.js",
     "test:ioc-export": "node --test lib/iocExportHelpers.test.js",
     "test:ioc-search": "node --test lib/iocSearchDsl/parser.test.js lib/iocSearchDsl/queryBuilder.test.js lib/iocSearchExport/csv.test.js lib/iocSearchExport/exportRows.test.js lib/iocSearchExport/exportStatus.test.js lib/iocSearchExport/exportStore.cleanup.test.js routes/iocSearchExports.test.js",

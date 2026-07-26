@@ -33,12 +33,23 @@ test('Job Queue Status remains routed', () => {
   assert.ok(mainSrc.includes('/threat-intelligence/queue'));
 });
 
-test('Job Queue Status table exposes Finished At and Duration columns', () => {
+test('Job Queue Status table exposes Finished At, Duration, and Result columns', () => {
   assert.ok(mainSrc.includes('>Finished At<'));
   assert.ok(mainSrc.includes('>Duration<'));
+  assert.ok(mainSrc.includes('>Result<'));
 });
 
 test('Job Queue Status wires the duration helpers', () => {
   assert.ok(mainSrc.includes("from './lib/integrationJobDuration.js'"));
   assert.ok(mainSrc.includes('formatJobDuration(computeJobDurationMs(j))'));
+});
+
+test('Job Queue Status uses shared result helpers', () => {
+  assert.ok(mainSrc.includes("from './lib/jobQueueResult.js'"));
+  assert.ok(mainSrc.includes('presentQueueJobResult'));
+  assert.ok(mainSrc.includes('presentQueueJobReason'));
+});
+
+test('Job Queue Status does not hardcode Completed successfully for success', () => {
+  assert.equal(mainSrc.includes("if (state === 'success') return 'Completed successfully'"), false);
 });

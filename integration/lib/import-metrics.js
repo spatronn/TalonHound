@@ -9,6 +9,8 @@ export function createImportMetrics() {
     records_duplicate: 0,
     records_skipped: 0,
     records_unchanged: 0,
+    records_reactivated: 0,
+    records_removed: 0,
     records_suppressed: 0,
     records_failed: 0,
     noteInsert() {
@@ -46,6 +48,8 @@ export function createImportMetrics() {
       this.records_duplicate += Number(other.records_duplicate || 0);
       this.records_skipped += Number(other.records_skipped || 0);
       this.records_unchanged += Number(other.records_unchanged || 0);
+      this.records_reactivated += Number(other.records_reactivated || 0);
+      this.records_removed += Number(other.records_removed || 0);
       this.records_suppressed += Number(other.records_suppressed || 0);
       this.records_failed += Number(other.records_failed || 0);
     },
@@ -69,6 +73,8 @@ export function createImportMetrics() {
         records_duplicate: this.records_duplicate,
         records_skipped: this.records_skipped,
         records_unchanged: this.records_unchanged,
+        records_reactivated: this.records_reactivated,
+        records_removed: this.records_removed,
         records_suppressed: this.records_suppressed,
         records_failed: this.records_failed
       };

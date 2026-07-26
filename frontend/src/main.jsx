@@ -35,6 +35,13 @@ import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPrese
 import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/iocListTimestampPresentation.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
+import {
+  presentQueueJobResult,
+  presentQueueJobReason,
+  buildQueueJobDetailMetrics,
+  formatQueueTrigger,
+  formatQueueRunMode
+} from './lib/jobQueueResult.js';
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import {
   DEFAULT_SOURCE_COLOR,
@@ -337,21 +344,10 @@ function usomRunDiagnostics(run) {
 }
 
 function integrationJobReasonLabel(job) {
-  const state = String(job?.state || job?.status || '').toLowerCase();
-  if (state === 'queued' && job?.queue_hint) return job.queue_hint;
-  if (state === 'success') return 'Completed successfully';
-  if (state === 'running') {
-    const parts = [];
-    if (job?.running_for_ms != null) parts.push(`running for ${formatDurationMs(job.running_for_ms)}`);
-    if (job?.started_at) parts.push(`started ${formatUserDateTime(job.started_at)}`);
-    if (job?.possibly_stuck) parts.push('Possibly stuck / stale');
-    return parts.length ? parts.join(' · ') : '-';
-  }
-  if (job?.failed_reason) {
-    if (job?.failure_type) return `[${job.failure_type}] ${job.failed_reason}`;
-    return job.failed_reason;
-  }
-  return '-';
+  return presentQueueJobReason(job, {
+    formatDurationMs: (ms) => formatJobDuration(ms),
+    formatUserDateTime
+  });
 }
 
 function queueHealthColor(health) {
@@ -3786,36 +3782,72 @@ function IntegrationsQueueStatusPage() {
   const { isAdmin } = useSession();
   const [loading, setLoading] = useState(true);
   const [queue, setQueue] = useState({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
-  const [tableWidths, setTableWidths] = useState({ id: 130, integration: 180, name: 140, state: 100, queued: 170, started: 170, finished: 170, duration: 100, reason: 320 });
+  const [integrations, setIntegrations] = useState([]);
+  const [tableWidths, setTableWidths] = useState({
+    id: 110, integration: 160, name: 130, state: 90, queued: 150, started: 150, finished: 150, duration: 90, result: 180, reason: 220
+  });
   const [resizeState, setResizeState] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState('');
   const [windowValue, setWindowValue] = useState('24h');
+  const [integrationFilter, setIntegrationFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
   const [recoverPreview, setRecoverPreview] = useState(null);
   const [recoverLoading, setRecoverLoading] = useState(false);
   const [recoverError, setRecoverError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
-  async function load(targetPage = page, targetPageSize = pageSize, targetSearch = search, targetWindow = windowValue) {
+  function toIsoOrUndefined(localValue) {
+    if (!localValue) return undefined;
+    const ms = Date.parse(localValue);
+    if (!Number.isFinite(ms)) return undefined;
+    return new Date(ms).toISOString();
+  }
+
+  async function load(
+    targetPage = page,
+    targetPageSize = pageSize,
+    targetSearch = search,
+    targetWindow = windowValue,
+    targetIntegration = integrationFilter,
+    targetState = stateFilter,
+    targetFrom = customFrom,
+    targetTo = customTo
+  ) {
     setLoading(true);
+    setLoadError('');
     try {
-      const { data } = await api.get('/integrations', {
-        params: {
-          queue_page: targetPage,
-          queue_page_size: targetPageSize,
-          queue_search: targetSearch || undefined,
-          queue_window: targetWindow
-        }
-      });
+      const params = {
+        queue_page: targetPage,
+        queue_page_size: targetPageSize,
+        queue_search: targetSearch || undefined,
+        queue_window: targetWindow,
+        queue_integration: targetIntegration || undefined,
+        queue_state: targetState || undefined
+      };
+      if (targetWindow === 'custom') {
+        params.queue_from = toIsoOrUndefined(targetFrom);
+        params.queue_to = toIsoOrUndefined(targetTo);
+      }
+      const { data } = await api.get('/integrations', { params });
       setQueue(data?.queue || { counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: 25, total: 0, total_pages: 1 } });
-    } catch {
+      if (Array.isArray(data?.integrations)) setIntegrations(data.integrations);
+    } catch (err) {
+      setLoadError(err?.response?.data?.message || 'Failed to load queue');
       setQueue({ counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }, jobs: [], pagination: { page: 1, page_size: targetPageSize, total: 0, total_pages: 1 } });
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(page, pageSize, search, windowValue).catch(() => {}); }, [page, pageSize, search, windowValue]);
+  useEffect(() => {
+    if (windowValue === 'custom') return;
+    load(page, pageSize, search, windowValue, integrationFilter, stateFilter, customFrom, customTo).catch(() => {});
+  }, [page, pageSize, search, windowValue, integrationFilter, stateFilter]);
 
   useEffect(() => {
     if (!resizeState) return undefined;
@@ -3861,7 +3893,7 @@ function IntegrationsQueueStatusPage() {
     try {
       await api.post('/integrations/queue/recover');
       setRecoverPreview(null);
-      await load(page, pageSize, search, windowValue);
+      await load(page, pageSize, search, windowValue, integrationFilter, stateFilter, customFrom, customTo);
     } catch (err) {
       setRecoverError(err?.response?.data?.message || 'Failed to recover queue');
     } finally {
@@ -3869,7 +3901,31 @@ function IntegrationsQueueStatusPage() {
     }
   }
 
+  function applyCustomRange() {
+    setPage(1);
+    load(1, pageSize, search, 'custom', integrationFilter, stateFilter, customFrom, customTo).catch(() => {});
+  }
+
   const qh = queue.queue_health || {};
+  const colCount = 10;
+  const resultToneColor = {
+    success: '#86efac',
+    danger: '#fca5a5',
+    warning: '#fcd34d',
+    neutral: '#94a3b8'
+  };
+
+  const feedOptions = useMemo(() => {
+    const seen = new Set();
+    const opts = [];
+    for (const feed of integrations || []) {
+      const key = String(feed.key || '').trim();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      opts.push({ key, name: feed.name || key });
+    }
+    return opts.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [integrations]);
 
   return (
     <AppShell>
@@ -3882,7 +3938,12 @@ function IntegrationsQueueStatusPage() {
                 {recoverLoading ? 'Checking...' : 'Recover Queue'}
               </button>
             ) : null}
-            <button type="button" onClick={() => load(page, pageSize, search, windowValue).catch(() => {})}>Refresh</button>
+            <button
+              type="button"
+              onClick={() => load(page, pageSize, search, windowValue, integrationFilter, stateFilter, customFrom, customTo).catch(() => {})}
+            >
+              Refresh
+            </button>
           </div>
         </div>
         {qh.queue_health ? (
@@ -3906,6 +3967,7 @@ function IntegrationsQueueStatusPage() {
           </div>
         ) : null}
         {recoverError ? <div className="queue-recover-error" style={{ marginBottom: 8, fontSize: 13 }}>{recoverError}</div> : null}
+        {loadError ? <div className="queue-recover-error" style={{ marginBottom: 8, fontSize: 13 }}>{loadError}</div> : null}
         {recoverPreview ? (
           <div className="queue-recover-preview" style={{ marginBottom: 12, padding: 12, borderRadius: 8, fontSize: 13 }}>
             <div><b>Dry-run:</b> would reconcile <b>{recoverPreview.reconciled_count || 0}</b> item(s).</div>
@@ -3932,18 +3994,65 @@ function IntegrationsQueueStatusPage() {
             value={search}
             onChange={(e) => { setPage(1); setSearch(e.target.value); }}
             placeholder="Search all columns..."
-            style={{ minWidth: 260, ...queuePageInputStyle }}
+            style={{ minWidth: 220, ...queuePageInputStyle }}
           />
           <select value={windowValue} onChange={(e) => { setPage(1); setWindowValue(e.target.value); }} style={queuePageInputStyle}>
             <option value="24h">24 hours</option>
-            <option value="1d">1 day</option>
             <option value="7d">7 days</option>
+            <option value="30d">30 days</option>
+            <option value="custom">Custom</option>
+          </select>
+          <select
+            value={integrationFilter}
+            onChange={(e) => { setPage(1); setIntegrationFilter(e.target.value); }}
+            style={queuePageInputStyle}
+          >
+            <option value="">All integrations</option>
+            {feedOptions.map((f) => (
+              <option key={f.key} value={f.key}>{f.name}</option>
+            ))}
+          </select>
+          <select
+            value={stateFilter}
+            onChange={(e) => { setPage(1); setStateFilter(e.target.value); }}
+            style={queuePageInputStyle}
+          >
+            <option value="">All states</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+            <option value="skipped">Skipped</option>
           </select>
           <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }} style={queuePageInputStyle}>
             <option value={25}>25 rows</option>
             <option value={50}>50 rows</option>
+            <option value={100}>100 rows</option>
           </select>
         </div>
+        {windowValue === 'custom' ? (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+            <label style={{ color: '#94a3b8', fontSize: 12 }}>
+              From
+              <input
+                type="datetime-local"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                style={{ display: 'block', marginTop: 4, ...queuePageInputStyle }}
+              />
+            </label>
+            <label style={{ color: '#94a3b8', fontSize: 12 }}>
+              To
+              <input
+                type="datetime-local"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                style={{ display: 'block', marginTop: 4, ...queuePageInputStyle }}
+              />
+            </label>
+            <button type="button" onClick={() => applyCustomRange()} style={{ marginTop: 16 }}>Apply range</button>
+          </div>
+        ) : null}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 10, fontSize: 14, color: '#cbd5e1' }}>
           <span>Waiting: <b style={{ color: '#f1f5f9' }}>{queue.counts?.waiting || 0}</b></span>
           <span>Active: <b style={{ color: '#f1f5f9' }}>{queue.counts?.active || 0}</b></span>
@@ -3962,6 +4071,7 @@ function IntegrationsQueueStatusPage() {
               <col style={{ width: tableWidths.started }} />
               <col style={{ width: tableWidths.finished }} />
               <col style={{ width: tableWidths.duration }} />
+              <col style={{ width: tableWidths.result }} />
               <col style={{ width: tableWidths.reason }} />
             </colgroup>
             <thead>
@@ -3974,25 +4084,83 @@ function IntegrationsQueueStatusPage() {
                 <th style={{ position: 'relative' }}>Started At<div onMouseDown={(e) => startResize('started', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Finished At<div onMouseDown={(e) => startResize('finished', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Duration<div onMouseDown={(e) => startResize('duration', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                <th style={{ position: 'relative' }}>Result<div onMouseDown={(e) => startResize('result', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 <th style={{ position: 'relative' }}>Reason<div onMouseDown={(e) => startResize('reason', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={9}>Loading...</td></tr> : (queue.jobs?.length ? queue.jobs.map((j) => {
+              {loading ? <tr><td colSpan={colCount}>Loading...</td></tr> : (queue.jobs?.length ? queue.jobs.flatMap((j) => {
                 const durationText = formatJobDuration(computeJobDurationMs(j));
-                return (
-                <tr key={String(j.id)} style={{ borderBottom: '1px solid #334155' }}>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.id}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.integration_name || j.integration_key || '-'}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{integrationJobDisplayName(j)}</td>
-                  <td style={{ color: queueJobStateColor(j.state === 'fail' ? 'failed' : j.state), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ?' : ''}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.started_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.finished_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={durationText}>{durationText}</td>
-                  <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#fcd34d' : '#cbd5e1' }} title={integrationJobReasonLabel(j)}>{integrationJobReasonLabel(j)}</td>
-                </tr>
-              );}) : <tr><td colSpan={9} style={{ color: '#94a3b8' }}>No queued jobs</td></tr>)}
+                const resultView = presentQueueJobResult(j);
+                const reasonText = integrationJobReasonLabel(j);
+                const isExpanded = expandedId === String(j.id);
+                const detailMetrics = isExpanded ? buildQueueJobDetailMetrics(j) : [];
+                const mainRow = (
+                  <tr
+                    key={String(j.id)}
+                    style={{ borderBottom: isExpanded ? 'none' : '1px solid #334155', cursor: 'pointer' }}
+                    onClick={() => setExpandedId(isExpanded ? null : String(j.id))}
+                  >
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }} title={String(j.id)}>{j.id}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{j.integration_name || j.integration_key || '-'}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#e2e8f0' }}>{integrationJobDisplayName(j)}</td>
+                    <td style={{ color: queueJobStateColor(j.state === 'fail' ? 'failed' : j.state), fontWeight: 700, textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '-')}{j.possibly_stuck ? ' ?' : ''}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.queued_at || j.timestamp)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.started_at)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>{formatUserDateTime(j.finished_at)}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }} title={durationText}>{durationText}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: resultToneColor[resultView.tone] || '#cbd5e1', fontWeight: 600 }} title={resultView.title}>{resultView.text}</td>
+                    <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: j.possibly_stuck ? '#fcd34d' : '#cbd5e1' }} title={reasonText}>{reasonText}</td>
+                  </tr>
+                );
+                if (!isExpanded) return [mainRow];
+                return [
+                  mainRow,
+                  <tr key={`${j.id}-detail`} style={{ borderBottom: '1px solid #334155', background: '#0b1220' }}>
+                    <td colSpan={colCount} style={{ padding: 14, color: '#cbd5e1', fontSize: 12, lineHeight: 1.6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                        <div><b style={{ color: '#94a3b8' }}>Integration</b><div>{j.integration_name || j.integration_key || '—'}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Job name</b><div>{integrationJobDisplayName(j)}</div></div>
+                        <div>
+                          <b style={{ color: '#94a3b8' }}>Job ID</b>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <span style={{ wordBreak: 'break-all' }}>{j.id}</span>
+                            <button
+                              type="button"
+                              style={{ fontSize: 11, padding: '2px 6px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard?.writeText(String(j.id)).catch(() => {});
+                              }}
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                        <div><b style={{ color: '#94a3b8' }}>State</b><div style={{ textTransform: 'capitalize' }}>{j.state === 'fail' ? 'failed' : (j.state || '—')}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Run mode</b><div>{formatQueueRunMode(j.run_mode || j.result?.run_mode)}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Trigger</b><div>{formatQueueTrigger(j.triggered_by)}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Queued</b><div>{formatUserDateTime(j.queued_at || j.timestamp)}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Started</b><div>{formatUserDateTime(j.started_at)}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Finished</b><div>{formatUserDateTime(j.finished_at)}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Duration</b><div>{durationText}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Result code</b><div>{j.result_code || j.result?.result_code || '—'}</div></div>
+                        <div><b style={{ color: '#94a3b8' }}>Reason</b><div>{reasonText}</div></div>
+                      </div>
+                      {detailMetrics.length ? (
+                        <div style={{ marginTop: 12 }}>
+                          <b style={{ color: '#94a3b8' }}>Metrics</b>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 6 }}>
+                            {detailMetrics.map((m) => (
+                              <div key={m.label}><span style={{ color: '#64748b' }}>{m.label}:</span> {m.value}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ];
+              }) : <tr><td colSpan={colCount} style={{ color: '#94a3b8' }}>No queued jobs</td></tr>)}
             </tbody>
           </table>
         </div>

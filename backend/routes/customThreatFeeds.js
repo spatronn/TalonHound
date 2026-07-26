@@ -209,7 +209,21 @@ async function queueCustomFeedSync(pool, importQueue, feedRow, triggeredBy, manu
     `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
      VALUES ($1, $2, $3, 'queued', $4, NOW(), NOW())
      ON CONFLICT (job_id)
-     DO UPDATE SET status='queued', triggered_by=$4, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+     DO UPDATE SET status='queued', triggered_by=$4, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL,
+       records_processed = 0,
+       records_inserted = 0,
+       records_updated = 0,
+       records_duplicate = 0,
+       records_unchanged = 0,
+       records_reactivated = 0,
+       records_removed = 0,
+       records_skipped = 0,
+       records_suppressed = 0,
+       records_failed = 0,
+       result_code = NULL,
+       result_summary = NULL,
+       result_details = NULL,
+       run_mode = NULL`,
     [String(job.id), integrationKey, CUSTOM_FEED_JOB_NAME, triggeredBy]
   );
 

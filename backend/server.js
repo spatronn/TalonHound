@@ -105,6 +105,10 @@ import {
   pickHealthStatus
 } from './lib/feedHealth.js';
 import { normalizeLastRunResult } from './lib/feedLastRunResult.js';
+import {
+  mapQueueJobResult,
+  QUEUE_JOB_REQUEUE_RESET_SQL
+} from './lib/jobResultSnapshot.js';
 import { assertCustomFeedSettingsAllowed } from './lib/customThreatFeedAccess.js';
 import { normalizeRdapTarget } from './lib/domainRoot.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
@@ -738,7 +742,82 @@ function wantsIntegrationsQueue(req) {
   const q = req.query || {};
   return Object.prototype.hasOwnProperty.call(q, 'queue_page')
     || Object.prototype.hasOwnProperty.call(q, 'queue_search')
-    || Object.prototype.hasOwnProperty.call(q, 'queue_window');
+    || Object.prototype.hasOwnProperty.call(q, 'queue_window')
+    || Object.prototype.hasOwnProperty.call(q, 'queue_integration')
+    || Object.prototype.hasOwnProperty.call(q, 'queue_state')
+    || Object.prototype.hasOwnProperty.call(q, 'queue_from')
+    || Object.prototype.hasOwnProperty.call(q, 'queue_to');
+}
+
+const QUEUE_ALLOWED_STATES = new Set(['queued', 'running', 'success', 'failed', 'skipped']);
+const QUEUE_MAX_CUSTOM_RANGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Resolve queue time window filters for integration_queue_jobs listing.
+ * @returns {{ ok: true, clause: string, params: any[], nextIndex: number, window: string, from: string|null, to: string|null }
+ *   | { ok: false, status: number, message: string }}
+ */
+function resolveQueueWindowFilter(req, startParamIndex = 1) {
+  const queueWindow = String(req.query?.queue_window || '24h').trim();
+  const params = [];
+  let idx = startParamIndex;
+
+  if (queueWindow === 'custom') {
+    const fromRaw = String(req.query?.queue_from || '').trim();
+    const toRaw = String(req.query?.queue_to || '').trim();
+    if (!fromRaw || !toRaw) {
+      return { ok: false, status: 400, message: 'queue_from and queue_to are required when queue_window=custom' };
+    }
+    const fromMs = Date.parse(fromRaw);
+    const toMs = Date.parse(toRaw);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
+      return { ok: false, status: 400, message: 'queue_from and queue_to must be valid ISO timestamps' };
+    }
+    if (toMs < fromMs) {
+      return { ok: false, status: 400, message: 'queue_to must be greater than or equal to queue_from' };
+    }
+    if ((toMs - fromMs) > QUEUE_MAX_CUSTOM_RANGE_MS) {
+      return { ok: false, status: 400, message: 'Custom queue window cannot exceed 30 days' };
+    }
+    params.push(new Date(fromMs).toISOString(), new Date(toMs).toISOString());
+    const fromIdx = idx;
+    const toIdx = idx + 1;
+    idx += 2;
+    return {
+      ok: true,
+      clause: `q.queued_at >= $${fromIdx}::timestamptz AND q.queued_at <= $${toIdx}::timestamptz`,
+      countClause: `queued_at >= $${fromIdx}::timestamptz AND queued_at <= $${toIdx}::timestamptz`,
+      params,
+      nextIndex: idx,
+      window: 'custom',
+      from: new Date(fromMs).toISOString(),
+      to: new Date(toMs).toISOString()
+    };
+  }
+
+  let intervalSql = "NOW() - INTERVAL '24 hours'";
+  let windowLabel = '24h';
+  if (queueWindow === '7d') {
+    intervalSql = "NOW() - INTERVAL '7 days'";
+    windowLabel = '7d';
+  } else if (queueWindow === '30d') {
+    intervalSql = "NOW() - INTERVAL '30 days'";
+    windowLabel = '30d';
+  } else if (queueWindow === '1d') {
+    intervalSql = "NOW() - INTERVAL '24 hours'";
+    windowLabel = '1d';
+  }
+
+  return {
+    ok: true,
+    clause: `q.queued_at >= ${intervalSql}`,
+    countClause: `queued_at >= ${intervalSql}`,
+    params,
+    nextIndex: idx,
+    window: windowLabel,
+    from: null,
+    to: null
+  };
 }
 
 function feedJobType(key) {
@@ -1105,12 +1184,19 @@ app.get('/api/integrations', async (req, res) => {
   try {
     const queuePage = Math.max(Number(req.query?.queue_page || 1) || 1, 1);
     const requestedSize = Number(req.query?.queue_page_size || 25) || 25;
-    const queuePageSize = Math.min(Math.max(requestedSize, 1), 50);
+    const queuePageSize = Math.min(Math.max(requestedSize, 1), 100);
     const queueOffset = (queuePage - 1) * queuePageSize;
     const queueSearch = String(req.query?.queue_search || '').trim();
-    const queueWindow = String(req.query?.queue_window || '24h').trim();
-    const queueWindowSql = queueWindow === '7d' ? "NOW() - INTERVAL '7 days'" : "NOW() - INTERVAL '24 hours'";
+    const queueIntegration = String(req.query?.queue_integration || '').trim();
+    const queueStateRaw = String(req.query?.queue_state || '').trim().toLowerCase();
+    const queueState = QUEUE_ALLOWED_STATES.has(queueStateRaw) ? queueStateRaw : '';
     const loadQueue = wantsIntegrationsQueue(req);
+
+    const queueWindowResolved = resolveQueueWindowFilter(req, 1);
+    if (loadQueue && !queueWindowResolved.ok) {
+      return res.status(queueWindowResolved.status).json({ message: queueWindowResolved.message });
+    }
+    const queueWindow = queueWindowResolved.ok ? queueWindowResolved.window : '24h';
 
     const includeArchived = String(req.query?.include_archived || '').trim() === '1';
 
@@ -1395,26 +1481,58 @@ app.get('/api/integrations', async (req, res) => {
     if (loadQueue) {
     const queueStart = Date.now();
     try {
-      const searchParams = [];
-      let searchWhere = '';
-      if (queueSearch) {
-        searchParams.push(`%${queueSearch}%`);
-        searchWhere = `
-          AND (
-            q.job_id ILIKE $1
-            OR q.integration_key ILIKE $1
-            OR q.job_name ILIKE $1
-            OR q.status ILIKE $1
-            OR COALESCE(q.error_message, '') ILIKE $1
-            OR COALESCE(f.name, q.integration_key) ILIKE $1
-          )
-        `;
+      const filterParams = [...(queueWindowResolved.params || [])];
+      let paramIdx = queueWindowResolved.nextIndex;
+      const whereParts = [queueWindowResolved.clause];
+
+      if (queueIntegration) {
+        filterParams.push(queueIntegration);
+        whereParts.push(`q.integration_key = $${paramIdx}`);
+        paramIdx += 1;
+      }
+      if (queueState) {
+        filterParams.push(queueState);
+        whereParts.push(`q.status = $${paramIdx}`);
+        paramIdx += 1;
       }
 
-      const countSql = `
+      let searchWhere = '';
+      if (queueSearch) {
+        filterParams.push(`%${queueSearch}%`);
+        searchWhere = `
+          AND (
+            q.job_id ILIKE $${paramIdx}
+            OR q.integration_key ILIKE $${paramIdx}
+            OR q.job_name ILIKE $${paramIdx}
+            OR q.status ILIKE $${paramIdx}
+            OR COALESCE(q.error_message, '') ILIKE $${paramIdx}
+            OR COALESCE(q.result_summary, '') ILIKE $${paramIdx}
+            OR COALESCE(q.result_code, '') ILIKE $${paramIdx}
+            OR COALESCE(f.name, q.integration_key) ILIKE $${paramIdx}
+          )
+        `;
+        paramIdx += 1;
+      }
+
+      const whereSql = whereParts.join(' AND ');
+
+      // Status histogram: time + integration + state (not free-text search)
+      const countParams = [...(queueWindowResolved.params || [])];
+      let countIdx = queueWindowResolved.nextIndex;
+      const countFilters = [queueWindowResolved.countClause];
+      if (queueIntegration) {
+        countParams.push(queueIntegration);
+        countFilters.push(`integration_key = $${countIdx}`);
+        countIdx += 1;
+      }
+      if (queueState) {
+        countParams.push(queueState);
+        countFilters.push(`status = $${countIdx}`);
+      }
+      const countSqlFinal = `
         SELECT status, COUNT(*)::int AS cnt
         FROM integration_queue_jobs
-        WHERE queued_at >= ${queueWindowSql}
+        WHERE ${countFilters.join(' AND ')}
         GROUP BY status
       `;
 
@@ -1422,7 +1540,7 @@ app.get('/api/integrations', async (req, res) => {
         SELECT COUNT(*)::int AS total
         FROM integration_queue_jobs q
         LEFT JOIN integration_feeds f ON f.key = q.integration_key
-        WHERE q.queued_at >= ${queueWindowSql}
+        WHERE ${whereSql}
         ${searchWhere}
       `;
 
@@ -1439,37 +1557,77 @@ app.get('/api/integrations', async (req, res) => {
           q.job_name AS name,
           q.status AS state,
           COALESCE(q.started_at, q.queued_at) AS timestamp,
+          q.queued_at,
           q.error_message AS failed_reason,
+          q.failure_type,
+          q.triggered_by,
           q.records_processed,
+          q.records_inserted,
+          q.records_updated,
+          q.records_duplicate,
+          q.records_unchanged,
+          q.records_reactivated,
+          q.records_removed,
+          q.records_skipped,
+          q.records_suppressed,
+          q.records_failed,
+          q.result_code,
+          q.result_summary,
+          q.result_details,
+          q.run_mode,
           q.started_at,
           q.finished_at
         FROM integration_queue_jobs q
         LEFT JOIN integration_feeds f ON f.key = q.integration_key
-        WHERE q.queued_at >= ${queueWindowSql}
+        WHERE ${whereSql}
         ${searchWhere}
         ORDER BY q.queued_at DESC
-        LIMIT $${searchParams.length + 1}
-        OFFSET $${searchParams.length + 2}
+        LIMIT $${paramIdx}
+        OFFSET $${paramIdx + 1}
       `;
 
+      const jobsParams = [...filterParams, queuePageSize, queueOffset];
+
       const [countRows, totalRows, jobsRows] = await Promise.all([
-        pool.query(countSql),
-        pool.query(totalSql, searchParams),
-        pool.query(jobsSql, [...searchParams, queuePageSize, queueOffset])
+        pool.query(countSqlFinal, countParams),
+        pool.query(totalSql, filterParams),
+        pool.query(jobsSql, jobsParams)
       ]);
 
-      const mapped = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 };
+      const mapped = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0, skipped: 0 };
       for (const r of countRows.rows) {
         if (r.status === 'queued') mapped.waiting += r.cnt;
         else if (r.status === 'running') mapped.active += r.cnt;
         else if (r.status === 'failed') mapped.failed += r.cnt;
         else if (r.status === 'success') mapped.completed += r.cnt;
+        else if (r.status === 'skipped') mapped.skipped += r.cnt;
       }
 
       const total = Number(totalRows.rows[0]?.total || 0);
       queue = {
         counts: mapped,
-        jobs: jobsRows.rows.map(withIntegrationJobDisplayName),
+        jobs: jobsRows.rows.map((row) => {
+          const result = mapQueueJobResult(row);
+          const display = withIntegrationJobDisplayName(row);
+          return {
+            ...display,
+            result_code: result.result_code,
+            result_summary: result.result_summary,
+            result_details: result.result_details,
+            result,
+            run_mode: row.run_mode || null,
+            triggered_by: row.triggered_by || null,
+            failure_type: row.failure_type || null,
+            records_inserted: row.records_inserted,
+            records_updated: row.records_updated,
+            records_unchanged: row.records_unchanged,
+            records_reactivated: row.records_reactivated,
+            records_removed: row.records_removed,
+            records_skipped: row.records_skipped,
+            records_suppressed: row.records_suppressed,
+            records_failed: row.records_failed
+          };
+        }),
         pagination: {
           page: queuePage,
           page_size: queuePageSize,
@@ -1478,7 +1636,11 @@ app.get('/api/integrations', async (req, res) => {
         },
         filters: {
           search: queueSearch,
-          window: queueWindow
+          window: queueWindow,
+          integration: queueIntegration || null,
+          state: queueState || null,
+          from: queueWindowResolved.from || null,
+          to: queueWindowResolved.to || null
         }
       };
     } catch {
@@ -1645,7 +1807,8 @@ async function enqueueUsomRun(mode, triggeredBy) {
     `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
      VALUES ($1, 'usom-trcert', $2, 'queued', $3, NOW(), NOW())
      ON CONFLICT (job_id)
-     DO UPDATE SET status='queued', triggered_by=$3, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+     DO UPDATE SET status='queued', triggered_by=$3, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL,
+       ${QUEUE_JOB_REQUEUE_RESET_SQL}`,
     [String(job.id), jobName, trigger]
   );
   return { ok: true, queued: true, coalesced: false, run_mode: mode, job_id: job.id };
@@ -1743,7 +1906,8 @@ app.post('/api/integrations/run-now', async (_req, res) => {
         `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
          VALUES ($1, $2, $3, 'queued', 'manual-ui-all', NOW(), NOW())
          ON CONFLICT (job_id)
-         DO UPDATE SET status='queued', triggered_by='manual-ui-all', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+         DO UPDATE SET status='queued', triggered_by='manual-ui-all', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL,
+           ${QUEUE_JOB_REQUEUE_RESET_SQL}`,
         [String(job.id), key, INTEGRATION_JOBS[key]]
       );
       queued.push({ key, job_id: job.id });
@@ -1806,7 +1970,8 @@ app.post('/api/integrations/:key/run-now', async (req, res) => {
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
        VALUES ($1, $2, $3, 'queued', 'manual-ui-one', NOW(), NOW())
        ON CONFLICT (job_id)
-       DO UPDATE SET status='queued', triggered_by='manual-ui-one', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+       DO UPDATE SET status='queued', triggered_by='manual-ui-one', updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL,
+         ${QUEUE_JOB_REQUEUE_RESET_SQL}`,
       [String(job.id), key, jobName]
     );
     return res.status(202).json({ ok: true, queued: true, key, job_id: job.id });
@@ -1955,7 +2120,8 @@ app.post('/api/integrations/:key/purge', requireRole(ROLES.ADMIN, ROLES.ANALYST)
       `INSERT INTO integration_queue_jobs (job_id, integration_key, job_name, status, triggered_by, queued_at, updated_at)
        VALUES ($1, $2, $3, 'queued', $4, NOW(), NOW())
        ON CONFLICT (job_id)
-       DO UPDATE SET status='queued', triggered_by=$4, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL`,
+       DO UPDATE SET status='queued', triggered_by=$4, updated_at=NOW(), started_at=NULL, finished_at=NULL, error_message=NULL, failure_type=NULL,
+         ${QUEUE_JOB_REQUEUE_RESET_SQL}`,
       [String(job.id), key, FEED_PURGE_JOB_NAME, actor.username || 'feed-purge-api']
     );
 

@@ -1,4 +1,8 @@
 import { FAILURE_TYPES } from './integrationQueueConfig.js';
+import {
+  buildJobResultSnapshot,
+  normalizePersistMetrics
+} from './jobResultSnapshot.js';
 
 export function createWorkerIdentity() {
   const workerId = `${process.pid}-${Date.now().toString(36)}`;
@@ -61,7 +65,35 @@ export function startJobHeartbeat(pool, jobId, intervalMs) {
   };
 }
 
-export async function markJobSuccess(pool, jobId, metrics) {
+/**
+ * Persist terminal success with immutable result snapshot.
+ * @param {import('pg').Pool} pool
+ * @param {string} jobId
+ * @param {object} metrics
+ * @param {{
+ *   triggeredBy?: string|null,
+ *   runMode?: string|null,
+ *   jobType?: string|null,
+ *   jobName?: string|null,
+ *   runDetails?: object|null,
+ *   fetched?: number|null,
+ *   parsed?: number|null
+ * }} [meta]
+ */
+export async function markJobSuccess(pool, jobId, metrics, meta = {}) {
+  const m = normalizePersistMetrics(metrics);
+  const snapshot = buildJobResultSnapshot({
+    status: 'success',
+    metrics: m,
+    runMode: meta.runMode || null,
+    triggeredBy: meta.triggeredBy || null,
+    jobType: meta.jobType || null,
+    jobName: meta.jobName || null,
+    runDetails: meta.runDetails || null,
+    fetched: meta.fetched,
+    parsed: meta.parsed
+  });
+
   await pool.query(
     `UPDATE integration_queue_jobs
      SET status = 'success',
@@ -73,25 +105,55 @@ export async function markJobSuccess(pool, jobId, metrics) {
          records_skipped = $6,
          records_suppressed = $7,
          records_failed = $8,
+         records_unchanged = $9,
+         records_reactivated = $10,
+         records_removed = $11,
+         result_code = $12,
+         result_summary = $13,
+         result_details = $14::jsonb,
+         run_mode = $15,
          error_message = NULL,
          failure_type = NULL,
          updated_at = NOW()
      WHERE job_id = $1`,
     [
       String(jobId),
-      Number(metrics.records_processed || 0),
-      Number(metrics.records_inserted || 0),
-      Number(metrics.records_updated || 0),
-      Number(metrics.records_duplicate || 0),
-      Number(metrics.records_skipped || 0),
-      Number(metrics.records_suppressed || 0),
-      Number(metrics.records_failed || 0)
+      m.records_processed,
+      m.records_inserted,
+      m.records_updated,
+      m.records_duplicate,
+      m.records_skipped,
+      m.records_suppressed,
+      m.records_failed,
+      m.records_unchanged,
+      m.records_reactivated,
+      m.records_removed,
+      snapshot.result_code,
+      snapshot.result_summary,
+      JSON.stringify(snapshot.result_details),
+      snapshot.run_mode
     ]
   );
 }
 
-export async function markJobSkipped(pool, jobId, metrics, reason = null) {
+/**
+ * Persist intentional skip with immutable result snapshot.
+ */
+export async function markJobSkipped(pool, jobId, metrics, reason = null, meta = {}) {
+  const m = normalizePersistMetrics(metrics);
   const note = reason ? `skipped:${String(reason).slice(0, 200)}` : 'skipped';
+  const snapshot = buildJobResultSnapshot({
+    status: 'skipped',
+    metrics: m,
+    skipReason: reason,
+    errorMessage: note,
+    runMode: meta.runMode || null,
+    triggeredBy: meta.triggeredBy || null,
+    jobType: meta.jobType || null,
+    jobName: meta.jobName || null,
+    runDetails: meta.runDetails || null
+  });
+
   await pool.query(
     `UPDATE integration_queue_jobs
      SET status = 'skipped',
@@ -103,34 +165,71 @@ export async function markJobSkipped(pool, jobId, metrics, reason = null) {
          records_skipped = $6,
          records_suppressed = $7,
          records_failed = $8,
-         error_message = $9,
+         records_unchanged = $9,
+         records_reactivated = $10,
+         records_removed = $11,
+         result_code = $12,
+         result_summary = $13,
+         result_details = $14::jsonb,
+         run_mode = $15,
+         error_message = $16,
          failure_type = NULL,
          updated_at = NOW()
      WHERE job_id = $1`,
     [
       String(jobId),
-      Number(metrics.records_processed || 0),
-      Number(metrics.records_inserted || 0),
-      Number(metrics.records_updated || 0),
-      Number(metrics.records_duplicate || 0),
-      Number(metrics.records_skipped || 0),
-      Number(metrics.records_suppressed || 0),
-      Number(metrics.records_failed || 0),
+      m.records_processed,
+      m.records_inserted,
+      m.records_updated,
+      m.records_duplicate,
+      m.records_skipped,
+      m.records_suppressed,
+      m.records_failed,
+      m.records_unchanged,
+      m.records_reactivated,
+      m.records_removed,
+      snapshot.result_code,
+      snapshot.result_summary,
+      JSON.stringify(snapshot.result_details),
+      snapshot.run_mode,
       note
     ]
   );
 }
 
-export async function markJobFailed(pool, jobId, message, failureType = null) {
+export async function markJobFailed(pool, jobId, message, failureType = null, meta = {}) {
+  const safeMsg = String(message || 'unknown error').slice(0, 4000);
+  const snapshot = buildJobResultSnapshot({
+    status: 'failed',
+    metrics: meta.metrics || {},
+    errorMessage: safeMsg,
+    runMode: meta.runMode || null,
+    triggeredBy: meta.triggeredBy || null,
+    jobType: meta.jobType || null,
+    jobName: meta.jobName || null
+  });
+
   await pool.query(
     `UPDATE integration_queue_jobs
      SET status = 'failed',
          finished_at = NOW(),
          error_message = $2,
          failure_type = $3,
+         result_code = $4,
+         result_summary = $5,
+         result_details = $6::jsonb,
+         run_mode = COALESCE($7, run_mode),
          updated_at = NOW()
      WHERE job_id = $1`,
-    [String(jobId), String(message || 'unknown error').slice(0, 4000), failureType]
+    [
+      String(jobId),
+      safeMsg,
+      failureType,
+      snapshot.result_code,
+      snapshot.result_summary,
+      JSON.stringify(snapshot.result_details),
+      snapshot.run_mode
+    ]
   );
 }
 

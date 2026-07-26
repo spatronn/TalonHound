@@ -55,6 +55,8 @@ export async function runCustomThreatFeedImport(pool, options = {}) {
     metrics.records_inserted = result.inserted || 0;
     metrics.records_updated = (result.updated || 0) + (result.refreshed || 0);
     metrics.records_duplicate = result.duplicate_rows || 0;
+    metrics.records_unchanged = Number(result.unchanged || result.duplicate_rows || 0);
+    metrics.records_removed = Number(result.expired_missing || 0);
     metrics.records_failed = result.status === 'failed' ? 1 : 0;
     metrics.noteSkipped(result.invalid_rows || 0);
 
@@ -66,6 +68,8 @@ export async function runCustomThreatFeedImport(pool, options = {}) {
 
     return {
       metrics: metrics.toJSON(),
+      fetched: result.fetched_bytes ?? null,
+      parsed: result.valid_rows ?? null,
       ...result
     };
   } finally {

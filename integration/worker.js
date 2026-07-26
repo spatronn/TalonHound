@@ -59,6 +59,26 @@ function resolveIntegrationKey(job) {
   return 'unknown';
 }
 
+const JOB_TYPE_BY_NAME = Object.freeze({
+  'hourly-import': 'hourly_import',
+  'usom-import': 'usom_import',
+  'urlhaus-import': 'urlhaus_import',
+  'threatfox-import': 'threatfox_import',
+  'malwarebazaar-import': 'malwarebazaar_import',
+  'phishtank-import': 'phishtank_import',
+  'alienvault-otx-import': 'alienvault_otx_import',
+  'custom-threat-feed-sync': 'custom_threat_feed_sync',
+  'feed_data_purge': 'feed_data_purge',
+  'spamhaus-drop-sync': 'spamhaus_drop_sync'
+});
+
+function resolveJobType(job, result) {
+  return result?.jobType
+    || result?.job_type
+    || JOB_TYPE_BY_NAME[job?.name]
+    || null;
+}
+
 function safeJobErrorMessage(job, err) {
   const raw = String(err?.message || 'unknown error');
   const integrationKey = resolveIntegrationKey(job);
@@ -209,15 +229,28 @@ const worker = new Worker(
         records_inserted: Number(result?.metrics?.records_inserted ?? result?.records_inserted ?? 0),
         records_updated: Number(result?.metrics?.records_updated ?? result?.records_updated ?? 0),
         records_duplicate: Number(result?.metrics?.records_duplicate ?? result?.records_duplicate ?? 0),
+        records_unchanged: Number(result?.metrics?.records_unchanged ?? result?.records_unchanged ?? 0),
+        records_reactivated: Number(result?.metrics?.records_reactivated ?? result?.records_reactivated ?? 0),
+        records_removed: Number(result?.metrics?.records_removed ?? result?.records_removed ?? 0),
         records_skipped: Number(result?.metrics?.records_skipped ?? result?.records_skipped ?? 0),
         records_suppressed: Number(result?.metrics?.records_suppressed ?? result?.records_suppressed ?? result?.suppressed_count ?? 0),
         records_failed: Number(result?.metrics?.records_failed ?? result?.records_failed ?? 0)
       };
 
+      const jobMeta = {
+        triggeredBy,
+        runMode: result?.mode || result?.run_mode || job?.data?.run_mode || null,
+        jobType: resolveJobType(job, result),
+        jobName: job.name,
+        runDetails: result?.runDetails || result?.run_details || null,
+        fetched: result?.fetched ?? result?.metrics?.fetched ?? null,
+        parsed: result?.parsed ?? result?.metrics?.parsed ?? null
+      };
+
       if (result?.skipped) {
-        await markJobSkipped(pool, String(job.id), metrics, result.reason);
+        await markJobSkipped(pool, String(job.id), metrics, result.reason, jobMeta);
       } else {
-        await markJobSuccess(pool, String(job.id), metrics);
+        await markJobSuccess(pool, String(job.id), metrics, jobMeta);
       }
 
       const skipNote = result?.skipped ? ` skipped=${result.reason || 'true'}` : '';
