@@ -2,14 +2,15 @@
  * File Artifact validation helpers (read-only invariant checks).
  */
 
-/** Empty orphan: no hashes, no IOC links, no source observations. */
+/** Empty orphan: active artifact with no hashes, no IOC links, no source observations. */
 export const EMPTY_ORPHAN_ARTIFACTS_SQL = `
 SELECT fa.id
 FROM file_artifacts fa
 LEFT JOIN file_artifact_hashes fah ON fah.artifact_id = fa.id
 LEFT JOIN file_artifact_ioc_links fail ON fail.artifact_id = fa.id
 LEFT JOIN file_artifact_source_observations faso ON faso.artifact_id = fa.id
-WHERE fah.id IS NULL
+WHERE fa.status = 'active'
+  AND fah.id IS NULL
   AND fail.id IS NULL
   AND faso.id IS NULL
 `;

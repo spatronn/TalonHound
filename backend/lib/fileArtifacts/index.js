@@ -90,3 +90,9 @@ export {
   countEmptyOrphanArtifacts,
   collectFileArtifactValidationMetrics
 } from './validate.js';
+
+export {
+  withSavepoint,
+  isControlledFileArtifactDbError,
+  formatProviderError
+} from './txSavepoint.js';

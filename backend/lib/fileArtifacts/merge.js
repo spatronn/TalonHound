@@ -75,21 +75,24 @@ export async function mergeFileArtifacts(client, input) {
        WHERE hash_type = $1 AND normalized_hash_value = $2`,
       [h.hash_type, h.normalized_hash_value]
     );
-    if (existing.rowCount && existing.rows[0].artifact_id === canonicalId) {
-      // Drop duplicate hash row after remapping FKs that point at it
-      await client.query(
-        `UPDATE file_artifact_ioc_links SET linked_hash_id = $2 WHERE linked_hash_id = $1`,
-        [h.id, existing.rows[0].id]
-      );
-      await client.query(
-        `UPDATE file_artifact_source_observations SET observed_hash_id = $2 WHERE observed_hash_id = $1`,
-        [h.id, existing.rows[0].id]
-      );
-      await client.query(`DELETE FROM file_artifact_hashes WHERE id = $1`, [h.id]);
-      continue;
-    }
-    if (existing.rowCount && existing.rows[0].artifact_id !== canonicalId) {
-      // Should not happen under global unique; skip
+    const ex = existing.rows[0] || null;
+    // Global unique means the SELECT always finds at least this row (h). Only treat
+    // *other* rows as collisions — previously "skip if artifact_id !== canonical"
+    // skipped moving the duplicate's own hashes and left them on tombstones.
+    if (ex && ex.id !== h.id) {
+      if (ex.artifact_id === canonicalId) {
+        await client.query(
+          `UPDATE file_artifact_ioc_links SET linked_hash_id = $2 WHERE linked_hash_id = $1`,
+          [h.id, ex.id]
+        );
+        await client.query(
+          `UPDATE file_artifact_source_observations SET observed_hash_id = $2 WHERE observed_hash_id = $1`,
+          [h.id, ex.id]
+        );
+        await client.query(`DELETE FROM file_artifact_hashes WHERE id = $1`, [h.id]);
+        continue;
+      }
+      // Bound to a third artifact under global unique — leave in place
       continue;
     }
     await client.query(

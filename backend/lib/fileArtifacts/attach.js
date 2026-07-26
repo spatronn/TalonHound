@@ -130,7 +130,19 @@ export async function findArtifactByHash(db, hashType, hashValue) {
   if (!rows.length) return null;
   const row = rows[0];
   if (row.status === 'merged' && row.merged_into_artifact_id) {
-    return findActiveArtifact(db, row.merged_into_artifact_id);
+    const active = await findActiveArtifact(db, row.merged_into_artifact_id);
+    if (!active?.artifact_id) return null;
+    return {
+      artifact_id: active.artifact_id,
+      status: active.status,
+      merged_into_artifact_id: active.merged_into_artifact_id || null,
+      hash_id: row.hash_id,
+      hash_type: row.hash_type,
+      normalized_hash_value: row.normalized_hash_value,
+      is_primary: row.is_primary,
+      // Physical row may still sit on a tombstone until merge heal moves it
+      hash_artifact_id: row.artifact_id
+    };
   }
   return row;
 }
@@ -197,6 +209,29 @@ async function attachExactHashInTx(client, input) {
 
   const existing = await findArtifactByHash(client, hash.hash_type, hash.normalized_hash_value);
   if (existing?.hash_id) {
+    // Heal leftover hash rows on merged tombstones that already point at this artifact
+    if (
+      existing.hash_artifact_id
+      && existing.hash_artifact_id !== existing.artifact_id
+      && (!input.artifact_id || input.artifact_id === existing.artifact_id)
+    ) {
+      await client.query(
+        `UPDATE file_artifact_hashes
+         SET artifact_id = $2, is_primary = FALSE, updated_at = NOW(),
+             last_seen_at = GREATEST(COALESCE(last_seen_at, $3::timestamptz), COALESCE($3::timestamptz, last_seen_at))
+         WHERE id = $1`,
+        [existing.hash_id, existing.artifact_id, input.last_seen_at || new Date().toISOString()]
+      );
+      await recomputePrimaryHash(client, existing.artifact_id);
+      return {
+        ok: true,
+        created_artifact: false,
+        created_hash: false,
+        artifact_id: existing.artifact_id,
+        hash_id: existing.hash_id,
+        healed_from_merged: true
+      };
+    }
     if (input.artifact_id && existing.artifact_id !== input.artifact_id) {
       await recordMergeConflict(client, {
         conflicting_hash_type: hash.hash_type,
@@ -252,7 +287,10 @@ async function attachExactHashInTx(client, input) {
 
   let hashId;
   let createdHash = true;
+  // SAVEPOINT: unique_violation aborts the subxact only — recovery queries must not see 25P02.
+  const hashInsSp = 'fa_hash_ins';
   try {
+    await client.query(`SAVEPOINT ${hashInsSp}`);
     const insH = await client.query(
       `INSERT INTO file_artifact_hashes (
          artifact_id, hash_type, normalized_hash_value, is_primary,
@@ -269,14 +307,40 @@ async function attachExactHashInTx(client, input) {
       ]
     );
     hashId = insH.rows[0].id;
+    await client.query(`RELEASE SAVEPOINT ${hashInsSp}`);
   } catch (err) {
-    if (err && (err.code === '23505' || String(err.message || '').includes('uq_file_artifact_hashes'))) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${hashInsSp}`).catch(() => {});
+    const isUnique =
+      err
+      && (err.code === '23505' || String(err.message || '').includes('uq_file_artifact_hashes'));
+    if (isUnique) {
       let cleaned = false;
       if (createdArtifact) {
         cleaned = await deleteEmptyOrphanArtifactIfSafe(client, artifactId);
       }
       const again = await findArtifactByHash(client, hash.hash_type, hash.normalized_hash_value);
       if (again?.hash_id) {
+        if (input.artifact_id && again.artifact_id !== input.artifact_id) {
+          await recordMergeConflict(client, {
+            conflicting_hash_type: hash.hash_type,
+            conflicting_hash_value: hash.normalized_hash_value,
+            candidate_artifact_ids: [again.artifact_id, input.artifact_id],
+            reason: 'exact_hash_already_bound_to_other_artifact',
+            evidence: {
+              existing_artifact_id: again.artifact_id,
+              requested_artifact_id: input.artifact_id,
+              raced: true
+            }
+          });
+          return {
+            ok: false,
+            reason: 'conflict',
+            artifact_id: again.artifact_id,
+            hash_id: again.hash_id,
+            raced: true,
+            orphan_cleaned: cleaned
+          };
+        }
         return {
           ok: true,
           created_artifact: false,
@@ -287,6 +351,16 @@ async function attachExactHashInTx(client, input) {
           orphan_cleaned: cleaned
         };
       }
+      if (createdArtifact) {
+        await deleteEmptyOrphanArtifactIfSafe(client, artifactId);
+      }
+      return {
+        ok: false,
+        reason: 'unique_violation',
+        code: '23505',
+        message: err.message,
+        orphan_cleaned: cleaned
+      };
     }
     if (createdArtifact) {
       await deleteEmptyOrphanArtifactIfSafe(client, artifactId);
@@ -326,7 +400,14 @@ async function attachExactHashInTx(client, input) {
  * }} input
  */
 export async function attachExactHash(db, input) {
-  const isPool = typeof db?.connect === 'function';
+  // pg.Client also has .connect(); only Pool needs a new checkout + transaction wrapper.
+  const isPool = Boolean(
+    db
+    && typeof db.connect === 'function'
+    && typeof db.query === 'function'
+    && typeof db.release !== 'function'
+    && (db.totalCount != null || db.options?.max != null || db.constructor?.name === 'Pool')
+  );
   if (isPool) {
     const client = await db.connect();
     try {

@@ -33,7 +33,10 @@ import {
   recordMergeConflict,
   OBSERVATION_TYPE,
   RELATION_METHOD,
-  isExactFileHashIocType
+  isExactFileHashIocType,
+  withSavepoint,
+  isControlledFileArtifactDbError,
+  formatProviderError
 } from './lib/fileArtifacts.js';
 
 const { Pool } = pg;
@@ -63,6 +66,7 @@ function emptySummary() {
     invalid_hashes: 0,
     unmatched_provider_records: 0,
     provider_mapped: 0,
+    controlled_errors: 0,
     validation_errors: [],
     batch_count: 0,
     errors: 0,
@@ -70,6 +74,15 @@ function emptySummary() {
     phase: PHASE,
     duration_ms: 0
   };
+}
+
+function noteControlled(summary, err, context) {
+  summary.controlled_errors += 1;
+  if (err?.reason === 'conflict') summary.conflicts += 1;
+  if (err?.reason === 'invalid_hash' || err?.reason === 'invalid_or_non_exact_hash') {
+    summary.invalid_hashes += 1;
+  }
+  console.error('[backfill-file-artifacts] controlled error', formatProviderError(err, context));
 }
 
 async function seedBatch(client, lastPublicId, summary) {
@@ -221,31 +234,49 @@ async function applyProviderHashSet(client, hashes, meta, summary) {
   }
 
   for (const h of hashes) {
-    const attached = await attachExactHash(client, {
+    const attached = await withSavepoint(client, 'fa_prov_hash', async () => attachExactHash(client, {
       artifact_id: artifactId,
       hash_type: h.hash_type,
       hash_value: h.normalized_hash_value,
       verification_source: meta.provider || null
-    });
+    }));
+    if (!attached.ok) {
+      if (attached.reason === 'conflict' || attached.reason === 'unique_violation') {
+        summary.conflicts += 1;
+        if (attached.reason === 'conflict' && !attached.hash_id) {
+          await recordMergeConflict(client, {
+            conflicting_hash_type: h.hash_type,
+            conflicting_hash_value: h.normalized_hash_value,
+            candidate_artifact_ids: [artifactId, attached.artifact_id].filter(Boolean),
+            reason: attached.reason,
+            evidence: meta
+          }).catch(() => {});
+        }
+      } else if (attached.reason === 'invalid_hash') {
+        summary.invalid_hashes += 1;
+      }
+      continue;
+    }
     if (attached.created_hash) summary.created_hashes += 1;
-    if (attached.ok && attached.hash_id) {
+    if (attached.hash_id) {
       const iocs = await client.query(
         `SELECT id, public_id, observable_type FROM ioc_items
          WHERE observable_type = $1 AND LOWER(observable) = $2`,
         [h.hash_type, h.normalized_hash_value]
       );
       for (const ioc of iocs.rows) {
-        const link = await linkIocToArtifact(client, {
+        const link = await withSavepoint(client, 'fa_prov_link', async () => linkIocToArtifact(client, {
           artifact_id: artifactId,
           ioc_item_id: ioc.id,
           ioc_observable_type: ioc.observable_type,
           ioc_public_id: ioc.public_id,
           linked_hash_id: attached.hash_id
-        });
-        if (link.created) summary.created_ioc_links += 1;
+        }));
+        if (link?.reason === 'conflict') summary.conflicts += 1;
+        if (link?.created) summary.created_ioc_links += 1;
       }
       if (meta.source_name) {
-        const obs = await upsertSourceObservation(client, {
+        const obs = await withSavepoint(client, 'fa_prov_obs', async () => upsertSourceObservation(client, {
           artifact_id: artifactId,
           source_name: meta.source_name,
           observed_hash_id: attached.hash_id,
@@ -254,8 +285,8 @@ async function applyProviderHashSet(client, hashes, meta, summary) {
           observation_type: meta.observation_type || OBSERVATION_TYPE.PROVIDER_MAPPING,
           relation_method: meta.relation_method || RELATION_METHOD.PROVIDER_EXACT_HASH_SET,
           raw_ref: meta
-        });
-        if (obs.created) summary.created_source_observations += 1;
+        }));
+        if (obs?.created) summary.created_source_observations += 1;
       }
     }
   }
@@ -293,19 +324,28 @@ async function providerMalwareBazaar(client, summary) {
       });
       try {
         if (!DRY_RUN) await client.query('BEGIN');
-        await applyProviderHashSet(client, hashes, {
-          provider: 'malwarebazaar',
-          source_name: row.source_name,
-          evidence_id: row.id,
-          method: 'provider_exact_hash_set',
-          observation_type: OBSERVATION_TYPE.PROVIDER_MAPPING,
-          relation_method: RELATION_METHOD.PROVIDER_EXACT_HASH_SET
-        }, summary);
+        await withSavepoint(client, 'fa_provider_rec', async () => {
+          await applyProviderHashSet(client, hashes, {
+            provider: 'malwarebazaar',
+            source_name: row.source_name,
+            evidence_id: row.id,
+            method: 'provider_exact_hash_set',
+            observation_type: OBSERVATION_TYPE.PROVIDER_MAPPING,
+            relation_method: RELATION_METHOD.PROVIDER_EXACT_HASH_SET
+          }, summary);
+        });
         if (!DRY_RUN) await client.query('COMMIT');
       } catch (err) {
         if (!DRY_RUN) await client.query('ROLLBACK').catch(() => {});
+        if (isControlledFileArtifactDbError(err)) {
+          noteControlled(summary, err, { provider: 'malwarebazaar', evidence_id: row.id });
+          continue;
+        }
         summary.errors += 1;
-        console.error('[backfill-file-artifacts] MB provider error', row.id, err.message);
+        console.error(
+          '[backfill-file-artifacts] MB provider error',
+          formatProviderError(err, { evidence_id: row.id })
+        );
         if (summary.errors >= MAX_ERRORS) throw err;
       }
     }
@@ -336,19 +376,28 @@ async function providerVirusTotal(client, summary) {
       if (hashes.length < 2) continue;
       try {
         if (!DRY_RUN) await client.query('BEGIN');
-        await applyProviderHashSet(client, hashes, {
-          provider: 'virustotal',
-          source_name: 'VirusTotal',
-          enrichment_id: row.id,
-          method: 'enrichment_result',
-          observation_type: OBSERVATION_TYPE.ENRICHMENT,
-          relation_method: RELATION_METHOD.ENRICHMENT_RESULT
-        }, summary);
+        await withSavepoint(client, 'fa_provider_rec', async () => {
+          await applyProviderHashSet(client, hashes, {
+            provider: 'virustotal',
+            source_name: 'VirusTotal',
+            enrichment_id: row.id,
+            method: 'enrichment_result',
+            observation_type: OBSERVATION_TYPE.ENRICHMENT,
+            relation_method: RELATION_METHOD.ENRICHMENT_RESULT
+          }, summary);
+        });
         if (!DRY_RUN) await client.query('COMMIT');
       } catch (err) {
         if (!DRY_RUN) await client.query('ROLLBACK').catch(() => {});
+        if (isControlledFileArtifactDbError(err)) {
+          noteControlled(summary, err, { provider: 'virustotal', enrichment_id: row.id });
+          continue;
+        }
         summary.errors += 1;
-        console.error('[backfill-file-artifacts] VT provider error', row.id, err.message);
+        console.error(
+          '[backfill-file-artifacts] VT provider error',
+          formatProviderError(err, { enrichment_id: row.id })
+        );
         if (summary.errors >= MAX_ERRORS) throw err;
       }
     }
@@ -422,7 +471,8 @@ async function validate(client, summary) {
      LEFT JOIN file_artifact_hashes fah ON fah.artifact_id = fa.id
      LEFT JOIN file_artifact_ioc_links fail ON fail.artifact_id = fa.id
      LEFT JOIN file_artifact_source_observations faso ON faso.artifact_id = fa.id
-     WHERE fah.id IS NULL
+     WHERE fa.status = 'active'
+       AND fah.id IS NULL
        AND fail.id IS NULL
        AND faso.id IS NULL`
   );

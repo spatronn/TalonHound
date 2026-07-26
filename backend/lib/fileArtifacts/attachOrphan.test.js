@@ -17,5 +17,6 @@ describe('orphan-safe attach helpers', () => {
     assert.match(EMPTY_ORPHAN_ARTIFACTS_SQL, /file_artifact_ioc_links/);
     assert.match(EMPTY_ORPHAN_ARTIFACTS_SQL, /file_artifact_source_observations/);
     assert.match(EMPTY_ORPHAN_ARTIFACTS_SQL, /fah\.id IS NULL/);
+    assert.match(EMPTY_ORPHAN_ARTIFACTS_SQL, /fa\.status = 'active'/);
   });
 });
