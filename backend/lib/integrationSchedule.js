@@ -30,6 +30,22 @@ const DEFAULT_SYSTEM_SCHEDULE_TIMEZONE = 'UTC';
 const HOURLY_AT_MINUTE = /^([0-5]?\d) \* \* \* \*$/;
 const WEEKLY_AT_TIME = /^([0-5]?\d) ([01]?\d|2[0-3]) \* \* ([0-6])$/;
 
+/** Runtime override from system_settings (preferred over env). */
+let scheduleTimezoneOverride = null;
+
+export function setSystemScheduleTimezoneOverride(timeZone) {
+  if (timeZone == null || timeZone === '') {
+    scheduleTimezoneOverride = null;
+    return null;
+  }
+  scheduleTimezoneOverride = normalizeScheduleTimezone(timeZone);
+  return scheduleTimezoneOverride;
+}
+
+export function getSystemScheduleTimezoneOverride() {
+  return scheduleTimezoneOverride;
+}
+
 /** Validate IANA timezone; fall back to UTC when missing or invalid. */
 export function normalizeScheduleTimezone(value) {
   const tz = String(value || '').trim();
@@ -42,9 +58,14 @@ export function normalizeScheduleTimezone(value) {
   }
 }
 
-/** Server reference timezone for cron execution (default UTC). Display uses each user's preference. */
+/** Server reference timezone for cron execution. DB override > env > UTC. */
 export function getSystemScheduleTimezone() {
-  const tz = String(process.env.INTEGRATION_SCHEDULE_TIMEZONE || DEFAULT_SYSTEM_SCHEDULE_TIMEZONE).trim();
+  if (scheduleTimezoneOverride) return scheduleTimezoneOverride;
+  const tz = String(
+    process.env.SYSTEM_TIMEZONE
+      || process.env.INTEGRATION_SCHEDULE_TIMEZONE
+      || DEFAULT_SYSTEM_SCHEDULE_TIMEZONE
+  ).trim();
   return normalizeScheduleTimezone(tz);
 }
 

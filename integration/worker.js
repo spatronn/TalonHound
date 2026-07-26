@@ -152,6 +152,13 @@ async function executeJobWithTimeout(job, integrationKey) {
   }
 }
 
+const { waitUntilSetupComplete } = await import('./lib/systemTime.js');
+const { setSystemScheduleTimezoneOverride } = await import('./lib/integrationSchedule.js');
+const systemTz = await waitUntilSetupComplete(pool, { logPrefix: LOG_PREFIX });
+process.env.TZ = systemTz;
+process.env.SYSTEM_TIMEZONE = systemTz;
+setSystemScheduleTimezoneOverride(systemTz);
+
 const worker = new Worker(
   config.queueName,
   async (job) => {

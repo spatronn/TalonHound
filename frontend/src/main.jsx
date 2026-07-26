@@ -45,8 +45,16 @@ import {
 } from './lib/sourceBadge.js';
 import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.jsx';
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
+import InitialSetupPage from './components/InitialSetupPage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
-import { formatUserDateTime, notifyTimezoneChanged } from './lib/formatDate.js';
+import {
+  formatUserDateTime,
+  notifyTimezoneChanged,
+  getSystemTimezone,
+  setSystemTimezoneCache,
+  systemLocalInputToUtcIso,
+  TIMEZONE_CHANGED_EVENT
+} from './lib/formatDate.js';
 import {
   presentFeedLastResult,
   resolveFeedLastResult,
@@ -1092,9 +1100,8 @@ function AuditTaxonomySummary({ item }) {
 
 function formatAuditDate(value) {
   if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString();
+  const formatted = formatUserDateTime(value);
+  return formatted === '-' ? String(value) : formatted;
 }
 
 async function fetchActiveSuppressionIndex(maxPages = 20) {
@@ -1561,8 +1568,7 @@ function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { userEmail, role, canWrite, isAdmin, refreshSession } = useSession();
-  const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
-  const [needsTimezoneSelection, setNeedsTimezoneSelection] = useState(false);
+  const [timezone, setTimezone] = useState(getSystemTimezone());
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   useEffect(() => {
@@ -1571,43 +1577,26 @@ function AppShell({ children }) {
 
   useEffect(() => {
     let mounted = true;
-    async function loadPreference() {
+    async function loadSystemTz() {
       try {
-        const { data } = await api.get('/users/me/preferences');
+        const { data } = await api.get('/system/timezone');
         if (!mounted) return;
-
-        if (data?.timezone) {
-          localStorage.setItem('demo_timezone', data.timezone);
-          setTimezone(data.timezone);
-          setNeedsTimezoneSelection(false);
-        } else {
-          setNeedsTimezoneSelection(true);
+        if (data?.system_timezone) {
+          setSystemTimezoneCache(data.system_timezone);
+          setTimezone(data.system_timezone);
         }
       } catch {
-        if (!localStorage.getItem('demo_timezone')) {
-          setNeedsTimezoneSelection(true);
-        }
+        /* setup gate / auth will redirect as needed */
       }
     }
-
-    loadPreference();
+    loadSystemTz();
+    const onTz = () => setTimezone(getSystemTimezone());
+    window.addEventListener(TIMEZONE_CHANGED_EVENT, onTz);
     return () => {
       mounted = false;
+      window.removeEventListener(TIMEZONE_CHANGED_EVENT, onTz);
     };
   }, []);
-
-  async function saveTimezone(value) {
-    try {
-      const { data } = await api.put('/users/me/preferences', { timezone: value });
-      const tz = data?.timezone || value;
-      localStorage.setItem('demo_timezone', tz);
-      setTimezone(tz);
-      setNeedsTimezoneSelection(false);
-      notifyTimezoneChanged();
-    } catch {
-      alert('Failed to save timezone');
-    }
-  }
 
   async function logout() {
     try {
@@ -1693,48 +1682,6 @@ function AppShell({ children }) {
       <main className="main-content" style={{ flex: 1, minWidth: 0 }}>
         {children}
       </main>
-
-      {needsTimezoneSelection && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-          <div style={{ width: 440, maxWidth: '96vw', background: 'linear-gradient(180deg, #111827 0%, #0f172a 100%)', borderRadius: 14, padding: 20, border: '1px solid #334155', boxShadow: '0 24px 60px rgba(2,6,23,0.55)' }}>
-            <h3 style={{ margin: '0 0 8px', color: '#f8fafc', fontSize: 22, fontWeight: 700 }}>Select Timezone</h3>
-            <p style={{ fontSize: 14, color: '#94a3b8', margin: '0 0 14px' }}>This is required once. You can change it later from Administration.</p>
-            <select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              style={{
-                width: '100%',
-                height: 42,
-                borderRadius: 10,
-                border: '1px solid #334155',
-                background: '#0b1220',
-                color: '#e2e8f0',
-                padding: '0 12px',
-                marginBottom: 12,
-                outline: 'none'
-              }}
-            >
-              {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-            </select>
-            <button
-              type="button"
-              onClick={() => saveTimezone(timezone)}
-              style={{
-                width: '100%',
-                height: 42,
-                borderRadius: 10,
-                border: '1px solid #2563eb',
-                background: 'linear-gradient(180deg, #3b82f6 0%, #2563eb 100%)',
-                color: '#eff6ff',
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-            >
-              Save Timezone
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1827,7 +1774,7 @@ function DashboardPage() {
           <span style={{ marginLeft: 10, color: '#94a3b8' }}>| Unique IPs: <b>{mapData.unique_ips}</b></span>
         </div>
         <div style={{ marginBottom: 10, fontSize: 13, color: '#94a3b8' }}>
-          {mapData.snapshot_time ? `As of ${new Date(mapData.snapshot_time).toLocaleString()}, this view reflects the last 24 hours of processed IOC data.` : 'Snapshot is being prepared from processed IOC data.'}
+          {mapData.snapshot_time ? `As of ${formatUserDateTime(mapData.snapshot_time)}, this view reflects the last 24 hours of processed IOC data.` : 'Snapshot is being prepared from processed IOC data.'}
         </div>
         <div style={{ marginBottom: 12, fontSize: 13, color: '#94a3b8' }}>
           {mapData.note || 'This dashboard is refreshed once per day around midnight in server local time while new IOC data continues to be processed in the background.'}
@@ -4743,7 +4690,7 @@ function CustomThreatFeedsPage() {
                       <td style={{ padding: 8 }}>{formatFeedScheduleLabel(feed.schedule)}</td>
                       <td style={{ padding: 8, textTransform: 'capitalize' }}>{feed.default_confidence || 'medium'}</td>
                       <td style={{ padding: 8 }}>{feed.expiration_summary || 'Never'}</td>
-                      <td style={{ padding: 8 }}>{feed.last_success_at ? new Date(feed.last_success_at).toLocaleString() : '—'}</td>
+                      <td style={{ padding: 8 }}>{feed.last_success_at ? formatUserDateTime(feed.last_success_at) : '—'}</td>
                       <td style={{ padding: 8 }}>{statusLabel(feed.last_run_status)}</td>
                       <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '—'}</td>
                       <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
@@ -5655,11 +5602,11 @@ function PublishedFeedsPage() {
             <p style={ui.modalSub}>
               {editing
                 ? 'Update filters and delivery settings. Regenerate snapshots after changing filters.'
-                : 'Create a filtered IOC snapshot feed. Add a Feed Access Key under Administration > API Keys to generate a pull URL.'}
+                : 'Create a filtered IOC snapshot feed. Add a Feed Access Key under Administration › API Keys to generate a pull URL.'}
             </p>
             {!editing ? (
               <p style={{ ...ui.modalSub, marginTop: -6 }}>
-                Choose the IOC type, filters, default time window, and delivery limits. After creation, generate a Feed Access Key on Administration > API Keys.
+                Choose the IOC type, filters, default time window, and delivery limits. After creation, generate a Feed Access Key on Administration › API Keys.
               </p>
             ) : null}
 
@@ -5784,8 +5731,8 @@ function AuditLogsPage() {
       if (entityTypeFilter) params.entity_type = entityTypeFilter;
       if (severityFilter) params.severity = severityFilter;
       if (statusFilter) params.status = statusFilter;
-      if (dateFrom) params.date_from = new Date(dateFrom).toISOString();
-      if (dateTo) params.date_to = new Date(dateTo).toISOString();
+      if (dateFrom) params.date_from = systemLocalInputToUtcIso(dateFrom);
+      if (dateTo) params.date_to = systemLocalInputToUtcIso(dateTo);
       const { data } = await api.get('/audit-logs', { params });
       setItems(Array.isArray(data?.items) ? data.items : []);
       setTotal(Number(data?.total || 0));
@@ -5829,8 +5776,8 @@ function AuditLogsPage() {
       if (entityTypeFilter) params.entity_type = entityTypeFilter;
       if (severityFilter) params.severity = severityFilter;
       if (statusFilter) params.status = statusFilter;
-      if (dateFrom) params.date_from = new Date(dateFrom).toISOString();
-      if (dateTo) params.date_to = new Date(dateTo).toISOString();
+      if (dateFrom) params.date_from = systemLocalInputToUtcIso(dateFrom);
+      if (dateTo) params.date_to = systemLocalInputToUtcIso(dateTo);
       const res = await api.get('/audit-logs/export.csv', { params, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
       const a = document.createElement('a');
@@ -8286,35 +8233,37 @@ function UserStatusBadge({ status }) {
 }
 
 function AdministrationSettingsPage() {
-  const { role, userId, refreshSession } = useSession();
+  const { role, userId, refreshSession, isAdmin } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
-  const [timezone, setTimezone] = useState(localStorage.getItem('demo_timezone') || 'UTC');
+  const [timezoneInfo, setTimezoneInfo] = useState({
+    system_timezone: getSystemTimezone(),
+    timezone_restart_required: false,
+    current_utc_time: '',
+    current_system_time: '',
+    common_timezones: COMMON_TIMEZONES
+  });
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [newTimezone, setNewTimezone] = useState('');
+  const [confirmText, setConfirmText] = useState('');
   const [saving, setSaving] = useState(false);
   const [timezoneError, setTimezoneError] = useState('');
   const [timezoneSuccess, setTimezoneSuccess] = useState('');
+  const [restartInstructions, setRestartInstructions] = useState(null);
   const [profile, setProfile] = useState({ first_name: '', last_name: '' });
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
-    async function loadPreference() {
-      try {
-        const { data } = await api.get('/users/me/preferences');
-        if (!mounted) return;
-        if (data?.timezone) {
-          localStorage.setItem('demo_timezone', data.timezone);
-          setTimezone(data.timezone);
-        }
-      } catch {
-        /* keep local fallback */
-      }
+  async function loadTimezone() {
+    const { data } = await api.get('/system/timezone');
+    setTimezoneInfo(data);
+    if (data?.active_system_timezone || data?.system_timezone) {
+      setSystemTimezoneCache(data.active_system_timezone || data.system_timezone);
     }
-    loadPreference().catch(() => {});
-    return () => {
-      mounted = false;
-    };
+  }
+
+  useEffect(() => {
+    loadTimezone().catch(() => {});
   }, []);
 
   async function loadSelfProfile() {
@@ -8332,19 +8281,26 @@ function AdministrationSettingsPage() {
     loadSelfProfile().catch(() => {});
   }, [role, userId]);
 
-  async function saveTimezone() {
+  async function changeSystemTimezone() {
     setSaving(true);
     setTimezoneError('');
     setTimezoneSuccess('');
+    setRestartInstructions(null);
     try {
-      const { data } = await api.put('/users/me/preferences', { timezone });
-      const tz = data?.timezone || timezone;
-      localStorage.setItem('demo_timezone', tz);
-      setTimezone(tz);
-      setTimezoneSuccess('Timezone updated.');
+      const { data } = await api.put('/system/timezone', {
+        timezone: newTimezone,
+        confirm: true,
+        confirmation_text: confirmText
+      });
+      setSystemTimezoneCache(data.active_system_timezone || data.system_timezone);
       notifyTimezoneChanged();
+      setTimezoneSuccess(data.message || 'Timezone change is pending restart');
+      setRestartInstructions(data.restart_instructions || null);
+      setChangeOpen(false);
+      setConfirmText('');
+      await loadTimezone();
     } catch (err) {
-      setTimezoneError(apiErrorMessage(err, 'Failed to update timezone'));
+      setTimezoneError(apiErrorMessage(err, 'Failed to change system timezone'));
     } finally {
       setSaving(false);
     }
@@ -8370,6 +8326,8 @@ function AdministrationSettingsPage() {
     }
   }
 
+  const zoneOptions = timezoneInfo.common_timezones || COMMON_TIMEZONES;
+
   return (
     <AppShell>
       <section style={ui.section}>
@@ -8377,33 +8335,79 @@ function AdministrationSettingsPage() {
         <p style={ui.pageSub}>Manage platform-wide preferences and display settings.</p>
 
         <div style={{ ...ui.formPanel, marginTop: 8 }}>
-          <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Timezone</h2>
+          <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>System Timezone</h2>
           <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
-            Used for timestamps across the application.
+            Configured during initial setup. Used for every timestamp in the UI, API responses,
+            schedules, logs, and exports. Browser timezone is never used.
           </p>
-          <label htmlFor="admin-tz" style={ui.label}>Display timezone</label>
-          <select
-            id="admin-tz"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            style={{ ...ui.select, maxWidth: 400 }}
-          >
-            {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-          </select>
-          <div style={{ marginTop: 16 }}>
-            <button
-              type="button"
-              onClick={() => saveTimezone().catch(() => {})}
-              disabled={saving}
-              style={{
-                ...ui.btnPrimary,
-                opacity: saving ? 0.75 : 1,
-                cursor: saving ? 'wait' : 'pointer'
-              }}
-            >
-              {saving ? 'Saving…' : 'Save timezone'}
-            </button>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>
+            <div><strong>Active timezone:</strong> {timezoneInfo.active_system_timezone || timezoneInfo.system_timezone || '—'}</div>
+            <div style={{ marginTop: 4 }}>
+              <strong>Pending timezone:</strong>{' '}
+              {timezoneInfo.pending_system_timezone || 'None'}
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <strong>Status:</strong>{' '}
+              {timezoneInfo.timezone_restart_required
+                ? 'Restart required'
+                : (timezoneInfo.timezone_configuration_required ? 'Configuration required' : 'Healthy')}
+            </div>
+            <div style={{ color: '#94a3b8', marginTop: 6 }}>Current UTC: {timezoneInfo.current_utc_time || '—'}</div>
+            <div style={{ color: '#94a3b8' }}>
+              Current active system time: {timezoneInfo.current_system_time || '—'}
+            </div>
+            {timezoneInfo.timezone_restart_required ? (
+              <div style={{ marginTop: 10, color: '#fbbf24' }}>
+                Timezone change is pending restart. Runtime continues using the active timezone until promotion.
+              </div>
+            ) : null}
           </div>
+          {isAdmin ? (
+            <div style={{ marginTop: 12 }}>
+              {!changeOpen ? (
+                <button type="button" style={ui.btnPrimary} onClick={() => setChangeOpen(true)}>
+                  Change System Timezone
+                </button>
+              ) : (
+                <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 14, background: '#0b1220' }}>
+                  <p style={{ marginTop: 0, color: '#fde68a', fontSize: 13, lineHeight: 1.5 }}>
+                    Changing timezone affects display, schedules, logs, and exports. Historical TIMESTAMPTZ
+                    values are not rewritten. A full application restart (Docker Compose recreate or Kubernetes
+                    rollout) is required. Type CHANGE SYSTEM TIMEZONE to confirm.
+                  </p>
+                  <label style={ui.label}>New timezone</label>
+                  <select
+                    value={newTimezone}
+                    onChange={(e) => setNewTimezone(e.target.value)}
+                    style={{ ...ui.select, maxWidth: 400, marginBottom: 10 }}
+                  >
+                    <option value="">Select…</option>
+                    {zoneOptions.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                  </select>
+                  <label style={ui.label}>Confirmation</label>
+                  <input
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    placeholder="CHANGE SYSTEM TIMEZONE"
+                    style={{ ...ui.input, maxWidth: 400, marginBottom: 12 }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      style={ui.btnPrimary}
+                      disabled={saving || !newTimezone || confirmText !== 'CHANGE SYSTEM TIMEZONE'}
+                      onClick={() => changeSystemTimezone().catch(() => {})}
+                    >
+                      {saving ? 'Saving…' : 'Confirm timezone change'}
+                    </button>
+                    <button type="button" onClick={() => setChangeOpen(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: '#94a3b8' }}>Only administrators can change the system timezone.</p>
+          )}
           {timezoneError ? (
             <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
               {timezoneError}
@@ -8413,6 +8417,11 @@ function AdministrationSettingsPage() {
             <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(22,101,52,0.2)', fontSize: 13 }}>
               {timezoneSuccess}
             </div>
+          ) : null}
+          {restartInstructions ? (
+            <pre style={{ marginTop: 12, padding: 12, background: '#020617', borderRadius: 8, fontSize: 12, overflow: 'auto', color: '#cbd5e1' }}>
+{`Docker Compose:\n${restartInstructions.docker_compose}\n\nKubernetes:\n${restartInstructions.kubernetes}`}
+            </pre>
           ) : null}
         </div>
 
@@ -9484,11 +9493,11 @@ function ActionCenterPage() {
                       ) : null}
                     </td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                      {row.created_at ? new Date(row.created_at).toLocaleString() : '—'}
+                      {row.created_at ? formatUserDateTime(row.created_at) : '—'}
                     </td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                       {(row.ready_at || row.completed_at)
-                        ? new Date(row.ready_at || row.completed_at).toLocaleString()
+                        ? formatUserDateTime(row.ready_at || row.completed_at)
                         : '—'}
                     </td>
                     <td style={ui.td}>
@@ -9651,9 +9660,8 @@ function IOCListPage() {
 
   function formatStatsCalculatedAt(value) {
     if (!value) return null;
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+    const formatted = formatUserDateTime(value);
+    return formatted === '-' ? null : formatted;
   }
 
   const loadData = useCallback(async (targetPage, targetSize) => {
@@ -10344,7 +10352,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
               <th onClick={() => nextSort('status')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Status{sortIndicator('status')}<div onMouseDown={(e) => startResize('status', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Timestamp{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Last changed in source{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
@@ -14691,6 +14699,19 @@ function IOCAddPage() {
   );
 }
 
+function SetupGatePage() {
+  const navigate = useNavigate();
+  return (
+    <InitialSetupPage
+      onCompleted={(data) => {
+        if (data?.system_timezone) setSystemTimezoneCache(data.system_timezone);
+        notifyTimezoneChanged();
+        navigate('/login', { replace: true });
+      }}
+    />
+  );
+}
+
 function Protected({ children }) {
   const { authState } = useSession();
 
@@ -15130,6 +15151,7 @@ function App() {
         <ReasonPromptProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/setup" element={<SetupGatePage />} />
           <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />

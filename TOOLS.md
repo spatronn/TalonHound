@@ -47,7 +47,7 @@ Add whatever helps you do your job. This is your cheat sheet.
 - SSH port: `22`
 - Auth: Windows host `~/.ssh/id_ed25519`
 - Web: `https://192.168.1.190` (self-signed cert beklenir)
-- Stack path (sunucu): `/opt/demo-runbook` (henüz rename edilmemiş olabilir)
+- Stack path (sunucu): `/opt/TalonHound`
 
 ## Demo VM (arşiv)
 

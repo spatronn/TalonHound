@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
+import { formatUserDateTime } from '../lib/formatDate.js';
 import {
   ProviderAccordionCard,
   ProviderActionBar,
@@ -671,7 +672,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                                     <div className="t">{s.list_type}</div>
                                     <div className="v">Status: {s.status}</div>
                                     {s.entry_count != null ? <div className="m">Entries: {s.entry_count.toLocaleString()}</div> : null}
-                                    {s.last_success_at ? <div className="m">Last sync: {new Date(s.last_success_at).toLocaleString()}</div> : null}
+                                    {s.last_success_at ? <div className="m">Last sync: {formatUserDateTime(s.last_success_at)}</div> : null}
                                     {s.error_message ? <div className="e">Error: {s.error_message}</div> : null}
                                   </div>
                                 ))}

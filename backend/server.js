@@ -75,6 +75,24 @@ import {
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
 import {
+  loadSystemTimeConfig,
+  buildTimeHealth,
+  convertPayloadTimestamps,
+  getCachedSystemTimezone,
+  assertValidIanaTimezone,
+  isValidIanaTimezone,
+  clearSystemTimeCache,
+  promotePendingSystemTimezone,
+  formatTimestampWithOffset,
+  adoptSystemTimezoneFromBootstrap,
+  isTimezoneRuntimeReady
+} from './lib/systemTime.js';
+import { attachCanonicalIocListTimestamps } from './lib/iocListTimestamps.js';
+import { applySessionTimezoneToPool } from './lib/pgSessionTimezone.js';
+import { registerSetupRoutes, createSetupGate } from './routes/setup.js';
+import { createServiceLogger } from './lib/appLogger.js';
+import { setSystemScheduleTimezoneOverride } from './lib/integrationSchedule.js';
+import {
   loadIntegrationQueueHealthSnapshot,
   runIntegrationQueueRecover
 } from './lib/integrationQueueApi.js';
@@ -214,8 +232,65 @@ const pool = new Pool({
   port: Number(process.env.DB_PORT || 5432),
   user: process.env.DB_USER || 'demo',
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'demo'
+  database: process.env.DB_NAME || 'demo',
+  options: `-c TimeZone=${String(process.env.SYSTEM_TIMEZONE || process.env.TZ || 'UTC').trim() || 'UTC'}`
 });
+
+const appLog = createServiceLogger('backend');
+
+async function syncRuntimeTimezoneFromDb() {
+  try {
+    await adoptSystemTimezoneFromBootstrap(pool, { logger: appLog });
+    const cfg = await loadSystemTimeConfig(pool, { force: true });
+    if (!isTimezoneRuntimeReady(cfg) && !(cfg.timezone_restart_required && cfg.pending_system_timezone)) {
+      appLog.warn('system timezone not ready', {
+        setup_completed: cfg.initial_setup_completed,
+        configuration_required: cfg.timezone_configuration_required
+      });
+      return null;
+    }
+
+    // After restart with a pending change: apply pending, verify PG session, then promote.
+    if (cfg.timezone_restart_required && cfg.pending_system_timezone) {
+      const pending = assertValidIanaTimezone(cfg.pending_system_timezone);
+      process.env.TZ = pending;
+      setSystemScheduleTimezoneOverride(pending);
+      await applySessionTimezoneToPool(pool, pending);
+      const { readPostgresSessionTimezone } = await import('./lib/systemTime.js');
+      const pgTz = await readPostgresSessionTimezone(pool);
+      const pgOk = pgTz && String(pgTz).toLowerCase() === pending.toLowerCase();
+      if (pgOk) {
+        const promoted = await promotePendingSystemTimezone(pool);
+        appLog.info('pending system timezone promoted', { timezone: pending, status: promoted.status });
+        return pending;
+      }
+      appLog.warn('pending timezone not promoted — postgres session mismatch; reverting process to active', {
+        pending,
+        active: cfg.active_system_timezone,
+        postgres_session_timezone: pgTz
+      });
+      // Health failed: do not promote. Keep restart_required + pending. Revert runtime to active.
+      if (cfg.active_system_timezone && isValidIanaTimezone(cfg.active_system_timezone)) {
+        const active = assertValidIanaTimezone(cfg.active_system_timezone);
+        process.env.TZ = active;
+        setSystemScheduleTimezoneOverride(active);
+        await applySessionTimezoneToPool(pool, active);
+        return active;
+      }
+      return null;
+    }
+
+    const tz = assertValidIanaTimezone(cfg.active_system_timezone);
+    process.env.TZ = tz;
+    setSystemScheduleTimezoneOverride(tz);
+    await applySessionTimezoneToPool(pool, tz);
+    appLog.info('system timezone synchronized', { timezone: tz });
+    return tz;
+  } catch (err) {
+    appLog.warn('system timezone sync skipped', { error: err?.message || String(err) });
+    return null;
+  }
+}
 
 loadThreatClassificationRegistry(pool).catch((err) => {
   console.warn('[threat-classifications] registry preload skipped:', err?.message || err);
@@ -265,9 +340,27 @@ function pickIocLifecycleRow(rows, seedRow) {
 app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
+app.use(createSetupGate(pool));
 app.use(apiAuthGate);
 app.use(csrfProtection);
 app.use(rbacHttpPolicy);
+
+// Serialize API timestamps with system-timezone offsets (never bare local / offset-less).
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    const tz = getCachedSystemTimezone() || process.env.SYSTEM_TIMEZONE || process.env.TZ || null;
+    if (tz && body != null && typeof body === 'object') {
+      try {
+        return originalJson(convertPayloadTimestamps(body, tz));
+      } catch {
+        return originalJson(body);
+      }
+    }
+    return originalJson(body);
+  };
+  next();
+});
 
 let geoCacheRefreshInProgress = false;
 let geoCacheDebounceTimer = null;
@@ -425,9 +518,14 @@ app.get('/healthz', (_req, res) => {
 
 app.get('/readyz', async (_req, res) => {
   const result = await runReadinessChecks(pool, redis);
-  const payload = buildHealthPayload(result.ok ? 'ok' : 'error', result.checks);
-  if (!result.ok) {
-    payload.error = result.error;
+  const timeHealth = await buildTimeHealth(pool).catch(() => null);
+  const checks = { ...result.checks };
+  if (timeHealth) checks.date_time = timeHealth.status;
+  const ok = result.ok && (!timeHealth || timeHealth.status !== 'unhealthy');
+  const payload = buildHealthPayload(ok ? 'ok' : 'error', checks);
+  if (timeHealth) payload.date_time = timeHealth;
+  if (!ok) {
+    payload.error = result.error || timeHealth?.error || 'readiness failed';
     return res.status(503).json(payload);
   }
   return res.json(payload);
@@ -436,40 +534,50 @@ app.get('/readyz', async (_req, res) => {
 app.get('/health', async (_req, res) => {
   try {
     const result = await runReadinessChecks(pool, redis);
-    if (result.ok) {
+    const timeHealth = await buildTimeHealth(pool).catch(() => null);
+    const checks = { ...result.checks };
+    if (timeHealth) checks.date_time = timeHealth.status;
+    const ok = result.ok && (!timeHealth || timeHealth.status !== 'unhealthy');
+    if (ok) {
       return res.json({
         ok: true,
         service: 'backend',
         db: 'up',
-        ...buildHealthPayload('ok', result.checks)
+        date_time: timeHealth,
+        ...buildHealthPayload('ok', checks)
       });
     }
     return res.status(500).json({
       ok: false,
       service: 'backend',
       db: result.checks.postgres === 'ok' ? 'up' : 'down',
-      ...buildHealthPayload('error', result.checks),
-      error: result.error
+      date_time: timeHealth,
+      ...buildHealthPayload('error', checks),
+      error: result.error || timeHealth?.error
     });
   } catch {
     res.status(500).json({ ok: false, service: 'backend', db: 'down' });
   }
 });
 
-app.get('/api/system/status', async (req, res) => {
-  const email = req.user?.email ? String(req.user.email).trim() : '';
-  let userTimezone = 'UTC';
+app.get('/api/system/time-health', async (_req, res) => {
+  try {
+    const timeHealth = await buildTimeHealth(pool);
+    const statusCode = timeHealth.status === 'unhealthy' ? 503 : 200;
+    return res.status(statusCode).json(timeHealth);
+  } catch (err) {
+    return res.status(500).json({ status: 'unhealthy', error: err?.message || 'time health failed' });
+  }
+});
 
-  if (email) {
-    try {
-      const { rows } = await pool.query('SELECT timezone FROM user_preferences WHERE email = $1', [email]);
-      const tz = rows[0]?.timezone;
-      if (tz) {
-        userTimezone = tz;
-      }
-    } catch (err) {
-      console.warn('[system-status] failed to load user timezone', err.message);
-    }
+app.get('/api/system/status', async (req, res) => {
+  let userTimezone = 'UTC';
+  try {
+    const cfg = await loadSystemTimeConfig(pool);
+    if (cfg.active_system_timezone) userTimezone = cfg.active_system_timezone;
+    else if (cfg.system_timezone) userTimezone = cfg.system_timezone;
+  } catch (err) {
+    console.warn('[system-status] failed to load system timezone', err.message);
   }
 
   const generatedAt = new Date().toISOString();
@@ -2490,7 +2598,31 @@ app.put('/api/users/me/preferences', async (req, res) => {
 });
 
 registerUserManagementRoutes(app, pool, auditLogService);
+registerSetupRoutes(app, pool, {
+  audit: auditLogService,
+  onTimezoneChanged: async (tz, meta = {}) => {
+    clearSystemTimeCache();
+    // Pending admin changes must NOT switch the running process off active.
+    if (meta?.restartRequired || meta?.reason === 'admin_change_pending') {
+      appLog.info('timezone change pending restart', {
+        active: meta.active,
+        pending: meta.pending
+      });
+      return;
+    }
+    if (!tz) return;
+    process.env.TZ = tz;
+    setSystemScheduleTimezoneOverride(tz);
+    try {
+      await applySessionTimezoneToPool(pool, tz);
+    } catch (err) {
+      appLog.warn('failed to apply session timezone after change', { error: err?.message || String(err) });
+    }
+    appLog.info('system timezone applied', { timezone: tz, reason: meta.reason || 'unknown' });
+  }
+});
 registerRouteModule('users');
+registerRouteModule('setup');
 registerPublicFeedRoutes(app, pool);
 registerRouteModule('public_feeds');
 registerPublishedFeedRoutes(app, pool, auditLogService);
@@ -3246,7 +3378,8 @@ async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, b
     includeInactiveMemberships: hasSearch
   });
   const scoped = hasSearch ? finalized : applyActiveListScope(finalized, statusFilter);
-  return decorateIocListItems(scoped);
+  const withCanonicalTs = await attachCanonicalIocListTimestamps(pool, scoped);
+  return decorateIocListItems(withCanonicalTs);
 }
 
 async function getCachedIocListGlobalTotal(pool, statusFilter = 'active') {
@@ -5763,6 +5896,7 @@ app.get('/api/admin/ioc-evidence-coverage', async (req, res) => {
 app.listen(port, async () => {
   console.log(`Backend listening on :${port}`);
   logRegisteredRouteModules();
+  await syncRuntimeTimezoneFromDb();
   if (IOC_LIST_TIMING) {
     console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
   }

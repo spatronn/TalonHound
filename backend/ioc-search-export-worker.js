@@ -282,6 +282,10 @@ async function cleanupExpired() {
 
 async function start() {
   await waitForExportTable();
+  const { waitUntilSetupComplete } = await import('./lib/systemTime.js');
+  const tz = await waitUntilSetupComplete(pool, { logPrefix: '[ioc-search-export]' });
+  process.env.TZ = tz;
+  process.env.SYSTEM_TIMEZONE = tz;
 
   worker = new Worker(
     EXPORT_QUEUE_NAME,
@@ -305,7 +309,7 @@ async function start() {
   cleanupTimer = setInterval(cleanupExpired, CLEANUP_INTERVAL_MS);
   cleanupExpired().catch(() => {});
 
-  console.log(`[ioc-search-export] worker started queue=${EXPORT_QUEUE_NAME} concurrency=${workerConcurrency} storage=${cfg.storageDir}`);
+  console.log(`[ioc-search-export] worker started queue=${EXPORT_QUEUE_NAME} concurrency=${workerConcurrency} storage=${cfg.storageDir} tz=${tz}`);
 }
 
 async function shutdown() {

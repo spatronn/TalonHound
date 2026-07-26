@@ -7,6 +7,8 @@
 //      = + - @ (or a leading tab/CR that Excel strips before evaluating) is prefixed
 //      with a single quote so spreadsheet software treats it as text, never a formula.
 
+import { formatTimestampWithOffset, isValidIanaTimezone } from '../systemTime.js';
+
 const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
 
 export function csvCell(value) {
@@ -28,10 +30,16 @@ export function csvRow(values) {
   return values.map(csvCell).join(',');
 }
 
-// Format a timestamp value as an ISO-8601 string, or empty string when null.
-export function csvTimestamp(value) {
+/**
+ * Format a timestamp in the system timezone with offset (ISO-8601).
+ * Falls back to UTC ISO when timezone is missing/invalid.
+ */
+export function csvTimestamp(value, timeZone = null) {
   if (value == null || value === '') return '';
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return '';
+  if (timeZone && isValidIanaTimezone(timeZone)) {
+    return formatTimestampWithOffset(d, timeZone) || d.toISOString();
+  }
   return d.toISOString();
 }

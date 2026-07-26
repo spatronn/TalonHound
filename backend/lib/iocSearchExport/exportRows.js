@@ -5,6 +5,12 @@
 // analyst source timestamps — all via a fixed number of batch queries per page, never
 // per-IOC. Nothing loads the full result set into memory.
 
+import {
+  CANONICAL_FIRST_SEEN_AGG_SQL,
+  CANONICAL_LAST_CHANGED_AGG_SQL,
+  resolveCanonicalIocTimestamps
+} from '../iocListTimestamps.js';
+
 // Build one keyset batch of base rows.
 //   whereSql/dslParams : compiled DSL predicate (references alias i)
 //   cutoff             : snapshot_cutoff timestamp (stable export boundary)
@@ -67,8 +73,8 @@ export async function enrichExportBatch(db, baseRows) {
     ),
     db.query(
       `SELECT m.ioc_item_id,
-              MIN(m.first_seen_in_feed) AS first_seen_in_source,
-              MAX(COALESCE(m.last_changed_in_source, m.first_seen_in_feed)) AS last_changed_in_source
+              ${CANONICAL_FIRST_SEEN_AGG_SQL} AS first_seen_in_source,
+              ${CANONICAL_LAST_CHANGED_AGG_SQL} AS last_changed_in_source
          FROM ioc_feed_memberships m
         WHERE m.ioc_item_id = ANY($1::bigint[])
         GROUP BY m.ioc_item_id`,
@@ -87,7 +93,12 @@ export async function enrichExportBatch(db, baseRows) {
 
   return baseRows.map((row) => {
     const id = Number(row.id);
-    const ts = tsMap.get(id);
+    const ts = tsMap.get(id) || {};
+    const resolved = resolveCanonicalIocTimestamps({
+      first_seen_in_source: ts.first_seen_in_source,
+      last_changed_in_source: ts.last_changed_in_source,
+      item_created_at: row.created_at
+    });
     return {
       observable: row.observable,
       observable_type: row.observable_type,
@@ -99,10 +110,8 @@ export async function enrichExportBatch(db, baseRows) {
       created_at: row.created_at,
       tags: tagMap.get(id) || [],
       classifications: classMap.get(id) || [],
-      // Analyst source timestamps; fall back to the item's own first_seen when the IOC
-      // has no feed membership (e.g. purely manual IOCs).
-      first_seen_in_source: (ts && ts.first_seen_in_source) || row.first_seen_at,
-      last_changed_in_source: (ts && ts.last_changed_in_source) || null
+      first_seen_in_source: resolved.first_seen_in_source,
+      last_changed_in_source: resolved.last_changed_in_source
     };
   });
 }

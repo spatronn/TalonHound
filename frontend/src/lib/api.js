@@ -27,6 +27,13 @@ api.interceptors.response.use(
   (err) => {
     const url = String(err.config?.url || '');
     const st = err.response?.status;
+    const code = err.response?.data?.code;
+    if (st === 428 || code === 'INITIAL_SETUP_REQUIRED' || code === 'TIMEZONE_CONFIGURATION_REQUIRED') {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/setup') {
+        window.location.assign('/setup');
+      }
+      return Promise.reject(err);
+    }
     if (st === 401 && !url.includes('/auth/login')) {
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login');

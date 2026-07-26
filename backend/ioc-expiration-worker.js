@@ -40,7 +40,11 @@ async function tick() {
 }
 
 async function main() {
-  console.log(`[ioc-expiration] worker started poll_ms=${POLL_MS} batch_size=${BATCH_SIZE}`);
+  const { waitUntilSetupComplete } = await import('./lib/systemTime.js');
+  const tz = await waitUntilSetupComplete(pool, { logPrefix: '[ioc-expiration]' });
+  process.env.TZ = tz;
+  process.env.SYSTEM_TIMEZONE = tz;
+  console.log(`[ioc-expiration] worker started poll_ms=${POLL_MS} batch_size=${BATCH_SIZE} tz=${tz}`);
   while (!stopping) {
     await tick();
     await new Promise((r) => setTimeout(r, POLL_MS));

@@ -91,8 +91,11 @@ Expected: `lock_waiters = 0` during steady state.
 ### Health endpoints
 
 - `GET /healthz` — process alive (no DB)
-- `GET /readyz` — DB connectivity (`SELECT 1`), returns 503 if DB unavailable
-- `GET /health` — legacy combined check (kept for compatibility)
+- `GET /readyz` — DB/Redis readiness + Date & Time health (`date_time`)
+- `GET /health` — legacy combined check (includes `date_time`)
+- `GET /api/system/time-health` — dedicated timezone consistency snapshot
+
+See [system-timezone.md](./system-timezone.md) for NTP responsibility, initial setup, and timezone change / restart procedures.
 
 ### Login smoke test
 

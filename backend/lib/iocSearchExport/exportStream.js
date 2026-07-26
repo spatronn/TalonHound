@@ -22,7 +22,8 @@ export async function streamExportToSink({
   sink,
   isCancelled = async () => false,
   onProgress = async () => {},
-  progressEvery = 10000
+  progressEvery = 10000,
+  timeZone = null
 }) {
   const write = (chunk) =>
     new Promise((resolve, reject) => {
@@ -39,7 +40,17 @@ export async function streamExportToSink({
   let cursor = null;
   let lastProgressAt = 0;
 
-  await write(`${csvRow(headerRow(columns))}\n`);
+  let tz = timeZone;
+  if (!tz) {
+    try {
+      const { requireSystemTimezone } = await import('../systemTime.js');
+      tz = await requireSystemTimezone(db);
+    } catch {
+      tz = process.env.SYSTEM_TIMEZONE || process.env.TZ || 'UTC';
+    }
+  }
+
+  await write(`${csvRow(headerRow(columns, tz))}\n`);
 
   for (;;) {
     if (await isCancelled()) return { status: 'cancelled', recordCount };
@@ -59,7 +70,7 @@ export async function streamExportToSink({
 
     const enriched = await enrichExportBatch(db, baseRows);
     let chunk = '';
-    for (const rec of enriched) chunk += `${csvRow(formatRecord(rec, columns))}\n`;
+    for (const rec of enriched) chunk += `${csvRow(formatRecord(rec, columns, tz))}\n`;
     await write(chunk);
 
     recordCount += baseRows.length;

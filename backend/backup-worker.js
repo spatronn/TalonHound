@@ -109,13 +109,14 @@ async function processBackupJob(job) {
 }
 
 async function maybeEnqueueScheduled() {
-  if (!cfg.enabled || stopping) return;
+  const liveCfg = getBackupConfig();
+  if (!liveCfg.enabled || stopping) return;
   const now = new Date();
-  if (!cronMatchesInTimezone(cfg.cron, now, cfg.timezone)) return;
+  if (!cronMatchesInTimezone(liveCfg.cron, now, liveCfg.timezone)) return;
   const key = minuteKeyUtc(now);
   if (lastScheduledMinute === key) return;
 
-  const active = await countBlockingBackups(pool, cfg.orphanQueuedMinutes);
+  const active = await countBlockingBackups(pool, liveCfg.orphanQueuedMinutes);
   if (active > 0) {
     console.log(`[backup-worker] skip scheduled run; blocking_active=${active}`);
     return;
@@ -123,13 +124,13 @@ async function maybeEnqueueScheduled() {
 
   const backupId = generateBackupId();
   const jobId = `scheduled-${key}`;
-  console.log(`[backup-worker] schedule match cron=${cfg.cron} tz=${cfg.timezone} jobId=${jobId}`);
+  console.log(`[backup-worker] schedule match cron=${liveCfg.cron} tz=${liveCfg.timezone} jobId=${jobId}`);
 
   const row = await createBackupRow(pool, {
     backupId,
     triggerType: 'scheduled',
     createdByEmail: 'system',
-    encrypted: cfg.encryptionEnabled
+    encrypted: liveCfg.encryptionEnabled
   });
   console.log(`[backup-worker] backup row created backup_id=${backupId} id=${row.id}`);
 
@@ -184,6 +185,12 @@ async function reconcileStale() {
 
 async function main() {
   await waitForTable();
+  const { waitUntilSetupComplete } = await import('./lib/systemTime.js');
+  const { setSystemScheduleTimezoneOverride } = await import('./lib/integrationSchedule.js');
+  const tz = await waitUntilSetupComplete(pool, { logPrefix: '[backup-worker]' });
+  process.env.TZ = tz;
+  process.env.SYSTEM_TIMEZONE = tz;
+  setSystemScheduleTimezoneOverride(tz);
   const interrupted = await interruptAllActive(pool);
   if (interrupted.length) {
     console.log(`[backup-worker] marked ${interrupted.length} active backup(s) interrupted`);

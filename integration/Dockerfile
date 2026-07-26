@@ -34,6 +34,8 @@ COPY backend/lib/integrationQueueBullmqReconciliation.js ./lib/integrationQueueB
 COPY backend/lib/integrationQueueHealth.js ./lib/integrationQueueHealth.js
 COPY backend/lib/integrationSchedule.js ./lib/integrationSchedule.js
 COPY backend/lib/integrationFeedScheduleSync.js ./lib/integrationFeedScheduleSync.js
+COPY backend/lib/systemTime.js ./lib/systemTime.js
+COPY backend/lib/appLogger.js ./lib/appLogger.js
 COPY backend/lib/spamhausDropSync.js ./lib/spamhausDropSync.js
 COPY backend/lib/spamhausDropScheduleSync.js ./lib/spamhausDropScheduleSync.js
 COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js

@@ -11,6 +11,13 @@ async function syncSchedules() {
 }
 
 async function main() {
+  const { waitUntilSetupComplete } = await import('./lib/systemTime.js');
+  const { setSystemScheduleTimezoneOverride } = await import('./lib/integrationSchedule.js');
+  const tz = await waitUntilSetupComplete(pool, { logPrefix: '[scheduler]' });
+  process.env.TZ = tz;
+  process.env.SYSTEM_TIMEZONE = tz;
+  setSystemScheduleTimezoneOverride(tz);
+
   await syncSchedules();
 
   setInterval(async () => {

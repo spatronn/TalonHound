@@ -1,3 +1,5 @@
+import { formatUserDateTime } from './formatDate.js';
+
 export const CONFIDENCE_OPTIONS = Object.freeze([
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
@@ -57,13 +59,13 @@ export function getIocConfidencePresentation(detail) {
   if (hasOverride) {
     const who = detail.overridden_by || detail.confidence_provenance?.overridden_by || 'analyst';
     const whenRaw = detail.overridden_at || detail.confidence_provenance?.overridden_at;
-    const when = whenRaw ? new Date(whenRaw).toLocaleString() : null;
-    if (when) {
+    const when = whenRaw ? formatUserDateTime(whenRaw) : null;
+    if (when && when !== '-') {
       sourceLine = `Source: Analyst override by ${who} at ${when}`;
     } else {
       const baseline = detail.baseline_effective || detail.source_confidence || detail.feed_default_confidence;
       const baselineLabel = confidenceLabel(baseline);
-      sourceLine = `Originally ${baselineLabel}. Changed by ${who}${whenRaw ? ` on ${new Date(whenRaw).toLocaleString()}` : ''}.`;
+      sourceLine = `Originally ${baselineLabel}. Changed by ${who}${whenRaw ? ` on ${formatUserDateTime(whenRaw)}` : ''}.`;
     }
   } else if (detail.source === 'feed_default') {
     const feed = detail.feed_name || detail.confidence_feed_name || detail.confidence_source_name || 'feed';

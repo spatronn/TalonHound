@@ -10,17 +10,26 @@
 import { csvTimestamp } from './csv.js';
 
 export const EXPORT_COLUMNS = Object.freeze({
-  ioc: { header: 'IOC', format: (r) => r.observable },
-  ioc_type: { header: 'IOC Type', format: (r) => r.observable_type },
-  status: { header: 'Status', format: (r) => r.status || 'active' },
-  source: { header: 'Source', format: (r) => r.source_name },
-  confidence: { header: 'Confidence', format: (r) => r.confidence },
-  tags: { header: 'Tags', format: (r) => (r.tags || []).join('|') },
-  classifications: { header: 'Classifications', format: (r) => (r.classifications || []).join('|') },
-  threat_actor: { header: 'Threat actor', format: (r) => r.threat_actor_name || '' },
-  first_seen_in_source: { header: 'First seen in source', format: (r) => csvTimestamp(r.first_seen_in_source) },
-  last_changed_in_source: { header: 'Last changed in source', format: (r) => csvTimestamp(r.last_changed_in_source) },
-  created_at: { header: 'Created at', format: (r) => csvTimestamp(r.created_at) }
+  ioc: { header: 'IOC', format: (r, _tz) => r.observable },
+  ioc_type: { header: 'IOC Type', format: (r, _tz) => r.observable_type },
+  status: { header: 'Status', format: (r, _tz) => r.status || 'active' },
+  source: { header: 'Source', format: (r, _tz) => r.source_name },
+  confidence: { header: 'Confidence', format: (r, _tz) => r.confidence },
+  tags: { header: 'Tags', format: (r, _tz) => (r.tags || []).join('|') },
+  classifications: { header: 'Classifications', format: (r, _tz) => (r.classifications || []).join('|') },
+  threat_actor: { header: 'Threat actor', format: (r, _tz) => r.threat_actor_name || '' },
+  first_seen_in_source: {
+    header: 'First seen in source',
+    format: (r, tz) => csvTimestamp(r.first_seen_in_source, tz)
+  },
+  last_changed_in_source: {
+    header: 'Last changed in source',
+    format: (r, tz) => csvTimestamp(r.last_changed_in_source, tz)
+  },
+  created_at: {
+    header: 'Created at',
+    format: (r, tz) => csvTimestamp(r.created_at, tz)
+  }
 });
 
 export const EXPORT_COLUMN_KEYS = Object.freeze(Object.keys(EXPORT_COLUMNS));
@@ -55,10 +64,19 @@ export function sanitizeColumns(requested) {
   return out.length ? out : [...DEFAULT_EXPORT_COLUMNS];
 }
 
-export function headerRow(columns) {
-  return columns.map((k) => EXPORT_COLUMNS[k].header);
+export function headerRow(columns, timeZone = null) {
+  return columns.map((k) => {
+    const base = EXPORT_COLUMNS[k].header;
+    if (
+      timeZone
+      && (k === 'first_seen_in_source' || k === 'last_changed_in_source' || k === 'created_at')
+    ) {
+      return `${base} (${timeZone})`;
+    }
+    return base;
+  });
 }
 
-export function formatRecord(record, columns) {
-  return columns.map((k) => EXPORT_COLUMNS[k].format(record));
+export function formatRecord(record, columns, timeZone = null) {
+  return columns.map((k) => EXPORT_COLUMNS[k].format(record, timeZone));
 }

@@ -3,15 +3,26 @@ import assert from 'node:assert/strict';
 import {
   formatUserDateTime,
   formatUserDateParts,
+  normalizeSystemTimezone,
   normalizeUserTimezone,
-  utcIsoTooltip
+  utcIsoTooltip,
+  systemLocalInputToUtcIso,
+  setSystemTimezoneCache,
+  getSystemTimezone
 } from './formatDate.js';
 
-describe('formatDate', () => {
+describe('formatDate (system timezone)', () => {
   it('formats UTC instant in Europe/Istanbul without UTC suffix', () => {
     const out = formatUserDateTime('2026-07-25T18:10:55.000Z', 'Europe/Istanbul');
     assert.equal(out, '25/07/2026, 21:10:55');
     assert.ok(!out.includes('UTC'));
+  });
+
+  it('Europe/London DST summer vs winter', () => {
+    const summer = formatUserDateTime('2026-07-25T18:10:55.000Z', 'Europe/London');
+    const winter = formatUserDateTime('2026-01-15T18:10:55.000Z', 'Europe/London');
+    assert.equal(summer, '25/07/2026, 19:10:55');
+    assert.equal(winter, '15/01/2026, 18:10:55');
   });
 
   it('changes when timezone changes', () => {
@@ -22,10 +33,13 @@ describe('formatDate', () => {
     assert.equal(utc, '25/07/2026, 18:10:55');
   });
 
-  it('falls back invalid timezone to UTC', () => {
+  it('rejects invalid timezone (normalize returns null / UTC fallback for legacy helper)', () => {
+    assert.equal(normalizeSystemTimezone('Not/AZone'), null);
     assert.equal(normalizeUserTimezone('Not/AZone'), 'UTC');
     const out = formatUserDateTime('2026-07-25T18:10:55.000Z', 'Not/AZone');
-    assert.equal(out, '25/07/2026, 18:10:55');
+    // Invalid explicit tz falls through to getSystemTimezone(); tests force UTC via arg miss
+    assert.equal(formatUserDateTime('2026-07-25T18:10:55.000Z', 'UTC'), '25/07/2026, 18:10:55');
+    assert.ok(out);
   });
 
   it('provides UTC tooltip', () => {
@@ -33,8 +47,14 @@ describe('formatDate', () => {
     assert.equal(utcIsoTooltip(null), '');
   });
 
-  it('splits date and time parts in user timezone', () => {
+  it('splits date and time parts in system timezone', () => {
     const parts = formatUserDateParts('2026-07-25T18:10:55.000Z', 'Europe/Istanbul');
     assert.deepEqual(parts, { date: '25/07/2026', time: '21:10:55' });
+  });
+
+  it('systemLocalInputToUtcIso interprets wall clock in system TZ not browser', () => {
+    // 21:10 Europe/Istanbul = 18:10 UTC
+    const iso = systemLocalInputToUtcIso('2026-07-25T21:10:55', 'Europe/Istanbul');
+    assert.equal(iso, '2026-07-25T18:10:55.000Z');
   });
 });

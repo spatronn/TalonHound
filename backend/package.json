@@ -37,7 +37,8 @@
     "test:ioc-search": "node --test lib/iocSearchDsl/parser.test.js lib/iocSearchDsl/queryBuilder.test.js lib/iocSearchExport/csv.test.js lib/iocSearchExport/exportRows.test.js lib/iocSearchExport/exportStatus.test.js lib/iocSearchExport/exportStore.cleanup.test.js routes/iocSearchExports.test.js",
     "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js",
     "test:ioc-classification-mapping": "node --test lib/iocClassificationMapping.test.js",
-    "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/backup/manifest.test.js lib/backup/checksums.test.js lib/backup/retention.test.js lib/backup/pathSafety.test.js lib/backup/operationLock.test.js lib/backup/encryption.test.js lib/backup/scheduler.test.js routes/backups.test.js",
+    "test:system-time": "node --test lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js",
+    "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/backup/manifest.test.js lib/backup/checksums.test.js lib/backup/retention.test.js lib/backup/pathSafety.test.js lib/backup/operationLock.test.js lib/backup/encryption.test.js lib/backup/scheduler.test.js routes/backups.test.js lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js",
 
     "smoke:routes": "node scripts/smoke-routes.js"
   },

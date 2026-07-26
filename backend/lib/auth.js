@@ -200,6 +200,7 @@ export function csrfProtection(req, res, next) {
   if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
   const p = req.path || '';
   if (p === '/api/auth/login' || p === '/api/auth/logout') return next();
+  if (p === '/api/setup/complete') return next();
   if (!p.startsWith('/api')) return next();
   if (req.authVia === 'ingest' || req.authVia === 'bearer') return next();
 
@@ -215,6 +216,14 @@ export function apiAuthGate(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   if (req.path === '/api/auth/login' && req.method === 'POST') return next();
   if (req.path === '/api/auth/logout' && req.method === 'POST') return next();
+  // Initial setup must be reachable before any user session exists.
+  if (
+    req.path === '/api/setup/status'
+    || req.path === '/api/setup/preview'
+    || (req.path === '/api/setup/complete' && req.method === 'POST')
+  ) {
+    return next();
+  }
   if (req.path.startsWith('/api')) {
     return requireAuth(req, res, next);
   }

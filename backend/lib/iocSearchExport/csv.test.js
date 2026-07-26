@@ -46,6 +46,7 @@ test('csvRow joins cells', () => {
 test('csvTimestamp formats ISO or empty', () => {
   assert.equal(csvTimestamp(null), '');
   assert.equal(csvTimestamp('2026-07-22T10:00:00Z'), '2026-07-22T10:00:00.000Z');
+  assert.equal(csvTimestamp('2026-07-22T10:00:00Z', 'Europe/Istanbul'), '2026-07-22T13:00:00+03:00');
   assert.equal(csvTimestamp('not-a-date'), '');
 });
 
@@ -68,10 +69,15 @@ test('updated_at is not a valid export column', () => {
 test('headerRow and formatRecord align with columns', () => {
   const cols = ['ioc', 'tags', 'last_changed_in_source'];
   assert.deepEqual(headerRow(cols), ['IOC', 'Tags', 'Last changed in source']);
+  assert.deepEqual(headerRow(cols, 'Europe/London'), ['IOC', 'Tags', 'Last changed in source (Europe/London)']);
   const rec = {
     observable: 'evil.com',
     tags: ['mirai', 'botnet'],
     last_changed_in_source: '2026-07-01T00:00:00Z'
   };
   assert.deepEqual(formatRecord(rec, cols), ['evil.com', 'mirai|botnet', '2026-07-01T00:00:00.000Z']);
+  assert.deepEqual(
+    formatRecord(rec, cols, 'Europe/London'),
+    ['evil.com', 'mirai|botnet', '2026-07-01T01:00:00+01:00']
+  );
 });
