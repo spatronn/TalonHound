@@ -47,6 +47,12 @@ import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.js
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
 import { formatUserDateTime, notifyTimezoneChanged } from './lib/formatDate.js';
+import {
+  presentFeedLastResult,
+  resolveFeedLastResult,
+  FEED_RESULT_TONE_COLORS,
+  FEED_RESULT_METRIC_TOOLTIPS
+} from './lib/feedLastResult.js';
 import './components/enrichmentProviders/enrichmentProviders.css';
 import {
   TAG_MANAGER_PAGE_SIZE,
@@ -2051,24 +2057,25 @@ const FEED_SCHEDULE_OPTIONS = [
 const RUN_ONCE_SCHEDULE_HELPER = 'Run once feeds are not executed by the recurring scheduler. Use Run now to execute them manually.';
 
 const FEED_METRIC_TOOLTIPS = {
-  processed: 'Total records/items processed during the last run.',
-  inserted: 'New IOC observables or source evidence inserted during the last run.',
-  unchanged: 'Records seen again with identical source content. Nothing was written and no analyst-visible date moved.',
-  reactivated: 'Previously removed/expired records that reappeared in the source.',
-  removed: 'Records no longer present in a successful full snapshot of the source.',
+  processed: FEED_RESULT_METRIC_TOOLTIPS.checked,
+  inserted: FEED_RESULT_METRIC_TOOLTIPS.new,
+  unchanged: FEED_RESULT_METRIC_TOOLTIPS.unchanged,
+  reactivated: FEED_RESULT_METRIC_TOOLTIPS.reactivated,
+  removed: FEED_RESULT_METRIC_TOOLTIPS.expired,
   duplicate: 'Deprecated alias of Unchanged.',
-  updated: 'Records whose source content genuinely changed during this run.',
-  skipped: 'Records skipped because they were invalid, filtered, old cursor entries, or not importable.',
-  suppressed: 'Records skipped because an active suppression policy matched them.',
+  updated: FEED_RESULT_METRIC_TOOLTIPS.updated,
+  skipped: FEED_RESULT_METRIC_TOOLTIPS.rejected,
+  suppressed: FEED_RESULT_METRIC_TOOLTIPS.suppressed,
   failed: 'Records that failed to parse or import.'
 };
 
 function feedMetricsHintPresentation(hint) {
   const map = {
     legacy_metrics: { label: 'Legacy metrics', color: '#fcd34d', title: 'Import breakdown unavailable until the feed runs again with granular metrics.' },
-    no_delta: { label: 'No delta', color: '#94a3b8', title: 'Last run processed records but did not insert or update IOCs — often normal when feed content is unchanged.' },
-    high_skipped: { label: 'High skipped', color: '#fdba74', title: 'Most records were skipped (unchanged, filtered, or already known). Review if unexpected.' },
-    high_failed: { label: 'High failed', color: '#fca5a5', title: 'A significant share of records failed to import.' }
+    no_delta: { label: 'No changes', color: '#94a3b8', title: 'Last run checked records but did not insert or update IOCs — normal when feed content is unchanged.' },
+    high_skipped: { label: 'High skipped', color: '#fdba74', title: 'Most records were rejected (filtered or not importable). Review if unexpected.' },
+    high_failed: { label: 'High failed', color: '#fca5a5', title: 'A significant share of records failed to import.' },
+    partial_fetch: { label: 'Partial fetch', color: '#fcd34d', title: 'Provider returned a truncated or partial result; some pages may be missing.' }
   };
   return map[hint] || { label: hint, color: '#94a3b8', title: hint };
 }
@@ -2343,6 +2350,14 @@ function FeedSettingsModal({
             <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}` }}>
               {state.label}
             </span>
+            {(() => {
+              const health = feedHealthPresentation(feed);
+              return (
+                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
+                  {health.label}
+                </span>
+              );
+            })()}
             {canWrite ? (
               <button
                 type="button"
@@ -2354,7 +2369,39 @@ function FeedSettingsModal({
               </button>
             ) : null}
           </div>
+          <div style={{ marginTop: 10, color: '#94a3b8', fontSize: 12, lineHeight: 1.5 }}>
+            Schedule: <span style={{ color: '#cbd5e1' }}>{formatFeedScheduleLabel(feed?.schedule)}</span>
+            <span style={{ color: '#475569' }}> · </span>
+            Confidence: <span style={{ color: '#cbd5e1' }}>{feedConfidencePresentation(feed?.default_confidence).label}</span>
+            <span style={{ color: '#475569' }}> · </span>
+            Expiration: <span style={{ color: '#cbd5e1' }}>{feed?.expiration_summary ?? 'Disabled'}</span>
+          </div>
         </div>
+
+        {(() => {
+          const result = resolveFeedLastResult(feed);
+          const view = presentFeedLastResult(result);
+          if (result.status === 'never' && !result.checked) return null;
+          return (
+            <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
+              <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Last result</div>
+              <div style={{ display: 'grid', gap: 6, color: '#cbd5e1', fontSize: 12, lineHeight: 1.5 }}>
+                <div style={{ color: FEED_RESULT_TONE_COLORS[view.primaryTone] || '#cbd5e1', fontWeight: 650 }}>{view.primary}</div>
+                {view.secondary ? <div style={{ color: '#94a3b8' }}>{view.secondary}</div> : null}
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.checked}>Checked: {Number(result.checked || 0).toLocaleString()}</div>
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.new}>New: {Number(result.new || 0).toLocaleString()}</div>
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.updated}>Updated: {Number(result.updated || 0).toLocaleString()}</div>
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.unchanged}>Unchanged: {Number(result.unchanged || 0).toLocaleString()}</div>
+                <div title={FEED_RESULT_METRIC_TOOLTIPS.rejected}>Rejected: {Number(result.rejected || 0).toLocaleString()}</div>
+                {result.expired > 0 ? <div title={FEED_RESULT_METRIC_TOOLTIPS.expired}>Removed: {Number(result.expired).toLocaleString()}</div> : null}
+                {result.suppressed > 0 ? <div title={FEED_RESULT_METRIC_TOOLTIPS.suppressed}>Suppressed: {Number(result.suppressed).toLocaleString()}</div> : null}
+                {result.started_at ? <div>Started at: {formatUserDateTime(result.started_at)}</div> : null}
+                {result.finished_at ? <div>Finished at: {formatUserDateTime(result.finished_at)}</div> : null}
+                {result.message && result.status === 'failed' ? <div style={{ color: '#fca5a5' }}>{result.message}</div> : null}
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
           <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Default confidence</div>
@@ -2443,8 +2490,8 @@ function FeedSettingsModal({
               <div><b>Incremental:</b> {usomRunDiagnostics(feed.last_incremental_run)}</div>
               <div><b>Last incremental success:</b> {formatUserDateTime(feed.last_incremental_success_at)}</div>
               <div><b>Full:</b> {usomRunDiagnostics(feed.last_full_reconciliation_run)}</div>
-              <div><b>Last full success:</b> {formatUserDateTime(feed.last_full_reconciliation_success_at)}</div>
-              <div><b>Next full:</b> {formatUserDateTime(feed.next_full_reconciliation_run_at)}</div>
+              <div><b>Last full sync:</b> {formatUserDateTime(feed.last_full_reconciliation_success_at)}</div>
+              <div><b>Next full sync:</b> {formatUserDateTime(feed.next_full_reconciliation_run_at)}</div>
               {feed.reconciliation_warning ? (
                 <div style={{ color: feed.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#fcd34d' }}>
                   {feed.reconciliation_warning}
@@ -2741,11 +2788,17 @@ function FeedSettingsModal({
 
 function feedHealthPresentation(feed) {
   const state = String(feed?.health_state || '').toLowerCase();
+  const runtime = String(feed?.runtime_state || '').toLowerCase();
   if (state === 'disabled') return { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
   if (state === 'failed') return { label: 'Failed', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#7f1d1d' };
   if (state === 'degraded') return { label: 'Degraded', color: '#fca5a5', bg: 'rgba(127,29,29,0.25)', border: '#7f1d1d' };
   if (state === 'warning') return { label: 'Warning', color: '#fcd34d', bg: 'rgba(120,53,15,0.25)', border: '#854d0e' };
-  if (state === 'success') return { label: 'Success', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' };
+  if (state === 'never') return { label: 'Never run', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
+  if (state === 'success') {
+    if (runtime === 'running') return { label: 'Healthy', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534', runtimeLabel: 'Running' };
+    if (runtime === 'queued') return { label: 'Healthy', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534', runtimeLabel: 'Queued' };
+    return { label: 'Healthy', color: '#86efac', bg: 'rgba(20,83,45,0.25)', border: '#166534' };
+  }
   return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
 }
 
@@ -2791,101 +2844,74 @@ function truncateFeedError(text, max = 48) {
   return `${raw.slice(0, max - 1)}…`;
 }
 
-function LastRunMetricsCell({ metrics, hints = [] }) {
-  const m = metrics || { available: false, processed: 0 };
-  const processed = Number(m.processed || 0);
-  const hintList = Array.isArray(hints) ? hints : [];
-
-  if (processed <= 0 && m.available !== false) {
-    return <span style={{ color: '#64748b', fontSize: 12 }}>No activity</span>;
+function formatFeedClock(value) {
+  if (!value) return '-';
+  const raw = formatUserDateTime(value);
+  if (!raw || raw === '-') return '-';
+  // en-GB → DD/MM/YYYY, HH:MM:SS — show HH:MM for compact table cells.
+  const parts = String(raw).split(',').map((p) => p.trim());
+  if (parts.length >= 2) {
+    const time = parts[1].slice(0, 5);
+    return time || parts[1];
   }
+  return raw;
+}
 
-  if (m.available === false && processed > 0) {
-    return (
-      <div style={{ display: 'grid', gap: 4 }}>
-        <span style={{ color: '#cbd5e1', fontSize: 12 }} title={FEED_METRIC_TOOLTIPS.processed}>Processed {processed}</span>
-        <span style={{ color: '#fcd34d', fontSize: 11, lineHeight: 1.35 }}>
-          Metrics breakdown unavailable until next run.
-        </span>
-      </div>
-    );
+function formatFeedLastRunCell(feed) {
+  if (feed?.key === 'usom-trcert') {
+    const at = feed.last_incremental_success_at || feed.last_success_at || feed.last_finished_at;
+    return {
+      primary: `Incremental · ${formatFeedClock(at)}`,
+      title: [
+        `Last incremental: ${formatUserDateTime(feed.last_incremental_success_at)}`,
+        `Last full sync: ${formatUserDateTime(feed.last_full_reconciliation_success_at)}`,
+        feed.next_full_reconciliation_run_at ? `Next full sync: ${formatUserDateTime(feed.next_full_reconciliation_run_at)}` : null
+      ].filter(Boolean).join('\n')
+    };
   }
+  const at = feed?.last_success_at
+    || (['success', 'skipped', 'skipped_unchanged'].includes(String(feed?.last_status || feed?.status || '').toLowerCase())
+      ? feed?.last_finished_at
+      : null);
+  return {
+    primary: formatUserDateTime(at),
+    title: at ? formatUserDateTime(at) : 'No successful run'
+  };
+}
 
-  const parts = [
-    { key: 'processed', label: 'Processed', value: processed, always: true },
-    { key: 'inserted', label: 'New', value: m.inserted, tone: '#86efac' },
-    // 'unchanged' replaces the old 'Duplicate' tile. Falls back to the deprecated alias
-    // so runs recorded before migration 121 still render.
-    { key: 'unchanged', label: 'Unchanged', value: m.unchanged ?? m.duplicate, tone: '#fcd34d' },
-    { key: 'updated', label: 'Changed', value: m.updated },
-    { key: 'reactivated', label: 'Reactivated', value: m.reactivated, tone: '#93c5fd', hideZero: true },
-    { key: 'removed', label: 'Removed', value: m.removed, tone: '#f9a8d4', hideZero: true },
-    { key: 'skipped', label: 'Skipped', value: m.skipped },
-    { key: 'suppressed', label: 'Suppressed', value: m.suppressed, tone: '#fb923c', hideZero: true },
-    { key: 'failed', label: 'Failed', value: m.failed, tone: '#fca5a5', hideZero: true }
-  ];
+function formatFeedNextRunCell(feed, canRunNow) {
+  if (!canRunNow) return { primary: '-', title: '' };
+  if (feed?.key === 'usom-trcert') {
+    const at = feed.next_incremental_run_at || feed.next_run_at;
+    return {
+      primary: `Incremental · ${formatFeedClock(at)}`,
+      title: [
+        `Next incremental: ${formatUserDateTime(at)}`,
+        `Next full sync: ${formatUserDateTime(feed.next_full_reconciliation_run_at)}`
+      ].join('\n')
+    };
+  }
+  return {
+    primary: formatUserDateTime(feed?.next_run_at),
+    title: formatUserDateTime(feed?.next_run_at)
+  };
+}
 
-  const visible = parts.filter((p) => p.always || (Number(p.value || 0) > 0) || (p.key === 'updated' && m.available));
-  const breakdownSum = ['inserted', 'unchanged', 'updated', 'skipped', 'suppressed', 'failed']
-    .reduce((acc, key) => acc + Number((key === 'unchanged' ? (m.unchanged ?? m.duplicate) : m[key]) || 0), 0);
-  const missingBreakdown = m.available && processed > 0 && breakdownSum === 0;
+function LastRunMetricsCell({ feed }) {
+  const result = resolveFeedLastResult(feed);
+  const view = presentFeedLastResult(result);
+  const primaryColor = FEED_RESULT_TONE_COLORS[view.primaryTone] || FEED_RESULT_TONE_COLORS.neutral;
+  const secondaryColor = FEED_RESULT_TONE_COLORS[view.secondaryTone] || FEED_RESULT_TONE_COLORS.neutral;
 
   return (
-    <div style={{ display: 'grid', gap: 4 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-        {visible.map((p) => {
-          const n = p.value === null || p.value === undefined ? 'N/A' : Number(p.value || 0);
-          if (p.hideZero && n === 0) return null;
-          const isAlert = p.key === 'failed' && Number(n) > 0;
-          const isSupp = p.key === 'suppressed' && Number(n) > 0;
-          return (
-            <span
-              key={p.key}
-              title={FEED_METRIC_TOOLTIPS[p.key] || undefined}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '2px 8px',
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 600,
-                color: isAlert ? '#fecaca' : isSupp ? '#fdba74' : (p.tone || '#cbd5e1'),
-                background: isAlert ? 'rgba(127,29,29,0.35)' : isSupp ? 'rgba(124,45,18,0.35)' : 'rgba(15,23,42,0.65)',
-                border: `1px solid ${isAlert ? '#991b1b' : isSupp ? '#9a3412' : '#334155'}`
-              }}
-            >
-              {p.label} {n}
-            </span>
-          );
-        })}
-        {hintList.map((hint) => {
-          const h = feedMetricsHintPresentation(hint);
-          return (
-            <span
-              key={hint}
-              title={h.title}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '2px 8px',
-                borderRadius: 999,
-                fontSize: 10,
-                fontWeight: 700,
-                color: h.color,
-                background: 'rgba(15,23,42,0.65)',
-                border: `1px solid ${h.color}`
-              }}
-            >
-              {h.label}
-            </span>
-          );
-        })}
+    <div style={{ display: 'grid', gap: 3, maxWidth: 280 }} title={view.title}>
+      <div style={{ color: primaryColor, fontSize: 12, fontWeight: 650, lineHeight: 1.35 }}>
+        {view.primary}
       </div>
-      {missingBreakdown ? (
-        <span style={{ color: '#fcd34d', fontSize: 11, lineHeight: 1.35 }}>
-          Processed records are available, but import result breakdown is missing. Check importer metrics.
-        </span>
+      {view.secondary ? (
+        <div style={{ color: secondaryColor, fontSize: 11, lineHeight: 1.35 }}>
+          {view.secondary}
+        </div>
       ) : null}
     </div>
   );
@@ -3609,21 +3635,27 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
               <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.total_feeds}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Enabled Feeds</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{summary.enabled_feeds ?? summary.active_feeds}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Healthy</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{summary.healthy_feeds ?? 0}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Failing Feeds</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: summary.failing_feeds > 0 ? '#fca5a5' : '#e2e8f0' }}>{summary.failing_feeds}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Needs Attention</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: (summary.needs_attention_feeds ?? 0) > 0 ? '#fcd34d' : '#e2e8f0' }}>{summary.needs_attention_feeds ?? 0}</div>
             </div>
             <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run Processed</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summary.last_run_processed_total}</div>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>Running / Queued</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: (summary.running_queued_feeds ?? 0) > 0 ? '#93c5fd' : '#e2e8f0' }}>{summary.running_queued_feeds ?? 0}</div>
             </div>
-            <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
-              <div style={{ fontSize: 11, color: '#94a3b8' }}>Last Run New</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#93c5fd' }}>{summary.last_run_new_total ?? summary.last_run_inserted_total}</div>
-            </div>
+            {summary.changes_24h?.available ? (
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Last 24h Changes</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginTop: 6, lineHeight: 1.35 }}>
+                  {Number(summary.changes_24h.new || 0).toLocaleString()} new
+                  <span style={{ color: '#64748b', fontWeight: 500 }}> · </span>
+                  {Number(summary.changes_24h.updated || 0).toLocaleString()} updated
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -3631,31 +3663,23 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
           <div className="integrations-feeds-table-scroll">
             <table className="ioc-table integrations-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
               <colgroup>
-                <col className="integrations-feeds-col-state" />
                 <col className="integrations-feeds-col-feed" />
+                <col className="integrations-feeds-col-state" />
                 <col className="integrations-feeds-col-health" />
-                <col className="integrations-feeds-col-schedule" />
-                <col className="integrations-feeds-col-confidence" />
-                <col className="integrations-feeds-col-expiration" />
-                <col className="integrations-feeds-col-last-success" />
+                <col className="integrations-feeds-col-last-run" />
                 <col className="integrations-feeds-col-metrics" />
-                <col className="integrations-feeds-col-error" />
                 <col className="integrations-feeds-col-next-run" />
                 <col className="integrations-feeds-col-action" />
               </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
-                  <th>State</th>
                   <th>Feed</th>
+                  <th>State</th>
                   <th>Health</th>
-                  <th>Schedule</th>
-                  <th>Confidence</th>
-                  <th>Expiration</th>
-                  <th>Last Success</th>
-                  <th>Last Run Metrics</th>
-                  <th>Last Error</th>
+                  <th>Last Run</th>
+                  <th>Last Result</th>
                   <th>Next Run</th>
-                  <th>Action</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -3664,19 +3688,14 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                   const isArchived = Boolean(i.archived_at);
                   const purgeActive = Boolean(i.purge_active);
                   const canRunNow = isActive && !isArchived && !purgeActive;
-                  const lastErr = String(i.last_error || '').trim();
                   const health = feedHealthPresentation(i);
-                  const confidence = feedConfidencePresentation(i.default_confidence);
                   const state = isArchived
                     ? { label: 'Archived', color: '#cbd5e1', bg: 'rgba(100,116,139,0.18)', border: '#64748b' }
                     : feedStatePresentation(isActive);
+                  const lastRunCell = formatFeedLastRunCell(i);
+                  const nextRunCell = formatFeedNextRunCell(i, canRunNow);
                   return (
                     <tr key={i.key} style={{ borderBottom: '1px solid #1e293b', opacity: isActive && !isArchived ? 1 : 0.78 }}>
-                      <td>
-                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}`, whiteSpace: 'nowrap' }}>
-                          {state.label}
-                        </span>
-                      </td>
                       <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>
                         <span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, ...sourceColorBadgeStyle(i.color || DEFAULT_SOURCE_COLOR) }}>{i.name}</span>
                         {i.purge_status_label ? (
@@ -3688,43 +3707,29 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                         ) : null}
                       </td>
                       <td>
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}`, whiteSpace: 'nowrap' }}>
+                          {state.label}
+                        </span>
+                      </td>
+                      <td>
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: health.color, background: health.bg, border: `1px solid ${health.border}` }}>
                           {health.label}
                         </span>
+                        {health.runtimeLabel ? (
+                          <div style={{ marginTop: 4, color: '#93c5fd', fontSize: 10, fontWeight: 600 }}>{health.runtimeLabel}</div>
+                        ) : null}
                         {i.reconciliation_warning ? (
-                          <div style={{ marginTop: 4, maxWidth: 150, color: i.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#fcd34d', fontSize: 10, lineHeight: 1.35 }}>
+                          <div style={{ marginTop: 4, maxWidth: 160, color: i.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#fcd34d', fontSize: 10, lineHeight: 1.35 }}>
                             {i.reconciliation_warning}
                           </div>
                         ) : null}
                       </td>
-                      <td>
-                        <span style={{ fontSize: 11, color: isActive ? '#cbd5e1' : '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {formatFeedScheduleLabel(i.schedule)}
-                        </span>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }} title={lastRunCell.title}>
+                        {lastRunCell.primary}
                       </td>
-                      <td>
-                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: confidence.color, background: confidence.bg, border: `1px solid ${confidence.border}`, whiteSpace: 'nowrap' }}>
-                          {confidence.label}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 11, color: '#cbd5e1', whiteSpace: 'nowrap' }}>{i.expiration_summary ?? 'Disabled'}</td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>
-                        {i.key === 'usom-trcert' ? (
-                          <>
-                            <div>Incremental: {formatUserDateTime(i.last_incremental_success_at)}</div>
-                            <div style={{ marginTop: 3, color: i.reconciliation_health_state === 'degraded' ? '#fca5a5' : '#94a3b8' }}>Full: {formatUserDateTime(i.last_full_reconciliation_success_at)}</div>
-                          </>
-                        ) : formatUserDateTime(i.last_success_at || (String(i.last_status || i.status).toLowerCase() === 'success' ? i.last_finished_at : null))}
-                      </td>
-                      <td><LastRunMetricsCell metrics={i.last_run_metrics} hints={i.metrics_hints} /></td>
-                      <td style={{ maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: lastErr ? '#fca5a5' : '#64748b', fontSize: 11 }} title={lastErr || undefined}>{lastErr ? truncateFeedError(lastErr) : '-'}</td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>
-                        {canRunNow && i.key === 'usom-trcert' ? (
-                          <>
-                            <div>Incremental: {formatUserDateTime(i.next_incremental_run_at || i.next_run_at)}</div>
-                            <div style={{ marginTop: 3 }}>Full: {formatUserDateTime(i.next_full_reconciliation_run_at)}</div>
-                          </>
-                        ) : (canRunNow ? formatUserDateTime(i.next_run_at) : '-')}
+                      <td><LastRunMetricsCell feed={i} /></td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }} title={nextRunCell.title}>
+                        {nextRunCell.primary}
                       </td>
                       <td className="integrations-feeds-action-cell">
                         <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
@@ -3746,7 +3751,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                     </tr>
                   );
                 }) : (
-                  <tr><td colSpan={11} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
+                  <tr><td colSpan={7} style={{ color: '#94a3b8', padding: 12 }}>No feeds found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -14892,20 +14897,16 @@ function App() {
         }
         .integrations-feeds-table {
           width: 100%;
-          min-width: 1320px;
+          min-width: 760px;
           table-layout: auto;
         }
         .integrations-feeds-table .integrations-feeds-col-state { min-width: 88px; width: 88px; }
-        .integrations-feeds-table .integrations-feeds-col-feed { min-width: 200px; }
-        .integrations-feeds-table .integrations-feeds-col-health { min-width: 92px; width: 92px; }
-        .integrations-feeds-table .integrations-feeds-col-schedule { min-width: 110px; }
-        .integrations-feeds-table .integrations-feeds-col-confidence { min-width: 104px; }
-        .integrations-feeds-table .integrations-feeds-col-expiration { min-width: 120px; }
-        .integrations-feeds-table .integrations-feeds-col-last-success { min-width: 130px; }
-        .integrations-feeds-table .integrations-feeds-col-metrics { min-width: 280px; }
-        .integrations-feeds-table .integrations-feeds-col-error { min-width: 120px; }
-        .integrations-feeds-table .integrations-feeds-col-next-run { min-width: 120px; }
-        .integrations-feeds-table .integrations-feeds-col-action { min-width: 96px; width: 96px; }
+        .integrations-feeds-table .integrations-feeds-col-feed { min-width: 180px; }
+        .integrations-feeds-table .integrations-feeds-col-health { min-width: 100px; width: 100px; }
+        .integrations-feeds-table .integrations-feeds-col-last-run { min-width: 130px; }
+        .integrations-feeds-table .integrations-feeds-col-metrics { min-width: 220px; }
+        .integrations-feeds-table .integrations-feeds-col-next-run { min-width: 130px; }
+        .integrations-feeds-table .integrations-feeds-col-action { min-width: 110px; width: 110px; }
         .integrations-feeds-table .integrations-feeds-feed-name {
           word-break: normal;
           overflow-wrap: normal;

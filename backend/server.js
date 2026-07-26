@@ -81,6 +81,12 @@ import {
 import { parseActionReason } from './lib/reasonValidation.js';
 import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
+import {
+  resolveFeedHealthState,
+  resolveFeedRuntimeState,
+  pickHealthStatus
+} from './lib/feedHealth.js';
+import { normalizeLastRunResult } from './lib/feedLastRunResult.js';
 import { assertCustomFeedSettingsAllowed } from './lib/customThreatFeedAccess.js';
 import { normalizeRdapTarget } from './lib/domainRoot.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
@@ -611,7 +617,8 @@ const FEED_JOB_TYPE_BY_KEY = {
   'urlhaus-abusech': 'urlhaus_import',
   'threatfox-abusech': 'threatfox_import',
   'malwarebazaar-abusech': 'malwarebazaar_import',
-  'phishtank-opendnsrr': 'phishtank_import'
+  'phishtank-opendnsrr': 'phishtank_import',
+  'alienvault-otx': 'alienvault_otx_import'
 };
 
 function integrationsTimingLog(enabled, label, startMs) {
@@ -721,18 +728,6 @@ function flatMetricsFromLastRun(lastRunMetrics) {
   };
 }
 
-function resolveFeedHealthState(feedActive, lastStatus, consecutiveFailures, metricsHints = []) {
-  if (feedActive === false) return 'disabled';
-  const st = String(lastStatus || '').toLowerCase();
-  if (st === 'failed' || st === 'fail') return 'failed';
-  if (Array.isArray(metricsHints) && metricsHints.includes('high_failed')) return 'warning';
-  if (Number(consecutiveFailures || 0) > 0) return 'warning';
-  if (st === 'running' || st === 'queued') return 'warning';
-  if (st === 'success') return 'success';
-  if (st === 'never') return 'warning';
-  return 'warning';
-}
-
 function pickRunMetrics(row) {
   const m = buildLastRunMetrics(row);
   return flatMetricsFromLastRun(m);
@@ -750,12 +745,28 @@ function computeConsecutiveFailures(runs, jobType) {
   return count;
 }
 
-function buildIntegrationHealthSummary(integrations) {
+function buildIntegrationHealthSummary(integrations, changes24h = null) {
   const feedRows = (integrations || []).filter((i) => i.key !== 'asn_enrichment');
   const activeFeeds = feedRows.filter((i) => i.active !== false);
-  const failingFeeds = feedRows.filter((i) => {
-    const st = String(i.status || i.last_status || '').toLowerCase();
+  const healthyFeeds = feedRows.filter((i) => {
+    if (i.active === false) return false;
     const health = String(i.health_state || '').toLowerCase();
+    return health === 'success';
+  });
+  const needsAttentionFeeds = feedRows.filter((i) => {
+    if (i.active === false) return false;
+    const health = String(i.health_state || '').toLowerCase();
+    return health === 'warning' || health === 'failed' || health === 'degraded';
+  });
+  const runningQueuedFeeds = feedRows.filter((i) => {
+    const runtime = String(i.runtime_state || '').toLowerCase();
+    const st = String(i.status || i.last_status || '').toLowerCase();
+    return runtime === 'running' || runtime === 'queued' || st === 'running' || st === 'queued';
+  });
+  // Legacy fields retained for older clients.
+  const failingFeeds = needsAttentionFeeds.filter((i) => {
+    const health = String(i.health_state || '').toLowerCase();
+    const st = String(i.status || i.last_status || '').toLowerCase();
     return st === 'failed' || st === 'fail' || health === 'failed' || health === 'degraded' || Number(i.consecutive_failures || 0) > 0;
   });
   const successfulFeeds24h = feedRows.filter((i) => {
@@ -767,17 +778,32 @@ function buildIntegrationHealthSummary(integrations) {
   const lastRunInsertedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.inserted ?? i.last_records_inserted), 0);
   const lastRunProcessedTotal = feedRows.reduce((acc, i) => acc + metricInt(i.last_run_metrics?.processed ?? i.last_records_processed), 0);
 
-  return {
+  const summary = {
     total_feeds: feedRows.length,
     active_feeds: activeFeeds.length,
     enabled_feeds: activeFeeds.length,
     inactive_feeds: feedRows.length - activeFeeds.length,
+    healthy_feeds: healthyFeeds.length,
+    needs_attention_feeds: needsAttentionFeeds.length,
+    running_queued_feeds: runningQueuedFeeds.length,
     failing_feeds: failingFeeds.length,
     successful_feeds_24h: successfulFeeds24h.length,
     last_run_inserted_total: lastRunInsertedTotal,
     last_run_new_total: lastRunInsertedTotal,
     last_run_processed_total: lastRunProcessedTotal
   };
+
+  if (changes24h && changes24h.available) {
+    summary.changes_24h = {
+      available: true,
+      new: metricInt(changes24h.new),
+      updated: metricInt(changes24h.updated)
+    };
+  } else {
+    summary.changes_24h = { available: false, new: null, updated: null };
+  }
+
+  return summary;
 }
 
 function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey) {
@@ -825,7 +851,8 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
       expiration_summary,
       status: asnLastUpdatedAt ? 'success' : 'never',
       last_status: asnLastUpdatedAt ? 'success' : 'never',
-      health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'warning') : 'disabled',
+      health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'never') : 'disabled',
+      runtime_state: null,
       last_run_at: asnLastUpdatedAt || null,
       last_started_at: asnLastUpdatedAt || null,
       last_finished_at: null,
@@ -833,17 +860,45 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
       last_error: null,
       consecutive_failures: 0,
       last_run_metrics: lastRunMetrics,
+      last_result: normalizeLastRunResult(null, {
+        status: asnLastUpdatedAt ? 'success' : 'never',
+        lastRunMetrics
+      }),
       ...runMetrics,
       total_records: null
     };
   }
 
-  const lastStatus = lr?.status || lq?.status || 'never';
-  const lastError = (lastStatus === 'failed' || lastStatus === 'fail')
+  const rawLastStatus = lr?.status || lq?.status || 'never';
+  const runtimeState = resolveFeedRuntimeState(rawLastStatus);
+  const healthStatus = pickHealthStatus(
+    lr || lq || { status: 'never' },
+    lastSuccess
+  );
+  // Prefer terminal status for display when in-flight; keep raw status on status field.
+  const lastStatus = rawLastStatus;
+  const lastError = (String(healthStatus) === 'failed' || String(healthStatus) === 'fail'
+    || String(rawLastStatus) === 'failed' || String(rawLastStatus) === 'fail')
     ? (lr?.error_message || lq?.error_message || null)
     : null;
   const consecutive = consecutiveFailures.get(jobType) || 0;
-  const metricsHints = buildFeedMetricsHints(lastRunMetrics);
+  const metricsHints = buildFeedMetricsHints(lastRunMetrics, { runDetails: lr?.run_details || null });
+  const healthState = resolveFeedHealthState(
+    feedActive,
+    healthStatus,
+    consecutive,
+    metricsHints,
+    { runDetails: lr?.run_details || null }
+  );
+  const lastResult = normalizeLastRunResult(metricsRow, {
+    status: lastStatus,
+    jobType,
+    errorMessage: lastError,
+    startedAt: lr?.started_at || lq?.started_at || null,
+    finishedAt: lr?.finished_at || lq?.finished_at || null,
+    lastRunMetrics,
+    runDetails: lr?.run_details || null
+  });
 
   return {
     ...feed,
@@ -856,15 +911,21 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
     purge_active: purgeActive,
     status: lastStatus,
     last_status: lastStatus,
-    health_state: resolveFeedHealthState(feedActive, lastStatus, consecutive, metricsHints),
+    health_state: healthState,
+    runtime_state: runtimeState,
     last_run_at: lr?.finished_at || lr?.started_at || lq?.finished_at || lq?.started_at || lq?.queued_at || null,
     last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,
     last_finished_at: lr?.finished_at || lq?.finished_at || null,
-    last_success_at: lastSuccess?.finished_at || lastSuccess?.started_at || (lastStatus === 'success' ? (lr?.finished_at || lr?.started_at || null) : null),
+    last_success_at: lastSuccess?.finished_at || lastSuccess?.started_at || (
+      ['success', 'skipped', 'skipped_unchanged'].includes(String(lastStatus).toLowerCase())
+        ? (lr?.finished_at || lr?.started_at || null)
+        : null
+    ),
     last_error: lastError,
     consecutive_failures: consecutive,
     last_run_metrics: lastRunMetrics,
     last_run_details: lr?.run_details || null,
+    last_result: lastResult,
     metrics_hints: metricsHints,
     ...runMetrics,
     total_records: runMetrics.last_records_processed
@@ -1053,7 +1114,7 @@ app.get('/api/integrations', async (req, res) => {
         job_type, status, started_at, finished_at
       FROM integration_runs
       WHERE job_type = ANY($1::text[])
-        AND status = 'success'
+        AND status IN ('success', 'skipped_unchanged', 'skipped')
       ORDER BY job_type, started_at DESC
     `;
 
@@ -1149,8 +1210,18 @@ app.get('/api/integrations', async (req, res) => {
       ORDER BY integration_key, COALESCE(started_at, queued_at) DESC
     `;
 
+    const changes24hQ = `
+      SELECT
+        COALESCE(SUM(records_inserted), 0)::bigint AS new_count,
+        COALESCE(SUM(records_updated), 0)::bigint AS updated_count
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+        AND status IN ('success', 'skipped_unchanged', 'skipped')
+        AND finished_at >= NOW() - INTERVAL '24 hours'
+    `;
+
     const latestRunStart = Date.now();
-    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, usomRunsByModeRes, usomSuccessRunsByModeRes] = await Promise.all([
+    const [latestRunsRes, lastSuccessRunsRes, recentFailuresRes, latestQueueRes, latestPurgeRes, asnRes, usomRunsByModeRes, usomSuccessRunsByModeRes, changes24hRes] = await Promise.all([
       jobTypes.length
         ? queryIntegrationsMetaWithTimeout(pool.query(latestRunsQ, [jobTypes]))
         : Promise.resolve({ rows: [] }),
@@ -1174,7 +1245,10 @@ app.get('/api/integrations', async (req, res) => {
         : Promise.resolve({ rows: [] }),
       feedKeys.includes('usom-trcert')
         ? queryIntegrationsMetaWithTimeout(pool.query(usomSuccessRunsByModeQ))
-        : Promise.resolve({ rows: [] })
+        : Promise.resolve({ rows: [] }),
+      jobTypes.length
+        ? queryIntegrationsMetaWithTimeout(pool.query(changes24hQ, [jobTypes]), [{ new_count: null, updated_count: null }])
+        : Promise.resolve({ rows: [{ new_count: null, updated_count: null }] })
     ]);
     integrationsTimingLog(timingEnabled, 'latest run query', latestRunStart);
 
@@ -1188,6 +1262,14 @@ app.get('/api/integrations', async (req, res) => {
     const latestUsomByMode = new Map(usomRunsByModeRes.rows.map((r) => [r.run_mode, r]));
     const lastSuccessfulUsomByMode = new Map(usomSuccessRunsByModeRes.rows.map((r) => [r.run_mode, r]));
     const asnLastUpdatedAt = asnRes.rows[0]?.last_updated_at || null;
+    const changes24hRow = changes24hRes.rows[0] || {};
+    const changes24h = (changes24hRow.new_count != null || changes24hRow.updated_count != null)
+      ? {
+          available: true,
+          new: Number(changes24hRow.new_count || 0),
+          updated: Number(changes24hRow.updated_count || 0)
+        }
+      : { available: false, new: null, updated: null };
 
     const integrations = feedsRes.rows.map((feed) => mergeUsomReconciliationFields(
       mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey),
@@ -1195,7 +1277,7 @@ app.get('/api/integrations', async (req, res) => {
       lastSuccessfulUsomByMode,
       now
     ));
-    const healthSummary = buildIntegrationHealthSummary(integrations);
+    const healthSummary = buildIntegrationHealthSummary(integrations, changes24h);
 
     let queue = {
       counts: { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 },

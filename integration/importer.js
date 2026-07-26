@@ -2139,7 +2139,8 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     return;
   }
   if (insertResult === 'unchanged') {
-    metrics.noteSkipped();
+    // Same-source content unchanged — not a reject.
+    metrics.noteUnchanged();
     return;
   }
   // 'duplicate' — existing IOC from same/other source; membership + evidence already synced.
@@ -2175,12 +2176,9 @@ export async function runAlienvaultOtxImport(options = {}) {
 
       const apiKey = await resolveOtxApiKey(client, config.alienvaultOtxApiKey);
       if (!apiKey) {
-        await finalizeIntegrationRun(client, runId, metrics);
-        return withSuppressionStats(
-          { ok: true, runId, skipped: true, reason: ALIENVAULT_OTX_AUTH_REQUIRED_MSG },
-          suppressionStats,
-          metrics
-        );
+        await failIntegrationRun(client, runId, ALIENVAULT_OTX_AUTH_REQUIRED_MSG, metrics);
+        const err = new Error(ALIENVAULT_OTX_AUTH_REQUIRED_MSG);
+        throw err;
       }
 
       // Cursor: only pull pulses modified strictly after the last successful run.
@@ -2267,10 +2265,13 @@ export async function runAlienvaultOtxImport(options = {}) {
       );
 
       throwIfAborted(signal);
-      await finalizeIntegrationRun(client, runId, metrics);
+      await finalizeIntegrationRun(client, runId, metrics, 'success', {
+        truncated: Boolean(walkStats.truncated),
+        summary
+      });
       logImportSuppressionSummary('alienvault_otx_import', runId, suppressionStats, metrics.toJSON());
       console.log(
-        `[integration-import] job=alienvault_otx_import runId=${runId} pages=${walkStats.pages} pulses=${walkStats.fetchedPulses} fetched_indicators=${fetchedIndicators} inserted=${metrics.records_inserted} updated=${metrics.records_updated} duplicate=${metrics.records_duplicate} unsupported=${unsupportedIndicators} truncated=${walkStats.truncated} is_initial_run=${isInitialRun} cursor_before=${cursorBefore || '-'} cursor_after=${cursorAfter}`
+        `[integration-import] job=alienvault_otx_import runId=${runId} pages=${walkStats.pages} pulses=${walkStats.fetchedPulses} fetched_indicators=${fetchedIndicators} inserted=${metrics.records_inserted} updated=${metrics.records_updated} duplicate=${metrics.records_duplicate} unchanged=${metrics.records_unchanged} unsupported=${unsupportedIndicators} truncated=${walkStats.truncated} is_initial_run=${isInitialRun} cursor_before=${cursorBefore || '-'} cursor_after=${cursorAfter}`
       );
       return withSuppressionStats({ ok: true, runId, summary }, suppressionStats, metrics);
     });

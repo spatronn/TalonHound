@@ -142,18 +142,19 @@ describe('computeThreatFoxProviderFingerprint', () => {
 // ---------------------------------------------------------------------------
 
 describe('createImportMetrics noteUnchanged', () => {
-  it('increments both records_unchanged and records_skipped', () => {
+  it('increments records_unchanged without bumping skipped', () => {
     const m = createImportMetrics();
     m.noteUnchanged();
     assert.equal(m.records_unchanged, 1);
-    assert.equal(m.records_skipped, 1);
+    assert.equal(m.records_skipped, 0);
+    assert.equal(m.records_duplicate, 1, 'deprecated duplicate alias stays in sync');
   });
 
   it('noteUnchanged(3) increments by 3', () => {
     const m = createImportMetrics();
     m.noteUnchanged(3);
     assert.equal(m.records_unchanged, 3);
-    assert.equal(m.records_skipped, 3);
+    assert.equal(m.records_skipped, 0);
   });
 
   it('records_unchanged appears in toJSON()', () => {
@@ -161,7 +162,8 @@ describe('createImportMetrics noteUnchanged', () => {
     m.noteUnchanged(2);
     const json = m.toJSON();
     assert.equal(json.records_unchanged, 2);
-    assert.equal(json.records_skipped, 2);
+    assert.equal(json.records_skipped, 0);
+    assert.equal(json.records_duplicate, 2);
   });
 
   it('merge() propagates records_unchanged', () => {
@@ -170,21 +172,22 @@ describe('createImportMetrics noteUnchanged', () => {
     const b = createImportMetrics();
     b.merge(a);
     assert.equal(b.records_unchanged, 5);
-    assert.equal(b.records_skipped, 5);
+    assert.equal(b.records_skipped, 0);
   });
 
-  it('noteUnchanged contributes to recordsProcessed via records_skipped', () => {
+  it('noteUnchanged contributes to recordsProcessed via unchanged', () => {
     const m = createImportMetrics();
     m.noteUnchanged(2);
     assert.equal(m.recordsProcessed(), 2);
   });
 
-  it('noteUnchanged does not double-count in recordsProcessed', () => {
+  it('noteUnchanged does not double-count with noteSkipped', () => {
     const m = createImportMetrics();
     m.noteUnchanged(1);
     m.noteSkipped(1);
-    // records_skipped = 2, records_unchanged = 1; recordsProcessed = 2 (not 3)
+    // unchanged=1, skipped=1 → processed=2
     assert.equal(m.recordsProcessed(), 2);
     assert.equal(m.records_unchanged, 1);
+    assert.equal(m.records_skipped, 1);
   });
 });

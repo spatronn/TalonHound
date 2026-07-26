@@ -18,15 +18,20 @@ export function createImportMetrics() {
       this.records_updated += 1;
     },
     noteDuplicate() {
+      // Deprecated writer path — same semantic as unchanged (already-known / no write).
       this.records_duplicate += 1;
+      this.records_unchanged += 1;
     },
     noteSkipped(n = 1) {
       this.records_skipped += Math.max(0, Number(n) || 0);
     },
     noteUnchanged(n = 1) {
+      // Unchanged = seen again with identical content. Do NOT bump records_skipped;
+      // skipped is reserved for rejected / invalid / unsupported / filtered rows.
       const count = Math.max(0, Number(n) || 0);
       this.records_unchanged += count;
-      this.records_skipped += count;
+      // Keep deprecated duplicate alias in sync for writers that still read it.
+      this.records_duplicate += count;
     },
     noteFailed(n = 1) {
       this.records_failed += Math.max(0, Number(n) || 0);
@@ -45,10 +50,11 @@ export function createImportMetrics() {
       this.records_failed += Number(other.records_failed || 0);
     },
     recordsProcessed() {
+      // Canonical unchanged covers the deprecated duplicate bucket (kept in sync by writers).
       return (
         this.records_inserted
         + this.records_updated
-        + this.records_duplicate
+        + this.records_unchanged
         + this.records_skipped
         + this.records_suppressed
         + this.records_failed
@@ -81,11 +87,12 @@ export async function finalizeIntegrationRun(client, runId, metrics, status = 's
          records_inserted = $4,
          records_updated = $5,
          records_duplicate = $6,
-         records_skipped = $7,
-         records_suppressed = $8,
-         records_failed = $9,
+         records_unchanged = $7,
+         records_skipped = $8,
+         records_suppressed = $9,
+         records_failed = $10,
          error_message = NULL,
-         run_details = COALESCE($10::jsonb, run_details)
+         run_details = COALESCE($11::jsonb, run_details)
      WHERE id = $1`,
     [
       runId,
@@ -94,6 +101,7 @@ export async function finalizeIntegrationRun(client, runId, metrics, status = 's
       Number(m.records_inserted || 0),
       Number(m.records_updated || 0),
       Number(m.records_duplicate || 0),
+      Number(m.records_unchanged || 0),
       Number(m.records_skipped || 0),
       Number(m.records_suppressed || 0),
       Number(m.records_failed || 0),
@@ -114,10 +122,11 @@ export async function failIntegrationRun(client, runId, errorMessage, metrics = 
          records_inserted = $4,
          records_updated = $5,
          records_duplicate = $6,
-         records_skipped = $7,
-         records_suppressed = $8,
-         records_failed = $9,
-         run_details = COALESCE($10::jsonb, run_details)
+         records_unchanged = $7,
+         records_skipped = $8,
+         records_suppressed = $9,
+         records_failed = $10,
+         run_details = COALESCE($11::jsonb, run_details)
      WHERE id = $1`,
     [
       runId,
@@ -126,6 +135,7 @@ export async function failIntegrationRun(client, runId, errorMessage, metrics = 
       Number(m.records_inserted || 0),
       Number(m.records_updated || 0),
       Number(m.records_duplicate || 0),
+      Number(m.records_unchanged || 0),
       Number(m.records_skipped || 0),
       Number(m.records_suppressed || 0),
       Number(m.records_failed || 0),
