@@ -67,17 +67,61 @@ Store production archives **outside** the production server when possible (USB, 
 | `BACKUP_MAX_CONCURRENT` | `1` | Only one backup at a time |
 | `BACKUP_ENCRYPTION_ENABLED` | `false` | AES-256-GCM envelope |
 | `BACKUP_ENCRYPTION_KEY_FILE` | _(empty)_ | Path to 32-byte or 64-hex key file |
+| `BACKUP_STALE_JOB_TIMEOUT_MINUTES` | `60` | Interrupt queued/running/verifying with no progress |
+| `BACKUP_ORPHAN_QUEUED_MINUTES` | `5` | Fail `queued` rows that never received a BullMQ `job_id` |
 
-Cron is evaluated in the **schedule timezone** (not silently as UTC). Example override for Istanbul Sundays at midnight:
+### Default product schedule
+
+- Cron: **Sunday 00:00**
+- Timezone: **UTC** (when `BACKUP_CRON_TIMEZONE` is unset)
+- In Europe/Istanbul (EEST, UTC+3) that is **Sunday 03:00** local time
+- The Admin UI shows the cron summary in the schedule timezone and, when your user timezone differs, the next fire in your timezone
+
+To run wall-clock Sunday 03:00 in Istanbul instead:
 
 ```bash
-BACKUP_CRON=0 0 * * 0
+BACKUP_CRON=0 3 * * 0
 BACKUP_CRON_TIMEZONE=Europe/Istanbul
 ```
+
+Scheduled backups are enqueued by the **`backup-worker`** process (30s ticker), not by the API container. Both `backend` and `backup-worker` must share the same Redis and `BACKUP_QUEUE_NAME` (`system-backup`).
 
 Weekly default implies a worst-case **RPO of about 7 days**. Take a **manual backup** before important deployments or migrations.
 
 Retention never deletes active (`queued`/`running`/`verifying`) backups. Deletion is audited.
+
+### Troubleshooting a stuck `queued` backup
+
+Symptoms: History shows `queued`, size `0 B`, Create Backup disabled / “Backup running…”, worker may log enqueue errors.
+
+1. Confirm `backup-worker` is up: `docker compose ps backup-worker`
+2. Read logs: `docker compose logs --since 2h backup-worker`
+3. Look for `Custom Id cannot contain :`, `ENQUEUE_FAILED`, or `schedule tick failed`
+4. Confirm Redis queue (auth from `.env`): waiting/active lists for `bull:system-backup:*`
+5. DB check:
+
+```sql
+SELECT backup_id, status, created_at, started_at, job_id, error_code
+FROM system_backups
+WHERE status IN ('queued', 'running', 'verifying')
+ORDER BY created_at DESC;
+```
+
+6. If `status=queued` and `job_id IS NULL` for more than a few minutes, the row is an orphan (enqueue never succeeded). After deploying the colon-safe jobId fix, either wait for the worker reconciler (`BACKUP_ORPHAN_QUEUED_MINUTES`, default 5) or mark failed with operator approval:
+
+```sql
+UPDATE system_backups
+SET status = 'failed',
+    error_code = 'ENQUEUE_FAILED',
+    error_message = 'BullMQ custom jobId contained colon (scheduled-*-T*:*); enqueue never succeeded',
+    updated_at = NOW()
+WHERE backup_id = '<backup_id>'
+  AND status = 'queued'
+  AND job_id IS NULL;
+```
+
+7. Restart worker after fixing code: `docker compose up -d --force-recreate backup-worker`
+8. Create a manual backup from the UI to verify the pipeline.
 
 ## Encryption
 

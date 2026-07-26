@@ -82,6 +82,27 @@ export async function countActiveBackups(db) {
   return rows[0]?.n || 0;
 }
 
+/**
+ * Backups that should block a new enqueue.
+ * Excludes orphan queued rows (no job_id) older than orphanQueuedMinutes —
+ * those are left for reconciler and must not lock Create Backup forever.
+ */
+export async function countBlockingBackups(db, orphanQueuedMinutes = 5) {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS n FROM system_backups
+     WHERE status IN ('running', 'verifying')
+        OR (
+          status = 'queued'
+          AND (
+            job_id IS NOT NULL
+            OR created_at >= NOW() - ($1::text || ' minutes')::interval
+          )
+        )`,
+    [String(orphanQueuedMinutes)]
+  );
+  return rows[0]?.n || 0;
+}
+
 export async function setJobId(db, id, jobId) {
   await db.query(
     `UPDATE system_backups SET job_id = $2, updated_at = NOW() WHERE id = $1`,
@@ -202,17 +223,37 @@ export async function markVerifyResult(db, id, { ok, error = null, checksum = nu
   return rows[0];
 }
 
-export async function interruptStale(db, staleMinutes = 180) {
+export async function interruptStale(db, staleMinutes = 60) {
   const { rows } = await db.query(
     `UPDATE system_backups
         SET status = 'interrupted',
             error_code = 'INTERRUPTED',
-            error_message = 'Backup interrupted by process restart or stale lock',
+            error_message = 'Backup interrupted: exceeded stale job timeout without progress',
             updated_at = NOW()
       WHERE status IN ('queued', 'running', 'verifying')
         AND updated_at < NOW() - ($1::text || ' minutes')::interval
       RETURNING ${SELECT_COLUMNS}`,
     [String(staleMinutes)]
+  );
+  return rows;
+}
+
+/**
+ * Fail orphan queued rows that never received a BullMQ job_id (enqueue failed after INSERT).
+ */
+export async function failOrphanQueued(db, olderThanMinutes = 5) {
+  const { rows } = await db.query(
+    `UPDATE system_backups
+        SET status = 'failed',
+            completed_at = NOW(),
+            error_code = 'ENQUEUE_FAILED',
+            error_message = 'Backup stayed queued without a queue job_id (enqueue likely failed)',
+            updated_at = NOW()
+      WHERE status = 'queued'
+        AND job_id IS NULL
+        AND created_at < NOW() - ($1::text || ' minutes')::interval
+      RETURNING ${SELECT_COLUMNS}`,
+    [String(olderThanMinutes)]
   );
   return rows;
 }

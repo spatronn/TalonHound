@@ -56,6 +56,19 @@ function createMockPool(backups) {
         return { rows: [{ n }], rowCount: 1 };
       }
 
+      if (s.includes("status IN ('running', 'verifying')") && s.includes('COUNT')) {
+        const orphanMin = Number(params[0] || 5);
+        const cutoff = Date.now() - orphanMin * 60_000;
+        const n = [...backups.values()].filter((r) => {
+          if (['running', 'verifying'].includes(r.status)) return true;
+          if (r.status !== 'queued') return false;
+          if (r.job_id) return true;
+          const t = new Date(r.created_at).getTime();
+          return Number.isFinite(t) && t >= cutoff;
+        }).length;
+        return { rows: [{ n }], rowCount: 1 };
+      }
+
       if (s.includes('COUNT(*)::int AS n') && s.includes('system_backups')) {
         const n = [...backups.values()].filter((r) => r.status !== 'deleted').length;
         return { rows: [{ n }], rowCount: 1 };
@@ -111,6 +124,17 @@ function createMockPool(backups) {
         return { rows: [row], rowCount: 1 };
       }
 
+      if (s.includes("SET status = 'failed'")) {
+        const row = backups.get(params[0]);
+        if (!row) return { rows: [], rowCount: 0 };
+        row.status = 'failed';
+        row.completed_at = new Date().toISOString();
+        row.error_code = params[1];
+        row.error_message = params[2];
+        row.updated_at = new Date().toISOString();
+        return { rows: [row], rowCount: 1 };
+      }
+
       if (s.includes('SET verify_status')) {
         const row = backups.get(params[0]);
         if (!row) return { rows: [], rowCount: 0 };
@@ -126,7 +150,7 @@ function createMockPool(backups) {
   };
 }
 
-async function withApp(fn, { user = ADMIN, backupDir } = {}) {
+async function withApp(fn, { user = ADMIN, backupDir, backupQueue } = {}) {
   const dir = backupDir || (await fs.promises.mkdtemp(path.join(os.tmpdir(), 'th-bk-api-')));
   process.env.BACKUP_DIR = dir;
   const backups = new Map();
@@ -139,9 +163,9 @@ async function withApp(fn, { user = ADMIN, backupDir } = {}) {
     next();
   });
   const pool = createMockPool(backups);
-  const backupQueue = { add: async () => ({ id: 'job-1' }) };
+  const queue = backupQueue || { add: async () => ({ id: 'job-1' }) };
   const auditLogService = { auditSuccess: async () => {}, auditFailure: async () => {} };
-  registerBackupRoutes(app, pool, { backupQueue, auditLogService });
+  registerBackupRoutes(app, pool, { backupQueue: queue, auditLogService });
   const server = app.listen(0);
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}`;
@@ -192,6 +216,47 @@ test('concurrent second backup is rejected', async () => {
     row.status = 'running';
     const second = await fetch(`${base}/api/backups`, { method: 'POST', headers: authHeaders(ADMIN) });
     assert.equal(second.status, 409);
+  });
+});
+
+test('enqueue failure marks backup failed (no orphan queued)', async () => {
+  await withApp(async ({ base, backups }) => {
+    const res = await fetch(`${base}/api/backups`, {
+      method: 'POST',
+      headers: authHeaders(ADMIN)
+    });
+    assert.equal(res.status, 500);
+    assert.equal(backups.size, 1);
+    const row = [...backups.values()][0];
+    assert.equal(row.status, 'failed');
+    assert.equal(row.error_code, 'ENQUEUE_FAILED');
+  }, {
+    backupQueue: {
+      add: async () => {
+        throw new Error('Custom Id cannot contain :');
+      }
+    }
+  });
+});
+
+test('status distinguishes running from queued', async () => {
+  await withApp(async ({ base, backups }) => {
+    const id = '00000000-0000-4000-8000-000000000070';
+    backups.set(id, {
+      id,
+      backup_id: 'backup-20260726-000006-orphan',
+      status: 'queued',
+      trigger_type: 'scheduled',
+      job_id: null,
+      created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    });
+    const res = await fetch(`${base}/api/backups/status`, { headers: authHeaders(ADMIN) });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.backup_running, false);
+    assert.equal(body.backup_queued, true);
+    assert.equal(body.backup_stale_queued, true);
   });
 });
 

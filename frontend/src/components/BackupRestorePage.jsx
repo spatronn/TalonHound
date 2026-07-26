@@ -417,10 +417,38 @@ export default function BackupRestorePage({ AppShell, useSession }) {
     return undefined;
   }, [isAdmin, refresh]);
 
-  const hasActive = useMemo(
-    () => Boolean(status?.backup_running) || items.some((r) => ['queued', 'running', 'verifying'].includes(r.status)),
+  const orphanQueuedMs = (status?.orphan_queued_minutes ?? 5) * 60_000;
+
+  const isStaleQueuedRow = useCallback((row) => {
+    if (!row || row.status !== 'queued') return false;
+    const t = new Date(row.created_at || row.updated_at).getTime();
+    return Number.isFinite(t) && Date.now() - t >= orphanQueuedMs;
+  }, [orphanQueuedMs]);
+
+  const hasRunning = useMemo(
+    () => Boolean(status?.backup_running)
+      || items.some((r) => ['running', 'verifying'].includes(r.status)),
     [status, items]
   );
+
+  const hasFreshQueued = useMemo(
+    () => items.some((r) => r.status === 'queued' && !isStaleQueuedRow(r)),
+    [items, isStaleQueuedRow]
+  );
+
+  const hasStaleQueued = useMemo(
+    () => Boolean(status?.backup_stale_queued) || items.some((r) => isStaleQueuedRow(r)),
+    [status, items, isStaleQueuedRow]
+  );
+
+  /** Poll while any in-flight row exists (including stale queued until reconcile). */
+  const hasActive = useMemo(
+    () => hasRunning || hasFreshQueued || items.some((r) => r.status === 'queued'),
+    [hasRunning, hasFreshQueued, items]
+  );
+
+  /** Create allowed when only stale orphans remain (API also ignores them as blockers). */
+  const createBlocked = busy || hasRunning || hasFreshQueued;
 
   useEffect(() => {
     if (!isAdmin || !hasActive) return undefined;
@@ -523,6 +551,10 @@ export default function BackupRestorePage({ AppShell, useSession }) {
   const encryptionOn = Boolean(status?.encryption_enabled);
   const scheduleSummary = status?.schedule_summary || '—';
   const scheduleTz = status?.timezone || 'UTC';
+  const scheduleLocalHint = useMemo(() => {
+    if (!status?.next_scheduled_at || scheduleTz === timezone) return null;
+    return `Next in your timezone (${timezone}): ${formatUserDateTime(status.next_scheduled_at, timezone)}`;
+  }, [status?.next_scheduled_at, scheduleTz, timezone]);
   const storageLabel = status?.storage_provider === 'local' || !status?.storage_provider
     ? 'Local persistent volume'
     : String(status.storage_provider);
@@ -530,6 +562,12 @@ export default function BackupRestorePage({ AppShell, useSession }) {
     `${status?.total_stored ?? items.length} backup${(status?.total_stored ?? items.length) === 1 ? '' : 's'} stored`,
     status?.last_verification?.status ? `verification ${status.last_verification.status}` : null
   ].filter(Boolean).join(' · ');
+
+  const createButtonLabel = hasRunning
+    ? 'Backup running…'
+    : hasFreshQueued
+      ? 'Backup queued…'
+      : 'Create Backup';
 
   return (
     <AppShell>
@@ -544,12 +582,14 @@ export default function BackupRestorePage({ AppShell, useSession }) {
           <button
             type="button"
             className="br-btn br-btn-primary br-btn-lg"
-            disabled={busy || hasActive}
+            disabled={createBlocked}
             onClick={onCreate}
-            title={hasActive ? 'A backup is already running' : 'Create backup'}
+            title={createBlocked
+              ? (hasRunning ? 'A backup is already running' : 'A backup is already queued')
+              : 'Create backup'}
           >
             <span className="br-btn-leading">{Icons.create}</span>
-            {hasActive ? 'Backup running…' : 'Create Backup'}
+            {createButtonLabel}
           </button>
         </div>
 
@@ -561,6 +601,18 @@ export default function BackupRestorePage({ AppShell, useSession }) {
               {' '}
               Backup archives may contain API keys and other sensitive configuration.
               Enable <code>BACKUP_ENCRYPTION_ENABLED</code> and configure <code>BACKUP_ENCRYPTION_KEY_FILE</code>.
+            </div>
+          </div>
+        ) : null}
+
+        {hasStaleQueued ? (
+          <div className="br-banner br-banner-warn" role="status">
+            <span className="br-banner-icon">{Icons.warn}</span>
+            <div>
+              <strong>Backup is queued but has not been picked up by the worker.</strong>
+              {' '}
+              Create Backup is available again; the stale row will be marked failed by the worker reconciler
+              (or ask an operator to clear it). Check <code>backup-worker</code> logs for <code>ENQUEUE_FAILED</code>.
             </div>
           </div>
         ) : null}
@@ -587,10 +639,14 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             <div className="br-policy-item">
               <div className="br-policy-label">Schedule</div>
               <div className="br-policy-value">{scheduleSummary}</div>
+              {scheduleLocalHint ? <div className="br-muted" style={{ marginTop: 4, fontSize: 12 }}>{scheduleLocalHint}</div> : null}
             </div>
             <div className="br-policy-item">
               <div className="br-policy-label">Timezone</div>
               <div className="br-policy-value">{scheduleTz}</div>
+              <div className="br-muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Cron wall-clock in this zone (default Sunday 00:00 UTC ≈ 03:00 Europe/Istanbul in summer).
+              </div>
             </div>
             <div className="br-policy-item">
               <div className="br-policy-label">Retention</div>

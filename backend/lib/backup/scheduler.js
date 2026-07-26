@@ -127,7 +127,12 @@ export function describeBackupSchedule(cron, timeZone = 'UTC') {
   return { summary: `Cron: ${expr || '—'}`, timezone: tz };
 }
 
+/**
+ * UTC minute key for schedule dedupe and BullMQ jobId.
+ * Must not contain ':' — BullMQ rejects custom ids with colons.
+ * @returns {string} e.g. 20260725T0200Z
+ */
 export function minuteKeyUtc(date = new Date()) {
   const d = date instanceof Date ? date : new Date(date);
-  return d.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  return d.toISOString().slice(0, 16).replace(/[-:]/g, '') + 'Z';
 }

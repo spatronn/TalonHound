@@ -81,7 +81,10 @@ describe('backup scheduler', () => {
     assert.equal(d.timezone, 'UTC');
   });
 
-  it('minute key suppresses duplicates', () => {
-    assert.equal(minuteKeyUtc(new Date('2026-07-25T02:00:10Z')), '2026-07-25T02:00');
+  it('minute key suppresses duplicates and is BullMQ-safe (no colon)', () => {
+    const key = minuteKeyUtc(new Date('2026-07-25T02:00:10Z'));
+    assert.equal(key, '20260725T0200Z');
+    assert.equal(key.includes(':'), false);
+    assert.equal(minuteKeyUtc(new Date('2026-07-25T02:00:59Z')), key);
   });
 });

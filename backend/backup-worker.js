@@ -15,9 +15,12 @@ import {
 } from './lib/backup/index.js';
 import {
   interruptAllActive,
-  countActiveBackups,
+  interruptStale,
+  failOrphanQueued,
+  countBlockingBackups,
   createBackupRow,
   setJobId,
+  markFailed,
   getBackupById
 } from './lib/backup/backupStore.js';
 import { generateBackupId } from './lib/backup/ids.js';
@@ -81,6 +84,7 @@ async function processBackupJob(job) {
     console.warn('[backup-worker] job missing backupRowId');
     return;
   }
+  console.log(`[backup-worker] job received id=${job.id} backupRowId=${backupRowId}`);
   const before = await getBackupById(pool, backupRowId);
   if (before) {
     await auditBackup(AUDIT_ACTION.BACKUP_STARTED, before);
@@ -110,31 +114,72 @@ async function maybeEnqueueScheduled() {
   if (!cronMatchesInTimezone(cfg.cron, now, cfg.timezone)) return;
   const key = minuteKeyUtc(now);
   if (lastScheduledMinute === key) return;
-  lastScheduledMinute = key;
 
-  const active = await countActiveBackups(pool);
+  const active = await countBlockingBackups(pool, cfg.orphanQueuedMinutes);
   if (active > 0) {
-    console.log(`[backup-worker] skip scheduled run; active=${active}`);
+    console.log(`[backup-worker] skip scheduled run; blocking_active=${active}`);
     return;
   }
 
   const backupId = generateBackupId();
+  const jobId = `scheduled-${key}`;
+  console.log(`[backup-worker] schedule match cron=${cfg.cron} tz=${cfg.timezone} jobId=${jobId}`);
+
   const row = await createBackupRow(pool, {
     backupId,
     triggerType: 'scheduled',
     createdByEmail: 'system',
     encrypted: cfg.encryptionEnabled
   });
-  const job = await backupQueue.add(
-    'backup',
-    { backupRowId: row.id, backupId },
-    { removeOnComplete: 50, removeOnFail: 100, attempts: 1, jobId: `scheduled-${key}` }
-  );
-  await setJobId(pool, row.id, String(job.id));
-  await auditBackup(AUDIT_ACTION.BACKUP_REQUESTED, row, {
-    extra: { trigger_type: 'scheduled' }
-  });
-  console.log(`[backup-worker] scheduled backup_id=${backupId}`);
+  console.log(`[backup-worker] backup row created backup_id=${backupId} id=${row.id}`);
+
+  try {
+    const job = await backupQueue.add(
+      'backup',
+      { backupRowId: row.id, backupId },
+      { removeOnComplete: 50, removeOnFail: 100, attempts: 1, jobId }
+    );
+    await setJobId(pool, row.id, String(job.id));
+    lastScheduledMinute = key;
+    await auditBackup(AUDIT_ACTION.BACKUP_REQUESTED, row, {
+      extra: { trigger_type: 'scheduled', bullmq_job_id: String(job.id) }
+    });
+    console.log(`[backup-worker] enqueue succeeded backup_id=${backupId} jobId=${job.id}`);
+  } catch (err) {
+    const failed = await markFailed(pool, row.id, {
+      errorCode: 'ENQUEUE_FAILED',
+      errorMessage: err?.message || 'Failed to enqueue scheduled backup'
+    });
+    await auditBackup(AUDIT_ACTION.BACKUP_FAILED, failed || row, {
+      status: 'failed',
+      severity: AUDIT_SEVERITY.WARNING,
+      extra: { error_code: 'ENQUEUE_FAILED', result: 'failed' }
+    });
+    // Allow retry later in the same minute only if enqueue failed before marking lastScheduledMinute
+    console.warn(`[backup-worker] enqueue failed backup_id=${backupId} err=${err?.message}`);
+    throw err;
+  }
+}
+
+async function reconcileStale() {
+  if (stopping) return;
+  const orphans = await failOrphanQueued(pool, cfg.orphanQueuedMinutes);
+  for (const row of orphans) {
+    console.warn(
+      `[backup-worker] reconciler failed orphan queued backup_id=${row.backup_id} age_gt=${cfg.orphanQueuedMinutes}m`
+    );
+    await auditBackup(AUDIT_ACTION.BACKUP_FAILED, row, {
+      status: 'failed',
+      severity: AUDIT_SEVERITY.WARNING,
+      extra: { error_code: row.error_code, result: 'stale_queued' }
+    });
+  }
+  const interrupted = await interruptStale(pool, cfg.staleJobTimeoutMinutes);
+  for (const row of interrupted) {
+    console.warn(
+      `[backup-worker] reconciler interrupted stale backup_id=${row.backup_id} timeout=${cfg.staleJobTimeoutMinutes}m`
+    );
+  }
 }
 
 async function main() {
@@ -169,12 +214,19 @@ async function main() {
     });
   }, 60 * 60 * 1000);
 
+  const reconcileTimer = setInterval(() => {
+    reconcileStale().catch((err) => {
+      console.warn('[backup-worker] reconcile failed:', err.message);
+    });
+  }, 5 * 60 * 1000);
+
   // Initial ticks
   maybeEnqueueScheduled().catch(() => {});
   runRetentionSweep(pool, audit, { logger: console }).catch(() => {});
+  reconcileStale().catch(() => {});
 
   console.log(
-    `[backup-worker] started queue=${BACKUP_QUEUE_NAME} dir=${cfg.backupDir} cron=${cfg.cron} tz=${cfg.timezone} enabled=${cfg.enabled}`
+    `[backup-worker] started queue=${BACKUP_QUEUE_NAME} dir=${cfg.backupDir} cron=${cfg.cron} tz=${cfg.timezone} enabled=${cfg.enabled} stale_timeout_m=${cfg.staleJobTimeoutMinutes} orphan_queued_m=${cfg.orphanQueuedMinutes}`
   );
 
   const shutdown = async (signal) => {
@@ -183,6 +235,7 @@ async function main() {
     console.log(`[backup-worker] shutting down (${signal})`);
     clearInterval(scheduleTimer);
     clearInterval(retentionTimer);
+    clearInterval(reconcileTimer);
     await worker.close();
     await backupQueue.close();
     redis.disconnect();

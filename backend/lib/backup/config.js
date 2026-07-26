@@ -41,7 +41,14 @@ export function getBackupConfig() {
     storageProvider: 'local',
     maxConcurrent: intFromEnv('BACKUP_MAX_CONCURRENT', 1, { min: 1, max: 1 }),
     queueName: String(process.env.BACKUP_QUEUE_NAME || 'system-backup'),
-    staleRunningMinutes: intFromEnv('BACKUP_STALE_RUNNING_MINUTES', 180, { min: 30, max: 24 * 60 }),
+    /** Age after which queued/running/verifying are interrupted (minutes). */
+    staleJobTimeoutMinutes: intFromEnv(
+      'BACKUP_STALE_JOB_TIMEOUT_MINUTES',
+      intFromEnv('BACKUP_STALE_RUNNING_MINUTES', 60, { min: 5, max: 24 * 60 }),
+      { min: 5, max: 24 * 60 }
+    ),
+    /** Orphan queued rows with no BullMQ job_id fail after this many minutes. */
+    orphanQueuedMinutes: intFromEnv('BACKUP_ORPHAN_QUEUED_MINUTES', 5, { min: 1, max: 120 }),
     pgDumpTimeoutMs: intFromEnv('BACKUP_PG_DUMP_TIMEOUT_MS', 2 * 60 * 60 * 1000, { min: 60_000 }),
     db: {
       host: String(process.env.DB_HOST || 'db'),

@@ -24,8 +24,10 @@ import {
   listBackups,
   countBackups,
   countActiveBackups,
+  countBlockingBackups,
   setJobId,
   markDeleted,
+  markFailed,
   markVerifyResult,
   getLastSuccessful,
   sumCompletedArchiveBytes,
@@ -76,7 +78,7 @@ async function enqueueBackup(pool, backupQueue, {
   encrypted
 }) {
   const cfg = getBackupConfig();
-  const active = await countActiveBackups(pool);
+  const active = await countBlockingBackups(pool, cfg.orphanQueuedMinutes);
   assertCanStartBackup(active, cfg.maxConcurrent);
 
   const backupId = generateBackupId();
@@ -89,12 +91,24 @@ async function enqueueBackup(pool, backupQueue, {
   });
 
   if (backupQueue) {
-    const job = await backupQueue.add(
-      'backup',
-      { backupRowId: row.id, backupId },
-      { removeOnComplete: 50, removeOnFail: 100, attempts: 1 }
-    );
-    await setJobId(pool, row.id, String(job.id));
+    try {
+      const job = await backupQueue.add(
+        'backup',
+        { backupRowId: row.id, backupId },
+        { removeOnComplete: 50, removeOnFail: 100, attempts: 1 }
+      );
+      await setJobId(pool, row.id, String(job.id));
+    } catch (err) {
+      const failed = await markFailed(pool, row.id, {
+        errorCode: 'ENQUEUE_FAILED',
+        errorMessage: err?.message || 'Failed to enqueue backup job'
+      });
+      const e = new Error(err?.message || 'Failed to enqueue backup job');
+      e.code = 'ENQUEUE_FAILED';
+      e.status = 500;
+      e.backup = failed || row;
+      throw e;
+    }
   }
 
   return row;
@@ -111,16 +125,26 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
   app.get('/api/backups/status', admin, async (_req, res) => {
     try {
       const cfg = getBackupConfig();
-      const [last, total, active, storageUsed] = await Promise.all([
+      const [last, total, active, storageUsed, itemsPreview] = await Promise.all([
         getLastSuccessful(pool),
         countBackups(pool),
         countActiveBackups(pool),
-        sumCompletedArchiveBytes(pool)
+        sumCompletedArchiveBytes(pool),
+        listBackups(pool, { limit: 20, offset: 0 })
       ]);
       const lastVerify = last
         ? { status: last.verify_status, at: last.verified_at, backup_id: last.backup_id }
         : null;
       const schedule = describeBackupSchedule(cfg.cron, cfg.timezone);
+      const inFlight = itemsPreview.filter((r) => ['queued', 'running', 'verifying'].includes(r.status));
+      const runningOrVerifying = inFlight.filter((r) => ['running', 'verifying'].includes(r.status));
+      const queuedOnly = inFlight.filter((r) => r.status === 'queued');
+      const staleQueuedMs = cfg.orphanQueuedMinutes * 60_000;
+      const now = Date.now();
+      const staleQueued = queuedOnly.filter((r) => {
+        const t = new Date(r.created_at || r.updated_at).getTime();
+        return Number.isFinite(t) && now - t >= staleQueuedMs;
+      });
       return res.json({
         enabled: cfg.enabled,
         cron: cfg.cron,
@@ -131,7 +155,11 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
         storage_provider: cfg.storageProvider || 'local',
         max_concurrent: cfg.maxConcurrent,
         active_backups: active,
-        backup_running: active > 0,
+        /** True only when a job is actually executing (not merely orphan-queued). */
+        backup_running: runningOrVerifying.length > 0,
+        backup_queued: queuedOnly.length > 0,
+        backup_stale_queued: staleQueued.length > 0,
+        orphan_queued_minutes: cfg.orphanQueuedMinutes,
         last_successful: serializeBackup(last),
         next_scheduled_at: cfg.enabled ? nextBackupFireAt(cfg.cron, new Date(), cfg.timezone) : null,
         total_stored: total,
