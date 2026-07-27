@@ -18,13 +18,3 @@ CREATE TABLE IF NOT EXISTS integration_checkpoints (
   last_cursor TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-
-CREATE INDEX IF NOT EXISTS idx_ioc_ips_dedup_lookup
-ON ioc_ips (
-  ip,
-  source_name,
-  confidence,
-  COALESCE(category, ''),
-  COALESCE(source_url, '')
-);
