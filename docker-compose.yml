@@ -282,29 +282,6 @@ services:
       - redis
     restart: unless-stopped
 
-  loadgen:
-    build: ./tools/loadgen
-    container_name: demo-loadgen
-    profiles: ["manual"]
-    environment:
-      - PYTHONUNBUFFERED=1
-      - ENABLED=0
-      - MODE=mixed
-      - EPS=100
-      - DURATION_SECONDS=86400
-      - IOC_INSERT_RATIO=0
-      - REALTIME_RATIO=0.5
-      - RETRO_DELAY_MS=0
-      - STATS_EVERY_SEC=10
-      - IOC_API_BASE=http://backend:3000
-      - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
-      - IOC_SOURCE_NAME=loadgen-smoke
-      - IOC_CONFIDENCE=90
-      - IOC_NOTE=loadgen random ioc
-    depends_on:
-      - backend
-    restart: unless-stopped
-
   frontend:
     build: ./frontend
     container_name: demo-frontend
