@@ -198,7 +198,6 @@ docker compose logs --tail=200
 - Database: PostgreSQL 16
 - Runtime/Orchestration: Docker + Docker Compose
 - Reverse proxy/static serving: Nginx (frontend container)
-- Map rendering: `react-simple-maps` + local lightweight GeoJSON (`frontend/public/world-lite.geojson`)
 
 ### Data sources / integrations
 - IP enrichment (ASN/country): **IPinfo Lite** on-demand via Administration → Enrichment Providers (`ioc_ip_enrichment` table).
@@ -218,7 +217,6 @@ docker compose logs --tail=200
 - IOC source detail view: `/api/ioc/ip/sources`
 - Raw recent IOC feed (Add IOC table): `/api/ioc/ip/recent-raw`
 - Daily/period summary: `/api/ioc/summary/today?day=today|24h|7d|all`
-- Threat map country aggregation: `/api/ioc/map/countries?day=today|24h|7d|all`
 - IOC filters: query/source/confidence/asn/country + subnet search
 
 ## 13) Supported Syslog Parse Formats (IOC Extraction)

@@ -1,0 +1,8 @@
+# Dependencies
+node_modules/
+
+# Local environment (do not commit real secrets; .env.example is tracked)
+.env
+
+# Frontend build output (produced by `vite build` / Docker image build)
+frontend/dist/
