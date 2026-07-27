@@ -36,12 +36,6 @@ export function registerIocDeleteRoute(app, pool, auditLogService, { invalidateD
       await pool.query('DELETE FROM ioc_manual_source_memberships WHERE ioc_item_id = $1', [row.id]).catch(() => {});
       await pool.query('DELETE FROM ioc_items WHERE id = $1', [row.id]);
 
-      await pool.query(
-        `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
-         VALUES ('delete', $1, $2, $3)`,
-        [row.id, row.observable, row.observable_type]
-      ).catch(() => {});
-
       invalidateDetailsCache(row.public_id);
 
       await auditLogService.auditSuccess({

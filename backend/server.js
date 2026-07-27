@@ -676,37 +676,6 @@ app.get('/api/system/status', async (req, res) => {
   }
   payload.integrations = integrations;
 
-  let mapSnapshot;
-  try {
-    const [snapshotRes, stateRes] = await Promise.all([
-      pool.query(`
-        SELECT snapshot_time, total_records, unique_ips, countries
-        FROM dashboard_map_display_snapshot
-        WHERE singleton = TRUE
-        LIMIT 1
-      `),
-      pool.query(`
-        SELECT full_rebuild_pending, last_run_at, snapshot_last_refreshed_at
-        FROM dashboard_map_job_state
-        WHERE singleton = TRUE
-        LIMIT 1
-      `)
-    ]);
-    const snapshot = snapshotRes.rows[0] || null;
-    const state = stateRes.rows[0] || null;
-    mapSnapshot = {
-      total_records: Number(snapshot?.total_records || 0),
-      unique_ips: Number(snapshot?.unique_ips || 0),
-      snapshot_time: snapshot?.snapshot_time || null,
-      full_rebuild_pending: Boolean(state?.full_rebuild_pending),
-      last_run_at: state?.last_run_at || null,
-      snapshot_last_refreshed_at: state?.snapshot_last_refreshed_at || null
-    };
-  } catch (err) {
-    mapSnapshot = { error: err.message };
-  }
-  payload.map_snapshot = mapSnapshot;
-
   let telemetry = {};
   try {
     const [iocTotalRes, iocTodayRes] = await Promise.all([
@@ -3515,14 +3484,6 @@ app.post('/api/ioc/ip', async (req, res) => {
         scheduleGeoCacheRefreshAfterAdd();
       }
     });
-
-    if (result.status === 201 && result.body?.id) {
-      await pool.query(
-        `INSERT INTO dashboard_map_pending_events (event_type, ioc_id, observable, observable_type)
-         VALUES ('add', $1, $2, $3)`,
-        [result.body.id, result.body.observable, result.body.observable_type]
-      ).catch(() => {});
-    }
 
     return res.status(result.status).json(result.body);
   } catch (err) {
