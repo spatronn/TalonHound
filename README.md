@@ -5,7 +5,6 @@
 - **Deployment & migrations:** `docs/deployment.md`
 - System diagram: `docs/system-diagram.md`
 - Container operations & tuning: `docs/container-operations-and-tuning.md`
-- IOC exposure & impact scoring: `docs/risk-engine-analytics.md` (API fields: `risk_score`, `institution_risk_score`)
 
 ## Run
 
