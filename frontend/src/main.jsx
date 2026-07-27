@@ -14437,11 +14437,6 @@ function IOCAddPage() {
               {message.text}
             </div>
               )}
-          {!normalizeSelectedThreatClasses(primaryThreatClass).length ? (
-	            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #92400e', background: 'rgba(217,119,6,0.12)', color: '#fde68a', fontSize: 13 }}>
-	              Threat classifications are Unknown. AI insight quality may be lower.
-	            </div>
-	          ) : null}
 
           <form ref={iocFormRef} onSubmit={onSubmit} style={{ display: 'grid', gap: 14 }}>
             <div>
