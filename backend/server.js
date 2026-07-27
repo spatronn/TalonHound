@@ -5788,10 +5788,6 @@ app.get('/api/ioc/recent', async (req, res) => {
   }
 });
 
-app.get('/api/ioc/map/countries', async (_req, res) => {
-  return res.status(410).json({ message: 'Threat World Map feature removed' });
-});
-
 app.get('/api/ioc/summary/today', async (req, res) => {
   try {
     const statusFilter = parseIocListStatusFilter(req.query.status ?? 'active');
