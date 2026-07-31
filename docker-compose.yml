@@ -76,6 +76,10 @@ services:
       - BACKUP_ENCRYPTION_KEY_FILE=${BACKUP_ENCRYPTION_KEY_FILE:-}
       - BACKUP_MAX_CONCURRENT=1
       - BACKUP_QUEUE_NAME=system-backup
+      # Published Feed API keys: server-side AES-256-GCM key for revealable keys +
+      # per-key pull rate limit for /api/published-feeds/{slug}.
+      - API_KEY_ENCRYPTION_KEY=${API_KEY_ENCRYPTION_KEY:-}
+      - FEED_PUBLIC_RATE_LIMIT_PER_MIN=${FEED_PUBLIC_RATE_LIMIT_PER_MIN:-60}
     depends_on:
       - db
       - redis
