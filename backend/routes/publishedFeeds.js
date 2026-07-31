@@ -14,6 +14,7 @@ function toPublicFeed(row, extra = {}) {
   return {
     id: Number(row.id),
     name: row.name,
+    slug: row.slug,
     description: row.description,
     enabled: Boolean(row.enabled),
     ioc_type: row.ioc_type,
@@ -121,6 +122,28 @@ function accessKeyAuditSnapshot(row) {
   return pickSafeFields(toPublicAccessKey(row), ['id', 'feed_id', 'name', 'enabled']);
 }
 
+// Kebab-case slug used in the public pull URL. Mirrors migration 133's backfill.
+function slugifyFeedName(name) {
+  const base = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return base || 'feed';
+}
+
+/** First free slug of the form base, base-2, base-3, … (unique index is the backstop). */
+async function generateUniqueFeedSlug(pool, name) {
+  const base = slugifyFeedName(name);
+  const { rows } = await pool.query(
+    'SELECT slug FROM published_feeds WHERE slug = $1 OR slug LIKE $2',
+    [base, `${base}-%`]
+  );
+  const taken = new Set(rows.map((r) => r.slug));
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 10000; i += 1) {
+    const candidate = `${base}-${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
@@ -169,21 +192,23 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     const timeWindow = tw === 'last_1_day' ? '1d' : tw === 'last_3_days' ? '3d' : tw === 'last_7_days' ? '7d' : tw;
 
     try {
+      const slug = await generateUniqueFeedSlug(pool, body.name);
       const { rows } = await pool.query(
         `INSERT INTO published_feeds (
-           name, description, enabled, ioc_type, format, min_confidence,
+           name, slug, description, enabled, ioc_type, format, min_confidence,
            include_feed_keys, include_tags, exclude_tags,
            exclude_false_positive, exclude_expired,
            time_window, max_items, refresh_interval_minutes
          ) VALUES (
-           $1, $2, COALESCE($3, TRUE), $4, COALESCE($5, 'txt'), $6,
-           $7::jsonb, $8::jsonb, $9::jsonb,
-           COALESCE($10, TRUE), COALESCE($11, TRUE),
-           $12, $13, COALESCE($14, 15)
+           $1, $2, $3, COALESCE($4, TRUE), $5, COALESCE($6, 'txt'), $7,
+           $8::jsonb, $9::jsonb, $10::jsonb,
+           COALESCE($11, TRUE), COALESCE($12, TRUE),
+           $13, $14, COALESCE($15, 15)
          )
          RETURNING *`,
         [
           String(body.name).trim(),
+          slug,
           body.description || null,
           body.enabled,
           String(body.ioc_type).toLowerCase(),

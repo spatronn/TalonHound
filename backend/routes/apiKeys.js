@@ -1,32 +1,78 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
-import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
+import {
+  PUBLISHED_FEED_KEY_TYPE,
+  LEGACY_FEED_ACCESS_KEY_TYPE,
+  PUBLISHED_FEED_KEY_PREFIX,
+  generatePublishedFeedApiKey,
+  hashApiKey,
+  lastFourOf,
+  maskApiKey,
+  keyStatus,
+  isRevealableKeyRow
+} from '../lib/publishedFeedApiKey.js';
+import {
+  encryptApiKeySecret,
+  decryptApiKeySecret,
+  isApiKeyEncryptionConfigured
+} from '../lib/apiKeyEncryption.js';
 
-const FEED_ACCESS_TYPE = 'feed_access';
+const LEGACY_REVEAL_MESSAGE = 'This legacy key cannot be revealed. Rotate to create a revealable key.';
 
+const LIST_COLUMNS = `
+  k.id, k.feed_id, k.name, k.key_type, k.key_prefix, k.last_four,
+  k.enabled, k.expires_at, k.last_used_at, k.last_used_ip,
+  k.created_at, k.revoked_at,
+  (k.secret_ciphertext IS NOT NULL) AS has_secret,
+  f.name AS feed_name, f.ioc_type AS feed_ioc_type, f.slug AS feed_slug`;
+
+function typeLabel(keyType) {
+  return keyType === PUBLISHED_FEED_KEY_TYPE ? 'Published Feed' : 'Feed Access (legacy)';
+}
+
+/** Public (never includes the plaintext secret). */
 function toPublicApiKey(row) {
   if (!row) return null;
-  const revoked = Boolean(row.revoked_at);
+  const keyType = row.key_type || LEGACY_FEED_ACCESS_KEY_TYPE;
+  const revealable = keyType === PUBLISHED_FEED_KEY_TYPE && Boolean(row.has_secret);
+  // Legacy feed_access tokens have no th_pf_ prefix; show a neutral mask for them.
+  const maskedKey = keyType === PUBLISHED_FEED_KEY_TYPE
+    ? maskApiKey({ key_prefix: row.key_prefix, last_four: row.last_four })
+    : '••••••••';
   return {
     id: Number(row.id),
-    key_type: FEED_ACCESS_TYPE,
-    feed_id: Number(row.feed_id),
     name: row.name,
+    key_type: keyType,
+    key_type_label: typeLabel(keyType),
+    masked_key: maskedKey,
+    revealable,
     enabled: Boolean(row.enabled),
-    last_used_at: row.last_used_at,
-    last_used_ip: row.last_used_ip,
+    status: keyStatus(row),
+    expires_at: row.expires_at || null,
+    last_used_at: row.last_used_at || null,
+    last_used_ip: row.last_used_ip || null,
     created_at: row.created_at,
-    revoked_at: row.revoked_at,
-    feed_name: row.feed_name,
-    feed_ioc_type: row.feed_ioc_type,
-    status: revoked ? 'revoked' : row.enabled ? 'active' : 'disabled'
+    revoked_at: row.revoked_at || null,
+    // Legacy feed-bound keys keep their feed context for display.
+    feed_id: row.feed_id != null ? Number(row.feed_id) : null,
+    feed_name: row.feed_name || null,
+    feed_ioc_type: row.feed_ioc_type || null,
+    feed_slug: row.feed_slug || null
   };
 }
 
 function apiKeyAuditSnapshot(row) {
-  return pickSafeFields(toPublicApiKey(row), ['id', 'feed_id', 'name', 'enabled', 'feed_name', 'feed_ioc_type', 'status']);
+  return pickSafeFields(toPublicApiKey(row), [
+    'id', 'name', 'key_type', 'status', 'revealable', 'enabled', 'feed_id', 'feed_name'
+  ]);
+}
+
+/** Never cache responses that carry a plaintext secret. */
+function noStore(res) {
+  res.set('Cache-Control', 'no-store');
+  res.set('Pragma', 'no-cache');
 }
 
 /**
@@ -38,19 +84,9 @@ export function registerApiKeyRoutes(app, pool, audit) {
   app.get('/api/api-keys', async (_req, res) => {
     try {
       const { rows } = await pool.query(
-        `SELECT
-           k.id,
-           k.feed_id,
-           k.name,
-           k.enabled,
-           k.last_used_at,
-           k.last_used_ip,
-           k.created_at,
-           k.revoked_at,
-           f.name AS feed_name,
-           f.ioc_type AS feed_ioc_type
+        `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
-         JOIN published_feeds f ON f.id = k.feed_id
+         LEFT JOIN published_feeds f ON f.id = k.feed_id
          ORDER BY k.created_at DESC`
       );
       return res.json({ api_keys: rows.map(toPublicApiKey) });
@@ -59,37 +95,52 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
   });
 
+  // Create a revealable Published Feed key (not bound to a single feed).
   app.post('/api/api-keys', requireRole(ROLES.ADMIN), async (req, res) => {
-    const keyType = String(req.body?.key_type || FEED_ACCESS_TYPE).trim().toLowerCase();
-    const feedId = Number(req.body?.feed_id);
+    const keyType = String(req.body?.key_type || PUBLISHED_FEED_KEY_TYPE).trim().toLowerCase();
     const name = String(req.body?.name || '').trim();
     const enabled = req.body?.enabled !== false;
 
-    if (keyType !== FEED_ACCESS_TYPE) {
-      return res.status(400).json({ message: 'Only feed_access key type is supported in MVP' });
-    }
-    if (!Number.isFinite(feedId) || feedId <= 0) {
-      return res.status(400).json({ message: 'feed_id is required' });
+    if (keyType !== PUBLISHED_FEED_KEY_TYPE) {
+      return res.status(400).json({ message: 'Only the Published Feed key type can be created here' });
     }
     if (!name) return res.status(400).json({ message: 'name is required' });
+    if (!isApiKeyEncryptionConfigured()) {
+      return res.status(503).json({
+        message: 'API_KEY_ENCRYPTION_KEY is not configured; cannot create revealable keys'
+      });
+    }
 
     try {
-      const feedQ = await pool.query('SELECT id, enabled, ioc_type, name FROM published_feeds WHERE id = $1', [feedId]);
-      if (!feedQ.rows.length) return res.status(404).json({ message: 'Published feed not found' });
+      const rawKey = generatePublishedFeedApiKey();
+      const tokenHash = hashApiKey(rawKey);
+      const { ciphertext, nonce, tag } = encryptApiKeySecret(rawKey);
 
-      const rawToken = generateFeedAccessToken();
-      const tokenHash = hashFeedAccessToken(rawToken);
-      const { rows } = await pool.query(
-        `INSERT INTO published_feed_access_keys (feed_id, name, token_hash, enabled)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, feed_id, name, enabled, last_used_at, last_used_ip, created_at, revoked_at`,
-        [feedId, name, tokenHash, enabled]
+      const insertQ = await pool.query(
+        `INSERT INTO published_feed_access_keys
+           (feed_id, name, token_hash, key_type, key_prefix, last_four,
+            secret_ciphertext, secret_nonce, secret_tag, enabled, created_by)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id`,
+        [
+          name,
+          tokenHash,
+          PUBLISHED_FEED_KEY_TYPE,
+          PUBLISHED_FEED_KEY_PREFIX,
+          lastFourOf(rawKey),
+          ciphertext,
+          nonce,
+          tag,
+          enabled,
+          req.user?.email || req.user?.username || null
+        ]
       );
-      const key = toPublicApiKey({
-        ...rows[0],
-        feed_name: feedQ.rows[0].name,
-        feed_ioc_type: feedQ.rows[0].ioc_type
-      });
+      const { rows } = await pool.query(
+        `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
+         LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
+        [insertQ.rows[0].id]
+      );
+      const key = toPublicApiKey(rows[0]);
 
       audit?.auditSuccess({
         req,
@@ -98,17 +149,66 @@ export function registerApiKeyRoutes(app, pool, audit) {
         entityId: String(key.id),
         entityDisplay: key.name,
         severity: AUDIT_SEVERITY.WARNING,
-        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0].name, feed_ioc_type: feedQ.rows[0].ioc_type }),
-        metadata: { feed_id: feedId, feed_name: feedQ.rows[0].name, masked_key: `${rawToken.slice(0, 8)}…` }
+        after: apiKeyAuditSnapshot(rows[0]),
+        metadata: { key_type: PUBLISHED_FEED_KEY_TYPE, masked_key: key.masked_key }
       });
 
-      return res.status(201).json({
-        api_key: key,
-        token: rawToken,
-        feed_url: buildPublicFeedUrl(req, rawToken)
-      });
+      noStore(res);
+      return res.status(201).json({ api_key: key, token: rawKey });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to create API key', detail: err.message });
+    }
+  });
+
+  // Reveal the plaintext secret of a revealable key (admin only, audited, never cached).
+  app.get('/api/api-keys/:keyId/reveal', requireRole(ROLES.ADMIN), async (req, res) => {
+    const keyId = Number(req.params.keyId);
+    if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
+
+    try {
+      const { rows } = await pool.query(
+        `SELECT ${LIST_COLUMNS}, k.secret_ciphertext, k.secret_nonce, k.secret_tag
+         FROM published_feed_access_keys k
+         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         WHERE k.id = $1`,
+        [keyId]
+      );
+      if (!rows.length) return res.status(404).json({ message: 'API key not found' });
+      const row = rows[0];
+
+      if (!isRevealableKeyRow(row)) {
+        return res.status(409).json({ message: LEGACY_REVEAL_MESSAGE, revealable: false });
+      }
+      if (!isApiKeyEncryptionConfigured()) {
+        return res.status(503).json({ message: 'API_KEY_ENCRYPTION_KEY is not configured' });
+      }
+
+      let plaintext;
+      try {
+        plaintext = decryptApiKeySecret({
+          ciphertext: row.secret_ciphertext,
+          nonce: row.secret_nonce,
+          tag: row.secret_tag
+        });
+      } catch {
+        // Do not leak ciphertext/key material in the error.
+        return res.status(500).json({ message: 'Failed to decrypt API key' });
+      }
+
+      audit?.auditSuccess({
+        req,
+        action: AUDIT_ACTION.API_KEY_REVEALED,
+        entityType: AUDIT_ENTITY.API_KEY,
+        entityId: String(row.id),
+        entityDisplay: row.name,
+        severity: AUDIT_SEVERITY.WARNING,
+        metadata: { key_type: row.key_type, masked_key: maskApiKey(row) }
+      });
+
+      noStore(res);
+      return res.json({ api_key: toPublicApiKey(row), token: plaintext });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to reveal API key', detail: err.message });
     }
   });
 
@@ -124,9 +224,9 @@ export function registerApiKeyRoutes(app, pool, audit) {
 
     try {
       const beforeQ = await pool.query(
-        `SELECT k.*, f.name AS feed_name, f.ioc_type AS feed_ioc_type
+        `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
-         JOIN published_feeds f ON f.id = k.feed_id
+         LEFT JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.id = $1 AND k.revoked_at IS NULL`,
         [keyId]
       );
@@ -144,19 +244,19 @@ export function registerApiKeyRoutes(app, pool, audit) {
         sets.push(`enabled = $${params.length}`);
       }
 
-      const { rows } = await pool.query(
+      await pool.query(
         `UPDATE published_feed_access_keys SET ${sets.join(', ')}
-         WHERE id = $1 AND revoked_at IS NULL
-         RETURNING id, feed_id, name, enabled, last_used_at, last_used_ip, created_at, revoked_at`,
+         WHERE id = $1 AND revoked_at IS NULL`,
         params
       );
-      if (!rows.length) return res.status(404).json({ message: 'API key not found' });
-      const feedQ = await pool.query('SELECT name, ioc_type FROM published_feeds WHERE id = $1', [rows[0].feed_id]);
-      const key = toPublicApiKey({
-        ...rows[0],
-        feed_name: feedQ.rows[0]?.name,
-        feed_ioc_type: feedQ.rows[0]?.ioc_type
-      });
+      const afterQ = await pool.query(
+        `SELECT ${LIST_COLUMNS}
+         FROM published_feed_access_keys k
+         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         WHERE k.id = $1`,
+        [keyId]
+      );
+      const key = toPublicApiKey(afterQ.rows[0]);
 
       audit?.auditSuccess({
         req,
@@ -166,7 +266,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
         entityDisplay: key.name,
         severity: AUDIT_SEVERITY.INFO,
         before,
-        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0]?.name, feed_ioc_type: feedQ.rows[0]?.ioc_type }),
+        after: apiKeyAuditSnapshot(afterQ.rows[0]),
         metadata: { changed_fields: { name: name !== undefined, enabled: enabled !== undefined } }
       });
 
@@ -176,36 +276,85 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
   });
 
+  // Rotate: revealable keys get a fresh secret in place; legacy hash-only keys are
+  // replaced by a new revealable Published Feed key and the old one is revoked.
   app.post('/api/api-keys/:keyId/rotate', requireRole(ROLES.ADMIN), async (req, res) => {
     const keyId = Number(req.params.keyId);
     if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
     const reasonCheck = parseActionReason(req.body);
     if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
+    if (!isApiKeyEncryptionConfigured()) {
+      return res.status(503).json({ message: 'API_KEY_ENCRYPTION_KEY is not configured' });
+    }
 
     try {
-      const existing = await pool.query(
-        `SELECT k.id, k.feed_id, k.name, k.enabled, f.name AS feed_name, f.ioc_type AS feed_ioc_type
+      const existingQ = await pool.query(
+        `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
-         JOIN published_feeds f ON f.id = k.feed_id
+         LEFT JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.id = $1 AND k.revoked_at IS NULL`,
         [keyId]
       );
-      if (!existing.rows.length) return res.status(404).json({ message: 'API key not found' });
+      if (!existingQ.rows.length) return res.status(404).json({ message: 'API key not found' });
+      const existing = existingQ.rows[0];
 
-      const rawToken = generateFeedAccessToken();
-      const tokenHash = hashFeedAccessToken(rawToken);
-      const { rows } = await pool.query(
-        `UPDATE published_feed_access_keys SET token_hash = $2 WHERE id = $1
-         RETURNING id, feed_id, name, enabled, last_used_at, last_used_ip, created_at, revoked_at`,
-        [keyId, tokenHash]
-      );
-      const meta = existing.rows[0];
-      const key = toPublicApiKey({
-        ...rows[0],
-        feed_name: meta.feed_name,
-        feed_ioc_type: meta.feed_ioc_type
-      });
+      const rawKey = generatePublishedFeedApiKey();
+      const tokenHash = hashApiKey(rawKey);
+      const { ciphertext, nonce, tag } = encryptApiKeySecret(rawKey);
 
+      let resultRow;
+      let upgradedFromLegacy = false;
+
+      if (isRevealableKeyRow(existing)) {
+        // In-place rotation keeps the same key id.
+        await pool.query(
+          `UPDATE published_feed_access_keys
+           SET token_hash = $2, last_four = $3, secret_ciphertext = $4,
+               secret_nonce = $5, secret_tag = $6
+           WHERE id = $1`,
+          [keyId, tokenHash, lastFourOf(rawKey), ciphertext, nonce, tag]
+        );
+        const afterQ = await pool.query(
+          `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
+           LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
+          [keyId]
+        );
+        resultRow = afterQ.rows[0];
+      } else {
+        // Legacy hash-only key: mint a new revealable key and revoke the old one.
+        upgradedFromLegacy = true;
+        const insertQ = await pool.query(
+          `INSERT INTO published_feed_access_keys
+             (feed_id, name, token_hash, key_type, key_prefix, last_four,
+              secret_ciphertext, secret_nonce, secret_tag, enabled, created_by)
+           VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9)
+           RETURNING id`,
+          [
+            existing.name,
+            tokenHash,
+            PUBLISHED_FEED_KEY_TYPE,
+            PUBLISHED_FEED_KEY_PREFIX,
+            lastFourOf(rawKey),
+            ciphertext,
+            nonce,
+            tag,
+            req.user?.email || req.user?.username || null
+          ]
+        );
+        await pool.query(
+          `UPDATE published_feed_access_keys SET enabled = FALSE, revoked_at = NOW()
+           WHERE id = $1 AND revoked_at IS NULL`,
+          [keyId]
+        );
+        const afterQ = await pool.query(
+          `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
+           LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
+          [insertQ.rows[0].id]
+        );
+        resultRow = afterQ.rows[0];
+      }
+
+      const key = toPublicApiKey(resultRow);
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.API_KEY_ROTATED,
@@ -213,15 +362,18 @@ export function registerApiKeyRoutes(app, pool, audit) {
         entityId: String(key.id),
         entityDisplay: key.name,
         severity: AUDIT_SEVERITY.WARNING,
-        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: meta.feed_name, feed_ioc_type: meta.feed_ioc_type }),
-        metadata: { feed_id: key.feed_id, masked_key: `${rawToken.slice(0, 8)}…`, reason: reasonCheck.reason }
+        after: apiKeyAuditSnapshot(resultRow),
+        metadata: {
+          key_type: PUBLISHED_FEED_KEY_TYPE,
+          masked_key: key.masked_key,
+          upgraded_from_legacy: upgradedFromLegacy,
+          previous_key_id: upgradedFromLegacy ? keyId : undefined,
+          reason: reasonCheck.reason
+        }
       });
 
-      return res.json({
-        api_key: key,
-        token: rawToken,
-        feed_url: buildPublicFeedUrl(req, rawToken)
-      });
+      noStore(res);
+      return res.json({ api_key: key, token: rawKey, upgraded_from_legacy: upgradedFromLegacy });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to rotate API key', detail: err.message });
     }
@@ -235,29 +387,27 @@ export function registerApiKeyRoutes(app, pool, audit) {
 
     try {
       const beforeQ = await pool.query(
-        `SELECT k.*, f.name AS feed_name, f.ioc_type AS feed_ioc_type
+        `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
-         JOIN published_feeds f ON f.id = k.feed_id
+         LEFT JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.id = $1 AND k.revoked_at IS NULL`,
         [keyId]
       );
       if (!beforeQ.rows.length) return res.status(404).json({ message: 'API key not found' });
       const before = apiKeyAuditSnapshot(beforeQ.rows[0]);
 
-      const { rows } = await pool.query(
+      await pool.query(
         `UPDATE published_feed_access_keys
          SET enabled = FALSE, revoked_at = NOW()
-         WHERE id = $1 AND revoked_at IS NULL
-         RETURNING id, feed_id, name, enabled, last_used_at, last_used_ip, created_at, revoked_at`,
+         WHERE id = $1 AND revoked_at IS NULL`,
         [keyId]
       );
-      if (!rows.length) return res.status(404).json({ message: 'API key not found' });
-      const feedQ = await pool.query('SELECT name, ioc_type FROM published_feeds WHERE id = $1', [rows[0].feed_id]);
-      const key = toPublicApiKey({
-        ...rows[0],
-        feed_name: feedQ.rows[0]?.name,
-        feed_ioc_type: feedQ.rows[0]?.ioc_type
-      });
+      const afterQ = await pool.query(
+        `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
+         LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
+        [keyId]
+      );
+      const key = toPublicApiKey(afterQ.rows[0]);
 
       audit?.auditSuccess({
         req,
@@ -267,7 +417,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
         entityDisplay: key.name,
         severity: AUDIT_SEVERITY.CRITICAL,
         before,
-        after: apiKeyAuditSnapshot({ ...rows[0], feed_name: feedQ.rows[0]?.name, feed_ioc_type: feedQ.rows[0]?.ioc_type }),
+        after: apiKeyAuditSnapshot(afterQ.rows[0]),
         metadata: { revoked: true, reason: reasonCheck.reason }
       });
 

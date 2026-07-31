@@ -224,6 +224,18 @@ export function apiAuthGate(req, res, next) {
   ) {
     return next();
   }
+  // Public Published Feed pull: authorized by ?api_key=, not by a user session.
+  // Scoped to GET /api/published-feeds/{slug} with an api_key query parameter so
+  // the admin feed-config routes still require authentication.
+  if (
+    req.method === 'GET'
+    && typeof req.query?.api_key === 'string'
+    && req.query.api_key !== ''
+    && /^\/api\/published-feeds\/[^/]+$/.test(req.path)
+    && req.path !== '/api/published-feeds/source-options'
+  ) {
+    return next();
+  }
   if (req.path.startsWith('/api')) {
     return requireAuth(req, res, next);
   }
