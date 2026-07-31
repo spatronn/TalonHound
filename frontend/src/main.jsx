@@ -79,6 +79,7 @@ import {
   FEED_RESULT_METRIC_TOOLTIPS
 } from './lib/feedLastResult.js';
 import './AppShell.css';
+import './components/LoginPage.css';
 import './components/enrichmentProviders/enrichmentProviders.css';
 import {
   TAG_MANAGER_PAGE_SIZE,
@@ -1509,13 +1510,22 @@ function normalizeEventContext(event) {
 function LoginPage() {
   const navigate = useNavigate();
   const { refreshSession } = useSession();
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
+    setError('');
     const form = new FormData(e.currentTarget);
-    const email = form.get('email');
-    const password = form.get('password');
+    const email = String(form.get('email') || '').trim();
+    const password = String(form.get('password') || '');
 
+    if (!email || !password) {
+      setError('Enter your username and password to continue.');
+      return;
+    }
+
+    setSubmitting(true);
     try {
       await api.post('/auth/login', { email, password });
       localStorage.removeItem('demo_timezone');
@@ -1523,19 +1533,61 @@ function LoginPage() {
       navigate('/ioc');
     } catch (err) {
       const msg = err?.response?.data?.message || 'Invalid email or password';
-      alert(msg);
+      setError(msg);
+      setSubmitting(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h2>Demo Login</h2>
-      <form onSubmit={onSubmit}>
-        <input name="email" type="text" placeholder="username or email" autoComplete="username" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
-        <input name="password" type="password" placeholder="password" autoComplete="current-password" required style={{ width: '100%', marginBottom: 8, padding: 8 }} />
-        <button type="submit" style={{ width: '100%', padding: 10 }}>Sign In</button>
-      </form>
-      <p style={{ fontSize: 12, color: '#555' }}>Demo user: demo@demo.local / Password1!</p>
+    <div className="login-shell">
+      <main className="auth">
+        <div className="top-brand">
+          <img src={talonHoundLogo} alt="TalonHound" draggable={false} />
+          <span className="wm">Talon<span className="hound">Hound</span></span>
+        </div>
+
+        <div className="card">
+          <h1>Sign in</h1>
+          <p className="sub">Enter your credentials to access TalonHound.</p>
+
+          <form onSubmit={onSubmit} noValidate>
+            <div className="field">
+              <label htmlFor="login-user">Username or email</label>
+              <input id="login-user" name="email" type="text" autoComplete="username" required />
+            </div>
+
+            <div className="field">
+              <label htmlFor="login-pass">Password</label>
+              <input id="login-pass" name="password" type="password" autoComplete="current-password" required />
+            </div>
+
+            <button className={`btn${submitting ? ' loading' : ''}`} type="submit" disabled={submitting}>
+              {submitting ? 'Signing in…' : 'Sign in'}
+            </button>
+            {error ? <div className="msg err" role="alert">{error}</div> : null}
+          </form>
+        </div>
+
+        <p className="foot">TalonHound Console</p>
+      </main>
+
+      <aside className="brand">
+        <svg className="texture" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <circle className="dash" cx="980" cy="180" r="150" />
+          <circle className="dash" cx="1060" cy="620" r="230" />
+          <circle cx="850" cy="430" r="60" />
+          <circle className="dash" cx="220" cy="760" r="180" />
+          <rect className="dash" x="640" y="330" width="760" height="140" rx="70" />
+          <line className="dash" x1="80" y1="140" x2="420" y2="140" />
+          <line className="dash" x1="760" y1="810" x2="1150" y2="810" />
+        </svg>
+
+        <div className="brand-inner">
+          <img className="wolf" src={talonHoundLogo} alt="" draggable={false} />
+          <div className="wordmark">Talon<span className="hound">Hound</span></div>
+          <p className="tagline">Track adversaries across your network before they reach what matters.</p>
+        </div>
+      </aside>
     </div>
   );
 }
