@@ -47,12 +47,16 @@ test('timestamp cards use correct labels and values', () => {
     }],
     []
   );
+  assert.equal(cards.length, 3);
   assert.equal(cards[0].label, 'Inserted into Platform');
   assert.equal(cards[1].label, 'First seen in source');
   assert.equal(cards[2].label, 'Last changed in source');
-  assert.equal(cards[3].label, 'Last confirmed / Last seen');
   assert.equal(cards[1].context, 'Source: MalwareBazaar abuse.ch');
   assert.equal(cards[0].value, '2026-07-26T14:32:41.000Z');
+  assert.equal(
+    cards.some((card) => card.label === 'Last confirmed / Last seen'),
+    false
+  );
 });
 
 test('multi-source context avoids a single misleading source name', () => {

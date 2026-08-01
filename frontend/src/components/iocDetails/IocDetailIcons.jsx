@@ -49,9 +49,6 @@ export const IocDetailIcons = {
   edit: (props) => (
     <SvgIcon {...props}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></SvgIcon>
   ),
-  eye: (props) => (
-    <SvgIcon {...props}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></SvgIcon>
-  ),
   copy: (props) => (
     <SvgIcon {...props}>
       <rect x="9" y="9" width="11" height="11" rx="2" />

@@ -19,12 +19,6 @@ export const IOC_DETAIL_TIMESTAMP_CARDS = Object.freeze({
     label: 'Last changed in source',
     description: 'Last time this IOC meaningfully changed in a source.',
     icon: 'edit'
-  }),
-  lastConfirmed: Object.freeze({
-    key: 'last_confirmed',
-    label: 'Last confirmed / Last seen',
-    description: 'Last time this IOC was confirmed in a source.',
-    icon: 'eye'
   })
 });
 
@@ -76,7 +70,7 @@ export function resolveTimestampSourceContext({
 }
 
 /**
- * Build the four IOC Timestamps cards for Overview.
+ * Build the three IOC Timestamps cards for Overview.
  * @param {object|null} summary
  * @param {object[]} activeSources
  * @param {object[]} historicalSources
@@ -87,7 +81,6 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
   const firstSeen = summary?.first_seen_at ?? null;
   // summary.last_seen_at is the canonical last-changed aggregate (legacy field name).
   const lastChanged = summary?.last_seen_at ?? null;
-  const lastConfirmed = summary?.last_confirmed_at ?? null;
 
   return [
     {
@@ -114,17 +107,6 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
         value: lastChanged,
         sources,
         pick: (s) => s.last_changed_at || null
-      })
-    },
-    {
-      ...IOC_DETAIL_TIMESTAMP_CARDS.lastConfirmed,
-      value: lastConfirmed,
-      display: formatIocDetailDateTime(lastConfirmed),
-      context: resolveTimestampSourceContext({
-        value: lastConfirmed,
-        sources,
-        // Presence field retained on source rows for API compat; only used for context match.
-        pick: (s) => s.last_seen_at || null
       })
     }
   ];

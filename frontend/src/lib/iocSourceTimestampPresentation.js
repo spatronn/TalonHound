@@ -10,8 +10,8 @@
 // a genuine source-content change or a reactivation. Rows predating migration 121 fall
 // back to first_seen_in_feed as the documented baseline.
 //
-// IOC-level presence confirmation belongs on the dedicated "Last confirmed / Last seen"
-// timestamp card (summary.last_confirmed_at), never as a sources-table column.
+// IOC-level presence confirmation (summary.last_confirmed_at) is technical bookkeeping
+// and must not be rendered as a sources-table column.
 export const IOC_SOURCE_TIMESTAMP_PRESENTATION = Object.freeze({
   first: Object.freeze({
     label: 'First seen in source',
