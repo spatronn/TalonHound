@@ -3,10 +3,10 @@ import { computeQueueHealth } from './integrationQueueHealth.js';
 import { runQueueRecovery } from './integrationQueueRecovery.js';
 
 export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
-  const { loadStalledBullJobs } = await import('./integrationQueueBullmqReconciliation.js');
+  const { loadTrulyStalledBullJobs } = await import('./integrationQueueBullmqReconciliation.js');
   const [bullCounts, stalledJobs, workers, dbStatusRes, dbRunningRes, oldestQueuedRes] = await Promise.all([
     queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused'),
-    loadStalledBullJobs(queue, 500),
+    loadTrulyStalledBullJobs(queue, 500),
     queue.getWorkers().catch(() => []),
     pool.query(
       `SELECT status, COUNT(*)::int AS cnt

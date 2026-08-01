@@ -27,6 +27,62 @@ test('computeQueueHealth waiting with no active shows degradation warning', () =
   assert.ok(health.warnings.some((w) => /waiting but no worker/i.test(w)));
 });
 
+test('computeQueueHealth stays Healthy for a 5+ min running job with no real stall', () => {
+  // Long healthy job: BullMQ active=1, truly-stalled count 0, DB running=1,
+  // recovery not needed. Must NOT go Degraded just because the job is long-lived.
+  const health = computeQueueHealth({
+    bullCounts: { waiting: 0, active: 1, stalled: 0 },
+    dbCounts: { waiting: 0, active: 1 },
+    dbRunningCount: 1,
+    workerConsuming: true,
+    recoveryNeeded: false
+  });
+  assert.equal(health.queue_health, 'Healthy');
+  assert.equal(health.bullmq_stalled, 0);
+  assert.equal(health.bullmq_active, 1);
+  assert.equal(health.db_running, 1);
+  assert.equal(health.recovery_needed, false);
+  assert.deepEqual(health.warnings, []);
+});
+
+test('computeQueueHealth goes Degraded on a real BullMQ stalled job', () => {
+  const health = computeQueueHealth({
+    bullCounts: { waiting: 0, active: 1, stalled: 1 },
+    dbCounts: { waiting: 0, active: 1 },
+    dbRunningCount: 1,
+    workerConsuming: true,
+    recoveryNeeded: false
+  });
+  assert.equal(health.queue_health, 'Degraded');
+  assert.equal(health.bullmq_stalled, 1);
+});
+
+test('computeQueueHealth is Healthy when DB running matches BullMQ active with no stall', () => {
+  const health = computeQueueHealth({
+    bullCounts: { waiting: 0, active: 1, stalled: 0 },
+    dbCounts: { waiting: 0, active: 1 },
+    dbRunningCount: 1,
+    workerConsuming: true
+  });
+  assert.equal(health.queue_health, 'Healthy');
+});
+
+test('computeQueueHealth: recovery_needed=no long run does not turn Degraded (50s-boundary guard)', () => {
+  // Simulates the corrected snapshot at the ~stalledInterval boundary: the long
+  // job is active with a held lock so the truly-stalled count is 0.
+  const health = computeQueueHealth({
+    bullCounts: { waiting: 0, active: 1, stalled: 0 },
+    dbCounts: { waiting: 0, active: 1 },
+    dbRunningCount: 1,
+    staleActiveJobs: [],
+    staleStalledJobs: [],
+    workerConsuming: true,
+    recoveryNeeded: false
+  });
+  assert.equal(health.queue_health, 'Healthy');
+  assert.equal(health.recovery_needed, false);
+});
+
 test('buildQueuedJobHint explains source lock', () => {
   const hint = buildQueuedJobHint({
     jobId: '17',

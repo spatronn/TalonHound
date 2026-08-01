@@ -247,6 +247,43 @@ export async function loadStalledBullJobs(queue, limit = 500) {
   return jobs;
 }
 
+/**
+ * Count jobs BullMQ genuinely considers STALLED right now (for the health gauge).
+ *
+ * The raw `<prefix>:stalled` SET is NOT a set of confirmed-stalled jobs. BullMQ's
+ * moveStalledJobsToWait check unconditionally re-adds EVERY active job to this set
+ * on each stalled-check as a "potentially stalled" candidate and only verifies the
+ * lock on the NEXT check (see moveStalledJobsToWait.lua: SADD active -> stalled,
+ * then EXISTS <job>:lock == 0 => really stalled). So a healthy long-running job
+ * always appears here between checks, and counting raw membership makes any job
+ * that merely outlives one stalledInterval look stalled -> queue health Degraded.
+ *
+ * A candidate is only really stalled when its lock key is missing AND it is still
+ * sitting in the active list — exactly BullMQ's own criterion. This filters to
+ * those, so the gauge reflects real stalls, not liveness of long jobs.
+ */
+export async function loadTrulyStalledBullJobs(queue, limit = 500) {
+  const jobs = [];
+  try {
+    const client = await queue.client;
+    const prefix = getQueueKeyPrefix(queue);
+    const stalledIds = await client.smembers(`${prefix}:stalled`);
+    for (const id of stalledIds.slice(0, limit)) {
+      // Lock still held => worker is alive and renewing => healthy active candidate.
+      if ((await client.exists(`${prefix}:${id}:lock`)) === 1) continue;
+      const job = await queue.getJob(id);
+      if (!job) continue; // completed/removed between checks => not stalled
+      // Only active-list jobs with a missing lock are genuinely stalled right now;
+      // a completed/waiting job in the leftover candidate set is not.
+      if ((await getBullmqJobState(job)) !== 'active') continue;
+      jobs.push(job);
+    }
+  } catch (err) {
+    console.warn(`[integration-queue] loadTrulyStalledBullJobs failed: ${err?.message || err}`);
+  }
+  return jobs;
+}
+
 export async function loadRedisListedBullJobIds(queue, limit = 500) {
   const client = await queue.client;
   const prefix = getQueueKeyPrefix(queue);

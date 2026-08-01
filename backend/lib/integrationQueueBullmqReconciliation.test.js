@@ -6,7 +6,8 @@ import {
   isBlockingBullmqEntry,
   moveBullJobToFailed,
   classifyOrphanSourceLock,
-  orphanSourceLockGraceMs
+  orphanSourceLockGraceMs,
+  loadTrulyStalledBullJobs
 } from './integrationQueueBullmqReconciliation.js';
 import { QUEUE_HARDENING } from './integrationQueueConfig.js';
 
@@ -138,4 +139,86 @@ test('classifyOrphanSourceLock ignores non-running rows', () => {
 test('orphanSourceLockGraceMs stays above one heartbeat interval', () => {
   assert.ok(orphanSourceLockGraceMs() >= QUEUE_HARDENING.heartbeatIntervalMs * 2);
   assert.ok(orphanSourceLockGraceMs() >= 90_000);
+});
+
+// --- loadTrulyStalledBullJobs: real-stalled vs. BullMQ "candidate" set ---
+// Regression guard for the false Degraded a long healthy job caused by merely
+// appearing in the `<prefix>:stalled` candidate set (repopulated with EVERY
+// active job on each stalled-check). Only lock-missing, still-active jobs count.
+
+function makeStalledQueue({ stalled = [], locks = {}, jobs = {} }) {
+  const prefix = 'bull:integration-imports';
+  const client = {
+    async smembers(key) {
+      assert.equal(key, `${prefix}:stalled`);
+      return stalled.slice();
+    },
+    async exists(key) {
+      const m = key.match(/:([^:]+):lock$/);
+      const id = m ? m[1] : null;
+      return locks[id] ? 1 : 0;
+    }
+  };
+  return {
+    qualifiedName: prefix,
+    client: Promise.resolve(client),
+    async getJob(id) {
+      const j = jobs[id];
+      if (!j) return null;
+      return { id, getState: async () => j.state };
+    }
+  };
+}
+
+test('loadTrulyStalledBullJobs ignores a healthy long-running job that holds its lock', async () => {
+  // Job 201814 style: in the candidate set, lock held, state active => NOT stalled.
+  const queue = makeStalledQueue({
+    stalled: ['201814'],
+    locks: { '201814': true },
+    jobs: { '201814': { state: 'active' } }
+  });
+  const result = await loadTrulyStalledBullJobs(queue);
+  assert.equal(result.length, 0);
+});
+
+test('loadTrulyStalledBullJobs counts an active job whose lock is gone (real stall)', async () => {
+  const queue = makeStalledQueue({
+    stalled: ['900'],
+    locks: {}, // lock expired => worker gone
+    jobs: { '900': { state: 'active' } }
+  });
+  const result = await loadTrulyStalledBullJobs(queue);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, '900');
+});
+
+test('loadTrulyStalledBullJobs ignores a completed job lingering in the candidate set', async () => {
+  const queue = makeStalledQueue({
+    stalled: ['901'],
+    locks: {},
+    jobs: { '901': { state: 'completed' } }
+  });
+  const result = await loadTrulyStalledBullJobs(queue);
+  assert.equal(result.length, 0);
+});
+
+test('loadTrulyStalledBullJobs ignores a candidate whose job no longer exists', async () => {
+  const queue = makeStalledQueue({ stalled: ['902'], locks: {}, jobs: {} });
+  const result = await loadTrulyStalledBullJobs(queue);
+  assert.equal(result.length, 0);
+});
+
+test('loadTrulyStalledBullJobs filters a mixed set to only the genuinely stalled job', async () => {
+  const queue = makeStalledQueue({
+    stalled: ['201814', '900', '901', '902'],
+    locks: { '201814': true }, // only the healthy job still holds its lock
+    jobs: {
+      '201814': { state: 'active' },    // healthy long job, lock held -> excluded
+      '900': { state: 'active' },       // lock gone, active -> stalled
+      '901': { state: 'completed' },    // completed leftover -> excluded
+      '902': undefined                  // job removed -> excluded
+    }
+  });
+  const result = await loadTrulyStalledBullJobs(queue);
+  assert.deepEqual(result.map((j) => j.id), ['900']);
 });
