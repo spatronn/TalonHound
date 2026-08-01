@@ -44,7 +44,7 @@ mkdir -p "$BACKUP_DIR"
 
 PG_OUT="${BACKUP_DIR}/postgres.dump"
 echo "[backup] PostgreSQL -> postgres.dump"
-docker compose exec -T db pg_dump -U demo -d demo -Fc > "$PG_OUT"
+docker compose exec -T db pg_dump -U talonhound -d talonhound -Fc > "$PG_OUT"
 PG_BYTES=$(wc -c < "$PG_OUT" | tr -d ' ')
 if [ "${PG_BYTES:-0}" -le 0 ]; then
   echo "[backup] empty dump; aborting" >&2

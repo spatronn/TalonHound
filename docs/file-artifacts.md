@@ -197,7 +197,7 @@ set ALLOW_FILE_ARTIFACT_DB_TESTS=1
 set NODE_ENV=test
 set DB_HOST=127.0.0.1
 set DB_PORT=55432
-set DB_USER=demo
+set DB_USER=talonhound
 set DB_PASSWORD=test
 set DB_NAME=talonhound_file_artifact_test
 npm run test:file-artifacts-db

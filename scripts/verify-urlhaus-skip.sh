@@ -8,9 +8,9 @@ sleep 120
 echo "=== Worker logs ==="
 docker compose logs integration-worker --tail 20 2>&1 | grep -E 'urlhaus|skipped unchanged|integration-import' || true
 echo "=== Recent integration_runs ==="
-docker compose exec -T db psql -U demo -d demo -P pager=off -c \
+docker compose exec -T db psql -U talonhound -d talonhound -P pager=off -c \
   "SELECT id, job_type, status, records_processed, records_updated, records_inserted, records_skipped
    FROM integration_runs WHERE job_type='urlhaus_import' ORDER BY id DESC LIMIT 3;"
 echo "=== Checkpoint ==="
-docker compose exec -T db psql -U demo -d demo -P pager=off -c \
+docker compose exec -T db psql -U talonhound -d talonhound -P pager=off -c \
   "SELECT left(last_cursor, 120) AS checkpoint FROM integration_checkpoints WHERE source_name='URLhaus:abuse.ch';"

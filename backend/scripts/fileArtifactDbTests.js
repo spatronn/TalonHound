@@ -14,7 +14,7 @@
  *   2 = environment unavailable (Docker/guard) — NOT a pass
  *
  * Env (defaults for dockerized run):
- *   DB_HOST=127.0.0.1 DB_PORT=55432 DB_USER=demo DB_PASSWORD=test
+ *   DB_HOST=127.0.0.1 DB_PORT=55432 DB_USER=talonhound DB_PASSWORD=test
  *   DB_NAME=talonhound_file_artifact_test
  *   FILE_ARTIFACT_DB_KEEP_CONTAINER=1  — leave container running after tests
  *   FILE_ARTIFACT_DB_SKIP_DOCKER=1     — use already-running DB (still guarded)
@@ -239,7 +239,7 @@ async function main() {
     if (!process.env.DB_HOST) process.env.DB_HOST = '127.0.0.1';
     if (!process.env.DB_PORT) process.env.DB_PORT = String(DEFAULT_PORT);
     if (!process.env.DB_NAME) process.env.DB_NAME = 'talonhound_file_artifact_test';
-    if (!process.env.DB_USER) process.env.DB_USER = 'demo';
+    if (!process.env.DB_USER) process.env.DB_USER = 'talonhound';
     if (!process.env.DB_PASSWORD) process.env.DB_PASSWORD = 'test';
     if (!process.env.NODE_ENV) process.env.NODE_ENV = 'test';
     if (!process.env.ALLOW_FILE_ARTIFACT_DB_TESTS) {

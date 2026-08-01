@@ -9,9 +9,9 @@ const sourceName = process.env.URLHAUS_SOURCE_NAME || 'URLhaus:abuse.ch';
 const pool = new pg.Pool({
   host: process.env.DB_HOST || 'db',
   port: Number(process.env.DB_PORT || 5432),
-  user: process.env.DB_USER || 'demo',
+  user: process.env.DB_USER || 'talonhound',
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'demo'
+  database: process.env.DB_NAME || 'talonhound'
 });
 
 const client = await pool.connect();

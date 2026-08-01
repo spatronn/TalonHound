@@ -20,8 +20,8 @@ services:
       - -c
       - pg_stat_statements.track=all
     environment:
-      - POSTGRES_DB=demo
-      - POSTGRES_USER=demo
+      - POSTGRES_DB=talonhound
+      - POSTGRES_USER=talonhound
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -43,9 +43,9 @@ services:
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars, e.g. openssl rand -hex 32)}
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USER=demo
+      - DB_USER=talonhound
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
+      - DB_NAME=talonhound
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
@@ -111,9 +111,9 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USER=demo
+      - DB_USER=talonhound
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
+      - DB_NAME=talonhound
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
@@ -156,9 +156,9 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USER=demo
+      - DB_USER=talonhound
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
+      - DB_NAME=talonhound
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
@@ -215,9 +215,9 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USER=demo
+      - DB_USER=talonhound
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
+      - DB_NAME=talonhound
       - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
       - TZ=${SYSTEM_TIMEZONE:-}
       - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
@@ -232,9 +232,9 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USER=demo
+      - DB_USER=talonhound
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
+      - DB_NAME=talonhound
       - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
       - TZ=${SYSTEM_TIMEZONE:-}
       - REDIS_HOST=redis
@@ -259,9 +259,9 @@ services:
     environment:
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USER=demo
+      - DB_USER=talonhound
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=demo
+      - DB_NAME=talonhound
       - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
       - TZ=${SYSTEM_TIMEZONE:-}
       - REDIS_HOST=redis

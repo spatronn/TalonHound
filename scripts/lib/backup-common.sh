@@ -185,7 +185,7 @@ find_postgres_dump() {
 # Returns 0 when target DB looks empty/fresh (skip safety); 1 when populated.
 target_db_is_empty() {
   # Prefer live tuple estimate across user tables; fall back to ioc_items/users if present.
-  _count=$(docker compose exec -T db psql -U demo -d demo -Atc \
+  _count=$(docker compose exec -T db psql -U talonhound -d talonhound -Atc \
     "SELECT COALESCE(SUM(n_live_tup), 0)::bigint
      FROM pg_stat_user_tables
      WHERE schemaname = 'public'" 2>/dev/null | tr -d '[:space:]') || _count=""
@@ -198,7 +198,7 @@ target_db_is_empty() {
   if [ "$_count" -le 50 ]; then
     # Fresh installs after migrate have schema + seed rows but little app data.
     # Double-check meaningful tables when they exist.
-    _app=$(docker compose exec -T db psql -U demo -d demo -Atc \
+    _app=$(docker compose exec -T db psql -U talonhound -d talonhound -Atc \
       "SELECT
          (CASE WHEN to_regclass('public.ioc_items') IS NOT NULL
                THEN (SELECT COUNT(*) FROM ioc_items) ELSE 0 END)
@@ -315,7 +315,7 @@ create_safety_backup() {
   SAFETY_DIR="${SAFETY_ROOT}/safety-${STAMP}"
   mkdir -p "$SAFETY_DIR"
   PG_OUT="${SAFETY_DIR}/postgres.dump"
-  if ! docker compose exec -T db pg_dump -U demo -d demo -Fc > "$PG_OUT"; then
+  if ! docker compose exec -T db pg_dump -U talonhound -d talonhound -Fc > "$PG_OUT"; then
     echo "[restore] safety backup pg_dump failed — aborting restore" >&2
     return 1
   fi

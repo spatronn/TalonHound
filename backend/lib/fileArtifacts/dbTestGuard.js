@@ -27,7 +27,7 @@ export function assertFileArtifactDbTestAllowed(env = process.env) {
   return {
     host,
     port: Number(env.DB_PORT || 55432),
-    user: env.DB_USER || 'demo',
+    user: env.DB_USER || 'talonhound',
     password: env.DB_PASSWORD || 'test',
     database: env.DB_NAME
   };

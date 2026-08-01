@@ -13,7 +13,7 @@ describe('assertFileArtifactDbTestAllowed', () => {
       DB_HOST: '127.0.0.1',
       DB_PORT: '55432',
       DB_NAME: 'talonhound_file_artifact_test',
-      DB_USER: 'demo',
+      DB_USER: 'talonhound',
       DB_PASSWORD: 'test'
     });
     assert.equal(cfg.database, 'talonhound_file_artifact_test');
@@ -48,7 +48,7 @@ describe('assertFileArtifactDbTestAllowed', () => {
       () => assertFileArtifactDbTestAllowed({
         ALLOW_FILE_ARTIFACT_DB_TESTS: '1',
         DB_HOST: 'localhost',
-        DB_NAME: 'demo',
+        DB_NAME: 'talonhound',
         NODE_ENV: 'test'
       }),
       /_test/

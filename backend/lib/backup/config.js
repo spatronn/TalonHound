@@ -53,9 +53,9 @@ export function getBackupConfig() {
     db: {
       host: String(process.env.DB_HOST || 'db'),
       port: Number(process.env.DB_PORT || 5432),
-      user: String(process.env.DB_USER || 'demo'),
+      user: String(process.env.DB_USER || 'talonhound'),
       password: process.env.DB_PASSWORD || '',
-      database: String(process.env.DB_NAME || 'demo')
+      database: String(process.env.DB_NAME || 'talonhound')
     }
   };
 }

@@ -148,7 +148,7 @@ trap - EXIT INT TERM
 stop_writers
 
 echo "[restore] PostgreSQL pg_restore..."
-if ! docker compose exec -T db pg_restore -U demo -d demo --clean --if-exists < "$PG_DUMP"; then
+if ! docker compose exec -T db pg_restore -U talonhound -d talonhound --clean --if-exists < "$PG_DUMP"; then
   echo "[restore] pg_restore reported errors (some warnings are normal with --clean)." >&2
   echo "[restore] continuing to migrate; verify application health carefully." >&2
 fi

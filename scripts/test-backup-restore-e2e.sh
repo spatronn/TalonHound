@@ -12,7 +12,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DB_USER="${DB_USER:-demo}"
+DB_USER="${DB_USER:-talonhound}"
 TEST_DB="talonhound_backup_test_$$"
 MARKER="e2e-marker-$(date -u +%Y%m%d%H%M%S)"
 

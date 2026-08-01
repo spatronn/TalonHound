@@ -30,11 +30,11 @@ docker compose up -d --build
 **Ops notes**
 - Check health:
   ```bash
-  docker compose exec -T db pg_isready -U demo -d demo
+  docker compose exec -T db pg_isready -U talonhound -d talonhound
   ```
 - Quick table counts:
   ```bash
-  docker compose exec -T db psql -U demo -d demo -c "SELECT count(*) FROM signal_events;" -c "SELECT count(*) FROM ioc_match_events;"
+  docker compose exec -T db psql -U talonhound -d talonhound -c "SELECT count(*) FROM signal_events;" -c "SELECT count(*) FROM ioc_match_events;"
   ```
 
 ---
@@ -127,7 +127,7 @@ docker compose up -d --build
   ```
 - Progress check:
   ```bash
-  docker compose exec -T db psql -U demo -d demo -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
+  docker compose exec -T db psql -U talonhound -d talonhound -c "SELECT last_processed_ioc_id, full_rebuild_pending, last_run_at, snapshot_last_refreshed_at FROM dashboard_map_job_state;"
   ```
 
 
