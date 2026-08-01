@@ -18,7 +18,6 @@ function createMockPool(store) {
       const s = String(sql);
 
       if (s.includes('INSERT INTO published_feed_access_keys')) {
-        const isCreate = params.length === 10;
         const row = {
           id: seq++,
           feed_id: null,
@@ -30,13 +29,15 @@ function createMockPool(store) {
           secret_ciphertext: params[5],
           secret_nonce: params[6],
           secret_tag: params[7],
-          enabled: isCreate ? params[8] : true,
-          created_by: isCreate ? params[9] : params[8],
+          enabled: params[8],
+          created_by: params[9],
           expires_at: null,
           last_used_at: null,
           last_used_ip: null,
           created_at: new Date().toISOString(),
           revoked_at: null,
+          deleted_at: null,
+          deleted_by: null,
           feed_name: null,
           feed_ioc_type: null,
           feed_slug: null
@@ -45,12 +46,18 @@ function createMockPool(store) {
         return { rows: [{ id: row.id }], rowCount: 1 };
       }
 
-      if (s.includes('SET enabled = FALSE, revoked_at = NOW()')) {
-        const row = store.find((r) => r.id === params[0] && !r.revoked_at);
-        if (row) { row.enabled = false; row.revoked_at = new Date().toISOString(); }
+      // Soft-delete
+      if (s.includes('UPDATE published_feed_access_keys') && s.includes('deleted_at = NOW()')) {
+        const row = store.find((r) => r.id === params[0] && !r.deleted_at);
+        if (row) {
+          row.enabled = false;
+          row.deleted_at = new Date().toISOString();
+          row.deleted_by = params[1];
+        }
         return { rows: row ? [{ id: row.id }] : [], rowCount: row ? 1 : 0 };
       }
 
+      // In-place secret update (create-time only path uses INSERT; keep for safety)
       if (s.includes('UPDATE published_feed_access_keys') && s.includes('token_hash = $2')) {
         const row = store.find((r) => r.id === params[0]);
         if (row) {
@@ -63,9 +70,9 @@ function createMockPool(store) {
         return { rows: [], rowCount: row ? 1 : 0 };
       }
 
+      // patch: name/enabled
       if (s.includes('UPDATE published_feed_access_keys SET')) {
-        // patch: name/enabled — params[0] is id, remaining are the set values in order
-        const row = store.find((r) => r.id === params[0] && !r.revoked_at);
+        const row = store.find((r) => r.id === params[0] && !r.deleted_at);
         if (row) {
           if (s.includes('name = $')) row.name = params[1];
           if (s.includes('enabled = $')) row.enabled = params[params.length - 1];
@@ -74,11 +81,13 @@ function createMockPool(store) {
       }
 
       if (s.includes('FROM published_feed_access_keys') && s.includes('ORDER BY k.created_at DESC')) {
-        return { rows: store.map(view), rowCount: store.length };
+        const rows = store.filter((r) => !r.deleted_at).map(view);
+        return { rows, rowCount: rows.length };
       }
 
       if (s.includes('FROM published_feed_access_keys') && s.includes('WHERE k.id = $1')) {
-        const row = store.find((r) => r.id === params[0]);
+        const requireNotDeleted = s.includes('deleted_at IS NULL');
+        const row = store.find((r) => r.id === params[0] && (!requireNotDeleted || !r.deleted_at));
         return { rows: row ? [view(row)] : [], rowCount: row ? 1 : 0 };
       }
 
@@ -87,11 +96,12 @@ function createMockPool(store) {
   };
 }
 
-function makeApp(store, getUser) {
+function makeApp(store, getUser, auditEvents) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => { req.user = getUser(); req.authVia = 'cookie'; next(); });
-  registerApiKeyRoutes(app, createMockPool(store), { auditSuccess: () => {} });
+  const audit = { auditSuccess: (e) => { auditEvents?.push(e); } };
+  registerApiKeyRoutes(app, createMockPool(store), audit);
   return app;
 }
 
@@ -115,6 +125,12 @@ async function req(app, method, path, body) {
   }
 }
 
+async function createKey(store, name = 'k') {
+  const created = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', { name, key_type: 'published_feed' });
+  assert.equal(created.status, 201);
+  return created;
+}
+
 test('create Published Feed key returns token + masked, never plaintext in api_key object', async () => {
   const store = [];
   const app = makeApp(store, () => ADMIN);
@@ -124,16 +140,14 @@ test('create Published Feed key returns token + masked, never plaintext in api_k
   assert.equal(res.body.api_key.revealable, true);
   assert.equal(res.body.api_key.key_type, 'published_feed');
   assert.match(res.body.api_key.masked_key, /^th_pf_•+/);
-  // The api_key object must not carry the plaintext secret.
   assert.ok(!JSON.stringify(res.body.api_key).includes(res.body.token));
   assert.equal(res.headers.get('cache-control'), 'no-store');
 });
 
 test('list never returns plaintext and marks revealable', async () => {
   const store = [];
-  const app = makeApp(store, () => ADMIN);
-  const created = await req(app, 'POST', '/api/api-keys', { name: 'k1', key_type: 'published_feed' });
-  const list = await req(app, 'GET', '/api/api-keys');
+  const created = await createKey(store, 'k1');
+  const list = await req(makeApp(store, () => ADMIN), 'GET', '/api/api-keys');
   assert.equal(list.status, 200);
   assert.ok(!list.text.includes(created.body.token));
   assert.equal(list.body.api_keys[0].revealable, true);
@@ -142,7 +156,7 @@ test('list never returns plaintext and marks revealable', async () => {
 
 test('admin can reveal; readonly is forbidden', async () => {
   const store = [];
-  const created = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', { name: 'k', key_type: 'published_feed' });
+  const created = await createKey(store, 'k');
   const id = created.body.api_key.id;
 
   const reveal = await req(makeApp(store, () => ADMIN), 'GET', `/api/api-keys/${id}/reveal`);
@@ -160,14 +174,127 @@ test('legacy hash-only key cannot be revealed', async () => {
     key_prefix: null, last_four: null, secret_ciphertext: null, secret_nonce: null,
     secret_tag: null, enabled: true, expires_at: null, last_used_at: null,
     last_used_ip: null, created_at: new Date().toISOString(), revoked_at: null,
+    deleted_at: null, deleted_by: null,
     feed_name: 'Old Feed', feed_ioc_type: 'ip', feed_slug: 'old-feed'
   }];
   const res = await req(makeApp(store, () => ADMIN), 'GET', '/api/api-keys/99/reveal');
   assert.equal(res.status, 409);
-  assert.match(res.body.message, /cannot be revealed. Rotate/);
+  assert.match(res.body.message, /cannot be revealed/);
 });
 
 test('rejects non published_feed key type on create', async () => {
   const res = await req(makeApp([], () => ADMIN), 'POST', '/api/api-keys', { name: 'x', key_type: 'feed_access' });
   assert.equal(res.status, 400);
+});
+
+test('ACTIVE -> DISABLED then DISABLED -> ACTIVE', async () => {
+  const store = [];
+  const created = await createKey(store, 'toggle');
+  const id = created.body.api_key.id;
+
+  const disable = await req(makeApp(store, () => ADMIN), 'PATCH', `/api/api-keys/${id}`, { enabled: false });
+  assert.equal(disable.status, 200);
+  assert.equal(disable.body.api_key.status, 'disabled');
+  assert.equal(disable.body.api_key.enabled, false);
+
+  const enable = await req(makeApp(store, () => ADMIN), 'PATCH', `/api/api-keys/${id}`, { enabled: true });
+  assert.equal(enable.status, 200);
+  assert.equal(enable.body.api_key.status, 'active');
+  assert.equal(enable.body.api_key.enabled, true);
+});
+
+test('enabling an already-enabled key is rejected (state machine)', async () => {
+  const store = [];
+  const created = await createKey(store, 'noop');
+  const id = created.body.api_key.id;
+  const res = await req(makeApp(store, () => ADMIN), 'PATCH', `/api/api-keys/${id}`, { enabled: true });
+  assert.equal(res.status, 409);
+});
+
+test('disabling an expired key is rejected (state machine)', async () => {
+  const store = [{
+    id: 77, feed_id: null, name: 'expired', token_hash: 'z', key_type: 'published_feed',
+    key_prefix: 'th_pf_', last_four: 'wxyz', secret_ciphertext: Buffer.from('x'),
+    secret_nonce: Buffer.from('n'), secret_tag: Buffer.from('t'), enabled: true,
+    expires_at: new Date(Date.now() - 1000).toISOString(), last_used_at: null, last_used_ip: null,
+    created_at: new Date().toISOString(), revoked_at: null, deleted_at: null, deleted_by: null,
+    feed_name: null, feed_ioc_type: null, feed_slug: null
+  }];
+  const res = await req(makeApp(store, () => ADMIN), 'PATCH', '/api/api-keys/77', { enabled: false });
+  assert.equal(res.status, 409);
+});
+
+test('ACTIVE -> DELETED: soft-deletes, hides from list, blocks reveal, is irreversible', async () => {
+  const store = [];
+  const auditEvents = [];
+  const created = await createKey(store, 'delete-me');
+  const id = created.body.api_key.id;
+
+  const del = await req(makeApp(store, () => ADMIN, auditEvents), 'DELETE', `/api/api-keys/${id}`);
+  assert.equal(del.status, 200);
+  assert.equal(del.body.ok, true);
+
+  // Not in the list anymore.
+  const list = await req(makeApp(store, () => ADMIN), 'GET', '/api/api-keys');
+  assert.equal(list.body.api_keys.length, 0);
+
+  // Reveal is now 404.
+  const reveal = await req(makeApp(store, () => ADMIN), 'GET', `/api/api-keys/${id}/reveal`);
+  assert.equal(reveal.status, 404);
+
+  // Deleting again is a 404 (irreversible, idempotent from the client's view).
+  const again = await req(makeApp(store, () => ADMIN), 'DELETE', `/api/api-keys/${id}`);
+  assert.equal(again.status, 404);
+
+  // Audit metadata carries only safe fields — never the secret.
+  const evt = auditEvents.find((e) => e.action === 'api_key.deleted');
+  assert.ok(evt);
+  // Only safe metadata/snapshot is recorded — never the secret.
+  const serialized = JSON.stringify({ metadata: evt.metadata, before: evt.before, after: evt.after });
+  assert.ok(!serialized.includes(created.body.token));
+  assert.deepEqual(Object.keys(evt.metadata).sort(), ['key_id', 'key_type', 'name']);
+});
+
+test('DISABLED -> DELETED', async () => {
+  const store = [];
+  const created = await createKey(store, 'disabled-delete');
+  const id = created.body.api_key.id;
+  await req(makeApp(store, () => ADMIN), 'PATCH', `/api/api-keys/${id}`, { enabled: false });
+  const del = await req(makeApp(store, () => ADMIN), 'DELETE', `/api/api-keys/${id}`);
+  assert.equal(del.status, 200);
+});
+
+test('legacy feed_access key supports delete', async () => {
+  const store = [{
+    id: 42, feed_id: 5, name: 'legacy', token_hash: 'abc', key_type: 'feed_access',
+    key_prefix: null, last_four: null, secret_ciphertext: null, secret_nonce: null,
+    secret_tag: null, enabled: true, expires_at: null, last_used_at: null,
+    last_used_ip: null, created_at: new Date().toISOString(), revoked_at: null,
+    deleted_at: null, deleted_by: null, feed_name: 'Old', feed_ioc_type: 'ip', feed_slug: 'old'
+  }];
+  const auditEvents = [];
+  const del = await req(makeApp(store, () => ADMIN, auditEvents), 'DELETE', '/api/api-keys/42');
+  assert.equal(del.status, 200);
+  const evt = auditEvents.find((e) => e.action === 'api_key.deleted');
+  assert.equal(evt.metadata.key_type, 'feed_access');
+});
+
+test('readonly cannot delete or patch', async () => {
+  const store = [];
+  const created = await createKey(store, 'guarded');
+  const id = created.body.api_key.id;
+  const del = await req(makeApp(store, () => READONLY), 'DELETE', `/api/api-keys/${id}`);
+  assert.equal(del.status, 403);
+  const patch = await req(makeApp(store, () => READONLY), 'PATCH', `/api/api-keys/${id}`, { enabled: false });
+  assert.equal(patch.status, 403);
+});
+
+test('rotate and revoke endpoints no longer exist', async () => {
+  const store = [];
+  const created = await createKey(store, 'gone');
+  const id = created.body.api_key.id;
+  const rotate = await req(makeApp(store, () => ADMIN), 'POST', `/api/api-keys/${id}/rotate`, { reason: 'x' });
+  assert.equal(rotate.status, 404);
+  const revoke = await req(makeApp(store, () => ADMIN), 'POST', `/api/api-keys/${id}/revoke`, { reason: 'x' });
+  assert.equal(revoke.status, 404);
 });

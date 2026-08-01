@@ -142,9 +142,9 @@ export function registerPublicFeedRoutes(app, pool) {
 
     try {
       const { rows: keyRows } = await pool.query(
-        `SELECT id, token_hash, key_type, enabled, revoked_at, expires_at
+        `SELECT id, token_hash, key_type, enabled, revoked_at, deleted_at, expires_at
          FROM published_feed_access_keys
-         WHERE token_hash = $1 AND key_type = $2
+         WHERE token_hash = $1 AND key_type = $2 AND deleted_at IS NULL
          LIMIT 1`,
         [presentedHash, PUBLISHED_FEED_KEY_TYPE]
       );
@@ -197,11 +197,11 @@ export function registerPublicFeedRoutes(app, pool) {
 
     try {
       const { rows: keyRows } = await pool.query(
-        `SELECT k.id, k.enabled, k.revoked_at, k.expires_at,
+        `SELECT k.id, k.enabled, k.revoked_at, k.deleted_at, k.expires_at,
                 f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_type, f.time_window, f.max_items
          FROM published_feed_access_keys k
          JOIN published_feeds f ON f.id = k.feed_id
-         WHERE k.token_hash = $1
+         WHERE k.token_hash = $1 AND k.deleted_at IS NULL
          LIMIT 1`,
         [tokenHash]
       );

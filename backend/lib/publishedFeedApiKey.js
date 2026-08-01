@@ -71,10 +71,12 @@ export function isRevealableKeyRow(row) {
 
 /**
  * Derive UI status from a key row.
- * @returns {'revoked'|'expired'|'disabled'|'active'}
+ * Soft-deleted keys (and any legacy revoked rows) are reported as `deleted`; such
+ * keys are hidden from the list and rejected by every auth path.
+ * @returns {'deleted'|'expired'|'disabled'|'active'}
  */
 export function keyStatus(row, now = new Date()) {
-  if (row?.revoked_at) return 'revoked';
+  if (row?.deleted_at || row?.revoked_at) return 'deleted';
   if (row?.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) return 'expired';
   if (!row?.enabled) return 'disabled';
   return 'active';

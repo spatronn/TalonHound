@@ -1,7 +1,6 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
-import { parseActionReason } from '../lib/reasonValidation.js';
 import {
   PUBLISHED_FEED_KEY_TYPE,
   LEGACY_FEED_ACCESS_KEY_TYPE,
@@ -19,12 +18,12 @@ import {
   isApiKeyEncryptionConfigured
 } from '../lib/apiKeyEncryption.js';
 
-const LEGACY_REVEAL_MESSAGE = 'This legacy key cannot be revealed. Rotate to create a revealable key.';
+const LEGACY_REVEAL_MESSAGE = 'This legacy key cannot be revealed.';
 
 const LIST_COLUMNS = `
   k.id, k.feed_id, k.name, k.key_type, k.key_prefix, k.last_four,
   k.enabled, k.expires_at, k.last_used_at, k.last_used_ip,
-  k.created_at, k.revoked_at,
+  k.created_at, k.revoked_at, k.deleted_at,
   (k.secret_ciphertext IS NOT NULL) AS has_secret,
   f.name AS feed_name, f.ioc_type AS feed_ioc_type, f.slug AS feed_slug`;
 
@@ -87,6 +86,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
         `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
          LEFT JOIN published_feeds f ON f.id = k.feed_id
+         WHERE k.deleted_at IS NULL
          ORDER BY k.created_at DESC`
       );
       return res.json({ api_keys: rows.map(toPublicApiKey) });
@@ -170,7 +170,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
         `SELECT ${LIST_COLUMNS}, k.secret_ciphertext, k.secret_nonce, k.secret_tag
          FROM published_feed_access_keys k
          LEFT JOIN published_feeds f ON f.id = k.feed_id
-         WHERE k.id = $1`,
+         WHERE k.id = $1 AND k.deleted_at IS NULL`,
         [keyId]
       );
       if (!rows.length) return res.status(404).json({ message: 'API key not found' });
@@ -223,15 +223,32 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
 
     try {
+      // Deleted keys are gone for good: never match them here.
       const beforeQ = await pool.query(
         `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
          LEFT JOIN published_feeds f ON f.id = k.feed_id
-         WHERE k.id = $1 AND k.revoked_at IS NULL`,
+         WHERE k.id = $1 AND k.deleted_at IS NULL`,
         [keyId]
       );
       if (!beforeQ.rows.length) return res.status(404).json({ message: 'API key not found' });
-      const before = apiKeyAuditSnapshot(beforeQ.rows[0]);
+      const beforeRow = beforeQ.rows[0];
+      const before = apiKeyAuditSnapshot(beforeRow);
+
+      // Enforce the enable/disable state machine server-side (do not trust the UI):
+      // enable only applies to a currently-disabled key; disable only to an active one.
+      // Expired keys cannot be toggled.
+      if (enabled !== undefined) {
+        const currentStatus = keyStatus(beforeRow);
+        if (currentStatus === 'expired') {
+          return res.status(409).json({ message: 'Expired keys cannot be enabled or disabled' });
+        }
+        if (Boolean(enabled) === Boolean(beforeRow.enabled)) {
+          return res.status(409).json({
+            message: `API key is already ${beforeRow.enabled ? 'enabled' : 'disabled'}`
+          });
+        }
+      }
 
       const params = [keyId];
       const sets = [];
@@ -246,7 +263,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
 
       await pool.query(
         `UPDATE published_feed_access_keys SET ${sets.join(', ')}
-         WHERE id = $1 AND revoked_at IS NULL`,
+         WHERE id = $1 AND deleted_at IS NULL`,
         params
       );
       const afterQ = await pool.query(
@@ -276,154 +293,51 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
   });
 
-  // Rotate: revealable keys get a fresh secret in place; legacy hash-only keys are
-  // replaced by a new revealable Published Feed key and the old one is revoked.
-  app.post('/api/api-keys/:keyId/rotate', requireRole(ROLES.ADMIN), async (req, res) => {
+  // Delete (soft-delete): irreversible. The key is stamped deleted_at/deleted_by,
+  // hidden from the list, and rejected by every auth path. Works for both
+  // Published Feed and legacy Feed Access keys.
+  app.delete('/api/api-keys/:keyId', requireRole(ROLES.ADMIN), async (req, res) => {
     const keyId = Number(req.params.keyId);
     if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
-    const reasonCheck = parseActionReason(req.body);
-    if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
-    if (!isApiKeyEncryptionConfigured()) {
-      return res.status(503).json({ message: 'API_KEY_ENCRYPTION_KEY is not configured' });
-    }
-
-    try {
-      const existingQ = await pool.query(
-        `SELECT ${LIST_COLUMNS}
-         FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id
-         WHERE k.id = $1 AND k.revoked_at IS NULL`,
-        [keyId]
-      );
-      if (!existingQ.rows.length) return res.status(404).json({ message: 'API key not found' });
-      const existing = existingQ.rows[0];
-
-      const rawKey = generatePublishedFeedApiKey();
-      const tokenHash = hashApiKey(rawKey);
-      const { ciphertext, nonce, tag } = encryptApiKeySecret(rawKey);
-
-      let resultRow;
-      let upgradedFromLegacy = false;
-
-      if (isRevealableKeyRow(existing)) {
-        // In-place rotation keeps the same key id.
-        await pool.query(
-          `UPDATE published_feed_access_keys
-           SET token_hash = $2, last_four = $3, secret_ciphertext = $4,
-               secret_nonce = $5, secret_tag = $6
-           WHERE id = $1`,
-          [keyId, tokenHash, lastFourOf(rawKey), ciphertext, nonce, tag]
-        );
-        const afterQ = await pool.query(
-          `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
-           LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
-          [keyId]
-        );
-        resultRow = afterQ.rows[0];
-      } else {
-        // Legacy hash-only key: mint a new revealable key and revoke the old one.
-        upgradedFromLegacy = true;
-        const insertQ = await pool.query(
-          `INSERT INTO published_feed_access_keys
-             (feed_id, name, token_hash, key_type, key_prefix, last_four,
-              secret_ciphertext, secret_nonce, secret_tag, enabled, created_by)
-           VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9)
-           RETURNING id`,
-          [
-            existing.name,
-            tokenHash,
-            PUBLISHED_FEED_KEY_TYPE,
-            PUBLISHED_FEED_KEY_PREFIX,
-            lastFourOf(rawKey),
-            ciphertext,
-            nonce,
-            tag,
-            req.user?.email || req.user?.username || null
-          ]
-        );
-        await pool.query(
-          `UPDATE published_feed_access_keys SET enabled = FALSE, revoked_at = NOW()
-           WHERE id = $1 AND revoked_at IS NULL`,
-          [keyId]
-        );
-        const afterQ = await pool.query(
-          `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
-           LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
-          [insertQ.rows[0].id]
-        );
-        resultRow = afterQ.rows[0];
-      }
-
-      const key = toPublicApiKey(resultRow);
-      audit?.auditSuccess({
-        req,
-        action: AUDIT_ACTION.API_KEY_ROTATED,
-        entityType: AUDIT_ENTITY.API_KEY,
-        entityId: String(key.id),
-        entityDisplay: key.name,
-        severity: AUDIT_SEVERITY.WARNING,
-        after: apiKeyAuditSnapshot(resultRow),
-        metadata: {
-          key_type: PUBLISHED_FEED_KEY_TYPE,
-          masked_key: key.masked_key,
-          upgraded_from_legacy: upgradedFromLegacy,
-          previous_key_id: upgradedFromLegacy ? keyId : undefined,
-          reason: reasonCheck.reason
-        }
-      });
-
-      noStore(res);
-      return res.json({ api_key: key, token: rawKey, upgraded_from_legacy: upgradedFromLegacy });
-    } catch (err) {
-      return res.status(500).json({ message: 'Failed to rotate API key', detail: err.message });
-    }
-  });
-
-  app.post('/api/api-keys/:keyId/revoke', requireRole(ROLES.ADMIN), async (req, res) => {
-    const keyId = Number(req.params.keyId);
-    if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
-    const reasonCheck = parseActionReason(req.body);
-    if (!reasonCheck.ok) return res.status(400).json({ message: reasonCheck.message });
 
     try {
       const beforeQ = await pool.query(
         `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
          LEFT JOIN published_feeds f ON f.id = k.feed_id
-         WHERE k.id = $1 AND k.revoked_at IS NULL`,
+         WHERE k.id = $1 AND k.deleted_at IS NULL`,
         [keyId]
       );
       if (!beforeQ.rows.length) return res.status(404).json({ message: 'API key not found' });
-      const before = apiKeyAuditSnapshot(beforeQ.rows[0]);
+      const beforeRow = beforeQ.rows[0];
+      const actor = req.user?.email || req.user?.username || null;
 
       await pool.query(
         `UPDATE published_feed_access_keys
-         SET enabled = FALSE, revoked_at = NOW()
-         WHERE id = $1 AND revoked_at IS NULL`,
-        [keyId]
+         SET enabled = FALSE, deleted_at = NOW(), deleted_by = $2
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [keyId, actor]
       );
-      const afterQ = await pool.query(
-        `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
-        [keyId]
-      );
-      const key = toPublicApiKey(afterQ.rows[0]);
 
+      // Audit records only safe metadata — never the key secret/material.
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.API_KEY_DELETED,
         entityType: AUDIT_ENTITY.API_KEY,
-        entityId: String(key.id),
-        entityDisplay: key.name,
+        entityId: String(beforeRow.id),
+        entityDisplay: beforeRow.name,
         severity: AUDIT_SEVERITY.CRITICAL,
-        before,
-        after: apiKeyAuditSnapshot(afterQ.rows[0]),
-        metadata: { revoked: true, reason: reasonCheck.reason }
+        before: apiKeyAuditSnapshot(beforeRow),
+        metadata: {
+          key_id: Number(beforeRow.id),
+          name: beforeRow.name,
+          key_type: beforeRow.key_type || LEGACY_FEED_ACCESS_KEY_TYPE
+        }
       });
 
-      return res.json({ api_key: key });
+      return res.json({ ok: true, id: Number(beforeRow.id) });
     } catch (err) {
-      return res.status(500).json({ message: 'Failed to revoke API key', detail: err.message });
+      return res.status(500).json({ message: 'Failed to delete API key', detail: err.message });
     }
   });
 }

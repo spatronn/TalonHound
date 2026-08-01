@@ -5989,7 +5989,6 @@ function AuditLogsPage() {
 function apiKeyStatusStyle(status) {
   const map = {
     active: { bg: 'rgba(34,197,94,0.15)', c: '#86efac', b: '#166534' },
-    revoked: { bg: 'rgba(239,68,68,0.15)', c: '#fca5a5', b: '#7f1d1d' },
     expired: { bg: 'rgba(234,179,8,0.15)', c: '#fcd34d', b: '#854d0e' },
     disabled: { bg: 'rgba(148,163,184,0.15)', c: '#94a3b8', b: '#475569' }
   };
@@ -6001,9 +6000,10 @@ function apiKeyStatusStyle(status) {
   };
 }
 
+const DELETE_KEY_WARNING = 'This API key will permanently stop working and cannot be restored.';
+
 function ApiKeysPage() {
   const { isAdmin } = useSession();
-  const requestRequiredReason = useReasonPrompt();
   const ui = PUBLISHED_FEEDS_UI;
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState([]);
@@ -6013,6 +6013,16 @@ function ApiKeysPage() {
   const [revealed, setRevealed] = useState({});
   const [revealing, setRevealing] = useState({});
   const [createdKey, setCreatedKey] = useState(null);
+  // Delete requires explicit confirmation in a modal before any request is sent.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(''), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   async function loadAll() {
     setLoading(true);
@@ -6093,45 +6103,30 @@ function ApiKeysPage() {
     }
   }
 
-  async function rotateKey(key) {
-    if (!isAdmin || !window.confirm('Rotate this key? The old key stops working immediately.')) return;
-    const reason = await requestRequiredReason('Rotate API key');
-    if (!reason) return;
-    try {
-      const { data } = await api.post(`/api-keys/${key.id}/rotate`, { reason });
-      hideKey(key.id);
-      setCreatedKey({
-        title: data.upgraded_from_legacy
-          ? 'New revealable key created — legacy key revoked'
-          : 'API key rotated',
-        token: data.token
-      });
-      await loadAll();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to rotate API key');
-    }
-  }
-
-  async function revokeKey(keyId) {
-    if (!isAdmin || !window.confirm('Revoke this API key? Pull access stops immediately.')) return;
-    const reason = await requestRequiredReason('Revoke API key');
-    if (!reason) return;
-    try {
-      await api.post(`/api-keys/${keyId}/revoke`, { reason });
-      hideKey(keyId);
-      await loadAll();
-    } catch {
-      alert('Failed to revoke API key');
-    }
-  }
-
   async function toggleEnabled(key) {
-    if (!isAdmin || key.status === 'revoked' || key.status === 'expired') return;
+    if (!isAdmin || key.status === 'expired') return;
     try {
       await api.patch(`/api-keys/${key.id}`, { enabled: !key.enabled });
+      setToast(key.enabled ? 'API key disabled' : 'API key enabled');
       await loadAll();
-    } catch {
-      alert('Failed to update API key');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update API key');
+    }
+  }
+
+  async function confirmDelete() {
+    if (!isAdmin || !deleteTarget) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api-keys/${deleteTarget.id}`);
+      hideKey(deleteTarget.id);
+      setDeleteTarget(null);
+      setToast('API key deleted');
+      await loadAll();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete API key');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -6154,6 +6149,8 @@ function ApiKeysPage() {
             ) : null}
           </div>
         </div>
+
+        {toast ? <div style={{ marginBottom: 10, color: '#86efac' }}>{toast}</div> : null}
 
         <div style={{ overflowX: 'auto' }}>
           <table className="ioc-table published-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 13, background: 'transparent' }}>
@@ -6192,8 +6189,8 @@ function ApiKeysPage() {
                           <button type="button" style={{ ...ui.btn, padding: '4px 10px', fontSize: 12 }} onClick={() => copyKey(k)}>Copy</button>
                         </>
                       ) : (
-                        <span style={{ fontSize: 11, color: '#64748b' }} title={k.key_type === 'published_feed' ? 'Encryption key unavailable' : 'This legacy key cannot be revealed. Rotate to create a revealable key.'}>
-                          {k.key_type === 'published_feed' ? 'Not revealable' : 'Legacy — rotate to reveal'}
+                        <span style={{ fontSize: 11, color: '#64748b' }} title={k.key_type === 'published_feed' ? 'Encryption key unavailable' : 'This legacy key cannot be revealed.'}>
+                          {k.key_type === 'published_feed' ? 'Not revealable' : 'Legacy — not revealable'}
                         </span>
                       )}
                     </div>
@@ -6202,15 +6199,20 @@ function ApiKeysPage() {
                   <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
                   <td style={ui.td}>{formatUserDateTime(k.created_at)}</td>
                   <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                    {isAdmin && k.status !== 'revoked' ? (
+                    {isAdmin ? (
                       <>
-                        <button type="button" style={ui.btn} onClick={() => rotateKey(k)}>Rotate</button>
-                        <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => revokeKey(k.id)}>Revoke</button>
                         {k.status !== 'expired' ? (
-                          <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => toggleEnabled(k)}>
+                          <button type="button" style={ui.btn} onClick={() => toggleEnabled(k)}>
                             {k.enabled ? 'Disable' : 'Enable'}
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          style={{ ...ui.btn, marginLeft: k.status !== 'expired' ? 6 : 0, borderColor: '#7f1d1d', color: '#fca5a5' }}
+                          onClick={() => setDeleteTarget(k)}
+                        >
+                          Delete
+                        </button>
                       </>
                     ) : <span style={ui.muted}>—</span>}
                   </td>
@@ -6280,6 +6282,34 @@ function ApiKeysPage() {
               Find the exact URL template on the Published Feeds page.
             </p>
             <button type="button" style={{ ...ui.btn, marginTop: 16, width: '100%' }} onClick={() => setCreatedKey(null)}>Done</button>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1002, padding: 16 }}
+          onClick={() => { if (!deleting) setDeleteTarget(null); }}
+        >
+          <div style={{ ...ui.modal, maxWidth: 480, width: '100%' }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Delete API key</h3>
+            <p style={{ ...ui.modalSub, color: '#cbd5e1' }}>
+              Delete <strong style={{ color: '#f1f5f9' }}>{deleteTarget.name}</strong>?
+            </p>
+            <p style={{ color: '#fca5a5', fontWeight: 600, margin: '12px 0 0' }}>
+              {DELETE_KEY_WARNING}
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button type="button" style={ui.btn} disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button
+                type="button"
+                style={{ ...ui.btnPrimary, background: '#b91c1c', borderColor: '#7f1d1d' }}
+                disabled={deleting}
+                onClick={() => confirmDelete().catch(() => {})}
+              >
+                {deleting ? 'Deleting…' : 'Delete key'}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

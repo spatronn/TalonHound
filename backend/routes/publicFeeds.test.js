@@ -8,7 +8,7 @@ import { hashFeedAccessToken } from '../lib/feedAccessToken.js';
 function baseKey(over = {}) {
   return {
     id: 1, token_hash: 'x', key_type: 'published_feed', enabled: true,
-    revoked_at: null, expires_at: null, feed_id: null, ...over
+    revoked_at: null, deleted_at: null, expires_at: null, feed_id: null, ...over
   };
 }
 
@@ -26,12 +26,13 @@ function createMockPool({ keys = [], feeds = [] }) {
       const s = String(sql);
 
       if (s.includes('FROM published_feed_access_keys') && s.includes('key_type = $2')) {
-        const row = keys.find((k) => k.token_hash === params[0] && k.key_type === params[1]);
+        // The pull endpoint filters out soft-deleted keys in SQL.
+        const row = keys.find((k) => k.token_hash === params[0] && k.key_type === params[1] && !k.deleted_at);
         return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
       }
-      // legacy join lookup
+      // legacy join lookup (also excludes soft-deleted keys)
       if (s.includes('FROM published_feed_access_keys k') && s.includes('JOIN published_feeds')) {
-        const row = keys.find((k) => k.token_hash === params[0]);
+        const row = keys.find((k) => k.token_hash === params[0] && !k.deleted_at);
         if (!row) return { rows: [], rowCount: 0 };
         const feed = feeds.find((f) => f.id === row.feed_id);
         return {
@@ -117,6 +118,25 @@ test('revoked / expired / disabled keys are rejected', async () => {
     const res = await get(app, `/api/published-feeds/malware-domains?api_key=${raw}`);
     assert.equal(res.status, 403);
   }
+});
+
+test('a soft-deleted key is rejected (treated as unknown)', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw), deleted_at: new Date().toISOString() })];
+  const app = makeApp(createMockPool({ keys, feeds: FEEDS }));
+  const res = await get(app, `/api/published-feeds/malware-domains?api_key=${raw}`);
+  assert.equal(res.status, 401);
+});
+
+test('a soft-deleted legacy key is rejected on the legacy endpoint', async () => {
+  const raw = 'legacy-token-value';
+  const keys = [baseKey({
+    token_hash: hashFeedAccessToken(raw), key_type: 'feed_access', feed_id: 1,
+    deleted_at: new Date().toISOString()
+  })];
+  const app = makeApp(createMockPool({ keys, feeds: FEEDS }));
+  const res = await get(app, '/public/feeds/legacy-token-value/feed.txt');
+  assert.equal(res.status, 404);
 });
 
 test('missing api_key falls through to the admin route', async () => {

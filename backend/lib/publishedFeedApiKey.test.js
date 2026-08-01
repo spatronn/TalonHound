@@ -58,10 +58,12 @@ test('isRevealableKeyRow requires published_feed type + ciphertext', () => {
   assert.equal(isRevealableKeyRow({ key_type: 'feed_access', secret_ciphertext: Buffer.from('x') }), false);
 });
 
-test('keyStatus resolves revoked/expired/disabled/active', () => {
+test('keyStatus resolves deleted/expired/disabled/active', () => {
   const past = new Date(Date.now() - 1000).toISOString();
   const future = new Date(Date.now() + 100000).toISOString();
-  assert.equal(keyStatus({ revoked_at: past, enabled: true }), 'revoked');
+  assert.equal(keyStatus({ deleted_at: past, enabled: true }), 'deleted');
+  // Legacy revoked rows also read as deleted (defense-in-depth for un-migrated rows).
+  assert.equal(keyStatus({ revoked_at: past, enabled: true }), 'deleted');
   assert.equal(keyStatus({ enabled: true, expires_at: past }), 'expired');
   assert.equal(keyStatus({ enabled: false }), 'disabled');
   assert.equal(keyStatus({ enabled: true, expires_at: future }), 'active');
