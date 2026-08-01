@@ -1021,6 +1021,7 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
       status: asnLastUpdatedAt ? 'success' : 'never',
       last_status: asnLastUpdatedAt ? 'success' : 'never',
       health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'never') : 'disabled',
+      run_health_state: feedActive ? (asnLastUpdatedAt ? 'success' : 'never') : 'disabled',
       runtime_state: null,
       last_run_at: asnLastUpdatedAt || null,
       last_started_at: asnLastUpdatedAt || null,
@@ -1081,6 +1082,10 @@ function mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, las
     status: lastStatus,
     last_status: lastStatus,
     health_state: healthState,
+    // Run-level operational health of the latest run, before any USOM full-reconciliation
+    // overlay is applied by mergeUsomReconciliationFields. The Last Result column reconciles
+    // against this so a separate reconciliation problem never rewrites a successful run.
+    run_health_state: healthState,
     runtime_state: runtimeState,
     last_run_at: lr?.finished_at || lr?.started_at || lq?.finished_at || lq?.started_at || lq?.queued_at || null,
     last_started_at: lr?.started_at || lq?.started_at || lq?.queued_at || null,

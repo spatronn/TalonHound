@@ -65,3 +65,35 @@ test('full reconciliation health warns after 8 days and degrades after 14', () =
   });
   assert.equal(failed.state, 'degraded');
 });
+
+test('full-reconciliation health is a separate, explicitly labeled signal', () => {
+  const now = new Date('2026-08-01T22:30:00.000Z');
+
+  // Latest full reconciliation failed, even though a fresh successful full exists just before it.
+  const failed = buildUsomReconciliationHealth({
+    latestFullRun: { status: 'failed', finished_at: '2026-08-01T21:16:00.000Z' },
+    lastSuccessfulFullRun: { status: 'success', finished_at: '2026-08-01T20:46:00.000Z' },
+    now
+  });
+  assert.equal(failed.state, 'degraded');
+  assert.equal(failed.warning, 'Latest full reconciliation failed.');
+  assert.equal(failed.latest_status, 'failed');
+
+  // Successful full reconciliation clears the degraded reconciliation signal.
+  const healthy = buildUsomReconciliationHealth({
+    latestFullRun: { status: 'success', finished_at: '2026-08-01T20:46:00.000Z' },
+    lastSuccessfulFullRun: { status: 'success', finished_at: '2026-08-01T20:46:00.000Z' },
+    now
+  });
+  assert.equal(healthy.state, 'healthy');
+  assert.equal(healthy.warning, null);
+
+  // A successful incremental does not feed this signal — it is derived only from full runs.
+  const noFullEver = buildUsomReconciliationHealth({
+    latestFullRun: null,
+    lastSuccessfulFullRun: null,
+    now
+  });
+  assert.equal(noFullEver.state, 'degraded');
+  assert.equal(noFullEver.warning, 'No successful full reconciliation has been recorded.');
+});

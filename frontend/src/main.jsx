@@ -81,6 +81,7 @@ import {
 import {
   presentFeedLastResult,
   resolveFeedLastResult,
+  resolveLastResultHealthState,
   FEED_RESULT_TONE_COLORS,
   FEED_RESULT_METRIC_TOOLTIPS
 } from './lib/feedLastResult.js';
@@ -2250,7 +2251,7 @@ function FeedSettingsModal({
 
         {(() => {
           const result = resolveFeedLastResult(feed);
-          const view = presentFeedLastResult(result, { healthState: feed?.health_state });
+          const view = presentFeedLastResult(result, { healthState: resolveLastResultHealthState(feed) });
           if (result.status === 'never' && !result.checked) return null;
           return (
             <div style={{ borderTop: '1px solid #1e293b', paddingTop: 14 }}>
@@ -2774,7 +2775,7 @@ function formatFeedNextRunCell(feed, canRunNow) {
 
 function LastRunMetricsCell({ feed }) {
   const result = resolveFeedLastResult(feed);
-  const view = presentFeedLastResult(result, { healthState: feed?.health_state });
+  const view = presentFeedLastResult(result, { healthState: resolveLastResultHealthState(feed) });
   const primaryColor = FEED_RESULT_TONE_COLORS[view.primaryTone] || FEED_RESULT_TONE_COLORS.neutral;
 
   return (

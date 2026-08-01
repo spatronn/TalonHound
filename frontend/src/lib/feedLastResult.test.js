@@ -4,6 +4,7 @@ import {
   presentFeedLastResult,
   resolveFeedLastResult,
   reconcileLastResultWithHealth,
+  resolveLastResultHealthState,
   FEED_RESULT_TONE_COLORS
 } from './feedLastResult.js';
 
@@ -217,6 +218,104 @@ test('fallback legacy payload with high skipped stays completed', () => {
   assert.equal(result.rejected, 0);
   const view = presentFeedLastResult(result, { healthState: 'success' });
   assert.equal(view.primary, 'Completed · 10 new · 6 updated');
+});
+
+// --- USOM: full-reconciliation health is a separate signal from Last Result ---
+
+test('resolveLastResultHealthState prefers run_health_state over overlaid health_state', () => {
+  assert.equal(
+    resolveLastResultHealthState({ health_state: 'degraded', run_health_state: 'success' }),
+    'success'
+  );
+});
+
+test('resolveLastResultHealthState falls back to health_state on legacy payloads', () => {
+  assert.equal(resolveLastResultHealthState({ health_state: 'warning' }), 'warning');
+  assert.equal(resolveLastResultHealthState(null), null);
+});
+
+test('successful incremental is not shown as Failed when a separate full reconciliation failed', () => {
+  // Reported scenario: latest run = incremental success (1 new); feed health degraded
+  // solely because the last full reconciliation failed. Last Result must reflect the run.
+  const feed = {
+    health_state: 'degraded',
+    run_health_state: 'success',
+    reconciliation_health_state: 'degraded',
+    reconciliation_warning: 'Latest full reconciliation failed.',
+    last_result: {
+      status: 'completed',
+      outcome: 'changes',
+      checked: 143,
+      new: 1,
+      updated: 0,
+      unchanged: 142,
+      rejected: 0
+    }
+  };
+  const view = presentFeedLastResult(resolveFeedLastResult(feed), {
+    healthState: resolveLastResultHealthState(feed)
+  });
+  assert.equal(view.primary, 'Completed · 1 new');
+  assert.equal(view.primaryTone, 'success');
+  assert.equal(view.primary.includes('Failed'), false);
+});
+
+test('genuinely failed last run still shows Failed even when feed is degraded', () => {
+  // Latest run = failed full reconciliation; run health is failed, so Last Result is Failed.
+  const feed = {
+    health_state: 'degraded',
+    run_health_state: 'failed',
+    reconciliation_health_state: 'degraded',
+    last_result: {
+      status: 'failed',
+      checked: 0,
+      new: 0,
+      updated: 0,
+      unchanged: 0,
+      rejected: 0,
+      message: 'USOM API response has invalid totalCount'
+    }
+  };
+  const view = presentFeedLastResult(resolveFeedLastResult(feed), {
+    healthState: resolveLastResultHealthState(feed)
+  });
+  assert.match(view.primary, /^Failed · /);
+  assert.equal(view.primaryTone, 'danger');
+});
+
+test('reconciliation-age warning does not downgrade a successful run to warnings', () => {
+  const feed = {
+    health_state: 'warning',
+    run_health_state: 'success',
+    reconciliation_health_state: 'warning',
+    last_result: {
+      status: 'completed',
+      outcome: 'changes',
+      checked: 200,
+      new: 5,
+      updated: 2,
+      unchanged: 193,
+      rejected: 0
+    }
+  };
+  const view = presentFeedLastResult(resolveFeedLastResult(feed), {
+    healthState: resolveLastResultHealthState(feed)
+  });
+  assert.equal(view.primary, 'Completed · 5 new · 2 updated');
+  assert.equal(view.primaryTone, 'success');
+});
+
+test('degraded health from the run itself still forces Last Result to Failed', () => {
+  // Non-USOM safety: when the run health is the failing signal, alignment still applies.
+  const reconciled = reconcileLastResultWithHealth({
+    status: 'completed',
+    outcome: 'changes',
+    checked: 10,
+    new: 2,
+    updated: 0,
+    rejected: 0
+  }, 'failed');
+  assert.equal(reconciled.status, 'failed');
 });
 
 test('tooltips distinguish unchanged / filtered / rejected', async () => {

@@ -195,6 +195,25 @@ export function resolveFeedLastResult(feed) {
 }
 
 /**
+ * Health signal the Last Result column must reconcile against.
+ *
+ * The Last Result column reflects the latest run's own outcome. USOM full-reconciliation
+ * health is a *separate* operational signal, surfaced independently in the Health column
+ * (badge + reconciliation_warning). It must never rewrite the Last Result — otherwise a
+ * successful incremental is shown as "Failed · Sync failed" only because an older, unrelated
+ * full reconciliation failed. Prefer the backend-provided run-level health; fall back to the
+ * overlaid health_state for older payloads that predate run_health_state.
+ * @param {object|null} feed
+ * @returns {string|null}
+ */
+export function resolveLastResultHealthState(feed) {
+  if (feed && typeof feed === 'object' && feed.run_health_state != null) {
+    return feed.run_health_state;
+  }
+  return feed?.health_state ?? null;
+}
+
+/**
  * Align Last Result presentation with feed health_state.
  * Healthy feeds must not render as "Completed with warnings".
  * @param {object} result
