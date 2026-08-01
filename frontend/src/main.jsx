@@ -4,6 +4,11 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from './lib/api.js';
 import {
+  CHANGE_PASSWORD_PATH,
+  postLoginDestination,
+  shouldForceChangePassword
+} from './lib/passwordChangeGate.js';
+import {
   SEARCH_FIELDS,
   FIELD_BY_NAME,
   EXPORT_COLUMN_OPTIONS,
@@ -228,6 +233,7 @@ const SessionContext = React.createContext({
   role: 'admin',
   canWrite: true,
   isAdmin: true,
+  mustChangePassword: false,
   refreshSession: async () => {}
 });
 
@@ -236,6 +242,7 @@ function SessionProvider({ children }) {
   const [userEmail, setUserEmail] = useState('');
   const [userId, setUserId] = useState(null);
   const [role, setRole] = useState('admin');
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -246,15 +253,18 @@ function SessionProvider({ children }) {
         setUserEmail(em);
         setUserId(u.id != null ? String(u.id) : null);
         setRole(String(u.role || 'admin'));
+        setMustChangePassword(Boolean(u.mustChangePassword));
         setAuthState('authed');
       } else {
         setAuthState('anon');
+        setMustChangePassword(false);
       }
     } catch {
       setAuthState('anon');
       setUserEmail('');
       setUserId(null);
       setRole('admin');
+      setMustChangePassword(false);
     }
   }, []);
 
@@ -265,8 +275,17 @@ function SessionProvider({ children }) {
   const canWrite = role !== 'readonly';
   const isAdmin = role === 'admin';
   const value = useMemo(
-    () => ({ authState, userEmail, userId, role, canWrite, isAdmin, refreshSession }),
-    [authState, userEmail, userId, role, canWrite, isAdmin, refreshSession]
+    () => ({
+      authState,
+      userEmail,
+      userId,
+      role,
+      canWrite,
+      isAdmin,
+      mustChangePassword,
+      refreshSession
+    }),
+    [authState, userEmail, userId, role, canWrite, isAdmin, mustChangePassword, refreshSession]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -1527,10 +1546,10 @@ function LoginPage() {
 
     setSubmitting(true);
     try {
-      await api.post('/auth/login', { email, password });
+      const { data } = await api.post('/auth/login', { email, password });
       localStorage.removeItem('demo_timezone');
       await refreshSession();
-      navigate('/ioc');
+      navigate(postLoginDestination(data?.user), { replace: true });
     } catch (err) {
       const msg = err?.response?.data?.message || 'Invalid email or password';
       setError(msg);
@@ -1651,7 +1670,7 @@ function AppShell({ children }) {
   const navLinkClass = (active) => `sidebar-nav-link${active ? ' is-active' : ''}`;
   const roleLabel = formatSidebarRoleLabel(role);
   const initials = userInitialsFromEmail(userEmail);
-  const displayName = userEmail || 'demo user';
+  const displayName = userEmail || 'user';
 
   return (
     <div className="app-shell" style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
@@ -14634,6 +14653,98 @@ function IOCAddPage() {
   );
 }
 
+function ChangePasswordPage() {
+  const navigate = useNavigate();
+  const { authState, mustChangePassword, refreshSession } = useSession();
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (authState === 'anon') {
+      navigate('/login', { replace: true });
+      return;
+    }
+    if (authState === 'authed' && !mustChangePassword) {
+      navigate('/ioc', { replace: true });
+    }
+  }, [authState, mustChangePassword, navigate]);
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setError('');
+    const form = new FormData(e.currentTarget);
+    const currentPassword = String(form.get('currentPassword') || '');
+    const newPassword = String(form.get('newPassword') || '');
+    const confirmPassword = String(form.get('confirmPassword') || '');
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('Fill in all password fields.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setError('New password must be different from the current password.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.post('/auth/change-password', { currentPassword, newPassword });
+      await refreshSession();
+      navigate('/ioc', { replace: true });
+    } catch (err) {
+      const msg = err?.response?.data?.message || 'Failed to change password';
+      setError(msg);
+      setSubmitting(false);
+    }
+  }
+
+  if (authState === 'loading') {
+    return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
+  }
+
+  return (
+    <div className="login-shell">
+      <main className="auth">
+        <div className="top-brand">
+          <img src={talonHoundLogo} alt="TalonHound" draggable={false} />
+          <span className="wm">Talon<span className="hound">Hound</span></span>
+        </div>
+
+        <div className="card">
+          <h1>Change password</h1>
+          <p className="sub">You must set a new password before continuing.</p>
+
+          <form onSubmit={onSubmit} noValidate>
+            <div className="field">
+              <label htmlFor="cp-current">Current password</label>
+              <input id="cp-current" name="currentPassword" type="password" autoComplete="current-password" required />
+            </div>
+            <div className="field">
+              <label htmlFor="cp-new">New password</label>
+              <input id="cp-new" name="newPassword" type="password" autoComplete="new-password" required />
+            </div>
+            <div className="field">
+              <label htmlFor="cp-confirm">Confirm new password</label>
+              <input id="cp-confirm" name="confirmPassword" type="password" autoComplete="new-password" required />
+            </div>
+
+            <button className={`btn${submitting ? ' loading' : ''}`} type="submit" disabled={submitting}>
+              {submitting ? 'Saving…' : 'Save password'}
+            </button>
+            {error ? <div className="msg err" role="alert">{error}</div> : null}
+          </form>
+        </div>
+
+        <p className="foot">TalonHound Console</p>
+      </main>
+    </div>
+  );
+}
+
 function SetupGatePage() {
   const navigate = useNavigate();
   return (
@@ -14648,22 +14759,27 @@ function SetupGatePage() {
 }
 
 function Protected({ children }) {
-  const { authState } = useSession();
+  const { authState, mustChangePassword } = useSession();
+  const location = useLocation();
 
   if (authState === 'loading') {
     return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
   }
   if (authState === 'anon') return <Navigate to="/login" replace />;
+  if (shouldForceChangePassword(mustChangePassword, location.pathname)) {
+    return <Navigate to={CHANGE_PASSWORD_PATH} replace />;
+  }
   return children;
 }
 
 function DefaultRedirect() {
-  const { authState } = useSession();
+  const { authState, mustChangePassword } = useSession();
 
   if (authState === 'loading') {
     return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
   }
   if (authState === 'anon') return <Navigate to="/login" replace />;
+  if (mustChangePassword) return <Navigate to={CHANGE_PASSWORD_PATH} replace />;
   return <Navigate to="/ioc" replace />;
 }
 
@@ -15086,6 +15202,7 @@ function App() {
         <ReasonPromptProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/setup" element={<SetupGatePage />} />
           <Route path="/system" element={<Protected><SystemStatusPage /></Protected>} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />

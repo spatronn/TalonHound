@@ -15,6 +15,7 @@
     "test:tags": "node --test src/lib/iocTagBadges.test.js src/lib/tagManagerList.test.js",
     "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js",
     "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js",
+    "test:password-change": "node --test src/lib/passwordChangeGate.test.js",
     "test:integration-queue": "node --test src/lib/integrationJobDuration.test.js src/lib/integrationQueueStatusView.test.js src/lib/feedLastResult.test.js src/lib/jobQueueResult.test.js"
   },
   "dependencies": {

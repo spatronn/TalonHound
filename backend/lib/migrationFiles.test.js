@@ -21,3 +21,7 @@ test('sortMigrationFiles is deterministic', () => {
   const sorted = sortMigrationFiles(['010_b.sql', '002_a.sql', '001_core.sql']);
   assert.deepEqual(sorted, ['001_core.sql', '002_a.sql', '010_b.sql']);
 });
+
+test('135 must_change_password migration is runnable', () => {
+  assert.equal(isRunnableMigrationFile('135_users_must_change_password.sql'), true);
+});

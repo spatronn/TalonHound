@@ -211,7 +211,8 @@ export function createSetupGate(pool) {
     '/api/setup/complete',
     '/api/auth/login',
     '/api/auth/logout',
-    '/api/auth/me'
+    '/api/auth/me',
+    '/api/auth/change-password'
   ]);
 
   return async function setupGate(req, res, next) {

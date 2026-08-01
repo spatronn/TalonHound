@@ -63,7 +63,7 @@
 - Verification: `ls -la /opt/demo-runbook`
 
 ### 4.4 Environment variables
-- Command(s): runtime env passed via `docker-compose.yml` (DEMO_EMAIL/DEMO_PASSWORD)
+- Command(s): runtime env passed via `docker-compose.yml` (`JWT_SECRET`, `DB_PASSWORD`, …)
 - Expected output: backend starts and listens on `:3000`
 - Verification: `docker compose logs --tail=100`
 
@@ -162,7 +162,7 @@ docker compose logs --tail=200
 1. Open `http://<VM_IP>`
 2. Show login screen
 3. Try wrong password and show validation
-4. Login with demo user (`demo@demo.local / Password1!`)
+4. Login with default clean-install admin (`admin@talonhound.local / admin`) and complete forced password change
 5. Show dashboard access
 6. Logout and verify redirect back to login
 

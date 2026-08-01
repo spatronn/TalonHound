@@ -99,7 +99,15 @@ See [system-timezone.md](./system-timezone.md) for NTP responsibility, initial s
 
 ### Login smoke test
 
-Create a database user via the Users admin screen, or for **local dev only** set `DEMO_EMAIL` and `DEMO_PASSWORD` in `.env` (see `.env.example`). Production deployments should leave both unset.
+**Clean first install only:** the backend creates a default local admin when the `users` table is empty and bootstrap has never run:
+
+```text
+admin@talonhound.local / admin
+```
+
+Password change is required on first login. This account is **not** recreated on later restarts or after deletion.
+
+On existing installs, create users via **Administration → Users**.
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/auth/login \

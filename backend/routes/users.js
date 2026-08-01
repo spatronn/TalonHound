@@ -217,7 +217,8 @@ export function registerUserManagementRoutes(app, pool, audit) {
            password_hash = $3,
            first_name = COALESCE($4, first_name),
            last_name = COALESCE($5, last_name),
-           role = COALESCE($6::app_user_role, role)
+           role = COALESCE($6::app_user_role, role),
+           must_change_password = CASE WHEN $7 THEN FALSE ELSE must_change_password END
          WHERE id = $1
          RETURNING public_id, username, first_name, last_name, role, status, created_at`,
         [
@@ -226,7 +227,8 @@ export function registerUserManagementRoutes(app, pool, audit) {
           password_hash,
           first_name ?? null,
           last_name ?? null,
-          nextRole ?? null
+          nextRole ?? null,
+          passwordChanged
         ]
       );
 

@@ -37,9 +37,6 @@ services:
     build: ./backend
     environment:
       - PORT=3000
-      # Dev-only bootstrap login. Set in .env for local demos; leave unset in production.
-      - DEMO_EMAIL=${DEMO_EMAIL:-}
-      - DEMO_PASSWORD=${DEMO_PASSWORD:-}
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars, e.g. openssl rand -hex 32)}
       - DB_HOST=db
       - DB_PORT=5432

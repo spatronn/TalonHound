@@ -16,6 +16,8 @@ import {
   appendCsrfCookie,
   clearCsrfCookie
 } from './lib/auth.js';
+import { createPasswordChangeGate } from './lib/passwordChangeGate.js';
+import { ensureDefaultAdminBootstrap } from './lib/defaultAdminBootstrap.js';
 import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
@@ -239,8 +241,6 @@ const { Pool } = pg;
 
 const app = express();
 const port = process.env.PORT || 3000;
-const demoEmail = String(process.env.DEMO_EMAIL || '').trim();
-const demoPassword = String(process.env.DEMO_PASSWORD || '').trim();
 
 // Single shared pool: no new Client() per request; connections are reused (recommended for latency).
 const pool = new Pool({
@@ -359,6 +359,7 @@ app.use(express.json());
 app.use(createSetupGate(pool));
 app.use(apiAuthGate);
 app.use(csrfProtection);
+app.use(createPasswordChangeGate(pool));
 app.use(rbacHttpPolicy);
 
 // Serialize API timestamps with system-timezone offsets (never bare local / offset-less).
@@ -2585,7 +2586,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, public_id, username, password_hash, role, status FROM users WHERE username = $1',
+      'SELECT id, public_id, username, password_hash, role, status, must_change_password FROM users WHERE username = $1',
       [loginId]
     );
     if (rows.length) {
@@ -2632,33 +2633,14 @@ app.post('/api/auth/login', async (req, res) => {
             email: u.username,
             username: u.username,
             id: u.public_id,
-            role: u.role
+            role: u.role,
+            mustChangePassword: Boolean(u.must_change_password)
           }
         });
       }
     }
-  } catch {
-    /* fall through to env-based demo login if DB unavailable */
-  }
-
-  if (demoEmail && demoPassword && loginId === demoEmail && password === demoPassword) {
-    const token = signUserToken(loginId);
-    appendAuthCookie(req, res, token);
-    appendCsrfCookie(req, res);
-    await auditLogService.auditSuccess({
-      req,
-      action: AUDIT_ACTION.AUTH_LOGIN_SUCCESS,
-      entityType: AUDIT_ENTITY.AUTH,
-      entityDisplay: loginId,
-      severity: AUDIT_SEVERITY.INFO,
-      actorUsername: loginId,
-      actorEmail: loginId,
-      actorRole: ROLES.ADMIN,
-      metadata: { source: 'demo_env_login' }
-    }).catch(() => {});
-    return res.json({
-      user: { email: loginId, username: loginId, id: null, role: ROLES.ADMIN }
-    });
+  } catch (err) {
+    appLog.warn('login database lookup failed', { error: err?.message || String(err) });
   }
 
   await auditLogService.auditFailure({
@@ -2686,23 +2668,109 @@ app.post('/api/auth/logout', async (req, res) => {
   res.status(204).end();
 });
 
+app.post('/api/auth/change-password', async (req, res) => {
+  const userId = req.user?.id;
+  if (userId == null || !Number.isFinite(Number(userId))) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const currentPassword = req.body?.currentPassword ?? req.body?.current_password;
+  const newPassword = req.body?.newPassword ?? req.body?.new_password;
+
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'currentPassword and newPassword are required' });
+  }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ message: 'New password must be different from the current password' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, public_id, username, password_hash, role, must_change_password FROM users WHERE id = $1',
+      [Number(userId)]
+    );
+    if (!rows.length) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const u = rows[0];
+    const ok = await bcrypt.compare(currentPassword, u.password_hash);
+    if (!ok) {
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    const updated = await pool.query(
+      `UPDATE users
+       SET password_hash = $2,
+           must_change_password = FALSE
+       WHERE id = $1
+       RETURNING public_id, username, role, must_change_password`,
+      [u.id, hash]
+    );
+    const next = updated.rows[0];
+    const token = signUserToken({
+      userId: u.id,
+      username: next.username,
+      email: next.username,
+      role: next.role
+    });
+    appendAuthCookie(req, res, token);
+    appendCsrfCookie(req, res);
+
+    await auditLogService.auditSuccess({
+      req,
+      action: AUDIT_ACTION.USER_PASSWORD_CHANGED,
+      entityType: AUDIT_ENTITY.USER,
+      entityId: String(next.public_id || u.id),
+      entityDisplay: next.username,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: { source: 'self_change_password' }
+    }).catch(() => {});
+
+    return res.json({
+      user: {
+        email: next.username,
+        username: next.username,
+        id: next.public_id,
+        role: next.role,
+        mustChangePassword: Boolean(next.must_change_password)
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to change password', detail: err.message });
+  }
+});
+
 app.get('/api/auth/me', async (req, res) => {
   let publicId = null;
+  let mustChangePassword = false;
+  let role = req.user?.role || ROLES.ADMIN;
+  let username = req.user?.username || req.user?.email;
+
   if (req.user?.id != null) {
     try {
-      const { rows } = await pool.query('SELECT public_id FROM users WHERE id = $1', [Number(req.user.id)]);
-      if (rows.length) publicId = rows[0].public_id;
+      const { rows } = await pool.query(
+        'SELECT public_id, username, role, must_change_password FROM users WHERE id = $1',
+        [Number(req.user.id)]
+      );
+      if (rows.length) {
+        publicId = rows[0].public_id;
+        mustChangePassword = Boolean(rows[0].must_change_password);
+        role = rows[0].role || role;
+        username = rows[0].username || username;
+      }
     } catch {
-      // fall through to null id
+      // fall through
     }
   }
 
   res.json({
     user: {
-      email: req.user.email,
-      username: req.user.username || req.user.email,
+      email: username,
+      username,
       id: publicId,
-      role: req.user.role || ROLES.ADMIN
+      role,
+      mustChangePassword
     }
   });
 });
@@ -5828,17 +5896,11 @@ app.post('/api/ioc/stats/refresh', requireRole(ROLES.ADMIN, ROLES.ANALYST), asyn
 });
 
 
-async function ensureSeedDemoUser() {
+async function ensureDefaultAdmin() {
   try {
-    const hash = await bcrypt.hash(demoPassword, 12);
-    await pool.query(
-      `INSERT INTO users (username, password_hash, first_name, last_name, role)
-       VALUES ($1, $2, 'Demo', 'User', 'admin'::app_user_role)
-       ON CONFLICT (username) DO NOTHING`,
-      [String(demoEmail || '').trim(), hash]
-    );
+    await ensureDefaultAdminBootstrap(pool, { logger: appLog });
   } catch (err) {
-    console.warn('[users] demo seed skipped:', err.message);
+    appLog.warn('default admin bootstrap skipped', { error: err?.message || String(err) });
   }
 }
 
@@ -6373,7 +6435,7 @@ app.listen(port, async () => {
   if (IOC_LIST_TIMING) {
     console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
   }
-  await ensureSeedDemoUser();
+  await ensureDefaultAdmin();
   runIocListStatsRefreshTick().catch(() => {});
   setInterval(() => {
     runIocListStatsRefreshTick().catch(() => {});

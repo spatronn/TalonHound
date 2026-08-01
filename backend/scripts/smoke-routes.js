@@ -1,12 +1,12 @@
 /**
  * Smoke-check that critical API route modules are mounted (not Express 404 HTML).
  * Usage: npm run smoke:routes
- * Env: SMOKE_BASE_URL (default http://127.0.0.1:3000), DEMO_EMAIL, DEMO_PASSWORD
+ * Env: SMOKE_BASE_URL (default http://127.0.0.1:3000), SMOKE_EMAIL, SMOKE_PASSWORD
  */
 
 const BASE = String(process.env.SMOKE_BASE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
-const DEMO_EMAIL = process.env.DEMO_EMAIL || 'demo@demo.local';
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'Password1!';
+const SMOKE_EMAIL = process.env.SMOKE_EMAIL || 'admin@talonhound.local';
+const SMOKE_PASSWORD = process.env.SMOKE_PASSWORD || 'admin';
 
 /** @type {{ name: string, path: string, method?: string, assert?: (res: Response, body: unknown) => void }[]} */
 const CHECKS = [
@@ -95,7 +95,7 @@ async function login() {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD })
+    body: JSON.stringify({ email: SMOKE_EMAIL, password: SMOKE_PASSWORD })
   });
   if (!res.ok) {
     const text = await res.text();

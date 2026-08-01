@@ -34,6 +34,12 @@ api.interceptors.response.use(
       }
       return Promise.reject(err);
     }
+    if (st === 403 && code === 'PASSWORD_CHANGE_REQUIRED') {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/change-password') {
+        window.location.assign('/change-password');
+      }
+      return Promise.reject(err);
+    }
     if (st === 401 && !url.includes('/auth/login')) {
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login');
