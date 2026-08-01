@@ -20,6 +20,7 @@ import { createPasswordChangeGate } from './lib/passwordChangeGate.js';
 import { ensureDefaultAdminBootstrap } from './lib/defaultAdminBootstrap.js';
 import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
+import { registerAuthPasswordRoutes } from './routes/authPassword.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
@@ -2673,77 +2674,12 @@ app.post('/api/auth/logout', async (req, res) => {
   res.status(204).end();
 });
 
-app.post('/api/auth/change-password', async (req, res) => {
-  const userId = req.user?.id;
-  if (userId == null || !Number.isFinite(Number(userId))) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-
-  const currentPassword = req.body?.currentPassword ?? req.body?.current_password;
-  const newPassword = req.body?.newPassword ?? req.body?.new_password;
-
-  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !currentPassword || !newPassword) {
-    return res.status(400).json({ message: 'currentPassword and newPassword are required' });
-  }
-  if (newPassword === currentPassword) {
-    return res.status(400).json({ message: 'New password must be different from the current password' });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      'SELECT id, public_id, username, password_hash, role, must_change_password FROM users WHERE id = $1',
-      [Number(userId)]
-    );
-    if (!rows.length) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-    const u = rows[0];
-    const ok = await bcrypt.compare(currentPassword, u.password_hash);
-    if (!ok) {
-      return res.status(401).json({ message: 'Current password is incorrect' });
-    }
-
-    const hash = await bcrypt.hash(newPassword, 12);
-    const updated = await pool.query(
-      `UPDATE users
-       SET password_hash = $2,
-           must_change_password = FALSE
-       WHERE id = $1
-       RETURNING public_id, username, role, must_change_password`,
-      [u.id, hash]
-    );
-    const next = updated.rows[0];
-    const token = signUserToken({
-      userId: u.id,
-      username: next.username,
-      email: next.username,
-      role: next.role
-    });
-    appendAuthCookie(req, res, token);
-    appendCsrfCookie(req, res);
-
-    await auditLogService.auditSuccess({
-      req,
-      action: AUDIT_ACTION.USER_PASSWORD_CHANGED,
-      entityType: AUDIT_ENTITY.USER,
-      entityId: String(next.public_id || u.id),
-      entityDisplay: next.username,
-      severity: AUDIT_SEVERITY.WARNING,
-      metadata: { source: 'self_change_password' }
-    }).catch(() => {});
-
-    return res.json({
-      user: {
-        email: next.username,
-        username: next.username,
-        id: next.public_id,
-        role: next.role,
-        mustChangePassword: Boolean(next.must_change_password)
-      }
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to change password', detail: err.message });
-  }
+registerAuthPasswordRoutes(app, pool, {
+  bcrypt,
+  signUserToken,
+  appendAuthCookie,
+  appendCsrfCookie,
+  audit: auditLogService
 });
 
 app.get('/api/auth/me', async (req, res) => {

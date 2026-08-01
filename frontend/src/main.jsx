@@ -50,7 +50,8 @@ import {
   formatQueueRunMode
 } from './lib/jobQueueResult.js';
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
-import { canResetUserPassword, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
+import { resolveRowPasswordAction, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
+import { submitChangePassword } from './lib/changePasswordForm.js';
 import {
   DEFAULT_SOURCE_COLOR,
   isValidHexColor,
@@ -8696,7 +8697,7 @@ function CreateUserModal({ onClose, onCreated }) {
   );
 }
 
-function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetBusyId, onSetStatus, onRemove, onResetPassword }) {
+function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetBusyId, onSetStatus, onRemove, onResetPassword, onChangePassword }) {
   const ui = PUBLISHED_FEEDS_UI;
 
   if (usersLoading) {
@@ -8723,7 +8724,7 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
             const isPassive = String(u.status || 'active') === 'passive';
             const isOwnRow = userId != null && String(userId) === String(u.id);
             const busy = statusBusyId === u.id;
-            const canReset = canResetUserPassword({ isAdmin, isOwnRow, status: u.status });
+            const passwordAction = resolveRowPasswordAction({ isAdmin, isOwnRow, status: u.status });
             const resetBusy = resetBusyId === u.id;
             return (
               <tr key={u.id} style={{ ...ui.tr, opacity: isPassive ? 0.62 : 1 }}>
@@ -8733,7 +8734,17 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                 <td style={ui.td}><UserStatusBadge status={u.status} /></td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
-                    {canReset ? (
+                    {passwordAction === 'change' ? (
+                      <button
+                        type="button"
+                        onClick={() => onChangePassword(u)}
+                        style={USERS_ACTION_BTN.reset}
+                        title="Change your own password"
+                      >
+                        Change Password
+                      </button>
+                    ) : null}
+                    {passwordAction === 'reset' ? (
                       <button
                         type="button"
                         onClick={() => onResetPassword(u)}
@@ -8810,6 +8821,8 @@ function UsersPage() {
   const [actionError, setActionError] = useState('');
   // Target user awaiting reset confirmation.
   const [resetConfirmUser, setResetConfirmUser] = useState(null);
+  // Signed-in user's own row Change Password modal (self-service).
+  const [changePwOpen, setChangePwOpen] = useState(false);
   // One-time temporary password result. `password` lives only in memory.
   const [resetResult, setResetResult] = useState(clearTemporaryPasswordState());
 
@@ -8884,6 +8897,17 @@ function UsersPage() {
     setResetConfirmUser(u);
   }
 
+  function openChangePassword() {
+    setSuccessMessage('');
+    setActionError('');
+    setChangePwOpen(true);
+  }
+
+  function handleOwnPasswordChanged() {
+    setChangePwOpen(false);
+    setSuccessMessage('Your password has been changed successfully.');
+  }
+
   function closeResetConfirm() {
     setResetConfirmUser(null);
   }
@@ -8954,6 +8978,7 @@ function UsersPage() {
             onSetStatus={setUserStatus}
             onRemove={removeUser}
             onResetPassword={openResetConfirm}
+            onChangePassword={openChangePassword}
           />
         </div>
       </section>
@@ -8962,6 +8987,13 @@ function UsersPage() {
         <CreateUserModal
           onClose={closeCreateModal}
           onCreated={handleUserCreated}
+        />
+      ) : null}
+
+      {changePwOpen ? (
+        <SelfChangePasswordModal
+          onClose={() => setChangePwOpen(false)}
+          onChanged={handleOwnPasswordChanged}
         />
       ) : null}
 
@@ -8998,6 +9030,103 @@ function ResetPasswordConfirmModal({ user, onCancel, onConfirm }) {
         <button type="button" style={ui.btn} onClick={onCancel}>Cancel</button>
         <button type="button" style={ui.btnPrimary} onClick={onConfirm}>Reset Password</button>
       </div>
+    </ModalOverlay>
+  );
+}
+
+/**
+ * Shared self-service change-password form used by both the standalone
+ * ChangePasswordPage and the Users-page modal. Owns the field state, validation,
+ * API call, loading and error display (all via ./lib/changePasswordForm.js) so
+ * there is a single source of truth. Presentation differs by `variant`:
+ *   - 'auth'  : login-shell markup for the full-page forced-change flow.
+ *   - 'modal' : PUBLISHED_FEEDS_UI markup with a Cancel button for the modal.
+ * `onSuccess` runs after a successful change (and session refresh); the caller
+ * decides what that means (navigate away vs. close the modal + show a banner).
+ */
+function ChangePasswordForm({ variant = 'auth', onSuccess, onCancel }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  const { refreshSession } = useSession();
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const update = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    const result = await submitChangePassword(api, form);
+    if (!result.ok) {
+      setError(result.error);
+      setSaving(false);
+      return;
+    }
+    await refreshSession().catch(() => {});
+    // Leave `saving` true: the caller navigates away or unmounts the modal.
+    await onSuccess?.();
+  }
+
+  if (variant === 'modal') {
+    return (
+      <form onSubmit={onSubmit}>
+        <FeedFormField ui={ui} label="Current password" fullWidth>
+          <input required type="password" value={form.currentPassword} onChange={update('currentPassword')} style={ui.input} autoComplete="current-password" />
+        </FeedFormField>
+        <FeedFormField ui={ui} label="New password" fullWidth>
+          <input required type="password" value={form.newPassword} onChange={update('newPassword')} style={ui.input} autoComplete="new-password" />
+        </FeedFormField>
+        <FeedFormField ui={ui} label="Confirm new password" fullWidth>
+          <input required type="password" value={form.confirmPassword} onChange={update('confirmPassword')} style={ui.input} autoComplete="new-password" />
+        </FeedFormField>
+        {error ? (
+          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }} role="alert">
+            {error}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+          <button type="button" style={ui.btn} onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="submit" style={ui.btnPrimary} disabled={saving}>
+            {saving ? 'Saving…' : 'Change Password'}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  return (
+    <form onSubmit={onSubmit} noValidate>
+      <div className="field">
+        <label htmlFor="cp-current">Current password</label>
+        <input id="cp-current" name="currentPassword" type="password" autoComplete="current-password" value={form.currentPassword} onChange={update('currentPassword')} required />
+      </div>
+      <div className="field">
+        <label htmlFor="cp-new">New password</label>
+        <input id="cp-new" name="newPassword" type="password" autoComplete="new-password" value={form.newPassword} onChange={update('newPassword')} required />
+      </div>
+      <div className="field">
+        <label htmlFor="cp-confirm">Confirm new password</label>
+        <input id="cp-confirm" name="confirmPassword" type="password" autoComplete="new-password" value={form.confirmPassword} onChange={update('confirmPassword')} required />
+      </div>
+
+      <button className={`btn${saving ? ' loading' : ''}`} type="submit" disabled={saving}>
+        {saving ? 'Saving…' : 'Save password'}
+      </button>
+      {error ? <div className="msg err" role="alert">{error}</div> : null}
+    </form>
+  );
+}
+
+function SelfChangePasswordModal({ onClose, onChanged }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  return (
+    <ModalOverlay onClose={onClose}>
+      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Change password</h3>
+      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+        Update the password for your own account.
+      </p>
+      <ChangePasswordForm variant="modal" onCancel={onClose} onSuccess={onChanged} />
     </ModalOverlay>
   );
 }
@@ -14808,9 +14937,7 @@ function IOCAddPage() {
 
 function ChangePasswordPage() {
   const navigate = useNavigate();
-  const { authState, mustChangePassword, refreshSession } = useSession();
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { authState, mustChangePassword } = useSession();
 
   useEffect(() => {
     if (authState === 'anon') {
@@ -14821,39 +14948,6 @@ function ChangePasswordPage() {
       navigate('/ioc', { replace: true });
     }
   }, [authState, mustChangePassword, navigate]);
-
-  async function onSubmit(e) {
-    e.preventDefault();
-    setError('');
-    const form = new FormData(e.currentTarget);
-    const currentPassword = String(form.get('currentPassword') || '');
-    const newPassword = String(form.get('newPassword') || '');
-    const confirmPassword = String(form.get('confirmPassword') || '');
-
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError('Fill in all password fields.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('New password and confirmation do not match.');
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setError('New password must be different from the current password.');
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await api.post('/auth/change-password', { currentPassword, newPassword });
-      await refreshSession();
-      navigate('/ioc', { replace: true });
-    } catch (err) {
-      const msg = err?.response?.data?.message || 'Failed to change password';
-      setError(msg);
-      setSubmitting(false);
-    }
-  }
 
   if (authState === 'loading') {
     return <div style={{ padding: 24, fontFamily: 'sans-serif', color: '#94a3b8' }}>Loading…</div>;
@@ -14871,25 +14965,7 @@ function ChangePasswordPage() {
           <h1>Change password</h1>
           <p className="sub">You must set a new password before continuing.</p>
 
-          <form onSubmit={onSubmit} noValidate>
-            <div className="field">
-              <label htmlFor="cp-current">Current password</label>
-              <input id="cp-current" name="currentPassword" type="password" autoComplete="current-password" required />
-            </div>
-            <div className="field">
-              <label htmlFor="cp-new">New password</label>
-              <input id="cp-new" name="newPassword" type="password" autoComplete="new-password" required />
-            </div>
-            <div className="field">
-              <label htmlFor="cp-confirm">Confirm new password</label>
-              <input id="cp-confirm" name="confirmPassword" type="password" autoComplete="new-password" required />
-            </div>
-
-            <button className={`btn${submitting ? ' loading' : ''}`} type="submit" disabled={submitting}>
-              {submitting ? 'Saving…' : 'Save password'}
-            </button>
-            {error ? <div className="msg err" role="alert">{error}</div> : null}
-          </form>
+          <ChangePasswordForm variant="auth" onSuccess={() => navigate('/ioc', { replace: true })} />
         </div>
 
         <p className="foot">TalonHound Console</p>
