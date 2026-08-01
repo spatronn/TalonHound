@@ -50,6 +50,7 @@ import {
   formatQueueRunMode
 } from './lib/jobQueueResult.js';
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
+import { canResetUserPassword, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
 import {
   DEFAULT_SOURCE_COLOR,
   isValidHexColor,
@@ -8235,6 +8236,16 @@ const USERS_ACTION_BTN = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6
+  },
+  reset: {
+    padding: '6px 10px',
+    borderRadius: 8,
+    border: '1px solid #1d4ed8',
+    background: 'rgba(37,99,235,0.2)',
+    color: '#93c5fd',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer'
   }
 };
 
@@ -8684,7 +8695,7 @@ function CreateUserModal({ onClose, onCreated }) {
   );
 }
 
-function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, onRemove }) {
+function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetBusyId, onSetStatus, onRemove, onResetPassword }) {
   const ui = PUBLISHED_FEEDS_UI;
 
   if (usersLoading) {
@@ -8711,6 +8722,8 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
             const isPassive = String(u.status || 'active') === 'passive';
             const isOwnRow = userId != null && String(userId) === String(u.id);
             const busy = statusBusyId === u.id;
+            const canReset = canResetUserPassword({ isAdmin, isOwnRow, status: u.status });
+            const resetBusy = resetBusyId === u.id;
             return (
               <tr key={u.id} style={{ ...ui.tr, opacity: isPassive ? 0.62 : 1 }}>
                 <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>{u.username}</td>
@@ -8719,6 +8732,21 @@ function UsersTable({ users, usersLoading, userId, statusBusyId, onSetStatus, on
                 <td style={ui.td}><UserStatusBadge status={u.status} /></td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {canReset ? (
+                      <button
+                        type="button"
+                        onClick={() => onResetPassword(u)}
+                        disabled={resetBusy}
+                        style={{
+                          ...USERS_ACTION_BTN.reset,
+                          opacity: resetBusy ? 0.4 : 1,
+                          cursor: resetBusy ? 'wait' : 'pointer'
+                        }}
+                        title="Generate a temporary password and force a change at next login"
+                      >
+                        {resetBusy ? '…' : 'Reset Password'}
+                      </button>
+                    ) : null}
                     {!isPassive ? (
                       <button
                         type="button"
@@ -8775,9 +8803,14 @@ function UsersPage() {
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState(null);
+  const [resetBusyId, setResetBusyId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  // Target user awaiting reset confirmation.
+  const [resetConfirmUser, setResetConfirmUser] = useState(null);
+  // One-time temporary password result. `password` lives only in memory.
+  const [resetResult, setResetResult] = useState(clearTemporaryPasswordState());
 
   async function loadUsers() {
     setUsersLoading(true);
@@ -8844,6 +8877,38 @@ function UsersPage() {
     }
   }
 
+  function openResetConfirm(u) {
+    setSuccessMessage('');
+    setActionError('');
+    setResetConfirmUser(u);
+  }
+
+  function closeResetConfirm() {
+    setResetConfirmUser(null);
+  }
+
+  function closeResetResult() {
+    // Scrub the one-time secret from state on close.
+    setResetResult(clearTemporaryPasswordState());
+  }
+
+  async function confirmResetPassword() {
+    const target = resetConfirmUser;
+    if (!target) return;
+    setResetConfirmUser(null);
+    setResetBusyId(target.id);
+    setActionError('');
+    try {
+      const { data } = await api.post(`/admin/users/${target.id}/reset-password`);
+      setResetResult({ open: true, username: target.username, password: String(data?.temporary_password || '') });
+    } catch (err) {
+      // On failure never open the password dialog; surface via the existing banner.
+      setActionError(apiErrorMessage(err, 'Failed to reset password'));
+    } finally {
+      setResetBusyId(null);
+    }
+  }
+
   if (!isAdmin) {
     return (
       <AppShell>
@@ -8882,9 +8947,12 @@ function UsersPage() {
             users={users}
             usersLoading={usersLoading}
             userId={userId}
+            isAdmin={isAdmin}
             statusBusyId={statusBusyId}
+            resetBusyId={resetBusyId}
             onSetStatus={setUserStatus}
             onRemove={removeUser}
+            onResetPassword={openResetConfirm}
           />
         </div>
       </section>
@@ -8895,7 +8963,91 @@ function UsersPage() {
           onCreated={handleUserCreated}
         />
       ) : null}
+
+      {resetConfirmUser ? (
+        <ResetPasswordConfirmModal
+          user={resetConfirmUser}
+          onCancel={closeResetConfirm}
+          onConfirm={confirmResetPassword}
+        />
+      ) : null}
+
+      {resetResult.open ? (
+        <ResetPasswordResultModal
+          username={resetResult.username}
+          password={resetResult.password}
+          onClose={closeResetResult}
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+function ResetPasswordConfirmModal({ user, onCancel, onConfirm }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  const name = user?.username || 'this user';
+  return (
+    <ModalOverlay onClose={onCancel}>
+      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Reset password</h3>
+      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
+        A new temporary password will be generated for {name}. The user will be required to
+        change it at the next login. The user will be required to change it before continuing.
+      </p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+        <button type="button" style={ui.btn} onClick={onCancel}>Cancel</button>
+        <button type="button" style={ui.btnPrimary} onClick={onConfirm}>Reset Password</button>
+      </div>
+    </ModalOverlay>
+  );
+}
+
+function ResetPasswordResultModal({ username, password, onClose }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  const [copied, setCopied] = useState(false);
+
+  function copyPassword() {
+    if (!navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(password).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Temporary password</h3>
+      <p style={{ margin: '0 0 14px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
+        Temporary password for <strong style={{ color: '#e2e8f0' }}>{username}</strong>:
+      </p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', marginBottom: 12 }}>
+        <code
+          style={{
+            flex: 1,
+            padding: '10px 12px',
+            borderRadius: 8,
+            border: '1px solid #334155',
+            background: '#020617',
+            color: '#f1f5f9',
+            fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+            fontSize: 15,
+            letterSpacing: '0.04em',
+            wordBreak: 'break-all',
+            userSelect: 'all'
+          }}
+        >
+          {password}
+        </code>
+        <button type="button" style={{ ...ui.btnPrimary, whiteSpace: 'nowrap' }} onClick={copyPassword}>
+          {copied ? 'Copied' : 'Copy Password'}
+        </button>
+      </div>
+      <div style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #b45309', color: '#fcd34d', background: 'rgba(180,83,9,0.15)', fontSize: 12.5, lineHeight: 1.45 }}>
+        This password will only be shown once. Copy it before closing this dialog.
+      </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
+        <button type="button" style={ui.btnPrimary} onClick={onClose}>Close</button>
+      </div>
+    </ModalOverlay>
   );
 }
 
