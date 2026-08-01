@@ -677,11 +677,46 @@ export async function upsertMembershipOnImport(client, {
       && !row.expired_at
       && !row.purged_at;
 
+    // first_seen_in_feed is write-once at creation, so it never regresses on re-import
+    // (a NEWER incoming source date can never push it forward). But when an explicit,
+    // strictly-EARLIER source date arrives — a genuinely older indicator/pulse-added
+    // time, or a correction for a membership whose first_seen was recorded as the import
+    // time before the source date was threaded through — LEAST semantics require lowering
+    // it. Gated on an explicit firstSeenAt (callers that pass none are untouched) and on
+    // the value actually being earlier, so the common path issues no extra write.
+    let firstSeenLowered = false;
+    if (firstSeenAt != null && row.first_seen_in_feed != null) {
+      const incoming = firstSeenAt instanceof Date ? firstSeenAt : new Date(firstSeenAt);
+      if (Number.isFinite(incoming.getTime())
+        && incoming.getTime() < new Date(row.first_seen_in_feed).getTime()) {
+        const lowered = await client.query(
+          `UPDATE ioc_feed_memberships
+             SET first_seen_in_feed = $2, updated_at = NOW()
+           WHERE id = $1 AND first_seen_in_feed > $2
+           RETURNING *`,
+          [membershipId, incoming]
+        );
+        if (lowered.rowCount) {
+          Object.assign(row, lowered.rows[0]);
+          membershipRow = lowered.rows[0];
+          firstSeenLowered = true;
+          membershipTouched = true;
+          // fixed_ttl expiry derives from first_seen_in_feed — recompute policy fields.
+          const recomputed = await applyMembershipComputedFields(client, membershipId, policy, now, row);
+          if (recomputed?.updated) membershipTouched = true;
+        }
+      }
+    }
+
     // reactivateOnly: membership is healthy — skip all DB writes, return early.
     // For inactive/expired memberships the condition below does NOT hold, so we fall through
     // to the normal reactivation path (because feed re-appearance is semantically meaningful).
     if (reactivateOnly && healthyActive) {
-      return { membershipId: row.id, outcome: 'unchanged', touched: false };
+      return {
+        membershipId: row.id,
+        outcome: firstSeenLowered ? 'changed' : 'unchanged',
+        touched: firstSeenLowered
+      };
     }
 
     if (fp && healthyActive) {

@@ -158,11 +158,27 @@ export function normalizeOtxTags(raw) {
 }
 
 export function parseOtxTimestamp(value) {
-  const raw = String(value ?? '').trim();
+  let raw = String(value ?? '').trim();
   if (!raw) return null;
+  // OTX serializes source timestamps as naive UTC without a zone designator
+  // (e.g. "2026-07-30T13:03:20" or "2026-07-30T13:03:19.240000"). `new Date()` would
+  // interpret a zone-less string in the worker process's local timezone, silently
+  // shifting the source date when the worker is not on UTC. Pin such strings to UTC so
+  // parsing is timezone-independent. Strings that already carry 'Z' or a ±HH:MM offset
+  // are left untouched.
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)) {
+    raw = `${raw.replace(' ', 'T')}Z`;
+  }
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return null;
   return dt;
+}
+
+/** Earlier of two Dates; tolerates nulls (returns the non-null one, or null). */
+export function earlierDate(a, b) {
+  if (!a) return b || null;
+  if (!b) return a || null;
+  return a.getTime() <= b.getTime() ? a : b;
 }
 
 /**
@@ -281,9 +297,15 @@ export function collectOtxEntries(pulses) {
         byKey.set(key, entry);
         continue;
       }
+      // Keep the freshest pulse context (note/evidence) but preserve the EARLIEST
+      // source first-seen across every pulse the observable appears in — that is the
+      // correct "first seen in source" for an IOC carried by multiple pulses.
+      const earliestFirstSeen = earlierDate(prev.firstSeen, entry.firstSeen);
       const prevMod = prev.pulseModified ? prev.pulseModified.getTime() : 0;
       const curMod = entry.pulseModified ? entry.pulseModified.getTime() : 0;
-      if (curMod >= prevMod) byKey.set(key, entry);
+      const winner = curMod >= prevMod ? entry : prev;
+      winner.firstSeen = earliestFirstSeen;
+      byKey.set(key, winner);
     }
   }
 

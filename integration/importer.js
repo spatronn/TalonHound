@@ -2199,7 +2199,12 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     feedDefaultConfidence,
     category,
     note,
-    threatClassification
+    threatClassification,
+    // Real OTX source date (indicator.created, else pulse.created) → first_seen_in_feed.
+    // Never the platform import time. Null when OTX gives no valid date → membership
+    // falls back to import time (existing behavior). last_seen_in_feed stays at import
+    // time (feed-confirmation), so we do NOT pass entry.lastSeen here.
+    firstSeenAt: entry.firstSeen || null
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {

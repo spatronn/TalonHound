@@ -15,6 +15,8 @@ import {
   fetchOtxSubscribedPage,
   walkOtxSubscribedPulses,
   resolveOtxApiKey,
+  parseOtxTimestamp,
+  earlierDate,
   OTX_PAGE_LIMIT_MAX,
   ALIENVAULT_OTX_FEED_KEY
 } from './alienvaultOtx.js';
@@ -270,6 +272,76 @@ test('collectOtxEntries dedupes same observable across pulses, keeping latest pu
   assert.equal(entries.length, 2); // evil.com deduped
   const domain = entries.find((e) => e.observable === 'evil.com');
   assert.equal(domain.pulseId, 'new'); // latest pulse context wins
+});
+
+// --- Source first-seen timestamp (regression: was import time, must be OTX source date) ---
+
+test('parseOtxTimestamp treats OTX zone-less timestamps as UTC (timezone-independent)', () => {
+  // OTX serializes source dates without a zone designator; this is the exact value the
+  // pulse-indicators endpoint returned for wedfcvbn.gleeze.com.
+  assert.equal(parseOtxTimestamp('2026-07-30T13:03:20').toISOString(), '2026-07-30T13:03:20.000Z');
+  // Fractional seconds (pulse.created shape) also pinned to UTC.
+  assert.equal(parseOtxTimestamp('2026-07-30T13:03:19.240000').toISOString(), '2026-07-30T13:03:19.240Z');
+  // Space separator variant.
+  assert.equal(parseOtxTimestamp('2026-07-30 13:03:20').toISOString(), '2026-07-30T13:03:20.000Z');
+});
+
+test('parseOtxTimestamp preserves explicit Z / offset and rejects invalid', () => {
+  assert.equal(parseOtxTimestamp('2026-07-30T13:03:20Z').toISOString(), '2026-07-30T13:03:20.000Z');
+  assert.equal(parseOtxTimestamp('2026-07-30T16:03:20+03:00').toISOString(), '2026-07-30T13:03:20.000Z');
+  assert.equal(parseOtxTimestamp(''), null);
+  assert.equal(parseOtxTimestamp('not-a-date'), null);
+  assert.equal(parseOtxTimestamp(null), null);
+});
+
+test('mapOtxPulseIndicator firstSeen uses indicator.created (the OTX web-UI "Added")', () => {
+  const pulse = { id: 'p1', modified: '2026-07-31T11:15:38.959000', created: '2026-07-30T13:03:19.240000' };
+  const indicator = { id: 4468384870, indicator: 'wedfcvbn.gleeze.com', type: 'hostname', created: '2026-07-30T13:03:20' };
+  const { entry } = mapOtxPulseIndicator(pulse, indicator);
+  // indicator.created (13:03:20) wins over pulse.created (13:03:19), matching web UI "Added".
+  assert.equal(entry.firstSeen.toISOString(), '2026-07-30T13:03:20.000Z');
+  // last_seen tracks pulse freshness, not first-seen.
+  assert.equal(entry.lastSeen.toISOString(), '2026-07-31T11:15:38.959Z');
+});
+
+test('mapOtxPulseIndicator firstSeen falls back to pulse.created when indicator.created missing', () => {
+  const pulse = { id: 'p1', modified: '2026-07-31T00:00:00Z', created: '2026-07-30T13:03:19' };
+  const { entry } = mapOtxPulseIndicator(pulse, { indicator: '1.2.3.4', type: 'IPv4' });
+  assert.equal(entry.firstSeen.toISOString(), '2026-07-30T13:03:19.000Z');
+});
+
+test('mapOtxPulseIndicator firstSeen is null when no valid source date (safe fallback)', () => {
+  const { entry } = mapOtxPulseIndicator({ id: 'p1' }, { indicator: '1.2.3.4', type: 'IPv4' });
+  assert.equal(entry.firstSeen, null);
+});
+
+test('earlierDate returns the earlier date and tolerates nulls', () => {
+  const a = new Date('2026-07-30T00:00:00Z');
+  const b = new Date('2026-07-31T00:00:00Z');
+  assert.equal(earlierDate(a, b), a);
+  assert.equal(earlierDate(b, a), a);
+  assert.equal(earlierDate(null, b), b);
+  assert.equal(earlierDate(a, null), a);
+  assert.equal(earlierDate(null, null), null);
+});
+
+test('collectOtxEntries keeps EARLIEST first-seen across multiple pulses (freshest context kept)', () => {
+  const pulses = [
+    {
+      id: 'old', name: 'Old', modified: '2026-06-01T00:00:00Z',
+      indicators: [{ indicator: 'evil.com', type: 'domain', created: '2026-05-20T00:00:00' }]
+    },
+    {
+      id: 'new', name: 'New', modified: '2026-06-20T00:00:00Z',
+      indicators: [{ indicator: 'evil.com', type: 'domain', created: '2026-06-15T00:00:00' }]
+    }
+  ];
+  const { entries } = collectOtxEntries(pulses);
+  const domain = entries.find((e) => e.observable === 'evil.com');
+  // Freshest pulse context (note/evidence) still wins…
+  assert.equal(domain.pulseId, 'new');
+  // …but first-seen is the EARLIEST across all pulses (from the older pulse).
+  assert.equal(domain.firstSeen.toISOString(), '2026-05-20T00:00:00.000Z');
 });
 
 test('collectOtxEntries counts unsupported types with breakdown', () => {
