@@ -1,7 +1,12 @@
+# Explicit project name so container/volume/network prefixes are stable regardless of
+# the checkout directory. Override per-install with `-p <name>` or COMPOSE_PROJECT_NAME
+# to run multiple TalonHound stacks on one host. Keep this value = the existing project
+# name so named volumes (talonhound_postgres_data, ...) are preserved across upgrades.
+name: talonhound
+
 services:
   db:
     image: postgres:16-alpine
-    container_name: demo-db
     command:
       - postgres
       - -c
@@ -25,13 +30,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: demo-redis
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-dev-insecure-redis}"]
     restart: unless-stopped
 
   backend:
     build: ./backend
-    container_name: demo-backend
     environment:
       - PORT=3000
       # Dev-only bootstrap login. Set in .env for local demos; leave unset in production.
@@ -104,7 +107,6 @@ services:
     build:
       context: .
       dockerfile: integration/Dockerfile
-    container_name: demo-integration-scheduler
     command: ["npm", "run", "scheduler"]
     environment:
       - DB_HOST=db
@@ -149,7 +151,6 @@ services:
     build:
       context: .
       dockerfile: integration/Dockerfile
-    container_name: demo-integration-worker
     command: ["npm", "run", "worker"]
     stop_grace_period: 45s
     environment:
@@ -210,7 +211,6 @@ services:
 
   ioc-expiration-worker:
     build: ./backend
-    container_name: demo-ioc-expiration-worker
     command: ["npm", "run", "ioc-expiration-worker"]
     environment:
       - DB_HOST=db
@@ -228,7 +228,6 @@ services:
 
   ioc-search-export-worker:
     build: ./backend
-    container_name: demo-ioc-search-export-worker
     command: ["npm", "run", "ioc-search-export-worker"]
     environment:
       - DB_HOST=db
@@ -256,7 +255,6 @@ services:
 
   backup-worker:
     build: ./backend
-    container_name: demo-backup-worker
     command: ["npm", "run", "backup-worker"]
     environment:
       - DB_HOST=db
@@ -288,14 +286,12 @@ services:
 
   frontend:
     build: ./frontend
-    container_name: demo-frontend
     depends_on:
       - backend
     restart: unless-stopped
 
   proxy:
     build: ./proxy
-    container_name: demo-proxy
     ports:
       - "80:80"
       - "443:443"

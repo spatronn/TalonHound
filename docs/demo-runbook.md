@@ -169,9 +169,9 @@ docker compose logs --tail=200
 ## 10) Test Evidence (Summary)
 - VM reachable over subnet (`192.168.1.251`)
 - Docker installed and validated (`hello-world` successful)
-- Compose stack running:
-  - `demo-backend` up
-  - `demo-frontend` up (`0.0.0.0:80->80`)
+- Compose stack running (`docker compose ps`):
+  - `backend` service up
+  - `frontend` service up (reached via `proxy` on `0.0.0.0:80->80`)
 - Backend log confirms: `Backend listening on :3000`
 - Frontend reachable and login flow validated end-to-end
 

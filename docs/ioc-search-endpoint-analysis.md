@@ -15,7 +15,7 @@ Bu doküman `GET /api/ioc/list` endpoint'ini, gecikme kaynaklarını ve performa
 ## 2. Timing Logları
 
 **Açma:**  
-- **docker-compose:** Backend servisinde `IOC_LIST_TIMING=1` env var tanımlı (varsayılan test ortamı). Container yeniden başlatıldığında `docker logs demo-backend` ile startup’ta `[ioc/list] IOC_LIST_TIMING=1: timing logs enabled` satırı görünür.  
+- **docker-compose:** Backend servisinde `IOC_LIST_TIMING=1` env var tanımlı (varsayılan test ortamı). Container yeniden başlatıldığında `docker compose logs backend` ile startup’ta `[ioc/list] IOC_LIST_TIMING=1: timing logs enabled` satırı görünür.
 - **Manuel:** `IOC_LIST_TIMING=1` (env) veya istekte **`?timing=1`** (tek istek, env olmadan).
 
 Aşağıdaki aşamalar loglanır (ms):

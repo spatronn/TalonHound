@@ -1,4 +1,4 @@
-# demo-integration
+# TalonHound Integration
 
 Queue + worker based hourly import service.
 

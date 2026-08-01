@@ -17,7 +17,7 @@ docker compose up -d --build
 
 ## Service Inventory
 
-### 1) `demo-db` (PostgreSQL)
+### 1) `db` (PostgreSQL)
 **Purpose**
 - Primary datastore for users, IOC data, signal events, and detection events.
 
@@ -39,7 +39,7 @@ docker compose up -d --build
 
 ---
 
-### 2) `demo-redis`
+### 2) `redis`
 **Purpose**
 - Queue broker for async jobs.
 - **AUTH:** `redis-server --requirepass` from `REDIS_PASSWORD` (compose default `dev-insecure-redis` if unset). All app workers use the same password via `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`.
@@ -55,7 +55,7 @@ docker compose up -d --build
 
 ---
 
-### 3) `demo-backend`
+### 3) `backend`
 **Purpose**
 - API layer for auth, UI data, integrations, and analytics.
 
@@ -70,7 +70,7 @@ docker compose up -d --build
 
 ---
 
-### 4) `demo-signal-engine`
+### 4) `signal-engine`
 **Purpose**
 - Dedicated signal processing worker (BullMQ consumer).
 - Reads from `signal-events` queue.
@@ -91,11 +91,11 @@ docker compose up -d --build
 
 ---
 
-### 5) `demo-integration-scheduler`
+### 5) `integration-scheduler`
 **Purpose**
 - Schedules IOC feed import jobs.
 
-### 6) `demo-integration-worker`
+### 6) `integration-worker`
 **Purpose**
 - Executes IOC import jobs and updates IOC dataset.
 
@@ -104,7 +104,7 @@ docker compose up -d --build
 
 ---
 
-### 7) `demo-dashboard-map-worker`
+### 7) `dashboard-map-worker`
 **Purpose**
 - Batch worker for Threat World Map aggregation.
 - Processes IOC rows in chunks (default 1000) and updates precomputed map tables.
@@ -138,7 +138,7 @@ docker compose up -d --build
 ---
 
 
-### 10) `demo-llm-risk-worker`
+### 10) `llm-risk-worker`
 **Purpose**
 - Asynchronous LLM risk advisor worker.
 - Consumes `llm-risk-jobs` queue and calls Ollama for risk adjustment output.
@@ -171,9 +171,9 @@ docker compose up -d --build
   docker compose exec -T redis redis-cli -a "$REDIS_PASSWORD" LLEN bull:llm-risk-jobs:wait
   ```
 
-### 11) `demo-frontend`
+### 11) `frontend`
 **Purpose**
-- Web UI (nginx + static build). **Not published on the host**; reached via `demo-proxy` on the Docker network.
+- Web UI (nginx + static build). **Not published on the host**; reached via `proxy` on the Docker network.
 
 **Current relevant pages**
 - Dashboard (world map)
@@ -185,7 +185,7 @@ docker compose up -d --build
   - Incident list
   - Incident detail (AI Insight + manual AI analyze action)
 
-### 12) `demo-proxy`
+### 12) `proxy`
 **Purpose**
 - TLS termination and HTTP→HTTPS redirect. Publishes host ports **80** and **443**.
 
@@ -206,14 +206,14 @@ Ana diyagramlar ayrı dosyada tutulur:
 
 ```mermaid
 flowchart LR
-    FE[demo-frontend\nUI]
-    BE[demo-backend\nAPI + enqueue]
-    R[(demo-redis\nBullMQ queues)]
-    SE[demo-signal-engine\nqueue consumer]
-    IS[demo-integration-scheduler\njob scheduler]
-    IW[demo-integration-worker\nIOC import worker]
-    LLMW[demo-llm-risk-worker\nLLM risk queue worker]
-    DB[(demo-db\nPostgreSQL)]
+    FE[frontend\nUI]
+    BE[backend\nAPI + enqueue]
+    R[(redis\nBullMQ queues)]
+    SE[signal-engine\nqueue consumer]
+    IS[integration-scheduler\njob scheduler]
+    IW[integration-worker\nIOC import worker]
+    LLMW[llm-risk-worker\nLLM risk queue worker]
+    DB[(db\nPostgreSQL)]
     EXT[(IOC Feeds\nET / USOM / URLhaus)]
 
     FE -->|API calls| BE
