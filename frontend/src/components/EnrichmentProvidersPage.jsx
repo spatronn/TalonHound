@@ -7,6 +7,8 @@ import {
   ProviderConfigForm,
   ProviderField,
   ProviderSummaryStats,
+  ConfirmRemoveKeyModal,
+  useRemoveKeyConfirm,
   PROVIDER_ORDER,
   getProviderMeta,
   resolveProviderStatus
@@ -16,6 +18,7 @@ import './enrichmentProviders/enrichmentProviders.css';
 export default function EnrichmentProvidersPage({ AppShell, useSession, useReasonPrompt }) {
   const { canWrite, isAdmin } = useSession();
   const requestRequiredReason = useReasonPrompt();
+  const { state: removeConfirm, controller: removeKey } = useRemoveKeyConfirm();
   const [loading, setLoading] = useState(true);
   const [vt, setVt] = useState(null);
   const [ipinfo, setIpinfo] = useState(null);
@@ -155,14 +158,18 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     }
   }
 
+  // Confirmed remove actions. These run only after the shared confirmation
+  // modal is accepted; they rethrow on failure so the modal stays open and
+  // surfaces the error instead of closing.
   async function removeVtKey() {
     setBusy((b) => ({ ...b, vtRemove: true }));
+    setFeedback({ type: '', text: '' });
     try {
       await api.post('/admin/enrichment-providers/virustotal/remove-key');
       setFeedback({ type: 'success', text: 'VirusTotal API key removed.' });
       await load();
-    } catch {
-      setFeedback({ type: 'error', text: 'Remove failed' });
+    } catch (e) {
+      throw new Error(e?.response?.data?.message || 'Remove failed');
     } finally {
       setBusy((b) => ({ ...b, vtRemove: false }));
     }
@@ -203,12 +210,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
 
   async function removeIpToken() {
     setBusy((b) => ({ ...b, ipRemove: true }));
+    setFeedback({ type: '', text: '' });
     try {
       await api.post('/admin/enrichment-providers/ipinfo-lite/remove-key');
       setFeedback({ type: 'success', text: 'IPinfo Lite token removed.' });
       await load();
-    } catch {
-      setFeedback({ type: 'error', text: 'Remove failed' });
+    } catch (e) {
+      throw new Error(e?.response?.data?.message || 'Remove failed');
     } finally {
       setBusy((b) => ({ ...b, ipRemove: false }));
     }
@@ -250,12 +258,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
 
   async function removeAbuseKey() {
     setBusy((b) => ({ ...b, abuseRemove: true }));
+    setFeedback({ type: '', text: '' });
     try {
       await api.post('/admin/enrichment-providers/abuseipdb/remove-key');
       setFeedback({ type: 'success', text: 'AbuseIPDB API key removed.' });
       await load();
-    } catch {
-      setFeedback({ type: 'error', text: 'Remove failed' });
+    } catch (e) {
+      throw new Error(e?.response?.data?.message || 'Remove failed');
     } finally {
       setBusy((b) => ({ ...b, abuseRemove: false }));
     }
@@ -385,7 +394,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                           <ProviderActionBar
                             onTest={() => testVt().catch(() => {})}
                             onSave={() => saveVt().catch(() => {})}
-                            onRemove={() => removeVtKey().catch(() => {})}
+                            onRemove={() => removeKey.request({
+                              providerKey: key,
+                              providerName: meta.name,
+                              keyNoun: 'API key',
+                              confirmLabel: 'Remove key',
+                              onConfirm: removeVtKey
+                            })}
                             removeLabel="Remove key"
                             disabled={!canWrite || anyBusy}
                             busy={{ save: busy.vtSave, test: busy.vtTest, remove: busy.vtRemove }}
@@ -452,7 +467,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                           <ProviderActionBar
                             onTest={() => testIpinfo().catch(() => {})}
                             onSave={() => saveIpinfo().catch(() => {})}
-                            onRemove={() => removeIpToken().catch(() => {})}
+                            onRemove={() => removeKey.request({
+                              providerKey: key,
+                              providerName: meta.name,
+                              keyNoun: 'token',
+                              confirmLabel: 'Remove token',
+                              onConfirm: removeIpToken
+                            })}
                             removeLabel="Remove token"
                             disabled={!canWrite || anyBusy}
                             busy={{ save: busy.ipSave, test: busy.ipTest, remove: busy.ipRemove }}
@@ -529,7 +550,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                           <ProviderActionBar
                             onTest={() => testAbuseipdb().catch(() => {})}
                             onSave={() => saveAbuseipdb().catch(() => {})}
-                            onRemove={() => removeAbuseKey().catch(() => {})}
+                            onRemove={() => removeKey.request({
+                              providerKey: key,
+                              providerName: meta.name,
+                              keyNoun: 'API key',
+                              confirmLabel: 'Remove key',
+                              onConfirm: removeAbuseKey
+                            })}
                             removeLabel="Remove key"
                             disabled={!isAdmin || anyBusy}
                             busy={{ save: busy.abuseSave, test: busy.abuseTest, remove: busy.abuseRemove }}
@@ -704,6 +731,17 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
           </>
         )}
       </section>
+
+      <ConfirmRemoveKeyModal
+        open={removeConfirm.open}
+        providerName={removeConfirm.providerName}
+        keyNoun={removeConfirm.keyNoun}
+        confirmLabel={removeConfirm.confirmLabel}
+        submitting={removeConfirm.submitting}
+        error={removeConfirm.error}
+        onCancel={() => removeKey.cancel()}
+        onConfirm={() => removeKey.confirm()}
+      />
     </AppShell>
   );
 }
