@@ -31,9 +31,10 @@ test('re-resolving idle onClose keeps stable handler identity (no duplicate sema
   assert.equal(formModalOnClose({ busy: false, onClose: close }), close);
 });
 
-test('Published Feeds with no saving lock: idle busy=false always yields onClose', () => {
+test('Custom Threat Feeds Edit/Delete use the same busy lock contract', () => {
   const close = () => {};
   assert.equal(formModalOnClose({ busy: false, onClose: close }), close);
+  assert.equal(formModalOnClose({ busy: true, onClose: close }), undefined); // saving | deleteLoading
 });
 
 test('Feeds settings busy aggregate locks Escape', () => {

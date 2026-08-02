@@ -4977,148 +4977,149 @@ function CustomThreatFeedsPage() {
         </section>
 
         {showModal ? (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-            <div style={{
-              background: '#111827',
-              color: '#e2e8f0',
-              borderRadius: 12,
-              width: 'min(620px, 94vw)',
-              maxHeight: 'min(90vh, 860px)',
-              display: 'flex',
-              flexDirection: 'column',
-              border: '1px solid #334155'
-            }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid #334155', flexShrink: 0 }}>
-                <h3 style={{ margin: 0, fontSize: 18, color: '#f1f5f9' }}>
-                  {editingFeed ? 'Edit Custom Threat Feed' : 'Add Custom Threat Feed'}
-                </h3>
-              </div>
-              <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
-                {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
+          <ModalOverlay
+            zIndex={1000}
+            onClose={formModalOnClose({
+              busy: saving,
+              onClose: () => { setShowModal(false); setEditingFeed(null); }
+            })}
+          >
+            <h3 style={{ margin: 0, marginBottom: 12, fontSize: 18, color: '#f1f5f9' }}>
+              {editingFeed ? 'Edit Custom Threat Feed' : 'Add Custom Threat Feed'}
+            </h3>
+            {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
 
-                <CustomFeedModalSection title="Source" first>
-                  <label style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Name</span>
-                    <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={CTF_INPUT_STYLE} />
-                  </label>
-                  <label style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Feed URL</span>
-                    <input
-                      value={form.url}
-                      onChange={(e) => {
-                        setEditUrlMissing(false);
-                        setForm({ ...form, url: e.target.value });
-                      }}
-                      style={{ ...CTF_INPUT_STYLE, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', overflowX: 'auto' }}
-                      placeholder={editingFeed ? undefined : 'https://ti.example.com/feed.txt'}
-                      required
-                    />
-                    {editingFeed ? (
-                      editUrlMissing ? (
-                        <span style={{ color: '#fcd34d', fontSize: 11 }}>Current URL is not available</span>
-                      ) : (
-                        <span style={{ color: '#64748b', fontSize: 11, lineHeight: 1.45 }}>
-                          This is the full source URL used for this custom threat feed.
-                        </span>
-                      )
-                    ) : null}
-                  </label>
-                  <label style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Format</span>
-                    <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} style={CTF_INPUT_STYLE}>
-                      <option value="auto">auto</option>
-                      <option value="txt">txt</option>
-                      <option value="csv">csv</option>
-                    </select>
-                  </label>
-                  <label style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>IOC type mode</span>
-                    <select value={form.ioc_type_mode} onChange={(e) => setForm({ ...form, ioc_type_mode: e.target.value })} style={CTF_INPUT_STYLE}>
-                      <option value="auto">auto</option>
-                      <option value="fixed">fixed</option>
-                    </select>
-                  </label>
-                  {form.ioc_type_mode === 'fixed' ? (
-                    <label style={CTF_FIELD_LABEL}>
-                      <span style={{ color: '#94a3b8', fontSize: 12 }}>Fixed IOC type</span>
-                      <select value={form.fixed_ioc_type} onChange={(e) => setForm({ ...form, fixed_ioc_type: e.target.value })} style={CTF_INPUT_STYLE}>
-                        <option value="domain">domain</option>
-                        <option value="ip">ip</option>
-                        <option value="url">url</option>
-                        <option value="file_hash">file_hash</option>
-                      </select>
-                    </label>
-                  ) : null}
-                  <label style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Description</span>
-                    <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...CTF_INPUT_STYLE, minHeight: 72, resize: 'vertical' }} rows={3} />
-                  </label>
-                  <div style={CTF_FIELD_LABEL}>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>Badge color</span>
-                    <SourceColorField
-                      value={form.color}
-                      onChange={(next) => setForm({ ...form, color: next })}
-                      previewLabel={form.name || 'Feed'}
-                      label=""
-                      helper="Leave blank to use the default badge color."
-                    />
-                  </div>
-                </CustomFeedModalSection>
-
-                <CustomFeedModalSection title="Authentication">
-                  <CustomFeedAuthSection
-                    draftAuth={draftAuth}
-                    onAuthChange={setDraftAuth}
-                    existingAuth={editingFeed?.auth || null}
-                    disabled={saving}
-                  />
-                </CustomFeedModalSection>
-
-                <CustomFeedModalSection title={editingFeed ? 'Schedule & Lifecycle' : 'Schedule'}>
-                  {editingFeed ? (
-                    <>
-                      <CustomFeedLifecycleFields
-                        feedActive={editActive}
-                        draftCron={draftCron}
-                        onCronChange={setDraftCron}
-                        draftConfidence={draftConfidence}
-                        onConfidenceChange={setDraftConfidence}
-                        draftExpiration={draftExpiration}
-                        onExpirationChange={setDraftExpiration}
-                        onRequestActiveChange={requestActiveChange}
-                      />
-                      <div style={{ marginTop: 12 }}>
-                        <button type="button" className={buttonClassName({ size: 'compact' })} onClick={openPurgeFromEdit}>
-                          Purge feed data
-                        </button>
-                      </div>
-                    </>
+            <CustomFeedModalSection title="Source" first>
+              <label style={CTF_FIELD_LABEL}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Name</span>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={CTF_INPUT_STYLE} />
+              </label>
+              <label style={CTF_FIELD_LABEL}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Feed URL</span>
+                <input
+                  value={form.url}
+                  onChange={(e) => {
+                    setEditUrlMissing(false);
+                    setForm({ ...form, url: e.target.value });
+                  }}
+                  style={{ ...CTF_INPUT_STYLE, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', overflowX: 'auto' }}
+                  placeholder={editingFeed ? undefined : 'https://ti.example.com/feed.txt'}
+                  required
+                />
+                {editingFeed ? (
+                  editUrlMissing ? (
+                    <span style={{ color: '#fcd34d', fontSize: 11 }}>Current URL is not available</span>
                   ) : (
-                    <label style={CTF_FIELD_LABEL}>
-                      <span style={{ color: '#94a3b8', fontSize: 12 }}>Schedule</span>
-                      <select value={draftCron} onChange={(e) => setDraftCron(e.target.value)} style={CTF_INPUT_STYLE}>
-                        {FEED_SCHEDULE_OPTIONS.map((opt) => (
-                          <option key={opt.cron} value={opt.cron}>{opt.label}</option>
-                        ))}
-                      </select>
-                      <FeedRunOnceScheduleHint cron={draftCron} />
-                    </label>
-                  )}
-                </CustomFeedModalSection>
+                    <span style={{ color: '#64748b', fontSize: 11, lineHeight: 1.45 }}>
+                      This is the full source URL used for this custom threat feed.
+                    </span>
+                  )
+                ) : null}
+              </label>
+              <label style={CTF_FIELD_LABEL}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Format</span>
+                <select value={form.format} onChange={(e) => setForm({ ...form, format: e.target.value })} style={CTF_INPUT_STYLE}>
+                  <option value="auto">auto</option>
+                  <option value="txt">txt</option>
+                  <option value="csv">csv</option>
+                </select>
+              </label>
+              <label style={CTF_FIELD_LABEL}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>IOC type mode</span>
+                <select value={form.ioc_type_mode} onChange={(e) => setForm({ ...form, ioc_type_mode: e.target.value })} style={CTF_INPUT_STYLE}>
+                  <option value="auto">auto</option>
+                  <option value="fixed">fixed</option>
+                </select>
+              </label>
+              {form.ioc_type_mode === 'fixed' ? (
+                <label style={CTF_FIELD_LABEL}>
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>Fixed IOC type</span>
+                  <select value={form.fixed_ioc_type} onChange={(e) => setForm({ ...form, fixed_ioc_type: e.target.value })} style={CTF_INPUT_STYLE}>
+                    <option value="domain">domain</option>
+                    <option value="ip">ip</option>
+                    <option value="url">url</option>
+                    <option value="file_hash">file_hash</option>
+                  </select>
+                </label>
+              ) : null}
+              <label style={CTF_FIELD_LABEL}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Description</span>
+                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ ...CTF_INPUT_STYLE, minHeight: 72, resize: 'vertical' }} rows={3} />
+              </label>
+              <div style={CTF_FIELD_LABEL}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Badge color</span>
+                <SourceColorField
+                  value={form.color}
+                  onChange={(next) => setForm({ ...form, color: next })}
+                  previewLabel={form.name || 'Feed'}
+                  label=""
+                  helper="Leave blank to use the default badge color."
+                />
               </div>
-              <div style={{
-                padding: '12px 20px',
-                borderTop: '1px solid #334155',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 8,
-                flexShrink: 0
-              }}>
-                <button type="button" onClick={() => { setShowModal(false); setEditingFeed(null); }} disabled={saving}>Cancel</button>
-                <button type="button" onClick={() => saveFeed().catch(() => {})} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-              </div>
+            </CustomFeedModalSection>
+
+            <CustomFeedModalSection title="Authentication">
+              <CustomFeedAuthSection
+                draftAuth={draftAuth}
+                onAuthChange={setDraftAuth}
+                existingAuth={editingFeed?.auth || null}
+                disabled={saving}
+              />
+            </CustomFeedModalSection>
+
+            <CustomFeedModalSection title={editingFeed ? 'Schedule & Lifecycle' : 'Schedule'}>
+              {editingFeed ? (
+                <>
+                  <CustomFeedLifecycleFields
+                    feedActive={editActive}
+                    draftCron={draftCron}
+                    onCronChange={setDraftCron}
+                    draftConfidence={draftConfidence}
+                    onConfidenceChange={setDraftConfidence}
+                    draftExpiration={draftExpiration}
+                    onExpirationChange={setDraftExpiration}
+                    onRequestActiveChange={requestActiveChange}
+                  />
+                  <div style={{ marginTop: 12 }}>
+                    <button type="button" className={buttonClassName({ size: 'compact' })} onClick={openPurgeFromEdit}>
+                      Purge feed data
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <label style={CTF_FIELD_LABEL}>
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>Schedule</span>
+                  <select value={draftCron} onChange={(e) => setDraftCron(e.target.value)} style={CTF_INPUT_STYLE}>
+                    {FEED_SCHEDULE_OPTIONS.map((opt) => (
+                      <option key={opt.cron} value={opt.cron}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <FeedRunOnceScheduleHint cron={draftCron} />
+                </label>
+              )}
+            </CustomFeedModalSection>
+
+            <div style={{
+              marginTop: 16,
+              paddingTop: 12,
+              borderTop: '1px solid #334155',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8
+            }}>
+              <button
+                type="button"
+                onClick={() => { setShowModal(false); setEditingFeed(null); }}
+                disabled={saving}
+                data-modal-cancel
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={() => saveFeed().catch(() => {})} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
             </div>
-          </div>
+          </ModalOverlay>
         ) : null}
 
         {activeConfirm ? (
@@ -5172,39 +5173,44 @@ function CustomThreatFeedsPage() {
             body = 'This feed is disabled and has no active imported IOC memberships. It will be removed from the custom feed list. Audit and historical job records may remain.';
           }
           return (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 16 }}>
-              <div style={{ background: '#111827', color: '#e2e8f0', borderRadius: 12, width: 'min(500px, 94vw)', border: '1px solid #334155', padding: 24 }}>
-                <h3 style={{ margin: '0 0 10px', color: '#f1f5f9', fontSize: 16 }}>{title}</h3>
-                <p style={{ margin: '0 0 6px', fontSize: 13, color: '#94a3b8' }}><b style={{ color: '#e2e8f0' }}>{feed.name}</b></p>
-                <p style={{ margin: '0 0 16px', fontSize: 13, color: canDel ? '#e2e8f0' : '#fca5a5' }}>{body}</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: 12, color: '#94a3b8', marginBottom: 18 }}>
-                  <span>Successful runs: <b style={{ color: '#e2e8f0' }}>{check.successful_run_count}</b></span>
-                  <span>Active IOC memberships: <b style={{ color: check.active_membership_count > 0 ? '#fca5a5' : '#86efac' }}>{check.active_membership_count}</b></span>
-                  <span>Historical memberships: <b style={{ color: '#e2e8f0' }}>{check.historical_membership_count}</b></span>
-                  <span>Queued/running jobs: <b style={{ color: check.queued_or_running_job_count > 0 ? '#fca5a5' : '#e2e8f0' }}>{check.queued_or_running_job_count}</b></span>
-                  <span>Published feed deps: <b style={{ color: check.published_feed_dependency_count > 0 ? '#fca5a5' : '#e2e8f0' }}>{check.published_feed_dependency_count}</b></span>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {canDel ? (
-                    <button
-                      type="button"
-                      className={buttonClassName({ variant: 'dangerSolid', size: 'sm' })}
-                      disabled={deleteLoading}
-                      onClick={() => confirmDelete().catch(() => {})}
-                    >
-                      {deleteLoading
-                        ? 'Deleting…'
-                        : check.delete_mode === 'cleanup_delete'
-                          ? 'Delete and remove from Published Feeds'
-                          : 'Confirm delete'}
-                    </button>
-                  ) : null}
-                  <button type="button" className={buttonClassName({ variant: 'secondary', size: 'sm' })} onClick={() => setDeleteModal(null)} disabled={deleteLoading} data-modal-cancel>
-                    {canDel ? 'Cancel' : 'Close'}
-                  </button>
-                </div>
+            <ModalOverlay
+              zIndex={1100}
+              initialFocus="cancel"
+              onClose={formModalOnClose({
+                busy: deleteLoading,
+                onClose: () => setDeleteModal(null)
+              })}
+            >
+              <h3 style={{ margin: '0 0 10px', color: '#f1f5f9', fontSize: 16 }}>{title}</h3>
+              <p style={{ margin: '0 0 6px', fontSize: 13, color: '#94a3b8' }}><b style={{ color: '#e2e8f0' }}>{feed.name}</b></p>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: canDel ? '#e2e8f0' : '#fca5a5' }}>{body}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: 12, color: '#94a3b8', marginBottom: 18 }}>
+                <span>Successful runs: <b style={{ color: '#e2e8f0' }}>{check.successful_run_count}</b></span>
+                <span>Active IOC memberships: <b style={{ color: check.active_membership_count > 0 ? '#fca5a5' : '#86efac' }}>{check.active_membership_count}</b></span>
+                <span>Historical memberships: <b style={{ color: '#e2e8f0' }}>{check.historical_membership_count}</b></span>
+                <span>Queued/running jobs: <b style={{ color: check.queued_or_running_job_count > 0 ? '#fca5a5' : '#e2e8f0' }}>{check.queued_or_running_job_count}</b></span>
+                <span>Published feed deps: <b style={{ color: check.published_feed_dependency_count > 0 ? '#fca5a5' : '#e2e8f0' }}>{check.published_feed_dependency_count}</b></span>
               </div>
-            </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {canDel ? (
+                  <button
+                    type="button"
+                    className={buttonClassName({ variant: 'dangerSolid', size: 'sm' })}
+                    disabled={deleteLoading}
+                    onClick={() => confirmDelete().catch(() => {})}
+                  >
+                    {deleteLoading
+                      ? 'Deleting…'
+                      : check.delete_mode === 'cleanup_delete'
+                        ? 'Delete and remove from Published Feeds'
+                        : 'Confirm delete'}
+                  </button>
+                ) : null}
+                <button type="button" className={buttonClassName({ variant: 'secondary', size: 'sm' })} onClick={() => setDeleteModal(null)} disabled={deleteLoading} data-modal-cancel>
+                  {canDel ? 'Cancel' : 'Close'}
+                </button>
+              </div>
+            </ModalOverlay>
           );
         })() : null}
 
