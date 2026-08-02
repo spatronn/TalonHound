@@ -483,14 +483,16 @@
   line-height: 1;
 }
 
-.br-btn-primary {
+.br-btn-primary,
+button.br-btn.br-btn-primary {
   background: linear-gradient(180deg, rgba(59, 130, 246, 0.75), rgba(37, 99, 235, 0.72));
   border-color: rgba(96, 165, 250, 0.55);
   color: #eff6ff;
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
 }
 
-.br-btn-primary:hover:not(:disabled) {
+.br-btn-primary:hover:not(:disabled),
+button.br-btn.br-btn-primary:hover:not(:disabled) {
   background: linear-gradient(180deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.85));
 }
 
@@ -504,7 +506,8 @@
   background: rgba(59, 130, 246, 0.12);
 }
 
-.br-btn-danger {
+.br-btn-danger,
+button.br-btn.br-btn-danger {
   background: rgba(127, 29, 29, 0.4);
   border-color: rgba(248, 113, 113, 0.5);
   color: #fecaca;

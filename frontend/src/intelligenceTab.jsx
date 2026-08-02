@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from './lib/api.js';
+import { useAppConfirm } from './lib/appChromeContext.jsx';
 import {
   analystConfidenceLabel,
   assessmentImpactLabel,
@@ -333,6 +334,7 @@ function AnalystReferenceFormModal({ open, formSeedKey, initialForm, isEdit = fa
 }
 
 export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryChange, formatUserDateTime }) {
+  const requestConfirm = useAppConfirm();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({ total_count: 0, supports_malicious_count: 0 });
   const [loading, setLoading] = useState(false);
@@ -393,7 +395,13 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
   }
 
   async function handleDelete(item) {
-    if (!window.confirm(`Delete reference "${item.title}"?`)) return;
+    const ok = await requestConfirm({
+      title: 'Delete reference?',
+      description: `Delete reference "${item.title}"?`,
+      variant: 'danger',
+      confirmLabel: 'Delete'
+    });
+    if (!ok) return;
     try {
       await api.delete(`/ioc/${iocId}/analyst-intelligence/${item.id}`);
       await load();

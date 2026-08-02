@@ -83,6 +83,10 @@ import {
 } from './lib/createUserForm.js';
 import { feedFieldDomIds, mergeAriaDescribedBy } from './lib/feedFormField.js';
 import { DELETE_USER_CONFIRM_PREFER_CANCEL, deleteUserConfirmCopy } from './lib/deleteUserConfirm.js';
+import { APP_CONFIRM_INITIAL, createAppConfirmController } from './lib/appConfirm.js';
+import { createAppFeedbackController, feedbackRoleForTone } from './lib/appFeedback.js';
+import { buildEmptyStateModel } from './lib/emptyState.js';
+import { AppConfirmContext, AppFeedbackContext, useAppConfirm, useAppFeedback } from './lib/appChromeContext.jsx';
 import {
   DEFAULT_SOURCE_COLOR,
   isValidHexColor,
@@ -1450,12 +1454,23 @@ function ReasonPromptProvider({ children }) {
     <ReasonPromptContext.Provider value={value}>
       {children}
       {state ? (
-        <ModalOverlay onClose={handleCancel}>
-          <h3 style={{ marginTop: 0, color: '#f1f5f9', fontSize: 18 }}>{state.title}</h3>
-          <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}>{state.description}</p>
-          <label style={{ display: 'grid', gap: 6 }}>
+        <ModalOverlay
+          size="sm"
+          title={state.title}
+          description={state.description}
+          onClose={handleCancel}
+          initialFocusRef={undefined}
+          footer={(
+            <>
+              <button type="button" className={buttonClassName({ variant: 'secondary' })} data-modal-cancel onClick={handleCancel}>Cancel</button>
+              <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={handleSubmit}>{state.confirmLabel}</button>
+            </>
+          )}
+        >
+          <label htmlFor="reason-prompt-input" style={{ display: 'grid', gap: 6 }}>
             <span style={{ color: '#94a3b8', fontSize: 13 }}>Reason</span>
             <textarea
+              id="reason-prompt-input"
               value={reason}
               onChange={(e) => { setReason(e.target.value); if (error) setError(''); }}
               rows={4}
@@ -1465,14 +1480,10 @@ function ReasonPromptProvider({ children }) {
             />
           </label>
           {error ? (
-            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+            <div role="alert" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
               {error}
             </div>
           ) : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-            <button type="button" onClick={handleCancel}>Cancel</button>
-            <button type="button" onClick={handleSubmit}>{state.confirmLabel}</button>
-          </div>
         </ModalOverlay>
       ) : null}
     </ReasonPromptContext.Provider>
@@ -1483,6 +1494,146 @@ function useReasonPrompt() {
   const ctx = useContext(ReasonPromptContext);
   if (!ctx) throw new Error('useReasonPrompt must be used within ReasonPromptProvider');
   return ctx;
+}
+
+function AppConfirmHost({ state, controller }) {
+  const confirmVariant = state.variant === 'danger'
+    ? 'danger'
+    : state.variant === 'warning'
+      ? 'warning'
+      : 'primary';
+  const footer = (
+    <>
+      <button
+        type="button"
+        className={buttonClassName({ variant: 'secondary' })}
+        data-modal-cancel
+        disabled={state.submitting}
+        onClick={() => controller.cancel()}
+      >
+        {state.cancelLabel}
+      </button>
+      <button
+        type="button"
+        className={buttonClassName({ variant: confirmVariant })}
+        disabled={state.submitting}
+        onClick={() => { controller.confirm().catch(() => {}); }}
+      >
+        {state.submitting ? 'Working…' : state.confirmLabel}
+      </button>
+    </>
+  );
+  return (
+    <ModalOverlay
+      size="sm"
+      title={state.title}
+      description={state.description}
+      onClose={state.submitting ? undefined : () => controller.cancel()}
+      initialFocus="cancel"
+      footer={footer}
+      zIndex={1200}
+    >
+      {state.detail ? (
+        <p style={{ margin: '0 0 10px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+          {state.detail}
+        </p>
+      ) : null}
+      {state.error ? (
+        <div
+          role="alert"
+          style={{ marginTop: 4, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}
+        >
+          {state.error}
+        </div>
+      ) : null}
+    </ModalOverlay>
+  );
+}
+
+function AppConfirmProvider({ children }) {
+  const [state, setState] = useState({ ...APP_CONFIRM_INITIAL });
+  const controllerRef = useRef(null);
+  if (!controllerRef.current) {
+    controllerRef.current = createAppConfirmController(setState);
+  }
+  const requestConfirm = useCallback((options) => controllerRef.current.request(options), []);
+  return (
+    <AppConfirmContext.Provider value={requestConfirm}>
+      {children}
+      {state.open ? <AppConfirmHost state={state} controller={controllerRef.current} /> : null}
+    </AppConfirmContext.Provider>
+  );
+}
+
+function AppFeedbackHost({ items, onDismiss }) {
+  useEffect(() => {
+    const timers = items
+      .filter((it) => it.autoDismissMs != null && Number(it.autoDismissMs) > 0)
+      .map((it) => window.setTimeout(() => onDismiss(it.id), Number(it.autoDismissMs)));
+    return () => { timers.forEach((t) => window.clearTimeout(t)); };
+  }, [items, onDismiss]);
+
+  if (!items.length) return null;
+  return (
+    <div className="app-feedback-stack" aria-live="polite">
+      {items.map((it) => (
+        <div
+          key={it.id}
+          className={`app-feedback app-feedback--${it.tone}`}
+          role={feedbackRoleForTone(it.tone)}
+        >
+          <span className="app-feedback-text">{it.message}</span>
+          <button
+            type="button"
+            className={buttonClassName({ variant: 'ghost', size: 'sm', className: 'app-feedback-dismiss' })}
+            aria-label="Dismiss"
+            onClick={() => onDismiss(it.id)}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AppFeedbackProvider({ children }) {
+  const [items, setItems] = useState([]);
+  const controllerRef = useRef(null);
+  if (!controllerRef.current) {
+    controllerRef.current = createAppFeedbackController(setItems);
+  }
+  const api = useMemo(() => ({
+    push: (opts) => controllerRef.current.push(opts),
+    dismiss: (id) => controllerRef.current.dismiss(id),
+    clear: () => controllerRef.current.clear(),
+    success: (message, autoDismissMs) => controllerRef.current.success(message, autoDismissMs),
+    error: (message) => controllerRef.current.error(message),
+    warning: (message, autoDismissMs) => controllerRef.current.warning(message, autoDismissMs),
+    info: (message, autoDismissMs) => controllerRef.current.info(message, autoDismissMs)
+  }), []);
+  const onDismiss = useCallback((id) => controllerRef.current.dismiss(id), []);
+  return (
+    <AppFeedbackContext.Provider value={api}>
+      {children}
+      <AppFeedbackHost items={items} onDismiss={onDismiss} />
+    </AppFeedbackContext.Provider>
+  );
+}
+
+function EmptyState({ title, description, ctaLabel, canWrite, onCta }) {
+  const model = buildEmptyStateModel({ title, description, ctaLabel, canWrite });
+  return (
+    <div className="app-empty-state">
+      <div className="app-empty-title">{model.title}</div>
+      {model.description ? <div className="app-empty-desc">{model.description}</div> : null}
+      {model.showCta ? (
+        <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={onCta}>
+          {model.ctaLabel}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 const SAVED_VIEW_STORAGE = {
@@ -1687,6 +1838,7 @@ function LoginPage() {
             <div className="field">
               <label htmlFor="login-user">Username or email</label>
               <input id="login-user" name="email" type="text" autoComplete="username" required />
+              <span className="field-hint">You can sign in with either your username or your email address.</span>
             </div>
 
             <div className="field">
@@ -2924,6 +3076,8 @@ function FeedPurgeModal({ feed, open, onClose, onCompleted }) {
 function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, showRunAll = true } = {}) {
   const { canWrite } = useSession();
   const requestRequiredReason = useReasonPrompt();
+  const requestConfirm = useAppConfirm();
+  const feedback = useAppFeedback();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [integrations, setIntegrations] = useState([]);
@@ -3012,18 +3166,23 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
 
   async function runNowAll() {
     if (!canWrite) return;
-    const ok = window.confirm('All integrations will be queued now. Do you want to continue?');
+    const ok = await requestConfirm({
+      title: 'Run all integrations?',
+      description: 'All integrations will be queued now. Do you want to continue?',
+      variant: 'warning',
+      confirmLabel: 'Queue all'
+    });
     if (!ok || runningNowAll) return;
     setRunningNowAll(true);
     try {
       const { data } = await api.post('/integrations/run-now');
       await load();
       const skipped = Array.isArray(data?.skipped) ? data.skipped.length : 0;
-      alert(skipped > 0
+      feedback.success(skipped > 0
         ? `Queued ${data?.count || 0} integration(s); ${skipped} skipped (already running)`
         : 'All integrations queued');
     } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to queue integrations'));
+      feedback.error(apiErrorMessage(err, 'Failed to queue integrations'));
     } finally {
       setRunningNowAll(false);
     }
@@ -3034,11 +3193,16 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     const isUsom = key === 'usom-trcert';
     const runningKey = isUsom ? `${key}:${runMode}` : key;
     const isFull = isUsom && runMode === 'full_reconciliation';
-    const ok = window.confirm(isFull
-      ? `Run a FULL reconciliation for ${name || key}? This scans the complete USOM dataset and may take significantly longer.`
-      : isUsom
-        ? `Queue incremental run for ${name || key} now?`
-        : `Queue ${name || key} now?`);
+    const ok = await requestConfirm({
+      title: isFull ? 'Run full reconciliation?' : 'Queue feed run?',
+      description: isFull
+        ? `Run a FULL reconciliation for ${name || key}? This scans the complete USOM dataset and may take significantly longer.`
+        : isUsom
+          ? `Queue incremental run for ${name || key} now?`
+          : `Queue ${name || key} now?`,
+      variant: isFull ? 'warning' : 'primary',
+      confirmLabel: isFull ? 'Run full' : 'Queue run'
+    });
     if (!ok || runningKeys[runningKey]) return;
     setRunningKeys((prev) => ({ ...prev, [runningKey]: true }));
     try {
@@ -3046,14 +3210,14 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       const { data } = await api.post(`/integrations/${encodeURIComponent(key)}/run-now`, payload);
       await load();
       if (isUsom) {
-        alert(data?.coalesced
+        feedback.success(data?.coalesced
           ? `${integrationRunModeLabel(runMode)} is already queued or running.`
           : `${integrationRunModeLabel(runMode)} queued`);
       } else {
-        alert('Run queued');
+        feedback.success('Run queued');
       }
     } catch (err) {
-      alert(apiErrorMessage(err, `Failed to queue ${key}`));
+      feedback.error(apiErrorMessage(err, `Failed to queue ${key}`));
     } finally {
       setRunningKeys((prev) => ({ ...prev, [runningKey]: false }));
     }
@@ -3210,15 +3374,21 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   async function archiveFeedFromSettings() {
     if (!canWrite || !editingFeed) return;
     const feed = editingFeed;
-    const ok = window.confirm(`Archive feed "${feed.name}"? It will be hidden from the default list and scheduling will stop.`);
+    const ok = await requestConfirm({
+      title: 'Archive feed?',
+      description: `Archive feed "${feed.name}"? It will be hidden from the default list and scheduling will stop.`,
+      variant: 'danger',
+      confirmLabel: 'Archive'
+    });
     if (!ok) return;
     try {
       await api.patch(`/integrations/${encodeURIComponent(feed.key)}/archive`);
       const list = await load();
       syncEditingFeed(list);
       setFeedActionSuccess(`Feed "${feed.name}" archived.`);
+      feedback.success(`Feed "${feed.name}" archived.`);
     } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to archive feed'));
+      feedback.error(apiErrorMessage(err, 'Failed to archive feed'));
     }
   }
 
@@ -3230,8 +3400,9 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       const list = await load();
       syncEditingFeed(list);
       setFeedActionSuccess(`Feed "${feed.name}" restored.`);
+      feedback.success(`Feed "${feed.name}" restored.`);
     } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to restore feed'));
+      feedback.error(apiErrorMessage(err, 'Failed to restore feed'));
     }
   }
 
@@ -4629,7 +4800,7 @@ function CustomThreatFeedsPage() {
       const { data } = await api.post(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/sync`);
       setToast(data?.message || 'Custom threat feed run queued');
     } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to queue feed run'));
+      setToast(apiErrorMessage(err, 'Failed to queue feed run'));
     } finally {
       setActionFeedId('');
     }
@@ -4642,7 +4813,7 @@ function CustomThreatFeedsPage() {
       const { data: check } = await api.get(`/custom-threat-feeds/${encodeURIComponent(feed.id)}/delete-check`);
       setDeleteModal({ feed, check });
     } catch (err) {
-      alert(apiErrorMessage(err, 'Failed to check delete eligibility'));
+      setToast(apiErrorMessage(err, 'Failed to check delete eligibility'));
     } finally {
       setDeleteLoading(false);
     }
@@ -4663,7 +4834,7 @@ function CustomThreatFeedsPage() {
       await loadFeeds();
     } catch (err) {
       const msg = err?.response?.data?.message || apiErrorMessage(err, 'Failed to delete Custom Threat Feed');
-      alert(msg);
+      setToast(msg);
     } finally {
       setDeleteLoading(false);
     }
@@ -4708,7 +4879,13 @@ function CustomThreatFeedsPage() {
           {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : null}
 
           {!loading && feeds.length === 0 ? (
-            <p style={{ color: '#94a3b8' }}>No Custom Threat Feeds configured.</p>
+            <EmptyState
+              title="No Custom Threat Feeds yet"
+              description="Add a feed URL to start syncing IOCs on a schedule."
+              ctaLabel="Add Custom Threat Feed"
+              canWrite={isAdmin}
+              onCta={openCreate}
+            />
           ) : null}
 
           {!loading && feeds.length > 0 ? (
@@ -5204,7 +5381,7 @@ const PUBLISHED_FEEDS_UI = {
     minHeight: 72,
     resize: 'vertical'
   },
-  helper: { display: 'block', fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.45 },
+  helper: { display: 'block', fontSize: 11, color: '#94a3b8', marginTop: 4, lineHeight: 1.45 },
   checkRow: { display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10 },
   checkLabel: { display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#cbd5e1', cursor: 'pointer' },
   btn: {
@@ -5391,6 +5568,8 @@ function FeedFormSection({ title, children }) {
 
 function PublishedFeedsPage() {
   const { canWrite } = useSession();
+  const requestConfirm = useAppConfirm();
+  const feedback = useAppFeedback();
   const [loading, setLoading] = useState(true);
   const [feeds, setFeeds] = useState([]);
   const [sourceFeeds, setSourceFeeds] = useState([]);
@@ -5398,6 +5577,7 @@ function PublishedFeedsPage() {
   const [editing, setEditing] = useState(null);
   const [regenerating, setRegenerating] = useState({});
   const [urlTemplateFeed, setUrlTemplateFeed] = useState(null);
+  const [formError, setFormError] = useState('');
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -5443,10 +5623,12 @@ function PublishedFeedsPage() {
   function closeFormModal() {
     setShowFormModal(false);
     setEditing(null);
+    setFormError('');
   }
 
   function openCreateForm() {
     setEditing(null);
+    setFormError('');
     setForm({
       name: '',
       description: '',
@@ -5468,6 +5650,7 @@ function PublishedFeedsPage() {
   function openEditForm(feed) {
     const selectedKeys = Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : [];
     setEditing(feed);
+    setFormError('');
     setForm({
       name: feed.name || '',
       description: feed.description || '',
@@ -5512,6 +5695,7 @@ function PublishedFeedsPage() {
     e.preventDefault();
     if (!canWrite) return;
     const payload = buildPayload();
+    setFormError('');
     try {
       if (editing?.id) {
         await api.patch(`/published-feeds/${editing.id}`, payload);
@@ -5526,17 +5710,24 @@ function PublishedFeedsPage() {
         if (created?.slug) setUrlTemplateFeed(created);
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to save feed');
+      setFormError(err.response?.data?.message || 'Failed to save feed');
     }
   }
 
   async function deleteFeed(id) {
-    if (!canWrite || !window.confirm('Delete this published feed?')) return;
+    if (!canWrite) return;
+    const ok = await requestConfirm({
+      title: 'Delete published feed?',
+      description: 'Delete this published feed?',
+      variant: 'danger',
+      confirmLabel: 'Delete'
+    });
+    if (!ok) return;
     try {
       await api.delete(`/published-feeds/${id}`);
       await loadFeeds();
     } catch {
-      alert('Failed to delete feed');
+      feedback.error('Failed to delete feed');
     }
   }
 
@@ -5547,7 +5738,7 @@ function PublishedFeedsPage() {
       await api.post(`/published-feeds/${id}/regenerate`);
       await loadFeeds();
     } catch {
-      alert('Regenerate failed');
+      feedback.error('Regenerate failed');
     } finally {
       setRegenerating((p) => ({ ...p, [id]: false }));
     }
@@ -5624,13 +5815,14 @@ function PublishedFeedsPage() {
                   </tr>
               )) : (
                 <tr>
-                  <td colSpan={8} style={{ ...ui.td, padding: '28px 12px', textAlign: 'center' }}>
-                    <p style={{ margin: '0 0 12px', color: '#94a3b8', lineHeight: 1.5 }}>
-                      No published feeds yet. Create a feed to publish filtered IOC snapshots for internal security products.
-                    </p>
-                    {canWrite ? (
-                      <button type="button" style={ui.btnPrimary} onClick={openCreateForm}>Create Feed</button>
-                    ) : null}
+                  <td colSpan={8} style={{ ...ui.td, padding: 0 }}>
+                    <EmptyState
+                      title="No published feeds yet"
+                      description="Create a feed to publish filtered IOC snapshots for internal security products."
+                      ctaLabel="Create Feed"
+                      canWrite={canWrite}
+                      onCta={openCreateForm}
+                    />
                   </td>
                 </tr>
               )}
@@ -5660,6 +5852,7 @@ function PublishedFeedsPage() {
             ) : null}
 
             <form onSubmit={saveFeed}>
+              {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
               <FeedFormSection title="Basic">
                 <FeedFormField ui={ui} label="Name">
                   <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} />
@@ -5751,9 +5944,10 @@ function PublishedFeedsPage() {
 }
 
 function FeedUrlTemplateModal({ ui, feed, onClose }) {
+  const feedback = useAppFeedback();
   const template = publishedFeedUrlTemplate(feed.slug);
   const curl = publishedFeedCurlExample(feed.slug);
-  const copy = (text) => navigator.clipboard?.writeText(text).then(() => alert('Copied')).catch(() => alert(text));
+  const copy = (text) => navigator.clipboard?.writeText(text).then(() => feedback.success('Copied')).catch(() => feedback.info(text));
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: 16 }}
@@ -6031,11 +6225,13 @@ const DELETE_KEY_WARNING = 'This API key will permanently stop working and canno
 
 function ApiKeysPage() {
   const { isAdmin } = useSession();
+  const feedback = useAppFeedback();
   const ui = PUBLISHED_FEEDS_UI;
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [form, setForm] = useState({ name: '', enabled: true });
+  const [formError, setFormError] = useState('');
   // Revealed plaintext values live only in component memory — never persisted.
   const [revealed, setRevealed] = useState({});
   const [revealing, setRevealing] = useState({});
@@ -6067,11 +6263,12 @@ function ApiKeysPage() {
 
   function openCreateModal() {
     setForm({ name: '', enabled: true });
+    setFormError('');
     setShowCreateModal(true);
   }
 
   function copyText(text) {
-    navigator.clipboard?.writeText(text).then(() => alert('Copied')).catch(() => alert(text));
+    navigator.clipboard?.writeText(text).then(() => feedback.success('Copied')).catch(() => feedback.info(text));
   }
 
   function hideKey(keyId) {
@@ -6095,7 +6292,7 @@ function ApiKeysPage() {
       const token = await fetchReveal(key.id);
       if (token) setRevealed((p) => ({ ...p, [key.id]: token }));
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to reveal API key');
+      feedback.error(err.response?.data?.message || 'Failed to reveal API key');
     } finally {
       setRevealing((p) => ({ ...p, [key.id]: false }));
     }
@@ -6108,14 +6305,15 @@ function ApiKeysPage() {
       const token = await fetchReveal(key.id);
       if (token) copyText(token);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to copy API key');
+      feedback.error(err.response?.data?.message || 'Failed to copy API key');
     }
   }
 
   async function createKey(e) {
     e.preventDefault();
     if (!isAdmin) return;
-    if (!form.name.trim()) { alert('Enter a key name.'); return; }
+    setFormError('');
+    if (!form.name.trim()) { setFormError('Enter a key name.'); return; }
     try {
       const { data } = await api.post('/api-keys', {
         name: form.name.trim(),
@@ -6126,7 +6324,7 @@ function ApiKeysPage() {
       setCreatedKey({ title: 'Published Feed API key created', token: data.token });
       await loadAll();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to create API key');
+      setFormError(err.response?.data?.message || 'Failed to create API key');
     }
   }
 
@@ -6137,7 +6335,7 @@ function ApiKeysPage() {
       setToast(key.enabled ? 'API key disabled' : 'API key enabled');
       await loadAll();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update API key');
+      feedback.error(err.response?.data?.message || 'Failed to update API key');
     }
   }
 
@@ -6151,7 +6349,7 @@ function ApiKeysPage() {
       setToast('API key deleted');
       await loadAll();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to delete API key');
+      feedback.error(err.response?.data?.message || 'Failed to delete API key');
     } finally {
       setDeleting(false);
     }
@@ -6246,13 +6444,14 @@ function ApiKeysPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={7} style={{ ...ui.td, padding: '28px 12px', textAlign: 'center' }}>
-                    <p style={{ margin: '0 0 12px', color: '#94a3b8', lineHeight: 1.5 }}>
-                      No API keys yet. Create a Published Feed key to let internal tools pull any published feed.
-                    </p>
-                    {isAdmin ? (
-                      <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Create API Key</button>
-                    ) : null}
+                  <td colSpan={7} style={{ ...ui.td, padding: 0 }}>
+                    <EmptyState
+                      title="No API keys yet"
+                      description="Create a Published Feed key to let internal tools pull any published feed."
+                      ctaLabel="Create API Key"
+                      canWrite={isAdmin}
+                      onCta={openCreateModal}
+                    />
                   </td>
                 </tr>
               )}
@@ -6272,6 +6471,7 @@ function ApiKeysPage() {
               A Published Feed key can pull any published feed. Authorization is by key type — no per-feed binding.
             </p>
             <form onSubmit={createKey}>
+              {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
               <FeedFormField ui={ui} label="Key name" fullWidth>
                 <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. Fortigate-01" />
               </FeedFormField>
@@ -6661,6 +6861,7 @@ const EMPTY_TAG_FORM = {
 
 function TagManagerPage() {
   const { isAdmin } = useSession();
+  const requestConfirm = useAppConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const ui = PUBLISHED_FEEDS_UI;
   const initial = useMemo(() => parseTagManagerUrlState(searchParams), []);
@@ -6686,6 +6887,7 @@ function TagManagerPage() {
   const [formError, setFormError] = useState('');
   const requestSeqRef = useRef(0);
   const abortRef = useRef(null);
+  const tagNameRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
@@ -6824,9 +7026,12 @@ function TagManagerPage() {
 
   async function disableTag(tag) {
     if (!tag?.id || !isAdmin) return;
-    const ok = window.confirm(
-      `Disable tag "${tag.name}"? It will be hidden on IOC details and removed from pickers. Existing assignments are kept and will reappear if you enable the tag again.`
-    );
+    const ok = await requestConfirm({
+      title: 'Disable tag?',
+      description: `Disable tag "${tag.name}"? It will be hidden on IOC details and removed from pickers. Existing assignments are kept and will reappear if you enable the tag again.`,
+      variant: 'warning',
+      confirmLabel: 'Disable'
+    });
     if (!ok) return;
     setError('');
     try {
@@ -6917,7 +7122,15 @@ function TagManagerPage() {
               {loading && !tags.length ? (
                 <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : !tags.length ? (
-                <tr><td colSpan={6} style={ui.td}>No tags found.</td></tr>
+                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>
+                  <EmptyState
+                    title="No tags yet"
+                    description="Create a tag to start organizing IOCs."
+                    ctaLabel="Add Tag"
+                    canWrite={isAdmin}
+                    onCta={openCreateModal}
+                  />
+                </td></tr>
               ) : tags.map((tag) => {
                 const sourceCell = formatTagSourcesCell(tag.sources || []);
                 return (
@@ -6993,11 +7206,37 @@ function TagManagerPage() {
       </section>
 
       {showFormModal ? (
-        <ModalOverlay onClose={() => setShowFormModal(false)}>
-          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingTag ? 'Edit Tag' : 'Add Tag'}</h3>
-          <form onSubmit={submitForm}>
-            <FeedFormField ui={ui} label="Name" fullWidth>
+        <ModalOverlay
+          size="sm"
+          title={editingTag ? 'Edit Tag' : 'Add Tag'}
+          onClose={saving ? undefined : () => setShowFormModal(false)}
+          initialFocusRef={tagNameRef}
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={() => setShowFormModal(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="tag-form"
+                className={buttonClassName({ variant: 'primary' })}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : (editingTag ? 'Save Changes' : 'Create Tag')}
+              </button>
+            </>
+          )}
+        >
+          <form id="tag-form" onSubmit={submitForm} noValidate>
+            <FeedFormField ui={ui} label="Name" fullWidth required={!editingTag}>
               <input
+                ref={tagNameRef}
                 required={!editingTag}
                 value={form.name}
                 onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))}
@@ -7033,10 +7272,6 @@ function TagManagerPage() {
               </label>
             </FeedFormField>
             {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingTag ? 'Save Changes' : 'Create Tag')}</button>
-            </div>
           </form>
         </ModalOverlay>
       ) : null}
@@ -7062,6 +7297,7 @@ const EMPTY_THREAT_CLASSIFICATION_FORM = {
 
 function ThreatClassificationManagerPage() {
   const { isAdmin } = useSession();
+  const requestConfirm = useAppConfirm();
   const ui = PUBLISHED_FEEDS_UI;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -7074,6 +7310,7 @@ function ThreatClassificationManagerPage() {
   const [reordering, setReordering] = useState(false);
   const [formError, setFormError] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
+  const tcNameRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
@@ -7157,7 +7394,12 @@ function ThreatClassificationManagerPage() {
       setError('Unknown classification cannot be disabled.');
       return;
     }
-    const ok = window.confirm(`Disable classification "${item.name}"? Existing IOC assignments will remain visible, but it will no longer appear in pickers.`);
+    const ok = await requestConfirm({
+      title: 'Disable classification?',
+      description: `Disable classification "${item.name}"? Existing IOC assignments will remain visible, but it will no longer appear in pickers.`,
+      variant: 'warning',
+      confirmLabel: 'Disable'
+    });
     if (!ok) return;
     setError('');
     try {
@@ -7240,15 +7482,50 @@ function ThreatClassificationManagerPage() {
           onEdit={openEditModal}
           onDisable={(item) => { disableItem(item).catch(() => {}); }}
           onEnable={(item) => { enableItem(item).catch(() => {}); }}
+          emptyState={(
+            <EmptyState
+              title="No classifications yet"
+              description="Create a classification to categorize threats."
+              ctaLabel="Add Classification"
+              canWrite={isAdmin}
+              onCta={openCreateModal}
+            />
+          )}
         />
       </section>
 
       {showFormModal ? (
-        <ModalOverlay onClose={() => setShowFormModal(false)}>
-          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingItem ? 'Edit Threat Classification' : 'Add Threat Classification'}</h3>
-          <form onSubmit={submitForm}>
-            <FeedFormField ui={ui} label="Name" fullWidth>
+        <ModalOverlay
+          size="sm"
+          title={editingItem ? 'Edit Threat Classification' : 'Add Threat Classification'}
+          onClose={saving ? undefined : () => setShowFormModal(false)}
+          initialFocusRef={tcNameRef}
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={() => setShowFormModal(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="threat-classification-form"
+                className={buttonClassName({ variant: 'primary' })}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Classification')}
+              </button>
+            </>
+          )}
+        >
+          <form id="threat-classification-form" onSubmit={submitForm} noValidate>
+            <FeedFormField ui={ui} label="Name" fullWidth required>
               <input
+                ref={tcNameRef}
                 required
                 value={form.name}
                 onChange={(e) => {
@@ -7263,7 +7540,7 @@ function ThreatClassificationManagerPage() {
                 placeholder="e.g. Phishing"
               />
             </FeedFormField>
-            <FeedFormField ui={ui} label="Slug" helper="Lowercase snake_case. Used in API/DB." fullWidth>
+            <FeedFormField ui={ui} label="Slug" helper="Lowercase snake_case. Used in API/DB." fullWidth required>
               <input
                 required
                 value={form.slug}
@@ -7286,10 +7563,6 @@ function ThreatClassificationManagerPage() {
               </label>
             </FeedFormField>
             {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingItem ? 'Save Changes' : 'Create Classification')}</button>
-            </div>
           </form>
         </ModalOverlay>
       ) : null}
@@ -7312,6 +7585,7 @@ function formatThreatActorAliases(aliases) {
 
 function ThreatActorManagerPage() {
   const { isAdmin } = useSession();
+  const requestConfirm = useAppConfirm();
   const ui = PUBLISHED_FEEDS_UI;
   const [actors, setActors] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -7322,6 +7596,7 @@ function ThreatActorManagerPage() {
   const [form, setForm] = useState(EMPTY_THREAT_ACTOR_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const actorNameRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
@@ -7392,7 +7667,12 @@ function ThreatActorManagerPage() {
 
   async function disableActor(actor) {
     if (!actor?.id || !isAdmin) return;
-    const ok = window.confirm(`Disable threat actor "${actor.name}"? Existing IOC assignments will remain visible, but the actor will no longer appear in pickers.`);
+    const ok = await requestConfirm({
+      title: 'Disable threat actor?',
+      description: `Disable threat actor "${actor.name}"? Existing IOC assignments will remain visible, but the actor will no longer appear in pickers.`,
+      variant: 'warning',
+      confirmLabel: 'Disable'
+    });
     if (!ok) return;
     setError('');
     try {
@@ -7460,7 +7740,15 @@ function ThreatActorManagerPage() {
               {loading ? (
                 <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : !actors.length ? (
-                <tr><td colSpan={6} style={ui.td}>No threat actors found.</td></tr>
+                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>
+                  <EmptyState
+                    title="No threat actors yet"
+                    description="Add a threat actor to link them to IOCs."
+                    ctaLabel="Add Threat Actor"
+                    canWrite={isAdmin}
+                    onCta={openCreateModal}
+                  />
+                </td></tr>
               ) : actors.map((actor) => (
                 <tr key={actor.id} style={{ opacity: actor.active ? 1 : 0.62 }}>
                   <td style={ui.td}>
@@ -7487,11 +7775,36 @@ function ThreatActorManagerPage() {
       </section>
 
       {showFormModal ? (
-        <ModalOverlay onClose={() => setShowFormModal(false)}>
-          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>{editingActor ? 'Edit Threat Actor' : 'Add Threat Actor'}</h3>
-          <form onSubmit={submitForm}>
-            <FeedFormField ui={ui} label="Name" fullWidth>
-              <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. APT29" />
+        <ModalOverlay
+          size="sm"
+          title={editingActor ? 'Edit Threat Actor' : 'Add Threat Actor'}
+          onClose={saving ? undefined : () => setShowFormModal(false)}
+          initialFocusRef={actorNameRef}
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={() => setShowFormModal(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="threat-actor-form"
+                className={buttonClassName({ variant: 'primary' })}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : (editingActor ? 'Save Changes' : 'Create Threat Actor')}
+              </button>
+            </>
+          )}
+        >
+          <form id="threat-actor-form" onSubmit={submitForm} noValidate>
+            <FeedFormField ui={ui} label="Name" fullWidth required>
+              <input ref={actorNameRef} required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. APT29" />
             </FeedFormField>
             <FeedFormField ui={ui} label="Aliases" helper="Comma-separated alternate names." fullWidth>
               <input value={form.aliases} onChange={(e) => setForm((x) => ({ ...x, aliases: e.target.value }))} style={ui.input} placeholder="Cozy Bear, The Dukes" />
@@ -7506,10 +7819,6 @@ function ThreatActorManagerPage() {
               </label>
             </FeedFormField>
             {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-              <button type="button" style={ui.btn} onClick={() => setShowFormModal(false)}>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editingActor ? 'Save Changes' : 'Create Threat Actor')}</button>
-            </div>
           </form>
         </ModalOverlay>
       ) : null}
@@ -7919,7 +8228,15 @@ function IocSourcesPage() {
                   </td>
                 </tr>
               );}) : (
-	                <tr><td colSpan={7} style={{ ...ui.td, color: '#64748b' }}>No IOC sources yet.</td></tr>
+                <tr><td colSpan={7} style={{ ...ui.td, padding: 0 }}>
+                  <EmptyState
+                    title="No IOC sources yet"
+                    description="Add a source to track where IOCs come from."
+                    ctaLabel="Add Source"
+                    canWrite={isAdmin}
+                    onCta={openCreateModal}
+                  />
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -8882,14 +9199,22 @@ function DeleteUserConfirmModal({ user, submitting, onCancel, onConfirm }) {
   );
 }
 
-function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetBusyId, onSetStatus, onRemove, onResetPassword, onChangePassword }) {
+function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetBusyId, onSetStatus, onRemove, onResetPassword, onChangePassword, onCreateUser }) {
   const ui = PUBLISHED_FEEDS_UI;
 
   if (usersLoading) {
     return <div style={{ color: '#94a3b8', padding: '12px 0' }}>Loading…</div>;
   }
   if (!users.length) {
-    return <div style={{ color: '#64748b', fontSize: 14, padding: '12px 0' }}>No users yet.</div>;
+    return (
+      <EmptyState
+        title="No users yet"
+        description="Create a user account to give someone access to the platform."
+        ctaLabel="Create User"
+        canWrite={isAdmin}
+        onCta={onCreateUser}
+      />
+    );
   }
 
   return (
@@ -9015,13 +9340,14 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
 function UsersPage() {
   const { isAdmin, userId } = useSession();
   const requestRequiredReason = useReasonPrompt();
+  const requestConfirm = useAppConfirm();
+  const feedback = useAppFeedback();
   const ui = PUBLISHED_FEEDS_UI;
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [statusBusyId, setStatusBusyId] = useState(null);
   const [resetBusyId, setResetBusyId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
   const [actionError, setActionError] = useState('');
   // Target user awaiting reset confirmation.
   const [resetConfirmUser, setResetConfirmUser] = useState(null);
@@ -9052,7 +9378,6 @@ function UsersPage() {
   }, [isAdmin]);
 
   function openCreateModal() {
-    setSuccessMessage('');
     setActionError('');
     setShowCreateModal(true);
   }
@@ -9062,12 +9387,11 @@ function UsersPage() {
   }
 
   async function handleUserCreated() {
-    setSuccessMessage('User created successfully.');
+    feedback.success('User created successfully.');
     await loadUsers();
   }
 
   function requestDeleteUser(user) {
-    setSuccessMessage('');
     setActionError('');
     setDeleteConfirmUser(user || null);
   }
@@ -9095,12 +9419,17 @@ function UsersPage() {
   }
 
   async function setUserStatus(targetId, next) {
-    const confirmMsg =
-      next === 'passive'
+    const isDeactivate = next === 'passive';
+    const ok = await requestConfirm({
+      title: isDeactivate ? 'Deactivate user?' : 'Activate user?',
+      description: isDeactivate
         ? 'Are you sure you want to deactivate this user?'
-        : 'Are you sure you want to activate this user?';
-    if (!window.confirm(confirmMsg)) return;
-    const reason = await requestRequiredReason(next === 'passive' ? 'Deactivate user' : 'Activate user');
+        : 'Are you sure you want to activate this user?',
+      variant: isDeactivate ? 'warning' : 'primary',
+      confirmLabel: isDeactivate ? 'Deactivate' : 'Activate'
+    });
+    if (!ok) return;
+    const reason = await requestRequiredReason(isDeactivate ? 'Deactivate user' : 'Activate user');
     if (!reason) return;
     setStatusBusyId(targetId);
     setActionError('');
@@ -9115,20 +9444,18 @@ function UsersPage() {
   }
 
   function openResetConfirm(u) {
-    setSuccessMessage('');
     setActionError('');
     setResetConfirmUser(u);
   }
 
   function openChangePassword() {
-    setSuccessMessage('');
     setActionError('');
     setChangePwOpen(true);
   }
 
   function handleOwnPasswordChanged() {
     setChangePwOpen(false);
-    setSuccessMessage('Your password has been changed successfully.');
+    feedback.success('Your password has been changed successfully.');
   }
 
   function closeResetConfirm() {
@@ -9179,11 +9506,6 @@ function UsersPage() {
           <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={openCreateModal}>+ Create User</button>
         </div>
 
-        {successMessage ? (
-          <div style={{ ...ui.banner, marginTop: 12, borderColor: '#166534', color: '#86efac', background: 'rgba(22,101,52,0.18)' }}>
-            {successMessage}
-          </div>
-        ) : null}
         {actionError ? (
           <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5', background: 'rgba(127,29,29,0.18)' }}>
             {actionError}
@@ -9202,6 +9524,7 @@ function UsersPage() {
             onRemove={requestDeleteUser}
             onResetPassword={openResetConfirm}
             onChangePassword={openChangePassword}
+            onCreateUser={openCreateModal}
           />
         </div>
       </section>
@@ -9249,19 +9572,22 @@ function UsersPage() {
 }
 
 function ResetPasswordConfirmModal({ user, onCancel, onConfirm }) {
-  const ui = PUBLISHED_FEEDS_UI;
   const name = user?.username || 'this user';
   return (
-    <ModalOverlay onClose={onCancel}>
-      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Reset password</h3>
-      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
-        A new temporary password will be generated for {name}. The user will be required to
-        change it at the next login. The user will be required to change it before continuing.
-      </p>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-        <button type="button" style={ui.btn} onClick={onCancel}>Cancel</button>
-        <button type="button" style={ui.btnPrimary} onClick={onConfirm}>Reset Password</button>
-      </div>
+    <ModalOverlay
+      size="sm"
+      title="Reset password"
+      description={`A new temporary password will be generated for ${name}. The user will be required to change it at the next login.`}
+      onClose={onCancel}
+      initialFocus="cancel"
+      footer={(
+        <>
+          <button type="button" className={buttonClassName({ variant: 'secondary' })} data-modal-cancel onClick={onCancel}>Cancel</button>
+          <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={onConfirm}>Reset Password</button>
+        </>
+      )}
+    >
+      {null}
     </ModalOverlay>
   );
 }
@@ -9302,7 +9628,7 @@ function ChangePasswordForm({ variant = 'auth', onSuccess, onCancel }) {
 
   if (variant === 'modal') {
     return (
-      <form onSubmit={onSubmit}>
+      <form onSubmit={onSubmit} noValidate>
         <FeedFormField ui={ui} label="Current password" fullWidth>
           <input required type="password" value={form.currentPassword} onChange={update('currentPassword')} style={ui.input} autoComplete="current-password" />
         </FeedFormField>
@@ -9318,8 +9644,8 @@ function ChangePasswordForm({ variant = 'auth', onSuccess, onCancel }) {
           </div>
         ) : null}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-          <button type="button" style={ui.btn} onClick={onCancel} disabled={saving}>Cancel</button>
-          <button type="submit" style={ui.btnPrimary} disabled={saving}>
+          <button type="button" className={buttonClassName({ variant: 'secondary' })} data-modal-cancel onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="submit" className={buttonClassName({ variant: 'primary' })} disabled={saving}>
             {saving ? 'Saving…' : 'Change Password'}
           </button>
         </div>
@@ -9351,20 +9677,19 @@ function ChangePasswordForm({ variant = 'auth', onSuccess, onCancel }) {
 }
 
 function SelfChangePasswordModal({ onClose, onChanged }) {
-  const ui = PUBLISHED_FEEDS_UI;
   return (
-    <ModalOverlay onClose={onClose}>
-      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Change password</h3>
-      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
-        Update the password for your own account.
-      </p>
+    <ModalOverlay
+      size="sm"
+      title="Change password"
+      description="Update the password for your own account."
+      onClose={onClose}
+    >
       <ChangePasswordForm variant="modal" onCancel={onClose} onSuccess={onChanged} />
     </ModalOverlay>
   );
 }
 
 function ResetPasswordResultModal({ username, password, onClose }) {
-  const ui = PUBLISHED_FEEDS_UI;
   const [copied, setCopied] = useState(false);
 
   function copyPassword() {
@@ -9376,8 +9701,14 @@ function ResetPasswordResultModal({ username, password, onClose }) {
   }
 
   return (
-    <ModalOverlay onClose={onClose}>
-      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Temporary password</h3>
+    <ModalOverlay
+      size="sm"
+      title="Temporary password"
+      onClose={onClose}
+      footer={(
+        <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={onClose}>Close</button>
+      )}
+    >
       <p style={{ margin: '0 0 14px', fontSize: 13, color: '#94a3b8', lineHeight: 1.5 }}>
         Temporary password for <strong style={{ color: '#e2e8f0' }}>{username}</strong>:
       </p>
@@ -9399,15 +9730,12 @@ function ResetPasswordResultModal({ username, password, onClose }) {
         >
           {password}
         </code>
-        <button type="button" style={{ ...ui.btnPrimary, whiteSpace: 'nowrap' }} onClick={copyPassword}>
+        <button type="button" className={buttonClassName({ variant: 'primary' })} style={{ whiteSpace: 'nowrap' }} onClick={copyPassword}>
           {copied ? 'Copied' : 'Copy Password'}
         </button>
       </div>
       <div style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #b45309', color: '#fcd34d', background: 'rgba(180,83,9,0.15)', fontSize: 12.5, lineHeight: 1.45 }}>
         This password will only be shown once. Copy it before closing this dialog.
-      </div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-        <button type="button" style={ui.btnPrimary} onClick={onClose}>Close</button>
       </div>
     </ModalOverlay>
   );
@@ -10456,8 +10784,9 @@ function IOCListPage() {
     fontSize: 12,
     fontWeight: 700,
     textTransform: 'capitalize',
-    background: confidence === 'high' ? '#fee2e2' : confidence === 'medium' ? '#fef3c7' : '#dcfce7',
-    color: confidence === 'high' ? '#991b1b' : confidence === 'medium' ? '#92400e' : '#166534'
+    background: confidence === 'high' ? 'rgba(127,29,29,0.25)' : confidence === 'medium' ? 'rgba(180,83,9,0.25)' : 'rgba(22,101,52,0.25)',
+    color: confidence === 'high' ? '#fca5a5' : confidence === 'medium' ? '#fcd34d' : '#86efac',
+    border: `1px solid ${confidence === 'high' ? '#7f1d1d' : confidence === 'medium' ? '#b45309' : '#166534'}`
   });
 
   // Structural parse errors map to the single friendly hint; field/operator-level
@@ -10622,8 +10951,8 @@ function IOCListPage() {
 
   return (
     <AppShell>
-      <section className="ioc-list-page" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
-      <h2 style={{ marginTop: 0 }}>IOC List</h2>
+      <section className="ioc-list-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+      <h2 style={{ marginTop: 0, color: '#f1f5f9' }}>IOC List</h2>
 
       <div style={{ marginBottom: 14, padding: '12px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -10751,7 +11080,7 @@ function IOCListPage() {
       </div>
 
       {searchError && (
-        <div style={{ marginBottom: 10, padding: 10, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, color: '#991b1b', fontWeight: 600 }}>
+        <div style={{ marginBottom: 10, padding: 10, background: 'rgba(127,29,29,0.2)', border: '1px solid #7f1d1d', borderRadius: 6, color: '#fca5a5', fontWeight: 600 }}>
           {searchError}
         </div>
       )}
@@ -10925,7 +11254,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
       </div>
 
       {(listLoading || listStatusText) && (
-        <div style={{ marginBottom: 10, padding: 10, background: listLoading ? '#e0f2fe' : '#fff8e1', border: `1px solid ${listLoading ? '#7dd3fc' : '#ffe0a3'}`, borderRadius: 6, color: '#0f172a' }}>
+        <div style={{ marginBottom: 10, padding: 10, background: listLoading ? 'rgba(37,99,235,0.12)' : 'rgba(180,83,9,0.15)', border: `1px solid ${listLoading ? '#1d4ed8' : '#b45309'}`, borderRadius: 6, color: listLoading ? '#bfdbfe' : '#fcd34d' }}>
           {listLoading ? 'Query is running. Please wait while IOC results are being processed...' : listStatusText}
         </div>
       )}
@@ -10938,31 +11267,31 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
         </div>
       )}
 
-      <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 10 }}>
-        <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#fff', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+      <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
+        <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
-            <col style={{ width: columnWidths.index }} />
+            <col className="ioc-list-col-secondary" style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
             <col style={{ width: columnWidths.category }} />
-            <col style={{ width: columnWidths.classifications }} />
+            <col className="ioc-list-col-tertiary" style={{ width: columnWidths.classifications }} />
             <col style={{ width: columnWidths.status }} />
             <col style={{ width: columnWidths.source }} />
-            <col style={{ width: columnWidths.confidence }} />
-            <col style={{ width: columnWidths.timestamp }} />
+            <col className="ioc-list-col-secondary" style={{ width: columnWidths.confidence }} />
+            <col className="ioc-list-col-tertiary" style={{ width: columnWidths.timestamp }} />
           </colgroup>
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd', background: '#f8fafc' }}>
-              <th style={{ position: 'relative' }}>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937' }}>
+              <th className="ioc-list-col-secondary" style={{ position: 'relative' }}>
                 #
                 <div onMouseDown={(e) => startResize('index', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
               </th>
               <th onClick={() => nextSort('ip')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC{sortIndicator('ip')}<div onMouseDown={(e) => startResize('ip', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('category')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>IOC Type{sortIndicator('category')}<div onMouseDown={(e) => startResize('category', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th style={{ position: 'relative' }}>Classifications<div onMouseDown={(e) => startResize('classifications', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th className="ioc-list-col-tertiary" style={{ position: 'relative' }}>Classifications<div onMouseDown={(e) => startResize('classifications', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('status')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Status{sortIndicator('status')}<div onMouseDown={(e) => startResize('status', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
               <th onClick={() => nextSort('source')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Source{sortIndicator('source')}<div onMouseDown={(e) => startResize('source', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
-              <th onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>{IOC_LIST_TIMESTAMP_PRESENTATION.label}{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th className="ioc-list-col-secondary" onClick={() => nextSort('confidence')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>Confidence{sortIndicator('confidence')}<div onMouseDown={(e) => startResize('confidence', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
+              <th className="ioc-list-col-tertiary" onClick={() => nextSort('timestamp')} style={{ position: 'relative', cursor: 'pointer', userSelect: 'none' }}>{IOC_LIST_TIMESTAMP_PRESENTATION.label}{sortIndicator('timestamp')}<div onMouseDown={(e) => startResize('timestamp', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} /></th>
             </tr>
           </thead>
           <tbody>
@@ -10985,8 +11314,8 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
                 ? classVisible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ')
                 : 'Unknown';
               return (
-              <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
+              <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #334155' }}>
+                <td className="ioc-list-col-secondary" style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td title={obs} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   <button
                     onClick={() => r.public_id && navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`)}
@@ -11013,7 +11342,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
                   ) : null}
                 </td>
                 <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
-                <td title={classTitle} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
+                <td className="ioc-list-col-tertiary" title={classTitle} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
                   {classVisible.length === 0
                     ? <span style={{ color: '#94a3b8' }}>Unknown</span>
                     : <>
@@ -11039,8 +11368,8 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
                     <span className={r.display_source_kind === 'none' ? 'ioc-list-source-muted' : 'ioc-list-source-badge'} style={sourceBadgeInline}>{sourceLabel}</span>
                   )}
                 </td>
-                <td><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>
-                <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(resolveIocListTimestamp(r))}</td>
+                <td className="ioc-list-col-secondary"><span style={confidenceBadgeStyle((r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low')}>{(r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low'}</span></td>
+                <td className="ioc-list-col-tertiary" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(resolveIocListTimestamp(r))}</td>
               </tr>
             );})}
           </tbody>
@@ -11124,7 +11453,7 @@ function LegacyIOCDetailsRedirect() {
 
   return (
     <AppShell>
-      <section style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#ffffff', padding: 16 }}>
+      <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, color: '#94a3b8' }}>
         <div>Redirecting to IOC details...</div>
       </section>
     </AppShell>
@@ -13361,6 +13690,7 @@ function IOCDetailsPage() {
   const { isAdmin, canWrite } = useSession();
   const sourceColorIndex = useSourceColorIndex();
   const requestRequiredReason = useReasonPrompt();
+  const requestConfirm = useAppConfirm();
   const detailsPublicId = String(publicId || '').trim();
   const ui = PUBLISHED_FEEDS_UI;
   const aliasNotice = String(searchParams.get('alias_notice') || '').trim();
@@ -13693,7 +14023,12 @@ function IOCDetailsPage() {
     if (!Number.isFinite(tagId) || tagId <= 0) return;
 
     const tagName = String(tag?.name || 'this tag').trim() || 'this tag';
-    const ok = window.confirm(`Remove the analyst tag "${tagName}" from this IOC?`);
+    const ok = await requestConfirm({
+      title: 'Remove tag?',
+      description: `Remove the analyst tag "${tagName}" from this IOC?`,
+      variant: 'danger',
+      confirmLabel: 'Remove'
+    });
     if (!ok) return;
 
     setTagsSaving(true);
@@ -13721,7 +14056,12 @@ function IOCDetailsPage() {
       : (singleSource ? [singleSource] : []);
     if (!tag || !sources.length) return;
 
-    const ok = window.confirm('Remove this source tag from this IOC? It will not affect other IOCs.');
+    const ok = await requestConfirm({
+      title: 'Remove source tag?',
+      description: 'Remove this source tag from this IOC? It will not affect other IOCs.',
+      variant: 'danger',
+      confirmLabel: 'Remove'
+    });
     if (!ok) return;
 
     const prevTags = Array.isArray(data?.summary?.feed_intelligence?.tags)
@@ -14222,7 +14562,7 @@ function IOCDetailsPage() {
             <IocDetailTabBar tabs={visibleTabs} activeTab={activeTab} onChange={setActiveTab} />
 
             {activeTab === 'overview' ? (
-              <div style={{ display: 'grid', gap: 14 }}>
+              <div id="ioc-tab-panel-overview" role="tabpanel" aria-labelledby="ioc-tab-overview" tabIndex={0} style={{ display: 'grid', gap: 14 }}>
                 <IocStatusSummary
                   presentation={iocStatusCard}
                   renderBadge={iocStatusBadge}
@@ -14518,30 +14858,34 @@ function IOCDetailsPage() {
             ) : null}
 
             {activeTab === 'intelligence' ? (
-              <IntelligenceTabPanel
-                iocId={summary.id}
-                iocValue={summary.observable}
-                iocType={summary.observable_type}
-                active={intelligenceTabActive}
-                canWrite={canWrite}
-                isAdmin={isAdmin}
-                formatUserDateTime={formatUserDateTime}
-                isRdapEligible={isRdapEligibleObservable(summary.observable, summary.observable_type).eligible}
-                isHashObservable={isHashObservable}
-                hasMeaningfulFileInfo={hasMeaningfulFileInfo}
-                fileInformation={summary.file_information}
-                fileArtifact={data.file_artifact || null}
-                VirusTotalEnrichmentCard={VirusTotalEnrichmentCard}
-                IpEnrichmentCard={IpEnrichmentCard}
-                AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
-                RdapEnrichmentCard={RdapEnrichmentCard}
-                SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
-                DnsmaniaEnrichmentCard={DnsmaniaEnrichmentCard}
-              />
+              <div id="ioc-tab-panel-intelligence" role="tabpanel" aria-labelledby="ioc-tab-intelligence" tabIndex={0}>
+                <IntelligenceTabPanel
+                  iocId={summary.id}
+                  iocValue={summary.observable}
+                  iocType={summary.observable_type}
+                  active={intelligenceTabActive}
+                  canWrite={canWrite}
+                  isAdmin={isAdmin}
+                  formatUserDateTime={formatUserDateTime}
+                  isRdapEligible={isRdapEligibleObservable(summary.observable, summary.observable_type).eligible}
+                  isHashObservable={isHashObservable}
+                  hasMeaningfulFileInfo={hasMeaningfulFileInfo}
+                  fileInformation={summary.file_information}
+                  fileArtifact={data.file_artifact || null}
+                  VirusTotalEnrichmentCard={VirusTotalEnrichmentCard}
+                  IpEnrichmentCard={IpEnrichmentCard}
+                  AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
+                  RdapEnrichmentCard={RdapEnrichmentCard}
+                  SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
+                  DnsmaniaEnrichmentCard={DnsmaniaEnrichmentCard}
+                />
+              </div>
             ) : null}
 
             {activeTab === 'audit' && isAdmin ? (
-              <IocAuditHistoryPanel iocId={summary.id} enabled={auditTabActive} />
+              <div id="ioc-tab-panel-audit" role="tabpanel" aria-labelledby="ioc-tab-audit" tabIndex={0}>
+                <IocAuditHistoryPanel iocId={summary.id} enabled={auditTabActive} />
+              </div>
             ) : null}
           </>
         )}
@@ -14602,28 +14946,49 @@ function IOCDetailsPage() {
       ) : null}
 
       {showDeleteModal ? (
-        <ModalOverlay onClose={() => !deleteLoading && (setShowDeleteModal(false), setDeleteConfirmText(''), setDeleteError(''))}>
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Delete IOC</h3>
+        <ModalOverlay
+          size="sm"
+          title="Delete IOC"
+          onClose={() => !deleteLoading && (setShowDeleteModal(false), setDeleteConfirmText(''), setDeleteError(''))}
+          initialFocus="cancel"
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); setDeleteError(''); }}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'danger' })}
+                onClick={() => submitDeleteIoc().catch(() => {})}
+                disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}
+              >
+                {deleteLoading ? 'Deleting…' : 'Delete IOC'}
+              </button>
+            </>
+          )}
+        >
           <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 4 }}>You are about to permanently delete this IOC from the platform.</p>
           <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: '#e2e8f0', marginBottom: 12, overflowWrap: 'anywhere' }}>{summary?.observable}</div>
           <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 12 }}>This action will remove the IOC from active IOC operations and correlation lookup. This is intended for incorrectly imported or mistakenly added IOCs.</p>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>To confirm, type: <span style={{ color: '#fca5a5', fontFamily: 'monospace' }}>delete</span></div>
+          <div style={{ marginBottom: 4 }}>
+            <label htmlFor="delete-ioc-confirm-input" style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>To confirm, type: <span style={{ color: '#fca5a5', fontFamily: 'monospace' }}>delete</span></label>
             <input
+              id="delete-ioc-confirm-input"
               type="text"
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
               placeholder="delete"
               disabled={deleteLoading}
-              autoFocus
               style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0', fontSize: 13, outline: 'none' }}
             />
           </div>
-          {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" style={ui.btn} onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); setDeleteError(''); }} disabled={deleteLoading}>Cancel</button>
-            <button type="button" style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #7f1d1d', background: deleteConfirmText.trim().toLowerCase() === 'delete' ? '#991b1b' : 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13, fontWeight: 600, cursor: deleteConfirmText.trim().toLowerCase() === 'delete' ? 'pointer' : 'not-allowed', opacity: deleteConfirmText.trim().toLowerCase() === 'delete' ? 1 : 0.5 }} onClick={() => submitDeleteIoc().catch(() => {})} disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}>{deleteLoading ? 'Deleting…' : 'Delete IOC'}</button>
-          </div>
+          {deleteError ? <div role="alert" style={{ marginTop: 10, color: '#fca5a5', fontSize: 13 }}>{deleteError}</div> : null}
         </ModalOverlay>
       ) : null}
 
@@ -14962,9 +15327,9 @@ function IOCAddPage() {
   }
 
   function confidencePillStyle(value) {
-    if (value === 'high') return { color: '#991b1b', bg: '#fee2e2' };
-    if (value === 'medium') return { color: '#92400e', bg: '#fef3c7' };
-    return { color: '#166534', bg: '#dcfce7' };
+    if (value === 'high') return { color: '#fca5a5', bg: 'rgba(127,29,29,0.28)' };
+    if (value === 'medium') return { color: '#fcd34d', bg: 'rgba(120,53,15,0.28)' };
+    return { color: '#86efac', bg: 'rgba(22,101,52,0.25)' };
   }
 
   function relativeTime(dateVal) {
@@ -15729,6 +16094,15 @@ function App() {
         .ioc-list-page .ioc-list-table tbody tr {
           border-bottom: 1px solid #334155 !important;
         }
+        @media (max-width: 980px) {
+          .ioc-list-page .ioc-list-col-secondary { display: none; }
+          .ioc-list-page .ioc-list-table { min-width: 720px !important; }
+        }
+        @media (max-width: 720px) {
+          .ioc-list-page .ioc-list-col-secondary,
+          .ioc-list-page .ioc-list-col-tertiary { display: none; }
+          .ioc-list-page .ioc-list-table { min-width: 0 !important; }
+        }
         .ioc-list-source-badge {
           display: inline;
           padding: 2px 8px;
@@ -15839,6 +16213,78 @@ function App() {
         }
         .threat-classifications-table .tc-drag-handle:active {
           cursor: grabbing;
+        }
+        .app-feedback-stack {
+          position: fixed;
+          top: 16px;
+          right: 16px;
+          z-index: 1400;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          width: min(360px, calc(100vw - 24px));
+          pointer-events: none;
+        }
+        .app-feedback {
+          pointer-events: auto;
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid #334155;
+          background: #0f172a;
+          color: #e2e8f0;
+          box-shadow: 0 12px 40px rgba(2, 6, 23, 0.45);
+          font-size: 13px;
+          line-height: 1.45;
+        }
+        .app-feedback-text { flex: 1; min-width: 0; }
+        .app-feedback--success {
+          border-color: #166534;
+          background: rgba(22, 101, 52, 0.22);
+          color: #86efac;
+        }
+        .app-feedback--error {
+          border-color: #7f1d1d;
+          background: rgba(127, 29, 29, 0.28);
+          color: #fca5a5;
+        }
+        .app-feedback--warning {
+          border-color: #854d0e;
+          background: rgba(120, 53, 15, 0.28);
+          color: #fcd34d;
+        }
+        .app-feedback--info {
+          border-color: #1d4ed8;
+          background: rgba(37, 99, 235, 0.18);
+          color: #bfdbfe;
+        }
+        .app-feedback-dismiss {
+          padding: 0 6px !important;
+          min-width: 28px;
+          height: 28px;
+          font-size: 18px;
+          line-height: 1;
+        }
+        .app-empty-state {
+          padding: 28px 16px;
+          text-align: center;
+          color: #94a3b8;
+        }
+        .app-empty-title {
+          color: #e2e8f0;
+          font-size: 15px;
+          font-weight: 600;
+          margin-bottom: 6px;
+        }
+        .app-empty-desc {
+          font-size: 13px;
+          line-height: 1.5;
+          margin-bottom: 14px;
+          max-width: 420px;
+          margin-left: auto;
+          margin-right: auto;
         }
         .sr-only {
           position: absolute;
@@ -16039,6 +16485,8 @@ function App() {
       `}</style>
       <BrowserRouter>
         <SessionProvider>
+        <AppFeedbackProvider>
+        <AppConfirmProvider>
         <ReasonPromptProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -16071,6 +16519,8 @@ function App() {
           <Route path="*" element={<DefaultRedirect />} />
         </Routes>
         </ReasonPromptProvider>
+        </AppConfirmProvider>
+        </AppFeedbackProvider>
         </SessionProvider>
       </BrowserRouter>
     </>

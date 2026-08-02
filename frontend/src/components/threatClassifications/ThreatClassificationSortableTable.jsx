@@ -154,7 +154,8 @@ function SortableClassificationRow({
  *   onReorder: (nextItems: Array<object>, activeId: string, overId: string) => void | Promise<void>,
  *   onEdit: (item: object) => void,
  *   onDisable: (item: object) => void | Promise<void>,
- *   onEnable: (item: object) => void | Promise<void>
+ *   onEnable: (item: object) => void | Promise<void>,
+ *   emptyState?: React.ReactNode
  * }} props
  */
 export function ThreatClassificationSortableTable({
@@ -165,7 +166,8 @@ export function ThreatClassificationSortableTable({
   onReorder,
   onEdit,
   onDisable,
-  onEnable
+  onEnable,
+  emptyState = null
 }) {
   const [activeId, setActiveId] = useState(null);
   const sortedItems = useMemo(() => sortThreatClassificationsForDisplay(items), [items]);
@@ -226,7 +228,7 @@ export function ThreatClassificationSortableTable({
               {loading ? (
                 <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
               ) : !sortedItems.length ? (
-                <tr><td colSpan={6} style={ui.td}>No classifications found.</td></tr>
+                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>{emptyState || 'No classifications found.'}</td></tr>
               ) : sortedItems.map((item) => (
                 <SortableClassificationRow
                   key={item.id}

@@ -9,12 +9,12 @@ export const CONFIDENCE_OPTIONS = Object.freeze([
 export function confidenceBadgeStyle(value) {
   const c = String(value || 'medium').toLowerCase();
   if (c === 'high') {
-    return { bg: '#fee2e2', color: '#991b1b', border: '#fecaca' };
+    return { bg: 'rgba(127,29,29,0.28)', color: '#fca5a5', border: 'rgba(127,29,29,0.8)' };
   }
   if (c === 'medium') {
-    return { bg: '#fef3c7', color: '#92400e', border: '#fde68a' };
+    return { bg: 'rgba(120,53,15,0.28)', color: '#fcd34d', border: 'rgba(180,83,9,0.75)' };
   }
-  return { bg: '#dcfce7', color: '#166534', border: '#bbf7d0' };
+  return { bg: 'rgba(22,101,52,0.25)', color: '#86efac', border: 'rgba(22,101,52,0.85)' };
 }
 
 export function confidenceLabel(value) {

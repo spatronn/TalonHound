@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { IocDetailIcons } from './IocDetailIcons.jsx';
+import { buttonClassName } from '../../lib/uiButtons.js';
 
 export function IocHeader({
   title = 'IOC Details',
@@ -28,21 +29,6 @@ export function IocHeader({
     }
   }
 
-  const outlineBtn = {
-    ...ui.btn,
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    whiteSpace: 'nowrap'
-  };
-
-  const deleteBtn = {
-    ...outlineBtn,
-    borderColor: '#7f1d1d',
-    color: '#fca5a5',
-    background: 'rgba(127,29,29,0.12)'
-  };
-
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -52,13 +38,13 @@ export function IocHeader({
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {showMarkFalsePositive ? (
-            <button type="button" style={outlineBtn} onClick={onMarkFalsePositive}>Mark as False Positive</button>
+            <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onMarkFalsePositive}>Mark as False Positive</button>
           ) : null}
           {showDelete ? (
-            <button type="button" style={deleteBtn} onClick={onDelete} aria-label="Delete IOC">Delete IOC</button>
+            <button type="button" className={buttonClassName({ variant: 'danger' })} onClick={onDelete} aria-label="Delete IOC">Delete IOC</button>
           ) : null}
-          <button type="button" style={outlineBtn} onClick={onBack}>Back to IOC List</button>
-          <button type="button" style={outlineBtn} onClick={onRefresh} aria-label="Refresh IOC details">
+          <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onBack}>Back to IOC List</button>
+          <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onRefresh} aria-label="Refresh IOC details">
             <IocDetailIcons.refresh size={14} />
             Refresh
           </button>
@@ -92,22 +78,11 @@ export function IocHeader({
           {value && value !== '-' ? (
             <button
               type="button"
+              className={buttonClassName({ variant: 'ghost', size: 'sm', className: 'th-btn--icon' })}
               onClick={() => copyObservable().catch(() => {})}
               aria-label={copied ? 'Copied' : 'Copy IOC value'}
               title={copied ? 'Copied' : 'Copy'}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                border: '1px solid #475569',
-                background: '#0f172a',
-                color: copied ? '#86efac' : '#94a3b8',
-                cursor: 'pointer',
-                flexShrink: 0
-              }}
+              style={{ color: copied ? '#86efac' : '#94a3b8', flexShrink: 0 }}
             >
               <IocDetailIcons.copy size={14} />
             </button>
