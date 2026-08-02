@@ -66,6 +66,23 @@ import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import { resolveRowPasswordAction, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
 import { submitChangePassword } from './lib/changePasswordForm.js';
 import { resolveUserRowControls } from './lib/userRowControls.js';
+import { buttonClassName } from './lib/uiButtons.js';
+import {
+  canCloseModal,
+  modalSizeClass,
+  resolveModalInitialFocus,
+  trapFocusKeydown
+} from './lib/modalOverlay.js';
+import {
+  CREATE_USER_ROLES,
+  EMPTY_CREATE_USER_FORM,
+  buildCreateUserPayload,
+  createUserErrorFocusField,
+  createUserErrorMessage,
+  isCreateUserFormValid
+} from './lib/createUserForm.js';
+import { feedFieldDomIds, mergeAriaDescribedBy } from './lib/feedFormField.js';
+import { DELETE_USER_CONFIRM_PREFER_CANCEL, deleteUserConfirmCopy } from './lib/deleteUserConfirm.js';
 import {
   DEFAULT_SOURCE_COLOR,
   isValidHexColor,
@@ -1260,29 +1277,105 @@ function useBodyScrollLock(active) {
   }, [active]);
 }
 
-function ModalOverlay({ children, onClose, title, footer, zIndex = 1000 }) {
+/**
+ * Shared modal shell. Backward compatible with legacy callers that only pass
+ * children (+ optional onClose). Structured callers may pass title/description/
+ * footer/size. Escape, focus trap, and focus restore are always on when onClose
+ * is provided. Destructive confirms should set initialFocus="cancel".
+ */
+function ModalOverlay({
+  children,
+  onClose,
+  title,
+  description,
+  footer,
+  zIndex = 1000,
+  size,
+  labelledBy,
+  describedBy,
+  initialFocusRef,
+  initialFocus = 'auto',
+  closeOnEsc = true,
+  className = ''
+}) {
   useBodyScrollLock(true);
+  const dialogRef = useRef(null);
+  const titleIdRef = useRef(`modal-title-${Math.random().toString(36).slice(2, 9)}`);
+  const descIdRef = useRef(`modal-desc-${Math.random().toString(36).slice(2, 9)}`);
+  const restoreFocusRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const closeOnEscRef = useRef(closeOnEsc);
+  closeOnEscRef.current = closeOnEsc;
+  const structured = Boolean(title || footer || description);
+  const sizeClass = size ? modalSizeClass(size) : (structured ? modalSizeClass('md') : '');
+  const titleId = title ? (labelledBy || titleIdRef.current) : labelledBy;
+  const descriptionId = description ? (describedBy || descIdRef.current) : describedBy;
+  const allowClose = canCloseModal({ onClose, closeOnEsc });
+
+  useEffect(() => {
+    restoreFocusRef.current = typeof document !== 'undefined' ? document.activeElement : null;
+    const preferCancel = initialFocus === 'cancel';
+
+    const t = window.setTimeout(() => {
+      const dialog = dialogRef.current;
+      const preferred = initialFocusRef?.current || null;
+      const target = resolveModalInitialFocus(dialog, { preferredEl: preferred, preferCancel });
+      try { target?.focus?.({ preventScroll: true }); } catch { try { target?.focus?.(); } catch { /* ignore */ } }
+    }, 0);
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        if (!canCloseModal({ onClose: onCloseRef.current, closeOnEsc: closeOnEscRef.current })) return;
+        e.stopPropagation();
+        e.preventDefault();
+        onCloseRef.current?.();
+        return;
+      }
+      trapFocusKeydown(e, dialogRef.current);
+    }
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener('keydown', onKeyDown, true);
+      const prev = restoreFocusRef.current;
+      if (prev && typeof prev.focus === 'function') {
+        try { prev.focus({ preventScroll: true }); } catch { try { prev.focus(); } catch { /* ignore */ } }
+      }
+    };
+  }, [initialFocus, initialFocusRef]);
 
   const modal = (
     <div
-      className="modal-overlay"
+      className={`modal-overlay${className ? ` ${className}` : ''}`}
       role="presentation"
-      onClick={onClose}
+      onClick={allowClose ? onClose : undefined}
       style={{ zIndex }}
     >
       <div
-        className={`modal-dialog${footer || title ? '' : ' modal-dialog--legacy'}`}
+        ref={dialogRef}
+        className={[
+          'modal-dialog',
+          sizeClass,
+          structured ? '' : 'modal-dialog--legacy'
+        ].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId || undefined}
+        aria-describedby={descriptionId || undefined}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        {title ? (
-          <div className="modal-header">
-            <h3 className="modal-title">{title}</h3>
-          </div>
-        ) : null}
-        {footer || title ? (
+        {structured ? (
           <>
+            {title || description ? (
+              <div className="modal-header">
+                {title ? <h3 className="modal-title" id={titleId}>{title}</h3> : null}
+                {description ? (
+                  <p className="modal-description" id={descriptionId}>{description}</p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="modal-body">{children}</div>
             {footer ? <div className="modal-footer">{footer}</div> : null}
           </>
@@ -5226,12 +5319,60 @@ function publishedFeedCurlExample(slug) {
   return `curl "${window.location.origin}/api/published-feeds/${s}?api_key=YOUR_API_KEY"`;
 }
 
-function FeedFormField({ ui, label, helper, children, fullWidth = false }) {
+function FeedFormField({
+  ui,
+  label,
+  helper,
+  error,
+  required = false,
+  children,
+  fullWidth = false,
+  fieldId
+}) {
+  const autoId = React.useId();
+  const ids = feedFieldDomIds(fieldId || autoId);
+  const helperId = helper ? ids.helperId : undefined;
+  const errorId = error ? ids.errorId : undefined;
+  const controlId = ids.fieldId;
+
+  let control = children;
+  if (React.isValidElement(children)) {
+    control = React.cloneElement(children, {
+      id: children.props.id || controlId,
+      'aria-invalid': error ? true : children.props['aria-invalid'],
+      'aria-required': required ? true : children.props['aria-required'],
+      'aria-describedby': mergeAriaDescribedBy({
+        helperId,
+        errorId,
+        existing: children.props['aria-describedby']
+      })
+    });
+  }
+
   return (
-    <div style={fullWidth ? { gridColumn: '1 / -1' } : undefined}>
-      <span style={ui.label}>{label}</span>
-      {children}
-      {helper ? <span style={ui.helper}>{helper}</span> : null}
+    <div
+      className="feed-form-field"
+      style={{
+        ...(fullWidth ? { gridColumn: '1 / -1' } : null),
+        // Stacked full-width fields need gap; grid sections already provide gap.
+        ...(fullWidth ? { marginBottom: 12 } : null)
+      }}
+    >
+      <label htmlFor={controlId} style={ui.label}>
+        {label}
+        {required ? <span aria-hidden="true"> *</span> : null}
+      </label>
+      {control}
+      {helper ? <span id={helperId} style={ui.helper}>{helper}</span> : null}
+      {error ? (
+        <span
+          id={errorId}
+          role="alert"
+          style={{ display: 'block', marginTop: 4, fontSize: 12, color: '#fca5a5', lineHeight: 1.45 }}
+        >
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -8149,13 +8290,7 @@ function BackupRestorePage() {
   );
 }
 
-const EMPTY_CREATE_USER_FORM = {
-  first_name: '',
-  last_name: '',
-  username: '',
-  password: '',
-  role: 'readonly'
-};
+const EMPTY_CREATE_USER_FORM_STATE = { ...EMPTY_CREATE_USER_FORM };
 
 const USERS_ACTION_BTN = {
   deactivate: {
@@ -8569,105 +8704,180 @@ function AdministrationSettingsPage() {
 
 function CreateUserModal({ onClose, onCreated }) {
   const ui = PUBLISHED_FEEDS_UI;
-  const [form, setForm] = useState(EMPTY_CREATE_USER_FORM);
+  const [form, setForm] = useState(() => ({ ...EMPTY_CREATE_USER_FORM_STATE }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const firstNameRef = useRef(null);
+  const usernameRef = useRef(null);
+  const passwordRef = useRef(null);
+  const canSubmit = isCreateUserFormValid(form) && !saving;
 
   async function submit(e) {
     e.preventDefault();
-    const username = String(form.username || '').trim();
-    const password = form.password;
-    const first_name = String(form.first_name || '').trim();
-    const last_name = String(form.last_name || '').trim();
-    const role = String(form.role || 'readonly').trim();
-    if (!username || !password) {
-      setError('Username and password are required.');
-      return;
-    }
+    if (!isCreateUserFormValid(form) || saving) return;
+    const payload = buildCreateUserPayload(form);
     setSaving(true);
     setError('');
     try {
-      await api.post('/users', { username, password, first_name, last_name, role });
+      await api.post('/users', payload);
       onClose?.();
       onCreated?.();
     } catch (err) {
       const status = Number(err?.response?.status || 0);
       const backendMsg = String(err?.response?.data?.message || '').trim();
-      if (status === 409 || /already exists/i.test(backendMsg)) {
-        setError('This username is already in use. Please choose another one.');
-      } else {
-        setError(backendMsg || err?.message || 'Failed to create user');
-      }
+      const msg = createUserErrorMessage({ status, message: backendMsg || err?.message });
+      setError(msg);
+      const focusField = createUserErrorFocusField(msg);
+      window.setTimeout(() => {
+        if (focusField === 'password') passwordRef.current?.focus?.();
+        else usernameRef.current?.focus?.();
+      }, 0);
     } finally {
       setSaving(false);
     }
   }
 
+  const footer = (
+    <>
+      <button
+        type="button"
+        className={buttonClassName({ variant: 'secondary' })}
+        data-modal-cancel
+        onClick={onClose}
+        disabled={saving}
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="create-user-form"
+        className={buttonClassName({ variant: 'primary' })}
+        disabled={!canSubmit}
+      >
+        {saving ? 'Creating…' : 'Create User'}
+      </button>
+    </>
+  );
+
   return (
-    <ModalOverlay onClose={saving ? undefined : onClose}>
-      <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Create User</h3>
-      <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
-        Create a new account and assign a role.
-      </p>
-      <form onSubmit={submit}>
-        <FeedFormField ui={ui} label="First name" fullWidth>
+    <ModalOverlay
+      size="sm"
+      title="Create User"
+      onClose={saving ? undefined : onClose}
+      initialFocusRef={firstNameRef}
+      footer={footer}
+    >
+      <form id="create-user-form" onSubmit={submit} noValidate>
+        {/* Ensures Enter submits when the primary button lives in the sticky footer */}
+        <button type="submit" disabled={!canSubmit} tabIndex={-1} aria-hidden="true" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', border: 0 }} />
+        <div className="create-user-name-row">
+          <FeedFormField ui={ui} label="First name" fieldId="create-user-first-name">
+            <input
+              ref={firstNameRef}
+              value={form.first_name}
+              onChange={(e) => setForm((x) => ({ ...x, first_name: e.target.value }))}
+              style={ui.input}
+              autoComplete="given-name"
+            />
+          </FeedFormField>
+          <FeedFormField ui={ui} label="Last name" fieldId="create-user-last-name">
+            <input
+              value={form.last_name}
+              onChange={(e) => setForm((x) => ({ ...x, last_name: e.target.value }))}
+              style={ui.input}
+              autoComplete="family-name"
+            />
+          </FeedFormField>
+        </div>
+        <FeedFormField ui={ui} label="Username" fullWidth required fieldId="create-user-username">
           <input
-            value={form.first_name}
-            onChange={(e) => setForm((x) => ({ ...x, first_name: e.target.value }))}
-            style={ui.input}
-            autoComplete="given-name"
-          />
-        </FeedFormField>
-        <FeedFormField ui={ui} label="Last name" fullWidth>
-          <input
-            value={form.last_name}
-            onChange={(e) => setForm((x) => ({ ...x, last_name: e.target.value }))}
-            style={ui.input}
-            autoComplete="family-name"
-          />
-        </FeedFormField>
-        <FeedFormField ui={ui} label="Username" fullWidth>
-          <input
-            required
+            ref={usernameRef}
             value={form.username}
             onChange={(e) => setForm((x) => ({ ...x, username: e.target.value }))}
             style={ui.input}
             autoComplete="username"
           />
         </FeedFormField>
-        <FeedFormField ui={ui} label="Password" fullWidth>
-          <input
-            required
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm((x) => ({ ...x, password: e.target.value }))}
-            style={ui.input}
-            autoComplete="new-password"
-          />
-        </FeedFormField>
-        <FeedFormField ui={ui} label="User Role" fullWidth>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 8, alignItems: 'end', marginBottom: 12 }}>
+          <FeedFormField ui={ui} label="Password" required fieldId="create-user-password">
+            <input
+              ref={passwordRef}
+              type={showPassword ? 'text' : 'password'}
+              value={form.password}
+              onChange={(e) => setForm((x) => ({ ...x, password: e.target.value }))}
+              style={ui.input}
+              autoComplete="new-password"
+            />
+          </FeedFormField>
+          <button
+            type="button"
+            className={buttonClassName({ variant: 'secondary', size: 'sm' })}
+            onClick={() => setShowPassword((v) => !v)}
+            aria-pressed={showPassword}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            style={{ marginBottom: 0, height: 40, whiteSpace: 'nowrap' }}
+          >
+            {showPassword ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        <FeedFormField ui={ui} label="User Role" fullWidth fieldId="create-user-role">
           <select
             value={form.role}
             onChange={(e) => setForm((x) => ({ ...x, role: e.target.value }))}
             style={ui.select}
           >
-            <option value="admin">Admin (Full Access)</option>
-            <option value="analyst">Analyst (Triage)</option>
-            <option value="readonly">Read Only (View Only)</option>
+            {CREATE_USER_ROLES.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
           </select>
         </FeedFormField>
         {error ? (
-          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+          <div
+            role="alert"
+            style={{ marginTop: 4, marginBottom: 4, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}
+          >
             {error}
           </div>
         ) : null}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
-          <button type="button" style={ui.btn} onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" style={ui.btnPrimary} disabled={saving}>
-            {saving ? 'Creating…' : 'Create User'}
-          </button>
-        </div>
       </form>
+    </ModalOverlay>
+  );
+}
+
+function DeleteUserConfirmModal({ user, submitting, onCancel, onConfirm }) {
+  const copy = deleteUserConfirmCopy(user?.username);
+  const footer = (
+    <>
+      <button
+        type="button"
+        className={buttonClassName({ variant: 'secondary' })}
+        data-modal-cancel
+        onClick={onCancel}
+        disabled={submitting}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className={buttonClassName({ variant: 'danger' })}
+        onClick={onConfirm}
+        disabled={submitting}
+      >
+        {submitting ? 'Deleting…' : 'Delete'}
+      </button>
+    </>
+  );
+  return (
+    <ModalOverlay
+      size="sm"
+      title={copy.title}
+      description={copy.description}
+      onClose={submitting ? undefined : onCancel}
+      initialFocus="cancel"
+      footer={footer}
+    >
+      {null}
     </ModalOverlay>
   );
 }
@@ -8684,7 +8894,7 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <table className="ioc-table users-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={ui.thead}>
             <th style={ui.th}>Username</th>
@@ -8718,10 +8928,11 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                 </td>
                 <td style={ui.td}><UserStatusBadge status={u.status} /></td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <div className="users-row-actions">
                     {passwordAction === 'change' ? (
                       <button
                         type="button"
+                        className={buttonClassName({ variant: 'secondary', size: 'sm' })}
                         onClick={() => onChangePassword(u)}
                         style={USERS_ACTION_BTN.reset}
                         title="Change your own password"
@@ -8732,6 +8943,7 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     {passwordAction === 'reset' ? (
                       <button
                         type="button"
+                        className={buttonClassName({ variant: 'secondary', size: 'sm' })}
                         onClick={() => onResetPassword(u)}
                         disabled={resetBusy}
                         style={{
@@ -8747,6 +8959,7 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     {!isPassive ? (
                       <button
                         type="button"
+                        className={buttonClassName({ variant: 'warning', size: 'sm' })}
                         onClick={() => onSetStatus(u.id, 'passive')}
                         disabled={controls.deactivateDisabled}
                         style={{
@@ -8761,6 +8974,7 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     ) : (
                       <button
                         type="button"
+                        className={buttonClassName({ variant: 'success', size: 'sm' })}
                         onClick={() => onSetStatus(u.id, 'active')}
                         disabled={busy}
                         style={{
@@ -8775,7 +8989,8 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     )}
                     <button
                       type="button"
-                      onClick={() => onRemove(u.id)}
+                      className={buttonClassName({ variant: 'danger', size: 'sm' })}
+                      onClick={() => onRemove(u)}
                       disabled={controls.deleteDisabled}
                       style={{
                         ...USERS_ACTION_BTN.delete,
@@ -8784,7 +8999,6 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                       }}
                       title={controls.deleteTitle}
                     >
-                      <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>—</span>
                       Delete
                     </button>
                   </div>
@@ -8815,6 +9029,8 @@ function UsersPage() {
   const [changePwOpen, setChangePwOpen] = useState(false);
   // One-time temporary password result. `password` lives only in memory.
   const [resetResult, setResetResult] = useState(clearTemporaryPasswordState());
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   async function loadUsers() {
     setUsersLoading(true);
@@ -8850,14 +9066,31 @@ function UsersPage() {
     await loadUsers();
   }
 
-  async function removeUser(id) {
-    if (!window.confirm('Are you sure you want to delete this user?')) return;
+  function requestDeleteUser(user) {
+    setSuccessMessage('');
+    setActionError('');
+    setDeleteConfirmUser(user || null);
+  }
+
+  function closeDeleteConfirm() {
+    if (deleteBusy) return;
+    setDeleteConfirmUser(null);
+  }
+
+  async function confirmDeleteUser() {
+    const target = deleteConfirmUser;
+    if (!target?.id || deleteBusy) return;
+    setDeleteBusy(true);
     setActionError('');
     try {
-      await api.delete(`/users/${id}`);
+      await api.delete(`/users/${target.id}`);
+      setDeleteConfirmUser(null);
       await loadUsers();
     } catch (err) {
       setActionError(apiErrorMessage(err, 'Failed to delete user'));
+      setDeleteConfirmUser(null);
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -8943,7 +9176,7 @@ function UsersPage() {
             <h1 style={ui.pageTitle}>Users</h1>
             <p style={ui.pageSub}>Manage platform accounts, roles, and account status.</p>
           </div>
-          <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>+ Create User</button>
+          <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={openCreateModal}>+ Create User</button>
         </div>
 
         {successMessage ? (
@@ -8966,7 +9199,7 @@ function UsersPage() {
             statusBusyId={statusBusyId}
             resetBusyId={resetBusyId}
             onSetStatus={setUserStatus}
-            onRemove={removeUser}
+            onRemove={requestDeleteUser}
             onResetPassword={openResetConfirm}
             onChangePassword={openChangePassword}
           />
@@ -8977,6 +9210,15 @@ function UsersPage() {
         <CreateUserModal
           onClose={closeCreateModal}
           onCreated={handleUserCreated}
+        />
+      ) : null}
+
+      {deleteConfirmUser ? (
+        <DeleteUserConfirmModal
+          user={deleteConfirmUser}
+          submitting={deleteBusy}
+          onCancel={closeDeleteConfirm}
+          onConfirm={() => { confirmDeleteUser().catch(() => {}); }}
         />
       ) : null}
 
@@ -15269,6 +15511,15 @@ function App() {
           color: #e2e8f0;
           box-shadow: 0 24px 60px rgba(2, 6, 23, 0.55);
         }
+        .modal-dialog--sm {
+          width: min(500px, 96vw);
+        }
+        .modal-dialog--md {
+          width: min(720px, 96vw);
+        }
+        .modal-dialog--lg {
+          width: min(960px, 96vw);
+        }
         .modal-dialog--purge {
           width: min(560px, 100%);
         }
@@ -15285,6 +15536,12 @@ function App() {
           color: #f1f5f9;
           font-size: 18px;
           font-weight: 700;
+        }
+        .modal-description {
+          margin: 8px 0 0;
+          color: #94a3b8;
+          font-size: 13px;
+          line-height: 1.5;
         }
         .modal-body {
           flex: 1 1 auto;
@@ -15305,6 +15562,133 @@ function App() {
           border-top: 1px solid #334155;
           background: #0f172a;
         }
+        .create-user-name-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        @media (max-width: 640px) {
+          .create-user-name-row {
+            grid-template-columns: 1fr;
+          }
+          .modal-overlay {
+            padding: 12px;
+          }
+          .modal-footer {
+            flex-direction: column-reverse;
+            align-items: stretch;
+          }
+          .modal-footer .th-btn {
+            width: 100%;
+            justify-content: center;
+          }
+        }
+        .users-row-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          justify-content: flex-end;
+          align-items: center;
+          max-width: 100%;
+        }
+        @media (max-width: 640px) {
+          .users-row-actions {
+            justify-content: flex-start;
+          }
+        }
+        /* Soft dark button default — NO !important so semantic/inline variants win */
+        button {
+          font: inherit;
+          background: #1f2937;
+          color: #e2e8f0;
+          border: 1px solid #475569;
+          cursor: pointer;
+        }
+        button:hover:not(:disabled) { background: #334155; }
+        button:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .th-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 8px;
+          font-size: 13px;
+          font-weight: 600;
+          line-height: 1.2;
+          border: 1px solid #475569;
+          background: #1f2937;
+          color: #e2e8f0;
+          cursor: pointer;
+        }
+        .th-btn:hover:not(:disabled) { background: #334155; }
+        .th-btn:focus-visible {
+          outline: 2px solid #93c5fd;
+          outline-offset: 2px;
+        }
+        .th-btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        .th-btn--sm {
+          padding: 6px 10px;
+          font-size: 12px;
+        }
+        .th-btn--primary {
+          background: #2563eb;
+          border-color: #2563eb;
+          color: #fff;
+        }
+        .th-btn--primary:hover:not(:disabled) {
+          background: #1d4ed8;
+          border-color: #1d4ed8;
+        }
+        .th-btn--secondary {
+          background: #1f2937;
+          border-color: #475569;
+          color: #e2e8f0;
+        }
+        .th-btn--danger {
+          background: rgba(127, 29, 29, 0.35);
+          border-color: #7f1d1d;
+          color: #fca5a5;
+        }
+        .th-btn--danger:hover:not(:disabled) {
+          background: rgba(127, 29, 29, 0.5);
+        }
+        .th-btn--ghost {
+          background: transparent;
+          border-color: transparent;
+          color: #e2e8f0;
+        }
+        .th-btn--ghost:hover:not(:disabled) {
+          background: rgba(148, 163, 184, 0.12);
+        }
+        .th-btn--icon {
+          padding: 6px;
+          width: 32px;
+          height: 32px;
+        }
+        .th-btn--warning {
+          background: rgba(180, 83, 9, 0.2);
+          border-color: #b45309;
+          color: #fcd34d;
+        }
+        .th-btn--warning:hover:not(:disabled) {
+          background: rgba(180, 83, 9, 0.32);
+        }
+        .th-btn--success {
+          background: rgba(22, 101, 52, 0.25);
+          border-color: #166534;
+          color: #86efac;
+        }
+        .th-btn--success:hover:not(:disabled) {
+          background: rgba(22, 101, 52, 0.38);
+        }
         html, body, #root {
           background: #0b1220 !important;
           color: #e2e8f0 !important;
@@ -15322,12 +15706,6 @@ function App() {
           color: #e2e8f0 !important;
           border: 1px solid #334155 !important;
         }
-        button {
-          background: #1f2937 !important;
-          color: #e2e8f0 !important;
-          border: 1px solid #475569 !important;
-        }
-        button:hover { background: #334155 !important; }
         a { color: #93c5fd !important; }
         thead tr { background: #1f2937 !important; }
         tbody tr { background: #111827 !important; }
