@@ -15,11 +15,28 @@ import {
   resolveKnownFeedKeysForSnapshot
 } from './publishedFeedSources.js';
 import { isFileArtifactsReadEnabled } from './fileArtifacts/flags.js';
+import { createServiceLogger } from './appLogger.js';
 
 export { buildFeedKeySourceSql };
 
 const FEED_IOC_EXPIRY_DAYS = Math.max(Number(process.env.FEED_IOC_EXPIRY_DAYS || 90), 1);
 const FEED_EXPORT_MAX_LIMIT = Math.max(Number(process.env.FEED_EXPORT_MAX_LIMIT || 100000), 1);
+const feedLog = createServiceLogger('published-feeds');
+
+/**
+ * Dedicated two-key advisory-lock namespace for Published Feed generation.
+ * key1 = class (never shared with backup/bootstrap single-arg locks),
+ * key2 = feed id.
+ */
+export const PUBLISHED_FEED_GEN_LOCK_CLASS = 874290151;
+
+export function publishedFeedGenerationLockKeys(feedId) {
+  const id = Number(feedId);
+  return {
+    classId: PUBLISHED_FEED_GEN_LOCK_CLASS,
+    objId: Number.isFinite(id) && id > 0 ? Math.floor(id) : 0
+  };
+}
 
 export { FEED_EXPORT_MAX_LIMIT };
 
@@ -516,27 +533,58 @@ export function canSkipPublishedFeedRegeneration({
   return { skip: true, reason: 'unchanged_watermark' };
 }
 
-async function withTransaction(pool, fn) {
-  if (typeof pool.connect !== 'function') {
-    return fn(pool);
+/**
+ * Run fn inside BEGIN/COMMIT.
+ * - Pool (has .connect): checkout, release in finally.
+ * - Client (no .connect): reuse session (e.g. generation lock holder); do not release.
+ */
+async function withTransaction(db, fn) {
+  if (typeof db.connect === 'function') {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // ignore rollback failures; preserve original error
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
-  const client = await pool.connect();
+  await db.query('BEGIN');
   try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
+    const result = await fn(db);
+    await db.query('COMMIT');
     return result;
   } catch (err) {
     try {
-      await client.query('ROLLBACK');
+      await db.query('ROLLBACK');
     } catch {
-      // ignore rollback failures; preserve original error
+      // ignore
     }
     throw err;
-  } finally {
-    client.release();
   }
+}
+
+export async function tryAcquirePublishedFeedGenerationLock(client, feedId) {
+  const { classId, objId } = publishedFeedGenerationLockKeys(feedId);
+  const { rows } = await client.query(
+    'SELECT pg_try_advisory_lock($1::int, $2::int) AS ok',
+    [classId, objId]
+  );
+  return Boolean(rows[0]?.ok);
+}
+
+export async function releasePublishedFeedGenerationLock(client, feedId) {
+  const { classId, objId } = publishedFeedGenerationLockKeys(feedId);
+  await client.query('SELECT pg_advisory_unlock($1::int, $2::int)', [classId, objId]);
 }
 
 export async function persistPublishedFeedSnapshot(pool, snapshot) {
@@ -644,11 +692,73 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
     throw new Error('Invalid feed id');
   }
 
-  const { rows: feedRows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
+  const force = Boolean(options.force);
+  const startedAt = Date.now();
+
+  // Dedicated client so session advisory lock covers the entire generation.
+  if (typeof pool.connect !== 'function') {
+    return runPublishedFeedGeneration(pool, id, { ...options, force, startedAt });
+  }
+
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    locked = await tryAcquirePublishedFeedGenerationLock(client, id);
+    if (!locked) {
+      const result = {
+        feed_id: id,
+        results: [],
+        last_status: 'skipped',
+        last_error: null,
+        skipped: true,
+        reason: 'generation_in_progress'
+      };
+      feedLog.info('published feed generation', {
+        feed_id: id,
+        feed_name: null,
+        windows: options.window ? [options.window] : FEED_WINDOWS,
+        generation_ms: Date.now() - startedAt,
+        item_count: null,
+        snapshot_bytes: null,
+        result: 'generation_in_progress',
+        skip_reason: 'generation_in_progress',
+        force
+      });
+      return result;
+    }
+    return await runPublishedFeedGeneration(client, id, { ...options, force, startedAt });
+  } finally {
+    if (locked) {
+      try {
+        await releasePublishedFeedGenerationLock(client, id);
+      } catch (err) {
+        feedLog.warn('published feed generation unlock failed', {
+          feed_id: id,
+          error: String(err?.message || err)
+        });
+      }
+    }
+    client.release();
+  }
+}
+
+/**
+ * Heavy generation work — must run on the same DB client that holds the
+ * session advisory lock (or a mock queryable without connect).
+ */
+async function runPublishedFeedGeneration(db, id, options = {}) {
+  const force = Boolean(options.force);
+  const startedAt = options.startedAt || Date.now();
+  let queryMs = 0;
+  let snapshotBytes = null;
+  let maxItemCount = 0;
+
+  const { rows: feedRows } = await db.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
   if (!feedRows.length) throw new Error('Feed not found');
   const feedBase = normalizeFeedConfig(feedRows[0]);
+  const feedName = feedBase.name || null;
   const configuredKeys = feedBase.include_feed_keys || [];
-  const resolvedFeedKeys = await resolveKnownFeedKeysForSnapshot(pool, configuredKeys);
+  const resolvedFeedKeys = await resolveKnownFeedKeysForSnapshot(db, configuredKeys);
   const allKeysStale = configuredKeys.length > 0 && resolvedFeedKeys.length === 0;
   const feed = {
     ...feedBase,
@@ -657,10 +767,10 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
 
   const windows = options.window ? [normalizeTimeWindow(options.window)].filter(Boolean) : FEED_WINDOWS;
   const results = [];
-  const latestIntegrationFinishedAt = options.force
+  const latestIntegrationFinishedAt = force
     ? null
-    : await fetchLatestIntegrationFinishedAt(pool, feed);
-  const cheapWatermark = options.force ? null : await fetchCheapIocWatermark(pool, feed);
+    : await fetchLatestIntegrationFinishedAt(db, feed);
+  const cheapWatermark = force ? null : await fetchCheapIocWatermark(db, feed);
   const feedUpdatedAt = feed.updated_at instanceof Date
     ? feed.updated_at.toISOString()
     : (feed.updated_at ? String(feed.updated_at) : null);
@@ -671,15 +781,15 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
     try {
       const filters_hash = filtersHash(feed, window);
 
-      if (!options.force) {
-        const latest = await getLatestSnapshot(pool, id, iocTypeKey, window);
+      if (!force) {
+        const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
         const skipCheck = canSkipPublishedFeedRegeneration({
           feed,
           window,
           latestSnapshot: latest,
           watermark: cheapWatermark,
           latestIntegrationFinishedAt,
-          force: options.force
+          force
         });
         if (skipCheck.skip) {
           results.push({
@@ -689,27 +799,51 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
             skipped: true,
             reason: skipCheck.reason
           });
+          maxItemCount = Math.max(maxItemCount, Number(latest?.item_count || 0));
           continue;
         }
       }
 
-      const fingerprint = allKeysStale
-        ? { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) }
-        : await fetchIocExportFingerprint(pool, feed, window);
+      let fingerprint;
+      if (allKeysStale) {
+        fingerprint = { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) };
+      } else {
+        const t0 = Date.now();
+        fingerprint = await fetchIocExportFingerprint(db, feed, window);
+        queryMs += Date.now() - t0;
+      }
       const fingerprintKey = exportFingerprintKey(fingerprint);
 
-      if (!options.force) {
-        const latest = await getLatestSnapshot(pool, id, iocTypeKey, window);
+      if (!force) {
+        const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
         const prevKey = latest?.params?.export_fingerprint;
         if (latest?.content_hash && latest.params?.filters_hash === filters_hash && prevKey === fingerprintKey) {
-          results.push({ window, status: 'success', item_count: latest.item_count, skipped: true, reason: 'unchanged_fingerprint' });
+          results.push({
+            window,
+            status: 'success',
+            item_count: latest.item_count,
+            skipped: true,
+            reason: 'unchanged_fingerprint'
+          });
+          maxItemCount = Math.max(maxItemCount, Number(latest.item_count || 0));
+          if (latest.content_bytes != null) {
+            snapshotBytes = Math.max(snapshotBytes || 0, Number(latest.content_bytes));
+          }
           continue;
         }
       }
 
-      const iocRows = allKeysStale ? [] : await fetchIocRows(pool, feed, window);
+      let iocRows = [];
+      if (!allKeysStale) {
+        const t0 = Date.now();
+        iocRows = await fetchIocRows(db, feed, window);
+        queryMs += Date.now() - t0;
+      }
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
       const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, iocTypes, genMax);
+      const bytes = Buffer.byteLength(content, 'utf8');
+      snapshotBytes = Math.max(snapshotBytes || 0, bytes);
+      maxItemCount = Math.max(maxItemCount, item_count);
       const paramsJson = {
         ioc_type: iocTypeKey,
         ioc_types: iocTypes,
@@ -717,10 +851,10 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         filters_hash,
         export_fingerprint: fingerprintKey,
         feed_updated_at: feedUpdatedAt,
-        ioc_watermark: cheapWatermark || await fetchCheapIocWatermark(pool, feed)
+        ioc_watermark: cheapWatermark || await fetchCheapIocWatermark(db, feed)
       };
 
-      await persistPublishedFeedSnapshot(pool, {
+      await persistPublishedFeedSnapshot(db, {
         feedId: id,
         itemCount: item_count,
         contentHash: content_hash,
@@ -738,7 +872,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
         window,
         filters_hash: filtersHash(feed, window)
       };
-      await persistPublishedFeedSnapshot(pool, {
+      await persistPublishedFeedSnapshot(db, {
         feedId: id,
         itemCount: 0,
         contentHash: null,
@@ -755,9 +889,10 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
   const lastStatus = failed.length === results.length ? 'failed' : failed.length ? 'partial' : 'success';
   const lastError = failed.length ? failed.map((f) => `${f.window}: ${f.error}`).join('; ') : null;
   const allSkipped = results.length > 0 && results.every((r) => r.skipped);
+  const anyGenerated = results.some((r) => r.status === 'success' && !r.skipped);
 
   if (!allSkipped) {
-    await pool.query(
+    await db.query(
       `UPDATE published_feeds
        SET last_generated_at = NOW(),
            last_status = $2,
@@ -767,7 +902,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
       [id, lastStatus, lastError]
     );
   } else {
-    await pool.query(
+    await db.query(
       `UPDATE published_feeds
        SET last_generated_at = NOW(),
            last_status = COALESCE(last_status, 'success'),
@@ -777,12 +912,38 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
     );
   }
 
+  const resultLabel = failed.length === results.length && results.length
+    ? 'failed'
+    : anyGenerated
+      ? 'generated'
+      : allSkipped
+        ? 'unchanged'
+        : lastStatus === 'partial'
+          ? 'generated'
+          : 'failed';
+  const skipReason = allSkipped
+    ? (results.find((r) => r.reason)?.reason || 'unchanged')
+    : null;
+
+  feedLog.info('published feed generation', {
+    feed_id: id,
+    feed_name: feedName,
+    windows,
+    generation_ms: Date.now() - startedAt,
+    query_ms: queryMs,
+    item_count: maxItemCount,
+    snapshot_bytes: snapshotBytes,
+    result: resultLabel,
+    skip_reason: skipReason,
+    force
+  });
+
   return { feed_id: id, results, last_status: lastStatus, last_error: lastError };
 }
 
 export async function regenerateAllEnabledFeeds(pool) {
   const { rows } = await pool.query(
-    `SELECT id, refresh_interval_minutes, last_generated_at
+    `SELECT id, name, refresh_interval_minutes, last_generated_at
      FROM published_feeds
      WHERE enabled = TRUE`
   );
@@ -796,19 +957,53 @@ export async function regenerateAllEnabledFeeds(pool) {
   for (const row of due) {
     try {
       const result = await generatePublishedFeedSnapshot(pool, row.id);
-      const skipped = result.results?.filter((r) => r.skipped)?.length ?? 0;
-      const total = result.results?.length ?? 0;
-      if (skipped === total && total > 0) {
-        console.log(`[published-feeds] feed=${row.id} skipped all windows (${skipped}/${total})`);
+      if (result?.reason === 'generation_in_progress') {
+        // Structured log already emitted by generatePublishedFeedSnapshot.
+        continue;
       }
+      // Per-run structured log is emitted inside runPublishedFeedGeneration.
     } catch (err) {
-      console.error('[published-feeds] scheduled regenerate failed', row.id, err?.message || err);
+      feedLog.error('published feed scheduled regenerate failed', {
+        feed_id: row.id,
+        error: String(err?.message || err)
+      });
     }
   }
 }
 
-export async function getLatestSnapshot(pool, feedId, iocTypeKey, window) {
-  const { rows } = await pool.query(
+/** Metadata only — never SELECT content (used for 304 / skip checks). */
+export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window) {
+  const { rows } = await db.query(
+    `SELECT id, content_hash, item_count, generated_at, params,
+            octet_length(content) AS content_bytes
+     FROM published_feed_snapshots
+     WHERE feed_id = $1
+       AND status = 'success'
+       AND params->>'ioc_type' = $2
+       AND params->>'window' = $3
+     ORDER BY generated_at DESC
+     LIMIT 1`,
+    [Number(feedId), String(iocTypeKey), String(window)]
+  );
+  return rows[0] || null;
+}
+
+/** Load content pinned to snapshot id + content_hash (publish-race safe). */
+export async function getSnapshotContentByIdAndHash(db, snapshotId, contentHash) {
+  const { rows } = await db.query(
+    `SELECT id, content, content_hash, item_count, generated_at, params
+     FROM published_feed_snapshots
+     WHERE id = $1
+       AND content_hash = $2
+       AND status = 'success'
+     LIMIT 1`,
+    [Number(snapshotId), String(contentHash)]
+  );
+  return rows[0] || null;
+}
+
+export async function getLatestSnapshot(db, feedId, iocTypeKey, window) {
+  const { rows } = await db.query(
     `SELECT id, content, content_hash, item_count, generated_at, params
      FROM published_feed_snapshots
      WHERE feed_id = $1

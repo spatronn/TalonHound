@@ -7,7 +7,10 @@ import {
   filtersHash,
   fetchIocExportFingerprint,
   fetchIocRows,
-  shouldCanonicalizePublishedHashFeed
+  shouldCanonicalizePublishedHashFeed,
+  generatePublishedFeedSnapshot,
+  publishedFeedGenerationLockKeys,
+  PUBLISHED_FEED_GEN_LOCK_CLASS
 } from './feedPublisherService.js';
 
 function createMockPool(handlers) {
@@ -357,5 +360,248 @@ describe('published hash feed artifact canonicalization', () => {
     await fetchIocExportFingerprint(pool, { ioc_type: 'hash', exclude_expired: true }, 'all');
     assert.match(capturedSql, /COUNT\(DISTINCT lower\(i\.observable\)\)/);
     assert.doesNotMatch(capturedSql, /file_artifact_ioc_links/);
+  });
+});
+
+describe('published feed generation lock', () => {
+  it('uses a dedicated two-key lock namespace per feed id', () => {
+    const a = publishedFeedGenerationLockKeys(11);
+    const b = publishedFeedGenerationLockKeys(12);
+    assert.equal(a.classId, PUBLISHED_FEED_GEN_LOCK_CLASS);
+    assert.equal(b.classId, PUBLISHED_FEED_GEN_LOCK_CLASS);
+    assert.equal(a.objId, 11);
+    assert.equal(b.objId, 12);
+    assert.notEqual(a.objId, b.objId);
+  });
+
+  it('returns generation_in_progress without heavy work when try_lock fails', async () => {
+    const events = [];
+    const client = {
+      async query(sql) {
+        const s = String(sql);
+        if (s.includes('pg_try_advisory_lock')) {
+          events.push('try_lock');
+          return { rows: [{ ok: false }] };
+        }
+        events.push(s.slice(0, 40));
+        throw new Error(`unexpected query: ${s}`);
+      },
+      release() {
+        events.push('release');
+      }
+    };
+    const pool = {
+      async connect() {
+        events.push('connect');
+        return client;
+      }
+    };
+
+    const result = await generatePublishedFeedSnapshot(pool, 11, { force: true });
+    assert.equal(result.reason, 'generation_in_progress');
+    assert.equal(result.skipped, true);
+    assert.equal(result.last_status, 'skipped');
+    assert.deepEqual(events, ['connect', 'try_lock', 'release']);
+  });
+
+  it('releases lock and client when generation throws', async () => {
+    const events = [];
+    const client = {
+      async query(sql) {
+        const s = String(sql);
+        if (s.includes('pg_try_advisory_lock')) {
+          events.push('try_lock');
+          return { rows: [{ ok: true }] };
+        }
+        if (s.includes('pg_advisory_unlock')) {
+          events.push('unlock');
+          return { rows: [] };
+        }
+        if (s.includes('FROM published_feeds WHERE id')) {
+          events.push('load_feed');
+          throw new Error('boom');
+        }
+        throw new Error(`unexpected query: ${s}`);
+      },
+      release() {
+        events.push('release');
+      }
+    };
+    const pool = { async connect() { return client; } };
+
+    await assert.rejects(
+      () => generatePublishedFeedSnapshot(pool, 3, { force: true }),
+      /boom/
+    );
+    assert.deepEqual(events, ['try_lock', 'load_feed', 'unlock', 'release']);
+  });
+
+  it('only one concurrent generation for the same feed reaches heavy fetch', async () => {
+    let holder = null;
+    let heavyStarts = 0;
+    const gate = { release: null };
+    const held = new Promise((resolve) => {
+      gate.release = resolve;
+    });
+
+    function makePool(feedId) {
+      const client = {
+        async query(sql, params = []) {
+          const s = String(sql);
+          if (s.includes('pg_try_advisory_lock')) {
+            const objId = Number(params[1]);
+            if (holder != null) return { rows: [{ ok: false }] };
+            holder = objId;
+            return { rows: [{ ok: true }] };
+          }
+          if (s.includes('pg_advisory_unlock')) {
+            holder = null;
+            return { rows: [] };
+          }
+          if (s.includes('FROM published_feeds WHERE id')) {
+            heavyStarts += 1;
+            await held;
+            return {
+              rows: [{
+                id: feedId,
+                name: `feed-${feedId}`,
+                ioc_types: ['ip'],
+                ioc_type: 'ip',
+                time_window: 'all',
+                max_items: 1,
+                exclude_false_positive: true,
+                exclude_expired: true,
+                include_feed_keys: null,
+                include_tags: null,
+                exclude_tags: null,
+                min_confidence: null,
+                updated_at: '2026-08-01T00:00:00.000Z',
+                enabled: true,
+                format: 'txt',
+                refresh_interval_minutes: 15
+              }]
+            };
+          }
+          if (s.includes('FROM integration_feeds') || s.includes('FROM ioc_sources') || s.includes('FROM custom_threat_feeds')) {
+            return { rows: [] };
+          }
+          if (s.includes('FROM integration_runs') || s.includes('FROM custom_threat_feed_runs')) {
+            return { rows: [{ latest_finished_at: null }] };
+          }
+          if (s.includes('FROM ioc_ip') || s.includes('FROM ioc_domain') || s.includes('FROM ioc_url') || s.includes('FROM ioc_file_hash')) {
+            return { rows: [{ max_id: 0, max_ts: null, active_count: 0 }] };
+          }
+          if (s.includes('octet_length(content)') || s.includes('FROM published_feed_snapshots')) {
+            return { rows: [] };
+          }
+          if (s.includes('COUNT(DISTINCT') || s.includes('DISTINCT ON')) {
+            return { rows: [] };
+          }
+          if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [] };
+          if (s.includes('pg_advisory_xact_lock')) return { rows: [] };
+          if (s.includes('INSERT INTO published_feed_snapshots')) return { rows: [] };
+          if (s.includes('UPDATE published_feeds')) return { rows: [] };
+          throw new Error(`unexpected: ${s.slice(0, 100)}`);
+        },
+        release() {}
+      };
+      return {
+        async connect() {
+          return client;
+        },
+        async query(sql, params) {
+          return client.query(sql, params);
+        }
+      };
+    }
+
+    const p1 = generatePublishedFeedSnapshot(makePool(42), 42, { force: true, window: 'all' });
+    // Allow first task to acquire lock and reach heavy feed load.
+    await new Promise((r) => setTimeout(r, 20));
+    const p2 = generatePublishedFeedSnapshot(makePool(42), 42, { force: true, window: 'all' });
+    const second = await p2;
+    assert.equal(second.reason, 'generation_in_progress');
+    assert.equal(heavyStarts, 1);
+    gate.release();
+    const first = await p1;
+    assert.equal(first.feed_id, 42);
+    assert.ok(!first.reason);
+  });
+
+  it('different feeds do not block each other', async () => {
+    const held = new Map();
+    function makePool(feedId) {
+      const client = {
+        async query(sql, params = []) {
+          const s = String(sql);
+          if (s.includes('pg_try_advisory_lock')) {
+            const objId = Number(params[1]);
+            if (held.has(objId)) return { rows: [{ ok: false }] };
+            held.set(objId, true);
+            return { rows: [{ ok: true }] };
+          }
+          if (s.includes('pg_advisory_unlock')) {
+            held.delete(Number(params[1]));
+            return { rows: [] };
+          }
+          if (s.includes('FROM published_feeds WHERE id')) {
+            return {
+              rows: [{
+                id: feedId,
+                name: `feed-${feedId}`,
+                ioc_types: ['ip'],
+                ioc_type: 'ip',
+                time_window: 'all',
+                max_items: 1,
+                exclude_false_positive: true,
+                exclude_expired: true,
+                include_feed_keys: null,
+                include_tags: null,
+                exclude_tags: null,
+                min_confidence: null,
+                updated_at: '2026-08-01T00:00:00.000Z',
+                enabled: true,
+                format: 'txt',
+                refresh_interval_minutes: 15
+              }]
+            };
+          }
+          if (s.includes('FROM integration_feeds') || s.includes('FROM ioc_sources') || s.includes('FROM custom_threat_feeds')) {
+            return { rows: [] };
+          }
+          if (s.includes('FROM integration_runs') || s.includes('FROM custom_threat_feed_runs')) {
+            return { rows: [{ latest_finished_at: null }] };
+          }
+          if (s.includes('FROM ioc_ip') || s.includes('FROM ioc_domain') || s.includes('FROM ioc_url') || s.includes('FROM ioc_file_hash')) {
+            return { rows: [{ max_id: 0, max_ts: null, active_count: 0 }] };
+          }
+          if (s.includes('octet_length(content)') || s.includes('FROM published_feed_snapshots')) {
+            return { rows: [] };
+          }
+          if (s.includes('COUNT(DISTINCT') || s.includes('DISTINCT ON')) {
+            return { rows: [] };
+          }
+          if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [] };
+          if (s.includes('pg_advisory_xact_lock')) return { rows: [] };
+          if (s.includes('INSERT INTO published_feed_snapshots')) return { rows: [] };
+          if (s.includes('UPDATE published_feeds')) return { rows: [] };
+          throw new Error(`unexpected: ${s.slice(0, 100)}`);
+        },
+        release() {}
+      };
+      return {
+        async connect() { return client; },
+        async query(sql, params) { return client.query(sql, params); }
+      };
+    }
+
+    const [a, b] = await Promise.all([
+      generatePublishedFeedSnapshot(makePool(1), 1, { force: true, window: 'all' }),
+      generatePublishedFeedSnapshot(makePool(2), 2, { force: true, window: 'all' })
+    ]);
+    assert.equal(a.feed_id, 1);
+    assert.equal(b.feed_id, 2);
+    assert.ok(!a.reason);
+    assert.ok(!b.reason);
   });
 });

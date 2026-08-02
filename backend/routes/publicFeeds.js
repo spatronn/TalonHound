@@ -1,6 +1,12 @@
 import { hashFeedAccessToken } from '../lib/feedAccessToken.js';
 import { FEED_WINDOWS, computeResponseEtag, sliceFeedContent, feedIocTypesKey, normalizeFeedIocTypes } from '../lib/feedFormatter.js';
-import { getLatestSnapshot, normalizeFeedConfig, FEED_EXPORT_MAX_LIMIT, resolveFeedIocTypes } from '../lib/feedPublisherService.js';
+import {
+  getLatestSnapshotMeta,
+  getSnapshotContentByIdAndHash,
+  normalizeFeedConfig,
+  FEED_EXPORT_MAX_LIMIT,
+  resolveFeedIocTypes
+} from '../lib/feedPublisherService.js';
 import {
   PUBLISHED_FEED_KEY_TYPE,
   hashApiKey,
@@ -8,7 +14,9 @@ import {
   keyStatus,
   redactApiKeyInText
 } from '../lib/publishedFeedApiKey.js';
+import { createServiceLogger } from '../lib/appLogger.js';
 
+const feedLog = createServiceLogger('published-feeds');
 const FEED_PUBLIC_RATE_LIMIT_PER_MIN = Math.max(Number(process.env.FEED_PUBLIC_RATE_LIMIT_PER_MIN || 60), 1);
 const rateBuckets = new Map();
 
@@ -75,11 +83,32 @@ function touchAccessKey(pool, keyId, ip) {
   ).catch(() => {});
 }
 
+function applySnapshotHeaders(res, { etag, lastModified }) {
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  res.set('Cache-Control', 'private, max-age=300');
+  res.set('ETag', etag);
+  if (lastModified) res.set('Last-Modified', lastModified);
+}
+
+function conditionalNotModified(req, etag, lastModified) {
+  const inm = req.headers['if-none-match'];
+  const ims = req.headers['if-modified-since'];
+  if (inm && inm === etag) return true;
+  if (ims && lastModified && new Date(ims).getTime() >= new Date(lastModified).getTime()) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Serve a feed snapshot's plaintext with caching headers, honoring optional
  * window / limit / ioc_type overrides. Shared by both public endpoints.
+ *
+ * 304 path loads metadata only (no content TOAST → Node). Body path pins
+ * content by snapshot id + content_hash; one retry if a concurrent publish races.
  */
-async function serveSnapshot(pool, res, req, { feedId, iocTypes, window, maxItems }) {
+async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, maxItems }) {
+  const startedAt = Date.now();
   const iocTypeResult = parseIocTypeParam(req.query.ioc_type, iocTypes);
   if (iocTypeResult && typeof iocTypeResult === 'object' && iocTypeResult.error) {
     return res.status(400).send(iocTypeResult.error);
@@ -93,29 +122,56 @@ async function serveSnapshot(pool, res, req, { feedId, iocTypes, window, maxItem
     return res.status(400).send(limitResult.error);
   }
 
-  const snapshot = await getLatestSnapshot(pool, feedId, iocTypeResult, windowResult);
-  if (!snapshot) {
-    res.set('Content-Type', 'text/plain; charset=utf-8');
-    res.set('Cache-Control', 'private, max-age=300');
-    return res.status(404).send('');
+  const logServe = (fields) => {
+    feedLog.info('published feed serve', {
+      feed_id: Number(feedId),
+      slug: slug || null,
+      duration_ms: Date.now() - startedAt,
+      ...fields
+    });
+  };
+
+  // attempt 0 = first try; attempt 1 = one retry after id+hash miss
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const meta = await getLatestSnapshotMeta(pool, feedId, iocTypeResult, windowResult);
+    if (!meta) {
+      res.set('Content-Type', 'text/plain; charset=utf-8');
+      res.set('Cache-Control', 'private, max-age=300');
+      logServe({ status: 404, content_loaded: false, snapshot_bytes: null });
+      return res.status(404).send('');
+    }
+
+    const etag = computeResponseEtag(meta.content_hash, iocTypeResult, windowResult, limitResult ?? 'all');
+    const lastModified = meta.generated_at ? new Date(meta.generated_at).toUTCString() : undefined;
+    applySnapshotHeaders(res, { etag, lastModified });
+
+    if (conditionalNotModified(req, etag, lastModified)) {
+      logServe({
+        status: 304,
+        content_loaded: false,
+        snapshot_bytes: meta.content_bytes != null ? Number(meta.content_bytes) : null
+      });
+      return res.status(304).end();
+    }
+
+    const snapshot = await getSnapshotContentByIdAndHash(pool, meta.id, meta.content_hash);
+    if (!snapshot) {
+      if (attempt === 0) continue;
+      logServe({ status: 503, content_loaded: false, snapshot_bytes: null });
+      return res.status(503).send('Feed momentarily unavailable');
+    }
+
+    const sliced = sliceFeedContent(snapshot.content, limitResult);
+    // Headers already set from the meta that matches this content_hash.
+    const bytes = meta.content_bytes != null
+      ? Number(meta.content_bytes)
+      : Buffer.byteLength(sliced.content, 'utf8');
+    logServe({ status: 200, content_loaded: true, snapshot_bytes: bytes });
+    return res.send(sliced.content);
   }
 
-  const sliced = sliceFeedContent(snapshot.content, limitResult);
-  const etag = computeResponseEtag(snapshot.content_hash, iocTypeResult, windowResult, limitResult ?? 'all');
-  const lastModified = snapshot.generated_at ? new Date(snapshot.generated_at).toUTCString() : undefined;
-
-  res.set('Content-Type', 'text/plain; charset=utf-8');
-  res.set('Cache-Control', 'private, max-age=300');
-  res.set('ETag', etag);
-  if (lastModified) res.set('Last-Modified', lastModified);
-
-  const inm = req.headers['if-none-match'];
-  const ims = req.headers['if-modified-since'];
-  if (inm && inm === etag) return res.status(304).end();
-  if (ims && lastModified && new Date(ims).getTime() >= new Date(lastModified).getTime()) {
-    return res.status(304).end();
-  }
-  return res.send(sliced.content);
+  logServe({ status: 503, content_loaded: false, snapshot_bytes: null });
+  return res.status(503).send('Feed momentarily unavailable');
 }
 
 /**
@@ -175,6 +231,7 @@ export function registerPublicFeedRoutes(app, pool) {
       touchAccessKey(pool, key.id, clientIp(req));
       return await serveSnapshot(pool, res, req, {
         feedId: feed.id,
+        slug,
         iocTypes: resolveFeedIocTypes(feed),
         window: feed.time_window,
         maxItems: feed.max_items
@@ -199,7 +256,8 @@ export function registerPublicFeedRoutes(app, pool) {
     try {
       const { rows: keyRows } = await pool.query(
         `SELECT k.id, k.enabled, k.revoked_at, k.deleted_at, k.expires_at,
-                f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_types, f.time_window, f.max_items
+                f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_types, f.time_window, f.max_items,
+                f.slug AS feed_slug
          FROM published_feed_access_keys k
          JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.token_hash = $1 AND k.deleted_at IS NULL
@@ -215,6 +273,7 @@ export function registerPublicFeedRoutes(app, pool) {
       touchAccessKey(pool, key.id, clientIp(req));
       return await serveSnapshot(pool, res, req, {
         feedId: key.feed_id,
+        slug: key.feed_slug || null,
         iocTypes: resolveFeedIocTypes(key),
         window: key.time_window,
         maxItems: key.max_items

@@ -1,6 +1,6 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
-import { generatePublishedFeedSnapshot, normalizeFeedConfig, getLatestSnapshot, resolveFeedIocTypes } from '../lib/feedPublisherService.js';
+import { generatePublishedFeedSnapshot, normalizeFeedConfig, getLatestSnapshotMeta, resolveFeedIocTypes } from '../lib/feedPublisherService.js';
 import { normalizeFeedIocTypes, feedIocTypesKey } from '../lib/feedFormatter.js';
 import {
   fetchPublishedFeedSourceOptions,
@@ -115,7 +115,7 @@ async function latestItemCount(pool, feedRow) {
   const feed = normalizeFeedConfig(feedRow);
   if (!feed?.id) return null;
   const key = feedIocTypesKey(resolveFeedIocTypes(feed));
-  const snapshot = await getLatestSnapshot(pool, feed.id, key, feed.time_window);
+  const snapshot = await getLatestSnapshotMeta(pool, feed.id, key, feed.time_window);
   return snapshot?.item_count != null ? Number(snapshot.item_count) : null;
 }
 
@@ -372,6 +372,13 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
     try {
       const result = await generatePublishedFeedSnapshot(pool, id, { force: true });
+      if (result?.reason === 'generation_in_progress') {
+        return res.status(409).json({
+          message: 'Generation already in progress',
+          code: 'generation_in_progress',
+          regeneration: result
+        });
+      }
       const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
       const last_item_count = await latestItemCount(pool, rows[0]);
       audit?.auditSuccess({
@@ -381,7 +388,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
         entityId: String(id),
         entityDisplay: rows[0]?.name,
         severity: AUDIT_SEVERITY.INFO,
-        metadata: { regeneration: pickSafeFields(result, ['status', 'item_count', 'generated_at']) }
+        metadata: { regeneration: pickSafeFields(result, ['status', 'item_count', 'generated_at', 'last_status', 'reason']) }
       });
       return res.json({
         feed: toPublicFeed(normalizeFeedConfig(rows[0]), { last_item_count }),

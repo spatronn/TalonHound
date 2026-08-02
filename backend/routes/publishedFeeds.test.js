@@ -159,4 +159,25 @@ describe('publishedFeeds ioc_types API', () => {
     assert.equal(bad.status, 400);
     assert.match(bad.body.message, /ip, domain, url, or hash/);
   });
+
+  it('regenerate returns 409 generation_in_progress when lock is held', async () => {
+    let released = 0;
+    const client = {
+      async query(sql) {
+        if (String(sql).includes('pg_try_advisory_lock')) return { rows: [{ ok: false }] };
+        throw new Error(`unexpected query: ${sql}`);
+      },
+      release() { released += 1; }
+    };
+    const pool = {
+      ...createMockPool(),
+      async connect() { return client; }
+    };
+    const app = makeApp(pool);
+    const res = await req(app, 'POST', '/api/published-feeds/9/regenerate');
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'generation_in_progress');
+    assert.equal(res.body.message, 'Generation already in progress');
+    assert.equal(released, 1);
+  });
 });
