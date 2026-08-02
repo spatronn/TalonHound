@@ -544,43 +544,43 @@
   margin-top: 14px;
 }
 
-.ep-btn {
-  padding: 8px 14px !important;
-  border-radius: 8px !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  cursor: pointer;
-}
-
-.ep-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.ep-btn-primary {
-  background: #2563eb !important;
-  border: 1px solid #2563eb !important;
-  color: #fff !important;
-}
-
-.ep-btn-primary:hover:not(:disabled) {
-  background: #1d4ed8 !important;
-}
-
-.ep-btn-secondary {
-  background: #1f2937 !important;
-  border: 1px solid #475569 !important;
-  color: #e2e8f0 !important;
-}
-
+.ep-btn,
+.ep-btn-primary,
+.ep-btn-secondary,
 .ep-btn-danger {
-  background: transparent !important;
-  border: 1px solid #7f1d1d !important;
-  color: #fca5a5 !important;
+  padding: 8px 14px;
+  border-radius: 8px;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  background: #1f2937;
+  border: 1px solid #475569;
+  color: #e2e8f0;
 }
 
+.ep-btn:hover:not(:disabled),
+.ep-btn-primary:hover:not(:disabled),
+.ep-btn-secondary:hover:not(:disabled),
 .ep-btn-danger:hover:not(:disabled) {
-  background: rgba(127, 29, 29, 0.25) !important;
+  background: #273549;
+  border-color: #64748b;
+  color: #e2e8f0;
+}
+
+.ep-btn:disabled,
+.ep-btn-primary:disabled,
+.ep-btn-secondary:disabled,
+.ep-btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .ep-error-banner {

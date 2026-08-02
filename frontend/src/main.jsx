@@ -730,7 +730,7 @@ function IocExpirationActionModal({
     width: '100%',
     boxSizing: 'border-box'
   };
-  const confirmStyle = pending.danger ? ui.btnDangerSolid : ui.btnPrimary;
+  const confirmStyle = ui.btn;
   const minDateTimeLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
@@ -2336,9 +2336,9 @@ function FeedSettingsModal({
             {canWrite ? (
               <button
                 type="button"
+                className={buttonClassName({ size: 'compact' })}
                 onClick={onRequestActiveChange}
                 disabled={isArchived}
-                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: isActive ? '#fca5a5' : '#86efac', cursor: isArchived ? 'not-allowed' : 'pointer', opacity: isArchived ? 0.5 : 1 }}
               >
                 {isActive ? 'Disable feed' : 'Enable feed'}
               </button>
@@ -2705,20 +2705,20 @@ function FeedSettingsModal({
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 <button
                   type="button"
+                  className={buttonClassName({ size: 'compact' })}
                   onClick={onOpenPurge}
                   disabled={purgeActive}
                   title={purgeActive ? 'A purge job is already running for this feed.' : undefined}
-                  style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(248, 113, 113, 0.45)', background: 'transparent', color: '#fca5a5', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
                 >
                   Purge feed data
                 </button>
                 {!isBuiltIn ? (
                   <button
                     type="button"
+                    className={buttonClassName({ size: 'compact' })}
                     onClick={onArchive}
                     disabled={purgeActive}
                     title={purgeActive ? 'Wait for the purge job to finish before archiving.' : undefined}
-                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
                   >
                     Archive feed
                   </button>
@@ -2729,8 +2729,8 @@ function FeedSettingsModal({
                 {!isBuiltIn ? (
                   <button
                     type="button"
+                    className={buttonClassName({ size: 'compact' })}
                     onClick={onRestore}
-                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', cursor: 'pointer' }}
                   >
                     Restore feed
                   </button>
@@ -3726,16 +3726,16 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
                       </td>
                       <td className="integrations-feeds-action-cell">
                         <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                          <button type="button" onClick={() => runNowOne(i.key, i.name, 'incremental')} disabled={Boolean(runningKeys[i.key === 'usom-trcert' ? `${i.key}:incremental` : i.key]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px' }} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
+                          <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => runNowOne(i.key, i.name, 'incremental')} disabled={Boolean(runningKeys[i.key === 'usom-trcert' ? `${i.key}:incremental` : i.key]) || !canWrite || !canRunNow} title={purgeActive ? 'A purge job is running for this feed.' : (!canRunNow ? 'Enable the feed before running manually.' : undefined)}>
                             {runningKeys[i.key === 'usom-trcert' ? `${i.key}:incremental` : i.key] ? 'Queueing...' : (i.key === 'usom-trcert' ? 'Run Incremental' : 'Run now')}
                           </button>
                           {i.key === 'usom-trcert' ? (
-                            <button type="button" onClick={() => runNowOne(i.key, i.name, 'full_reconciliation')} disabled={Boolean(runningKeys[`${i.key}:full_reconciliation`]) || !canWrite || !canRunNow} style={{ fontSize: 11, padding: '4px 8px', borderColor: '#b45309', color: '#fcd34d' }}>
+                            <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => runNowOne(i.key, i.name, 'full_reconciliation')} disabled={Boolean(runningKeys[`${i.key}:full_reconciliation`]) || !canWrite || !canRunNow}>
                               {runningKeys[`${i.key}:full_reconciliation`] ? 'Queueing...' : 'Full Reconciliation'}
                             </button>
                           ) : null}
                           {canWrite ? (
-                            <button type="button" onClick={() => { setFeedActionSuccess(''); openSettingsModal(i); }} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #475569', background: 'transparent', color: '#93c5fd', cursor: 'pointer' }}>
+                            <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => { setFeedActionSuccess(''); openSettingsModal(i); }}>
                               Edit
                             </button>
                           ) : null}
@@ -4174,7 +4174,7 @@ function IntegrationsQueueStatusPage() {
                             <span style={{ wordBreak: 'break-all' }}>{j.id}</span>
                             <button
                               type="button"
-                              style={{ fontSize: 11, padding: '2px 6px' }}
+                              className={buttonClassName({ size: 'compact' })}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigator.clipboard?.writeText(String(j.id)).catch(() => {});
@@ -4918,16 +4918,16 @@ function CustomThreatFeedsPage() {
                       <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                           {isAdmin ? (
-                            <button type="button" disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})} style={{ fontSize: 11, padding: '4px 8px' }}>
+                            <button type="button" className={buttonClassName({ size: 'compact' })} disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})}>
                               Edit
                             </button>
                           ) : null}
                           {canRunActions ? (
                             <button
                               type="button"
+                              className={buttonClassName({ size: 'compact' })}
                               disabled={actionFeedId === feed.id || !feed.active}
                               onClick={() => runNowFeed(feed)}
-                              style={{ fontSize: 11, padding: '4px 8px' }}
                               title={!feed.active ? 'Enable the feed before running manually.' : undefined}
                             >
                               {actionFeedId === feed.id ? 'Queueing...' : 'Run now'}
@@ -4936,9 +4936,9 @@ function CustomThreatFeedsPage() {
                           {isAdmin ? (
                             <button
                               type="button"
+                              className={buttonClassName({ size: 'compact' })}
                               disabled={deleteLoading && deleteModal?.feed?.id === feed.id}
                               onClick={() => openDeleteCheck(feed).catch(() => {})}
-                              style={{ fontSize: 11, padding: '4px 8px', background: 'transparent', color: '#f87171', border: '1px solid #7f1d1d' }}
                             >
                               {deleteLoading && deleteModal?.feed?.id === feed.id ? '...' : 'Delete'}
                             </button>
@@ -5065,7 +5065,7 @@ function CustomThreatFeedsPage() {
                         onRequestActiveChange={requestActiveChange}
                       />
                       <div style={{ marginTop: 12 }}>
-                        <button type="button" onClick={openPurgeFromEdit} style={{ fontSize: 12, color: '#fca5a5', background: 'transparent', border: '1px solid rgba(248, 113, 113, 0.45)', borderRadius: 8, padding: '5px 10px' }}>
+                        <button type="button" className={buttonClassName({ size: 'compact' })} onClick={openPurgeFromEdit}>
                           Purge feed data
                         </button>
                       </div>
@@ -5386,37 +5386,84 @@ const PUBLISHED_FEEDS_UI = {
     color: '#e2e8f0',
     fontSize: 13,
     fontWeight: 600,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    minHeight: 36,
+    lineHeight: 1.2,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    boxSizing: 'border-box'
   },
+  /* Compact table-row actions — same shell, denser metrics */
+  btnCompact: {
+    padding: '5px 10px',
+    borderRadius: 8,
+    border: '1px solid #475569',
+    background: '#1f2937',
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    minHeight: 30,
+    lineHeight: 1.2,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    boxSizing: 'border-box'
+  },
+  /* Legacy aliases — identical shell (no color variants) */
   btnPrimary: {
     padding: '8px 14px',
     borderRadius: 8,
-    border: '1px solid #2563eb',
-    background: '#2563eb',
-    color: '#fff',
+    border: '1px solid #475569',
+    background: '#1f2937',
+    color: '#e2e8f0',
     fontSize: 13,
     fontWeight: 600,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    minHeight: 36,
+    lineHeight: 1.2,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    boxSizing: 'border-box'
   },
   btnDanger: {
     padding: '8px 14px',
     borderRadius: 8,
-    border: '1px solid rgba(248,113,113,0.45)',
-    background: 'transparent',
-    color: '#fca5a5',
+    border: '1px solid #475569',
+    background: '#1f2937',
+    color: '#e2e8f0',
     fontSize: 13,
     fontWeight: 600,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    minHeight: 36,
+    lineHeight: 1.2,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    boxSizing: 'border-box'
   },
   btnDangerSolid: {
     padding: '8px 14px',
     borderRadius: 8,
-    border: '1px solid #991b1b',
-    background: '#7f1d1d',
-    color: '#fecaca',
+    border: '1px solid #475569',
+    background: '#1f2937',
+    color: '#e2e8f0',
     fontSize: 13,
     fontWeight: 600,
-    cursor: 'pointer'
+    cursor: 'pointer',
+    minHeight: 36,
+    lineHeight: 1.2,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    boxSizing: 'border-box'
   },
   thead: { textAlign: 'left', borderBottom: '1px solid #334155', background: '#0f172a' },
   th: {
@@ -5814,17 +5861,17 @@ function PublishedFeedsPage() {
                     <td style={ui.td}>{f.last_item_count ?? '—'}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                       {canWrite ? (
-                        <button type="button" style={ui.btn} onClick={() => openEditForm(f)}>Edit</button>
+                        <button type="button" style={ui.btnCompact} onClick={() => openEditForm(f)}>Edit</button>
                       ) : null}
                       {canWrite ? (
-                        <button type="button" style={{ ...ui.btn, marginLeft: 6 }} disabled={regenerating[f.id]} onClick={() => regenerateFeed(f.id)}>
+                        <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} disabled={regenerating[f.id]} onClick={() => regenerateFeed(f.id)}>
                           {regenerating[f.id] ? '...' : 'Regenerate'}
                         </button>
                       ) : null}
                       {canWrite ? (
-                        <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => deleteFeed(f.id)}>Delete</button>
+                        <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => deleteFeed(f.id)}>Delete</button>
                       ) : null}
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setUrlTemplateFeed(f)}>URL</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => setUrlTemplateFeed(f)}>URL</button>
                     </td>
                   </tr>
               )) : (
@@ -6422,10 +6469,10 @@ function ApiKeysPage() {
                       </code>
                       {isAdmin && k.revealable ? (
                         <>
-                          <button type="button" style={{ ...ui.btn, padding: '4px 10px', fontSize: 12 }} disabled={revealing[k.id]} onClick={() => toggleReveal(k)}>
+                          <button type="button" style={ui.btnCompact} disabled={revealing[k.id]} onClick={() => toggleReveal(k)}>
                             {revealing[k.id] ? '…' : (revealed[k.id] ? 'Hide' : 'Show')}
                           </button>
-                          <button type="button" style={{ ...ui.btn, padding: '4px 10px', fontSize: 12 }} onClick={() => copyKey(k)}>Copy</button>
+                          <button type="button" style={ui.btnCompact} onClick={() => copyKey(k)}>Copy</button>
                         </>
                       ) : (
                         <span style={{ fontSize: 11, color: '#64748b' }} title={k.key_type === 'published_feed' ? 'Encryption key unavailable' : 'This legacy key cannot be revealed.'}>
@@ -6441,13 +6488,13 @@ function ApiKeysPage() {
                     {isAdmin ? (
                       <>
                         {k.status !== 'expired' ? (
-                          <button type="button" style={ui.btn} onClick={() => toggleEnabled(k)}>
+                          <button type="button" style={ui.btnCompact} onClick={() => toggleEnabled(k)}>
                             {k.enabled ? 'Disable' : 'Enable'}
                           </button>
                         ) : null}
                         <button
                           type="button"
-                          style={{ ...ui.btnDanger, marginLeft: k.status !== 'expired' ? 6 : 0 }}
+                          style={{ ...ui.btnCompact, marginLeft: k.status !== 'expired' ? 6 : 0 }}
                           onClick={() => setDeleteTarget(k)}
                         >
                           Delete
@@ -7167,11 +7214,11 @@ function TagManagerPage() {
                   </td>
                   <td style={ui.td}>{tag.is_active ? 'Yes' : 'No'}</td>
                   <td style={ui.td}>
-                    <button type="button" style={ui.btn} onClick={() => openEditModal(tag)}>Edit</button>
+                    <button type="button" style={ui.btnCompact} onClick={() => openEditModal(tag)}>Edit</button>
                     {tag.is_active ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => disableTag(tag).catch(() => {})}>Disable</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => disableTag(tag).catch(() => {})}>Disable</button>
                     ) : (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableTag(tag).catch(() => {})}>Enable</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => enableTag(tag).catch(() => {})}>Enable</button>
                     )}
                   </td>
                 </tr>
@@ -7774,11 +7821,11 @@ function ThreatActorManagerPage() {
                   <td style={ui.td}>{actor.active ? 'Yes' : 'No'}</td>
                   <td style={ui.td}>{formatUserDateTime(actor.created_at)}</td>
                   <td style={ui.td}>
-                    <button type="button" style={ui.btn} onClick={() => openEditModal(actor)}>Edit</button>
+                    <button type="button" style={ui.btnCompact} onClick={() => openEditModal(actor)}>Edit</button>
                     {actor.active ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => disableActor(actor).catch(() => {})}>Disable</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => disableActor(actor).catch(() => {})}>Disable</button>
                     ) : (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableActor(actor).catch(() => {})}>Enable</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => enableActor(actor).catch(() => {})}>Enable</button>
                     )}
                   </td>
                 </tr>
@@ -8214,19 +8261,19 @@ function IocSourcesPage() {
                   <td style={ui.td}>{iocCount.toLocaleString('en-US')}</td>
                   <td style={ui.td}>{formatIocSourceStateLabel(s)}</td>
                   <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button type="button" style={ui.btn} onClick={() => openEditModal(s)}>Edit</button>
+                    <button type="button" style={ui.btnCompact} onClick={() => openEditModal(s)}>Edit</button>
                     {!isArchived && s.active !== false ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setDisableTarget(s)}>Disable</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => setDisableTarget(s)}>Disable</button>
                     ) : null}
                     {!isArchived && s.active === false ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableSource(s).catch(() => {})}>Enable</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => enableSource(s).catch(() => {})}>Enable</button>
                     ) : null}
                     {!isArchived ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => setArchiveTarget(s)}>Archive</button>
+                      <button type="button" style={{ ...ui.btnCompact, marginLeft: 6 }} onClick={() => setArchiveTarget(s)}>Archive</button>
                     ) : null}
                     <button
                       type="button"
-                      style={{ ...ui.btn, marginLeft: 6, opacity: iocCount > 0 ? 1 : 0.45 }}
+                      style={{ ...ui.btnCompact, marginLeft: 6, opacity: iocCount > 0 ? 1 : 0.45 }}
                       disabled={iocCount <= 0}
                       onClick={() => openMoveModal(s)}
                     >
@@ -8234,7 +8281,7 @@ function IocSourcesPage() {
                     </button>
                     <button
                       type="button"
-                      style={{ ...ui.btnDanger, marginLeft: 6 }}
+                      style={{ ...ui.btnCompact, marginLeft: 6 }}
                       onClick={() => handleDeleteClick(s)}
                     >
                       Delete
@@ -8500,7 +8547,7 @@ function IocSourcesPage() {
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal}>Cancel</button>
-                  <button type="button" style={ui.btnDangerSolid} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
+                  <button type="button" style={ui.btn} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
                     {deleteBusy ? 'Deleting…' : 'Delete source'}
                   </button>
                 </div>
@@ -10034,7 +10081,7 @@ function IOCSuppressionsPage() {
                           {' · '}
                           <button
                             type="button"
-                            style={{ ...ui.linkBtn, color: '#fca5a5' }}
+                            style={ui.linkBtn}
                             onClick={() => { setDeleteItem(item); setDeleteError(''); }}
                           >
                             Delete
@@ -10147,7 +10194,7 @@ function IOCSuppressionsPage() {
           {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setDeleteItem(null)} disabled={deleteSaving}>Cancel</button>
-            <button type="button" style={ui.btnDanger} onClick={() => confirmDelete().catch(() => {})} disabled={!isAdmin || deleteSaving}>{deleteSaving ? 'Deleting…' : 'Delete suppression'}</button>
+            <button type="button" style={ui.btn} onClick={() => confirmDelete().catch(() => {})} disabled={!isAdmin || deleteSaving}>{deleteSaving ? 'Deleting…' : 'Delete suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -13401,7 +13448,7 @@ function DnsmaniaEnrichmentCard({
               {associatedIps.length && bulkCandidateIps.length && canWrite ? (
                 <button
                   type="button"
-                  style={{ fontSize: 11, padding: '4px 8px' }}
+                  className={buttonClassName({ size: 'compact' })}
                   disabled={bulkActionLoading || associatedIpIntel.loading}
                   onClick={() => enrichAssociatedIps(bulkCandidateIps, false).catch(() => {})}
                 >
@@ -14500,7 +14547,7 @@ function IOCDetailsPage() {
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>
                   {isAdmin ? (
-                    <button type="button" style={ui.btnDanger} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Disable suppression</button>
+                    <button type="button" style={ui.btn} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Disable suppression</button>
                   ) : null}
                 </div>
               </div>
@@ -14724,7 +14771,7 @@ function IOCDetailsPage() {
                       <button
                         type="button"
                         onClick={() => setShowHiddenSourceTags((v) => !v)}
-                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 8, border: '1px solid #334155', background: '#0b1220', color: '#93c5fd' }}
+                        style={ui.btnCompact}
                       >
                         {showHiddenSourceTags ? 'Hide' : 'Restore'} source tags ({hiddenSourceTags.length})
                       </button>
@@ -14887,7 +14934,7 @@ function IOCDetailsPage() {
           {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
-            <button type="button" style={ui.btnDanger} onClick={() => submitDisableSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Disabling…' : 'Disable suppression'}</button>
+            <button type="button" style={ui.btn} onClick={() => submitDisableSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Disabling…' : 'Disable suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -14971,7 +15018,7 @@ function IOCDetailsPage() {
               {confidenceCard.hasOverride ? (
                 <button
                   type="button"
-                  style={{ ...ui.btn, borderColor: '#475569', color: '#cbd5e1' }}
+                  style={ui.btn}
                   onClick={() => clearConfidenceOverride().catch(() => {})}
                   disabled={confidenceSaving}
                 >
@@ -15909,32 +15956,20 @@ function App() {
             justify-content: flex-start;
           }
         }
-        /* Soft dark button default — NO !important so semantic/inline variants win */
-        button {
-          font: inherit;
-          background: #1f2937;
-          color: #e2e8f0;
-          border: 1px solid #475569;
-          cursor: pointer;
-        }
-        button:hover:not(:disabled) {
-          background: #273549;
-          border-color: #64748b;
-        }
-        button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-          pointer-events: none;
-        }
-        .th-btn {
+        /* Universal button shell — one look for all text buttons */
+        button,
+        .th-btn,
+        a.th-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 6px;
           box-sizing: border-box;
           min-height: 36px;
+          height: auto;
           padding: 8px 14px;
           border-radius: 8px;
+          font: inherit;
           font-size: 13px;
           font-weight: 600;
           line-height: 1.2;
@@ -15942,83 +15977,73 @@ function App() {
           background: #1f2937;
           color: #e2e8f0;
           cursor: pointer;
+          text-decoration: none;
+          vertical-align: middle;
         }
-        .th-btn:hover:not(:disabled) {
+        button:hover:not(:disabled),
+        .th-btn:hover:not(:disabled),
+        a.th-btn:hover {
           background: #273549;
           border-color: #64748b;
+          color: #e2e8f0;
         }
-        .th-btn:focus-visible {
+        button:active:not(:disabled),
+        .th-btn:active:not(:disabled),
+        a.th-btn:active {
+          background: #1a2332;
+          border-color: #475569;
+        }
+        button:focus-visible,
+        .th-btn:focus-visible,
+        a.th-btn:focus-visible {
           outline: 2px solid rgba(147, 197, 253, 0.7);
           outline-offset: 2px;
         }
-        .th-btn:disabled {
+        button:disabled,
+        .th-btn:disabled,
+        .th-btn.is-loading,
+        a.th-btn[aria-disabled='true'] {
           opacity: 0.5;
           cursor: not-allowed;
           pointer-events: none;
         }
+        /* Semantic variants kept for markup compatibility — visually identical */
+        .th-btn--primary,
+        .th-btn--secondary,
+        .th-btn--ghost,
+        .th-btn--danger,
+        .th-btn--danger-solid,
+        .th-btn--warning,
+        .th-btn--success,
+        .th-btn--md {
+          background: #1f2937;
+          border-color: #475569;
+          color: #e2e8f0;
+        }
+        .th-btn--primary:hover:not(:disabled),
+        .th-btn--secondary:hover:not(:disabled),
+        .th-btn--ghost:hover:not(:disabled),
+        .th-btn--danger:hover:not(:disabled),
+        .th-btn--danger-solid:hover:not(:disabled),
+        .th-btn--warning:hover:not(:disabled),
+        .th-btn--success:hover:not(:disabled) {
+          background: #273549;
+          border-color: #64748b;
+          color: #e2e8f0;
+        }
+        /* Compact — table / dense row actions only */
+        .th-btn--compact,
         .th-btn--sm {
           min-height: 30px;
           padding: 5px 10px;
           font-size: 12px;
         }
-        /* Sparse accent: only page/modal primary CTAs */
-        .th-btn--primary {
-          background: #2563eb;
-          border-color: #2563eb;
-          color: #fff;
-        }
-        .th-btn--primary:hover:not(:disabled) {
-          background: #1d4ed8;
-          border-color: #1d4ed8;
-        }
-        /* Neutral family — secondary / warning / success share one look */
-        .th-btn--secondary,
-        .th-btn--warning,
-        .th-btn--success {
-          background: #1f2937;
-          border-color: #475569;
-          color: #e2e8f0;
-        }
-        .th-btn--secondary:hover:not(:disabled),
-        .th-btn--warning:hover:not(:disabled),
-        .th-btn--success:hover:not(:disabled) {
-          background: #273549;
-          border-color: #64748b;
-        }
-        /* Subtle danger for table/row destructive actions */
-        .th-btn--danger {
-          background: transparent;
-          border-color: rgba(248, 113, 113, 0.45);
-          color: #fca5a5;
-        }
-        .th-btn--danger:hover:not(:disabled) {
-          background: rgba(127, 29, 29, 0.22);
-          border-color: rgba(248, 113, 113, 0.7);
-        }
-        /* Strong danger — destructive modal confirm only */
-        .th-btn--danger-solid {
-          background: #7f1d1d;
-          border-color: #991b1b;
-          color: #fecaca;
-        }
-        .th-btn--danger-solid:hover:not(:disabled) {
-          background: #991b1b;
-          border-color: #b91c1c;
-        }
-        .th-btn--ghost {
-          background: transparent;
-          border-color: transparent;
-          color: #cbd5e1;
-        }
-        .th-btn--ghost:hover:not(:disabled) {
-          background: rgba(148, 163, 184, 0.1);
-          border-color: transparent;
-        }
         .th-btn--icon {
-          padding: 6px;
+          padding: 0;
           width: 32px;
           height: 32px;
           min-height: 32px;
+          min-width: 32px;
         }
         html, body, #root {
           background: #0b1220 !important;
@@ -16175,7 +16200,6 @@ function App() {
         }
         .threat-classifications-table .tc-action-buttons button {
           white-space: nowrap;
-          padding: 6px 10px;
         }
         .threat-classifications-table .tc-drag-handle:active {
           cursor: grabbing;

@@ -229,7 +229,8 @@ const styles = {
   },
   error: { color: '#fca5a5', marginBottom: 12, fontSize: 13 },
   button: {
-    width: '100%', padding: '12px 14px', borderRadius: 8, border: 'none',
-    background: '#2563eb', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14
+    width: '100%', padding: '8px 14px', borderRadius: 8, border: '1px solid #475569',
+    background: '#1f2937', color: '#e2e8f0', fontWeight: 600, cursor: 'pointer', fontSize: 13,
+    minHeight: 36, lineHeight: 1.2
   }
 };

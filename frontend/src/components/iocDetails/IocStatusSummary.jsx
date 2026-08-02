@@ -87,8 +87,7 @@ export function IocStatusSummary({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                whiteSpace: 'nowrap',
-                ...(def.danger ? { borderColor: '#7f1d1d', color: '#fca5a5' } : {})
+                whiteSpace: 'nowrap'
               };
               return (
                 <button

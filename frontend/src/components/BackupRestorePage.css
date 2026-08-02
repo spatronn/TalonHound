@@ -443,104 +443,100 @@
 }
 
 .br-btn {
-  border-radius: 9px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(255, 255, 255, 0.05);
-  color: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid #475569;
+  background: #1f2937;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  min-height: 36px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   line-height: 1.2;
+  box-sizing: border-box;
+}
+
+.br-btn:hover:not(:disabled) {
+  background: #273549;
+  border-color: #64748b;
+}
+
+.br-btn:active:not(:disabled) {
+  background: #1a2332;
+  border-color: #475569;
+}
+
+.br-btn:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.7);
+  outline-offset: 2px;
 }
 
 .br-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .br-btn-leading {
   display: inline-flex;
 }
 
+/* Size aliases collapse to default or compact */
 .br-btn-lg {
-  padding: 11px 18px;
-  font-size: 14px;
-  border-radius: 11px;
+  /* same as default — no oversized CTA */
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  min-height: 36px;
 }
 
 .br-btn-xs {
-  padding: 4px 6px;
-  font-size: 11px;
+  padding: 5px 10px;
+  font-size: 12px;
+  min-height: 30px;
+  border-radius: 8px;
 }
 
 .br-btn-icon {
-  padding: 6px 8px;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  min-width: 32px;
   font-size: 16px;
   line-height: 1;
 }
 
+/* Variant aliases — identical shell */
 .br-btn-primary,
-button.br-btn.br-btn-primary {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+button.br-btn.br-btn-primary,
+.br-btn-outline,
+.br-btn-danger,
+button.br-btn.br-btn-danger,
+.br-modal .br-btn-danger,
+.br-modal button.br-btn.br-btn-danger,
+.br-btn-ghost {
+  background: #1f2937;
+  border-color: #475569;
+  color: #e2e8f0;
   box-shadow: none;
 }
 
 .br-btn-primary:hover:not(:disabled),
-button.br-btn.br-btn-primary:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-}
-
-.br-btn-outline {
-  background: transparent;
-  border-color: rgba(96, 165, 250, 0.45);
-  color: #93c5fd;
-}
-
-.br-btn-outline:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.12);
-}
-
-.br-btn-danger,
-button.br-btn.br-btn-danger {
-  background: transparent;
-  border-color: rgba(248, 113, 113, 0.45);
-  color: #fca5a5;
-  box-shadow: none;
-}
-
+button.br-btn.br-btn-primary:hover:not(:disabled),
+.br-btn-outline:hover:not(:disabled),
 .br-btn-danger:hover:not(:disabled),
-button.br-btn.br-btn-danger:hover:not(:disabled) {
-  background: rgba(127, 29, 29, 0.22);
-  border-color: rgba(248, 113, 113, 0.7);
-}
-
-/* Modal footer destructive confirm — sole strong red action */
-.br-modal .br-btn-danger,
-.br-modal button.br-btn.br-btn-danger {
-  background: #7f1d1d;
-  border-color: #991b1b;
-  color: #fecaca;
-}
-
+button.br-btn.br-btn-danger:hover:not(:disabled),
 .br-modal .br-btn-danger:hover:not(:disabled),
-.br-modal button.br-btn.br-btn-danger:hover:not(:disabled) {
-  background: #991b1b;
-  border-color: #b91c1c;
-}
-
-.br-btn-ghost {
-  background: transparent;
-}
-
+.br-modal button.br-btn.br-btn-danger:hover:not(:disabled),
 .br-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: #273549;
+  border-color: #64748b;
+  color: #e2e8f0;
 }
 
 .br-badge {

@@ -79,10 +79,10 @@ export function IocHeader({
             <button
               type="button"
               className={buttonClassName({ variant: 'ghost', size: 'sm', className: 'th-btn--icon' })}
+              style={{ flexShrink: 0 }}
               onClick={() => copyObservable().catch(() => {})}
               aria-label={copied ? 'Copied' : 'Copy IOC value'}
               title={copied ? 'Copied' : 'Copy'}
-              style={{ color: copied ? '#86efac' : '#94a3b8', flexShrink: 0 }}
             >
               <IocDetailIcons.copy size={14} />
             </button>

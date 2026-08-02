@@ -98,21 +98,23 @@
 .login-shell .btn{
   width:100%;
   margin-top:6px;
-  border:none !important;
+  border:1px solid #475569 !important;
   border-radius:8px;
-  padding:13px;
+  padding:8px 14px;
+  min-height:36px;
   font:inherit;
-  font-size:15px;
+  font-size:13px;
   font-weight:600;
-  color:#fff !important;
+  line-height:1.2;
+  color:#e2e8f0 !important;
   cursor:pointer;
-  background:var(--login-blue) !important;
-  transition:background .15s;
+  background:#1f2937 !important;
+  transition:background .15s, border-color .15s;
 }
-.login-shell .btn:hover{background:#3D7BF0 !important}
-.login-shell .btn:active{background:#2A63D4 !important}
-.login-shell .btn:focus-visible{outline:3px solid rgba(143,180,245,.6);outline-offset:2px}
-.login-shell .btn.loading{pointer-events:none;opacity:.7}
+.login-shell .btn:hover{background:#273549 !important;border-color:#64748b !important}
+.login-shell .btn:active{background:#1a2332 !important;border-color:#475569 !important}
+.login-shell .btn:focus-visible{outline:2px solid rgba(147,197,253,.7);outline-offset:2px}
+.login-shell .btn.loading{pointer-events:none;opacity:.5}
 .login-shell .msg{
   margin-top:16px;
   font-size:13.5px;

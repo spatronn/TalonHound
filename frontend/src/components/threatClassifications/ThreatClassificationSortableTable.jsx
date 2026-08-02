@@ -124,18 +124,18 @@ function SortableClassificationRow({
       <td className="tc-col-builtin" style={ui.td}>{item.system_default ? 'Yes' : '—'}</td>
       <td className="tc-col-actions tc-actions-cell" style={ui.td}>
         <div className="tc-action-buttons">
-          <button type="button" style={ui.btn} onClick={() => onEdit(item)} disabled={disabled}>Edit</button>
+          <button type="button" style={ui.btnCompact} onClick={() => onEdit(item)} disabled={disabled}>Edit</button>
           {item.slug === 'unknown' ? null : item.active ? (
             <button
               type="button"
-              style={{ ...ui.btnDanger }}
+              style={ui.btnCompact}
               onClick={() => onDisable(item)}
               disabled={disabled}
             >
               Disable
             </button>
           ) : (
-            <button type="button" style={ui.btn} onClick={() => onEnable(item)} disabled={disabled}>
+            <button type="button" style={ui.btnCompact} onClick={() => onEnable(item)} disabled={disabled}>
               Enable
             </button>
           )}
