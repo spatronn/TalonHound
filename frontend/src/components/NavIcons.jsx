@@ -17,14 +17,6 @@ function Icon({ children }) {
 }
 
 export const NavIcons = {
-  system: (
-    <Icon>
-      <path d="M12 3 4 7v10l8 4 8-4V7l-8-4Z" />
-      <path d="M12 12 4 7" />
-      <path d="m12 12 8-5" />
-      <path d="M12 12v10" />
-    </Icon>
-  ),
   iocList: (
     <Icon>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
