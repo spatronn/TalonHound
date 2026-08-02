@@ -39,7 +39,7 @@ function createMockPool(store) {
           deleted_at: null,
           deleted_by: null,
           feed_name: null,
-          feed_ioc_type: null,
+          feed_ioc_types: null,
           feed_slug: null
         };
         store.push(row);
@@ -175,7 +175,7 @@ test('legacy hash-only key cannot be revealed', async () => {
     secret_tag: null, enabled: true, expires_at: null, last_used_at: null,
     last_used_ip: null, created_at: new Date().toISOString(), revoked_at: null,
     deleted_at: null, deleted_by: null,
-    feed_name: 'Old Feed', feed_ioc_type: 'ip', feed_slug: 'old-feed'
+    feed_name: 'Old Feed', feed_ioc_types: ['ip'], feed_slug: 'old-feed'
   }];
   const res = await req(makeApp(store, () => ADMIN), 'GET', '/api/api-keys/99/reveal');
   assert.equal(res.status, 409);
@@ -218,7 +218,7 @@ test('disabling an expired key is rejected (state machine)', async () => {
     secret_nonce: Buffer.from('n'), secret_tag: Buffer.from('t'), enabled: true,
     expires_at: new Date(Date.now() - 1000).toISOString(), last_used_at: null, last_used_ip: null,
     created_at: new Date().toISOString(), revoked_at: null, deleted_at: null, deleted_by: null,
-    feed_name: null, feed_ioc_type: null, feed_slug: null
+    feed_name: null, feed_ioc_types: null, feed_slug: null
   }];
   const res = await req(makeApp(store, () => ADMIN), 'PATCH', '/api/api-keys/77', { enabled: false });
   assert.equal(res.status, 409);
@@ -270,7 +270,7 @@ test('legacy feed_access key supports delete', async () => {
     key_prefix: null, last_four: null, secret_ciphertext: null, secret_nonce: null,
     secret_tag: null, enabled: true, expires_at: null, last_used_at: null,
     last_used_ip: null, created_at: new Date().toISOString(), revoked_at: null,
-    deleted_at: null, deleted_by: null, feed_name: 'Old', feed_ioc_type: 'ip', feed_slug: 'old'
+    deleted_at: null, deleted_by: null, feed_name: 'Old', feed_ioc_types: ['ip'], feed_slug: 'old'
   }];
   const auditEvents = [];
   const del = await req(makeApp(store, () => ADMIN, auditEvents), 'DELETE', '/api/api-keys/42');

@@ -3,7 +3,9 @@ import {
   FEED_WINDOWS,
   buildPlainTextFeed,
   confidenceToScore,
-  observableTypesForFeedIocType
+  feedIocTypesKey,
+  normalizeFeedIocTypes,
+  observableTypesForFeedIocTypes
 } from './feedFormatter.js';
 import {
   buildFeedKeySourceSql,
@@ -36,8 +38,22 @@ const ARTIFACT_HASH_TYPES_SQL = `'md5','sha1','sha256'`;
  * when File Artifact read path is enabled.
  */
 export function shouldCanonicalizePublishedHashFeed(feed) {
-  return isFileArtifactsReadEnabled()
-    && String(feed?.ioc_type || '').trim().toLowerCase() === 'hash';
+  if (!isFileArtifactsReadEnabled()) return false;
+  const types = resolveFeedIocTypes(feed);
+  return types.includes('hash');
+}
+
+/** Prefer ioc_types[]; fall back to legacy scalar ioc_type during rollout. */
+export function resolveFeedIocTypes(feed) {
+  if (Array.isArray(feed?.ioc_types) && feed.ioc_types.length) {
+    const norm = normalizeFeedIocTypes(feed.ioc_types);
+    if (norm.ok) return norm.value;
+  }
+  if (feed?.ioc_type != null && String(feed.ioc_type).trim() !== '') {
+    const norm = normalizeFeedIocTypes(feed.ioc_type);
+    if (norm.ok) return norm.value;
+  }
+  return [];
 }
 
 function parseJsonArray(val) {
@@ -65,10 +81,15 @@ function normalizeTimeWindow(value) {
 
 export function normalizeFeedConfig(row) {
   if (!row) return null;
+  const ioc_types = resolveFeedIocTypes({
+    ioc_types: parseJsonArray(row.ioc_types) || row.ioc_types,
+    ioc_type: row.ioc_type
+  });
   return {
     ...row,
     id: Number(row.id),
     time_window: normalizeTimeWindow(row.time_window) || 'all',
+    ioc_types,
     include_feed_keys: parseJsonArray(row.include_feed_keys),
     include_tags: parseJsonArray(row.include_tags),
     exclude_tags: parseJsonArray(row.exclude_tags)
@@ -77,7 +98,7 @@ export function normalizeFeedConfig(row) {
 
 export function filtersHash(feed, window) {
   const payload = {
-    ioc_type: feed.ioc_type,
+    ioc_types: resolveFeedIocTypes(feed),
     window,
     min_confidence: feed.min_confidence,
     include_feed_keys: feed.include_feed_keys,
@@ -232,7 +253,7 @@ const ARTIFACT_ANNOTATE_JOINS = `
 `;
 
 export async function fetchIocRows(pool, feed, window) {
-  const types = observableTypesForFeedIocType(feed.ioc_type);
+  const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
   if (!types.length) return [];
 
   const params = [];
@@ -325,7 +346,7 @@ export async function fetchIocRows(pool, feed, window) {
 
 /** Conservative export fingerprint — same filters as fetchIocRows without DISTINCT ON sort cost. */
 export async function fetchIocExportFingerprint(pool, feed, window) {
-  const types = observableTypesForFeedIocType(feed.ioc_type);
+  const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
   if (!types.length) {
     return { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) };
   }
@@ -408,38 +429,55 @@ export function watermarkKey(watermark) {
   });
 }
 
-/** Cheap partition-level watermark — one partition table, no parent ioc_items scan. */
+/**
+ * Cheap partition-level watermark — one query per selected feed IOC category
+ * (still partition tables only; no parent ioc_items scan). Results are merged.
+ */
 export async function fetchCheapIocWatermark(pool, feed) {
-  const table = FEED_IOC_PARTITION_TABLE[String(feed?.ioc_type || '').toLowerCase()];
-  if (!table) {
+  const feedTypes = resolveFeedIocTypes(feed);
+  if (!feedTypes.length) {
     return { max_id: 0, max_ts: null, active_count: 0 };
   }
 
-  const types = observableTypesForFeedIocType(feed.ioc_type);
-  const params = [];
-  let typeClause = '';
-  if (types.length === 1) {
-    params.push(types[0]);
-    typeClause = `AND observable_type = $${params.length}`;
-  } else if (types.length > 1) {
-    params.push(types);
-    typeClause = `AND observable_type = ANY($${params.length}::text[])`;
+  let maxId = 0;
+  let maxTs = null;
+  let activeCount = 0;
+
+  for (const feedType of feedTypes) {
+    const table = FEED_IOC_PARTITION_TABLE[feedType];
+    if (!table) continue;
+
+    const types = observableTypesForFeedIocTypes([feedType]);
+    const params = [];
+    let typeClause = '';
+    if (types.length === 1) {
+      params.push(types[0]);
+      typeClause = `AND observable_type = $${params.length}`;
+    } else if (types.length > 1) {
+      params.push(types);
+      typeClause = `AND observable_type = ANY($${params.length}::text[])`;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT COALESCE(MAX(id), 0)::bigint AS max_id,
+              MAX(COALESCE(last_seen_log, last_seen_at, created_at)) AS max_ts,
+              COUNT(*)::bigint AS active_count
+       FROM ${table}
+       WHERE COALESCE(status, 'active') = 'active'
+         ${typeClause}`,
+      params
+    );
+
+    maxId = Math.max(maxId, Number(rows[0]?.max_id || 0));
+    activeCount += Number(rows[0]?.active_count || 0);
+    const ts = normalizeWatermarkTs(rows[0]?.max_ts);
+    if (ts && (!maxTs || ts > maxTs)) maxTs = ts;
   }
 
-  const { rows } = await pool.query(
-    `SELECT COALESCE(MAX(id), 0)::bigint AS max_id,
-            MAX(COALESCE(last_seen_log, last_seen_at, created_at)) AS max_ts,
-            COUNT(*)::bigint AS active_count
-     FROM ${table}
-     WHERE COALESCE(status, 'active') = 'active'
-       ${typeClause}`,
-    params
-  );
-
   return {
-    max_id: Number(rows[0]?.max_id || 0),
-    max_ts: normalizeWatermarkTs(rows[0]?.max_ts),
-    active_count: Number(rows[0]?.active_count || 0)
+    max_id: maxId,
+    max_ts: maxTs,
+    active_count: activeCount
   };
 }
 
@@ -504,7 +542,11 @@ async function withTransaction(pool, fn) {
 export async function persistPublishedFeedSnapshot(pool, snapshot) {
   const feedId = Number(snapshot.feedId);
   const paramsJson = snapshot.paramsJson || {};
-  const iocType = String(paramsJson.ioc_type || '');
+  const iocTypeKey = String(
+    paramsJson.ioc_type
+    || feedIocTypesKey(paramsJson.ioc_types)
+    || ''
+  );
   const window = String(paramsJson.window || '');
   const status = String(snapshot.status || 'success');
   const paramsText = JSON.stringify(paramsJson);
@@ -512,7 +554,7 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
   return withTransaction(pool, async (client) => {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
-      [`published_feed_snapshots:${feedId}:${iocType}:${window}`]
+      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}`]
     );
 
     if (status !== 'success') {
@@ -526,7 +568,7 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
          ORDER BY generated_at DESC
          LIMIT 1
          FOR UPDATE`,
-        [feedId, iocType, window]
+        [feedId, iocTypeKey, window]
       );
 
       if (rows[0]?.id) {
@@ -564,7 +606,7 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
        ORDER BY generated_at DESC
        LIMIT 1
        FOR UPDATE`,
-      [feedId, iocType, window]
+      [feedId, iocTypeKey, window]
     );
 
     if (!rows[0]?.id) {
@@ -622,13 +664,15 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
   const feedUpdatedAt = feed.updated_at instanceof Date
     ? feed.updated_at.toISOString()
     : (feed.updated_at ? String(feed.updated_at) : null);
+  const iocTypes = resolveFeedIocTypes(feed);
+  const iocTypeKey = feedIocTypesKey(iocTypes);
 
   for (const window of windows) {
     try {
       const filters_hash = filtersHash(feed, window);
 
       if (!options.force) {
-        const latest = await getLatestSnapshot(pool, id, feed.ioc_type, window);
+        const latest = await getLatestSnapshot(pool, id, iocTypeKey, window);
         const skipCheck = canSkipPublishedFeedRegeneration({
           feed,
           window,
@@ -655,7 +699,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
       const fingerprintKey = exportFingerprintKey(fingerprint);
 
       if (!options.force) {
-        const latest = await getLatestSnapshot(pool, id, feed.ioc_type, window);
+        const latest = await getLatestSnapshot(pool, id, iocTypeKey, window);
         const prevKey = latest?.params?.export_fingerprint;
         if (latest?.content_hash && latest.params?.filters_hash === filters_hash && prevKey === fingerprintKey) {
           results.push({ window, status: 'success', item_count: latest.item_count, skipped: true, reason: 'unchanged_fingerprint' });
@@ -665,9 +709,10 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
 
       const iocRows = allKeysStale ? [] : await fetchIocRows(pool, feed, window);
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
-      const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, feed.ioc_type, genMax);
+      const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, iocTypes, genMax);
       const paramsJson = {
-        ioc_type: feed.ioc_type,
+        ioc_type: iocTypeKey,
+        ioc_types: iocTypes,
         window,
         filters_hash,
         export_fingerprint: fingerprintKey,
@@ -687,7 +732,12 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
       results.push({ window, status: 'success', item_count });
     } catch (err) {
       const msg = String(err?.message || err);
-      const paramsJson = { ioc_type: feed.ioc_type, window, filters_hash: filtersHash(feed, window) };
+      const paramsJson = {
+        ioc_type: iocTypeKey,
+        ioc_types: iocTypes,
+        window,
+        filters_hash: filtersHash(feed, window)
+      };
       await persistPublishedFeedSnapshot(pool, {
         feedId: id,
         itemCount: 0,
@@ -757,7 +807,7 @@ export async function regenerateAllEnabledFeeds(pool) {
   }
 }
 
-export async function getLatestSnapshot(pool, feedId, iocType, window) {
+export async function getLatestSnapshot(pool, feedId, iocTypeKey, window) {
   const { rows } = await pool.query(
     `SELECT id, content, content_hash, item_count, generated_at, params
      FROM published_feed_snapshots
@@ -767,7 +817,7 @@ export async function getLatestSnapshot(pool, feedId, iocType, window) {
        AND params->>'window' = $3
      ORDER BY generated_at DESC
      LIMIT 1`,
-    [Number(feedId), String(iocType), String(window)]
+    [Number(feedId), String(iocTypeKey), String(window)]
   );
   return rows[0] || null;
 }

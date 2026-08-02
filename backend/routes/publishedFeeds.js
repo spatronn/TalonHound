@@ -1,7 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
-import { generatePublishedFeedSnapshot, normalizeFeedConfig, getLatestSnapshot } from '../lib/feedPublisherService.js';
-import { FEED_IOC_TYPES } from '../lib/feedFormatter.js';
+import { generatePublishedFeedSnapshot, normalizeFeedConfig, getLatestSnapshot, resolveFeedIocTypes } from '../lib/feedPublisherService.js';
+import { normalizeFeedIocTypes, feedIocTypesKey } from '../lib/feedFormatter.js';
 import {
   fetchPublishedFeedSourceOptions,
   normalizeIncludeFeedKeys
@@ -11,13 +11,14 @@ import { pickSafeFields } from '../lib/auditRedaction.js';
 
 function toPublicFeed(row, extra = {}) {
   if (!row) return null;
+  const ioc_types = resolveFeedIocTypes(row);
   return {
     id: Number(row.id),
     name: row.name,
     slug: row.slug,
     description: row.description,
     enabled: Boolean(row.enabled),
-    ioc_type: row.ioc_type,
+    ioc_types,
     format: row.format,
     min_confidence: row.min_confidence,
     include_feed_keys: row.include_feed_keys,
@@ -53,7 +54,7 @@ function toPublicAccessKey(row) {
 
 function parseBodyArrays(body) {
   const out = { ...body };
-  for (const key of ['include_feed_keys', 'include_tags', 'exclude_tags']) {
+  for (const key of ['include_feed_keys', 'include_tags', 'exclude_tags', 'ioc_types']) {
     if (out[key] != null && !Array.isArray(out[key])) {
       if (typeof out[key] === 'string') {
         try {
@@ -65,6 +66,13 @@ function parseBodyArrays(body) {
     }
   }
   return out;
+}
+
+/** Accept ioc_types[] (preferred) or legacy scalar ioc_type during transition. */
+function resolveIocTypesInput(body) {
+  if (body.ioc_types !== undefined) return body.ioc_types;
+  if (body.ioc_type !== undefined) return body.ioc_type;
+  return undefined;
 }
 
 async function resolveIncludeFeedKeys(pool, raw, existingRow = null) {
@@ -83,10 +91,10 @@ function validateFeedPayload(body, partial = false) {
   if (!partial || body.name !== undefined) {
     if (!String(body.name || '').trim()) errors.push('name is required');
   }
-  if (!partial || body.ioc_type !== undefined) {
-    if (!FEED_IOC_TYPES.includes(String(body.ioc_type || '').toLowerCase())) {
-      errors.push('ioc_type must be ip, domain, url, or hash');
-    }
+  const iocInput = resolveIocTypesInput(body);
+  if (!partial || iocInput !== undefined) {
+    const norm = normalizeFeedIocTypes(iocInput);
+    if (!norm.ok) errors.push(norm.error);
   }
   if (body.time_window !== undefined) {
     const tw = String(body.time_window || '').toLowerCase();
@@ -106,14 +114,15 @@ function validateFeedPayload(body, partial = false) {
 async function latestItemCount(pool, feedRow) {
   const feed = normalizeFeedConfig(feedRow);
   if (!feed?.id) return null;
-  const snapshot = await getLatestSnapshot(pool, feed.id, feed.ioc_type, feed.time_window);
+  const key = feedIocTypesKey(resolveFeedIocTypes(feed));
+  const snapshot = await getLatestSnapshot(pool, feed.id, key, feed.time_window);
   return snapshot?.item_count != null ? Number(snapshot.item_count) : null;
 }
 
 function feedAuditSnapshot(row) {
   const pub = toPublicFeed(normalizeFeedConfig(row));
   return pickSafeFields(pub, [
-    'id', 'name', 'enabled', 'ioc_type', 'min_confidence', 'time_window',
+    'id', 'name', 'enabled', 'ioc_types', 'min_confidence', 'time_window',
     'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired'
   ]);
 }
@@ -193,14 +202,15 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
 
     try {
       const slug = await generateUniqueFeedSlug(pool, body.name);
+      const iocTypes = normalizeFeedIocTypes(resolveIocTypesInput(body)).value;
       const { rows } = await pool.query(
         `INSERT INTO published_feeds (
-           name, slug, description, enabled, ioc_type, format, min_confidence,
+           name, slug, description, enabled, ioc_types, format, min_confidence,
            include_feed_keys, include_tags, exclude_tags,
            exclude_false_positive, exclude_expired,
            time_window, max_items, refresh_interval_minutes
          ) VALUES (
-           $1, $2, $3, COALESCE($4, TRUE), $5, COALESCE($6, 'txt'), $7,
+           $1, $2, $3, COALESCE($4, TRUE), $5::jsonb, COALESCE($6, 'txt'), $7,
            $8::jsonb, $9::jsonb, $10::jsonb,
            COALESCE($11, TRUE), COALESCE($12, TRUE),
            $13, $14, COALESCE($15, 15)
@@ -211,7 +221,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
           slug,
           body.description || null,
           body.enabled,
-          String(body.ioc_type).toLowerCase(),
+          JSON.stringify(iocTypes),
           body.format || 'txt',
           body.min_confidence ?? null,
           feedKeys.value.length ? JSON.stringify(feedKeys.value) : null,
@@ -279,7 +289,11 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     if (body.name !== undefined) setField('name', String(body.name).trim());
     if (body.description !== undefined) setField('description', body.description || null);
     if (body.enabled !== undefined) setField('enabled', Boolean(body.enabled));
-    if (body.ioc_type !== undefined) setField('ioc_type', String(body.ioc_type).toLowerCase());
+    const iocInput = resolveIocTypesInput(body);
+    if (iocInput !== undefined) {
+      const iocTypes = normalizeFeedIocTypes(iocInput).value;
+      setField('ioc_types', JSON.stringify(iocTypes), '::jsonb');
+    }
     if (body.format !== undefined) setField('format', body.format);
     if (body.min_confidence !== undefined) setField('min_confidence', body.min_confidence);
     if (body.include_feed_keys !== undefined) {

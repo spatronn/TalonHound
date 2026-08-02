@@ -38,7 +38,7 @@ function createMockPool({ keys = [], feeds = [] }) {
         return {
           rows: [{
             ...row, feed_id: row.feed_id, feed_enabled: feed?.enabled ?? false,
-            ioc_type: feed?.ioc_type, time_window: feed?.time_window, max_items: feed?.max_items
+            ioc_types: feed?.ioc_types, time_window: feed?.time_window, max_items: feed?.max_items
           }],
           rowCount: 1
         };
@@ -80,8 +80,8 @@ async function get(app, path) {
 }
 
 const FEEDS = [
-  { id: 1, slug: 'malware-domains', enabled: true, ioc_type: 'ip', time_window: 'all', max_items: null },
-  { id: 2, slug: 'phishing-urls', enabled: true, ioc_type: 'ip', time_window: 'all', max_items: null }
+  { id: 1, slug: 'malware-domains', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null },
+  { id: 2, slug: 'phishing-urls', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null }
 ];
 
 test('valid Published Feed key pulls a feed by slug', async () => {

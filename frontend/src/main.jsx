@@ -5359,6 +5359,102 @@ function FeedIntegrationMultiSelect({ ui, options, value, onChange }) {
   );
 }
 
+const FEED_IOC_TYPE_OPTIONS = ['ip', 'domain', 'url', 'hash'];
+
+/** Fixed 4-value enum multi-select — chips + checkbox panel (matches ThreatActor pattern). */
+function FeedIocTypeMultiSelect({ ui, value, onChange, errorId }) {
+  const selected = Array.isArray(value) ? value.filter((t) => FEED_IOC_TYPE_OPTIONS.includes(t)) : [];
+  const linkBtn = {
+    background: 'none',
+    border: 'none',
+    color: '#60a5fa',
+    cursor: 'pointer',
+    padding: 0,
+    fontSize: 11,
+    fontWeight: 600
+  };
+
+  function toggle(type) {
+    const set = new Set(selected);
+    if (set.has(type)) set.delete(type);
+    else set.add(type);
+    onChange(FEED_IOC_TYPE_OPTIONS.filter((t) => set.has(t)));
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28, marginBottom: 8 }} aria-live="polite">
+        {selected.length ? selected.map((t) => (
+          <span
+            key={t}
+            style={{
+              fontSize: 12,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: '#172554',
+              border: '1px solid #334155',
+              color: '#bfdbfe'
+            }}
+          >
+            {t}
+            <button
+              type="button"
+              onClick={() => toggle(t)}
+              style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
+              aria-label={`Remove ${t}`}
+            >
+              ×
+            </button>
+          </span>
+        )) : (
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>Select at least one IOC type</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+        <button type="button" style={linkBtn} onClick={() => onChange([...FEED_IOC_TYPE_OPTIONS])}>
+          Select all
+        </button>
+        <button type="button" style={linkBtn} onClick={() => onChange([])}>
+          Clear all
+        </button>
+      </div>
+      <div
+        role="group"
+        aria-label="IOC types"
+        aria-describedby={errorId || undefined}
+        style={{
+          border: '1px solid #334155',
+          borderRadius: 8,
+          padding: 10,
+          background: '#0f172a',
+          display: 'grid',
+          gap: 6
+        }}
+      >
+        {FEED_IOC_TYPE_OPTIONS.map((t) => (
+          <label key={t} style={{ ...ui.checkLabel, display: 'flex' }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(t)}
+              onChange={() => toggle(t)}
+            />
+            <span>{t}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Compact list cell: chips when few; "domain, url +2" when cramped. */
+function formatIocTypesSummary(types, maxVisible = 2) {
+  const list = Array.isArray(types) ? types.filter(Boolean) : (types ? [types] : []);
+  if (!list.length) return '—';
+  if (list.length <= maxVisible) return list.join(', ');
+  const shown = list.slice(0, maxVisible).join(', ');
+  return `${shown} +${list.length - maxVisible}`;
+}
+
 const PUBLISHED_FEEDS_UI = {
   section: { border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 },
   pageTitle: { margin: 0, fontSize: 22, fontWeight: 700, color: '#f1f5f9' },
@@ -5672,7 +5768,7 @@ function PublishedFeedsPage() {
     name: '',
     description: '',
     enabled: true,
-    ioc_type: 'ip',
+    ioc_types: ['ip'],
     exclude_false_positive: true,
     exclude_expired: true,
     include_feed_keys: [],
@@ -5723,7 +5819,7 @@ function PublishedFeedsPage() {
       name: '',
       description: '',
       enabled: true,
-      ioc_type: 'ip',
+      ioc_types: ['ip'],
       exclude_false_positive: true,
       exclude_expired: true,
       include_feed_keys: [],
@@ -5739,13 +5835,16 @@ function PublishedFeedsPage() {
 
   function openEditForm(feed) {
     const selectedKeys = Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : [];
+    const iocTypes = Array.isArray(feed.ioc_types) && feed.ioc_types.length
+      ? feed.ioc_types
+      : (feed.ioc_type ? [feed.ioc_type] : ['ip']);
     setEditing(feed);
     setFormError('');
     setForm({
       name: feed.name || '',
       description: feed.description || '',
       enabled: Boolean(feed.enabled),
-      ioc_type: feed.ioc_type || 'ip',
+      ioc_types: iocTypes,
       exclude_false_positive: feed.exclude_false_positive !== false,
       exclude_expired: feed.exclude_expired !== false,
       include_feed_keys: selectedKeys,
@@ -5768,7 +5867,7 @@ function PublishedFeedsPage() {
       name: form.name.trim(),
       description: form.description.trim() || null,
       enabled: Boolean(form.enabled),
-      ioc_type: form.ioc_type,
+      ioc_types: form.ioc_types,
       format: 'txt',
       exclude_false_positive: Boolean(form.exclude_false_positive),
       exclude_expired: Boolean(form.exclude_expired),
@@ -5784,6 +5883,10 @@ function PublishedFeedsPage() {
   async function saveFeed(e) {
     e.preventDefault();
     if (!canWrite) return;
+    if (!Array.isArray(form.ioc_types) || !form.ioc_types.length) {
+      setFormError('Select at least one IOC type');
+      return;
+    }
     const payload = buildPayload();
     setFormError('');
     try {
@@ -5878,7 +5981,9 @@ function PublishedFeedsPage() {
                       <span style={{ ...ui.badge(true), marginLeft: 6, background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', border: '1px solid #1e40af' }}>txt</span>
                       {f.last_error ? <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 4 }}>Last error: {f.last_error}</div> : null}
                     </td>
-                    <td style={ui.td}>{f.ioc_type}</td>
+                    <td style={ui.td} title={(Array.isArray(f.ioc_types) ? f.ioc_types : [f.ioc_type]).filter(Boolean).join(', ')}>
+                      {formatIocTypesSummary(f.ioc_types || f.ioc_type)}
+                    </td>
                     <td style={ui.td}>{windowLabel(f.time_window)}</td>
                     <td style={ui.td}>{f.max_items ?? '—'}</td>
                     <td style={ui.td}>{formatUserDateTime(f.last_generated_at)}</td>
@@ -5958,13 +6063,23 @@ function PublishedFeedsPage() {
             </FeedFormSection>
 
             <FeedFormSection title="Feed content">
-              <FeedFormField ui={ui} label="IOC Type" helper="The type of indicators this feed will publish. One feed publishes one IOC type.">
-                <select required value={form.ioc_type} onChange={(e) => setForm((x) => ({ ...x, ioc_type: e.target.value }))} style={ui.select}>
-                  <option value="ip">ip</option>
-                  <option value="domain">domain</option>
-                  <option value="url">url</option>
-                  <option value="hash">hash</option>
-                </select>
+              <FeedFormField
+                ui={ui}
+                label="IOC Types"
+                helper="Indicators this feed will publish. Select one or more types (ip, domain, url, hash)."
+                fullWidth
+              >
+                <FeedIocTypeMultiSelect
+                  ui={ui}
+                  value={form.ioc_types}
+                  onChange={(next) => setForm((x) => ({ ...x, ioc_types: next }))}
+                  errorId={formError && !form.ioc_types?.length ? 'feed-ioc-types-error' : undefined}
+                />
+                {!form.ioc_types?.length ? (
+                  <p id="feed-ioc-types-error" style={{ color: '#fca5a5', fontSize: 12, margin: '6px 0 0' }}>
+                    Select at least one IOC type
+                  </p>
+                ) : null}
               </FeedFormField>
               <FeedFormField ui={ui} label="Default Window" helper="Default time range used when the consumer does not pass ?window=.">
                 <select value={form.time_window} onChange={(e) => setForm((x) => ({ ...x, time_window: e.target.value }))} style={ui.select}>

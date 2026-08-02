@@ -70,7 +70,7 @@ test('buildFeedKeySourceSql empty for unknown non-custom keys only', () => {
 
 test('filtersHash changes when custom feed key added', () => {
   const base = {
-    ioc_type: 'ip',
+    ioc_types: ['ip'],
     min_confidence: null,
     include_feed_keys: ['urlhaus-abusech'],
     include_tags: null,
@@ -86,7 +86,7 @@ test('filtersHash changes when custom feed key added', () => {
 
 test('filtersHash changes when manual source key added', () => {
   const base = {
-    ioc_type: 'domain',
+    ioc_types: ['domain'],
     min_confidence: null,
     include_feed_keys: ['urlhaus-abusech'],
     include_tags: null,

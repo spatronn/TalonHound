@@ -1,0 +1,33 @@
+-- Cleanup: drop legacy published_feeds.ioc_type after new backend is verified.
+-- Apply ONLY after: migration 139 → backend → frontend → smoke/regenerate.
+SET LOCAL statement_timeout = 0;
+SET LOCAL lock_timeout = '120s';
+
+-- Safety: refuse cleanup if any row is missing a usable ioc_types value.
+DO $$
+DECLARE
+  bad_count bigint;
+BEGIN
+  SELECT COUNT(*) INTO bad_count
+  FROM published_feeds
+  WHERE ioc_types IS NULL
+     OR jsonb_typeof(ioc_types) <> 'array'
+     OR jsonb_array_length(ioc_types) < 1;
+
+  IF bad_count > 0 THEN
+    RAISE EXCEPTION
+      'migration 140 refused: % published_feeds row(s) have null/empty ioc_types; fix data then retry',
+      bad_count;
+  END IF;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_published_feeds_bridge_ioc_types ON published_feeds;
+DROP FUNCTION IF EXISTS published_feeds_bridge_ioc_types();
+
+DROP INDEX IF EXISTS idx_published_feeds_ioc_type;
+
+ALTER TABLE published_feeds
+  DROP CONSTRAINT IF EXISTS chk_published_feeds_ioc_type;
+
+ALTER TABLE published_feeds
+  DROP COLUMN IF EXISTS ioc_type;

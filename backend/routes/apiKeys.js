@@ -17,6 +17,7 @@ import {
   decryptApiKeySecret,
   isApiKeyEncryptionConfigured
 } from '../lib/apiKeyEncryption.js';
+import { resolveFeedIocTypes } from '../lib/feedPublisherService.js';
 
 const LEGACY_REVEAL_MESSAGE = 'This legacy key cannot be revealed.';
 
@@ -25,7 +26,7 @@ const LIST_COLUMNS = `
   k.enabled, k.expires_at, k.last_used_at, k.last_used_ip,
   k.created_at, k.revoked_at, k.deleted_at,
   (k.secret_ciphertext IS NOT NULL) AS has_secret,
-  f.name AS feed_name, f.ioc_type AS feed_ioc_type, f.slug AS feed_slug`;
+  f.name AS feed_name, f.ioc_types AS feed_ioc_types, f.slug AS feed_slug`;
 
 function typeLabel(keyType) {
   return keyType === PUBLISHED_FEED_KEY_TYPE ? 'Published Feed' : 'Feed Access (legacy)';
@@ -57,7 +58,9 @@ function toPublicApiKey(row) {
     // Legacy feed-bound keys keep their feed context for display.
     feed_id: row.feed_id != null ? Number(row.feed_id) : null,
     feed_name: row.feed_name || null,
-    feed_ioc_type: row.feed_ioc_type || null,
+    feed_ioc_types: Array.isArray(row.feed_ioc_types)
+      ? row.feed_ioc_types
+      : (row.feed_ioc_types ? resolveFeedIocTypes({ ioc_types: row.feed_ioc_types }) : null),
     feed_slug: row.feed_slug || null
   };
 }

@@ -258,6 +258,21 @@ describe('published feed excludes suppressed IOCs', () => {
     await fetchIocExportFingerprint(pool, { ioc_type: 'ip', exclude_expired: true }, 'all');
     assert.match(capturedSql, /COALESCE\(i\.status, 'active'\) <> 'suppressed'/);
   });
+
+  it('multi-type feed uses a single IN filter for the type union', async () => {
+    let captured = { sql: '', params: [] };
+    const pool = {
+      async query(sql, params = []) {
+        captured = { sql: String(sql).replace(/\s+/g, ' ').trim(), params: [...params] };
+        return { rows: [] };
+      }
+    };
+    await fetchIocRows(pool, { ioc_types: ['domain', 'url'], exclude_expired: true }, 'all');
+    assert.match(captured.sql, /observable_type IN/);
+    assert.ok(captured.params.includes('domain'));
+    assert.ok(captured.params.includes('url'));
+    assert.ok(!captured.params.includes('ip'));
+  });
 });
 
 describe('published hash feed artifact canonicalization', () => {
@@ -273,6 +288,7 @@ describe('published hash feed artifact canonicalization', () => {
   it('enables canonicalize only for hash feeds when READ on', () => {
     process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
     assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_type: 'hash' }), true);
+    assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_types: ['domain', 'hash'] }), true);
     assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_type: 'ip' }), false);
     delete process.env.FILE_ARTIFACTS_READ_ENABLED;
     assert.equal(shouldCanonicalizePublishedHashFeed({ ioc_type: 'hash' }), false);

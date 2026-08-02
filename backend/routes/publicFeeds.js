@@ -1,11 +1,6 @@
 import { hashFeedAccessToken } from '../lib/feedAccessToken.js';
-import {
-  FEED_IOC_TYPES,
-  FEED_WINDOWS,
-  computeResponseEtag,
-  sliceFeedContent
-} from '../lib/feedFormatter.js';
-import { getLatestSnapshot, normalizeFeedConfig, FEED_EXPORT_MAX_LIMIT } from '../lib/feedPublisherService.js';
+import { FEED_WINDOWS, computeResponseEtag, sliceFeedContent, feedIocTypesKey, normalizeFeedIocTypes } from '../lib/feedFormatter.js';
+import { getLatestSnapshot, normalizeFeedConfig, FEED_EXPORT_MAX_LIMIT, resolveFeedIocTypes } from '../lib/feedPublisherService.js';
 import {
   PUBLISHED_FEED_KEY_TYPE,
   hashApiKey,
@@ -56,13 +51,19 @@ function parseWindowParam(raw, feedDefault) {
   return v;
 }
 
-function parseIocTypeParam(raw, feedIocType) {
-  const feedType = String(feedIocType || '').toLowerCase();
-  if (raw == null || raw === '') return feedType;
+function parseIocTypeParam(raw, feedIocTypes) {
+  const types = resolveFeedIocTypes({ ioc_types: feedIocTypes });
+  const key = feedIocTypesKey(types);
+  if (raw == null || raw === '') return key;
   const v = String(raw).trim().toLowerCase();
-  if (!FEED_IOC_TYPES.includes(v)) return { error: 'Invalid ioc_type' };
-  if (v !== feedType) return { error: 'ioc_type is not allowed for this feed' };
-  return v;
+  const asMulti = normalizeFeedIocTypes(v.includes(',') ? v.split(',') : v);
+  if (asMulti.ok && feedIocTypesKey(asMulti.value) === key) return key;
+  // Single-type feeds accept the legacy scalar match (e.g. ?ioc_type=ip).
+  if (types.length === 1 && types[0] === v) return key;
+  if (!asMulti.ok && !['ip', 'domain', 'url', 'hash'].includes(v)) {
+    return { error: 'Invalid ioc_type' };
+  }
+  return { error: 'ioc_type is not allowed for this feed' };
 }
 
 function touchAccessKey(pool, keyId, ip) {
@@ -78,8 +79,8 @@ function touchAccessKey(pool, keyId, ip) {
  * Serve a feed snapshot's plaintext with caching headers, honoring optional
  * window / limit / ioc_type overrides. Shared by both public endpoints.
  */
-async function serveSnapshot(pool, res, req, { feedId, iocType, window, maxItems }) {
-  const iocTypeResult = parseIocTypeParam(req.query.ioc_type, iocType);
+async function serveSnapshot(pool, res, req, { feedId, iocTypes, window, maxItems }) {
+  const iocTypeResult = parseIocTypeParam(req.query.ioc_type, iocTypes);
   if (iocTypeResult && typeof iocTypeResult === 'object' && iocTypeResult.error) {
     return res.status(400).send(iocTypeResult.error);
   }
@@ -162,7 +163,7 @@ export function registerPublicFeedRoutes(app, pool) {
       }
 
       const { rows: feedRows } = await pool.query(
-        `SELECT id, enabled, ioc_type, time_window, max_items
+        `SELECT id, enabled, ioc_types, time_window, max_items
          FROM published_feeds WHERE slug = $1 LIMIT 1`,
         [slug]
       );
@@ -174,7 +175,7 @@ export function registerPublicFeedRoutes(app, pool) {
       touchAccessKey(pool, key.id, clientIp(req));
       return await serveSnapshot(pool, res, req, {
         feedId: feed.id,
-        iocType: feed.ioc_type,
+        iocTypes: resolveFeedIocTypes(feed),
         window: feed.time_window,
         maxItems: feed.max_items
       });
@@ -198,7 +199,7 @@ export function registerPublicFeedRoutes(app, pool) {
     try {
       const { rows: keyRows } = await pool.query(
         `SELECT k.id, k.enabled, k.revoked_at, k.deleted_at, k.expires_at,
-                f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_type, f.time_window, f.max_items
+                f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_types, f.time_window, f.max_items
          FROM published_feed_access_keys k
          JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.token_hash = $1 AND k.deleted_at IS NULL
@@ -214,7 +215,7 @@ export function registerPublicFeedRoutes(app, pool) {
       touchAccessKey(pool, key.id, clientIp(req));
       return await serveSnapshot(pool, res, req, {
         feedId: key.feed_id,
-        iocType: key.ioc_type,
+        iocTypes: resolveFeedIocTypes(key),
         window: key.time_window,
         maxItems: key.max_items
       });
