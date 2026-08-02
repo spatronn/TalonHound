@@ -77,6 +77,7 @@ import {
   iocSourceConfirmModalOnClose,
   iocSourceFormModalOnClose
 } from './lib/iocSourceFormModal.js';
+import { formModalOnClose } from './lib/formModalClose.js';
 import {
   CREATE_USER_ROLES,
   EMPTY_CREATE_USER_FORM,
@@ -2298,11 +2299,22 @@ function FeedSettingsModal({
   const showTtl = exp.enabled && ['fixed_ttl', 'last_seen_ttl'].includes(exp.expiration_mode);
   const showGrace = exp.enabled && exp.expiration_mode === 'missing_from_feed_ttl';
 
+  const settingsBusy = savingSchedule || savingExpiration || savingConfidence || savingCredentials || testingCredentials || savingColor;
+
   return (
     <FeedHealthModal
       title="Feed settings"
-      onClose={(savingSchedule || savingExpiration || savingConfidence || savingCredentials || testingCredentials) ? undefined : onClose}
-      actions={<button type="button" onClick={onClose} disabled={savingSchedule || savingExpiration || savingConfidence || savingCredentials || testingCredentials}>Close</button>}
+      onClose={formModalOnClose({ busy: settingsBusy, onClose })}
+      actions={(
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={settingsBusy}
+          data-modal-cancel
+        >
+          Close
+        </button>
+      )}
     >
       <div style={{ display: 'grid', gap: 16, fontSize: 13 }}>
         <div>
@@ -3279,7 +3291,14 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   }
 
   function closeSettingsModal() {
-    if (savingScheduleKey || savingCredentialsKey || savingConfidenceKey || testingCredentialsKey) return;
+    if (
+      savingScheduleKey
+      || savingCredentialsKey
+      || savingConfidenceKey
+      || savingExpirationKey
+      || savingColorKey
+      || testingCredentialsKey
+    ) return;
     setEditingFeed(null);
     setSettingsError('');
   }
@@ -5897,108 +5916,106 @@ function PublishedFeedsPage() {
       </section>
 
       {showFormModal ? (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
-          onClick={closeFormModal}
+        <ModalOverlay
+          zIndex={1000}
+          onClose={formModalOnClose({ busy: false, onClose: closeFormModal })}
         >
-          <div style={ui.formModal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>
-              {editing ? 'Edit Published Feed' : 'Create Published Feed'}
-            </h3>
-            <p style={ui.modalSub}>
-              {editing
-                ? 'Update filters and delivery settings. Regenerate snapshots after changing filters.'
-                : 'Create a filtered IOC snapshot feed. Its pull URL is generated automatically from the feed name — pull it with any Published Feed API key.'}
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>
+            {editing ? 'Edit Published Feed' : 'Create Published Feed'}
+          </h3>
+          <p style={ui.modalSub}>
+            {editing
+              ? 'Update filters and delivery settings. Regenerate snapshots after changing filters.'
+              : 'Create a filtered IOC snapshot feed. Its pull URL is generated automatically from the feed name — pull it with any Published Feed API key.'}
+          </p>
+          {!editing ? (
+            <p style={{ ...ui.modalSub, marginTop: -6 }}>
+              Choose the IOC type, filters, default time window, and delivery limits. The feed URL template is shown after creation.
             </p>
-            {!editing ? (
-              <p style={{ ...ui.modalSub, marginTop: -6 }}>
-                Choose the IOC type, filters, default time window, and delivery limits. The feed URL template is shown after creation.
-              </p>
-            ) : null}
+          ) : null}
 
-            <form onSubmit={saveFeed}>
-              {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
-              <FeedFormSection title="Basic">
-                <FeedFormField ui={ui} label="Name">
-                  <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} />
-                </FeedFormField>
-                <FeedFormField ui={ui} label="Enabled">
-                  <label style={ui.checkLabel}>
-                    <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((x) => ({ ...x, enabled: e.target.checked }))} />
-                    Feed is active
-                  </label>
-                </FeedFormField>
-                <FeedFormField ui={ui} label="Description" fullWidth>
-                  <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} />
-                </FeedFormField>
-              </FeedFormSection>
+          <form onSubmit={saveFeed}>
+            {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
+            <FeedFormSection title="Basic">
+              <FeedFormField ui={ui} label="Name">
+                <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} />
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Enabled">
+                <label style={ui.checkLabel}>
+                  <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((x) => ({ ...x, enabled: e.target.checked }))} />
+                  Feed is active
+                </label>
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Description" fullWidth>
+                <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} rows={2} />
+              </FeedFormField>
+            </FeedFormSection>
 
-              <FeedFormSection title="Feed content">
-                <FeedFormField ui={ui} label="IOC Type" helper="The type of indicators this feed will publish. One feed publishes one IOC type.">
-                  <select required value={form.ioc_type} onChange={(e) => setForm((x) => ({ ...x, ioc_type: e.target.value }))} style={ui.select}>
-                    <option value="ip">ip</option>
-                    <option value="domain">domain</option>
-                    <option value="url">url</option>
-                    <option value="hash">hash</option>
-                  </select>
-                </FeedFormField>
-                <FeedFormField ui={ui} label="Default Window" helper="Default time range used when the consumer does not pass ?window=.">
-                  <select value={form.time_window} onChange={(e) => setForm((x) => ({ ...x, time_window: e.target.value }))} style={ui.select}>
-                    {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </FeedFormField>
-                <FeedFormField
+            <FeedFormSection title="Feed content">
+              <FeedFormField ui={ui} label="IOC Type" helper="The type of indicators this feed will publish. One feed publishes one IOC type.">
+                <select required value={form.ioc_type} onChange={(e) => setForm((x) => ({ ...x, ioc_type: e.target.value }))} style={ui.select}>
+                  <option value="ip">ip</option>
+                  <option value="domain">domain</option>
+                  <option value="url">url</option>
+                  <option value="hash">hash</option>
+                </select>
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Default Window" helper="Default time range used when the consumer does not pass ?window=.">
+                <select value={form.time_window} onChange={(e) => setForm((x) => ({ ...x, time_window: e.target.value }))} style={ui.select}>
+                  {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </FeedFormField>
+              <FeedFormField
+                ui={ui}
+                label="Threat Feeds"
+                helper="Optional. Leave empty to include all feeds, or select integration feeds, custom threat feeds, and manual IOC sources to limit IOC provenance."
+                fullWidth
+              >
+                <FeedIntegrationMultiSelect
                   ui={ui}
-                  label="Threat Feeds"
-                  helper="Optional. Leave empty to include all feeds, or select integration feeds, custom threat feeds, and manual IOC sources to limit IOC provenance."
-                  fullWidth
-                >
-                  <FeedIntegrationMultiSelect
-                    ui={ui}
-                    options={sourceFeeds}
-                    value={form.include_feed_keys}
-                    onChange={(next) => setForm((x) => ({ ...x, include_feed_keys: next }))}
-                  />
-                </FeedFormField>
-              </FeedFormSection>
+                  options={sourceFeeds}
+                  value={form.include_feed_keys}
+                  onChange={(next) => setForm((x) => ({ ...x, include_feed_keys: next }))}
+                />
+              </FeedFormField>
+            </FeedFormSection>
 
-              <FeedFormSection title="Safety filters">
-                <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                  <label style={ui.checkLabel}>
-                    <input type="checkbox" checked={form.exclude_false_positive} onChange={(e) => setForm((x) => ({ ...x, exclude_false_positive: e.target.checked }))} />
-                    Exclude false positives
-                  </label>
-                  <label style={ui.checkLabel}>
-                    <input type="checkbox" checked={form.exclude_expired} onChange={(e) => setForm((x) => ({ ...x, exclude_expired: e.target.checked }))} />
-                    Exclude expired
-                  </label>
-                </div>
-                <FeedFormField ui={ui} label="Include Tags" helper="Optional. Comma-separated tag names.">
-                  <input value={form.include_tags} onChange={(e) => setForm((x) => ({ ...x, include_tags: e.target.value }))} style={ui.input} />
-                </FeedFormField>
-                <FeedFormField ui={ui} label="Exclude Tags" helper="Optional. Comma-separated tag names.">
-                  <input value={form.exclude_tags} onChange={(e) => setForm((x) => ({ ...x, exclude_tags: e.target.value }))} style={ui.input} />
-                </FeedFormField>
-              </FeedFormSection>
-
-              <FeedFormSection title="Delivery">
-                <FeedFormField ui={ui} label="Max Items" helper="Optional cap for products that support limited feed size, e.g. 40,000 IPs.">
-                  <input type="number" min={1} placeholder="optional" value={form.max_items} onChange={(e) => setForm((x) => ({ ...x, max_items: e.target.value }))} style={ui.input} />
-                </FeedFormField>
-                <FeedFormField ui={ui} label="Refresh (minutes)" helper="How often snapshots should be regenerated. Minimum 5 minutes.">
-                  <input type="number" min={5} value={form.refresh_interval_minutes} onChange={(e) => setForm((x) => ({ ...x, refresh_interval_minutes: e.target.value }))} style={ui.input} />
-                </FeedFormField>
-              </FeedFormSection>
-
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, paddingTop: 16, borderTop: '1px solid #334155' }}>
-                <button type="button" style={ui.btn} onClick={closeFormModal}>Cancel</button>
-                <button type="submit" style={ui.btnPrimary} disabled={!canWrite}>
-                  {editing ? 'Save changes' : 'Create Feed'}
-                </button>
+            <FeedFormSection title="Safety filters">
+              <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                <label style={ui.checkLabel}>
+                  <input type="checkbox" checked={form.exclude_false_positive} onChange={(e) => setForm((x) => ({ ...x, exclude_false_positive: e.target.checked }))} />
+                  Exclude false positives
+                </label>
+                <label style={ui.checkLabel}>
+                  <input type="checkbox" checked={form.exclude_expired} onChange={(e) => setForm((x) => ({ ...x, exclude_expired: e.target.checked }))} />
+                  Exclude expired
+                </label>
               </div>
-            </form>
-          </div>
-        </div>
+              <FeedFormField ui={ui} label="Include Tags" helper="Optional. Comma-separated tag names.">
+                <input value={form.include_tags} onChange={(e) => setForm((x) => ({ ...x, include_tags: e.target.value }))} style={ui.input} />
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Exclude Tags" helper="Optional. Comma-separated tag names.">
+                <input value={form.exclude_tags} onChange={(e) => setForm((x) => ({ ...x, exclude_tags: e.target.value }))} style={ui.input} />
+              </FeedFormField>
+            </FeedFormSection>
+
+            <FeedFormSection title="Delivery">
+              <FeedFormField ui={ui} label="Max Items" helper="Optional cap for products that support limited feed size, e.g. 40,000 IPs.">
+                <input type="number" min={1} placeholder="optional" value={form.max_items} onChange={(e) => setForm((x) => ({ ...x, max_items: e.target.value }))} style={ui.input} />
+              </FeedFormField>
+              <FeedFormField ui={ui} label="Refresh (minutes)" helper="How often snapshots should be regenerated. Minimum 5 minutes.">
+                <input type="number" min={5} value={form.refresh_interval_minutes} onChange={(e) => setForm((x) => ({ ...x, refresh_interval_minutes: e.target.value }))} style={ui.input} />
+              </FeedFormField>
+            </FeedFormSection>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, paddingTop: 16, borderTop: '1px solid #334155' }}>
+              <button type="button" style={ui.btn} onClick={closeFormModal} data-modal-cancel>Cancel</button>
+              <button type="submit" style={ui.btnPrimary} disabled={!canWrite}>
+                {editing ? 'Save changes' : 'Create Feed'}
+              </button>
+            </div>
+          </form>
+        </ModalOverlay>
       ) : null}
 
       {urlTemplateFeed ? (

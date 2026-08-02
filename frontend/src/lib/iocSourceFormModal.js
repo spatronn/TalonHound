@@ -1,10 +1,9 @@
 /**
  * Close / dismiss rules for IOC Sources Edit/Add (and related page modals).
- * Visual dismissal goes through ModalOverlay; these helpers keep busy-state
- * contracts unit-testable without mounting React.
+ * Thin wrappers over shared formModalClose helpers (ModalOverlay contract).
  */
 
-import { canCloseModal } from './modalOverlay.js';
+import { canDismissFormModal, formModalOnClose } from './formModalClose.js';
 
 /**
  * Edit/Add form may dismiss via Escape, backdrop, or Cancel only when not saving.
@@ -12,10 +11,7 @@ import { canCloseModal } from './modalOverlay.js';
  * @returns {boolean}
  */
 export function canDismissIocSourceFormModal({ saving = false } = {}) {
-  return canCloseModal({
-    onClose: saving ? null : () => {},
-    closeOnEsc: true
-  });
+  return canDismissFormModal({ busy: saving });
 }
 
 /**
@@ -24,8 +20,7 @@ export function canDismissIocSourceFormModal({ saving = false } = {}) {
  * @returns {Function | undefined}
  */
 export function iocSourceFormModalOnClose({ saving = false, onClose } = {}) {
-  if (typeof onClose !== 'function') return undefined;
-  return canDismissIocSourceFormModal({ saving }) ? onClose : undefined;
+  return formModalOnClose({ busy: saving, onClose });
 }
 
 /**
@@ -35,6 +30,5 @@ export function iocSourceFormModalOnClose({ saving = false, onClose } = {}) {
  * @returns {Function | undefined}
  */
 export function iocSourceConfirmModalOnClose({ busy = false, onClose } = {}) {
-  if (typeof onClose !== 'function') return undefined;
-  return busy ? undefined : onClose;
+  return formModalOnClose({ busy, onClose });
 }
