@@ -485,15 +485,16 @@
 
 .br-btn-primary,
 button.br-btn.br-btn-primary {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.75), rgba(37, 99, 235, 0.72));
-  border-color: rgba(96, 165, 250, 0.55);
-  color: #eff6ff;
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  box-shadow: none;
 }
 
 .br-btn-primary:hover:not(:disabled),
 button.br-btn.br-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.85));
+  background: #1d4ed8;
+  border-color: #1d4ed8;
 }
 
 .br-btn-outline {
@@ -508,9 +509,30 @@ button.br-btn.br-btn-primary:hover:not(:disabled) {
 
 .br-btn-danger,
 button.br-btn.br-btn-danger {
-  background: rgba(127, 29, 29, 0.4);
-  border-color: rgba(248, 113, 113, 0.5);
+  background: transparent;
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fca5a5;
+  box-shadow: none;
+}
+
+.br-btn-danger:hover:not(:disabled),
+button.br-btn.br-btn-danger:hover:not(:disabled) {
+  background: rgba(127, 29, 29, 0.22);
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+/* Modal footer destructive confirm — sole strong red action */
+.br-modal .br-btn-danger,
+.br-modal button.br-btn.br-btn-danger {
+  background: #7f1d1d;
+  border-color: #991b1b;
   color: #fecaca;
+}
+
+.br-modal .br-btn-danger:hover:not(:disabled),
+.br-modal button.br-btn.br-btn-danger:hover:not(:disabled) {
+  background: #991b1b;
+  border-color: #b91c1c;
 }
 
 .br-btn-ghost {

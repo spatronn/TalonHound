@@ -128,7 +128,7 @@ function SortableClassificationRow({
           {item.slug === 'unknown' ? null : item.active ? (
             <button
               type="button"
-              style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }}
+              style={{ ...ui.btnDanger }}
               onClick={() => onDisable(item)}
               disabled={disabled}
             >

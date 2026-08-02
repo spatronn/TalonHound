@@ -66,7 +66,7 @@ import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import { resolveRowPasswordAction, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
 import { submitChangePassword } from './lib/changePasswordForm.js';
 import { resolveUserRowControls } from './lib/userRowControls.js';
-import { buttonClassName } from './lib/uiButtons.js';
+import { buttonClassName, confirmButtonVariant } from './lib/uiButtons.js';
 import {
   canCloseModal,
   modalSizeClass,
@@ -730,9 +730,7 @@ function IocExpirationActionModal({
     width: '100%',
     boxSizing: 'border-box'
   };
-  const confirmStyle = pending.danger
-    ? { ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.25)' }
-    : ui.btnPrimary;
+  const confirmStyle = pending.danger ? ui.btnDangerSolid : ui.btnPrimary;
   const minDateTimeLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
@@ -1497,11 +1495,7 @@ function useReasonPrompt() {
 }
 
 function AppConfirmHost({ state, controller }) {
-  const confirmVariant = state.variant === 'danger'
-    ? 'danger'
-    : state.variant === 'warning'
-      ? 'warning'
-      : 'primary';
+  const confirmVariant = confirmButtonVariant(state.variant);
   const footer = (
     <>
       <button
@@ -2163,12 +2157,12 @@ function FeedActiveConfirmModal({ feed, mode, loading, error, onCancel, onConfir
       onClose={loading ? undefined : onCancel}
       actions={(
         <>
-          <button type="button" onClick={onCancel} disabled={loading}>Cancel</button>
+          <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onCancel} disabled={loading} data-modal-cancel>Cancel</button>
           <button
             type="button"
+            className={buttonClassName({ variant: enable ? 'primary' : 'dangerSolid' })}
             onClick={onConfirm}
             disabled={loading}
-            style={enable ? undefined : { background: '#991b1b', borderColor: '#7f1d1d' }}
           >
             {loading ? (enable ? 'Enabling...' : 'Disabling...') : (enable ? 'Enable Feed' : 'Disable Feed')}
           </button>
@@ -2714,7 +2708,7 @@ function FeedSettingsModal({
                   onClick={onOpenPurge}
                   disabled={purgeActive}
                   title={purgeActive ? 'A purge job is already running for this feed.' : undefined}
-                  style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #7f1d1d', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
+                  style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(248, 113, 113, 0.45)', background: 'transparent', color: '#fca5a5', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
                 >
                   Purge feed data
                 </button>
@@ -2724,7 +2718,7 @@ function FeedSettingsModal({
                     onClick={onArchive}
                     disabled={purgeActive}
                     title={purgeActive ? 'Wait for the purge job to finish before archiving.' : undefined}
-                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #854d0e', background: 'rgba(120,53,15,0.2)', color: '#fcd34d', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
+                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', cursor: purgeActive ? 'not-allowed' : 'pointer', opacity: purgeActive ? 0.55 : 1 }}
                   >
                     Archive feed
                   </button>
@@ -2736,7 +2730,7 @@ function FeedSettingsModal({
                   <button
                     type="button"
                     onClick={onRestore}
-                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid #166534', background: 'rgba(20,83,45,0.2)', color: '#86efac', cursor: 'pointer' }}
+                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #475569', background: '#1f2937', color: '#e2e8f0', cursor: 'pointer' }}
                   >
                     Restore feed
                   </button>
@@ -5071,7 +5065,7 @@ function CustomThreatFeedsPage() {
                         onRequestActiveChange={requestActiveChange}
                       />
                       <div style={{ marginTop: 12 }}>
-                        <button type="button" onClick={openPurgeFromEdit} style={{ fontSize: 12, color: '#fca5a5', background: 'transparent', border: '1px solid #7f1d1d', borderRadius: 6, padding: '4px 10px' }}>
+                        <button type="button" onClick={openPurgeFromEdit} style={{ fontSize: 12, color: '#fca5a5', background: 'transparent', border: '1px solid rgba(248, 113, 113, 0.45)', borderRadius: 8, padding: '5px 10px' }}>
                           Purge feed data
                         </button>
                       </div>
@@ -5171,9 +5165,9 @@ function CustomThreatFeedsPage() {
                   {canDel ? (
                     <button
                       type="button"
+                      className={buttonClassName({ variant: 'dangerSolid', size: 'sm' })}
                       disabled={deleteLoading}
                       onClick={() => confirmDelete().catch(() => {})}
-                      style={{ padding: '6px 14px', background: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b', borderRadius: 6, cursor: deleteLoading ? 'not-allowed' : 'pointer', fontWeight: 600 }}
                     >
                       {deleteLoading
                         ? 'Deleting…'
@@ -5182,7 +5176,7 @@ function CustomThreatFeedsPage() {
                           : 'Confirm delete'}
                     </button>
                   ) : null}
-                  <button type="button" onClick={() => setDeleteModal(null)} disabled={deleteLoading}>
+                  <button type="button" className={buttonClassName({ variant: 'secondary', size: 'sm' })} onClick={() => setDeleteModal(null)} disabled={deleteLoading} data-modal-cancel>
                     {canDel ? 'Cancel' : 'Close'}
                   </button>
                 </div>
@@ -5395,11 +5389,31 @@ const PUBLISHED_FEEDS_UI = {
     cursor: 'pointer'
   },
   btnPrimary: {
-    padding: '8px 18px',
+    padding: '8px 14px',
     borderRadius: 8,
-    border: 'none',
+    border: '1px solid #2563eb',
     background: '#2563eb',
     color: '#fff',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer'
+  },
+  btnDanger: {
+    padding: '8px 14px',
+    borderRadius: 8,
+    border: '1px solid rgba(248,113,113,0.45)',
+    background: 'transparent',
+    color: '#fca5a5',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer'
+  },
+  btnDangerSolid: {
+    padding: '8px 14px',
+    borderRadius: 8,
+    border: '1px solid #991b1b',
+    background: '#7f1d1d',
+    color: '#fecaca',
     fontSize: 13,
     fontWeight: 600,
     cursor: 'pointer'
@@ -6114,7 +6128,7 @@ function AuditLogsPage() {
             <option value={50}>50 / page</option>
             <option value={100}>100 / page</option>
           </select>
-          <button type="button" style={ui.btnPrimary} onClick={applyFilters}>Apply</button>
+          <button type="button" style={ui.btn} onClick={applyFilters}>Apply</button>
         </div>
 
         {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
@@ -6433,7 +6447,7 @@ function ApiKeysPage() {
                         ) : null}
                         <button
                           type="button"
-                          style={{ ...ui.btn, marginLeft: k.status !== 'expired' ? 6 : 0, borderColor: '#7f1d1d', color: '#fca5a5' }}
+                          style={{ ...ui.btnDanger, marginLeft: k.status !== 'expired' ? 6 : 0 }}
                           onClick={() => setDeleteTarget(k)}
                         >
                           Delete
@@ -6527,10 +6541,10 @@ function ApiKeysPage() {
               {DELETE_KEY_WARNING}
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-              <button type="button" style={ui.btn} disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button type="button" className={buttonClassName({ variant: 'secondary' })} disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button>
               <button
                 type="button"
-                style={{ ...ui.btnPrimary, background: '#b91c1c', borderColor: '#7f1d1d' }}
+                className={buttonClassName({ variant: 'dangerSolid' })}
                 disabled={deleting}
                 onClick={() => confirmDelete().catch(() => {})}
               >
@@ -7155,7 +7169,7 @@ function TagManagerPage() {
                   <td style={ui.td}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(tag)}>Edit</button>
                     {tag.is_active ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableTag(tag).catch(() => {})}>Disable</button>
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => disableTag(tag).catch(() => {})}>Disable</button>
                     ) : (
                       <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableTag(tag).catch(() => {})}>Enable</button>
                     )}
@@ -7762,7 +7776,7 @@ function ThreatActorManagerPage() {
                   <td style={ui.td}>
                     <button type="button" style={ui.btn} onClick={() => openEditModal(actor)}>Edit</button>
                     {actor.active ? (
-                      <button type="button" style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableActor(actor).catch(() => {})}>Disable</button>
+                      <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => disableActor(actor).catch(() => {})}>Disable</button>
                     ) : (
                       <button type="button" style={{ ...ui.btn, marginLeft: 6 }} onClick={() => enableActor(actor).catch(() => {})}>Enable</button>
                     )}
@@ -8220,7 +8234,7 @@ function IocSourcesPage() {
                     </button>
                     <button
                       type="button"
-                      style={{ ...ui.btn, marginLeft: 6, borderColor: '#7f1d1d', color: '#fca5a5' }}
+                      style={{ ...ui.btnDanger, marginLeft: 6 }}
                       onClick={() => handleDeleteClick(s)}
                     >
                       Delete
@@ -8389,7 +8403,7 @@ function IocSourcesPage() {
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => setDisableTarget(null)}>Cancel</button>
-              <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
+              <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
                 {disableBusy ? 'Disabling…' : 'Disable Source'}
               </button>
             </div>
@@ -8410,7 +8424,7 @@ function IocSourcesPage() {
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => setArchiveTarget(null)}>Cancel</button>
-              <button type="button" style={{ ...ui.btn, borderColor: '#92400e', color: '#fde68a' }} disabled={archiveBusy} onClick={() => confirmArchiveSource().catch(() => {})}>
+              <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => confirmArchiveSource().catch(() => {})}>
                 {archiveBusy ? 'Archiving…' : 'Archive Source'}
               </button>
             </div>
@@ -8486,7 +8500,7 @@ function IocSourcesPage() {
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal}>Cancel</button>
-                  <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
+                  <button type="button" style={ui.btnDangerSolid} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
                     {deleteBusy ? 'Deleting…' : 'Delete source'}
                   </button>
                 </div>
@@ -8608,52 +8622,6 @@ function BackupRestorePage() {
 }
 
 const EMPTY_CREATE_USER_FORM_STATE = { ...EMPTY_CREATE_USER_FORM };
-
-const USERS_ACTION_BTN = {
-  deactivate: {
-    padding: '6px 10px',
-    borderRadius: 8,
-    border: '1px solid #b45309',
-    background: 'rgba(180,83,9,0.2)',
-    color: '#fcd34d',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer'
-  },
-  activate: {
-    padding: '6px 10px',
-    borderRadius: 8,
-    border: '1px solid #166534',
-    background: 'rgba(22,101,52,0.25)',
-    color: '#86efac',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer'
-  },
-  delete: {
-    padding: '6px 12px',
-    borderRadius: 8,
-    border: '1px solid #7f1d1d',
-    background: 'rgba(127,29,29,0.25)',
-    color: '#fca5a5',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6
-  },
-  reset: {
-    padding: '6px 10px',
-    borderRadius: 8,
-    border: '1px solid #1d4ed8',
-    background: 'rgba(37,99,235,0.2)',
-    color: '#93c5fd',
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer'
-  }
-};
 
 function formatUserDisplayName(u) {
   const t = `${u?.first_name || ''} ${u?.last_name || ''}`.trim();
@@ -9177,7 +9145,7 @@ function DeleteUserConfirmModal({ user, submitting, onCancel, onConfirm }) {
       </button>
       <button
         type="button"
-        className={buttonClassName({ variant: 'danger' })}
+        className={buttonClassName({ variant: 'dangerSolid' })}
         onClick={onConfirm}
         disabled={submitting}
       >
@@ -9259,7 +9227,6 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                         type="button"
                         className={buttonClassName({ variant: 'secondary', size: 'sm' })}
                         onClick={() => onChangePassword(u)}
-                        style={USERS_ACTION_BTN.reset}
                         title="Change your own password"
                       >
                         Change Password
@@ -9271,11 +9238,6 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                         className={buttonClassName({ variant: 'secondary', size: 'sm' })}
                         onClick={() => onResetPassword(u)}
                         disabled={resetBusy}
-                        style={{
-                          ...USERS_ACTION_BTN.reset,
-                          opacity: resetBusy ? 0.4 : 1,
-                          cursor: resetBusy ? 'wait' : 'pointer'
-                        }}
                         title="Generate a temporary password and force a change at next login"
                       >
                         {resetBusy ? '…' : 'Reset Password'}
@@ -9284,14 +9246,9 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     {!isPassive ? (
                       <button
                         type="button"
-                        className={buttonClassName({ variant: 'warning', size: 'sm' })}
+                        className={buttonClassName({ variant: 'secondary', size: 'sm' })}
                         onClick={() => onSetStatus(u.id, 'passive')}
                         disabled={controls.deactivateDisabled}
-                        style={{
-                          ...USERS_ACTION_BTN.deactivate,
-                          opacity: controls.deactivateDisabled ? 0.4 : 1,
-                          cursor: controls.deactivateDisabled ? 'not-allowed' : 'pointer'
-                        }}
                         title={controls.deactivateTitle}
                       >
                         {busy ? '…' : 'Deactivate'}
@@ -9299,14 +9256,9 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     ) : (
                       <button
                         type="button"
-                        className={buttonClassName({ variant: 'success', size: 'sm' })}
+                        className={buttonClassName({ variant: 'secondary', size: 'sm' })}
                         onClick={() => onSetStatus(u.id, 'active')}
                         disabled={busy}
-                        style={{
-                          ...USERS_ACTION_BTN.activate,
-                          opacity: busy ? 0.4 : 1,
-                          cursor: busy ? 'wait' : 'pointer'
-                        }}
                         title="Activate user"
                       >
                         {busy ? '…' : 'Activate'}
@@ -9317,11 +9269,6 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                       className={buttonClassName({ variant: 'danger', size: 'sm' })}
                       onClick={() => onRemove(u)}
                       disabled={controls.deleteDisabled}
-                      style={{
-                        ...USERS_ACTION_BTN.delete,
-                        opacity: controls.deleteDisabled ? 0.4 : 1,
-                        cursor: controls.deleteDisabled ? 'not-allowed' : 'pointer'
-                      }}
                       title={controls.deleteTitle}
                     >
                       Delete
@@ -10200,7 +10147,7 @@ function IOCSuppressionsPage() {
           {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setDeleteItem(null)} disabled={deleteSaving}>Cancel</button>
-            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => confirmDelete().catch(() => {})} disabled={!isAdmin || deleteSaving}>{deleteSaving ? 'Deleting…' : 'Delete suppression'}</button>
+            <button type="button" style={ui.btnDanger} onClick={() => confirmDelete().catch(() => {})} disabled={!isAdmin || deleteSaving}>{deleteSaving ? 'Deleting…' : 'Delete suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -11130,7 +11077,7 @@ function IOCListPage() {
           <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <button onClick={addAdvCondition}>Add condition</button>
             <button onClick={resetAdvanced}>Reset</button>
-            <button onClick={applyAdvancedSearch} style={{ borderColor: '#16a34a', color: '#86efac' }}>Apply Search</button>
+            <button onClick={applyAdvancedSearch}>Apply Search</button>
             <code style={{ marginLeft: 'auto', fontSize: 12, color: '#7dd3fc', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {buildDslFromConditions(advMatch, advConditions) || '—'}
             </code>
@@ -11181,7 +11128,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
               <button onClick={dslPrevPage} disabled={dslCursorStack.length === 0 || dslLoading}>Prev</button>
               <button onClick={dslNextPage} disabled={!dslResult.has_more || dslLoading}>Next</button>
               <button onClick={() => { setAdvancedOpen(true); if (dslSearchInputRef.current) dslSearchInputRef.current.focus(); }}>Refine search</button>
-              <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} style={{ borderColor: '#16a34a', color: '#86efac' }} disabled={exportBusy}>Export matching IOCs</button>
+              <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} disabled={exportBusy}>Export matching IOCs</button>
             </div>
           </div>
           {(dslResult.warnings || []).map((w, i) => (
@@ -11226,7 +11173,7 @@ tag equals "mirai" AND tag equals "botnet"`}</pre>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={() => setExportModalOpen(false)} disabled={exportBusy}>Cancel</button>
-            <button onClick={createExport} disabled={exportBusy || exportColumns.length === 0} style={{ borderColor: '#16a34a', color: '#86efac' }}>{exportBusy ? 'Creating…' : 'Create Export'}</button>
+            <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={createExport} disabled={exportBusy || exportColumns.length === 0}>{exportBusy ? 'Creating…' : 'Create Export'}</button>
           </div>
         </ModalOverlay>
       )}
@@ -14553,7 +14500,7 @@ function IOCDetailsPage() {
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>
                   {isAdmin ? (
-                    <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Disable suppression</button>
+                    <button type="button" style={ui.btnDanger} onClick={() => { setShowRemoveConfirm(true); setRemoveError(''); }}>Disable suppression</button>
                   ) : null}
                 </div>
               </div>
@@ -14940,7 +14887,7 @@ function IOCDetailsPage() {
           {removeError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{removeError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setShowRemoveConfirm(false)} disabled={removeSaving}>Cancel</button>
-            <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => submitDisableSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Disabling…' : 'Disable suppression'}</button>
+            <button type="button" style={ui.btnDanger} onClick={() => submitDisableSuppression().catch(() => {})} disabled={removeSaving}>{removeSaving ? 'Disabling…' : 'Disable suppression'}</button>
           </div>
         </ModalOverlay>
       ) : null}
@@ -14964,7 +14911,7 @@ function IOCDetailsPage() {
               </button>
               <button
                 type="button"
-                className={buttonClassName({ variant: 'danger' })}
+                className={buttonClassName({ variant: 'dangerSolid' })}
                 onClick={() => submitDeleteIoc().catch(() => {})}
                 disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}
               >
@@ -15970,16 +15917,22 @@ function App() {
           border: 1px solid #475569;
           cursor: pointer;
         }
-        button:hover:not(:disabled) { background: #334155; }
+        button:hover:not(:disabled) {
+          background: #273549;
+          border-color: #64748b;
+        }
         button:disabled {
-          opacity: 0.55;
+          opacity: 0.5;
           cursor: not-allowed;
+          pointer-events: none;
         }
         .th-btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 6px;
+          box-sizing: border-box;
+          min-height: 36px;
           padding: 8px 14px;
           border-radius: 8px;
           font-size: 13px;
@@ -15990,19 +15943,25 @@ function App() {
           color: #e2e8f0;
           cursor: pointer;
         }
-        .th-btn:hover:not(:disabled) { background: #334155; }
+        .th-btn:hover:not(:disabled) {
+          background: #273549;
+          border-color: #64748b;
+        }
         .th-btn:focus-visible {
-          outline: 2px solid #93c5fd;
+          outline: 2px solid rgba(147, 197, 253, 0.7);
           outline-offset: 2px;
         }
         .th-btn:disabled {
-          opacity: 0.55;
+          opacity: 0.5;
           cursor: not-allowed;
+          pointer-events: none;
         }
         .th-btn--sm {
-          padding: 6px 10px;
+          min-height: 30px;
+          padding: 5px 10px;
           font-size: 12px;
         }
+        /* Sparse accent: only page/modal primary CTAs */
         .th-btn--primary {
           background: #2563eb;
           border-color: #2563eb;
@@ -16012,47 +15971,54 @@ function App() {
           background: #1d4ed8;
           border-color: #1d4ed8;
         }
-        .th-btn--secondary {
+        /* Neutral family — secondary / warning / success share one look */
+        .th-btn--secondary,
+        .th-btn--warning,
+        .th-btn--success {
           background: #1f2937;
           border-color: #475569;
           color: #e2e8f0;
         }
+        .th-btn--secondary:hover:not(:disabled),
+        .th-btn--warning:hover:not(:disabled),
+        .th-btn--success:hover:not(:disabled) {
+          background: #273549;
+          border-color: #64748b;
+        }
+        /* Subtle danger for table/row destructive actions */
         .th-btn--danger {
-          background: rgba(127, 29, 29, 0.35);
-          border-color: #7f1d1d;
+          background: transparent;
+          border-color: rgba(248, 113, 113, 0.45);
           color: #fca5a5;
         }
         .th-btn--danger:hover:not(:disabled) {
-          background: rgba(127, 29, 29, 0.5);
+          background: rgba(127, 29, 29, 0.22);
+          border-color: rgba(248, 113, 113, 0.7);
+        }
+        /* Strong danger — destructive modal confirm only */
+        .th-btn--danger-solid {
+          background: #7f1d1d;
+          border-color: #991b1b;
+          color: #fecaca;
+        }
+        .th-btn--danger-solid:hover:not(:disabled) {
+          background: #991b1b;
+          border-color: #b91c1c;
         }
         .th-btn--ghost {
           background: transparent;
           border-color: transparent;
-          color: #e2e8f0;
+          color: #cbd5e1;
         }
         .th-btn--ghost:hover:not(:disabled) {
-          background: rgba(148, 163, 184, 0.12);
+          background: rgba(148, 163, 184, 0.1);
+          border-color: transparent;
         }
         .th-btn--icon {
           padding: 6px;
           width: 32px;
           height: 32px;
-        }
-        .th-btn--warning {
-          background: rgba(180, 83, 9, 0.2);
-          border-color: #b45309;
-          color: #fcd34d;
-        }
-        .th-btn--warning:hover:not(:disabled) {
-          background: rgba(180, 83, 9, 0.32);
-        }
-        .th-btn--success {
-          background: rgba(22, 101, 52, 0.25);
-          border-color: #166534;
-          color: #86efac;
-        }
-        .th-btn--success:hover:not(:disabled) {
-          background: rgba(22, 101, 52, 0.38);
+          min-height: 32px;
         }
         html, body, #root {
           background: #0b1220 !important;
