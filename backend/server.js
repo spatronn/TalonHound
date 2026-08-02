@@ -38,6 +38,10 @@ import {
   getQueryTimeoutMs,
   isDslError
 } from './lib/iocSearchDsl/index.js';
+import {
+  buildSearchPageSql,
+  buildSearchProbeSql
+} from './lib/iocSearchDsl/searchPageSql.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerDnsmaniaEnrichmentRoutes } from './routes/dnsmaniaEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
@@ -4409,127 +4413,33 @@ async function handleIocSearch(req, res) {
   const fetchLimit = effectivePageSize + 1;
 
   let keysetClause = '';
+  let cursorParamStart = null;
   if (cursor) {
     params.push(cursor.t);
     params.push(cursor.id);
-    keysetClause = ` AND (i.created_at, i.id) < ($${dslParamCount + 1}::timestamptz, $${dslParamCount + 2}::bigint)`;
+    cursorParamStart = dslParamCount + 1;
+    keysetClause = ` AND (i.created_at, i.id) < ($${cursorParamStart}::timestamptz, $${cursorParamStart + 1}::bigint)`;
   }
   params.push(fetchLimit);
   const limitIdx = params.length;
 
-  const pageSql = isFileArtifactsReadEnabled()
-    ? `
-    WITH matched AS (
-      SELECT i.id, i.public_id, i.observable, i.observable_type,
-             COALESCE(i.status, 'active') AS status,
-             i.first_seen_at, i.last_seen_at, i.created_at,
-             i.source_name, i.confidence, i.category,
-             i.threat_classification, i.threat_actor_id
-      FROM ioc_items i
-      WHERE ${whereSql}
-    ),
-    ann AS (
-      SELECT m.*,
-             CASE
-               WHEN fa.id IS NULL THEN NULL
-               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL THEN fa.merged_into_artifact_id
-               ELSE fa.id
-             END AS artifact_id,
-             faph.hash_type AS primary_hash_type,
-             faph.normalized_hash_value AS primary_hash_value,
-             CASE
-               WHEN fa.id IS NULL THEN 'o:' || m.observable_type || ':' || LOWER(m.observable)
-               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
-                 THEN 'a:' || fa.merged_into_artifact_id::text
-               ELSE 'a:' || fa.id::text
-             END AS identity_key
-      FROM matched m
-      LEFT JOIN file_artifact_ioc_links fal
-        ON fal.ioc_item_id = m.id AND fal.ioc_observable_type = m.observable_type
-      LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
-      LEFT JOIN file_artifact_hashes faph
-        ON faph.artifact_id = COALESCE(
-             CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END,
-             fa.id
-           )
-       AND faph.is_primary = TRUE
-    ),
-    grouped AS (
-      SELECT
-        identity_key,
-        MIN(created_at) AS platform_imported_at,
-        (ARRAY_AGG(id ORDER BY
-          CASE WHEN primary_hash_value IS NOT NULL
-            AND LOWER(observable) = LOWER(primary_hash_value)
-            AND LOWER(observable_type) = LOWER(primary_hash_type) THEN 0 ELSE 1 END,
-          CASE LOWER(observable_type) WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END,
-          created_at ASC, id ASC
-        ))[1]::bigint AS id,
-        (ARRAY_AGG(public_id::text ORDER BY
-          CASE WHEN primary_hash_value IS NOT NULL
-            AND LOWER(observable) = LOWER(primary_hash_value)
-            AND LOWER(observable_type) = LOWER(primary_hash_type) THEN 0 ELSE 1 END,
-          CASE LOWER(observable_type) WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END,
-          created_at ASC, id ASC
-        ))[1] AS public_id,
-        COALESCE(
-          (ARRAY_AGG(primary_hash_value) FILTER (WHERE primary_hash_value IS NOT NULL))[1],
-          (ARRAY_AGG(observable ORDER BY created_at ASC, id ASC))[1]
-        ) AS observable,
-        COALESCE(
-          (ARRAY_AGG(primary_hash_type) FILTER (WHERE primary_hash_type IS NOT NULL))[1],
-          (ARRAY_AGG(observable_type ORDER BY created_at ASC, id ASC))[1]
-        ) AS observable_type,
-        (ARRAY_AGG(status ORDER BY created_at DESC))[1] AS status,
-        MIN(first_seen_at) AS first_seen_at,
-        MAX(last_seen_at) AS last_seen_at,
-        (ARRAY_AGG(artifact_id) FILTER (WHERE artifact_id IS NOT NULL))[1] AS artifact_id
-      FROM ann
-      GROUP BY identity_key
-    )
-    SELECT id, public_id, observable, observable_type, status,
-           first_seen_at, last_seen_at, platform_imported_at AS created_at, artifact_id, identity_key
-    FROM grouped
-    WHERE TRUE${cursor
-      ? ` AND (platform_imported_at, id) < ($${dslParamCount + 1}::timestamptz, $${dslParamCount + 2}::bigint)`
-      : ''}
-    ORDER BY platform_imported_at DESC, id DESC
-    LIMIT $${limitIdx}`
-    : `
-    SELECT i.id, i.public_id, i.observable, i.observable_type,
-           COALESCE(i.status, 'active') AS status,
-           i.first_seen_at, i.last_seen_at, i.created_at
-    FROM ioc_items i
-    WHERE ${whereSql}${keysetClause}
-    ORDER BY i.created_at DESC, i.id DESC
-    LIMIT $${limitIdx}`;
+  const faRead = isFileArtifactsReadEnabled();
+  const pageSql = buildSearchPageSql({
+    fileArtifactsReadEnabled: faRead,
+    whereSql,
+    keysetClause,
+    cursorParamStart,
+    limitParamIdx: limitIdx
+  });
 
   // Probe (first page only) to derive an exact count for small result sets or the
   // "N+" indicator for large ones, without a full COUNT. Bounded by previewLimit+1.
   const probeLimit = previewLimit + 1;
-  const probeSql = isFileArtifactsReadEnabled()
-    ? `
-    WITH matched AS (
-      SELECT i.id, i.observable, i.observable_type
-      FROM ioc_items i
-      WHERE ${whereSql}
-      LIMIT ${Math.max(probeLimit * 5, probeLimit)}
-    ),
-    ann AS (
-      SELECT m.*,
-             CASE
-               WHEN fa.id IS NULL THEN 'o:' || m.observable_type || ':' || LOWER(m.observable)
-               WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
-                 THEN 'a:' || fa.merged_into_artifact_id::text
-               ELSE 'a:' || fa.id::text
-             END AS identity_key
-      FROM matched m
-      LEFT JOIN file_artifact_ioc_links fal
-        ON fal.ioc_item_id = m.id AND fal.ioc_observable_type = m.observable_type
-      LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
-    )
-    SELECT 1 FROM (SELECT DISTINCT identity_key FROM ann) d LIMIT ${probeLimit}`
-    : `SELECT 1 FROM ioc_items i WHERE ${whereSql} LIMIT ${probeLimit}`;
+  const probeSql = buildSearchProbeSql({
+    fileArtifactsReadEnabled: faRead,
+    whereSql,
+    probeLimit
+  });
   const probeParams = built.params;
 
   const safeTimeout = Math.max(100, Math.min(Math.trunc(timeoutMs), 120000));
@@ -4537,6 +4447,11 @@ async function handleIocSearch(req, res) {
   try {
     await client.query('BEGIN');
     await client.query(`SET LOCAL statement_timeout = ${safeTimeout}`);
+    // Parallel hash / gather needs extra DSM segments; the db container ships with
+    // default 64MiB /dev/shm which OOMs on ~500k-row FA aggregates and surfaces as
+    // a non-timeout 500 ("Search failed"). Serialize this transaction only — do not
+    // raise container shm as the fix.
+    await client.query('SET LOCAL max_parallel_workers_per_gather = 0');
 
     let exactCount = null;
     let countDisplay = null;

@@ -15,6 +15,13 @@ import { buildWhereClause } from './queryBuilder.js';
 
 export { DslError, isDslError } from './errors.js';
 export { buildWhereClause } from './queryBuilder.js';
+export {
+  buildSearchPageSql,
+  buildSearchProbeSql,
+  buildFileArtifactSearchPageSql,
+  buildLegacyFileArtifactSearchPageSql,
+  canonicalSearchPageFromRows
+} from './searchPageSql.js';
 export { FIELD_REGISTRY, FIELD_NAMES } from './fields.js';
 export {
   getSearchLimits,
