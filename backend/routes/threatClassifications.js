@@ -7,6 +7,20 @@ import {
   normalizeThreatClassificationSlugInput,
   loadThreatClassificationRegistry
 } from '../lib/threatClassification.js';
+import {
+  applyThreatClassificationSortOrders,
+  planThreatClassificationReorder,
+  sortThreatClassificationsForDisplay,
+  threatClassificationOrderSnapshot,
+  THREAT_CLASSIFICATION_SORT_STEP
+} from '../lib/threatClassificationReorder.js';
+
+const ADMIN_LIST_ORDER_SQL = `
+  CASE WHEN slug = '${UNKNOWN_THREAT_CLASSIFICATION}' THEN 0 ELSE 1 END,
+  CASE WHEN active THEN 0 ELSE 1 END,
+  sort_order ASC,
+  name ASC
+`;
 
 function serializeThreatClassification(row) {
   if (!row) return null;
@@ -32,6 +46,13 @@ function classificationAuditSnapshot(row) {
 async function fetchClassificationById(pool, id) {
   const { rows } = await pool.query('SELECT * FROM threat_classifications WHERE id = $1::uuid', [id]);
   return rows[0] || null;
+}
+
+async function fetchAllClassifications(clientOrPool) {
+  const { rows } = await clientOrPool.query(
+    `SELECT * FROM threat_classifications ORDER BY ${ADMIN_LIST_ORDER_SQL}`
+  );
+  return rows;
 }
 
 async function findDuplicateSlug(pool, { slug, excludeId = null }) {
@@ -61,6 +82,34 @@ function userLabel(req) {
   return req.user?.email || req.user?.username || req.user?.publicId || null;
 }
 
+async function renumberClassificationsPreservingRelativeOrder(client, actor, { placeIdAtEndOfActive = null } = {}) {
+  const rows = await fetchAllClassifications(client);
+  const byId = new Map(rows.map((row) => [String(row.id), row]));
+  let orderedIds = sortThreatClassificationsForDisplay(rows).map((row) => String(row.id));
+
+  if (placeIdAtEndOfActive) {
+    const targetId = String(placeIdAtEndOfActive);
+    const target = byId.get(targetId);
+    if (target) {
+      orderedIds = orderedIds.filter((id) => id !== targetId);
+      const unknownId = orderedIds.find((id) => byId.get(id)?.slug === UNKNOWN_THREAT_CLASSIFICATION);
+      const rest = orderedIds.filter((id) => id !== unknownId);
+      const activeIds = rest.filter((id) => byId.get(id)?.active !== false);
+      const inactiveIds = rest.filter((id) => byId.get(id)?.active === false);
+      if (target.active !== false) {
+        orderedIds = [unknownId, ...activeIds, targetId, ...inactiveIds].filter(Boolean);
+      } else {
+        orderedIds = [unknownId, ...activeIds, ...inactiveIds, targetId].filter(Boolean);
+      }
+    }
+  }
+
+  const planned = planThreatClassificationReorder(rows, orderedIds);
+  if (!planned.ok) throw new Error(planned.error);
+  await applyThreatClassificationSortOrders(client, planned.assignments, actor);
+  return planned.assignments;
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
@@ -82,11 +131,63 @@ export function registerThreatClassificationRoutes(app, pool, audit) {
       const { rows } = await pool.query(
         `SELECT * FROM threat_classifications
          ${includeInactive ? '' : 'WHERE active = TRUE'}
-         ORDER BY sort_order ASC, name ASC`
+         ORDER BY ${ADMIN_LIST_ORDER_SQL}`
       );
       return res.json({ threat_classifications: rows.map(serializeThreatClassification) });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/admin/threat-classifications/reorder', requireRole(ROLES.ADMIN), async (req, res) => {
+    const orderedIds = req.body?.ordered_ids;
+    const actor = userLabel(req);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const rows = await fetchAllClassifications(client);
+      const before = threatClassificationOrderSnapshot(rows);
+      const planned = planThreatClassificationReorder(rows, orderedIds);
+      if (!planned.ok) {
+        await client.query('ROLLBACK');
+        return res.status(planned.status).json({ success: false, error: planned.error });
+      }
+
+      await applyThreatClassificationSortOrders(client, planned.assignments, actor);
+      await client.query('COMMIT');
+
+      invalidateThreatClassificationRegistry();
+      await loadThreatClassificationRegistry(pool);
+
+      const afterRows = await fetchAllClassifications(pool);
+      const after = threatClassificationOrderSnapshot(afterRows);
+
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.THREAT_CLASSIFICATION_REORDERED,
+        entityType: AUDIT_ENTITY.THREAT_CLASSIFICATION,
+        entityId: 'dictionary',
+        entityDisplay: 'Threat Classifications',
+        metadata: {
+          before_order: before,
+          after_order: after,
+          count: planned.assignments.length
+        }
+      });
+
+      return res.json({
+        success: true,
+        threat_classifications: afterRows.map(serializeThreatClassification)
+      });
+    } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      return res.status(500).json({ success: false, error: err.message });
+    } finally {
+      client.release();
     }
   });
 
@@ -101,37 +202,53 @@ export function registerThreatClassificationRoutes(app, pool, audit) {
     }
     const description = body.description != null ? String(body.description).trim() || null : null;
     const active = body.active !== false;
-    const sortOrder = Number(body.sort_order);
-    const sort_order = Number.isFinite(sortOrder) ? Math.trunc(sortOrder) : 100;
     const actor = userLabel(req);
 
+    const client = await pool.connect();
     try {
       const dup = await findDuplicateSlug(pool, { slug });
       if (dup) return res.status(409).json({ success: false, error: 'Threat classification slug already exists' });
 
-      const { rows } = await pool.query(
+      await client.query('BEGIN');
+      // Temporary high order; renumber places active creates at end of active group.
+      const tempOrder = 1_000_000 + THREAT_CLASSIFICATION_SORT_STEP;
+      const { rows } = await client.query(
         `INSERT INTO threat_classifications
            (name, slug, description, active, sort_order, system_default, created_by, updated_by)
          VALUES ($1, $2, $3, $4, $5, FALSE, $6, $6)
          RETURNING *`,
-        [name, slug, description, active, sort_order, actor]
+        [name, slug, description, active, tempOrder, actor]
       );
       const row = rows[0];
+      await renumberClassificationsPreservingRelativeOrder(client, actor, {
+        placeIdAtEndOfActive: active ? row.id : null
+      });
+      await client.query('COMMIT');
+
       invalidateThreatClassificationRegistry();
       await loadThreatClassificationRegistry(pool);
+
+      const fresh = await fetchClassificationById(pool, row.id);
 
       await audit.auditSuccess({
         req,
         action: AUDIT_ACTION.THREAT_CLASSIFICATION_CREATED,
         entityType: AUDIT_ENTITY.THREAT_CLASSIFICATION,
-        entityId: String(row.id),
-        entityDisplay: row.name,
-        after: classificationAuditSnapshot(row),
-        metadata: { slug: row.slug }
+        entityId: String(fresh.id),
+        entityDisplay: fresh.name,
+        after: classificationAuditSnapshot(fresh),
+        metadata: { slug: fresh.slug }
       });
-      return res.status(201).json({ success: true, threat_classification: serializeThreatClassification(row) });
+      return res.status(201).json({ success: true, threat_classification: serializeThreatClassification(fresh) });
     } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
       return res.status(500).json({ success: false, error: err.message });
+    } finally {
+      client.release();
     }
   });
 
@@ -172,6 +289,8 @@ export function registerThreatClassificationRoutes(app, pool, audit) {
     if (prev.slug === UNKNOWN_THREAT_CLASSIFICATION && active === false) {
       return res.status(400).json({ success: false, error: 'Unknown classification cannot be disabled' });
     }
+    // sort_order remains a technical field; clients should use the reorder endpoint.
+    // Keep PATCH acceptance for backward compatibility without encouraging UI edits.
     const sortOrder = body.sort_order !== undefined ? Number(body.sort_order) : prev.sort_order;
     const sort_order = Number.isFinite(sortOrder) ? Math.trunc(sortOrder) : prev.sort_order;
     const actor = userLabel(req);
@@ -220,28 +339,45 @@ export function registerThreatClassificationRoutes(app, pool, audit) {
       return res.status(400).json({ success: false, error: 'Unknown classification cannot be disabled' });
     }
     const actor = userLabel(req);
+    const client = await pool.connect();
     try {
-      const { rows } = await pool.query(
+      await client.query('BEGIN');
+      const { rows } = await client.query(
         `UPDATE threat_classifications SET active = $2, updated_by = $3, updated_at = NOW()
          WHERE id = $1::uuid RETURNING *`,
         [id, active, actor]
       );
       const row = rows[0];
+      // Keep dictionary order contiguous and enforce active-before-inactive after toggles.
+      await renumberClassificationsPreservingRelativeOrder(client, actor, {
+        placeIdAtEndOfActive: active ? row.id : null
+      });
+      await client.query('COMMIT');
+
       invalidateThreatClassificationRegistry();
       await loadThreatClassificationRegistry(pool);
+
+      const fresh = await fetchClassificationById(pool, id);
 
       await audit.auditSuccess({
         req,
         action: active ? AUDIT_ACTION.THREAT_CLASSIFICATION_ENABLED : AUDIT_ACTION.THREAT_CLASSIFICATION_DISABLED,
         entityType: AUDIT_ENTITY.THREAT_CLASSIFICATION,
-        entityId: String(row.id),
-        entityDisplay: row.name,
+        entityId: String(fresh.id),
+        entityDisplay: fresh.name,
         before: classificationAuditSnapshot(prev),
-        after: classificationAuditSnapshot(row)
+        after: classificationAuditSnapshot(fresh)
       });
-      return res.json({ success: true, threat_classification: serializeThreatClassification(row) });
+      return res.json({ success: true, threat_classification: serializeThreatClassification(fresh) });
     } catch (err) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
       return res.status(500).json({ success: false, error: err.message });
+    } finally {
+      client.release();
     }
   }
 

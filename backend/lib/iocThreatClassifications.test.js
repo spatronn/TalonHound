@@ -22,7 +22,7 @@ describe('iocThreatClassifications', () => {
   });
 
   it('parses comma-separated input', () => {
-    assert.deepEqual(parseThreatClassificationInput('phishing, command_and_control'), ['phishing', ' command_and_control']);
+    assert.deepEqual(parseThreatClassificationInput('phishing, command_and_control'), ['phishing', 'command_and_control']);
   });
 
   it('builds unknown fallback response when empty', () => {

@@ -30,6 +30,13 @@ import {
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { isRdapEligibleObservable } from './lib/iocProviderApplicability.js';
 import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
+import {
+  buildThreatClassificationReorderPayload,
+  mergeThreatClassificationPickerOptions,
+  mergeVisibleThreatClassificationOrder,
+  sortThreatClassificationsForDisplay
+} from './lib/threatClassificationOrder.js';
+import { ThreatClassificationSortableTable } from './components/threatClassifications/ThreatClassificationSortableTable.jsx';
 import { getDnsmaniaPresentation } from './lib/dnsmaniaPresentation.js';
 import {
   compactAssociatedIpViewModel,
@@ -904,6 +911,7 @@ const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_actor.updated',
   'threat_classification.created',
   'threat_classification.updated',
+  'threat_classification.reordered',
   'threat_classification.disabled',
   'threat_classification.enabled',
   'threat_actor.created',
@@ -6285,12 +6293,7 @@ function ThreatClassificationMultiSelect({
   disabled = false
 }) {
   const selected = normalizeSelectedThreatClasses(value);
-  const allOptions = [...options];
-  for (const inactive of inactiveOptions) {
-    if (inactive?.value && !allOptions.some((o) => o.value === inactive.value)) {
-      allOptions.unshift(inactive);
-    }
-  }
+  const allOptions = mergeThreatClassificationPickerOptions(options, inactiveOptions);
 
   function toggle(slug) {
     if (disabled) return;
@@ -6787,8 +6790,7 @@ const EMPTY_THREAT_CLASSIFICATION_FORM = {
   name: '',
   slug: '',
   description: '',
-  active: true,
-  sort_order: 100
+  active: true
 };
 
 function ThreatClassificationManagerPage() {
@@ -6802,6 +6804,7 @@ function ThreatClassificationManagerPage() {
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState(EMPTY_THREAT_CLASSIFICATION_FORM);
   const [saving, setSaving] = useState(false);
+  const [reordering, setReordering] = useState(false);
   const [formError, setFormError] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
 
@@ -6810,20 +6813,27 @@ function ThreatClassificationManagerPage() {
     setLoading(true);
     setError('');
     try {
-      const params = showInactive ? { include_inactive: true } : { include_inactive: false };
-      const { data } = await api.get('/admin/threat-classifications', { params });
-      setItems(Array.isArray(data?.threat_classifications) ? data.threat_classifications : []);
+      // Always load inactive so reorder payloads stay complete when "Show inactive" is off.
+      const { data } = await api.get('/admin/threat-classifications', { params: { include_inactive: true } });
+      setItems(sortThreatClassificationsForDisplay(
+        Array.isArray(data?.threat_classifications) ? data.threat_classifications : []
+      ));
     } catch (err) {
       setItems([]);
       setError(apiErrorMessage(err, 'Failed to load threat classifications'));
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, showInactive]);
+  }, [isAdmin]);
 
   useEffect(() => {
     load().catch(() => {});
   }, [load]);
+
+  const visibleItems = useMemo(() => {
+    const sorted = sortThreatClassificationsForDisplay(items);
+    return showInactive ? sorted : sorted.filter((item) => item.active !== false);
+  }, [items, showInactive]);
 
   function openCreateModal() {
     setEditingItem(null);
@@ -6839,8 +6849,7 @@ function ThreatClassificationManagerPage() {
       name: item?.name || '',
       slug: item?.slug || '',
       description: item?.description || '',
-      active: item?.active !== false,
-      sort_order: item?.sort_order ?? 100
+      active: item?.active !== false
     });
     setSlugTouched(true);
     setFormError('');
@@ -6857,8 +6866,7 @@ function ThreatClassificationManagerPage() {
         name: form.name.trim(),
         slug: form.slug.trim(),
         description: form.description,
-        active: form.active,
-        sort_order: Number(form.sort_order)
+        active: form.active
       };
       if (editingItem?.id) {
         await api.patch(`/admin/threat-classifications/${editingItem.id}`, payload);
@@ -6877,7 +6885,7 @@ function ThreatClassificationManagerPage() {
   }
 
   async function disableItem(item) {
-    if (!item?.id || !isAdmin) return;
+    if (!item?.id || !isAdmin || reordering) return;
     if (item.slug === 'unknown') {
       setError('Unknown classification cannot be disabled.');
       return;
@@ -6894,13 +6902,35 @@ function ThreatClassificationManagerPage() {
   }
 
   async function enableItem(item) {
-    if (!item?.id || !isAdmin) return;
+    if (!item?.id || !isAdmin || reordering) return;
     setError('');
     try {
       await api.patch(`/admin/threat-classifications/${item.id}/enable`);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, 'Enable failed'));
+    }
+  }
+
+  async function handleReorder(nextVisible) {
+    if (!isAdmin || reordering) return;
+    const previous = items;
+    const merged = mergeVisibleThreatClassificationOrder(items, nextVisible, showInactive);
+    setItems(merged);
+    setReordering(true);
+    setError('');
+    try {
+      const { data } = await api.post(
+        '/admin/threat-classifications/reorder',
+        buildThreatClassificationReorderPayload(merged)
+      );
+      const next = Array.isArray(data?.threat_classifications) ? data.threat_classifications : merged;
+      setItems(sortThreatClassificationsForDisplay(next));
+    } catch (err) {
+      setItems(previous);
+      setError(apiErrorMessage(err, 'Failed to save classification order'));
+    } finally {
+      setReordering(false);
     }
   }
 
@@ -6921,77 +6951,29 @@ function ThreatClassificationManagerPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Threat Classifications</h1>
-            <p style={ui.pageSub}>Manage platform threat classifications used on IOCs. Use display order to control picker and list sorting. Unknown is always active and cannot be disabled.</p>
+            <p style={ui.pageSub}>Manage platform threat classifications used on IOCs. Drag rows to control picker and list sorting. Unknown is always first, active, and cannot be disabled.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
-              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} disabled={reordering} />
               Show inactive
             </label>
-            <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Classification</button>
+            <button type="button" style={ui.btnPrimary} onClick={openCreateModal} disabled={reordering}>Add Classification</button>
           </div>
         </div>
 
-        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }} role="alert">{error}</div> : null}
 
-        <div style={{ marginTop: 16, overflowX: 'auto', maxWidth: '100%' }}>
-          <table className="ioc-table threat-classifications-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th className="tc-col-classification" style={ui.th}>Classification</th>
-                <th className="tc-col-description" style={ui.th}>Description</th>
-                <th className="tc-col-status" style={ui.th}>Status</th>
-                <th className="tc-col-builtin" style={ui.th} title="Platform-managed classification">Built-in</th>
-                <th className="tc-col-order" style={ui.th} title="Display order in dropdowns and lists">Order</th>
-                <th className="tc-col-actions" style={ui.th}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
-              ) : !items.length ? (
-                <tr><td colSpan={6} style={ui.td}>No classifications found.</td></tr>
-              ) : items.map((item) => (
-                <tr key={item.id} style={{ opacity: item.active ? 1 : 0.62 }}>
-                  <td className="tc-col-classification" style={ui.td}>
-                    <div style={{ fontWeight: 600 }}>{item.name}</div>
-                    <code style={{ fontSize: 11, color: '#64748b' }}>{item.slug}</code>
-                  </td>
-                  <td className="tc-col-description tc-description-cell" style={ui.td} title={item.description || undefined}>
-                    {item.description || '—'}
-                  </td>
-                  <td className="tc-col-status" style={ui.td}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 999,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      background: item.active ? 'rgba(22, 101, 52, 0.35)' : 'rgba(71, 85, 105, 0.35)',
-                      color: item.active ? '#86efac' : '#94a3b8',
-                      border: `1px solid ${item.active ? '#166534' : '#475569'}`
-                    }}
-                    >
-                      {item.active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="tc-col-builtin" style={ui.td}>{item.system_default ? 'Yes' : '—'}</td>
-                  <td className="tc-col-order" style={ui.td}>{item.sort_order ?? '—'}</td>
-                  <td className="tc-col-actions tc-actions-cell" style={ui.td}>
-                    <div className="tc-action-buttons">
-                      <button type="button" style={ui.btn} onClick={() => openEditModal(item)}>Edit</button>
-                      {item.slug === 'unknown' ? null : item.active ? (
-                        <button type="button" style={{ ...ui.btn, borderColor: '#7f1d1d', color: '#fca5a5' }} onClick={() => disableItem(item).catch(() => {})}>Disable</button>
-                      ) : (
-                        <button type="button" style={ui.btn} onClick={() => enableItem(item).catch(() => {})}>Enable</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ThreatClassificationSortableTable
+          items={visibleItems}
+          ui={ui}
+          loading={loading}
+          reordering={reordering}
+          onReorder={handleReorder}
+          onEdit={openEditModal}
+          onDisable={(item) => { disableItem(item).catch(() => {}); }}
+          onEnable={(item) => { enableItem(item).catch(() => {}); }}
+        />
       </section>
 
       {showFormModal ? (
@@ -7029,9 +7011,6 @@ function ThreatClassificationManagerPage() {
             </FeedFormField>
             <FeedFormField ui={ui} label="Description" fullWidth>
               <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
-            </FeedFormField>
-            <FeedFormField ui={ui} label="Display order" helper="Controls the order in classification dropdowns and lists. Lower numbers appear first." fullWidth>
-              <input type="number" min={0} step={1} value={form.sort_order} onChange={(e) => setForm((x) => ({ ...x, sort_order: e.target.value }))} style={ui.input} />
             </FeedFormField>
             <FeedFormField ui={ui} label="Active" fullWidth>
               <label style={ui.checkLabel}>
@@ -15112,11 +15091,11 @@ function App() {
           table-layout: fixed;
           font-size: 13px;
         }
+        .threat-classifications-table .tc-col-handle { width: 44px; text-align: center; }
         .threat-classifications-table .tc-col-classification { width: 24%; min-width: 160px; }
         .threat-classifications-table .tc-col-description { width: auto; }
         .threat-classifications-table .tc-col-status { width: 88px; }
         .threat-classifications-table .tc-col-builtin { width: 72px; text-align: center; }
-        .threat-classifications-table .tc-col-order { width: 64px; text-align: center; }
         .threat-classifications-table .tc-col-actions { width: 160px; }
         .threat-classifications-table .tc-description-cell {
           overflow: hidden;
@@ -15137,7 +15116,34 @@ function App() {
         .threat-classifications-table .tc-action-buttons button {
           white-space: nowrap;
           padding: 6px 10px;
-          font-size: 12px;
+        }
+        .threat-classifications-table .tc-drag-handle:active {
+          cursor: grabbing;
+        }
+        .sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+        @media (max-width: 720px) {
+          .threat-classifications-table .tc-col-builtin { display: none; }
+          .threat-classifications-table .tc-col-description { display: none; }
+          .threat-classifications-table .tc-col-handle { width: 40px; }
+          .threat-classifications-table .tc-col-actions { width: 120px; }
+          .threat-classifications-table .tc-action-buttons {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+          }
+          .threat-classifications-table .tc-action-buttons button {
+            width: 100%;
+          }
         }
         .published-feeds-page input:focus,
         .published-feeds-page select:focus,

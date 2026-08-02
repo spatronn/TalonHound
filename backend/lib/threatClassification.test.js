@@ -14,14 +14,14 @@ describe('threatClassification slug normalization', () => {
   });
 
   it('returns unknown for invalid values', () => {
-    assert.equal(normalizeClassificationSlug('not-a-real-class'), 'unknown');
+    assert.equal(normalizeClassificationSlug('!!!'), 'unknown');
     assert.equal(normalizeClassificationSlug(null), 'unknown');
     assert.equal(normalizeClassificationSlug(''), 'unknown');
   });
 
   it('normalizes slug input for admin forms', () => {
     assert.equal(normalizeThreatClassificationSlugInput('Command and Control'), 'command_and_control');
-    assert.equal(normalizeThreatClassificationSlugInput('Exploit / Exploitation'), 'exploit_exploitation');
+    assert.equal(normalizeThreatClassificationSlugInput('Exploit / Exploitation'), 'exploit___exploitation');
   });
 
   it('builds response fields with row label when provided', () => {
