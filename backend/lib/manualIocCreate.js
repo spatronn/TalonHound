@@ -5,6 +5,13 @@ import {
   legacyThreatClassificationColumnValue,
   replaceIocThreatClassifications
 } from './iocThreatClassifications.js';
+import {
+  buildMultiThreatActorResponseFields,
+  emptyThreatActorResponseFields,
+  legacyThreatActorColumnValue,
+  replaceIocThreatActors,
+  validateIocThreatActorIds
+} from './iocThreatActors.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
@@ -59,9 +66,12 @@ function normalizeConfidence(value) {
   return 'medium';
 }
 
-export function serializeManualIocResponse(row, source, expiration, classificationFields = null, tags = null) {
+export function serializeManualIocResponse(row, source, expiration, classificationFields = null, tags = null, actorFields = null) {
   if (!row) return null;
   const classFields = classificationFields || buildMultiThreatClassificationResponseFields([]);
+  const threatActors = actorFields || (row.threat_actor_id
+    ? buildMultiThreatActorResponseFields([{ id: row.threat_actor_id, name: null, active: true }])
+    : emptyThreatActorResponseFields());
   const response = {
     id: Number(row.id),
     public_id: row.public_id,
@@ -77,7 +87,7 @@ export function serializeManualIocResponse(row, source, expiration, classificati
     confidence: row.confidence,
     category: row.category,
     ...classFields,
-    threat_actor_id: row.threat_actor_id || null,
+    ...threatActors,
     note: row.note,
     status: row.status || 'active',
     expires_at: row.expires_at,
@@ -148,20 +158,23 @@ export async function createManualIoc(pool, body, opts = {}) {
   const threatClassSlugs = threatClassCheck.value;
   const legacyThreatClass = legacyThreatClassificationColumnValue(threatClassSlugs);
 
-  let threatActorId = null;
-  if (body?.threat_actor_id != null && body?.threat_actor_id !== '') {
-    threatActorId = String(body.threat_actor_id).trim();
-    if (!/^[0-9a-f-]{36}$/i.test(threatActorId)) {
-      return { status: 400, body: { message: 'threat_actor_id must be a valid UUID' } };
-    }
-    const actorQ = await pool.query(
-      `SELECT id FROM threat_actors WHERE id = $1::uuid AND active = TRUE`,
-      [threatActorId]
-    );
-    if (!actorQ.rows.length) {
-      return { status: 400, body: { message: 'Invalid or inactive threat actor' } };
-    }
+  let threatActorIds = [];
+  let threatActorRows = [];
+  if (Array.isArray(body?.threat_actor_ids) || Array.isArray(body?.threat_actors)) {
+    const raw = Array.isArray(body?.threat_actor_ids)
+      ? body.threat_actor_ids
+      : body.threat_actors.map((x) => x?.id ?? x?.threat_actor_id ?? x);
+    const check = await validateIocThreatActorIds(pool, raw, { requireActive: true });
+    if (!check.ok) return { status: 400, body: { message: check.error } };
+    threatActorIds = check.value;
+    threatActorRows = check.rows || [];
+  } else if (body?.threat_actor_id != null && body?.threat_actor_id !== '') {
+    const check = await validateIocThreatActorIds(pool, [body.threat_actor_id], { requireActive: true });
+    if (!check.ok) return { status: 400, body: { message: check.error } };
+    threatActorIds = check.value;
+    threatActorRows = check.rows || [];
   }
+  const threatActorId = legacyThreatActorColumnValue(threatActorIds);
   const confidenceProvenance = resolveManualIocConfidenceProvenance(body, sourceRow, confidence);
   const sourceName = String(sourceRow.name);
   const sourceUrl = body?.source_url ? String(body.source_url).trim() || null : null;
@@ -243,6 +256,17 @@ export async function createManualIoc(pool, body, opts = {}) {
     actor: userId
   }).catch(() => {});
 
+  if (threatActorIds.length) {
+    await replaceIocThreatActors(pool, {
+      iocId: row.id,
+      observableType: row.observable_type,
+      threatActorIds,
+      sourceType: 'manual',
+      sourceName,
+      actor: userId
+    }).catch(() => {});
+  }
+
   const assignedTags = [];
   for (const tag of resolvedTags) {
     try {
@@ -307,7 +331,10 @@ export async function createManualIoc(pool, body, opts = {}) {
     name: sourceRow.name
   };
   const classFields = buildMultiThreatClassificationResponseFields(threatClassSlugs);
-  const response = serializeManualIocResponse(fresh, source, expiration, classFields, assignedTags);
+  const actorFields = threatActorRows.length
+    ? buildMultiThreatActorResponseFields(threatActorRows)
+    : emptyThreatActorResponseFields();
+  const response = serializeManualIocResponse(fresh, source, expiration, classFields, assignedTags, actorFields);
 
   if (opts.audit?.auditSuccess && opts.req) {
     await opts.audit.auditSuccess({
@@ -319,7 +346,7 @@ export async function createManualIoc(pool, body, opts = {}) {
       severity: AUDIT_SEVERITY.INFO,
       after: pickSafeFields(response, [
         'id', 'observable', 'observable_type', 'source_name', 'ioc_source_id',
-        'threat_classification', 'threat_classifications', 'threat_actor_id',
+        'threat_classification', 'threat_classifications', 'threat_actor_id', 'threat_actor_ids',
         'status', 'expires_at', 'manual_expires_at', 'expiration_policy'
       ]),
       metadata: {

@@ -1,6 +1,22 @@
 import React from 'react';
 import { getEffectiveThreatClassifications } from '../../lib/classificationSummary.js';
 
+export function getThreatActorsFromSummary(summary) {
+  if (Array.isArray(summary?.threat_actors) && summary.threat_actors.length) {
+    return summary.threat_actors.filter((a) => a?.id);
+  }
+  if (Array.isArray(summary?.threat_actor_ids) && summary.threat_actor_ids.length) {
+    return summary.threat_actor_ids.map((id) => ({
+      id,
+      name: summary?.threat_actor_name || id
+    }));
+  }
+  if (summary?.threat_actor_id) {
+    return [{ id: summary.threat_actor_id, name: summary.threat_actor_name || summary.threat_actor_id }];
+  }
+  return [];
+}
+
 export function IocMetadataCards({
   confidenceCard,
   summary,
@@ -8,9 +24,11 @@ export function IocMetadataCards({
   onEditConfidence,
   onEditThreatClass,
   onEditThreatActor,
-  ThreatClassificationBadges
+  ThreatClassificationBadges,
+  ThreatActorBadges
 }) {
   const classifications = getEffectiveThreatClassifications(summary);
+  const actors = getThreatActorsFromSummary(summary);
 
   const cardStyle = {
     padding: 12,
@@ -88,13 +106,19 @@ export function IocMetadataCards({
 
       <div style={cardStyle}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-          <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Actor</div>
+          <div style={{ fontSize: 13, color: '#94a3b8' }}>Threat Actors</div>
           {canWrite ? (
-            <button type="button" onClick={onEditThreatActor} style={editBtn} aria-label="Edit threat actor">Edit</button>
+            <button type="button" onClick={onEditThreatActor} style={editBtn} aria-label="Edit threat actors">Edit</button>
           ) : null}
         </div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: summary?.threat_actor_name ? '#e2e8f0' : '#64748b' }}>
-          {summary?.threat_actor_name || 'Not selected'}
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {ThreatActorBadges ? (
+            <ThreatActorBadges actors={actors} />
+          ) : (
+            <span style={{ color: actors.length ? '#e2e8f0' : '#64748b' }}>
+              {actors.length ? actors.map((a) => a.name).join(', ') : 'Not selected'}
+            </span>
+          )}
         </div>
       </div>
 

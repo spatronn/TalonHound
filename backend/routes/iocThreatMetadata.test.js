@@ -149,6 +149,35 @@ describe('buildThreatMetadataFields — details/list parity', () => {
     const effective = (fields.effective_threat_classifications || []).map((x) => x.value);
     assert.deepEqual(effective, ['phishing']);
   });
+
+  it('includes multi threat actors from junction (with legacy fallback)', async () => {
+    const actorId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const pool = mockPool([
+      ['FROM ioc_threat_classifications', []],
+      ['FROM ioc_threat_classification_overrides', []],
+      ['FROM ioc_threat_actors', [{
+        ioc_id: 11,
+        ioc_observable_type: 'ip',
+        threat_actor_id: actorId,
+        name: 'APT29',
+        slug: 'apt29',
+        aliases: [],
+        active: true
+      }]]
+    ]);
+    const row = {
+      id: 11,
+      observable_type: 'ip',
+      threat_classification: null,
+      threat_actor_id: actorId,
+      threat_actor_name: 'APT29'
+    };
+    const fields = await buildThreatMetadataFields(pool, row, { feedClassifications: [] });
+    assert.equal(fields.threat_actor_id, actorId);
+    assert.equal(fields.threat_actor_name, 'APT29');
+    assert.equal(fields.threat_actors.length, 1);
+    assert.deepEqual(fields.threat_actor_ids, [actorId]);
+  });
 });
 
 describe('batchLoadFeedClassifications', () => {

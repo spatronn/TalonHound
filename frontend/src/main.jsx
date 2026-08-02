@@ -917,6 +917,7 @@ const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_classification.suppressed',
   'ioc.threat_classification.restored',
   'ioc.threat_actor.updated',
+  'ioc.threat_actors.updated',
   'threat_classification.created',
   'threat_classification.updated',
   'threat_classification.reordered',
@@ -6363,6 +6364,124 @@ function ThreatClassificationMultiSelect({
             ) : null}
           </label>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function getThreatActorsFromSummary(summary) {
+  if (Array.isArray(summary?.threat_actors) && summary.threat_actors.length) {
+    return summary.threat_actors.filter((a) => a?.id);
+  }
+  if (Array.isArray(summary?.threat_actor_ids) && summary.threat_actor_ids.length) {
+    return summary.threat_actor_ids.map((id) => ({
+      id,
+      name: summary?.threat_actor_name || id
+    }));
+  }
+  if (summary?.threat_actor_id) {
+    return [{ id: summary.threat_actor_id, name: summary.threat_actor_name || summary.threat_actor_id }];
+  }
+  return [];
+}
+
+function ThreatActorBadges({ actors, max = 5 }) {
+  const list = Array.isArray(actors) ? actors.filter((a) => a?.id) : [];
+  if (!list.length) {
+    return <span style={{ color: '#64748b', fontSize: 13, fontWeight: 500 }}>Not selected</span>;
+  }
+  const shown = list.slice(0, max);
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {shown.map((a) => (
+        <span
+          key={a.id}
+          style={{
+            fontSize: 12,
+            padding: '2px 8px',
+            borderRadius: 999,
+            background: '#1e293b',
+            border: '1px solid #334155',
+            color: '#e2e8f0'
+          }}
+        >
+          {a.name || a.id}
+          {a.active === false ? ' (Inactive)' : ''}
+        </span>
+      ))}
+      {list.length > max ? <span style={{ color: '#94a3b8', fontSize: 12 }}>+{list.length - max}</span> : null}
+    </span>
+  );
+}
+
+function ThreatActorMultiSelect({
+  value,
+  onChange,
+  options = [],
+  disabled = false
+}) {
+  const selected = Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+  const optionList = Array.isArray(options) ? options : [];
+
+  function toggle(id) {
+    if (disabled) return;
+    const set = new Set(selected);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    onChange([...set]);
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}>
+        {selected.length ? selected.map((id) => {
+          const label = optionList.find((o) => String(o.id) === String(id))?.name || id;
+          return (
+            <span
+              key={id}
+              style={{
+                fontSize: 12,
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: '#172554',
+                border: '1px solid #334155',
+                color: '#bfdbfe'
+              }}
+            >
+              {label}
+              {!disabled ? (
+                <button
+                  type="button"
+                  onClick={() => toggle(id)}
+                  style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
+                  aria-label={`Remove ${label}`}
+                >
+                  ×
+                </button>
+              ) : null}
+            </span>
+          );
+        }) : <span style={{ color: '#94a3b8', fontSize: 13 }}>Not selected</span>}
+      </div>
+      <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 220, overflowY: 'auto', background: '#0f172a' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13 }}>
+          <input type="checkbox" checked={!selected.length} onChange={() => onChange([])} disabled={disabled} />
+          Not selected
+        </label>
+        {optionList.map((opt) => {
+          const id = String(opt.id);
+          return (
+            <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={selected.includes(id)}
+                onChange={() => toggle(id)}
+                disabled={disabled}
+              />
+              <span>{opt.name}</span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );
@@ -13050,7 +13169,7 @@ function IOCDetailsPage() {
   const [threatClassSaving, setThreatClassSaving] = useState(false);
   const [threatClassError, setThreatClassError] = useState('');
   const [showThreatActorModal, setShowThreatActorModal] = useState(false);
-  const [threatActorDraft, setThreatActorDraft] = useState('');
+  const [threatActorDraft, setThreatActorDraft] = useState([]);
   const [threatActorSaving, setThreatActorSaving] = useState(false);
   const [threatActorError, setThreatActorError] = useState('');
 
@@ -13174,7 +13293,7 @@ function IOCDetailsPage() {
     let active = true;
     (async () => {
       try {
-        const { data } = await api.get('/admin/threat-actors', { params: { include_inactive: false } });
+        const { data } = await api.get('/threat-actors');
         if (active) setThreatActors(Array.isArray(data?.threat_actors) ? data.threat_actors : []);
       } catch {
         if (active) setThreatActors([]);
@@ -13532,7 +13651,7 @@ function IOCDetailsPage() {
   }
 
   function openThreatActorEditor() {
-    setThreatActorDraft(summary?.threat_actor_id || '');
+    setThreatActorDraft(getThreatActorsFromSummary(summary).map((a) => String(a.id)));
     setThreatActorError('');
     setShowThreatActorModal(true);
   }
@@ -13547,18 +13666,19 @@ function IOCDetailsPage() {
     try {
       const body = {
         observable_type: observableType,
-        threat_actor_id: threatActorDraft || null
+        threat_actor_ids: Array.isArray(threatActorDraft) ? threatActorDraft : []
       };
-      const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-actor`, body);
+      const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-actors`, body);
       if (!patchData?.success) {
         setThreatActorError(patchData?.error || 'Request failed');
         return;
       }
       setShowThreatActorModal(false);
-      setActionToast('Threat actor updated');
+      setThreatActorDraft([]);
+      setActionToast('Threat actors updated');
       await load();
     } catch (err) {
-      setThreatActorError(apiErrorMessage(err, 'Failed to update threat actor'));
+      setThreatActorError(apiErrorMessage(err, 'Failed to update threat actors'));
     } finally {
       setThreatActorSaving(false);
     }
@@ -13937,6 +14057,7 @@ function IOCDetailsPage() {
                   onEditThreatClass={openThreatClassEditor}
                   onEditThreatActor={openThreatActorEditor}
                   ThreatClassificationBadges={ThreatClassificationBadges}
+                  ThreatActorBadges={ThreatActorBadges}
                 />
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
@@ -14354,26 +14475,35 @@ function IOCDetailsPage() {
       ) : null}
 
       {showThreatActorModal ? (
-        <ModalOverlay onClose={() => !threatActorSaving && setShowThreatActorModal(false)}>
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat actor</h3>
+        <ModalOverlay onClose={() => {
+          if (threatActorSaving) return;
+          setShowThreatActorModal(false);
+          setThreatActorDraft([]);
+          setThreatActorError('');
+        }}
+        >
+          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat actors</h3>
           <div style={{ display: 'grid', gap: 12 }}>
-            <div>
-              <span style={ui.label}>Threat actor</span>
-              <select
-                value={threatActorDraft}
-                onChange={(e) => setThreatActorDraft(e.target.value)}
-                disabled={threatActorSaving}
-                style={ui.input}
-              >
-                <option value="">Not selected</option>
-                {threatActors.map((actor) => (
-                  <option key={actor.id} value={actor.id}>{actor.name}</option>
-                ))}
-              </select>
-            </div>
+            <ThreatActorMultiSelect
+              value={threatActorDraft}
+              onChange={setThreatActorDraft}
+              options={threatActors}
+              disabled={threatActorSaving}
+            />
             {threatActorError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatActorError}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" style={ui.btn} onClick={() => setShowThreatActorModal(false)} disabled={threatActorSaving}>Cancel</button>
+              <button
+                type="button"
+                style={ui.btn}
+                onClick={() => {
+                  setShowThreatActorModal(false);
+                  setThreatActorDraft([]);
+                  setThreatActorError('');
+                }}
+                disabled={threatActorSaving}
+              >
+                Cancel
+              </button>
               <button type="button" style={ui.btnPrimary} onClick={() => submitThreatActor().catch(() => {})} disabled={threatActorSaving}>
                 {threatActorSaving ? 'Saving…' : 'Save'}
               </button>
@@ -14423,7 +14553,7 @@ function IOCAddPage() {
   const [sourceId, setSourceId] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [primaryThreatClass, setPrimaryThreatClass] = useState([]);
-  const [threatActorId, setThreatActorId] = useState('');
+  const [threatActorIds, setThreatActorIds] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [tagSuggestions, setTagSuggestions] = useState([]);
   const [tagSearch, setTagSearch] = useState('');
@@ -14460,7 +14590,7 @@ function IOCAddPage() {
     (async () => {
       setThreatActorsLoading(true);
       try {
-        const { data } = await api.get('/admin/threat-actors', { params: { include_inactive: false } });
+        const { data } = await api.get('/threat-actors');
         if (active) setThreatActors(Array.isArray(data?.threat_actors) ? data.threat_actors : []);
       } catch {
         if (active) setThreatActors([]);
@@ -14553,7 +14683,7 @@ function IOCAddPage() {
     setSourceId('');
     setSourceUrl('');
     setPrimaryThreatClass([]);
-    setThreatActorId('');
+    setThreatActorIds([]);
     setSelectedTags([]);
     setTagDropdownOpen(false);
     setTagSearch('');
@@ -14704,8 +14834,8 @@ function IOCAddPage() {
       primary_threat_classification: selectedClasses[0] || 'unknown',
       note: note.trim() || undefined
     };
-    if (threatActorId) {
-      payload.threat_actor_id = threatActorId;
+    if (Array.isArray(threatActorIds) && threatActorIds.length) {
+      payload.threat_actor_ids = threatActorIds;
     }
     if (selectedTags.length) {
       payload.tag_ids = selectedTags.map((t) => Number(t.id)).filter((id) => Number.isFinite(id) && id > 0);
@@ -14832,13 +14962,17 @@ function IOCAddPage() {
 	              />
 	            </div>
 	            <div>
-	              <label htmlFor="threat-actor-id" style={fieldLabelStyle}>Threat Actor (optional)</label>
-	              <select id="threat-actor-id" value={threatActorId} onChange={(e) => setThreatActorId(e.target.value)} disabled={!canWrite || threatActorsLoading} style={inputStyle}>
-	                <option value="">{threatActorsLoading ? 'Loading threat actors…' : 'Not selected'}</option>
-	                {threatActors.map((actor) => (
-	                  <option key={actor.id} value={actor.id}>{actor.name}</option>
-	                ))}
-	              </select>
+	              <label style={fieldLabelStyle}>Threat Actors (optional)</label>
+	              {threatActorsLoading ? (
+	                <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading threat actors…</div>
+	              ) : (
+	                <ThreatActorMultiSelect
+	                  value={threatActorIds}
+	                  onChange={setThreatActorIds}
+	                  options={threatActors}
+	                  disabled={!canWrite}
+	                />
+	              )}
 	            </div>
 
             <div>

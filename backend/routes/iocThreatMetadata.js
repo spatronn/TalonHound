@@ -17,6 +17,16 @@ import {
 } from '../lib/iocThreatClassificationOverrides.js';
 import { resolveThreatActorById } from './threatActors.js';
 import { parseNoteFields, normalizeFeedTags } from '../lib/feedTagNormalization.js';
+import {
+  buildMultiThreatActorResponseFields,
+  emptyThreatActorResponseFields,
+  fetchIocThreatActors,
+  loadIocThreatActorDetails,
+  parseThreatActorBody,
+  replaceIocThreatActors,
+  validateIocThreatActorIds,
+  diffThreatActorIds
+} from '../lib/iocThreatActors.js';
 
 async function fetchIocRow(pool, iocId, observableType) {
   const { rows } = await pool.query(
@@ -30,8 +40,36 @@ async function fetchIocRow(pool, iocId, observableType) {
   return rows[0] || null;
 }
 
-function actorDisplayName(row) {
-  return row?.threat_actor_name || null;
+function isThreatActorsTableMissing(err) {
+  return String(err?.message || '').includes('ioc_threat_actors');
+}
+
+/** Junction first; fall back to legacy ioc_items.threat_actor_id. */
+async function resolveThreatActorFields(pool, iocId, observableType, legacyRow = null) {
+  try {
+    const fields = await fetchIocThreatActors(pool, iocId, observableType);
+    if (fields.threat_actor_ids?.length) return fields;
+  } catch (err) {
+    if (!isThreatActorsTableMissing(err)) throw err;
+  }
+  if (legacyRow?.threat_actor_id) {
+    const actor = await resolveThreatActorById(pool, legacyRow.threat_actor_id);
+    if (actor) {
+      return buildMultiThreatActorResponseFields([{
+        id: actor.id,
+        name: actor.name,
+        slug: actor.slug,
+        aliases: actor.aliases,
+        active: actor.active
+      }]);
+    }
+    return buildMultiThreatActorResponseFields([{
+      id: legacyRow.threat_actor_id,
+      name: legacyRow.threat_actor_name || null,
+      active: true
+    }]);
+  }
+  return emptyThreatActorResponseFields();
 }
 
 function userLabel(req) {
@@ -117,10 +155,10 @@ async function buildIocClassificationResponse(pool, iocId, observableType, baseR
   const fields = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
     legacyThreatClassification: row.threat_classification
   });
+  const actorFields = await resolveThreatActorFields(pool, iocId, observableType, row);
   return {
     public_id: row.public_id,
-    threat_actor_id: row.threat_actor_id || null,
-    threat_actor_name: actorDisplayName(row),
+    ...actorFields,
     ...fields
   };
 }
@@ -269,7 +307,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
     applyIocThreatClassifications(req, res, { auditAction: AUDIT_ACTION.IOC_THREAT_CLASSIFICATION_UPDATED })
   );
 
-  app.patch('/api/ioc/:id/threat-actor', async (req, res) => {
+  async function applyIocThreatActors(req, res, { auditAction }) {
     const iocId = Number(req.params.id);
     if (!Number.isFinite(iocId) || iocId <= 0) {
       return res.status(400).json({ success: false, error: 'Invalid IOC id' });
@@ -279,92 +317,132 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       return res.status(400).json({ success: false, error: 'observable_type is required' });
     }
 
-    const rawActorId = req.body?.threat_actor_id;
-    const clear = rawActorId === null || rawActorId === '' || rawActorId === false;
-    let nextActorId = null;
-    if (!clear) {
-      nextActorId = String(rawActorId || '').trim();
-      if (!/^[0-9a-f-]{36}$/i.test(nextActorId)) {
-        return res.status(400).json({ success: false, error: 'threat_actor_id must be a UUID or null' });
-      }
-      const actor = await resolveThreatActorById(pool, nextActorId);
-      if (!actor || actor.active === false) {
-        return res.status(400).json({ success: false, error: 'Threat actor not found or inactive' });
-      }
+    const parsed = parseThreatActorBody(req.body);
+    if (parsed === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'threat_actor_ids (array) or threat_actor_id is required'
+      });
     }
+
+    const check = await validateIocThreatActorIds(pool, parsed, { requireActive: true });
+    if (!check.ok) return res.status(400).json({ success: false, error: check.error });
+    const nextIds = check.value;
 
     try {
       const prev = await fetchIocRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
-      const oldActorId = prev.threat_actor_id || null;
-      const oldActorName = actorDisplayName(prev);
-      if (String(oldActorId || '') === String(nextActorId || '')) {
+      const beforeFields = await resolveThreatActorFields(pool, iocId, observableType, prev);
+      const beforeIds = beforeFields.threat_actor_ids || [];
+      const sortKey = (arr) => [...arr].map((x) => String(x).toLowerCase()).sort().join('|');
+      if (sortKey(beforeIds) === sortKey(nextIds)) {
         return res.json({
           success: true,
-          threat_actor_id: oldActorId,
-          threat_actor_name: oldActorName,
-          public_id: prev.public_id
+          public_id: prev.public_id,
+          ...beforeFields
         });
       }
 
-      const { rows } = await pool.query(
-        `UPDATE ioc_items SET threat_actor_id = $3::uuid
-         WHERE id = $1 AND observable_type = $2
-         RETURNING public_id, threat_actor_id`,
-        [iocId, observableType, nextActorId]
-      );
-      const updated = rows[0];
-      let newActorName = null;
-      if (updated.threat_actor_id) {
-        const actor = await resolveThreatActorById(pool, updated.threat_actor_id);
-        newActorName = actor?.name || null;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await replaceIocThreatActors(client, {
+          iocId,
+          observableType,
+          threatActorIds: nextIds,
+          sourceType: 'analyst',
+          actor: userLabel(req),
+          manageTransaction: false
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+        throw err;
+      } finally {
+        client.release();
       }
-      invalidateDetailsCache(updated.public_id);
+
+      invalidateDetailsCache(prev.public_id);
+      const afterFields = await resolveThreatActorFields(pool, iocId, observableType);
+      const diff = diffThreatActorIds(beforeIds, afterFields.threat_actor_ids || []);
+      const beforeNames = (beforeFields.threat_actors || []).map((a) => a.name).filter(Boolean);
+      const afterNames = (afterFields.threat_actors || []).map((a) => a.name).filter(Boolean);
 
       await audit.auditSuccess({
         req,
-        action: AUDIT_ACTION.IOC_THREAT_ACTOR_UPDATED,
+        action: auditAction,
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(iocId),
         entityDisplay: `${observableType} · ${prev.observable}`,
         metadata: {
           observable_type: observableType,
           ioc_value: prev.observable,
-          old_threat_actor: oldActorName,
-          new_threat_actor: newActorName,
-          old_threat_actor_id: oldActorId,
-          new_threat_actor_id: updated.threat_actor_id
+          old_threat_actor: beforeNames[0] || null,
+          new_threat_actor: afterNames[0] || null,
+          old_threat_actors: beforeNames,
+          new_threat_actors: afterNames,
+          old_threat_actor_id: beforeFields.threat_actor_id || null,
+          new_threat_actor_id: afterFields.threat_actor_id || null,
+          ...diff
         },
-        before: { threat_actor_id: oldActorId, threat_actor_name: oldActorName },
-        after: { threat_actor_id: updated.threat_actor_id, threat_actor_name: newActorName }
+        before: {
+          threat_actor_id: beforeFields.threat_actor_id || null,
+          threat_actor_name: beforeFields.threat_actor_name || null,
+          threat_actor_ids: beforeIds,
+          threat_actors: beforeNames
+        },
+        after: {
+          threat_actor_id: afterFields.threat_actor_id || null,
+          threat_actor_name: afterFields.threat_actor_name || null,
+          threat_actor_ids: afterFields.threat_actor_ids || [],
+          threat_actors: afterNames
+        }
       });
 
       return res.json({
         success: true,
-        public_id: updated.public_id,
-        threat_actor_id: updated.threat_actor_id,
-        threat_actor_name: newActorName
+        public_id: prev.public_id,
+        ...afterFields
       });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
-  });
+  }
+
+  app.patch('/api/ioc/:id/threat-actors', (req, res) =>
+    applyIocThreatActors(req, res, { auditAction: AUDIT_ACTION.IOC_THREAT_ACTORS_UPDATED })
+  );
+
+  app.patch('/api/ioc/:id/threat-actor', (req, res) =>
+    applyIocThreatActors(req, res, { auditAction: AUDIT_ACTION.IOC_THREAT_ACTOR_UPDATED })
+  );
 }
 
 export async function buildThreatMetadataFields(pool, row, { feedClassifications = null } = {}) {
-  if (!row) return buildMultiThreatClassificationResponseFields([]);
+  if (!row) {
+    return {
+      ...buildMultiThreatClassificationResponseFields([]),
+      ...emptyThreatActorResponseFields()
+    };
+  }
+  const actorFields = Number.isFinite(Number(row.id)) && row.observable_type
+    ? await resolveThreatActorFields(pool, row.id, row.observable_type, row)
+    : (row.threat_actor_id
+      ? buildMultiThreatActorResponseFields([{
+        id: row.threat_actor_id,
+        name: row.threat_actor_name || null,
+        active: true
+      }])
+      : emptyThreatActorResponseFields());
+
   if (Number.isFinite(Number(row.id)) && row.observable_type) {
     try {
       const fields = await buildEffectiveClassificationBundle(pool, row.id, row.observable_type, {
         feedClassifications,
         legacyThreatClassification: row.threat_classification
       });
-      return {
-        ...fields,
-        threat_actor_id: row.threat_actor_id || null,
-        threat_actor_name: row.threat_actor_name || null
-      };
+      return { ...fields, ...actorFields };
     } catch (err) {
       if (!isOverridesTableMissing(err)) {
         console.warn('[threat-metadata] effective bundle failed:', err.message);
@@ -377,18 +455,13 @@ export async function buildThreatMetadataFields(pool, row, { feedClassifications
     const key = `${Number(row.id)}|${String(row.observable_type || '')}`;
     const fields = detailMap.get(key);
     if (fields) {
-      return {
-        ...fields,
-        threat_actor_id: row.threat_actor_id || null,
-        threat_actor_name: row.threat_actor_name || null
-      };
+      return { ...fields, ...actorFields };
     }
   }
   const slugs = normalizeIocThreatClassificationSlugs(row.threat_classification);
   return {
     ...buildMultiThreatClassificationResponseFields(slugs.length ? slugs : []),
-    threat_actor_id: row.threat_actor_id || null,
-    threat_actor_name: row.threat_actor_name || null
+    ...actorFields
   };
 }
 
@@ -415,6 +488,7 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
   );
 
   const detailMap = await loadIocThreatClassificationDetails(pool, pairs);
+  const actorDetailMap = await loadIocThreatActorDetails(pool, pairs);
   for (const row of rows) {
     const key = `${Number(row.id)}|${String(row.observable_type)}`;
     let fields = detailMap.get(key);
@@ -422,10 +496,18 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
       const slugs = normalizeIocThreatClassificationSlugs(row.threat_classification);
       fields = buildMultiThreatClassificationResponseFields(slugs.length ? slugs : []);
     }
+    let actorFields = actorDetailMap.get(key);
+    if (!actorFields?.threat_actor_ids?.length && row.threat_actor_id) {
+      actorFields = buildMultiThreatActorResponseFields([{
+        id: row.threat_actor_id,
+        name: row.threat_actor_name || null,
+        active: true
+      }]);
+    }
+    if (!actorFields) actorFields = emptyThreatActorResponseFields();
     map.set(key, {
       ...fields,
-      threat_actor_id: row.threat_actor_id || null,
-      threat_actor_name: row.threat_actor_name || null
+      ...actorFields
     });
   }
   return map;

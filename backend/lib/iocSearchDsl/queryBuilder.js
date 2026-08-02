@@ -181,10 +181,13 @@ class Builder {
     }
   }
 
-  // ---- text: threat_actor (EXISTS over threat_actors) -------------------
+  // ---- text: threat_actor (EXISTS over ioc_threat_actors junction) -------
   buildThreatActor(node) {
     const base = (cond) =>
-      `EXISTS (SELECT 1 FROM threat_actors ta WHERE ta.id = ${IOC_ALIAS}.threat_actor_id AND ${cond})`;
+      `EXISTS (SELECT 1 FROM ioc_threat_actors ita ` +
+      `JOIN threat_actors ta ON ta.id = ita.threat_actor_id ` +
+      `WHERE ita.ioc_id = ${IOC_ALIAS}.id AND ita.ioc_observable_type = ${IOC_ALIAS}.observable_type ` +
+      `AND ${cond})`;
     const v = node.values[0];
     switch (node.operator) {
       case 'contains':

@@ -57,6 +57,23 @@ async function findDuplicate(pool, { name, slug, excludeId = null }) {
  * @param {{ auditSuccess: Function }} audit
  */
 export function registerThreatActorRoutes(app, pool, audit) {
+  app.get('/api/threat-actors', async (_req, res) => {
+    try {
+      const rows = await fetchActiveThreatActors(pool);
+      return res.json({
+        threat_actors: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          aliases: row.aliases || [],
+          active: Boolean(row.active)
+        }))
+      });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   app.get('/api/admin/threat-actors', requireRole(ROLES.ADMIN), async (req, res) => {
     const includeInactive = String(req.query?.include_inactive ?? 'true') !== 'false';
     try {

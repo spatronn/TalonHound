@@ -138,7 +138,7 @@ export async function enrichExportBatch(db, baseRows) {
     baseRows.map((r) => r.artifact_id).filter(Boolean).map(String)
   )];
 
-  const [tagsRes, classRes, tsRes, hashesRes] = await Promise.all([
+  const [tagsRes, classRes, actorRes, tsRes, hashesRes] = await Promise.all([
     db.query(
       `SELECT it.ioc_id, ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS names
          FROM ioc_tags it JOIN tags t ON t.id = it.tag_id
@@ -155,6 +155,18 @@ export async function enrichExportBatch(db, baseRows) {
         GROUP BY itc.ioc_id`,
       [ids]
     ),
+    db.query(
+      `SELECT ita.ioc_id,
+              ARRAY_AGG(DISTINCT ta.name ORDER BY ta.name) AS names
+         FROM ioc_threat_actors ita
+         JOIN threat_actors ta ON ta.id = ita.threat_actor_id
+        WHERE ita.ioc_id = ANY($1::bigint[])
+        GROUP BY ita.ioc_id`,
+      [ids]
+    ).catch((err) => {
+      if (String(err?.message || '').includes('ioc_threat_actors')) return { rows: [] };
+      throw err;
+    }),
     db.query(
       `SELECT m.ioc_item_id,
               ${CANONICAL_FIRST_SEEN_AGG_SQL} AS first_seen_in_source,
@@ -178,6 +190,7 @@ export async function enrichExportBatch(db, baseRows) {
 
   const tagMap = new Map(tagsRes.rows.map((r) => [Number(r.ioc_id), r.names || []]));
   const classMap = new Map(classRes.rows.map((r) => [Number(r.ioc_id), r.names || []]));
+  const actorMap = new Map((actorRes.rows || []).map((r) => [Number(r.ioc_id), r.names || []]));
   const tsMap = new Map(
     tsRes.rows.map((r) => [
       Number(r.ioc_item_id),
@@ -205,13 +218,17 @@ export async function enrichExportBatch(db, baseRows) {
       item_created_at: row.created_at
     });
     const artKey = row.artifact_id ? String(row.artifact_id) : null;
+    const actorNames = actorMap.get(id);
+    const threatActorName = actorNames?.length
+      ? actorNames.join(', ')
+      : (row.threat_actor_name || null);
     return {
       observable: row.observable,
       observable_type: row.observable_type,
       status: row.status,
       source_name: row.source_name,
       confidence: row.confidence,
-      threat_actor_name: row.threat_actor_name,
+      threat_actor_name: threatActorName,
       first_seen_at: row.first_seen_at,
       created_at: platform.created_at,
       imported_at: platform.imported_at,

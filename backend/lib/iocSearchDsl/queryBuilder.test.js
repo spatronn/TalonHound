@@ -134,9 +134,10 @@ test('classification matches slug OR label', () => {
   assert.match(sql, /itc\.classification_slug = \$1 OR LOWER\(tc\.name\) = \$1/);
 });
 
-test('threat_actor equals via EXISTS on threat_actors', () => {
+test('threat_actor equals via EXISTS on ioc_threat_actors junction', () => {
   const { sql, params } = build('threat_actor equals "APT29"');
-  assert.match(sql, /EXISTS \(SELECT 1 FROM threat_actors ta WHERE ta\.id = i\.threat_actor_id/);
+  assert.match(sql, /EXISTS \(SELECT 1 FROM ioc_threat_actors ita/);
+  assert.match(sql, /JOIN threat_actors ta ON ta\.id = ita\.threat_actor_id/);
   assert.equal(params[0], 'apt29');
 });
 
