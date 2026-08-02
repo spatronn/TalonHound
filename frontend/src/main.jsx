@@ -32,7 +32,8 @@ import { isRdapEligibleObservable } from './lib/iocProviderApplicability.js';
 import {
   normalizeVisibleClassifications,
   buildThreatClassificationModalState,
-  buildThreatClassificationSavePayload
+  buildThreatClassificationSavePayload,
+  mergeThreatClassificationModalOptions
 } from './lib/classificationSummary.js';
 import {
   buildThreatClassificationReorderPayload,
@@ -912,6 +913,8 @@ const IOC_EXPIRATION_AUDIT_ACTIONS = new Set([
 const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_classification.updated',
   'ioc.threat_classifications.updated',
+  'ioc.threat_classification.suppressed',
+  'ioc.threat_classification.restored',
   'ioc.threat_actor.updated',
   'threat_classification.created',
   'threat_classification.updated',
@@ -6257,24 +6260,33 @@ function ThreatClassificationBadges({ classifications, max = 5, emptyLabel = 'Un
   const shown = items.slice(0, max);
   return (
     <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-      {shown.map((c) => (
-        <span
-          key={c.value}
-          title={c.origin === 'feed' ? (c.source_name ? `From feed: ${c.source_name}` : 'From feed') : undefined}
-          style={{
-            fontSize: 12,
-            padding: '2px 8px',
-            borderRadius: 999,
-            background: c.origin === 'feed' ? '#0f172a' : '#1e293b',
-            border: `1px solid ${c.origin === 'feed' ? '#475569' : '#334155'}`,
-            color: '#e2e8f0'
-          }}
-        >
-          {c.label || formatThreatClassificationLabel(c.value)}
-          {c.origin === 'feed' ? ' (Feed)' : ''}
-          {c.active === false ? ' (Inactive)' : ''}
-        </span>
-      ))}
+      {shown.map((c) => {
+        const origins = Array.isArray(c.origins)
+          ? c.origins
+          : (c.origin ? [c.origin] : []);
+        const fromFeed = origins.includes('feed') || c.origin === 'feed';
+        const fromAnalyst = origins.includes('analyst') || c.origin === 'analyst';
+        return (
+          <span
+            key={c.value}
+            title={fromFeed && c.source_name ? `From feed: ${c.source_name}` : undefined}
+            style={{
+              fontSize: 12,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: '#1e293b',
+              border: '1px solid #334155',
+              color: '#e2e8f0'
+            }}
+          >
+            {c.label || formatThreatClassificationLabel(c.value)}
+            {fromFeed ? ' · Feed' : ''}
+            {fromAnalyst && !fromFeed ? ' · Analyst' : ''}
+            {fromAnalyst && fromFeed ? ' · Analyst' : ''}
+            {c.active === false ? ' (Inactive)' : ''}
+          </span>
+        );
+      })}
       {items.length > max ? <span style={{ color: '#94a3b8', fontSize: 12 }}>+{items.length - max}</span> : null}
     </span>
   );
@@ -6285,7 +6297,7 @@ function ThreatClassificationMultiSelect({
   onChange,
   options,
   inactiveOptions = [],
-  feedOnlyOptions = [],
+  provenanceByValue = {},
   disabled = false
 }) {
   const selected = normalizeSelectedThreatClasses(value);
@@ -6335,45 +6347,40 @@ function ThreatClassificationMultiSelect({
           );
         }) : <span style={{ color: '#94a3b8', fontSize: 13 }}>Unknown (no classifications selected)</span>}
       </div>
-      <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 180, overflowY: 'auto', background: '#0f172a' }}>
+      <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 220, overflowY: 'auto', background: '#0f172a' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13 }}>
           <input type="checkbox" checked={!selected.length} onChange={() => onChange([])} disabled={disabled} />
           Unknown
         </label>
-        {allOptions.filter((o) => o.value !== 'unknown').map((opt) => (
-          <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={selected.includes(opt.value)}
-              onChange={() => toggle(opt.value)}
-              disabled={disabled}
-            />
-            {opt.label}
-            {inactiveOptions.some((x) => x.value === opt.value) ? ' (Inactive)' : ''}
-          </label>
-        ))}
-      </div>
-      {Array.isArray(feedOnlyOptions) && feedOnlyOptions.length ? (
-        <div style={{ border: '1px dashed #475569', borderRadius: 8, padding: 10, background: '#0b1220' }}>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-            Provided by feeds (read-only)
-          </div>
-          {feedOnlyOptions.map((opt) => (
-            <label
-              key={`feed-${opt.value}`}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13, color: '#cbd5e1' }}
-            >
-              <input type="checkbox" checked readOnly disabled />
-              {opt.label || formatThreatClassificationLabel(opt.value)}
-              {opt.source_name ? (
-                <span style={{ color: '#64748b', fontSize: 12 }}>({opt.source_name})</span>
-              ) : (
-                <span style={{ color: '#64748b', fontSize: 12 }}>(Feed)</span>
-              )}
+        {allOptions.filter((o) => o.value !== 'unknown').map((opt) => {
+          const meta = provenanceByValue[String(opt.value).toLowerCase()]
+            || provenanceByValue[opt.value]
+            || opt.provenance
+            || null;
+          return (
+            <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={selected.includes(opt.value)}
+                onChange={() => toggle(opt.value)}
+                disabled={disabled}
+              />
+              <span>{opt.label}</span>
+              {meta?.feed ? (
+                <span style={{ color: '#94a3b8', fontSize: 11 }}>
+                  Feed{meta.source_name ? ` · ${meta.source_name}` : ''}
+                </span>
+              ) : null}
+              {meta?.analyst ? (
+                <span style={{ color: '#93c5fd', fontSize: 11 }}>Analyst</span>
+              ) : null}
+              {inactiveOptions.some((x) => x.value === opt.value) ? (
+                <span style={{ color: '#94a3b8', fontSize: 11 }}>Inactive</span>
+              ) : null}
             </label>
-          ))}
-        </div>
-      ) : null}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -13444,16 +13451,21 @@ function IOCDetailsPage() {
     () => buildThreatClassificationModalState(summary),
     [summary]
   );
+  const threatClassModalOptions = useMemo(
+    () => mergeThreatClassificationModalOptions(threatClassOptions, summary),
+    [threatClassOptions, summary]
+  );
   const threatClassEditInactiveOptions = useMemo(() => {
     const current = threatClassModalView.editableSlugs;
     return current
-      .filter((slug) => !threatClassOptions.some((o) => o.value === slug))
+      .filter((slug) => !threatClassModalOptions.some((o) => o.value === slug))
       .map((slug) => ({
         value: slug,
-        label: `${summary?.threat_classifications?.find((x) => x.value === slug)?.label || threatClassLabelFor(slug)} (Inactive)`
+        label: `${summary?.effective_threat_classifications?.find((x) => x.value === slug)?.label
+          || summary?.threat_classifications?.find((x) => x.value === slug)?.label
+          || threatClassLabelFor(slug)} (Inactive)`
       }));
-  }, [summary, threatClassOptions, threatClassLabelFor, threatClassModalView.editableSlugs]);
-  const threatClassFeedOnlyOptions = threatClassModalView.feedOnly;
+  }, [summary, threatClassModalOptions, threatClassLabelFor, threatClassModalView.editableSlugs]);
   const activeSources = Array.isArray(data.active_sources) ? data.active_sources : [];
   const historicalSources = Array.isArray(data.historical_sources) ? data.historical_sources : [];
   const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
@@ -14332,9 +14344,9 @@ function IOCDetailsPage() {
             <ThreatClassificationMultiSelect
               value={threatClassDraft}
               onChange={setThreatClassDraft}
-              options={threatClassOptions}
+              options={threatClassModalOptions}
               inactiveOptions={threatClassEditInactiveOptions}
-              feedOnlyOptions={threatClassFeedOnlyOptions}
+              provenanceByValue={threatClassModalView.provenanceByValue}
               disabled={threatClassSaving}
             />
             {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}

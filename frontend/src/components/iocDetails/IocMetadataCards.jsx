@@ -1,8 +1,5 @@
 import React from 'react';
-import {
-  getAnalystThreatClassifications,
-  getFeedOnlyThreatClassifications
-} from '../../lib/classificationSummary.js';
+import { getEffectiveThreatClassifications } from '../../lib/classificationSummary.js';
 
 export function IocMetadataCards({
   confidenceCard,
@@ -13,9 +10,7 @@ export function IocMetadataCards({
   onEditThreatActor,
   ThreatClassificationBadges
 }) {
-  const analyst = getAnalystThreatClassifications(summary);
-  const feedOnly = getFeedOnlyThreatClassifications(summary);
-  const classifications = [...analyst, ...feedOnly];
+  const classifications = getEffectiveThreatClassifications(summary);
 
   const cardStyle = {
     padding: 12,
@@ -89,11 +84,6 @@ export function IocMetadataCards({
             <span style={{ color: '#64748b', fontSize: 13, fontWeight: 500 }}>Not selected</span>
           )}
         </div>
-        {feedOnly.length ? (
-          <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>
-            Feed-provided classifications are labeled and cannot be removed here.
-          </div>
-        ) : null}
       </div>
 
       <div style={cardStyle}>

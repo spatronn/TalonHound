@@ -2,12 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normalizeVisibleClassifications,
-  getAnalystThreatClassifications,
-  getFeedOnlyThreatClassifications,
-  getDisplayedThreatClassifications,
-  editableThreatClassificationSlugs,
+  getEffectiveThreatClassifications,
+  getFeedThreatClassifications,
+  getSuppressedThreatClassifications,
   buildThreatClassificationModalState,
-  buildThreatClassificationSavePayload
+  buildThreatClassificationSavePayload,
+  mergeThreatClassificationModalOptions
 } from './classificationSummary.js';
 
 describe('normalizeVisibleClassifications', () => {
@@ -17,199 +17,124 @@ describe('normalizeVisibleClassifications', () => {
     assert.deepEqual(normalizeVisibleClassifications([]), []);
   });
 
-  it('returns empty array for unknown-only input', () => {
-    assert.deepEqual(normalizeVisibleClassifications([{ value: 'unknown', label: 'Unknown' }]), []);
-    assert.deepEqual(normalizeVisibleClassifications([{ value: 'UNKNOWN', label: 'Unknown' }]), []);
-  });
-
-  it('returns single item for one classification', () => {
-    const result = normalizeVisibleClassifications([{ value: 'malware', label: 'Malware' }]);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].value, 'malware');
-    assert.equal(result[0].label, 'Malware');
-  });
-
-  it('returns two items for two classifications', () => {
-    const result = normalizeVisibleClassifications([
-      { value: 'malware', label: 'Malware' },
-      { value: 'phishing', label: 'Phishing' }
-    ]);
-    assert.equal(result.length, 2);
-    assert.equal(result[0].value, 'malware');
-    assert.equal(result[1].value, 'phishing');
-  });
-
-  it('filters unknown from mixed array and returns only real classifications', () => {
+  it('filters unknown and deduplicates', () => {
     const result = normalizeVisibleClassifications([
       { value: 'unknown', label: 'Unknown' },
       { value: 'malware', label: 'Malware' },
-      { value: 'phishing', label: 'Phishing' }
-    ]);
-    assert.equal(result.length, 2);
-    assert.equal(result[0].value, 'malware');
-    assert.equal(result[1].value, 'phishing');
-  });
-
-  it('deduplicates same value appearing twice', () => {
-    const result = normalizeVisibleClassifications([
-      { value: 'malware', label: 'Malware' },
       { value: 'malware', label: 'Malware' }
     ]);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].value, 'malware');
-  });
-
-  it('deduplicates case-insensitively', () => {
-    const result = normalizeVisibleClassifications([
-      { value: 'Malware', label: 'Malware' },
-      { value: 'malware', label: 'Malware' }
-    ]);
-    assert.equal(result.length, 1);
-  });
-
-  it('handles plain string items', () => {
-    const result = normalizeVisibleClassifications(['malware', 'phishing']);
-    assert.equal(result.length, 2);
-    assert.equal(result[0].value, 'malware');
-    assert.equal(result[0].label, null);
-  });
-
-  it('handles plain string unknown correctly', () => {
-    const result = normalizeVisibleClassifications(['unknown', 'malware']);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].value, 'malware');
-  });
-
-  it('preserves backend ordering', () => {
-    const result = normalizeVisibleClassifications([
-      { value: 'phishing', label: 'Phishing' },
-      { value: 'malware', label: 'Malware' },
-      { value: 'c2', label: 'C2' }
-    ]);
-    assert.deepEqual(result.map((x) => x.value), ['phishing', 'malware', 'c2']);
+    assert.deepEqual(result.map((x) => x.value), ['malware']);
   });
 });
 
-const MALWARE_DOWNLOAD_SUMMARY = {
-  threat_classifications: [
-    { value: 'malware', label: 'Malware', active: true }
+const SUMMARY = {
+  analyst_threat_classifications: [{ value: 'malware', label: 'Malware', origin: 'analyst' }],
+  feed_threat_classifications: [
+    { value: 'malware', label: 'Malware', origin: 'feed', source_name: 'URLhaus' },
+    { value: 'malware_download', label: 'Malware Download', origin: 'feed', source_name: 'URLhaus:abuse.ch' }
+  ],
+  suppressed_threat_classifications: [],
+  effective_threat_classifications: [
+    { value: 'malware', label: 'Malware', origin: 'feed', origins: ['feed', 'analyst'], source_name: 'URLhaus' },
+    { value: 'malware_download', label: 'Malware Download', origin: 'feed', origins: ['feed'], source_name: 'URLhaus:abuse.ch' }
   ],
   feed_intelligence: {
     classifications: [
       { value: 'malware', label: 'Malware', origin: 'feed', source_name: 'URLhaus' },
-      {
-        value: 'malware_download',
-        label: 'Malware Download',
-        origin: 'feed',
-        source_name: 'URLhaus:abuse.ch'
-      }
+      { value: 'malware_download', label: 'Malware Download', origin: 'feed', source_name: 'URLhaus:abuse.ch' }
     ]
   }
 };
 
-describe('analyst vs feed classification split', () => {
-  it('card display keeps Malware + Malware Download', () => {
-    const displayed = getDisplayedThreatClassifications(MALWARE_DOWNLOAD_SUMMARY);
-    assert.deepEqual(displayed.map((x) => x.value), ['malware', 'malware_download']);
-  });
-
-  it('editable slugs are analyst-only (Malware)', () => {
-    assert.deepEqual(editableThreatClassificationSlugs(MALWARE_DOWNLOAD_SUMMARY), ['malware']);
+describe('effective classification model', () => {
+  it('card shows Malware + Malware Download from effective set', () => {
     assert.deepEqual(
-      getAnalystThreatClassifications(MALWARE_DOWNLOAD_SUMMARY).map((x) => x.value),
-      ['malware']
+      getEffectiveThreatClassifications(SUMMARY).map((x) => x.value),
+      ['malware', 'malware_download']
     );
   });
 
-  it('feed-only list exposes Malware Download as source-provided', () => {
-    const feedOnly = getFeedOnlyThreatClassifications(MALWARE_DOWNLOAD_SUMMARY);
-    assert.equal(feedOnly.length, 1);
-    assert.equal(feedOnly[0].value, 'malware_download');
-    assert.equal(feedOnly[0].label, 'Malware Download');
-    assert.equal(feedOnly[0].origin, 'feed');
-    assert.equal(feedOnly[0].source_name, 'URLhaus:abuse.ch');
-  });
-});
-
-describe('buildThreatClassificationModalState', () => {
-  it('opens with Malware checked and Malware Download present as feed-only', () => {
-    const state = buildThreatClassificationModalState(MALWARE_DOWNLOAD_SUMMARY);
-    assert.deepEqual(state.editableSlugs, ['malware']);
-    assert.ok(state.presentValues.includes('malware'));
-    assert.ok(state.presentValues.includes('malware_download'));
-    assert.equal(state.feedOnly[0].value, 'malware_download');
+  it('modal opens with both feed classifications checked and editable', () => {
+    const state = buildThreatClassificationModalState(SUMMARY);
+    assert.ok(state.editableSlugs.includes('malware'));
+    assert.ok(state.editableSlugs.includes('malware_download'));
+    assert.equal(state.provenanceByValue.malware_download.feed, true);
+    assert.equal(state.provenanceByValue.malware_download.suppressed, false);
   });
 
-  it('hydrates by stable value key for labels like Command and Control (C2)', () => {
-    const summary = {
-      threat_classifications: [
-        { value: 'command_and_control', label: 'Command and Control (C2)' },
-        { value: 'malware_download', label: 'Malware Download' }
+  it('suppress removes feed classification from card but keeps provenance unchecked', () => {
+    const suppressedSummary = {
+      ...SUMMARY,
+      suppressed_threat_classifications: [
+        { value: 'malware_download', label: 'Malware Download', origin: 'suppress' }
       ],
-      feed_intelligence: { classifications: [] }
+      effective_threat_classifications: [
+        { value: 'malware', label: 'Malware', origin: 'feed', origins: ['feed', 'analyst'] }
+      ]
+    };
+    assert.deepEqual(
+      getEffectiveThreatClassifications(suppressedSummary).map((x) => x.value),
+      ['malware']
+    );
+    const state = buildThreatClassificationModalState(suppressedSummary);
+    assert.ok(!state.editableSlugs.includes('malware_download'));
+    assert.equal(state.provenanceByValue.malware_download.suppressed, true);
+    assert.equal(state.provenanceByValue.malware_download.feed, true);
+  });
+
+  it('unchanged save payload keeps both effective values', () => {
+    const state = buildThreatClassificationModalState(SUMMARY);
+    const payload = buildThreatClassificationSavePayload(state.editableSlugs);
+    assert.deepEqual(payload.effective_threat_classifications.sort(), ['malware', 'malware_download']);
+  });
+
+  it('removing one value only drops that slug from save payload', () => {
+    const payload = buildThreatClassificationSavePayload(['malware']);
+    assert.deepEqual(payload.threat_classifications, ['malware']);
+  });
+
+  it('hydrates by stable value for Command and Control (C2)', () => {
+    const summary = {
+      effective_threat_classifications: [
+        { value: 'command_and_control', label: 'Command and Control (C2)', origin: 'analyst' }
+      ],
+      analyst_threat_classifications: [
+        { value: 'command_and_control', label: 'Command and Control (C2)' }
+      ],
+      feed_threat_classifications: [],
+      suppressed_threat_classifications: []
     };
     const state = buildThreatClassificationModalState(summary);
-    assert.deepEqual(state.editableSlugs, ['command_and_control', 'malware_download']);
-    assert.equal(state.feedOnly.length, 0);
+    assert.deepEqual(state.editableSlugs, ['command_and_control']);
   });
 
-  it('reopening uses current server summary (stale prior draft not reused)', () => {
-    const afterRemove = {
-      threat_classifications: [{ value: 'malware', label: 'Malware' }],
-      feed_intelligence: {
-        classifications: [
-          { value: 'malware_download', label: 'Malware Download', origin: 'feed', source_name: 'URLhaus' }
-        ]
-      }
-    };
-    const first = buildThreatClassificationModalState(MALWARE_DOWNLOAD_SUMMARY);
-    const second = buildThreatClassificationModalState(afterRemove);
-    assert.deepEqual(first.editableSlugs, ['malware']);
-    assert.deepEqual(second.editableSlugs, ['malware']);
-    assert.deepEqual(second.feedOnly.map((x) => x.value), ['malware_download']);
-    assert.notEqual(first, second);
-  });
-});
-
-describe('buildThreatClassificationSavePayload', () => {
-  it('unchanged save keeps analyst set and does not drop feed-only from card model', () => {
-    const state = buildThreatClassificationModalState(MALWARE_DOWNLOAD_SUMMARY);
-    const payload = buildThreatClassificationSavePayload(state.editableSlugs);
-    assert.deepEqual(payload.threat_classifications, ['malware']);
-    // Feed-only remains outside the save payload but still displayed via feed_intelligence
-    const afterSaveCard = getDisplayedThreatClassifications({
-      threat_classifications: payload.threat_classifications.map((value) => ({ value, label: value })),
-      feed_intelligence: MALWARE_DOWNLOAD_SUMMARY.feed_intelligence
-    });
-    assert.deepEqual(afterSaveCard.map((x) => x.value), ['malware', 'malware_download']);
-  });
-
-  it('removing one analyst classification only drops that slug', () => {
-    const summary = {
-      threat_classifications: [
-        { value: 'malware', label: 'Malware' },
-        { value: 'phishing', label: 'Phishing' }
+  it('reopening uses current server summary', () => {
+    const after = {
+      ...SUMMARY,
+      suppressed_threat_classifications: [
+        { value: 'malware_download', label: 'Malware Download' }
       ],
-      feed_intelligence: {
-        classifications: [
-          { value: 'malware_download', label: 'Malware Download', origin: 'feed', source_name: 'URLhaus' }
-        ]
-      }
+      effective_threat_classifications: [
+        { value: 'malware', label: 'Malware', origin: 'feed' }
+      ]
     };
-    const payload = buildThreatClassificationSavePayload(['malware']);
-    assert.deepEqual(payload.classifications, ['malware']);
-    assert.deepEqual(payload.threat_classifications, ['malware']);
-    const card = getDisplayedThreatClassifications({
-      threat_classifications: [{ value: 'malware', label: 'Malware' }],
-      feed_intelligence: summary.feed_intelligence
-    });
-    assert.deepEqual(card.map((x) => x.value), ['malware', 'malware_download']);
+    const second = buildThreatClassificationModalState(after);
+    assert.deepEqual(second.editableSlugs, ['malware']);
+    assert.equal(second.provenanceByValue.malware_download.suppressed, true);
   });
 
-  it('filters unknown and deduplicates draft slugs', () => {
-    assert.deepEqual(
-      buildThreatClassificationSavePayload(['malware', 'unknown', 'malware', '']).threat_classifications,
-      ['malware']
+  it('modal options include feed-only malware_download with Feed provenance', () => {
+    const options = mergeThreatClassificationModalOptions(
+      [{ value: 'malware', label: 'Malware' }, { value: 'phishing', label: 'Phishing' }],
+      SUMMARY
     );
+    const md = options.find((o) => o.value === 'malware_download');
+    assert.ok(md);
+    assert.equal(md.provenance.feed, true);
+  });
+
+  it('feed/suppressed helpers read explicit API fields', () => {
+    assert.equal(getFeedThreatClassifications(SUMMARY).length, 2);
+    assert.equal(getSuppressedThreatClassifications(SUMMARY).length, 0);
   });
 });

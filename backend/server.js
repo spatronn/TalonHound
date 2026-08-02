@@ -193,7 +193,7 @@ import { registerIocSourceRoutes } from './routes/iocSources.js';
 import { registerCustomThreatFeedRoutes } from './routes/customThreatFeeds.js';
 import { registerThreatActorRoutes } from './routes/threatActors.js';
 import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
-import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem, batchLoadFeedClassifications, mergeFeedClassificationsIntoItem } from './routes/iocThreatMetadata.js';
+import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem, batchLoadFeedClassifications, batchLoadThreatClassificationSuppressions, mergeFeedClassificationsIntoItem } from './routes/iocThreatMetadata.js';
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
 import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
@@ -3374,18 +3374,19 @@ registerIocDeleteRoute(app, pool, auditLogService, { invalidateDetailsCache: inv
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
-  const [confMap, threatMetaMap, analystMap, feedClassMap] = await Promise.all([
+  const [confMap, threatMetaMap, analystMap, feedClassMap, suppressMap] = await Promise.all([
     buildDisplayConfidenceForItems(pool, enriched, {
       includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
     }),
     enrichItemsWithThreatMetadata(pool, pageItems),
     enrichItemsWithAnalystIntelligenceCounts(pool, pageItems),
-    batchLoadFeedClassifications(pool, pageItems)
+    batchLoadFeedClassifications(pool, pageItems),
+    batchLoadThreatClassificationSuppressions(pool, pageItems)
   ]);
   return enriched.map((it) => {
     const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
     const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-    const withFeed = mergeFeedClassificationsIntoItem(merged, feedClassMap);
+    const withFeed = mergeFeedClassificationsIntoItem(merged, feedClassMap, suppressMap);
     return mergeAnalystIntelligenceItem(withFeed, analystMap);
   });
 }
@@ -5364,6 +5365,10 @@ app.get('/api/ioc/details', async (req, res) => {
       console.warn('[ioc-details] disabled catalog tag filter skipped:', err.message);
     }
 
+    const threatMetadataFields = await buildThreatMetadataFields(pool, lifecycleRow, {
+      feedClassifications: rawFeedIntelligence?.classifications || []
+    });
+
     const summary = {
       id: seedRow.id,
       public_id: seedRow.public_id,
@@ -5380,7 +5385,7 @@ app.get('/api/ioc/details', async (req, res) => {
       expired_at: lifecycleRow.expired_at || null,
       expiration_reason: lifecycleRow.expiration_reason || null,
       reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
-      ...(await buildThreatMetadataFields(pool, lifecycleRow)),
+      ...threatMetadataFields,
       manual_status_override: Boolean(lifecycleRow.manual_status_override),
       manual_status: lifecycleRow.manual_status || null,
       // Platform insert = earliest ioc_items.created_at (immutable). API alias: imported_at.

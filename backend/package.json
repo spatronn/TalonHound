@@ -37,7 +37,7 @@
     "test:auth-bootstrap": "node --test lib/defaultAdminBootstrap.test.js lib/passwordChangeGate.test.js",
     "test:ioc-export": "node --test lib/iocExportHelpers.test.js",
     "test:ioc-search": "node --test lib/iocSearchDsl/parser.test.js lib/iocSearchDsl/queryBuilder.test.js lib/iocSearchExport/csv.test.js lib/iocSearchExport/exportRows.test.js lib/iocSearchExport/exportStatus.test.js lib/iocSearchExport/exportStore.cleanup.test.js routes/iocSearchExports.test.js",
-    "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js lib/threatClassificationReorder.test.js routes/threatClassifications.test.js",
+    "test:threat-classification": "node --test lib/threatClassification.test.js lib/iocThreatClassifications.test.js lib/threatClassificationReorder.test.js lib/iocThreatClassificationOverrides.test.js routes/threatClassifications.test.js routes/iocThreatMetadata.test.js",
     "test:ioc-classification-mapping": "node --test lib/iocClassificationMapping.test.js",
     "test:system-time": "node --test lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js",
     "test:file-artifacts": "node --test lib/fileArtifacts/*.test.js",

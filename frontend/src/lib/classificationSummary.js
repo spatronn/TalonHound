@@ -1,8 +1,11 @@
 /**
- * Normalizes a threat_classifications array into a deduplicated, unknown-filtered list.
- * Each item is expected to be { value, label, ... } or a plain slug string.
- * Returns the visible entries in backend order; empty array means Unknown should be shown.
+ * IOC threat classification display / modal helpers.
  *
+ * Effective set (server + client):
+ *   (feed classifications − analyst suppressions) ∪ analyst additions
+ */
+
+/**
  * @param {Array<{value: string, label?: string}|string>|null|undefined} classifications
  * @returns {Array<{value: string, label: string|null}>}
  */
@@ -16,101 +19,147 @@ export function normalizeVisibleClassifications(classifications) {
     const key = value.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ value, label: (typeof item === 'object' && item !== null) ? (item.label ?? null) : null });
-  }
-  return result;
-}
-
-/**
- * Analyst/manual classifications stored on the IOC (editable via threat-classifications PATCH).
- * @param {object|null|undefined} summary
- */
-export function getAnalystThreatClassifications(summary) {
-  return normalizeVisibleClassifications(summary?.threat_classifications);
-}
-
-/**
- * Feed-derived classifications that are not already present in the analyst set.
- * These come from feed_intelligence and are display-only in the edit modal.
- * @param {object|null|undefined} summary
- * @returns {Array<{value: string, label: string|null, origin: 'feed', source_name: string|null}>}
- */
-export function getFeedOnlyThreatClassifications(summary) {
-  const analystKeys = new Set(
-    getAnalystThreatClassifications(summary).map((c) => String(c.value).toLowerCase())
-  );
-  const list = Array.isArray(summary?.feed_intelligence?.classifications)
-    ? summary.feed_intelligence.classifications
-    : [];
-  const seen = new Set();
-  const result = [];
-  for (const item of list) {
-    const value = String(item?.value || '').trim();
-    if (!value || value.toLowerCase() === 'unknown') continue;
-    const key = value.toLowerCase();
-    if (analystKeys.has(key) || seen.has(key)) continue;
-    seen.add(key);
+    const obj = typeof item === 'object' && item !== null ? item : null;
     result.push({
       value,
-      label: item?.label ?? null,
-      origin: 'feed',
-      source_name: item?.source_name ? String(item.source_name) : null,
-      active: item?.active !== false
+      label: obj ? (obj.label ?? null) : null,
+      origin: obj?.origin || null,
+      origins: Array.isArray(obj?.origins) ? obj.origins : null,
+      source_name: obj?.source_name || null,
+      active: obj?.active
     });
   }
   return result;
 }
 
+export function getFeedThreatClassifications(summary) {
+  if (Array.isArray(summary?.feed_threat_classifications) && summary.feed_threat_classifications.length) {
+    return normalizeVisibleClassifications(summary.feed_threat_classifications);
+  }
+  return normalizeVisibleClassifications(summary?.feed_intelligence?.classifications);
+}
+
+export function getAnalystThreatClassifications(summary) {
+  if (Array.isArray(summary?.analyst_threat_classifications)) {
+    return normalizeVisibleClassifications(summary.analyst_threat_classifications);
+  }
+  // Legacy: threat_classifications was analyst-only before effective bundles
+  if (Array.isArray(summary?.effective_threat_classifications)) {
+    return normalizeVisibleClassifications(
+      (summary.effective_threat_classifications || []).filter((c) => {
+        const origins = c?.origins || (c?.origin ? [c.origin] : []);
+        return origins.includes('analyst') && !origins.includes('feed');
+      })
+    );
+  }
+  return normalizeVisibleClassifications(summary?.threat_classifications);
+}
+
+export function getSuppressedThreatClassifications(summary) {
+  return normalizeVisibleClassifications(summary?.suppressed_threat_classifications);
+}
+
 /**
- * Card display set: analyst classifications first, then feed-only extras (same merge as before).
- * @param {object|null|undefined} summary
+ * Card display: prefer server effective set; fall back to client-side merge for older payloads.
  */
+export function getEffectiveThreatClassifications(summary) {
+  if (Array.isArray(summary?.effective_threat_classifications)) {
+    return normalizeVisibleClassifications(summary.effective_threat_classifications);
+  }
+  const feed = getFeedThreatClassifications(summary);
+  const suppressed = new Set(
+    getSuppressedThreatClassifications(summary).map((c) => String(c.value).toLowerCase())
+  );
+  const visibleFeed = feed.filter((c) => !suppressed.has(String(c.value).toLowerCase()));
+  const analyst = getAnalystThreatClassifications(summary);
+  const seen = new Set(visibleFeed.map((c) => String(c.value).toLowerCase()));
+  const merged = [...visibleFeed];
+  for (const item of analyst) {
+    const key = String(item.value).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...item, origin: item.origin || 'analyst' });
+  }
+  return merged;
+}
+
+/** @deprecated use getEffectiveThreatClassifications */
 export function getDisplayedThreatClassifications(summary) {
-  return [
-    ...getAnalystThreatClassifications(summary),
-    ...getFeedOnlyThreatClassifications(summary)
-  ];
+  return getEffectiveThreatClassifications(summary);
 }
 
-/**
- * Editable modal draft slugs — analyst/manual only (stable classification value keys).
- * @param {object|null|undefined} summary
- * @returns {string[]}
- */
+/** @deprecated feed-only extras without suppress awareness */
+export function getFeedOnlyThreatClassifications(summary) {
+  const effectiveKeys = new Set(
+    getAnalystThreatClassifications(summary).map((c) => String(c.value).toLowerCase())
+  );
+  return getFeedThreatClassifications(summary).filter(
+    (c) => !effectiveKeys.has(String(c.value).toLowerCase())
+  );
+}
+
 export function editableThreatClassificationSlugs(summary) {
-  const fromMulti = getAnalystThreatClassifications(summary).map((c) => c.value);
-  if (fromMulti.length) return fromMulti;
-  if (Array.isArray(summary?.threat_classifications)) return [];
-  const legacy = summary?.threat_classification || summary?.primary_threat_classification;
-  if (legacy && String(legacy).toLowerCase() !== 'unknown') return [String(legacy)];
-  return [];
+  return getEffectiveThreatClassifications(summary).map((c) => c.value);
 }
 
 /**
- * View-model for the edit-threat-classifications modal.
- * Feed-only entries are included as read-only so they are not silently omitted.
- * @param {object|null|undefined} summary
+ * Modal view-model: checked = effective; feed provenance for labels; suppressed feed still listed unchecked.
  */
 export function buildThreatClassificationModalState(summary) {
-  const editableSlugs = editableThreatClassificationSlugs(summary);
-  const feedOnly = getFeedOnlyThreatClassifications(summary);
+  const feed = getFeedThreatClassifications(summary);
+  const analyst = getAnalystThreatClassifications(summary);
+  const suppressed = getSuppressedThreatClassifications(summary);
+  const effective = getEffectiveThreatClassifications(summary);
+  const editableSlugs = effective.map((c) => c.value);
+
+  const byValue = new Map();
+  for (const item of feed) {
+    byValue.set(String(item.value).toLowerCase(), {
+      value: item.value,
+      label: item.label,
+      feed: true,
+      source_name: item.source_name || null,
+      suppressed: false
+    });
+  }
+  for (const item of suppressed) {
+    const key = String(item.value).toLowerCase();
+    const prev = byValue.get(key) || {
+      value: item.value,
+      label: item.label,
+      feed: true,
+      source_name: item.source_name || null
+    };
+    byValue.set(key, { ...prev, suppressed: true, feed: true });
+  }
+  for (const item of analyst) {
+    const key = String(item.value).toLowerCase();
+    const prev = byValue.get(key);
+    if (prev) {
+      byValue.set(key, { ...prev, analyst: true });
+    } else {
+      byValue.set(key, {
+        value: item.value,
+        label: item.label,
+        analyst: true,
+        feed: false,
+        source_name: null,
+        suppressed: false
+      });
+    }
+  }
+
   return {
     editableSlugs,
-    feedOnly,
-    /** All classification values the user sees as "present" on open (editable + feed). */
+    feedOnly: [], // no longer a separate read-only list
+    provenanceByValue: Object.fromEntries(byValue),
     presentValues: [
       ...editableSlugs,
-      ...feedOnly.map((c) => c.value)
+      ...suppressed.map((c) => c.value)
     ]
   };
 }
 
-/**
- * Save payload for analyst classifications. Feed-only values are never included
- * (they remain sourced from feed_intelligence on the card).
- * @param {string[]} draftSlugs
- * @returns {{ classifications: string[], threat_classifications: string[] }}
- */
 export function buildThreatClassificationSavePayload(draftSlugs) {
   const slugs = (Array.isArray(draftSlugs) ? draftSlugs : [])
     .map((s) => String(s || '').trim())
@@ -118,6 +167,29 @@ export function buildThreatClassificationSavePayload(draftSlugs) {
   const unique = [...new Set(slugs)];
   return {
     classifications: unique,
-    threat_classifications: unique
+    threat_classifications: unique,
+    effective_threat_classifications: unique
   };
+}
+
+/**
+ * Merge dictionary options with feed/provenance entries so feed-only slugs appear as checkboxes.
+ */
+export function mergeThreatClassificationModalOptions(options, summary) {
+  const state = buildThreatClassificationModalState(summary);
+  const all = [...(options || [])];
+  for (const meta of Object.values(state.provenanceByValue || {})) {
+    if (!meta?.value) continue;
+    if (!all.some((o) => o.value === meta.value)) {
+      all.push({
+        value: meta.value,
+        label: meta.label || meta.value,
+        provenance: meta
+      });
+    } else {
+      const idx = all.findIndex((o) => o.value === meta.value);
+      if (idx >= 0) all[idx] = { ...all[idx], provenance: meta };
+    }
+  }
+  return all;
 }

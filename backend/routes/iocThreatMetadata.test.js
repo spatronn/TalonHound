@@ -185,7 +185,21 @@ describe('mergeFeedClassificationsIntoItem', () => {
     const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware', label: 'Malware' }] };
     const feedMap = new Map();
     const result = mergeFeedClassificationsIntoItem(item, feedMap);
-    assert.equal(result.threat_classifications.length, 1);
+    assert.ok(result.threat_classifications.some((x) => x.value === 'malware'));
+    assert.equal(result.effective_threat_classifications.length, 1);
+  });
+
+  it('applies suppressions so feed classification is excluded from effective set', () => {
+    const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware', label: 'Malware' }] };
+    const feedMap = new Map([
+      ['1|url', [{ value: 'malware_download', label: 'Malware Download', origin: 'feed' }]]
+    ]);
+    const suppressMap = new Map([
+      ['1|url', [{ classification_slug: 'malware_download' }]]
+    ]);
+    const result = mergeFeedClassificationsIntoItem(item, feedMap, suppressMap);
+    assert.deepEqual(result.effective_threat_classifications.map((x) => x.value), ['malware']);
+    assert.ok(result.suppressed_threat_classifications.some((x) => x.value === 'malware_download'));
   });
 
   it('appends feed classifications not already in stored list', () => {
@@ -194,8 +208,9 @@ describe('mergeFeedClassificationsIntoItem', () => {
       ['1|url', [{ value: 'malware_download', label: 'Malware Download', active: true, origin: 'feed', source_name: 'URLhaus:abuse.ch' }]]
     ]);
     const result = mergeFeedClassificationsIntoItem(item, feedMap);
-    assert.equal(result.threat_classifications.length, 2);
-    assert.equal(result.threat_classifications[1].value, 'malware_download');
+    const slugs = result.threat_classifications.map((x) => x.value).sort();
+    assert.deepEqual(slugs, ['malware', 'malware_download']);
+    assert.ok(result.effective_threat_classifications.some((x) => x.value === 'malware_download'));
   });
 
   it('skips feed classifications already in stored list', () => {

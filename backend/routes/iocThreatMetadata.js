@@ -6,12 +6,17 @@ import {
   loadIocThreatClassificationDetails,
   mergeIocThreatMetadataItem,
   normalizeIocThreatClassificationSlugs,
-  replaceIocThreatClassifications,
   validateIocThreatClassificationSlugs
 } from '../lib/iocThreatClassifications.js';
-import { normalizeClassificationSlug } from '../lib/threatClassification.js';
-import { parseNoteFields, normalizeFeedTags } from '../lib/feedTagNormalization.js';
+import {
+  buildThreatClassificationEffectiveFields,
+  computeEffectiveThreatClassifications,
+  listActiveThreatClassificationSuppressions,
+  planThreatClassificationEffectiveSave,
+  syncThreatClassificationOverrides
+} from '../lib/iocThreatClassificationOverrides.js';
 import { resolveThreatActorById } from './threatActors.js';
+import { parseNoteFields, normalizeFeedTags } from '../lib/feedTagNormalization.js';
 
 async function fetchIocRow(pool, iocId, observableType) {
   const { rows } = await pool.query(
@@ -36,19 +41,49 @@ function userLabel(req) {
 function parseClassificationBody(body) {
   if (Array.isArray(body?.threat_classifications)) return body.threat_classifications;
   if (Array.isArray(body?.classifications)) return body.classifications;
+  if (Array.isArray(body?.effective_threat_classifications)) return body.effective_threat_classifications;
   if (body?.threat_classification != null || body?.primary_threat_classification != null) {
     return [body?.threat_classification ?? body?.primary_threat_classification];
   }
   return body?.threat_classifications;
 }
 
+function isOverridesTableMissing(err) {
+  return String(err?.message || '').includes('ioc_threat_classification_overrides');
+}
+
+async function loadFeedClassificationsForIoc(pool, iocId, observableType) {
+  const map = await batchLoadFeedClassifications(pool, [{ id: iocId, observable_type: observableType }]);
+  return map.get(`${Number(iocId)}|${String(observableType)}`) || [];
+}
+
+async function buildEffectiveClassificationBundle(pool, iocId, observableType, {
+  analystSlugs = null,
+  feedClassifications = null
+} = {}) {
+  const feed = feedClassifications
+    || await loadFeedClassificationsForIoc(pool, iocId, observableType);
+  const additions = analystSlugs != null
+    ? normalizeIocThreatClassificationSlugs(analystSlugs)
+    : await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+  let suppressions = [];
+  try {
+    suppressions = await listActiveThreatClassificationSuppressions(pool, iocId, observableType);
+  } catch (err) {
+    if (!isOverridesTableMissing(err)) throw err;
+  }
+  const computed = computeEffectiveThreatClassifications({
+    feedClassifications: feed,
+    analystAdditionSlugs: additions,
+    activeSuppressions: suppressions
+  });
+  return buildThreatClassificationEffectiveFields(computed);
+}
+
 async function buildIocClassificationResponse(pool, iocId, observableType, baseRow = null) {
   const row = baseRow || await fetchIocRow(pool, iocId, observableType);
   if (!row) return null;
-  const slugs = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
-  const detailMap = await loadIocThreatClassificationDetails(pool, [{ id: iocId, observable_type: observableType }]);
-  const key = `${Number(iocId)}|${String(observableType || '')}`;
-  const fields = detailMap.get(key) || buildMultiThreatClassificationResponseFields(slugs);
+  const fields = await buildEffectiveClassificationBundle(pool, iocId, observableType);
   return {
     public_id: row.public_id,
     threat_actor_id: row.threat_actor_id || null,
@@ -78,39 +113,63 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       return res.status(400).json({ success: false, error: 'observable_type is required' });
     }
 
-    const check = await validateIocThreatClassificationSlugs(pool, parseClassificationBody(req.body), {
-      requireActive: true
-    });
-    if (!check.ok) return res.status(400).json({ success: false, error: check.error });
-
     try {
       const prev = await fetchIocRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
-      const oldSlugs = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
-      const legacyOld = oldSlugs.length
-        ? oldSlugs
-        : (normalizeClassificationSlug(prev.threat_classification) === 'unknown' ? [] : [normalizeClassificationSlug(prev.threat_classification)]);
+      const feedClassifications = await loadFeedClassificationsForIoc(pool, iocId, observableType);
+      const planned = planThreatClassificationEffectiveSave({
+        desiredEffectiveSlugs: parseClassificationBody(req.body),
+        feedClassifications
+      });
 
-      const newSlugs = check.value;
-      const sortKey = (arr) => [...arr].sort().join('|');
-      const same = sortKey(legacyOld) === sortKey(newSlugs);
-      if (same) {
+      const check = await validateIocThreatClassificationSlugs(pool, planned.additions, {
+        requireActive: true
+      });
+      if (!check.ok) return res.status(400).json({ success: false, error: check.error });
+
+      const beforeBundle = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
+        feedClassifications
+      });
+      const beforeEffective = (beforeBundle.effective_threat_classifications || [])
+        .map((x) => x.value)
+        .filter((v) => v && v !== 'unknown');
+
+      const sortKey = (arr) => [...arr].map((x) => String(x).toLowerCase()).sort().join('|');
+      if (sortKey(beforeEffective) === sortKey(planned.desired)) {
         const unchanged = await buildIocClassificationResponse(pool, iocId, observableType, prev);
         return res.json({ success: true, ...unchanged });
       }
 
-      await replaceIocThreatClassifications(pool, {
-        iocId,
-        observableType,
-        slugs: newSlugs,
-        sourceType: 'analyst',
-        sourceName: 'ui',
-        actor: userLabel(req)
-      });
+      const client = await pool.connect();
+      let syncResult;
+      try {
+        await client.query('BEGIN');
+        syncResult = await syncThreatClassificationOverrides(client, {
+          iocId,
+          observableType,
+          additions: planned.additions,
+          suppressions: planned.suppressions,
+          actor: userLabel(req)
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+        throw err;
+      } finally {
+        client.release();
+      }
+
       invalidateDetailsCache(prev.public_id);
 
-      const diff = diffThreatClassificationSlugs(legacyOld, newSlugs);
+      const afterBundle = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
+        feedClassifications
+      });
+      const afterEffective = (afterBundle.effective_threat_classifications || [])
+        .map((x) => x.value)
+        .filter((v) => v && v !== 'unknown');
+      const diff = diffThreatClassificationSlugs(beforeEffective, afterEffective);
+
       await audit.auditSuccess({
         req,
         action: auditAction,
@@ -120,13 +179,46 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
         metadata: {
           observable_type: observableType,
           ioc_value: prev.observable,
-          old_classification: legacyOld[0] || 'unknown',
-          new_classification: newSlugs[0] || 'unknown',
-          ...diff
+          old_classification: beforeEffective[0] || 'unknown',
+          new_classification: afterEffective[0] || 'unknown',
+          ...diff,
+          created_adds: syncResult.created_adds,
+          cleared_adds: syncResult.cleared_adds,
+          created_suppressions: syncResult.created_suppressions,
+          restored_suppressions: syncResult.restored_suppressions
         },
-        before: { threat_classifications: legacyOld },
-        after: { threat_classifications: newSlugs }
+        before: {
+          effective_threat_classifications: beforeEffective,
+          analyst_additions: beforeBundle.analyst_threat_classifications?.map((x) => x.value) || [],
+          suppressions: beforeBundle.suppressed_threat_classifications?.map((x) => x.value) || []
+        },
+        after: {
+          effective_threat_classifications: afterEffective,
+          analyst_additions: afterBundle.analyst_threat_classifications?.map((x) => x.value) || [],
+          suppressions: afterBundle.suppressed_threat_classifications?.map((x) => x.value) || []
+        }
       });
+
+      for (const slug of syncResult.created_suppressions || []) {
+        await audit.auditSuccess({
+          req,
+          action: AUDIT_ACTION.IOC_THREAT_CLASSIFICATION_SUPPRESSED,
+          entityType: AUDIT_ENTITY.IOC,
+          entityId: String(iocId),
+          entityDisplay: `${observableType} · ${prev.observable}`,
+          metadata: { observable_type: observableType, classification: slug, action: 'suppress' }
+        });
+      }
+      for (const slug of syncResult.restored_suppressions || []) {
+        await audit.auditSuccess({
+          req,
+          action: AUDIT_ACTION.IOC_THREAT_CLASSIFICATION_RESTORED,
+          entityType: AUDIT_ENTITY.IOC,
+          entityId: String(iocId),
+          entityDisplay: `${observableType} · ${prev.observable}`,
+          metadata: { observable_type: observableType, classification: slug, action: 'restore' }
+        });
+      }
 
       const response = await buildIocClassificationResponse(pool, iocId, observableType, prev);
       return res.json({ success: true, ...response });
@@ -226,9 +318,23 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
   });
 }
 
-export async function buildThreatMetadataFields(pool, row) {
+export async function buildThreatMetadataFields(pool, row, { feedClassifications = null } = {}) {
   if (!row) return buildMultiThreatClassificationResponseFields([]);
   if (Number.isFinite(Number(row.id)) && row.observable_type) {
+    try {
+      const fields = await buildEffectiveClassificationBundle(pool, row.id, row.observable_type, {
+        feedClassifications
+      });
+      return {
+        ...fields,
+        threat_actor_id: row.threat_actor_id || null,
+        threat_actor_name: row.threat_actor_name || null
+      };
+    } catch (err) {
+      if (!isOverridesTableMissing(err)) {
+        console.warn('[threat-metadata] effective bundle failed:', err.message);
+      }
+    }
     const detailMap = await loadIocThreatClassificationDetails(pool, [{
       id: row.id,
       observable_type: row.observable_type
@@ -251,7 +357,6 @@ export async function buildThreatMetadataFields(pool, row) {
   };
 }
 
-/** Batch-load classification + actor display fields for IOC list/hot rows. */
 export async function enrichItemsWithThreatMetadata(pool, items) {
   const map = new Map();
   if (!items?.length) return map;
@@ -298,11 +403,6 @@ export function mergeThreatMetadataItem(item, metaMap) {
   return mergeIocThreatMetadataItem(item, null, null);
 }
 
-/**
- * Batch-load feed-derived classifications from ioc_feed_source_evidence for list items.
- * Returns a Map of "id|observable_type" → [{value, label, active, origin, source_name}].
- * Single query for the whole page — no N+1.
- */
 export async function batchLoadFeedClassifications(pool, items) {
   const feedMap = new Map();
   if (!items?.length) return feedMap;
@@ -354,18 +454,50 @@ export async function batchLoadFeedClassifications(pool, items) {
   return feedMap;
 }
 
+export async function batchLoadThreatClassificationSuppressions(pool, items) {
+  const map = new Map();
+  if (!items?.length) return map;
+  const pairs = items
+    .map((it) => ({ id: Number(it?.id), observable_type: String(it?.observable_type || '').trim() }))
+    .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
+  if (!pairs.length) return map;
+
+  try {
+    const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
+    const params = pairs.flatMap((p) => [p.id, p.observable_type]);
+    const { rows } = await pool.query(
+      `SELECT ioc_id, ioc_observable_type, classification_slug, source_name, created_at, created_by
+       FROM ioc_threat_classification_overrides
+       WHERE action = 'suppress'
+         AND cleared_at IS NULL
+         AND (ioc_id, ioc_observable_type) IN (VALUES ${values})`,
+      params
+    );
+    for (const row of rows) {
+      const key = `${Number(row.ioc_id)}|${String(row.ioc_observable_type)}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    }
+  } catch (err) {
+    if (!isOverridesTableMissing(err)) throw err;
+  }
+  return map;
+}
+
 /**
- * Merge feed-derived classifications into an item's threat_classifications array.
- * Feed entries are appended after stored ones; duplicates by slug are skipped.
+ * Merge feed-derived classifications with analyst additions, applying suppressions.
  */
-export function mergeFeedClassificationsIntoItem(item, feedMap) {
+export function mergeFeedClassificationsIntoItem(item, feedMap, suppressMap = null) {
   const key = `${Number(item?.id)}|${String(item?.observable_type || '')}`;
-  const feedClasses = feedMap?.get(key);
-  if (!feedClasses?.length) return item;
-
-  const existing = new Set((item.threat_classifications || []).map((c) => c?.value).filter(Boolean));
-  const toAdd = feedClasses.filter((c) => !existing.has(c.value));
-  if (!toAdd.length) return item;
-
-  return { ...item, threat_classifications: [...(item.threat_classifications || []), ...toAdd] };
+  const feedClasses = feedMap?.get(key) || [];
+  const suppressions = suppressMap?.get(key) || [];
+  const analystSlugs = (item.threat_classifications || [])
+    .map((c) => c?.value)
+    .filter((v) => v && v !== 'unknown');
+  const computed = computeEffectiveThreatClassifications({
+    feedClassifications: feedClasses,
+    analystAdditionSlugs: analystSlugs,
+    activeSuppressions: suppressions
+  });
+  return { ...item, ...buildThreatClassificationEffectiveFields(computed) };
 }
