@@ -18,6 +18,7 @@ import {
 } from './lib/auth.js';
 import { createPasswordChangeGate } from './lib/passwordChangeGate.js';
 import { ensureDefaultAdminBootstrap } from './lib/defaultAdminBootstrap.js';
+import { ensureSystemAdminAccount, SYSTEM_ADMIN_MANUAL_INSTRUCTION } from './lib/systemAdminBootstrap.js';
 import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { registerAuthPasswordRoutes } from './routes/authPassword.js';
@@ -5842,6 +5843,32 @@ async function ensureDefaultAdmin() {
     await ensureDefaultAdminBootstrap(pool, { logger: appLog });
   } catch (err) {
     appLog.warn('default admin bootstrap skipped', { error: err?.message || String(err) });
+  }
+
+  // Reconcile the protected system administrator flag on every startup. This NEVER creates an
+  // account with the well-known default password on an existing install. A missing system admin
+  // is not swallowed as success:
+  //   - if another active admin exists, we log a high-priority actionable error and continue;
+  //   - if the invariant cannot be met (no active admin at all) or reconcile errors out, we abort
+  //     startup so the problem is loud and the operator must act.
+  try {
+    const result = await ensureSystemAdminAccount(pool, { logger: appLog });
+    if (result?.status === 'missing_manual_required') {
+      appLog.error(
+        '[SECURITY] Protected system administrator account (admin@talonhound.local) is MISSING and was NOT auto-created. ' +
+          SYSTEM_ADMIN_MANUAL_INSTRUCTION +
+          ' Backend is continuing only because other active administrators exist.',
+        { active_admins: result.activeAdminCount, reason: result.reason }
+      );
+    }
+  } catch (err) {
+    appLog.error(
+      '[SECURITY] Could not establish the protected system administrator account; aborting startup. ' +
+        SYSTEM_ADMIN_MANUAL_INSTRUCTION,
+      { error: err?.message || String(err) }
+    );
+    // Fail loudly rather than run without a protected system admin and no safe fallback.
+    process.exit(1);
   }
 }
 

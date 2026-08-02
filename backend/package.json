@@ -6,6 +6,7 @@
   "scripts": {
     "migrate": "node migrate.js",
     "migrate:list": "node migrate.js --list",
+    "create-system-admin": "node scripts/create-system-admin.js",
     "start": "node server.js",
     "ioc-expiration-worker": "node ioc-expiration-worker.js",
     "ioc-search-export-worker": "node ioc-search-export-worker.js",

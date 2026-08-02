@@ -52,6 +52,7 @@ import {
 import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import { resolveRowPasswordAction, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
 import { submitChangePassword } from './lib/changePasswordForm.js';
+import { resolveUserRowControls } from './lib/userRowControls.js';
 import {
   DEFAULT_SOURCE_COLOR,
   isValidHexColor,
@@ -8341,6 +8342,29 @@ function UserStatusBadge({ status }) {
   return <span style={userStatusBadgeStyle(status)}>{userStatusLabel(status)}</span>;
 }
 
+function SystemAdminBadge() {
+  return (
+    <span
+      title="Protected system administrator account"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+        padding: '4px 10px',
+        borderRadius: 6,
+        background: 'rgba(124, 58, 237, 0.18)',
+        color: '#c4b5fd',
+        border: '1px solid rgba(109, 40, 217, 0.7)'
+      }}
+    >
+      <span aria-hidden>🛡</span>System Admin
+    </span>
+  );
+}
+
 function AdministrationSettingsPage() {
   const { role, userId, refreshSession, isAdmin } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
@@ -8726,11 +8750,21 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
             const busy = statusBusyId === u.id;
             const passwordAction = resolveRowPasswordAction({ isAdmin, isOwnRow, status: u.status });
             const resetBusy = resetBusyId === u.id;
+            const controls = resolveUserRowControls({
+              isSystemAdmin: u.is_system_admin,
+              isOwnRow,
+              statusBusy: busy
+            });
             return (
               <tr key={u.id} style={{ ...ui.tr, opacity: isPassive ? 0.62 : 1 }}>
                 <td style={{ ...ui.td, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>{u.username}</td>
                 <td style={ui.td}>{formatUserDisplayName(u)}</td>
-                <td style={ui.td}><UserRoleBadge role={u.role} /></td>
+                <td style={ui.td}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    <UserRoleBadge role={u.role} />
+                    {controls.showProtectedBadge ? <SystemAdminBadge /> : null}
+                  </div>
+                </td>
                 <td style={ui.td}><UserStatusBadge status={u.status} /></td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
@@ -8763,13 +8797,13 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                       <button
                         type="button"
                         onClick={() => onSetStatus(u.id, 'passive')}
-                        disabled={isOwnRow || busy}
+                        disabled={controls.deactivateDisabled}
                         style={{
                           ...USERS_ACTION_BTN.deactivate,
-                          opacity: isOwnRow || busy ? 0.4 : 1,
-                          cursor: isOwnRow || busy ? 'not-allowed' : 'pointer'
+                          opacity: controls.deactivateDisabled ? 0.4 : 1,
+                          cursor: controls.deactivateDisabled ? 'not-allowed' : 'pointer'
                         }}
-                        title={isOwnRow ? 'You cannot deactivate your own account' : 'Deactivate user'}
+                        title={controls.deactivateTitle}
                       >
                         {busy ? '…' : 'Deactivate'}
                       </button>
@@ -8791,8 +8825,13 @@ function UsersTable({ users, usersLoading, userId, isAdmin, statusBusyId, resetB
                     <button
                       type="button"
                       onClick={() => onRemove(u.id)}
-                      style={USERS_ACTION_BTN.delete}
-                      title="Delete user"
+                      disabled={controls.deleteDisabled}
+                      style={{
+                        ...USERS_ACTION_BTN.delete,
+                        opacity: controls.deleteDisabled ? 0.4 : 1,
+                        cursor: controls.deleteDisabled ? 'not-allowed' : 'pointer'
+                      }}
+                      title={controls.deleteTitle}
                     >
                       <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>—</span>
                       Delete

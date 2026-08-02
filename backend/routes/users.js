@@ -4,6 +4,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstant
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
 import { generateTemporaryPassword } from '../lib/temporaryPassword.js';
+import { evaluateProtectedMutation } from '../lib/adminProtection.js';
 
 /** Prevent any caching of a response that carries a one-time secret. */
 function applyNoStoreHeaders(res) {
@@ -34,8 +35,31 @@ function toPublicUser(row) {
     last_name: row.last_name,
     role: row.role,
     status: row.status || 'active',
+    is_system_admin: Boolean(row.is_system_admin),
     created_at: row.created_at
   };
+}
+
+/**
+ * Inside an open transaction, lock the target row and (for admin-count safety) every admin row
+ * in a stable order, then return the target plus the count of OTHER active admins. Locking the
+ * admin set serializes concurrent operations that could each remove an administrator, which is
+ * what makes the last-active-admin invariant race-safe. Returns null if the target is gone.
+ */
+async function lockUserForMutation(client, targetId) {
+  // Stable lock order (by id) avoids deadlocks between concurrent mutations.
+  await client.query("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE");
+  const cur = await client.query(
+    `SELECT id, public_id, username, first_name, last_name, role, status, is_system_admin
+     FROM users WHERE id = $1 FOR UPDATE`,
+    [targetId]
+  );
+  if (!cur.rowCount) return null;
+  const others = await client.query(
+    "SELECT COUNT(*)::int AS n FROM users WHERE role = 'admin' AND status = 'active' AND id <> $1",
+    [targetId]
+  );
+  return { row: cur.rows[0], otherActiveAdminCount: Number(others.rows[0]?.n || 0) };
 }
 
 function userAuditSnapshot(row) {
@@ -105,7 +129,7 @@ export function registerUserManagementRoutes(app, pool, audit) {
     try {
       if (role === ROLES.ADMIN) {
         const { rows } = await pool.query(
-          `SELECT public_id, username, first_name, last_name, role, status, created_at
+          `SELECT public_id, username, first_name, last_name, role, status, is_system_admin, created_at
            FROM users ORDER BY created_at ASC`
         );
         return res.json({ users: rows.map(toPublicUser) });
@@ -115,7 +139,7 @@ export function registerUserManagementRoutes(app, pool, audit) {
         return res.status(403).json({ message: 'Forbidden' });
       }
       const { rows } = await pool.query(
-        `SELECT public_id, username, first_name, last_name, role, status, created_at
+        `SELECT public_id, username, first_name, last_name, role, status, is_system_admin, created_at
          FROM users WHERE id = $1`,
         [req.user.id]
       );
@@ -201,45 +225,94 @@ export function registerUserManagementRoutes(app, pool, audit) {
       roleChangeReason = reasonCheck.reason;
     }
 
+    const passwordProvided = password != null && String(password).length > 0;
+    if (passwordProvided && typeof password !== 'string') {
+      return res.status(400).json({ message: 'Invalid password' });
+    }
+
+    const client = await pool.connect();
     try {
-      const cur = await pool.query(
-        'SELECT id, public_id, username, first_name, last_name, role, status, password_hash FROM users WHERE id = $1',
-        [id]
-      );
-      if (!cur.rowCount) {
+      await client.query('BEGIN');
+      const ctx = await lockUserForMutation(client, id);
+      if (!ctx) {
+        await client.query('ROLLBACK');
         return res.status(404).json({ message: 'User not found' });
       }
-      const before = userAuditSnapshot(cur.rows[0]);
+      const currentRow = ctx.row;
+      const before = userAuditSnapshot(currentRow);
 
-      let password_hash = cur.rows[0].password_hash;
-      const passwordChanged = password != null && String(password).length > 0;
-      if (passwordChanged) {
-        if (typeof password !== 'string') {
-          return res.status(400).json({ message: 'Invalid password' });
+      // Identity change (username/email) is protected on the system admin account.
+      const renameRequested = username !== undefined && username !== currentRow.username;
+      if (renameRequested) {
+        const g = evaluateProtectedMutation({ operation: 'rename', isSystemAdmin: currentRow.is_system_admin });
+        if (!g.ok) {
+          await client.query('ROLLBACK');
+          await audit?.auditFailure?.({
+            req,
+            action: AUDIT_ACTION.USER_UPDATED,
+            entityType: AUDIT_ENTITY.USER,
+            entityId: String(currentRow.public_id || id),
+            entityDisplay: currentRow.username,
+            severity: AUDIT_SEVERITY.WARNING,
+            metadata: { reason: 'system_admin_protected', blocked: true, field: 'username' }
+          });
+          return res.status(g.status).json({ message: g.message });
         }
-        password_hash = await bcrypt.hash(password, 12);
       }
 
-      const { rows } = await pool.query(
+      // Demotion below admin is blocked for the system admin and for the last active admin.
+      const demoteRequested = nextRole != null && nextRole !== ROLES.ADMIN;
+      if (demoteRequested) {
+        const g = evaluateProtectedMutation({
+          operation: 'demote',
+          isSystemAdmin: currentRow.is_system_admin,
+          currentRole: currentRow.role,
+          currentStatus: currentRow.status,
+          otherActiveAdminCount: ctx.otherActiveAdminCount
+        });
+        if (!g.ok) {
+          await client.query('ROLLBACK');
+          await audit?.auditFailure?.({
+            req,
+            action: AUDIT_ACTION.USER_ROLE_CHANGED,
+            entityType: AUDIT_ENTITY.USER,
+            entityId: String(currentRow.public_id || id),
+            entityDisplay: currentRow.username,
+            severity: AUDIT_SEVERITY.WARNING,
+            metadata: {
+              reason: currentRow.is_system_admin ? 'system_admin_protected' : 'last_active_admin',
+              blocked: true,
+              attempted_role: nextRole
+            }
+          });
+          return res.status(g.status).json({ message: g.message });
+        }
+      }
+
+      const passwordChanged = passwordProvided;
+      const newHash = passwordChanged ? await bcrypt.hash(password, 12) : null;
+
+      const { rows } = await client.query(
         `UPDATE users SET
            username = COALESCE($2, username),
-           password_hash = $3,
+           password_hash = COALESCE($3, password_hash),
            first_name = COALESCE($4, first_name),
            last_name = COALESCE($5, last_name),
            role = COALESCE($6::app_user_role, role),
            must_change_password = CASE WHEN $7 THEN FALSE ELSE must_change_password END
          WHERE id = $1
-         RETURNING public_id, username, first_name, last_name, role, status, created_at`,
+         RETURNING public_id, username, first_name, last_name, role, status, is_system_admin, created_at`,
         [
           id,
           username ?? null,
-          password_hash,
+          newHash,
           first_name ?? null,
           last_name ?? null,
           nextRole ?? null,
           passwordChanged
         ]
       );
+      await client.query('COMMIT');
 
       const user = toPublicUser(rows[0]);
       const after = userAuditSnapshot(rows[0]);
@@ -288,10 +361,13 @@ export function registerUserManagementRoutes(app, pool, audit) {
 
       return res.json({ user });
     } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
       if (err.code === '23505') {
         return res.status(409).json({ message: 'Username already exists' });
       }
       return res.status(500).json({ message: 'Failed to update user', detail: err.message });
+    } finally {
+      client.release();
     }
   });
 
@@ -315,22 +391,50 @@ export function registerUserManagementRoutes(app, pool, audit) {
       return res.status(403).json({ message: 'Cannot deactivate your own account' });
     }
 
+    const client = await pool.connect();
     try {
-      const cur = await pool.query(
-        'SELECT public_id, username, first_name, last_name, role, status FROM users WHERE id = $1',
-        [id]
-      );
-      if (!cur.rowCount) return res.status(404).json({ message: 'User not found' });
-      const before = userAuditSnapshot(cur.rows[0]);
-
-      const { rows } = await pool.query(
-        `UPDATE users SET status = $2::app_user_status WHERE id = $1
-         RETURNING public_id, username, first_name, last_name, role, status, created_at`,
-        [id, next]
-      );
-      if (!rows.length) {
+      await client.query('BEGIN');
+      const ctx = await lockUserForMutation(client, id);
+      if (!ctx) {
+        await client.query('ROLLBACK');
         return res.status(404).json({ message: 'User not found' });
       }
+
+      // Only deactivation can violate a protection; activation is always safe.
+      if (next === 'passive') {
+        const guard = evaluateProtectedMutation({
+          operation: 'deactivate',
+          isSystemAdmin: ctx.row.is_system_admin,
+          currentRole: ctx.row.role,
+          currentStatus: ctx.row.status,
+          otherActiveAdminCount: ctx.otherActiveAdminCount
+        });
+        if (!guard.ok) {
+          await client.query('ROLLBACK');
+          await audit?.auditFailure?.({
+            req,
+            action: AUDIT_ACTION.USER_STATUS_CHANGED,
+            entityType: AUDIT_ENTITY.USER,
+            entityId: String(ctx.row.public_id || id),
+            entityDisplay: ctx.row.username,
+            severity: AUDIT_SEVERITY.WARNING,
+            metadata: {
+              reason: ctx.row.is_system_admin ? 'system_admin_protected' : 'last_active_admin',
+              blocked: true,
+              attempted_status: 'passive'
+            }
+          });
+          return res.status(guard.status).json({ message: guard.message });
+        }
+      }
+
+      const before = userAuditSnapshot(ctx.row);
+      const { rows } = await client.query(
+        `UPDATE users SET status = $2::app_user_status WHERE id = $1
+         RETURNING public_id, username, first_name, last_name, role, status, is_system_admin, created_at`,
+        [id, next]
+      );
+      await client.query('COMMIT');
 
       const user = toPublicUser(rows[0]);
       audit?.auditSuccess({
@@ -351,7 +455,10 @@ export function registerUserManagementRoutes(app, pool, audit) {
 
       return res.json({ user });
     } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
       return res.status(500).json({ message: 'Failed to update status', detail: err.message });
+    } finally {
+      client.release();
     }
   });
 
@@ -486,18 +593,42 @@ export function registerUserManagementRoutes(app, pool, audit) {
     if (!id) {
       return res.status(400).json({ message: 'Invalid user id' });
     }
+    const client = await pool.connect();
     try {
-      const cur = await pool.query(
-        'SELECT public_id, username, first_name, last_name, role, status FROM users WHERE id = $1',
-        [id]
-      );
-      if (!cur.rowCount) return res.status(404).json({ message: 'User not found' });
-      const before = userAuditSnapshot(cur.rows[0]);
-
-      const { rowCount } = await pool.query('DELETE FROM users WHERE id = $1', [id]);
-      if (!rowCount) {
+      await client.query('BEGIN');
+      const ctx = await lockUserForMutation(client, id);
+      if (!ctx) {
+        await client.query('ROLLBACK');
         return res.status(404).json({ message: 'User not found' });
       }
+
+      const guard = evaluateProtectedMutation({
+        operation: 'delete',
+        isSystemAdmin: ctx.row.is_system_admin,
+        currentRole: ctx.row.role,
+        currentStatus: ctx.row.status,
+        otherActiveAdminCount: ctx.otherActiveAdminCount
+      });
+      if (!guard.ok) {
+        await client.query('ROLLBACK');
+        await audit?.auditFailure?.({
+          req,
+          action: AUDIT_ACTION.USER_DELETED,
+          entityType: AUDIT_ENTITY.USER,
+          entityId: String(ctx.row.public_id || id),
+          entityDisplay: ctx.row.username,
+          severity: AUDIT_SEVERITY.WARNING,
+          metadata: {
+            reason: ctx.row.is_system_admin ? 'system_admin_protected' : 'last_active_admin',
+            blocked: true
+          }
+        });
+        return res.status(guard.status).json({ message: guard.message });
+      }
+
+      const before = userAuditSnapshot(ctx.row);
+      await client.query('DELETE FROM users WHERE id = $1', [id]);
+      await client.query('COMMIT');
 
       audit?.auditSuccess({
         req,
@@ -512,7 +643,10 @@ export function registerUserManagementRoutes(app, pool, audit) {
 
       return res.status(204).end();
     } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
       return res.status(500).json({ message: 'Failed to delete user', detail: err.message });
+    } finally {
+      client.release();
     }
   });
 }
