@@ -6295,7 +6295,6 @@ function ThreatClassificationMultiSelect({
   onChange,
   options,
   inactiveOptions = [],
-  provenanceByValue = {},
   disabled = false
 }) {
   const selected = normalizeSelectedThreatClasses(value);
@@ -6350,34 +6349,20 @@ function ThreatClassificationMultiSelect({
           <input type="checkbox" checked={!selected.length} onChange={() => onChange([])} disabled={disabled} />
           Unknown
         </label>
-        {allOptions.filter((o) => o.value !== 'unknown').map((opt) => {
-          const meta = provenanceByValue[String(opt.value).toLowerCase()]
-            || provenanceByValue[opt.value]
-            || opt.provenance
-            || null;
-          return (
-            <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={selected.includes(opt.value)}
-                onChange={() => toggle(opt.value)}
-                disabled={disabled}
-              />
-              <span>{opt.label}</span>
-              {meta?.feed ? (
-                <span style={{ color: '#94a3b8', fontSize: 11 }}>
-                  Feed{meta.source_name ? ` · ${meta.source_name}` : ''}
-                </span>
-              ) : null}
-              {meta?.analyst ? (
-                <span style={{ color: '#93c5fd', fontSize: 11 }}>Analyst</span>
-              ) : null}
-              {inactiveOptions.some((x) => x.value === opt.value) ? (
-                <span style={{ color: '#94a3b8', fontSize: 11 }}>Inactive</span>
-              ) : null}
-            </label>
-          );
-        })}
+        {allOptions.filter((o) => o.value !== 'unknown').map((opt) => (
+          <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={selected.includes(opt.value)}
+              onChange={() => toggle(opt.value)}
+              disabled={disabled}
+            />
+            <span>{opt.label}</span>
+            {inactiveOptions.some((x) => x.value === opt.value) ? (
+              <span style={{ color: '#94a3b8', fontSize: 11 }}>Inactive</span>
+            ) : null}
+          </label>
+        ))}
       </div>
     </div>
   );
@@ -14344,7 +14329,6 @@ function IOCDetailsPage() {
               onChange={setThreatClassDraft}
               options={threatClassModalOptions}
               inactiveOptions={threatClassEditInactiveOptions}
-              provenanceByValue={threatClassModalView.provenanceByValue}
               disabled={threatClassSaving}
             />
             {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}
