@@ -57,15 +57,46 @@ async function loadFeedClassificationsForIoc(pool, iocId, observableType) {
   return map.get(`${Number(iocId)}|${String(observableType)}`) || [];
 }
 
+/**
+ * Analyst additions come from the junction table. When junction is empty (pre-multi /
+ * feed-import rows), fall back to ioc_items.threat_classification so details matches
+ * the list path (`enrichItemsWithThreatMetadata` + `mergeFeedClassificationsIntoItem`).
+ */
+async function resolveAnalystAdditionSlugs(pool, iocId, observableType, {
+  analystSlugs = null,
+  legacyThreatClassification = null
+} = {}) {
+  if (analystSlugs != null) {
+    return normalizeIocThreatClassificationSlugs(analystSlugs);
+  }
+  const junction = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+  if (junction.length) return junction;
+
+  let legacy = legacyThreatClassification;
+  if (legacy == null) {
+    const { rows } = await pool.query(
+      `SELECT threat_classification
+       FROM ioc_items
+       WHERE id = $1 AND observable_type = $2
+       LIMIT 1`,
+      [iocId, observableType]
+    );
+    legacy = rows[0]?.threat_classification ?? null;
+  }
+  return normalizeIocThreatClassificationSlugs(legacy);
+}
+
 async function buildEffectiveClassificationBundle(pool, iocId, observableType, {
   analystSlugs = null,
-  feedClassifications = null
+  feedClassifications = null,
+  legacyThreatClassification = null
 } = {}) {
   const feed = feedClassifications
     || await loadFeedClassificationsForIoc(pool, iocId, observableType);
-  const additions = analystSlugs != null
-    ? normalizeIocThreatClassificationSlugs(analystSlugs)
-    : await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+  const additions = await resolveAnalystAdditionSlugs(pool, iocId, observableType, {
+    analystSlugs,
+    legacyThreatClassification
+  });
   let suppressions = [];
   try {
     suppressions = await listActiveThreatClassificationSuppressions(pool, iocId, observableType);
@@ -83,7 +114,9 @@ async function buildEffectiveClassificationBundle(pool, iocId, observableType, {
 async function buildIocClassificationResponse(pool, iocId, observableType, baseRow = null) {
   const row = baseRow || await fetchIocRow(pool, iocId, observableType);
   if (!row) return null;
-  const fields = await buildEffectiveClassificationBundle(pool, iocId, observableType);
+  const fields = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
+    legacyThreatClassification: row.threat_classification
+  });
   return {
     public_id: row.public_id,
     threat_actor_id: row.threat_actor_id || null,
@@ -129,7 +162,8 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       if (!check.ok) return res.status(400).json({ success: false, error: check.error });
 
       const beforeBundle = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
-        feedClassifications
+        feedClassifications,
+        legacyThreatClassification: prev.threat_classification
       });
       const beforeEffective = (beforeBundle.effective_threat_classifications || [])
         .map((x) => x.value)
@@ -323,7 +357,8 @@ export async function buildThreatMetadataFields(pool, row, { feedClassifications
   if (Number.isFinite(Number(row.id)) && row.observable_type) {
     try {
       const fields = await buildEffectiveClassificationBundle(pool, row.id, row.observable_type, {
-        feedClassifications
+        feedClassifications,
+        legacyThreatClassification: row.threat_classification
       });
       return {
         ...fields,
