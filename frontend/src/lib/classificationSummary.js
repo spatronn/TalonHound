@@ -160,6 +160,18 @@ export function buildThreatClassificationModalState(summary) {
   };
 }
 
+/**
+ * Visible label for IOC Details classification badges (no Feed/Analyst provenance text).
+ * @param {{ value?: string, label?: string|null }} classification
+ * @param {(slug: string) => string} [fallbackLabel]
+ */
+export function formatThreatClassificationBadgeLabel(classification, fallbackLabel = null) {
+  const value = String(classification?.value || '').trim();
+  if (classification?.label) return String(classification.label);
+  if (typeof fallbackLabel === 'function' && value) return fallbackLabel(value);
+  return value || 'Unknown';
+}
+
 export function buildThreatClassificationSavePayload(draftSlugs) {
   const slugs = (Array.isArray(draftSlugs) ? draftSlugs : [])
     .map((s) => String(s || '').trim())

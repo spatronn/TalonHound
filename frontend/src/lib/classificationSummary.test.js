@@ -7,7 +7,8 @@ import {
   getSuppressedThreatClassifications,
   buildThreatClassificationModalState,
   buildThreatClassificationSavePayload,
-  mergeThreatClassificationModalOptions
+  mergeThreatClassificationModalOptions,
+  formatThreatClassificationBadgeLabel
 } from './classificationSummary.js';
 
 describe('normalizeVisibleClassifications', () => {
@@ -52,6 +53,24 @@ describe('effective classification model', () => {
       getEffectiveThreatClassifications(SUMMARY).map((x) => x.value),
       ['malware', 'malware_download']
     );
+  });
+
+  it('card badge labels omit Feed/Analyst provenance text', () => {
+    const labels = getEffectiveThreatClassifications(SUMMARY).map((c) => formatThreatClassificationBadgeLabel(c));
+    assert.deepEqual(labels, ['Malware', 'Malware Download']);
+    for (const label of labels) {
+      assert.equal(/Feed|Analyst/i.test(label), false);
+    }
+  });
+
+  it('duplicate effective entry still yields one label without provenance suffix', () => {
+    const dual = {
+      value: 'malware',
+      label: 'Malware',
+      origins: ['feed', 'analyst'],
+      source_name: 'URLhaus'
+    };
+    assert.equal(formatThreatClassificationBadgeLabel(dual), 'Malware');
   });
 
   it('modal opens with both feed classifications checked and editable', () => {

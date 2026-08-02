@@ -33,7 +33,8 @@ import {
   normalizeVisibleClassifications,
   buildThreatClassificationModalState,
   buildThreatClassificationSavePayload,
-  mergeThreatClassificationModalOptions
+  mergeThreatClassificationModalOptions,
+  formatThreatClassificationBadgeLabel
 } from './lib/classificationSummary.js';
 import {
   buildThreatClassificationReorderPayload,
@@ -6265,7 +6266,7 @@ function ThreatClassificationBadges({ classifications, max = 5, emptyLabel = 'Un
           ? c.origins
           : (c.origin ? [c.origin] : []);
         const fromFeed = origins.includes('feed') || c.origin === 'feed';
-        const fromAnalyst = origins.includes('analyst') || c.origin === 'analyst';
+        const label = formatThreatClassificationBadgeLabel(c, formatThreatClassificationLabel);
         return (
           <span
             key={c.value}
@@ -6279,10 +6280,7 @@ function ThreatClassificationBadges({ classifications, max = 5, emptyLabel = 'Un
               color: '#e2e8f0'
             }}
           >
-            {c.label || formatThreatClassificationLabel(c.value)}
-            {fromFeed ? ' · Feed' : ''}
-            {fromAnalyst && !fromFeed ? ' · Analyst' : ''}
-            {fromAnalyst && fromFeed ? ' · Analyst' : ''}
+            {label}
             {c.active === false ? ' (Inactive)' : ''}
           </span>
         );
