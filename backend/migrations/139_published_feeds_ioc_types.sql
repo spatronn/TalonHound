@@ -35,15 +35,14 @@ ALTER TABLE published_feeds
 ALTER TABLE published_feeds
   DROP CONSTRAINT IF EXISTS chk_published_feeds_ioc_types;
 
+-- Non-empty array of allowed values only. Element uniqueness is enforced in app
+-- validation (PostgreSQL CHECK cannot use subqueries).
 ALTER TABLE published_feeds
   ADD CONSTRAINT chk_published_feeds_ioc_types CHECK (
     jsonb_typeof(ioc_types) = 'array'
     AND jsonb_array_length(ioc_types) >= 1
+    AND jsonb_array_length(ioc_types) <= 4
     AND ioc_types <@ '["domain","hash","ip","url"]'::jsonb
-    AND jsonb_array_length(ioc_types) = (
-      SELECT COUNT(DISTINCT elem)::int
-      FROM jsonb_array_elements_text(ioc_types) AS t(elem)
-    )
   );
 
 -- Keep idx_published_feeds_ioc_type intact for the old backend during rollout.
