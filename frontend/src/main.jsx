@@ -74,6 +74,10 @@ import {
   trapFocusKeydown
 } from './lib/modalOverlay.js';
 import {
+  iocSourceConfirmModalOnClose,
+  iocSourceFormModalOnClose
+} from './lib/iocSourceFormModal.js';
+import {
   CREATE_USER_ROLES,
   EMPTY_CREATE_USER_FORM,
   buildCreateUserPayload,
@@ -6889,18 +6893,6 @@ function ThreatActorMultiSelect({
   );
 }
 
-const IOC_SOURCE_MODAL_STYLE = {
-  width: 'min(680px, 96vw)',
-  maxHeight: '90vh',
-  overflowY: 'auto',
-  background: 'linear-gradient(180deg, #111827 0%, #0f172a 100%)',
-  borderRadius: 12,
-  padding: 24,
-  border: '1px solid #334155',
-  color: '#e2e8f0',
-  boxShadow: '0 24px 60px rgba(2,6,23,0.55)'
-};
-
 const EMPTY_IOC_SOURCE_FORM = {
   name: '',
   description: '',
@@ -8305,19 +8297,17 @@ function IocSourcesPage() {
       </section>
 
       {showFormModal ? (
-        <div
-          role="presentation"
-          onClick={closeFormModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.78)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        <ModalOverlay
+          zIndex={1100}
+          onClose={iocSourceFormModalOnClose({ saving, onClose: closeFormModal })}
         >
-          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={IOC_SOURCE_MODAL_STYLE}>
-            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 6 }}>
-              {editing ? 'Edit IOC Source' : 'Add IOC Source'}
-            </h3>
-            <p style={{ ...ui.pageSub, marginTop: 0, marginBottom: 16 }}>
-              {editing ? 'Update defaults for manual IOC provenance.' : 'Create a provenance label used when adding manual IOCs.'}
-            </p>
-            <form onSubmit={submitForm} style={{ display: 'grid', gap: 14 }}>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 6 }}>
+            {editing ? 'Edit IOC Source' : 'Add IOC Source'}
+          </h3>
+          <p style={{ ...ui.pageSub, marginTop: 0, marginBottom: 16 }}>
+            {editing ? 'Update defaults for manual IOC provenance.' : 'Create a provenance label used when adding manual IOCs.'}
+          </p>
+          <form onSubmit={submitForm} style={{ display: 'grid', gap: 14 }}>
               {!editing ? (
                 <FeedFormField ui={ui} label="Name" helper="3–64 chars: letters, numbers, underscore, hyphen." fullWidth>
                   <input
@@ -8426,66 +8416,60 @@ function IocSourcesPage() {
               </FeedFormField>
               {formError ? <div style={{ ...ui.banner, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid #334155' }}>
-                <button type="button" style={ui.btn} onClick={closeFormModal}>Cancel</button>
+                <button type="button" style={ui.btn} onClick={closeFormModal} disabled={saving} data-modal-cancel>Cancel</button>
                 <button type="submit" style={ui.btnPrimary} disabled={saving}>{saving ? 'Saving…' : (editing ? 'Save' : 'Create Source')}</button>
               </div>
             </form>
-          </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {disableTarget ? (
-        <div
-          role="presentation"
-          onClick={() => !disableBusy && setDisableTarget(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        <ModalOverlay
+          zIndex={1200}
+          initialFocus="cancel"
+          onClose={iocSourceConfirmModalOnClose({ busy: disableBusy, onClose: () => setDisableTarget(null) })}
         >
-          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(520px, 96vw)' }}>
-            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Disable IOC Source?</h3>
-            <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
-              This source will no longer be available when adding new IOCs.
-            </p>
-            <p style={{ margin: '0 0 20px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
-              Existing IOCs linked to <strong style={{ color: '#e2e8f0' }}>{disableTarget.name}</strong> will not be deleted, expired, or modified.
-            </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => setDisableTarget(null)}>Cancel</button>
-              <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
-                {disableBusy ? 'Disabling…' : 'Disable Source'}
-              </button>
-            </div>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Disable IOC Source?</h3>
+          <p style={{ margin: '0 0 12px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+            This source will no longer be available when adding new IOCs.
+          </p>
+          <p style={{ margin: '0 0 20px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
+            Existing IOCs linked to <strong style={{ color: '#e2e8f0' }}>{disableTarget.name}</strong> will not be deleted, expired, or modified.
+          </p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => setDisableTarget(null)} data-modal-cancel>Cancel</button>
+            <button type="button" style={ui.btn} disabled={disableBusy} onClick={() => confirmDisableSource().catch(() => {})}>
+              {disableBusy ? 'Disabling…' : 'Disable Source'}
+            </button>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {archiveTarget ? (
-        <div
-          role="presentation"
-          onClick={() => !archiveBusy && setArchiveTarget(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        <ModalOverlay
+          zIndex={1200}
+          initialFocus="cancel"
+          onClose={iocSourceConfirmModalOnClose({ busy: archiveBusy, onClose: () => setArchiveTarget(null) })}
         >
-          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
-            <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Archive IOC Source?</h3>
-            <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
-              Archive this source? Existing IOC evidence will be preserved, but the source will no longer be available when adding new IOCs.
-            </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => setArchiveTarget(null)}>Cancel</button>
-              <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => confirmArchiveSource().catch(() => {})}>
-                {archiveBusy ? 'Archiving…' : 'Archive Source'}
-              </button>
-            </div>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Archive IOC Source?</h3>
+          <p style={{ margin: '0 0 20px', color: '#cbd5e1', lineHeight: 1.55, fontSize: 14 }}>
+            Archive this source? Existing IOC evidence will be preserved, but the source will no longer be available when adding new IOCs.
+          </p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => setArchiveTarget(null)} data-modal-cancel>Cancel</button>
+            <button type="button" style={ui.btn} disabled={archiveBusy} onClick={() => confirmArchiveSource().catch(() => {})}>
+              {archiveBusy ? 'Archiving…' : 'Archive Source'}
+            </button>
           </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {deleteTarget ? (
-        <div
-          role="presentation"
-          onClick={closeDeleteModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        <ModalOverlay
+          zIndex={1200}
+          initialFocus="cancel"
+          onClose={iocSourceConfirmModalOnClose({ busy: deleteBusy || deletePreviewBusy, onClose: closeDeleteModal })}
         >
-          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(560px, 96vw)' }}>
             {deleteTarget.deleteMode === 'loading' || deletePreviewBusy ? (
               <>
                 <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 10 }}>Delete source</h3>
@@ -8498,7 +8482,7 @@ function IocSourcesPage() {
                   {deleteTarget.deletePreview?.blocked_message || deleteError || 'This source contains IOC records and cannot be deleted directly. Move the IOCs to another source first.'}
                 </p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" style={ui.btn} onClick={closeDeleteModal}>Cancel</button>
+                  <button type="button" style={ui.btn} onClick={closeDeleteModal} data-modal-cancel>Cancel</button>
                   <button
                     type="button"
                     style={ui.btnPrimary}
@@ -8530,7 +8514,7 @@ function IocSourcesPage() {
                   Remove this source from those Published Feed filters first.
                 </p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                  <button type="button" style={ui.btn} onClick={closeDeleteModal}>Cancel</button>
+                  <button type="button" style={ui.btn} onClick={closeDeleteModal} data-modal-cancel>Cancel</button>
                   <Link to="/threat-intelligence/published-feeds" style={{ ...ui.btnPrimary, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }} onClick={closeDeleteModal}>
                     Open Published Feeds
                   </Link>
@@ -8546,24 +8530,21 @@ function IocSourcesPage() {
                   <div style={{ ...ui.banner, marginBottom: 16, borderColor: '#991b1b', color: '#fca5a5' }}>{deleteError}</div>
                 ) : null}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal}>Cancel</button>
+                  <button type="button" style={ui.btn} disabled={deleteBusy} onClick={closeDeleteModal} data-modal-cancel>Cancel</button>
                   <button type="button" style={ui.btn} disabled={deleteBusy || deleteTarget.deletePreview?.can_delete === false} onClick={() => confirmDeleteSource().catch(() => {})}>
                     {deleteBusy ? 'Deleting…' : 'Delete source'}
                   </button>
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </ModalOverlay>
       ) : null}
 
       {moveTarget ? (
-        <div
-          role="presentation"
-          onClick={closeMoveModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.82)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        <ModalOverlay
+          zIndex={1200}
+          onClose={iocSourceConfirmModalOnClose({ busy: moveBusy || movePreviewBusy, onClose: closeMoveModal })}
         >
-          <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ ...IOC_SOURCE_MODAL_STYLE, width: 'min(680px, 96vw)' }}>
             <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 8 }}>Move IOCs</h3>
             <p style={{ margin: '0 0 16px', color: '#94a3b8', lineHeight: 1.55, fontSize: 13 }}>
               All IOC records linked to this source will be moved to the target source. Move history is preserved in audit logs and IOC details.
@@ -8634,7 +8615,7 @@ function IocSourcesPage() {
               {moveError ? <div style={{ ...ui.banner, borderColor: '#991b1b', color: '#fca5a5' }}>{moveError}</div> : null}
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
-              <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy} onClick={closeMoveModal}>Close</button>
+              <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy} onClick={closeMoveModal} data-modal-cancel>Close</button>
               <button type="button" style={ui.btn} disabled={moveBusy || movePreviewBusy || !moveForm.target_source_id} onClick={() => runMovePreview().catch(() => {})}>
                 {movePreviewBusy ? 'Previewing…' : 'Preview'}
               </button>
@@ -8642,8 +8623,7 @@ function IocSourcesPage() {
                 {moveBusy ? 'Moving…' : 'Confirm Move'}
               </button>
             </div>
-          </div>
-        </div>
+        </ModalOverlay>
       ) : null}
     </AppShell>
   );
