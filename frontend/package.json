@@ -13,7 +13,7 @@
     "test:intelligence": "node --test src/lib/ipEnrichmentTarget.test.js src/lib/dnsmaniaPresentation.test.js src/lib/associatedIpEnrichment.test.js",
     "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js src/lib/intelligenceSummarySection.test.js",
     "test:tags": "node --test src/lib/iocTagBadges.test.js src/lib/tagManagerList.test.js",
-    "test:threat-classification": "node --test src/lib/threatClassificationOrder.test.js",
+    "test:threat-classification": "node --test src/lib/threatClassificationOrder.test.js src/lib/classificationSummary.test.js",
     "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js",
     "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js",
     "test:password-change": "node --test src/lib/passwordChangeGate.test.js",

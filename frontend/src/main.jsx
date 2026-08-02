@@ -29,7 +29,11 @@ import {
 } from './lib/iocConfidenceCard.js';
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { isRdapEligibleObservable } from './lib/iocProviderApplicability.js';
-import { normalizeVisibleClassifications } from './lib/classificationSummary.js';
+import {
+  normalizeVisibleClassifications,
+  buildThreatClassificationModalState,
+  buildThreatClassificationSavePayload
+} from './lib/classificationSummary.js';
 import {
   buildThreatClassificationReorderPayload,
   mergeThreatClassificationPickerOptions,
@@ -6239,17 +6243,6 @@ function normalizeSelectedThreatClasses(selected) {
   return [...new Set(slugs)];
 }
 
-function threatClassesFromSummary(summary) {
-  if (Array.isArray(summary?.threat_classifications)) {
-    return summary.threat_classifications
-      .map((x) => x?.value)
-      .filter((v) => v && v !== 'unknown');
-  }
-  const legacy = summary?.threat_classification || summary?.primary_threat_classification;
-  if (legacy && legacy !== 'unknown') return [legacy];
-  return [];
-}
-
 function formatThreatClassificationsText(classifications, { emptyLabel = 'Unknown' } = {}) {
   const list = Array.isArray(classifications) ? classifications : [];
   const visible = list.filter((x) => x?.value && x.value !== 'unknown');
@@ -6267,16 +6260,18 @@ function ThreatClassificationBadges({ classifications, max = 5, emptyLabel = 'Un
       {shown.map((c) => (
         <span
           key={c.value}
+          title={c.origin === 'feed' ? (c.source_name ? `From feed: ${c.source_name}` : 'From feed') : undefined}
           style={{
             fontSize: 12,
             padding: '2px 8px',
             borderRadius: 999,
-            background: '#1e293b',
-            border: '1px solid #334155',
+            background: c.origin === 'feed' ? '#0f172a' : '#1e293b',
+            border: `1px solid ${c.origin === 'feed' ? '#475569' : '#334155'}`,
             color: '#e2e8f0'
           }}
         >
           {c.label || formatThreatClassificationLabel(c.value)}
+          {c.origin === 'feed' ? ' (Feed)' : ''}
           {c.active === false ? ' (Inactive)' : ''}
         </span>
       ))}
@@ -6290,6 +6285,7 @@ function ThreatClassificationMultiSelect({
   onChange,
   options,
   inactiveOptions = [],
+  feedOnlyOptions = [],
   disabled = false
 }) {
   const selected = normalizeSelectedThreatClasses(value);
@@ -6357,6 +6353,27 @@ function ThreatClassificationMultiSelect({
           </label>
         ))}
       </div>
+      {Array.isArray(feedOnlyOptions) && feedOnlyOptions.length ? (
+        <div style={{ border: '1px dashed #475569', borderRadius: 8, padding: 10, background: '#0b1220' }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+            Provided by feeds (read-only)
+          </div>
+          {feedOnlyOptions.map((opt) => (
+            <label
+              key={`feed-${opt.value}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13, color: '#cbd5e1' }}
+            >
+              <input type="checkbox" checked readOnly disabled />
+              {opt.label || formatThreatClassificationLabel(opt.value)}
+              {opt.source_name ? (
+                <span style={{ color: '#64748b', fontSize: 12 }}>({opt.source_name})</span>
+              ) : (
+                <span style={{ color: '#64748b', fontSize: 12 }}>(Feed)</span>
+              )}
+            </label>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -13423,15 +13440,20 @@ function IOCDetailsPage() {
   }
 
   const summary = data.summary;
+  const threatClassModalView = useMemo(
+    () => buildThreatClassificationModalState(summary),
+    [summary]
+  );
   const threatClassEditInactiveOptions = useMemo(() => {
-    const current = threatClassesFromSummary(summary);
+    const current = threatClassModalView.editableSlugs;
     return current
       .filter((slug) => !threatClassOptions.some((o) => o.value === slug))
       .map((slug) => ({
         value: slug,
         label: `${summary?.threat_classifications?.find((x) => x.value === slug)?.label || threatClassLabelFor(slug)} (Inactive)`
       }));
-  }, [summary, threatClassOptions, threatClassLabelFor]);
+  }, [summary, threatClassOptions, threatClassLabelFor, threatClassModalView.editableSlugs]);
+  const threatClassFeedOnlyOptions = threatClassModalView.feedOnly;
   const activeSources = Array.isArray(data.active_sources) ? data.active_sources : [];
   const historicalSources = Array.isArray(data.historical_sources) ? data.historical_sources : [];
   const feedMemberships = Array.isArray(data.feed_memberships) ? data.feed_memberships : [];
@@ -13480,7 +13502,8 @@ function IOCDetailsPage() {
   }
 
   function openThreatClassEditor() {
-    setThreatClassDraft(threatClassesFromSummary(summary));
+    const next = buildThreatClassificationModalState(summary);
+    setThreatClassDraft(next.editableSlugs);
     setThreatClassError('');
     setShowThreatClassModal(true);
   }
@@ -13493,16 +13516,17 @@ function IOCDetailsPage() {
     setThreatClassSaving(true);
     setThreatClassError('');
     try {
+      const payload = buildThreatClassificationSavePayload(threatClassDraft);
       const { data: patchData } = await api.patch(`/ioc/${iocId}/threat-classifications`, {
         observable_type: observableType,
-        classifications: normalizeSelectedThreatClasses(threatClassDraft),
-        threat_classifications: normalizeSelectedThreatClasses(threatClassDraft)
+        ...payload
       });
       if (!patchData?.success) {
         setThreatClassError(patchData?.error || 'Request failed');
         return;
       }
       setShowThreatClassModal(false);
+      setThreatClassDraft([]);
       setActionToast('Threat classifications updated');
       await load();
     } catch (err) {
@@ -14296,7 +14320,13 @@ function IOCDetailsPage() {
       ) : null}
 
       {showThreatClassModal ? (
-        <ModalOverlay onClose={() => !threatClassSaving && setShowThreatClassModal(false)}>
+        <ModalOverlay onClose={() => {
+          if (threatClassSaving) return;
+          setShowThreatClassModal(false);
+          setThreatClassDraft([]);
+          setThreatClassError('');
+        }}
+        >
           <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat classifications</h3>
           <div style={{ display: 'grid', gap: 12 }}>
             <ThreatClassificationMultiSelect
@@ -14304,11 +14334,23 @@ function IOCDetailsPage() {
               onChange={setThreatClassDraft}
               options={threatClassOptions}
               inactiveOptions={threatClassEditInactiveOptions}
+              feedOnlyOptions={threatClassFeedOnlyOptions}
               disabled={threatClassSaving}
             />
             {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" style={ui.btn} onClick={() => setShowThreatClassModal(false)} disabled={threatClassSaving}>Cancel</button>
+              <button
+                type="button"
+                style={ui.btn}
+                onClick={() => {
+                  setShowThreatClassModal(false);
+                  setThreatClassDraft([]);
+                  setThreatClassError('');
+                }}
+                disabled={threatClassSaving}
+              >
+                Cancel
+              </button>
               <button type="button" style={ui.btnPrimary} onClick={() => submitThreatClassification().catch(() => {})} disabled={threatClassSaving}>
                 {threatClassSaving ? 'Saving…' : 'Save'}
               </button>
