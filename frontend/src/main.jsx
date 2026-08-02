@@ -1983,21 +1983,25 @@ function AppShell({ children }) {
             <div className="sidebar-nav-section-label">Threat Intelligence</div>
             <Link to="/threat-intelligence/feeds" className={navLinkClass(isActive('/threat-intelligence/feeds') || isActive('/threat-intelligence'))}>{NavIcons.feeds}<span>Feeds</span></Link>
             <Link to="/threat-intelligence/custom-threat-feeds" className={navLinkClass(isActive('/threat-intelligence/custom-threat-feeds'))}>{NavIcons.customFeeds}<span>Custom Threat Feeds</span></Link>
-            <Link to="/threat-intelligence/queue" className={navLinkClass(isActive('/threat-intelligence/queue'))}>{NavIcons.jobQueue}<span>Job Queue Status</span></Link>
             <Link to="/threat-intelligence/published-feeds" className={navLinkClass(isActive('/threat-intelligence/published-feeds'))}>{NavIcons.publishedFeeds}<span>Published Feeds</span></Link>
+            {isAdmin ? <Link to="/administration/ioc-sources" className={navLinkClass(isActive('/administration/ioc-sources'))}>{NavIcons.iocSources}<span>IOC Sources</span></Link> : null}
+            {isAdmin ? <Link to="/administration/threat-actors" className={navLinkClass(isActive('/administration/threat-actors'))}>{NavIcons.threatActors}<span>Threat Actors</span></Link> : null}
+            {isAdmin ? <Link to="/administration/threat-classifications" className={navLinkClass(isActive('/administration/threat-classifications'))}>{NavIcons.classifications}<span>Threat Classifications</span></Link> : null}
+            <Link to="/administration/tags" className={navLinkClass(isActive('/administration/tags'))}>{NavIcons.tags}<span>Tags</span></Link>
+            <Link to="/administration/enrichment-providers" className={navLinkClass(isActive('/administration/enrichment-providers'))}>{NavIcons.enrichmentProviders}<span>Enrichment Providers</span></Link>
           </div>
 
           <div className="sidebar-nav-section">
             <div className="sidebar-nav-section-label">Administration</div>
-            <Link to="/administration" className={navLinkClass(isAdminSettingsActive)}>{NavIcons.settings}<span>Settings</span></Link>
             {isAdmin ? <Link to="/administration/users" className={navLinkClass(isActive('/administration/users'))}>{NavIcons.users}<span>Users</span></Link> : null}
-            <Link to="/administration/audit-logs" className={navLinkClass(isActive('/administration/audit-logs'))}>{NavIcons.auditLogs}<span>Audit Logs</span></Link>
-            <Link to="/administration/tags" className={navLinkClass(isActive('/administration/tags'))}>{NavIcons.tags}<span>Tags</span></Link>
-            {isAdmin ? <Link to="/administration/threat-classifications" className={navLinkClass(isActive('/administration/threat-classifications'))}>{NavIcons.classifications}<span>Threat Classifications</span></Link> : null}
-            {isAdmin ? <Link to="/administration/threat-actors" className={navLinkClass(isActive('/administration/threat-actors'))}>{NavIcons.threatActors}<span>Threat Actors</span></Link> : null}
-            {isAdmin ? <Link to="/administration/ioc-sources" className={navLinkClass(isActive('/administration/ioc-sources'))}>{NavIcons.iocSources}<span>IOC Sources</span></Link> : null}
             <Link to="/administration/api-keys" className={navLinkClass(isActive('/administration/api-keys'))}>{NavIcons.apiKeys}<span>API Keys</span></Link>
-            <Link to="/administration/enrichment-providers" className={navLinkClass(isActive('/administration/enrichment-providers'))}>{NavIcons.enrichmentProviders}<span>Enrichment Providers</span></Link>
+            <Link to="/administration/audit-logs" className={navLinkClass(isActive('/administration/audit-logs'))}>{NavIcons.auditLogs}<span>Audit Logs</span></Link>
+          </div>
+
+          <div className="sidebar-nav-section">
+            <div className="sidebar-nav-section-label">System</div>
+            <Link to="/administration" className={navLinkClass(isAdminSettingsActive)}>{NavIcons.settings}<span>Settings</span></Link>
+            <Link to="/threat-intelligence/queue" className={navLinkClass(isActive('/threat-intelligence/queue'))}>{NavIcons.jobQueue}<span>Job Queue Status</span></Link>
             {isAdmin ? <Link to="/administration/backup-restore" className={navLinkClass(isActive('/administration/backup-restore'))}>{NavIcons.backupRestore}<span>Backup &amp; Restore</span></Link> : null}
           </div>
         </nav>
