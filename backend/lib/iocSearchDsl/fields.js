@@ -45,6 +45,7 @@ export const DATE_OPERATORS = Object.freeze(['before', 'after', 'between']);
 export const FIELD_REGISTRY = Object.freeze({
   ioc: { kind: 'text', operators: TEXT_OPERATORS },
   tag: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // Matches list Source badge: canonical ioc_items.source_name and/or feed/manual display names.
   source: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   threat_actor: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   classification: { kind: 'enum', operators: ENUM_OPERATORS },

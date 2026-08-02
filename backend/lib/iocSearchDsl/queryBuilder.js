@@ -122,10 +122,48 @@ class Builder {
     }
   }
 
-  // ---- text: source (single column, case-insensitive) -------------------
+  // ---- text: source -----------------------------------------------------
+  // Matches what the IOC list Source badge shows, without hard-coding aliases:
+  //   1) ioc_items.source_name (canonical / stored identifier)
+  //   2) integration_feeds.name via ioc_feed_memberships (feed display name)
+  //   3) ioc_sources.name for manual IOC sources
+  // Equals / in are case-insensitive exact matches on any of those identities.
+  // Multiple feeds sharing one display name all contribute their member IOCs.
+  // Negations invert the whole disjunction (NOT (A OR B OR C)).
   buildSource(node) {
-    const col = `${IOC_ALIAS}.source_name`;
-    return this.buildTextColumn(node, col);
+    const negativeToPositive = {
+      not_contains: 'contains',
+      not_equals: 'equals',
+      not_in: 'in'
+    };
+    if (Object.prototype.hasOwnProperty.call(negativeToPositive, node.operator)) {
+      return `(NOT ${this.buildSourcePositive({
+        ...node,
+        operator: negativeToPositive[node.operator]
+      })})`;
+    }
+    return this.buildSourcePositive(node);
+  }
+
+  buildSourcePositive(node) {
+    const onSourceName = this.buildTextColumn(node, `${IOC_ALIAS}.source_name`);
+    const onFeedName = this.buildTextColumn(node, 'f.name');
+    const onManualName = this.buildTextColumn(node, 's.name');
+    const viaFeedDisplay = `EXISTS (
+      SELECT 1
+      FROM ioc_feed_memberships m
+      JOIN integration_feeds f ON f.integration_id = m.feed_id
+      WHERE m.ioc_item_id = ${IOC_ALIAS}.id
+        AND m.ioc_observable_type = ${IOC_ALIAS}.observable_type
+        AND (${onFeedName})
+    )`;
+    const viaManualSource = `EXISTS (
+      SELECT 1
+      FROM ioc_sources s
+      WHERE s.id = ${IOC_ALIAS}.ioc_source_id
+        AND (${onManualName})
+    )`;
+    return `(${onSourceName} OR ${viaFeedDisplay} OR ${viaManualSource})`;
   }
 
   buildTextColumn(node, col) {

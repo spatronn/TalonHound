@@ -5,7 +5,8 @@ import {
   buildDslFromConditions,
   defaultOperatorFor,
   newCondition,
-  chipLabel
+  chipLabel,
+  FIELD_BY_NAME
 } from './iocSearchDslClient.js';
 
 test('scalar text condition', () => {
@@ -79,4 +80,10 @@ test('chipLabel formats API condition summaries', () => {
   assert.equal(chipLabel({ field: 'ioc', operator: 'contains', values: ['example.com'] }), 'IOC contains: example.com');
   assert.equal(chipLabel({ field: 'status', operator: 'equals', values: ['active'] }), 'Status equals: active');
   assert.equal(chipLabel({ field: 'first_seen', operator: 'between', dates: ['2026-07-01', '2026-07-22'] }), 'First seen in source between: 2026-07-01 – 2026-07-22');
+});
+
+test('source field hint documents display name + canonical search', () => {
+  const hint = FIELD_BY_NAME.source?.hint || '';
+  assert.match(hint, /display name/i);
+  assert.match(hint, /USOM:TR-CERT/);
 });

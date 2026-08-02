@@ -17,7 +17,14 @@ export const SEARCH_FIELDS = [
   { name: 'type', label: 'Type', kind: 'enum', operators: ENUM_OPERATORS, values: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'] },
   { name: 'known_hash_type', label: 'Known hash type', kind: 'enum', operators: ENUM_OPERATORS, values: ['md5', 'sha1', 'sha256'] },
   { name: 'tag', label: 'Tag', kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
-  { name: 'source', label: 'Source', kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  {
+    name: 'source',
+    label: 'Source',
+    kind: 'text',
+    operators: [...TEXT_OPERATORS, ...LIST_OPERATORS],
+    // Hint: badge display name and/or canonical source_name (backend matches both).
+    hint: 'Matches Source badge display name or canonical source_name (e.g. USOM:TR-CERT).'
+  },
   { name: 'classification', label: 'Classification', kind: 'enum', operators: ENUM_OPERATORS },
   { name: 'threat_actor', label: 'Threat actor', kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   { name: 'status', label: 'Status', kind: 'enum', operators: ENUM_OPERATORS, values: ['active', 'expired', 'disabled', 'suppressed'] },

@@ -11216,7 +11216,8 @@ function IOCListPage() {
             const spec = FIELD_BY_NAME[cond.field] || SEARCH_FIELDS[0];
             const inCell = { padding: '6px 8px', borderRadius: 8, border: '1px solid #334155', background: '#111827', color: '#e2e8f0', fontSize: 13 };
             return (
-              <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div key={idx} style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <select style={inCell} value={cond.field} onChange={(e) => updateAdvCondition(idx, { field: e.target.value })}>
                   {SEARCH_FIELDS.map((f) => <option key={f.name} value={f.name}>{f.label}</option>)}
                 </select>
@@ -11240,6 +11241,10 @@ function IOCListPage() {
                   <input style={{ ...inCell, minWidth: 220 }} placeholder={spec.kind === 'date' ? 'YYYY-MM-DD' : 'value'} value={cond.value} onChange={(e) => updateAdvCondition(idx, { value: e.target.value })} />
                 )}
                 <button onClick={() => removeAdvCondition(idx)} disabled={advConditions.length <= 1} title="Remove condition">✕</button>
+              </div>
+              {spec.hint ? (
+                <div style={{ marginTop: 4, marginLeft: 2, color: '#64748b', fontSize: 11 }}>{spec.hint}</div>
+              ) : null}
               </div>
             );
           })}
@@ -11265,10 +11270,12 @@ function IOCListPage() {
           <p><b>List operators:</b> in, not_in</p>
           <p><b>Date operators:</b> before, after, between</p>
           <p><b>Logical:</b> AND, OR, NOT, ( )</p>
+          <p><b>Source:</b> matches the list Source badge (feed/manual display name) or the canonical source identifier. Examples: <code>source contains &quot;Siber&quot;</code>, <code>source contains &quot;USOM&quot;</code>, <code>source equals &quot;USOM:TR-CERT&quot;</code>.</p>
           <pre style={{ background: '#111827', padding: 10, borderRadius: 8, overflowX: 'auto', color: '#93c5fd' }}>{`ioc contains "example.com"
 ioc contains "example" AND tag contains "mirai"
 type in ("domain", "url") AND status equals "active"
-(source equals "USOM" OR source equals "URLHaus") AND confidence equals "high"
+(source contains "USOM" OR source contains "URLHaus") AND confidence equals "high"
+source equals "USOM:TR-CERT"
 last_changed after "2026-07-01"
 first_seen between "2026-07-01" AND "2026-07-22"
 tag equals "mirai" AND tag equals "botnet"`}</pre>

@@ -49,10 +49,68 @@ test('ioc not_equals uses NOT ILIKE', () => {
   assert.match(sql, /i\.observable NOT ILIKE \$1 ESCAPE/);
 });
 
-test('source equals uses wildcard-free ILIKE (trigram)', () => {
+test('source equals uses wildcard-free ILIKE on canonical source_name (trigram)', () => {
   const { sql, params } = build('source equals "USOM:TR-CERT"');
   assert.match(sql, /i\.source_name ILIKE \$1 ESCAPE/);
   assert.equal(params[0], 'USOM:TR-CERT');
+  assert.doesNotMatch(String(params[0]), /%/);
+});
+
+test('source equals also matches feed display name and manual source name (exact)', () => {
+  const { sql, params } = build('source equals "Siber Güvenlik Başkanlığı / USOM"');
+  assert.match(sql, /i\.source_name ILIKE \$1 ESCAPE/);
+  assert.match(sql, /EXISTS[\s\S]*ioc_feed_memberships m[\s\S]*integration_feeds f[\s\S]*f\.name ILIKE/);
+  assert.match(sql, /EXISTS[\s\S]*ioc_sources s[\s\S]*s\.name ILIKE/);
+  assert.equal(params[0], 'Siber Güvenlik Başkanlığı / USOM');
+  // Same exact literal bound for display-name paths — no contains wildcards.
+  assert.ok(params.every((p) => p === 'Siber Güvenlik Başkanlığı / USOM'));
+  assert.doesNotMatch(params.map(String).join('|'), /%/);
+});
+
+test('source contains matches canonical, feed display name, and manual source', () => {
+  const { sql, params } = build('source contains "Siber"');
+  assert.match(sql, /i\.source_name ILIKE \$1 ESCAPE/);
+  assert.match(sql, /f\.name ILIKE \$2 ESCAPE/);
+  assert.match(sql, /s\.name ILIKE \$3 ESCAPE/);
+  assert.deepEqual(params, ['%Siber%', '%Siber%', '%Siber%']);
+  assert.match(sql, /ioc_feed_memberships/);
+  assert.match(sql, /integration_feeds/);
+  assert.match(sql, /ioc_sources/);
+});
+
+test('source contains USOM / equals USOM:TR-CERT share dual-path shape (no hard-coded USOM)', () => {
+  const a = build('source contains "USOM"');
+  const b = build('source contains "Siber"');
+  const c = build('source equals "USOM:TR-CERT"');
+  for (const { sql } of [a, b, c]) {
+    assert.match(sql, /i\.source_name ILIKE/);
+    assert.match(sql, /integration_feeds/);
+    assert.match(sql, /ioc_feed_memberships/);
+    assert.match(sql, /ioc_sources/);
+    assert.doesNotMatch(sql, /usom-trcert|USOM:TR-CERT'/i); // no feed-key hardcode in SQL text
+  }
+  assert.deepEqual(a.params, ['%USOM%', '%USOM%', '%USOM%']);
+  assert.deepEqual(b.params, ['%Siber%', '%Siber%', '%Siber%']);
+  assert.equal(c.params[0], 'USOM:TR-CERT');
+  assert.ok(c.params.every((p) => p === 'USOM:TR-CERT'));
+});
+
+test('source not_contains negates the whole (canonical OR display OR manual) disjunction', () => {
+  const { sql } = build('source not_contains "Siber"');
+  assert.match(sql, /^\(NOT \(/);
+  assert.match(sql, /i\.source_name ILIKE/);
+  assert.match(sql, /f\.name ILIKE/);
+  assert.match(sql, /s\.name ILIKE/);
+  assert.doesNotMatch(sql, /i\.source_name NOT ILIKE/);
+});
+
+test('source starts_with / ends_with also cover feed display names', () => {
+  const start = build('source starts_with "Siber"');
+  const end = build('source ends_with "USOM"');
+  assert.deepEqual(start.params, ['Siber%', 'Siber%', 'Siber%']);
+  assert.deepEqual(end.params, ['%USOM', '%USOM', '%USOM']);
+  assert.match(start.sql, /f\.name ILIKE/);
+  assert.match(end.sql, /f\.name ILIKE/);
 });
 
 test('AND / OR / NOT structure', () => {
