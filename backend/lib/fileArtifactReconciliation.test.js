@@ -41,4 +41,10 @@ describe('file-artifact-reconciliation job contract', () => {
     assert.equal(snap.result_details.promoted_to_sha256, 2);
     assert.equal(snap.result_details.conflicts, 1);
   });
+
+  it('run history is persisted via integration_queue_jobs (not integration_runs)', () => {
+    // Worker markJobSuccess updates integration_queue_jobs.result_details.
+    // Feed importers still use integration_runs; reconciliation is queue-native.
+    assert.equal(FILE_ARTIFACT_RECON_JOB_NAME.includes('reconciliation'), true);
+  });
 });

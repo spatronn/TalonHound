@@ -9,6 +9,7 @@ import {
 } from './dualWrite.js';
 import { withSavepoint, isControlledFileArtifactDbError, formatProviderError } from './txSavepoint.js';
 import { feedKeyForSourceName } from './feedResolve.js';
+import { collectProviderMergeTargetIds } from './conflicts.js';
 
 const SHA256 = '094fa6d0cb7ead6c425ad9d25d5619c322445f6a32578c973a668322d0f8ba8a';
 const MD5 = 'dce9ad6317ce147f1f3f74bc93d9252a';
@@ -509,5 +510,30 @@ describe('fileArtifacts/dualWrite transaction safety', () => {
 
     const next = await client.query('SELECT next_item');
     assert.equal(next.rows[0].ok, true);
+  });
+
+  it('collectProviderMergeTargetIds fans in multiple sibling artifacts', () => {
+    assert.deepEqual(
+      collectProviderMergeTargetIds({
+        artifact_id: ART_ID,
+        siblings: {
+          needs_merge_with: '11111111-1111-1111-1111-111111111111',
+          needs_merge_with_ids: [
+            '11111111-1111-1111-1111-111111111111',
+            '22222222-2222-2222-2222-222222222222'
+          ]
+        }
+      }).sort(),
+      [
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222'
+      ].sort()
+    );
+  });
+
+  it('dualWrite source includes multi-merge fan-in + conflict resolve', () => {
+    assert.match(dualWriteSrc, /collectProviderMergeTargetIds/);
+    assert.match(dualWriteSrc, /resolveOpenProviderHashSetConflicts/);
+    assert.match(dualWriteSrc, /merge_fan_in/);
   });
 });

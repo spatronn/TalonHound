@@ -34,7 +34,9 @@ export {
 
 export {
   recordMergeConflict,
-  detectMultiArtifactConflict
+  detectMultiArtifactConflict,
+  collectProviderMergeTargetIds,
+  resolveOpenProviderHashSetConflicts
 } from './conflicts.js';
 
 export {

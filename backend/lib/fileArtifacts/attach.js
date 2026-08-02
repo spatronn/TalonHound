@@ -633,26 +633,19 @@ export async function attachProviderExactHashSet(client, input) {
       .concat(input.artifact_id ? [{ artifact_id: input.artifact_id }] : [])
   );
 
-  // If hashes already belong to multiple *other* artifacts, conflict
+  // Sibling hashes already bound to other artifact(s): signal merge (caller / dual-write /
+  // backfill choose canonical). Trusted provider exact-hash sets may span N artifacts
+  // (e.g. ThreatFox published md5/sha1/sha256 as separate IOCs) — that is merge evidence,
+  // not a blocking conflict. True unsafe multi-mapping is recorded via
+  // detectMultiArtifactConflict + attachExactHash unique binding conflicts.
   const otherArtifactIds = [...new Set(
     hits.map((h) => h.artifact_id).filter((id) => id && id !== input.artifact_id)
   )];
-  if (otherArtifactIds.length > 1) {
-    await recordMergeConflict(client, {
-      conflicting_hash_type: input.primary_hash?.hash_type || 'sha256',
-      conflicting_hash_value: input.primary_hash?.normalized_hash_value || '',
-      candidate_artifact_ids: [input.artifact_id, ...otherArtifactIds],
-      reason: 'provider_hash_set_maps_to_multiple_artifacts',
-      evidence: { hashes, other_artifact_ids: otherArtifactIds }
-    });
-    return { ok: false, reason: 'conflict', results: [] };
-  }
-
-  // If exactly one other artifact owns some sibling hashes, caller should merge — return signal
-  if (otherArtifactIds.length === 1) {
+  if (otherArtifactIds.length >= 1) {
     return {
       ok: true,
       needs_merge_with: otherArtifactIds[0],
+      needs_merge_with_ids: otherArtifactIds,
       results: hits
     };
   }

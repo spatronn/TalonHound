@@ -6,11 +6,22 @@ import {
   selectPrimaryHash
 } from './hashNormalize.js';
 import { selectCanonicalArtifact, mergeArtifactMetadata } from './metadataPolicy.js';
-import { detectMultiArtifactConflict } from './conflicts.js';
+import {
+  detectMultiArtifactConflict,
+  collectProviderMergeTargetIds
+} from './conflicts.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 const MD5 = '9aed790a18f214b04619837cd71546d3';
 const SHA1 = '0f9a253afc55a8ebbd29a70c43d0e3cd668920f4';
 const SHA256 = '8ec6066000f5585d6fefbc1d5a30fa094ac9893456dbf4085fec81e6b71cef3b';
+
+const attachSrc = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'attach.js'),
+  'utf8'
+);
 
 describe('fileArtifacts trust rules', () => {
   it('same-record exact hash extraction is trusted evidence shape', () => {
@@ -55,6 +66,29 @@ describe('fileArtifacts trust rules', () => {
     assert.equal(
       detectMultiArtifactConflict([{ artifact_id: 'a' }, { artifact_id: 'b' }]).conflict,
       true
+    );
+  });
+
+  it('TF-first md5+sha1 on separate artifacts signals multi merge targets (not blocking conflict)', () => {
+    const shaArt = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const md5Art = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const sha1Art = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const mergeIds = collectProviderMergeTargetIds({
+      artifact_id: shaArt,
+      siblings: {
+        needs_merge_with: md5Art,
+        needs_merge_with_ids: [md5Art, sha1Art]
+      }
+    });
+    assert.deepEqual(mergeIds.sort(), [md5Art, sha1Art].sort());
+    assert.equal(mergeIds.includes(shaArt), false);
+  });
+
+  it('live attachProviderExactHashSet merges N other artifacts instead of open conflict', () => {
+    assert.match(attachSrc, /needs_merge_with_ids/);
+    assert.doesNotMatch(
+      attachSrc,
+      /otherArtifactIds\.length > 1[\s\S]{0,200}recordMergeConflict/
     );
   });
 

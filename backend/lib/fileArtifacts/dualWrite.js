@@ -19,6 +19,10 @@ import {
   isControlledFileArtifactDbError,
   formatProviderError
 } from './txSavepoint.js';
+import {
+  collectProviderMergeTargetIds,
+  resolveOpenProviderHashSetConflicts
+} from './conflicts.js';
 
 /**
  * @param {any} err
@@ -141,8 +145,10 @@ export async function dualWriteFileArtifactForObservable(client, input) {
         relation_method: input.relationMethod || RELATION_METHOD.SAME_SOURCE_RECORD
       });
 
-      const needsMerge = result?.siblings?.needs_merge_with;
-      if (needsMerge && result?.artifact_id && needsMerge !== result.artifact_id) {
+      const mergeIds = collectProviderMergeTargetIds(result);
+
+      if (mergeIds.length && result?.artifact_id) {
+        const candidateIds = [result.artifact_id, ...mergeIds];
         const { rows: cands } = await client.query(
           `SELECT a.id,
                   a.created_at,
@@ -152,8 +158,8 @@ export async function dualWriteFileArtifactForObservable(client, input) {
                   ) AS has_sha256,
                   (SELECT COUNT(*)::int FROM file_artifact_ioc_links l WHERE l.artifact_id = a.id) AS link_count
            FROM file_artifacts a
-           WHERE a.id = ANY($1::uuid[])`,
-          [[result.artifact_id, needsMerge]]
+           WHERE a.id = ANY($1::uuid[]) AND a.status = 'active'`,
+          [candidateIds]
         );
         const canonical = selectCanonicalArtifact(cands.map((r) => ({
           id: r.id,
@@ -162,14 +168,28 @@ export async function dualWriteFileArtifactForObservable(client, input) {
           link_count: r.link_count
         })));
         if (canonical) {
-          const duplicateId = canonical.id === result.artifact_id ? needsMerge : result.artifact_id;
-          await mergeFileArtifacts(client, {
-            canonicalArtifactId: canonical.id,
-            duplicateArtifactId: duplicateId,
-            method: 'provider_exact_hash_set',
-            evidence: { source: input.sourceName || null }
-          });
+          for (const id of candidateIds) {
+            if (id === canonical.id) continue;
+            await mergeFileArtifacts(client, {
+              canonicalArtifactId: canonical.id,
+              duplicateArtifactId: id,
+              method: 'provider_exact_hash_set',
+              evidence: { source: input.sourceName || null, merge_fan_in: mergeIds.length }
+            });
+          }
           result.merged_into = canonical.id;
+          result.artifact_id = canonical.id;
+          const primaryHash = cands.find((r) => r.id === canonical.id);
+          await resolveOpenProviderHashSetConflicts(client, {
+            hash_type: String(input.observableType || 'sha256').toLowerCase(),
+            hash_value: String(input.observable || '').toLowerCase(),
+            resolution: {
+              resolved_by: 'dual_write_provider_exact_hash_set',
+              canonical_artifact_id: canonical.id,
+              merged_artifact_ids: mergeIds,
+              has_sha256_canonical: Boolean(primaryHash?.has_sha256)
+            }
+          }).catch(() => {});
         }
       }
 

@@ -31,6 +31,7 @@ import {
   linkIocToArtifact,
   upsertSourceObservation,
   recordMergeConflict,
+  resolveOpenProviderHashSetConflicts,
   OBSERVATION_TYPE,
   RELATION_METHOD,
   isExactFileHashIocType,
@@ -306,6 +307,19 @@ async function applyProviderHashSet(client, hashes, meta, summary) {
         if (obs?.created) summary.created_source_observations += 1;
       }
     }
+  }
+
+  const sha256 = hashes.find((h) => h.hash_type === 'sha256') || hashes[0];
+  if (sha256?.normalized_hash_value) {
+    await resolveOpenProviderHashSetConflicts(client, {
+      hash_type: sha256.hash_type,
+      hash_value: sha256.normalized_hash_value,
+      resolution: {
+        resolved_by: 'backfill_provider_exact_hash_set',
+        provider: meta.provider || null,
+        artifact_id: artifactId
+      }
+    }).catch(() => {});
   }
   summary.provider_mapped += 1;
 }

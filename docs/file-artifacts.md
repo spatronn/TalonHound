@@ -96,6 +96,8 @@ Auto-merge / attach sibling hashes only when:
 2. VirusTotal `raw_response.data.attributes` contains exact md5/sha1/sha256 together
 3. Manual merge (service ready; UI is Phase 2)
 
+When a trusted provider set maps to **multiple existing artifacts** (typical ThreatFox-first case: MD5, SHA1, and SHA256 imported as separate IOCs), live dual-write and nightly provider backfill both fan-in merge into the canonical artifact (SHA256 preferred). That is merge evidence, not a blocking conflict.
+
 **Never** auto-merge from: file name, size, MIME, family, tags, IMPHASH, TLSH, SSDEEP, timestamps alone.
 
 ## Source attribution
