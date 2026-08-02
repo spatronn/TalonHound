@@ -443,6 +443,21 @@ export async function runSpamhausDropListSync(pool, listType, options = {}) {
 export async function runSpamhausDropSync(pool, options = {}) {
   const { signal, triggeredBy = 'scheduler' } = options;
   const config = await getSpamhausDropConfig(pool);
+
+  // Worker-side re-check: the provider may have been disabled after this job was
+  // enqueued. Complete cleanly as skipped without any external fetch and without
+  // creating a retry. Terminal-success keeps existing queue metrics/run-history
+  // semantics intact.
+  if (!config.enabled) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'Spamhaus DROP provider is disabled',
+      triggered_by: triggeredBy,
+      results: {}
+    };
+  }
+
   const results = {};
 
   for (const listType of SPAMHAUS_DROP_LIST_TYPES) {

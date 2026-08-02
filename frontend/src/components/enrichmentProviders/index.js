@@ -5,5 +5,7 @@ export { default as ProviderAccordionCard } from './ProviderAccordionCard.jsx';
 export { default as ProviderActionBar } from './ProviderActionBar.jsx';
 export { default as ProviderConfigForm, ProviderField } from './ProviderConfigForm.jsx';
 export { default as ConfirmRemoveKeyModal } from './ConfirmRemoveKeyModal.jsx';
+export { default as ConfirmActionModal } from './ConfirmActionModal.jsx';
 export { useRemoveKeyConfirm } from './useRemoveKeyConfirm.js';
+export { useConfirmAction } from './useConfirmAction.js';
 export { PROVIDER_META, PROVIDER_ORDER, getProviderMeta, resolveProviderStatus } from './providerMeta.js';

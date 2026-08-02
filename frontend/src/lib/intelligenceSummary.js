@@ -1,5 +1,21 @@
 import { isProviderApplicable } from './iocProviderApplicability.js';
 
+/**
+ * True when a provider snapshot carries a previously fetched result, regardless
+ * of the provider's current enabled state. Used to distinguish a disabled
+ * provider that still has a viewable historical result from one with nothing.
+ */
+export function snapshotHasResult(snapshot) {
+  if (!snapshot) return false;
+  if (snapshot.hasResult === true || snapshot.historical === true) return true;
+  if (snapshot.data != null) return true;
+  if (snapshot.summary != null) return true;
+  if (snapshot.found === true) return true;
+  if (snapshot.listed != null) return true;
+  if (snapshot.fetched_at || snapshot.last_analysis_at || snapshot.last_enriched_at) return true;
+  return false;
+}
+
 function providerCoverageStatus(snapshot) {
   const status = String(snapshot?.status || 'not_run').toLowerCase();
   if (['success', 'available', 'enriched', 'vt_not_indexed', 'listed', 'not_listed'].includes(status)) {
@@ -10,7 +26,8 @@ function providerCoverageStatus(snapshot) {
   if (status === 'not_found') return 'not_found';
   if (status === 'no_data') return 'not_found';
   if (status === 'completed') return snapshot?.known === false ? 'not_found' : 'available';
-  if (status === 'disabled') return 'disabled';
+  // Disabled provider: keep historical results distinguishable from an empty one.
+  if (status === 'disabled') return snapshotHasResult(snapshot) ? 'historical_disabled' : 'disabled';
   if (['not_configured', 'api_key_missing'].includes(status)) return 'not_configured';
   if (['dataset_not_synced', 'suspicious', 'stale'].includes(status)) return 'not_configured';
   if (['error', 'failed'].includes(status)) return 'error';
@@ -49,6 +66,7 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
 export function dnsmaniaCoverageDetail(snapshot, state) {
   if (!snapshot || String(snapshot?.status || '') === 'not_run' || state === 'not_run') return 'Not run';
   const status = String(snapshot.status || '').toLowerCase();
+  if (state === 'historical_disabled') return 'Historical · Disabled';
   if (status === 'disabled' || status === 'not_configured' || state === 'disabled' || state === 'not_configured') {
     return 'Disabled';
   }
@@ -96,6 +114,7 @@ export function providerStateLabel(state) {
   if (state === 'available') return 'Available';
   if (state === 'partial') return 'Partial';
   if (state === 'not_found') return 'Not found';
+  if (state === 'historical_disabled') return 'Historical · Disabled';
   if (state === 'disabled') return 'Disabled';
   if (state === 'not_configured') return 'Not configured';
   if (state === 'error') return 'Error';
@@ -107,6 +126,8 @@ export function providerStateStyle(state) {
   if (state === 'partial') return { dot: '#f59e0b', color: '#fbbf24' };
   if (state === 'not_found') return { dot: '#64748b', color: '#94a3b8' };
   if (state === 'error') return { dot: '#ef4444', color: '#fca5a5' };
+  // Historical result under a now-disabled provider: present but muted, not dominant.
+  if (state === 'historical_disabled') return { dot: '#f59e0b', color: '#cbd5e1' };
   if (state === 'disabled' || state === 'not_configured') return { dot: '#f59e0b', color: '#fcd34d' };
   return { dot: '#64748b', color: '#94a3b8' };
 }

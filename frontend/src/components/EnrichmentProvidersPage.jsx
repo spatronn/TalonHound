@@ -8,7 +8,9 @@ import {
   ProviderField,
   ProviderSummaryStats,
   ConfirmRemoveKeyModal,
+  ConfirmActionModal,
   useRemoveKeyConfirm,
+  useConfirmAction,
   PROVIDER_ORDER,
   getProviderMeta,
   resolveProviderStatus
@@ -19,6 +21,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
   const { canWrite, isAdmin } = useSession();
   const requestRequiredReason = useReasonPrompt();
   const { state: removeConfirm, controller: removeKey } = useRemoveKeyConfirm();
+  const { state: disableConfirm, controller: disableAction } = useConfirmAction();
   const [loading, setLoading] = useState(true);
   const [vt, setVt] = useState(null);
   const [ipinfo, setIpinfo] = useState(null);
@@ -302,6 +305,39 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     }
   }
 
+  // Central disable persistence: one request per provider, enabled=false, without
+  // touching stored keys. Reused by the shared disable confirmation modal for all
+  // key/toggle providers. Throws on failure so the modal stays open with the error.
+  const DISABLE_REASON = 'Disabled from Enrichment Providers page';
+  async function commitProviderDisable(providerKey) {
+    const name = getProviderMeta(providerKey).name;
+    if (providerKey === 'virustotal') {
+      await api.put('/admin/enrichment-providers/virustotal', { ...vtForm, enabled: false, api_key: '' });
+    } else if (providerKey === 'ipinfo_lite') {
+      await api.put('/admin/enrichment-providers/ipinfo-lite', { ...ipForm, enabled: false, token: '', reason: DISABLE_REASON });
+    } else if (providerKey === 'abuseipdb') {
+      await api.put('/admin/enrichment-providers/abuseipdb', { ...abuseForm, enabled: false, api_key: '', reason: DISABLE_REASON });
+    } else if (providerKey === 'spamhaus_drop') {
+      await api.put('/admin/enrichment-providers/spamhaus-drop', { ...spamhausForm, enabled: false, reason: DISABLE_REASON });
+    } else {
+      throw new Error('Unsupported provider');
+    }
+    setFeedback({ type: 'success', text: `${name} disabled. Existing results remain viewable; new enrichment is blocked.` });
+    await load();
+  }
+
+  // Disabling opens the shared confirmation modal; enabling applies immediately.
+  function handleEnabledChange(providerKey, nextEnabled, setForm) {
+    if (nextEnabled) {
+      setForm((x) => ({ ...x, enabled: true }));
+      return;
+    }
+    disableAction.request({
+      payload: { providerKey, name: getProviderMeta(providerKey).name },
+      onConfirm: () => commitProviderDisable(providerKey)
+    });
+  }
+
   const byKey = {
     virustotal: vt,
     ipinfo_lite: ipinfo,
@@ -359,7 +395,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         status={hs.status}
                         statusLabel={hs.label}
                         enabled={vtForm.enabled}
-                        onEnabledChange={(v) => setVtForm((x) => ({ ...x, enabled: v }))}
+                        onEnabledChange={(v) => handleEnabledChange('virustotal', v, setVtForm)}
                         enabledDisabled={!canWrite}
                         lastTestAt={row.last_success_at || row.last_test_at}
                         description={meta.longDescription}
@@ -429,7 +465,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         status={hs.status}
                         statusLabel={hs.label}
                         enabled={ipForm.enabled}
-                        onEnabledChange={(v) => setIpForm((x) => ({ ...x, enabled: v }))}
+                        onEnabledChange={(v) => handleEnabledChange('ipinfo_lite', v, setIpForm)}
                         enabledDisabled={!canWrite}
                         lastTestAt={row.last_success_at || row.last_test_at}
                         description={meta.longDescription}
@@ -502,7 +538,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         status={hs.status}
                         statusLabel={hs.label}
                         enabled={abuseForm.enabled}
-                        onEnabledChange={(v) => setAbuseForm((x) => ({ ...x, enabled: v }))}
+                        onEnabledChange={(v) => handleEnabledChange('abuseipdb', v, setAbuseForm)}
                         enabledDisabled={!isAdmin}
                         lastTestAt={row.last_success_at || row.last_test_at}
                         description={meta.longDescription}
@@ -673,7 +709,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         status={hs.status}
                         statusLabel={hs.label}
                         enabled={spamhausForm.enabled}
-                        onEnabledChange={(v) => setSpamhausForm((x) => ({ ...x, enabled: v }))}
+                        onEnabledChange={(v) => handleEnabledChange('spamhaus_drop', v, setSpamhausForm)}
                         enabledDisabled={!isAdmin}
                         lastTestAt={row.last_success_at}
                         lastTestLabel="Last Sync"
@@ -741,6 +777,19 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
         error={removeConfirm.error}
         onCancel={() => removeKey.cancel()}
         onConfirm={() => removeKey.confirm()}
+      />
+
+      <ConfirmActionModal
+        open={disableConfirm.open}
+        title={`Disable ${disableConfirm.payload?.name || 'provider'}?`}
+        description="Existing enrichment results will remain visible, but new enrichment and refresh operations will be blocked."
+        confirmLabel="Disable provider"
+        submittingLabel="Disabling..."
+        destructive
+        submitting={disableConfirm.submitting}
+        error={disableConfirm.error}
+        onCancel={() => disableAction.cancel()}
+        onConfirm={() => disableAction.confirm()}
       />
     </AppShell>
   );

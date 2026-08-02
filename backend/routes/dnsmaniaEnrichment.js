@@ -8,6 +8,7 @@ import {
   getEnrichmentByLookupKey,
   rowToApiPayload
 } from '../services/dnsmaniaEnrichmentService.js';
+import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
 
 function decodeRouteValue(raw) {
   try {
@@ -147,6 +148,9 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
       const parsed = normalizeDnsmaniaLookup(iocType, value);
       if (!parsed.ok) return sendValidationError(res, parsed);
 
+      // Central disable guard: no external call for a disabled provider.
+      if (!(await guardProviderEnabled(pool, DNSMANIA_PROVIDER, res))) return;
+
       const cfg = getDnsmaniaConfig();
       if (!cfg.configured) {
         return res.status(503).json({
@@ -155,15 +159,6 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
           code: 'not_configured',
           provider: DNSMANIA_PROVIDER,
           status: 'not_configured'
-        });
-      }
-      if (!cfg.enabled) {
-        return res.status(503).json({
-          error: 'DNSMania enrichment is currently disabled',
-          message: 'DNSMania enrichment is currently disabled',
-          code: 'disabled',
-          provider: DNSMANIA_PROVIDER,
-          status: 'disabled'
         });
       }
 

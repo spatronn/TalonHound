@@ -13,6 +13,8 @@ import {
   ABUSEIPDB_PROVIDER,
   TEST_IP
 } from '../services/abuseipdbService.js';
+import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 
 function decodeRouteIp(raw) {
   try {
@@ -113,6 +115,9 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
     }
 
     try {
+      // Central disable guard: no external call for a disabled provider.
+      if (!(await guardProviderEnabled(pool, ABUSEIPDB_PROVIDER, res))) return;
+
       const result = await enrichIpWithAbuseIpdb(pool, publicIp, { force });
 
       if (result.skipped && result.provider_status === 'not_configured') {
@@ -260,23 +265,20 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
         [ABUSEIPDB_PROVIDER, enabled, ttlHours, timeoutMs, apiKey, JSON.stringify(config)]
       );
 
-      await audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.ENRICHMENT_PROVIDER_CONFIG_UPDATED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: ABUSEIPDB_PROVIDER,
-        entityDisplay: 'AbuseIPDB',
-        severity: AUDIT_SEVERITY.INFO,
+      await auditProviderConfigUpdate(audit, req, {
+        provider: ABUSEIPDB_PROVIDER,
+        displayName: 'AbuseIPDB',
+        previousEnabled: existing.enabled,
+        newEnabled: enabled,
         after: {
-          enabled,
           cache_ttl_hours: ttlHours,
           timeout_ms: timeoutMs,
           max_age_days: maxAgeDays,
           verbose,
           api_key_updated: Boolean(apiKey)
         },
-        metadata: { provider: ABUSEIPDB_PROVIDER, reason: reasonCheck.reason }
-      }).catch(() => {});
+        metadata: { reason: reasonCheck.reason }
+      });
 
       const cfg = await getAbuseIpdbConfig(pool);
       return res.json({

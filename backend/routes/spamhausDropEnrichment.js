@@ -15,6 +15,8 @@ import {
   persistSpamhausLookupResult,
   rowToSpamhausApiPayload
 } from '../services/spamhausDropEnrichmentService.js';
+import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 
 export function extractIpFromIoc(iocValue, iocType) {
   const type = String(iocType || '').trim().toLowerCase();
@@ -214,6 +216,7 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
     const timeoutMs = Math.max(5000, Number(req.body?.timeout_ms ?? 30000));
 
     try {
+      const previous = await getSpamhausDropConfig(pool);
       await pool.query(
         `INSERT INTO threat_intel_provider_configs (provider, enabled, ttl_hours, timeout_ms, config, updated_at)
          VALUES ($1, $2, 24, $3, $4::jsonb, NOW())
@@ -225,16 +228,14 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
         [SPAMHAUS_DROP_PROVIDER, enabled, timeoutMs, JSON.stringify({ sync_interval_hours: syncIntervalHours })]
       );
 
-      await audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.ENRICHMENT_PROVIDER_CONFIG_UPDATED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: SPAMHAUS_DROP_PROVIDER,
-        entityDisplay: 'Spamhaus DROP',
-        severity: AUDIT_SEVERITY.INFO,
-        after: { enabled, sync_interval_hours: syncIntervalHours, timeout_ms: timeoutMs },
-        metadata: { provider: SPAMHAUS_DROP_PROVIDER, reason: reasonCheck.reason }
-      }).catch(() => {});
+      await auditProviderConfigUpdate(audit, req, {
+        provider: SPAMHAUS_DROP_PROVIDER,
+        displayName: 'Spamhaus DROP',
+        previousEnabled: previous.enabled,
+        newEnabled: enabled,
+        after: { sync_interval_hours: syncIntervalHours, timeout_ms: timeoutMs },
+        metadata: { reason: reasonCheck.reason }
+      });
 
       const config = await getSpamhausDropConfig(pool);
       const syncState = await getSpamhausDropSyncState(pool);
@@ -250,10 +251,9 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
   // -------------------------------------------------------------------------
   app.post('/api/admin/enrichment-providers/spamhaus-drop/sync', requireRole(ROLES.ADMIN), async (req, res) => {
     try {
-      const config = await getSpamhausDropConfig(pool);
-      if (!config.enabled) {
-        return res.status(409).json({ message: 'Spamhaus DROP provider is disabled. Enable it before running a sync.' });
-      }
+      // Central disable guard: the queue producer must not enqueue a sync job for
+      // a disabled provider.
+      if (!(await guardProviderEnabled(pool, SPAMHAUS_DROP_PROVIDER, res))) return;
 
       if (!importQueue) {
         return res.status(503).json({ message: 'Import queue not available' });

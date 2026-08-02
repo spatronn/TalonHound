@@ -14,6 +14,8 @@ import {
   maskToken
 } from '../services/ipinfoLiteService.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
+import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 
 const IPINFO_PROVIDER = 'ipinfo_lite';
 
@@ -149,6 +151,10 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     });
 
     try {
+      // Central disable guard: block bulk enrichment for a disabled provider
+      // before any external call or audit write.
+      if (!(await guardProviderEnabled(pool, IPINFO_PROVIDER, res))) return;
+
       const results = await enrichIpsWithIpinfoLite(pool, requestedIps, { force });
       const summary = bulkSummary(results);
       const attempted = results.some((item) => item.state !== 'cached' && item.state !== 'invalid_ip');
@@ -249,6 +255,10 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
 
     try {
+      // Central disable guard first: a disabled provider blocks refresh entirely,
+      // even when a cached row exists, without any external call.
+      if (!(await guardProviderEnabled(pool, IPINFO_PROVIDER, res))) return;
+
       if (!force) {
         const existing = await getEnrichmentByIp(pool, publicIp);
         if (existing?.provider_status === 'success') {
@@ -261,12 +271,6 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         return res.status(409).json({
           error: 'IPinfo Lite provider is not configured',
           message: 'IPinfo Lite provider is not configured'
-        });
-      }
-      if (!cfg.enabled) {
-        return res.status(409).json({
-          error: 'IPinfo Lite provider is disabled',
-          message: 'IPinfo Lite provider is disabled'
         });
       }
 
@@ -483,16 +487,14 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         [IPINFO_PROVIDER, enabled, timeoutMs, token, JSON.stringify(config)]
       );
 
-      await audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.ENRICHMENT_PROVIDER_CONFIG_UPDATED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: IPINFO_PROVIDER,
-        entityDisplay: 'IPinfo Lite',
-        severity: AUDIT_SEVERITY.INFO,
-        after: { enabled, base_url: config.base_url, timeout_seconds: config.timeout_seconds, token_updated: Boolean(token) },
-        metadata: { provider: IPINFO_PROVIDER, reason: reasonCheck.reason }
-      }).catch(() => {});
+      await auditProviderConfigUpdate(audit, req, {
+        provider: IPINFO_PROVIDER,
+        displayName: 'IPinfo Lite',
+        previousEnabled: existing.enabled,
+        newEnabled: enabled,
+        after: { base_url: config.base_url, timeout_seconds: config.timeout_seconds, token_updated: Boolean(token) },
+        metadata: { reason: reasonCheck.reason }
+      });
 
       const cfg = await getIpinfoLiteConfig(pool);
       return res.json({

@@ -122,6 +122,8 @@ import { normalizeRdapTarget } from './lib/domainRoot.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './lib/spamhausDropSync.js';
+import { guardProviderEnabled } from './lib/enrichmentProviderRegistry.js';
+import { auditProviderConfigUpdate } from './lib/enrichmentProviderConfigAudit.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { getDnsmaniaProviderAdminSummary } from './services/dnsmaniaEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
@@ -5879,6 +5881,9 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
   let iocType = null;
 
   try {
+    // Central disable guard: no external call for a disabled provider.
+    if (!(await guardProviderEnabled(pool, VT_PROVIDER, res))) return;
+
     const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
     const vtKey = providerCfg.apiKey;
     if (!vtKey) return res.status(400).json({ status: 'api_key_missing', message: 'VirusTotal API key is not configured' });
@@ -6187,10 +6192,18 @@ app.put('/api/admin/enrichment-providers/virustotal', async (req, res) => {
     const ttl = Math.max(1, Number(req.body?.ttl_hours || 24));
     const timeout = Math.max(3000, Number(req.body?.timeout_ms || 12000));
     const apiKey = typeof req.body?.api_key === 'string' ? req.body.api_key.trim() : undefined;
+    const previous = await getThreatIntelProviderConfig(VT_PROVIDER);
     await pool.query(`INSERT INTO threat_intel_provider_configs(provider,enabled,ttl_hours,timeout_ms,api_key,updated_at)
       VALUES ($1,$2,$3,$4,$5,NOW())
       ON CONFLICT(provider) DO UPDATE SET enabled=$2, ttl_hours=$3, timeout_ms=$4, api_key=COALESCE(NULLIF($5,''), threat_intel_provider_configs.api_key), updated_at=NOW()`,
       [VT_PROVIDER, enabled, ttl, timeout, apiKey]);
+    await auditProviderConfigUpdate(auditLogService, req, {
+      provider: VT_PROVIDER,
+      displayName: 'VirusTotal',
+      previousEnabled: previous.enabled,
+      newEnabled: enabled,
+      after: { ttl_hours: ttl, timeout_ms: timeout, api_key_updated: Boolean(apiKey) }
+    });
     return res.json({ ok: true });
   } catch { return res.status(500).json({ message: 'Failed to update provider config' }); }
 });
