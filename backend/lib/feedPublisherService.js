@@ -130,42 +130,42 @@ export function filtersHash(feed, window) {
   return crypto.createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex').slice(0, 16);
 }
 
-async function fetchLatestIntegrationFinishedAt(pool, feed = null) {
+async function fetchLatestIntegrationFinishedAt(db, feed = null) {
   const includeCustom = (feed?.include_feed_keys || []).some((k) => isCustomFeedKey(k));
   const manualSourceIds = extractManualFeedSourceIds(feed?.include_feed_keys);
-  const queries = [
-    pool.query(
+  // Sequential queries: generation holds a single session client; pg Clients
+  // cannot safely run concurrent queries on the same connection.
+  const timestamps = [];
+  {
+    const { rows } = await db.query(
       `SELECT MAX(finished_at) AS latest_finished_at
        FROM integration_runs
        WHERE status = 'success' AND finished_at IS NOT NULL`
-    )
-  ];
-  if (includeCustom) {
-    queries.push(
-      pool.query(
-        `SELECT MAX(finished_at) AS latest_finished_at
-         FROM custom_threat_feed_runs
-         WHERE status = 'success' AND finished_at IS NOT NULL`
-      )
     );
+    if (rows[0]?.latest_finished_at) timestamps.push(rows[0].latest_finished_at);
+  }
+  if (includeCustom) {
+    const { rows } = await db.query(
+      `SELECT MAX(finished_at) AS latest_finished_at
+       FROM custom_threat_feed_runs
+       WHERE status = 'success' AND finished_at IS NOT NULL`
+    );
+    if (rows[0]?.latest_finished_at) timestamps.push(rows[0].latest_finished_at);
   }
   if (manualSourceIds.length) {
-    queries.push(
-      pool.query(
-        `SELECT MAX(COALESCE(last_seen_log, last_seen_at, created_at)) AS latest_finished_at
-         FROM ioc_items
-         WHERE ioc_source_id = ANY($1::bigint[])`,
-        [manualSourceIds]
-      )
+    const { rows } = await db.query(
+      `SELECT MAX(COALESCE(last_seen_log, last_seen_at, created_at)) AS latest_finished_at
+       FROM ioc_items
+       WHERE ioc_source_id = ANY($1::bigint[])`,
+      [manualSourceIds]
     );
+    if (rows[0]?.latest_finished_at) timestamps.push(rows[0].latest_finished_at);
   }
-  const results = await Promise.all(queries);
-  const timestamps = results
-    .map((r) => r.rows[0]?.latest_finished_at)
+  const normalized = timestamps
     .filter(Boolean)
     .map((ts) => (ts instanceof Date ? ts.toISOString() : String(ts)));
-  if (!timestamps.length) return null;
-  return timestamps.sort().at(-1) || null;
+  if (!normalized.length) return null;
+  return normalized.sort().at(-1) || null;
 }
 
 /**
@@ -535,11 +535,13 @@ export function canSkipPublishedFeedRegeneration({
 
 /**
  * Run fn inside BEGIN/COMMIT.
- * - Pool (has .connect): checkout, release in finally.
- * - Client (no .connect): reuse session (e.g. generation lock holder); do not release.
+ * - Pool (has .connect, no .release): checkout, release in finally.
+ * - Already-checked-out client (has .release): reuse session; do not release.
+ *   Important: pg Clients also expose .connect(), so we must not use that alone.
  */
 async function withTransaction(db, fn) {
-  if (typeof db.connect === 'function') {
+  const isCheckedOutClient = typeof db.release === 'function';
+  if (!isCheckedOutClient && typeof db.connect === 'function') {
     const client = await db.connect();
     try {
       await client.query('BEGIN');

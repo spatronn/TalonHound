@@ -157,6 +157,38 @@ describe('persistPublishedFeedSnapshot', () => {
     assert.ok(calls.some((c) => c.sql === 'ROLLBACK'));
     assert.equal(calls.at(-1).sql, 'RELEASE');
   });
+
+  it('reuses a checked-out client (has release) without calling connect again', async () => {
+    const events = [];
+    const client = {
+      async connect() {
+        events.push('client_connect');
+        throw new Error('must not reconnect checked-out client');
+      },
+      async query(sql, params = []) {
+        const normalized = String(sql).replace(/\s+/g, ' ').trim();
+        events.push(normalized.slice(0, 48));
+        if (normalized === 'BEGIN' || normalized === 'COMMIT' || normalized === 'ROLLBACK') {
+          return { rows: [] };
+        }
+        if (normalized.includes('pg_advisory_xact_lock')) return { rows: [] };
+        if (normalized.includes('FOR UPDATE') && normalized.includes("status = 'success'")) {
+          return { rows: [] };
+        }
+        if (normalized.includes('INSERT INTO published_feed_snapshots')) return { rows: [] };
+        throw new Error(`Unexpected: ${normalized}`);
+      },
+      release() {
+        events.push('release');
+      }
+    };
+
+    await persistPublishedFeedSnapshot(client, baseSnapshot);
+    assert.ok(!events.includes('client_connect'));
+    assert.ok(!events.includes('release'));
+    assert.ok(events.some((e) => e === 'BEGIN'));
+    assert.ok(events.some((e) => e === 'COMMIT'));
+  });
 });
 
 describe('canSkipPublishedFeedRegeneration', () => {
