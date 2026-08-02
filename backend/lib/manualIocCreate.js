@@ -8,6 +8,8 @@ import {
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
+import { ensureIocTagAssignment } from './tagCatalogService.js';
+import { parseExcludeTagIds } from './tagHelpers.js';
 
 export function inferObservableType(value) {
   const v = String(value || '').trim();
@@ -57,10 +59,10 @@ function normalizeConfidence(value) {
   return 'medium';
 }
 
-export function serializeManualIocResponse(row, source, expiration, classificationFields = null) {
+export function serializeManualIocResponse(row, source, expiration, classificationFields = null, tags = null) {
   if (!row) return null;
   const classFields = classificationFields || buildMultiThreatClassificationResponseFields([]);
-  return {
+  const response = {
     id: Number(row.id),
     public_id: row.public_id,
     observable: row.observable,
@@ -88,6 +90,10 @@ export function serializeManualIocResponse(row, source, expiration, classificati
     expire_days: expiration?.expire_days ?? null,
     created_at: row.created_at
   };
+  if (Array.isArray(tags)) {
+    response.tags = tags;
+  }
+  return response;
 }
 
 /**
@@ -165,6 +171,23 @@ export async function createManualIoc(pool, body, opts = {}) {
     ? opts.user.publicId
     : null;
 
+  const requestedTagIds = parseExcludeTagIds(body?.tag_ids ?? body?.tags);
+  let resolvedTags = [];
+  if (requestedTagIds.length) {
+    const tagQ = await pool.query(
+      `SELECT id, name, type, category
+       FROM tags
+       WHERE id = ANY($1::int[]) AND enabled = TRUE`,
+      [requestedTagIds]
+    );
+    if (tagQ.rows.length !== requestedTagIds.length) {
+      return { status: 400, body: { message: 'One or more tags are invalid or disabled' } };
+    }
+    // Preserve request order
+    const byId = new Map(tagQ.rows.map((row) => [Number(row.id), row]));
+    resolvedTags = requestedTagIds.map((id) => byId.get(id)).filter(Boolean);
+  }
+
   const insertQ = `
     INSERT INTO ioc_items (
       observable, observable_type, source_name, source_url, confidence, category, threat_classification, threat_actor_id, note,
@@ -220,6 +243,26 @@ export async function createManualIoc(pool, body, opts = {}) {
     actor: userId
   }).catch(() => {});
 
+  const assignedTags = [];
+  for (const tag of resolvedTags) {
+    try {
+      await ensureIocTagAssignment(pool, {
+        iocId: row.id,
+        observableType: row.observable_type,
+        tagId: tag.id,
+        origin: 'manual',
+        createdBy: opts.user?.id ?? null
+      });
+      assignedTags.push({
+        id: Number(tag.id),
+        name: tag.name,
+        type: tag.type || null
+      });
+    } catch {
+      // Tag assignment must not fail manual IOC create after insert
+    }
+  }
+
   await pool.query(
     `INSERT INTO ioc_observables (ioc_public_id, observable_type, observable_value)
      VALUES ($1, $2, $3)
@@ -264,7 +307,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     name: sourceRow.name
   };
   const classFields = buildMultiThreatClassificationResponseFields(threatClassSlugs);
-  const response = serializeManualIocResponse(fresh, source, expiration, classFields);
+  const response = serializeManualIocResponse(fresh, source, expiration, classFields, assignedTags);
 
   if (opts.audit?.auditSuccess && opts.req) {
     await opts.audit.auditSuccess({
@@ -284,9 +327,34 @@ export async function createManualIoc(pool, body, opts = {}) {
         source_id: source.id,
         source_name: source.name,
         expiration_policy: expiration.policy,
-        expire_days: expiration.expire_days ?? null
+        expire_days: expiration.expire_days ?? null,
+        tag_ids: assignedTags.map((t) => t.id)
       }
     });
+
+    for (const tag of assignedTags) {
+      await opts.audit.auditSuccess({
+        req: opts.req,
+        action: AUDIT_ACTION.IOC_TAG_ADDED,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: fresh.public_id ? String(fresh.public_id) : String(fresh.id),
+        entityDisplay: fresh.observable || String(fresh.id),
+        subjectIocId: fresh.id,
+        subjectIocType: fresh.observable_type || null,
+        subjectIocValue: fresh.observable || null,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: {
+          ioc_id: String(fresh.id),
+          subject_ioc_id: String(fresh.id),
+          subject_ioc_type: fresh.observable_type || null,
+          subject_ioc_value: fresh.observable || null,
+          tag_id: tag.id,
+          tag_name: tag.name,
+          tag_type: tag.type,
+          via: 'manual_create'
+        }
+      }).catch(() => {});
+    }
   }
 
   return { status: 201, body: response };

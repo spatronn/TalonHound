@@ -14424,10 +14424,16 @@ function IOCAddPage() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [primaryThreatClass, setPrimaryThreatClass] = useState([]);
   const [threatActorId, setThreatActorId] = useState('');
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [tagSuggestions, setTagSuggestions] = useState([]);
+  const [tagSearch, setTagSearch] = useState('');
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
   const [note, setNote] = useState('');
   const [sources, setSources] = useState([]);
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const iocFormRef = useRef(null);
+  const tagDropdownRef = useRef(null);
 
   useEffect(() => {
     if (!message) return;
@@ -14465,6 +14471,67 @@ function IOCAddPage() {
     return () => { active = false; };
   }, []);
 
+  async function loadTagSuggestions(search = '') {
+    setTagsLoading(true);
+    try {
+      const excludeIds = selectedTags.map((t) => Number(t.id)).filter((id) => Number.isFinite(id) && id > 0);
+      const res = await api.get('/tags', {
+        params: {
+          active: true,
+          limit: TAG_PICKER_LIMIT,
+          q: String(search || '').trim() || undefined,
+          exclude_ids: excludeIds.length ? excludeIds.join(',') : undefined
+        }
+      });
+      setTagSuggestions(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setTagSuggestions([]);
+    } finally {
+      setTagsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!tagDropdownOpen) {
+      setTagSearch('');
+      setTagSuggestions([]);
+      return undefined;
+    }
+    const delayMs = String(tagSearch || '').trim() ? 250 : 0;
+    const timer = setTimeout(() => {
+      loadTagSuggestions(tagSearch).catch(() => {});
+    }, delayMs);
+    return () => clearTimeout(timer);
+  }, [tagDropdownOpen, tagSearch, selectedTags]);
+
+  useEffect(() => {
+    if (!tagDropdownOpen) return undefined;
+    const onDocMouseDown = (evt) => {
+      if (!tagDropdownRef.current) return;
+      if (!tagDropdownRef.current.contains(evt.target)) {
+        setTagDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [tagDropdownOpen]);
+
+  function addSelectedTag(tag) {
+    const id = Number(tag?.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    setSelectedTags((prev) => (
+      prev.some((t) => Number(t.id) === id)
+        ? prev
+        : [...prev, { id, name: tag.name || String(id) }]
+    ));
+    setTagDropdownOpen(false);
+    setTagSearch('');
+  }
+
+  function removeSelectedTag(tagId) {
+    setSelectedTags((prev) => prev.filter((t) => Number(t.id) !== Number(tagId)));
+  }
+
   function applySourceDefaults(nextSourceId) {
     const src = sources.find((s) => String(s.id) === String(nextSourceId));
     if (!src) return;
@@ -14487,6 +14554,10 @@ function IOCAddPage() {
     setSourceUrl('');
     setPrimaryThreatClass([]);
     setThreatActorId('');
+    setSelectedTags([]);
+    setTagDropdownOpen(false);
+    setTagSearch('');
+    setTagSuggestions([]);
     setNote('');
   }
 
@@ -14636,6 +14707,9 @@ function IOCAddPage() {
     if (threatActorId) {
       payload.threat_actor_id = threatActorId;
     }
+    if (selectedTags.length) {
+      payload.tag_ids = selectedTags.map((t) => Number(t.id)).filter((id) => Number.isFinite(id) && id > 0);
+    }
 
     try {
       const { data } = await api.post('/ioc/ip', payload);
@@ -14766,6 +14840,104 @@ function IOCAddPage() {
 	                ))}
 	              </select>
 	            </div>
+
+            <div>
+              <label style={fieldLabelStyle}>Tags (optional)</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {selectedTags.map((tag) => (
+                  <span
+                    key={`add-tag-${tag.id}`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '3px 8px',
+                      borderRadius: 999,
+                      border: '1px solid #92400e',
+                      fontSize: 12,
+                      color: '#fbbf24',
+                      background: 'rgba(146,64,14,0.12)'
+                    }}
+                  >
+                    {tag.name}
+                    <button
+                      type="button"
+                      onClick={() => removeSelectedTag(tag.id)}
+                      title="Remove tag"
+                      aria-label={`Remove ${tag.name}`}
+                      disabled={!canWrite}
+                      style={{ padding: 0, border: 'none', background: 'transparent', color: '#a16207', cursor: canWrite ? 'pointer' : 'not-allowed', lineHeight: 1, fontSize: 14 }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {!selectedTags.length ? (
+                  <span style={{ color: '#64748b', fontSize: 12 }}>No tags selected</span>
+                ) : null}
+                <div style={{ position: 'relative' }} ref={tagDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setTagDropdownOpen((v) => !v)}
+                    disabled={!canWrite || submitting}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      border: '1px solid #334155',
+                      background: '#111827',
+                      color: '#93c5fd',
+                      cursor: !canWrite || submitting ? 'not-allowed' : 'pointer',
+                      fontSize: 12,
+                      fontWeight: 600
+                    }}
+                  >
+                    + Add Tag {tagsLoading ? '…' : ''}
+                  </button>
+                  {tagDropdownOpen ? (
+                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 260, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', zIndex: 30, padding: 8, overflow: 'hidden' }}>
+                      <input
+                        value={tagSearch}
+                        onChange={(e) => setTagSearch(e.target.value)}
+                        placeholder="Search tag..."
+                        autoFocus
+                        style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, height: TAG_PICKER_LIST_HEIGHT, overflow: 'hidden' }}>
+                        {tagsLoading ? (
+                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>Loading…</div>
+                        ) : tagSuggestions.map((t) => (
+                          <button
+                            key={`add-opt-tag-${t.id}`}
+                            type="button"
+                            onClick={() => addSelectedTag(t)}
+                            style={{
+                              textAlign: 'left',
+                              border: '1px solid #334155',
+                              borderRadius: 8,
+                              padding: '6px 8px',
+                              minHeight: TAG_PICKER_ITEM_HEIGHT,
+                              boxSizing: 'border-box',
+                              background: '#111827',
+                              color: '#e5e7eb',
+                              cursor: 'pointer',
+                              flex: '0 0 auto'
+                            }}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                        {!tagsLoading && !tagSuggestions.length && !String(tagSearch || '').trim() ? (
+                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tags available</div>
+                        ) : null}
+                        {!tagsLoading && !tagSuggestions.length && String(tagSearch || '').trim() ? (
+                          <div style={{ color: '#94a3b8', fontSize: 12, padding: '4px 2px' }}>No tag found</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
 
             <div>
               <label htmlFor="note" style={fieldLabelStyle}>Note</label>

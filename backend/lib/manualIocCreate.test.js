@@ -44,7 +44,11 @@ function makeInsertRow(overrides = {}) {
   };
 }
 
-function createManualIocPoolMock({ sourceRow = THREAT_HUNTING_SOURCE, insertRow = makeInsertRow() } = {}) {
+function createManualIocPoolMock({
+  sourceRow = THREAT_HUNTING_SOURCE,
+  insertRow = makeInsertRow(),
+  enabledTags = []
+} = {}) {
   const queries = [];
   const query = async (sql, params = []) => {
     queries.push({ sql: String(sql), params: [...params] });
@@ -61,6 +65,15 @@ function createManualIocPoolMock({ sourceRow = THREAT_HUNTING_SOURCE, insertRow 
           { slug: 'credential_theft', name: 'Credential Theft', active: true, system_default: true, sort_order: 20 }
         ]
       };
+    }
+    if (normalized.includes('FROM tags') && normalized.includes('id = ANY')) {
+      const wanted = Array.isArray(params[0]) ? params[0].map(Number) : [];
+      return {
+        rows: enabledTags.filter((t) => wanted.includes(Number(t.id)))
+      };
+    }
+    if (normalized.includes('INSERT INTO ioc_tags')) {
+      return { rows: [{ tag_id: params[2] }], rowCount: 1 };
     }
     if (normalized.includes('INSERT INTO ioc_items')) {
       assert.match(normalized, /threat_actor_id IS NOT DISTINCT FROM \$8::uuid/);
@@ -177,6 +190,45 @@ test('createManualIoc rejects missing IOC value', async () => {
   const result = await createManualIoc(pool, { source_id: 7, confidence: 'high' });
   assert.equal(result.status, 400);
   assert.match(result.body.message, /required/i);
+});
+
+test('createManualIoc assigns tag_ids atomically', async () => {
+  const pool = createManualIocPoolMock({
+    enabledTags: [
+      { id: 11, name: 'watchlist', type: 'context', category: 'custom' },
+      { id: 12, name: 'vip', type: 'context', category: 'targeting' }
+    ]
+  });
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    confidence: 'high',
+    tag_ids: [11, 12]
+  });
+
+  assert.equal(result.status, 201);
+  assert.deepEqual(
+    result.body.tags.map((t) => ({ id: t.id, name: t.name })),
+    [
+      { id: 11, name: 'watchlist' },
+      { id: 12, name: 'vip' }
+    ]
+  );
+  assert.ok(pool.queries.some((q) => q.sql.includes('INSERT INTO ioc_tags')));
+});
+
+test('createManualIoc rejects invalid tag_ids', async () => {
+  const pool = createManualIocPoolMock({
+    enabledTags: [{ id: 11, name: 'watchlist', type: 'context', category: 'custom' }]
+  });
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    confidence: 'high',
+    tag_ids: [11, 999]
+  });
+  assert.equal(result.status, 400);
+  assert.match(result.body.message, /tags are invalid/i);
 });
 
 test('normalizeSourceNameInput replaces spaces and strips invalid chars', () => {

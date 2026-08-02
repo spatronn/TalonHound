@@ -59,7 +59,15 @@ import {
   restoreIntegrationFeed,
   validatePurgeConfirmName
 } from './lib/feedLifecycle.js';
-import { categoryToLegacyType, isValidCategory, parseNormalizedTagName, toPublicTag } from './lib/tagHelpers.js';
+import {
+  categoryToLegacyType,
+  isValidCategory,
+  normalizeTagSearch,
+  parseExcludeTagIds,
+  parseNormalizedTagName,
+  parseTagListLimit,
+  toPublicTag
+} from './lib/tagHelpers.js';
 import {
   ensureCatalogTag,
   ensureIocTagAssignment,
@@ -2792,14 +2800,34 @@ function parsePositiveInt(value) {
 const TAG_TYPES = new Set(['threat', 'actor', 'technique', 'context']);
 
 app.get('/api/tags', async (req, res) => {
-  if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
+  if (!isAdminUser(req) && !isAnalystUser(req)) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
 
   try {
+    const limit = parseTagListLimit(req.query?.limit);
+    const search = normalizeTagSearch(req.query?.q);
+    const excludeIds = parseExcludeTagIds(req.query?.exclude_ids);
+    const params = [];
+    const where = ['enabled = TRUE'];
+
+    if (search) {
+      params.push(`%${search}%`);
+      where.push(`name ILIKE $${params.length}`);
+    }
+    if (excludeIds.length) {
+      params.push(excludeIds);
+      where.push(`NOT (id = ANY($${params.length}::int[]))`);
+    }
+    params.push(limit);
+
     const q = await pool.query(
       `SELECT id, name, type, enabled
        FROM tags
-       WHERE enabled = TRUE
-       ORDER BY type ASC, name ASC`
+       WHERE ${where.join(' AND ')}
+       ORDER BY type ASC, name ASC
+       LIMIT $${params.length}`,
+      params
     );
     return res.json(q.rows);
   } catch (err) {
