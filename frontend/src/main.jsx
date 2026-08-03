@@ -15274,9 +15274,8 @@ function IOCAddPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
   const [recentRows, setRecentRows] = useState([]);
-  const sourceColorIndex = useSourceColorIndex();
   const [recentSort, setRecentSort] = useState({ key: null, dir: null });
-  const [recentWidths, setRecentWidths] = useState({ idx: 50, observable: 420, type: 110, source: 220, confidence: 110, ts: 170 });
+  const [recentWidths, setRecentWidths] = useState({ observable: 420, type: 140, addedBy: 220, addedAt: 200 });
   const [recentResize, setRecentResize] = useState(null);
   const [iocValue, setIocValue] = useState('');
   const [confidenceValue, setConfidenceValue] = useState('medium');
@@ -15470,7 +15469,7 @@ function IOCAddPage() {
   }
 
   async function loadRecent() {
-    const res = await api.get('/ioc/recent', { params: { limit: 10 } });
+    const res = await api.get('/ioc/recent-manual', { params: { limit: 10 } });
     setRecentRows(res.data?.items || []);
   }
 
@@ -15521,9 +15520,8 @@ function IOCAddPage() {
     const value = (r, k) => {
       if (k === 'observable') return r.observable;
       if (k === 'type') return r.observable_type;
-      if (k === 'source') return r.source_label || r.source_name || '';
-      if (k === 'confidence') return r.confidence || '';
-      if (k === 'ts') return new Date(r.created_at || 0).getTime();
+      if (k === 'addedBy') return r.added_by || '';
+      if (k === 'addedAt') return new Date(r.created_at || 0).getTime();
       return '';
     };
     copy.sort((a, b) => {
@@ -15816,31 +15814,28 @@ function IOCAddPage() {
 
         <div style={{ border: '1px solid #334155', borderRadius: 14, background: '#0f172a', boxShadow: '0 8px 28px rgba(2, 6, 23, 0.35)' }}>
           <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #334155' }}>
-            <h3 style={{ margin: 0 }}>Last 10 IOC entries</h3>
+            <h3 style={{ margin: 0 }}>Last 10 Manually Added IOCs</h3>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 860, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
               <colgroup>
-                <col style={{ width: recentWidths.idx }} /><col style={{ width: recentWidths.observable }} /><col style={{ width: recentWidths.type }} /><col style={{ width: recentWidths.source }} /><col style={{ width: recentWidths.confidence }} /><col style={{ width: recentWidths.ts }} />
+                <col style={{ width: recentWidths.observable }} /><col style={{ width: recentWidths.type }} /><col style={{ width: recentWidths.addedBy }} /><col style={{ width: recentWidths.addedAt }} />
               </colgroup>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#111827' }}>
-                  <th style={{ position: 'relative' }}>#<div onMouseDown={(e) => startRecentResize('idx', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th onClick={() => toggleRecentSort('observable')} style={{ position: 'relative', cursor:'pointer' }}>IOC{recentIndicator('observable')}<div onMouseDown={(e) => startRecentResize('observable', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                   <th onClick={() => toggleRecentSort('type')} style={{ position: 'relative', cursor:'pointer' }}>IOC Type{recentIndicator('type')}<div onMouseDown={(e) => startRecentResize('type', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleRecentSort('source')} style={{ position: 'relative', cursor:'pointer' }}>Source{recentIndicator('source')}<div onMouseDown={(e) => startRecentResize('source', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleRecentSort('confidence')} style={{ position: 'relative', cursor:'pointer' }}>Confidence{recentIndicator('confidence')}<div onMouseDown={(e) => startRecentResize('confidence', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleRecentSort('ts')} style={{ position: 'relative', cursor:'pointer' }}>Timestamp{recentIndicator('ts')}<div onMouseDown={(e) => startRecentResize('ts', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th onClick={() => toggleRecentSort('addedBy')} style={{ position: 'relative', cursor:'pointer' }}>Added By{recentIndicator('addedBy')}<div onMouseDown={(e) => startRecentResize('addedBy', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
+                  <th onClick={() => toggleRecentSort('addedAt')} style={{ position: 'relative', cursor:'pointer' }}>Added At{recentIndicator('addedAt')}<div onMouseDown={(e) => startRecentResize('addedAt', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
                 </tr>
               </thead>
               <tbody>
-                {sortedRecentRows.map((r, idx) => {
-                  const conf = confidencePillStyle(r.confidence);
-                  const sourceLabel = r.source_label || r.source_name;
-                  const sourceStyle = resolveSourceBadgeStyle(sourceColorIndex, sourceLabel);
-                  return (
+                {!sortedRecentRows.length ? (
+                  <tr>
+                    <td colSpan={4} style={{ color: '#94a3b8', textAlign: 'center', padding: '18px 10px' }}>No manually added IOCs yet.</td>
+                  </tr>
+                ) : sortedRecentRows.map((r, idx) => (
                     <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #1f2937', transition: 'background 0.15s ease-in-out' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#111827'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                      <td>{idx + 1}</td>
                       <td title={r.observable} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <button
@@ -15852,16 +15847,10 @@ function IOCAddPage() {
                         </div>
                       </td>
                       <td>{r.observable_type || '-'}</td>
-                      <td title={sourceLabel} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                        <span style={{ display: 'inline-flex', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 700, ...sourceStyle }}>{sourceLabel || '-'}</span>
-                      </td>
-                      <td>
-                        <span style={{ display: 'inline-flex', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, textTransform: 'capitalize', color: conf.color, background: conf.bg }}>{r.confidence || '-'}</span>
-                      </td>
+                      <td title={r.added_by || ''} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.added_by || '-'}</td>
                       <td>{formatUserDateTime(r.created_at)}</td>
                     </tr>
-                  );
-                })}
+                  ))}
               </tbody>
             </table>
           </div>

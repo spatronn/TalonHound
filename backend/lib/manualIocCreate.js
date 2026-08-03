@@ -206,9 +206,11 @@ export async function createManualIoc(pool, body, opts = {}) {
       observable, observable_type, source_name, source_url, confidence, category, threat_classification, threat_actor_id, note,
       ioc_source_id, confidence_source, confidence_source_name,
       manual_status_override, manual_status, manual_expires_at,
-      manual_override_reason, manual_override_by_user_id, manual_override_at
+      manual_override_reason, manual_override_by_user_id, manual_override_at,
+      created_origin, created_by_user_id
     )
-    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE, 'active', $13, $14, $15::uuid, NOW()
+    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE, 'active', $13, $14, $15::uuid, NOW(),
+           'manual_add', $15::uuid
     WHERE NOT EXISTS (
       SELECT 1 FROM ioc_items
       WHERE observable = $1

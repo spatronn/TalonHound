@@ -209,6 +209,7 @@ import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItems
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
 import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
+import { fetchRecentManualIocs } from './lib/recentManualIocs.js';
 import { createManualSuppression } from './lib/manualSuppressionCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
@@ -5573,6 +5574,19 @@ app.get('/api/ioc/recent', async (req, res) => {
     return res.json({ items: rows });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch recent IOC records', detail: err.message });
+  }
+});
+
+// Manually-added IOCs only (created via the Add IOC workflow), newest first, max 10.
+// Filtering/sorting/limiting happen in SQL (created_origin = 'manual_add').
+// Auth: covered by the global apiAuthGate; readable by any signed-in role, matching
+// who can view the Add IOC page.
+app.get('/api/ioc/recent-manual', async (req, res) => {
+  try {
+    const items = await fetchRecentManualIocs(pool, { limit: req.query.limit });
+    return res.json({ items });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch recent manual IOC records', detail: err.message });
   }
 });
 

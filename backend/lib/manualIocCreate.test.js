@@ -78,6 +78,9 @@ function createManualIocPoolMock({
     if (normalized.includes('INSERT INTO ioc_items')) {
       assert.match(normalized, /threat_actor_id IS NOT DISTINCT FROM \$8::uuid/);
       assert.doesNotMatch(normalized, /\$8::text/);
+      // Durable manual-origin provenance is written on every manual create.
+      assert.match(normalized, /created_origin, created_by_user_id/);
+      assert.match(normalized, /'manual_add', \$15::uuid/);
       return { rows: [insertRow] };
     }
     if (normalized.includes('FROM ioc_items WHERE id = $1 AND observable_type = $2')) {
@@ -172,6 +175,22 @@ test('createManualIoc stores multiple threat classifications', async () => {
     result.body.threat_classifications.map((x) => x.value),
     ['phishing', 'credential_theft']
   );
+});
+
+test('createManualIoc stamps manual origin and records the creating user', async () => {
+  const pool = createManualIocPoolMock();
+  const creatorPublicId = '22222222-2222-4222-8222-222222222222';
+  const result = await createManualIoc(
+    pool,
+    { ip: 'deneme.ekhtelalattabrizi.xyz', source_id: 7, confidence: 'high' },
+    { user: { publicId: creatorPublicId } }
+  );
+
+  assert.equal(result.status, 201);
+  const insert = pool.queries.find((q) => q.sql.includes('INSERT INTO ioc_items'));
+  assert.ok(insert, 'expected an ioc_items insert');
+  // $15 feeds both manual_override_by_user_id and created_by_user_id.
+  assert.equal(insert.params[14], creatorPublicId);
 });
 
 test('createManualIoc rejects invalid source', async () => {
