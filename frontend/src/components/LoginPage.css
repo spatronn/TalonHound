@@ -49,7 +49,10 @@
   background-clip:text;
   color:transparent;
 }
-.login-shell .card{width:100%;max-width:340px;margin:auto 0}
+/* The app-wide dark-theme reset (see App's global <style>) paints every .card
+   with `background:#111827 !important`. Keep the sign-in form flush on the
+   panel by overriding just this scoped card back to transparent. */
+.login-shell .card{width:100%;max-width:340px;margin:auto 0;background:transparent !important}
 .login-shell .card h1{
   font-family:'Sora',sans-serif;
   font-size:24px;
