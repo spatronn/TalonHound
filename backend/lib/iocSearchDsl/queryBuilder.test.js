@@ -202,6 +202,42 @@ test('hash value is always a bound parameter, never inlined', () => {
   assert.doesNotMatch(sql, /dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6/);
 });
 
+test('imphash equals resolves via file_artifact_non_identity_attrs (row-wise semi-join)', () => {
+  const { sql, params } = build('imphash equals "F34D5F2D4577ED6D9CEEC516C1F5A744"', { fileArtifactsReadEnabled: true });
+  // Same index-friendly membership shape as buildFileHash — no `OR`, no per-row EXISTS.
+  assert.match(sql, /\(i\.observable_type, i\.id\) IN \(/);
+  assert.match(sql, /file_artifact_non_identity_attrs na/);
+  assert.match(sql, /file_artifact_ioc_links fal/);
+  assert.match(sql, /na\.attr_type = 'imphash' AND na\.attr_value = \$1/);
+  // owning artifact resolved through merge tombstones
+  assert.match(sql, /merged_into_artifact_id/);
+  // imphash lowercased (hex), bound as the only parameter
+  assert.deepEqual(params, ['f34d5f2d4577ed6d9ceec516c1f5a744']);
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('tlsh compares case-insensitively via LOWER(attr_value) (matches functional index)', () => {
+  const { sql, params } = build('tlsh equals "T14041FFD512BD02757EE6ADA7F1A6D584B1846BB719C5AE3C5CD8BCF4814CE082083A93"', { fileArtifactsReadEnabled: true });
+  assert.match(sql, /na\.attr_type = 'tlsh' AND LOWER\(na\.attr_value\) = \$1/);
+  // value already lowercased by the parser
+  assert.equal(params[0], 't14041ffd512bd02757ee6ada7f1a6d584b1846bb719c5ae3c5cd8bcf4814ce082083a93');
+  assert.doesNotMatch(String(params[0]), /[A-Z]/);
+});
+
+test('ssdeep compares case-SENSITIVELY (raw attr_value, no LOWER)', () => {
+  const v = '3072:Etd/dEZOS3hE0E9rycyje/d9gu+Q9sF7Nq40ln:M4OS3C3yjud9guh9Gq40ln';
+  const { sql, params } = build(`ssdeep equals "${v}"`, { fileArtifactsReadEnabled: true });
+  assert.match(sql, /na\.attr_type = 'ssdeep' AND na\.attr_value = \$1/);
+  assert.doesNotMatch(sql, /LOWER\(na\.attr_value\)/);
+  assert.equal(params[0], v); // exact, case + '+' preserved
+});
+
+test('attr value is always a bound parameter, never inlined', () => {
+  const v = '3072:Etd/dEZOS3hE0E9rycyje/d9gu+Q9sF7Nq40ln:M4OS3C3yjud9guh9Gq40ln';
+  const { sql } = build(`ssdeep equals "${v}"`, { fileArtifactsReadEnabled: true });
+  assert.doesNotMatch(sql, /Etd\/dEZOS3hE0/);
+});
+
 test('status equals uses COALESCE default active', () => {
   const { sql } = build('status equals "active"');
   assert.match(sql, /COALESCE\(i\.status, 'active'\) = \$1/);

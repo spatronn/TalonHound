@@ -6,7 +6,7 @@ import {
   getFieldSpec,
   operatorSupported
 } from './fields.js';
-import { assertUsableTextValue, parseDateLiteral, assertHashValue } from './normalize.js';
+import { assertUsableTextValue, parseDateLiteral, assertHashValue, assertAttrValue } from './normalize.js';
 
 const LOGICAL_KEYWORDS = new Set(['and', 'or', 'not']);
 
@@ -204,6 +204,17 @@ class Parser {
         position: tok.position
       });
       return { type: 'condition', field, kind: 'hash', operator, values: [value] };
+    }
+    // Non-identity file-artifact attribute fields (imphash/tlsh/ssdeep): validate + normalize
+    // per attr type. The registry only allows `equals`, so no fuzzy operator reaches here.
+    if (spec.kind === 'attr') {
+      const value = assertAttrValue(tok.value, {
+        field,
+        attrType: spec.attrType,
+        operator,
+        position: tok.position
+      });
+      return { type: 'condition', field, kind: 'attr', operator, values: [value] };
     }
     const value = assertUsableTextValue(tok.value, { field, operator, position: tok.position });
     this.assertEnumValue(field, spec, value, tok.position);

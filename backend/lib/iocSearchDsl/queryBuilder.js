@@ -85,6 +85,10 @@ class Builder {
       case 'sha1':
       case 'sha256':
         return this.buildFileHash(node);
+      case 'imphash':
+      case 'tlsh':
+      case 'ssdeep':
+        return this.buildNonIdentityAttr(node);
       case 'status':
         return this.buildSimpleEnum(node, `COALESCE(${IOC_ALIAS}.status, 'active')`, { lower: false });
       case 'confidence':
@@ -430,6 +434,58 @@ class Builder {
                hfa.id
              )
        WHERE h.hash_type = '${hashType}' AND h.normalized_hash_value = ${valuePh}
+    )`;
+  }
+
+  // ---- attr: imphash / tlsh / ssdeep (non-identity file-artifact attribute) --
+  // These are NOT IOC identities and never appear as ioc_items rows — they live only on
+  // file artifacts (file_artifact_non_identity_attrs). A match selects every IOC linked to
+  // the artifact(s) carrying this exact attribute value, resolved through merge tombstones;
+  // the canonical page/probe SQL (searchPageSql.js) then resolves each matched IOC to its
+  // artifact identity (SHA256 primary) and dedupes. One attribute value can legitimately
+  // sit on many artifacts (weak signal), yielding several distinct canonical IOCs — while
+  // the same artifact reached more than once collapses to a single result.
+  //
+  // Same index-friendly row-wise membership as buildFileHash (no `OR`, no per-row EXISTS):
+  // a NON-correlated semi-join driven by the (attr_type, attr_value) lookup index, then an
+  // ioc_items primary-key membership. attr_type is a whitelisted literal (never user text);
+  // the value is validated/normalized by the parser and bound as a parameter.
+  //
+  // Case-folding per attr type (see normalize.js): imphash/tlsh are hex → compared case-
+  // insensitively (parser already lowercased; tlsh also lowers the column via the
+  // lower(attr_value) index); ssdeep is base64 → compared case-SENSITIVELY on the raw column.
+  buildNonIdentityAttr(node) {
+    const ATTR_TYPE_LITERAL = { imphash: 'imphash', tlsh: 'tlsh', ssdeep: 'ssdeep' };
+    const attrType = ATTR_TYPE_LITERAL[node.field];
+    if (!attrType) {
+      throw new Error(`Unsupported attribute field in builder: ${node.field}`);
+    }
+    if (node.operator !== 'equals') {
+      throw new Error(`Unsupported operator for ${node.field}: ${node.operator}`);
+    }
+    const value = String(node.values[0]);
+    const valuePh = this.bind(value);
+    // tlsh: case-insensitive hex → LOWER(attr_value) (backed by the (attr_type, lower(attr_value))
+    // index; the parser already lowercased the bound value). imphash/ssdeep: compared on the
+    // raw column (imphash value pre-lowercased by the parser; ssdeep kept case-exact).
+    const valuePred = attrType === 'tlsh'
+      ? `LOWER(na.attr_value) = ${valuePh}`
+      : `na.attr_value = ${valuePh}`;
+
+    return `(${IOC_ALIAS}.observable_type, ${IOC_ALIAS}.id) IN (
+      SELECT fal.ioc_observable_type, fal.ioc_item_id
+        FROM file_artifact_non_identity_attrs na
+        JOIN file_artifacts nfa ON nfa.id = na.artifact_id
+        JOIN file_artifact_ioc_links fal
+          ON fal.artifact_id = COALESCE(
+               CASE
+                 WHEN nfa.status = 'merged' AND nfa.merged_into_artifact_id IS NOT NULL
+                   THEN nfa.merged_into_artifact_id
+                 ELSE nfa.id
+               END,
+               nfa.id
+             )
+       WHERE na.attr_type = '${attrType}' AND ${valuePred}
     )`;
   }
 

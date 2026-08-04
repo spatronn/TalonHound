@@ -43,10 +43,18 @@ export const DATE_OPERATORS = Object.freeze(['before', 'after', 'between']);
 // identity match, never a substring scan.
 export const HASH_OPERATORS = Object.freeze(['equals']);
 
+// Non-identity file-artifact attribute fields (imphash/tlsh/ssdeep) support equality only.
+// These are NOT IOC identity types — they are structural/similarity attributes attached to
+// a file artifact (file_artifact_non_identity_attrs) and never appear as ioc_items rows.
+// Exact lookup only in v1; no `contains`/`similar`/`similar_to`.
+export const ATTR_OPERATORS = Object.freeze(['equals']);
+
 // kind drives value parsing/normalization:
 //   text  - quoted string values, ILIKE/equality semantics
 //   enum  - constrained (or free) token values, equality/membership semantics
 //   date  - date/datetime literals, before/after/between semantics
+//   hash  - exact file-hash identity (md5/sha1/sha256), equality only
+//   attr  - non-identity file-artifact attribute (imphash/tlsh/ssdeep), equality only
 export const FIELD_REGISTRY = Object.freeze({
   ioc: { kind: 'text', operators: TEXT_OPERATORS },
   tag: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
@@ -54,10 +62,14 @@ export const FIELD_REGISTRY = Object.freeze({
   source: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   threat_actor: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   classification: { kind: 'enum', operators: ENUM_OPERATORS },
+  // True IOC identity types only. imphash/tlsh/ssdeep are intentionally NOT here: they are
+  // non-identity file-artifact attributes (see the imphash/tlsh/ssdeep fields below), never
+  // ioc_items observable_types, so `type equals "imphash"` is rejected rather than silently
+  // returning zero matches.
   type: {
     kind: 'enum',
     operators: ENUM_OPERATORS,
-    allowedValues: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']
+    allowedValues: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']
   },
   // Forensic / alias: any known exact hash on the linked file artifact (or raw type when unlinked).
   known_hash_type: {
@@ -74,6 +86,14 @@ export const FIELD_REGISTRY = Object.freeze({
   md5: { kind: 'hash', hashType: 'md5', operators: HASH_OPERATORS },
   sha1: { kind: 'hash', hashType: 'sha1', operators: HASH_OPERATORS },
   sha256: { kind: 'hash', hashType: 'sha256', operators: HASH_OPERATORS },
+  // Non-identity file-artifact attribute search. Each field carries its own attrType which
+  // drives value validation/normalization (parser) and the resolver (queryBuilder.buildNonIdentityAttr):
+  // it matches file_artifact_non_identity_attrs by exact value, resolves the owning artifact
+  // through merge tombstones, and returns that artifact's canonical file-hash IOC (SHA256).
+  // Same registry mechanism as the hash fields — a new attribute is just another (kind, resolver) pair.
+  imphash: { kind: 'attr', attrType: 'imphash', operators: ATTR_OPERATORS },
+  tlsh: { kind: 'attr', attrType: 'tlsh', operators: ATTR_OPERATORS },
+  ssdeep: { kind: 'attr', attrType: 'ssdeep', operators: ATTR_OPERATORS },
   status: {
     kind: 'enum',
     operators: ENUM_OPERATORS,

@@ -13,16 +13,24 @@ export const ENUM_OPERATORS = ['equals', 'not_equals', 'in', 'not_in'];
 export const DATE_OPERATORS = ['before', 'after', 'between'];
 // Exact file-hash identity fields: equality only (mirrors backend HASH_OPERATORS).
 export const HASH_OPERATORS = ['equals'];
+// Non-identity file-artifact attribute fields: equality only (mirrors backend ATTR_OPERATORS).
+export const ATTR_OPERATORS = ['equals'];
 
 export const SEARCH_FIELDS = [
   { name: 'ioc', label: 'IOC', kind: 'text', operators: TEXT_OPERATORS },
-  { name: 'type', label: 'Type', kind: 'enum', operators: ENUM_OPERATORS, values: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh'] },
+  // True IOC identity types only — imphash/tlsh/ssdeep are separate artifact-attribute fields below.
+  { name: 'type', label: 'Type', kind: 'enum', operators: ENUM_OPERATORS, values: ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'] },
   { name: 'known_hash_type', label: 'Known hash type', kind: 'enum', operators: ENUM_OPERATORS, values: ['md5', 'sha1', 'sha256'] },
   // Exact hash lookup: matches a direct hash IOC or a file artifact's known hashes,
   // resolved to the canonical (SHA256) file-hash IOC on the backend.
   { name: 'md5', label: 'MD5', kind: 'hash', operators: HASH_OPERATORS },
   { name: 'sha1', label: 'SHA1', kind: 'hash', operators: HASH_OPERATORS },
   { name: 'sha256', label: 'SHA256', kind: 'hash', operators: HASH_OPERATORS },
+  // Non-identity file-artifact attributes (structural/similarity signals, not IOC types).
+  // Exact lookup resolves to the artifact's canonical (SHA256) file-hash IOC on the backend.
+  { name: 'imphash', label: 'IMPHASH', kind: 'attr', operators: ATTR_OPERATORS },
+  { name: 'tlsh', label: 'TLSH', kind: 'attr', operators: ATTR_OPERATORS },
+  { name: 'ssdeep', label: 'SSDEEP', kind: 'attr', operators: ATTR_OPERATORS },
   { name: 'tag', label: 'Tag', kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   {
     name: 'source',

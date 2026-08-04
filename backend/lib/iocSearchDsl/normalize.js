@@ -56,6 +56,59 @@ export function assertHashValue(raw, { field, hashType, operator, position } = {
 }
 
 // ---------------------------------------------------------------------------
+// Non-identity file-artifact attributes (imphash / tlsh / ssdeep)
+// ---------------------------------------------------------------------------
+
+// Per-type validator + normalizer. Formats and case-folding are derived from the actual
+// production data in file_artifact_non_identity_attrs, NOT assumed:
+//   imphash - 32 hex, stored lowercase (0 uppercase observed). Case-insensitive hex, so we
+//             lowercase; compared exact. `fold: 'lower'`.
+//   tlsh    - optional 'T1' version prefix + 70 hex (72- or 70-char forms both occur), stored
+//             in mixed case. TLSH is a hex digest, so comparison is case-insensitive; we
+//             lowercase and the resolver compares LOWER(attr_value). `fold: 'lower'`.
+//   ssdeep  - blocksize:chunk:double_chunk. The chunk parts are base64 (case-significant:
+//             'A' != 'a'), and '+'/'/' are valid base64 chars — so ssdeep is compared
+//             case-SENSITIVELY and never lowercased. `fold: 'none'`.
+// Each `detail` names the expected shape so an invalid value gets an explicit DslError
+// consistent with the other validators (never a silent downgrade to a different search).
+const ATTR_VALUE_SPECS = Object.freeze({
+  imphash: {
+    fold: 'lower',
+    re: /^[0-9a-f]{32}$/,
+    detail: 'Expected a 32-character hexadecimal imphash.'
+  },
+  tlsh: {
+    fold: 'lower',
+    re: /^(t1)?[0-9a-f]{70}$/,
+    detail: 'Expected a TLSH digest: 70 hex characters, optionally prefixed with "T1".'
+  },
+  ssdeep: {
+    fold: 'none',
+    re: /^[0-9]+:[A-Za-z0-9+/]+:[A-Za-z0-9+/]+$/,
+    detail: 'Expected an ssdeep hash of the form blocksize:chunk:double_chunk.'
+  }
+});
+
+export function assertAttrValue(raw, { field, attrType, operator, position } = {}) {
+  const spec = ATTR_VALUE_SPECS[attrType];
+  if (!spec) {
+    throw new DslError(
+      `Invalid value for "${field} ${operator}".`,
+      { code: 'invalid_attr_value', position, field }
+    );
+  }
+  const trimmed = String(raw ?? '').trim();
+  const candidate = spec.fold === 'lower' ? trimmed.toLowerCase() : trimmed;
+  if (!candidate || !spec.re.test(candidate)) {
+    throw new DslError(
+      `Invalid ${attrType} value for "${field} ${operator}". ${spec.detail}`,
+      { code: 'invalid_attr_value', position, field }
+    );
+  }
+  return candidate;
+}
+
+// ---------------------------------------------------------------------------
 // IOC value normalization
 // ---------------------------------------------------------------------------
 

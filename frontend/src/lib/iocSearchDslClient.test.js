@@ -116,3 +116,33 @@ test('hash conditions generate the exact equals DSL syntax', () => {
 test('newCondition for a hash field seeds equals', () => {
   assert.deepEqual(newCondition('sha256'), { field: 'sha256', operator: 'equals', value: '', value2: '' });
 });
+
+test('Type dropdown no longer offers imphash/tlsh/ssdeep (not IOC types)', () => {
+  const typeValues = FIELD_BY_NAME.type.values;
+  for (const bad of ['imphash', 'tlsh', 'ssdeep']) {
+    assert.ok(!typeValues.includes(bad), `type must not offer ${bad}`);
+  }
+  // real IOC identity types remain
+  assert.deepEqual(typeValues, ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
+});
+
+test('imphash/tlsh/ssdeep are registered attr fields with equals only', () => {
+  for (const name of ['imphash', 'tlsh', 'ssdeep']) {
+    const f = FIELD_BY_NAME[name];
+    assert.ok(f, `${name} field must be registered`);
+    assert.equal(f.kind, 'attr');
+    assert.deepEqual(f.operators, ['equals'], `${name} must offer only equals`);
+    assert.equal(defaultOperatorFor(name), 'equals');
+  }
+});
+
+test('attr conditions generate the exact equals DSL syntax (ssdeep quoted with colons)', () => {
+  assert.equal(
+    conditionToDsl({ field: 'imphash', operator: 'equals', value: 'f34d5f2d4577ed6d9ceec516c1f5a744' }),
+    'imphash equals "f34d5f2d4577ed6d9ceec516c1f5a744"'
+  );
+  assert.equal(
+    conditionToDsl({ field: 'ssdeep', operator: 'equals', value: '3072:Etd/dEZOS3hE0:M4OS3C3yj' }),
+    'ssdeep equals "3072:Etd/dEZOS3hE0:M4OS3C3yj"'
+  );
+});

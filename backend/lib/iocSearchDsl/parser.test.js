@@ -151,6 +151,73 @@ test('md5/sha1/sha256 accept only equals — contains and others rejected', () =
   expectError('sha256 starts_with "dd55"', 'unsupported_operator');
 });
 
+test('type no longer accepts imphash/tlsh/ssdeep (not IOC identity types)', () => {
+  expectError('type equals "imphash"', 'invalid_enum_value');
+  expectError('type equals "tlsh"', 'invalid_enum_value');
+  expectError('type equals "ssdeep"', 'invalid_enum_value');
+  expectError('type in ("md5", "imphash")', 'invalid_enum_value');
+});
+
+test('type still accepts real IOC identity types', () => {
+  for (const t of ['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']) {
+    const ast = parse(`type equals "${t}"`);
+    assert.deepEqual(ast.values, [t]);
+  }
+});
+
+test('imphash/tlsh/ssdeep equals parse as attr conditions', () => {
+  const imphash = parse('imphash equals "f34d5f2d4577ed6d9ceec516c1f5a744"');
+  assert.equal(imphash.field, 'imphash');
+  assert.equal(imphash.kind, 'attr');
+  assert.equal(imphash.operator, 'equals');
+  assert.deepEqual(imphash.values, ['f34d5f2d4577ed6d9ceec516c1f5a744']);
+
+  const tlsh = parse('tlsh equals "T14041FFD512BD02757EE6ADA7F1A6D584B1846BB719C5AE3C5CD8BCF4814CE082083A93"');
+  assert.equal(tlsh.kind, 'attr');
+  // tlsh is lowercased (case-insensitive hex digest)
+  assert.deepEqual(tlsh.values, ['t14041ffd512bd02757ee6ada7f1a6d584b1846bb719c5ae3c5cd8bcf4814ce082083a93']);
+
+  const ssdeep = parse('ssdeep equals "3072:Etd/dEZOS3hE0E9rycyje/d9gu+Q9sF7Nq40ln:M4OS3C3yjud9guh9Gq40ln"');
+  assert.equal(ssdeep.kind, 'attr');
+});
+
+test('imphash is lowercased; tlsh accepts bare 70-hex form', () => {
+  const imphash = parse('imphash equals "  F34D5F2D4577ED6D9CEEC516C1F5A744  "');
+  assert.deepEqual(imphash.values, ['f34d5f2d4577ed6d9ceec516c1f5a744']);
+  // 70 hex with no T1 prefix is a valid TLSH form
+  const bare = parse('tlsh equals "4041FFD512BD02757EE6ADA7F1A6D584B1846BB719C5AE3C5CD8BCF4814CE082083A93"');
+  assert.equal(bare.values[0].length, 70);
+});
+
+test('ssdeep is case-SENSITIVE (base64) — case is preserved, not folded', () => {
+  const v = '3072:Etd/dEZOS3hE0E9rycyje/d9gu+Q9sF7Nq40ln:M4OS3C3yjud9guh9Gq40ln';
+  const ast = parse(`ssdeep equals "${v}"`);
+  assert.deepEqual(ast.values, [v]); // unchanged: '+' and mixed case preserved
+});
+
+test('ssdeep with colons and plus parses (tokenizer treats quoted value as opaque)', () => {
+  const ast = parse('ssdeep equals "24:vIaOIwOOvIocvI5Fy3Ijq7JICeI08F0j1IkSIo6IrYI5+V:vcxlCY+5VE9SwrX"');
+  assert.equal(ast.field, 'ssdeep');
+  assert.match(ast.values[0], /:.*:.*/);
+  assert.match(ast.values[0], /\+/);
+});
+
+test('invalid attr formats are rejected (not silently downgraded)', () => {
+  expectError('imphash equals "f34d5f2d4577ed6d9ceec516c1f5a74"', 'invalid_attr_value');  // 31 hex
+  expectError('imphash equals "z34d5f2d4577ed6d9ceec516c1f5a744"', 'invalid_attr_value'); // non-hex
+  expectError('tlsh equals "TNULL"', 'invalid_attr_value');                                // garbage sentinel
+  expectError('tlsh equals "T1zz41FFD512BD02757EE6ADA7F1A6D584B1846BB719C5AE3C5CD8BCF4814CE082083A93"', 'invalid_attr_value');
+  expectError('ssdeep equals "notanssdeep"', 'invalid_attr_value');                        // no blocksize:chunk:chunk
+  expectError('ssdeep equals "3::"', 'invalid_attr_value');                                // empty chunks
+});
+
+test('imphash/tlsh/ssdeep accept only equals — contains and others rejected', () => {
+  expectError('imphash contains "f34d5f2d4577ed6d9ceec516c1f5a744"', 'unsupported_operator');
+  expectError('tlsh contains "T14041FFD512BD02757EE6ADA7F1A6D584B1846BB719C5AE3C5CD8BCF4814CE082083A93"', 'unsupported_operator');
+  expectError('ssdeep contains "3072:Etd:M4OS"', 'unsupported_operator');
+  expectError('ssdeep starts_with "3072:"', 'unsupported_operator');
+});
+
 test('invalid field', () => expectError('severity equals "high"', 'unknown_field'));
 
 test('invalid operator for field', () =>
