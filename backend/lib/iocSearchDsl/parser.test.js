@@ -104,6 +104,53 @@ test('ISO-8601 with timezone is accepted and flagged', () => {
   assert.equal(ast.dates[0].hasTimezone, true);
 });
 
+test('md5/sha1/sha256 equals parse to normalized hash values', () => {
+  const md5 = parse('md5 equals "20945449fd11203d79ea5d0d29bf1e22"');
+  assert.equal(md5.field, 'md5');
+  assert.equal(md5.kind, 'hash');
+  assert.equal(md5.operator, 'equals');
+  assert.deepEqual(md5.values, ['20945449fd11203d79ea5d0d29bf1e22']);
+
+  const sha1 = parse('sha1 equals "0017b2e0d74be3c58ab319c29a84de9f3e3bedee"');
+  assert.deepEqual(sha1.values, ['0017b2e0d74be3c58ab319c29a84de9f3e3bedee']);
+
+  const sha256 = parse('sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"');
+  assert.deepEqual(sha256.values, ['dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6']);
+});
+
+test('hash values are trimmed and lowercased', () => {
+  const ast = parse('md5 equals "  20945449FD11203D79EA5D0D29BF1E22  "');
+  assert.deepEqual(ast.values, ['20945449fd11203d79ea5d0d29bf1e22']);
+});
+
+test('hash normalized query re-parses to the same normalized (lowercased) form', () => {
+  const { normalizedQuery } = parseSearchQuery('SHA256 equals "DD55CBAFBF914C8BB7EEE34ACFC65876D96B21DE2BA8F320737CF8D280A347E6"');
+  assert.equal(
+    normalizedQuery,
+    'sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"'
+  );
+  const reparsed = parseDsl(normalizedQuery);
+  assert.equal(reparsed.field, 'sha256');
+  assert.deepEqual(reparsed.values, ['dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6']);
+});
+
+test('wrong-length hash is rejected (never silently downgraded)', () => {
+  expectError('md5 equals "20945449fd11203d79ea5d0d29bf1e2"', 'invalid_hash_value'); // 31 chars
+  expectError('sha1 equals "0017b2e0d74be3c58ab319c29a84de9f3e3bede"', 'invalid_hash_value'); // 39
+  expectError('sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347"', 'invalid_hash_value'); // 62
+});
+
+test('non-hex hash value is rejected', () =>
+  expectError('md5 equals "zz945449fd11203d79ea5d0d29bf1e22"', 'invalid_hash_value'));
+
+test('md5/sha1/sha256 accept only equals — contains and others rejected', () => {
+  expectError('md5 contains "20945449fd11203d79ea5d0d29bf1e22"', 'unsupported_operator');
+  expectError('sha1 contains "0017b2e0d74be3c58ab319c29a84de9f3e3bedee"', 'unsupported_operator');
+  expectError('sha256 contains "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"', 'unsupported_operator');
+  expectError('md5 not_equals "20945449fd11203d79ea5d0d29bf1e22"', 'unsupported_operator');
+  expectError('sha256 starts_with "dd55"', 'unsupported_operator');
+});
+
 test('invalid field', () => expectError('severity equals "high"', 'unknown_field'));
 
 test('invalid operator for field', () =>

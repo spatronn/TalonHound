@@ -81,6 +81,10 @@ class Builder {
         return this.buildType(node);
       case 'known_hash_type':
         return this.buildKnownHashType(node);
+      case 'md5':
+      case 'sha1':
+      case 'sha256':
+        return this.buildFileHash(node);
       case 'status':
         return this.buildSimpleEnum(node, `COALESCE(${IOC_ALIAS}.status, 'active')`, { lower: false });
       case 'confidence':
@@ -364,6 +368,69 @@ class Builder {
       default:
         throw new Error(`Unsupported operator for hash type enum: ${node.operator}`);
     }
+  }
+
+  // ---- hash: md5 / sha1 / sha256 (exact file-hash identity) --------------
+  // Selects the ioc_items rows that match this exact hash two ways, and lets the
+  // canonical page/probe SQL (searchPageSql.js) resolve every matched row to its
+  // file-artifact identity (SHA256 primary) and dedupe:
+  //   1) Direct hash IOC: an ioc_items row of this hash type whose observable equals the
+  //      value. observable_type is a whitelisted literal (never user text), so the partial
+  //      expression index idx_ioc_items_<type>_lower_observable is usable.
+  //   2) Artifact known-hash identity (FA read only): every IOC linked to the file
+  //      artifact that owns this exact (hash_type, value), driven from the global-unique
+  //      hash index and resolved through any merge tombstone (mirrors read-path semantics).
+  //
+  // The two identity sources are combined as a single row-wise membership test
+  // `(observable_type, id) IN (<direct> UNION <artifact>)`, NOT `direct OR (… IN …)`.
+  // The OR form forces Postgres to sequential-scan every ioc_items partition (~3M rows,
+  // ~1.9s measured) because it cannot bitmap-combine an indexable predicate with a
+  // semi-join. The UNION-of-ids form keeps both branches index-only and the outer
+  // membership a keyed lookup on the ioc_items primary key (~2ms measured). id alone is
+  // not unique across type partitions, so the key is the full (observable_type, id).
+  // Only `equals` reaches here (registry whitelist); the value is already trimmed,
+  // lowercased and length/hex-validated by the parser, and is still bound as a parameter.
+  buildFileHash(node) {
+    const HASH_TYPE_LITERAL = { md5: 'md5', sha1: 'sha1', sha256: 'sha256' };
+    const hashType = HASH_TYPE_LITERAL[node.field];
+    if (!hashType) {
+      throw new Error(`Unsupported hash field in builder: ${node.field}`);
+    }
+    if (node.operator !== 'equals') {
+      throw new Error(`Unsupported operator for ${node.field}: ${node.operator}`);
+    }
+    const value = String(node.values[0]).trim().toLowerCase();
+    const valuePh = this.bind(value);
+
+    const directIoc =
+      `(${IOC_ALIAS}.observable_type = '${hashType}' AND LOWER(${IOC_ALIAS}.observable) = ${valuePh})`;
+
+    // Without the file-artifact read/canonical layer there is no artifact identity to
+    // resolve to and no dedup, so a direct exact hash IOC is the only sound match. This
+    // bare predicate already uses the partial hash index directly (no OR to defeat it).
+    if (!this.fileArtifactsReadEnabled) {
+      return directIoc;
+    }
+
+    return `(${IOC_ALIAS}.observable_type, ${IOC_ALIAS}.id) IN (
+      SELECT d.observable_type, d.id
+        FROM ioc_items d
+       WHERE d.observable_type = '${hashType}' AND LOWER(d.observable) = ${valuePh}
+      UNION
+      SELECT fal.ioc_observable_type, fal.ioc_item_id
+        FROM file_artifact_hashes h
+        JOIN file_artifacts hfa ON hfa.id = h.artifact_id
+        JOIN file_artifact_ioc_links fal
+          ON fal.artifact_id = COALESCE(
+               CASE
+                 WHEN hfa.status = 'merged' AND hfa.merged_into_artifact_id IS NOT NULL
+                   THEN hfa.merged_into_artifact_id
+                 ELSE hfa.id
+               END,
+               hfa.id
+             )
+       WHERE h.hash_type = '${hashType}' AND h.normalized_hash_value = ${valuePh}
+    )`;
   }
 
   // ---- date: item-level columns -----------------------------------------

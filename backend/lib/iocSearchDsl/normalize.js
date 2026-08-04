@@ -1,4 +1,5 @@
 import { DslError } from './errors.js';
+import { normalizeExactHash, HASH_LENGTH_BY_TYPE } from '../fileArtifacts/hashNormalize.js';
 
 // ---------------------------------------------------------------------------
 // Text values
@@ -27,6 +28,31 @@ export function assertUsableTextValue(raw, { field, operator, position } = {}) {
 // pairs this with `ESCAPE '\'`.
 export function likeEscape(value) {
   return String(value).replace(/([\\%_])/g, '\\$1');
+}
+
+// ---------------------------------------------------------------------------
+// Exact file-hash values (md5/sha1/sha256)
+// ---------------------------------------------------------------------------
+
+// Validate + normalize an exact hash literal for a hash-kind field. Delegates to the
+// single canonical hash normalizer (fileArtifacts/hashNormalize) so the DSL never grows
+// a second, divergent notion of what a valid/normalized hash is. Trims surrounding
+// whitespace and lowercases hex; rejects wrong-length or non-hex input with a DslError
+// consistent with the other value validators — never silently degrades to a substring
+// search. Returns the normalized lowercase hash on success.
+export function assertHashValue(raw, { field, hashType, operator, position } = {}) {
+  const normalized = normalizeExactHash(hashType, raw);
+  if (!normalized) {
+    const expectedLen = HASH_LENGTH_BY_TYPE[hashType];
+    const detail = expectedLen
+      ? `Expected ${expectedLen} hexadecimal characters.`
+      : 'Expected a hexadecimal hash value.';
+    throw new DslError(
+      `Invalid ${hashType} value for "${field} ${operator}". ${detail}`,
+      { code: 'invalid_hash_value', position, field }
+    );
+  }
+  return normalized.normalized_hash_value;
 }
 
 // ---------------------------------------------------------------------------

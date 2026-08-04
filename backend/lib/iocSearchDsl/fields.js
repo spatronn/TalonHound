@@ -38,6 +38,11 @@ export const ENUM_OPERATORS = Object.freeze(['equals', 'not_equals', 'in', 'not_
 
 export const DATE_OPERATORS = Object.freeze(['before', 'after', 'between']);
 
+// Exact file-hash identity fields (md5/sha1/sha256) support equality only. `contains`
+// and every other fuzzy operator are intentionally excluded — a hash lookup is an exact
+// identity match, never a substring scan.
+export const HASH_OPERATORS = Object.freeze(['equals']);
+
 // kind drives value parsing/normalization:
 //   text  - quoted string values, ILIKE/equality semantics
 //   enum  - constrained (or free) token values, equality/membership semantics
@@ -60,6 +65,15 @@ export const FIELD_REGISTRY = Object.freeze({
     operators: ENUM_OPERATORS,
     allowedValues: ['md5', 'sha1', 'sha256']
   },
+  // Exact file-hash identity search. Each field carries its own hashType which drives
+  // both value validation (parser) and the backend resolver (queryBuilder.buildFileHash):
+  // it matches a direct hash IOC in ioc_items AND any IOC linked to the file artifact
+  // whose known hashes include this exact value, then canonicalizes to the primary
+  // (SHA256) file-hash IOC. Adding domain/url/ip identity fields later is a matter of
+  // registering another (kind, resolver) pair here — no new special-casing elsewhere.
+  md5: { kind: 'hash', hashType: 'md5', operators: HASH_OPERATORS },
+  sha1: { kind: 'hash', hashType: 'sha1', operators: HASH_OPERATORS },
+  sha256: { kind: 'hash', hashType: 'sha256', operators: HASH_OPERATORS },
   status: {
     kind: 'enum',
     operators: ENUM_OPERATORS,

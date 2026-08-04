@@ -11265,10 +11265,11 @@ function IOCListPage() {
             <b style={{ color: '#e2e8f0' }}>Search Syntax</b>
             <button onClick={() => setSyntaxHelpOpen(false)}>Close</button>
           </div>
-          <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, first_seen, last_changed, created_at</p>
+          <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, first_seen, last_changed, created_at</p>
           <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
           <p><b>List operators:</b> in, not_in</p>
           <p><b>Date operators:</b> before, after, between</p>
+          <p><b>Hash fields (equals only):</b> exact <code>md5</code>, <code>sha1</code>, <code>sha256</code> lookup across direct hash IOCs and file-artifact known hashes, resolved to the canonical file-hash IOC. Examples: <code>sha256 equals &quot;dd55…a347e6&quot;</code>, <code>md5 equals &quot;20945449fd11203d79ea5d0d29bf1e22&quot;</code>.</p>
           <p><b>Logical:</b> AND, OR, NOT, ( )</p>
           <p><b>Source:</b> matches the list Source badge (feed/manual display name) or the canonical source identifier. Examples: <code>source contains &quot;Siber&quot;</code>, <code>source contains &quot;USOM&quot;</code>, <code>source equals &quot;USOM:TR-CERT&quot;</code>.</p>
           <pre style={{ background: '#111827', padding: 10, borderRadius: 8, overflowX: 'auto', color: '#93c5fd' }}>{`ioc contains "example.com"
@@ -11278,7 +11279,9 @@ type in ("domain", "url") AND status equals "active"
 source equals "USOM:TR-CERT"
 last_changed after "2026-07-01"
 first_seen between "2026-07-01" AND "2026-07-22"
-tag equals "mirai" AND tag equals "botnet"`}</pre>
+tag equals "mirai" AND tag equals "botnet"
+md5 equals "20945449fd11203d79ea5d0d29bf1e22"
+sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"`}</pre>
         </div>
       )}
 

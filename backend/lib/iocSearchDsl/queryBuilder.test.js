@@ -156,6 +156,52 @@ test('observed_type alias maps to known_hash_type', () => {
   assert.equal(ast.children?.[0]?.field || ast.field, 'known_hash_type');
 });
 
+test('md5 equals matches direct hash IOC AND artifact known-hash (FA read on)', () => {
+  const { sql, params } = build('md5 equals "20945449FD11203D79EA5D0D29BF1E22"', { fileArtifactsReadEnabled: true });
+  // Single row-wise membership over a UNION of the two identity sources — NOT `A OR (…IN…)`
+  // (that shape sequential-scans every ioc_items partition; see buildFileHash comment).
+  assert.match(sql, /\(i\.observable_type, i\.id\) IN \(/);
+  assert.doesNotMatch(sql, /\) OR \(i\.observable_type, i\.id\) IN/);
+  // Direct IOC branch: whitelisted literal type + LOWER(observable) = $ (hits partial index)
+  assert.match(sql, /d\.observable_type = 'md5' AND LOWER\(d\.observable\) = \$1/);
+  // Artifact known-hash branch keyed on the global-unique (hash_type, value)
+  assert.match(sql, /UNION/);
+  assert.match(sql, /file_artifact_hashes h/);
+  assert.match(sql, /file_artifact_ioc_links fal/);
+  assert.match(sql, /h\.hash_type = 'md5' AND h\.normalized_hash_value = \$1/);
+  // Resolves owning artifact through merge tombstones (matches read-path semantics)
+  assert.match(sql, /merged_into_artifact_id/);
+  // Value normalized to lowercase, bound as the only parameter and reused by both branches
+  assert.deepEqual(params, ['20945449fd11203d79ea5d0d29bf1e22']);
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('sha1 / sha256 equals use their own whitelisted type + hash_type literal', () => {
+  const sha1 = build('sha1 equals "0017b2e0d74be3c58ab319c29a84de9f3e3bedee"', { fileArtifactsReadEnabled: true });
+  assert.match(sha1.sql, /d\.observable_type = 'sha1' AND LOWER\(d\.observable\) = \$1/);
+  assert.match(sha1.sql, /h\.hash_type = 'sha1'/);
+  assert.deepEqual(sha1.params, ['0017b2e0d74be3c58ab319c29a84de9f3e3bedee']);
+
+  const sha256 = build('sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"', { fileArtifactsReadEnabled: true });
+  assert.match(sha256.sql, /d\.observable_type = 'sha256' AND LOWER\(d\.observable\) = \$1/);
+  assert.match(sha256.sql, /h\.hash_type = 'sha256'/);
+  assert.deepEqual(sha256.params, ['dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6']);
+});
+
+test('md5 equals is direct-IOC only when file-artifact read is off', () => {
+  const { sql, params } = build('md5 equals "20945449fd11203d79ea5d0d29bf1e22"', { fileArtifactsReadEnabled: false });
+  assert.match(sql, /i\.observable_type = 'md5' AND LOWER\(i\.observable\) = \$1/);
+  assert.doesNotMatch(sql, /file_artifact_hashes/);
+  assert.doesNotMatch(sql, /IN \(/);
+  assert.deepEqual(params, ['20945449fd11203d79ea5d0d29bf1e22']);
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('hash value is always a bound parameter, never inlined', () => {
+  const { sql } = build('sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"', { fileArtifactsReadEnabled: true });
+  assert.doesNotMatch(sql, /dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6/);
+});
+
 test('status equals uses COALESCE default active', () => {
   const { sql } = build('status equals "active"');
   assert.match(sql, /COALESCE\(i\.status, 'active'\) = \$1/);

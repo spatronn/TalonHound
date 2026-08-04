@@ -6,7 +6,7 @@ import {
   getFieldSpec,
   operatorSupported
 } from './fields.js';
-import { assertUsableTextValue, parseDateLiteral } from './normalize.js';
+import { assertUsableTextValue, parseDateLiteral, assertHashValue } from './normalize.js';
 
 const LOGICAL_KEYWORDS = new Set(['and', 'or', 'not']);
 
@@ -194,6 +194,17 @@ class Parser {
 
   parseScalarCondition(field, spec, operator) {
     const tok = this.expectString(field, operator);
+    // Hash-kind fields validate + normalize to an exact lowercase hash. The registry
+    // only allows `equals` for them, so no fuzzy operator ever reaches here.
+    if (spec.kind === 'hash') {
+      const value = assertHashValue(tok.value, {
+        field,
+        hashType: spec.hashType,
+        operator,
+        position: tok.position
+      });
+      return { type: 'condition', field, kind: 'hash', operator, values: [value] };
+    }
     const value = assertUsableTextValue(tok.value, { field, operator, position: tok.position });
     this.assertEnumValue(field, spec, value, tok.position);
     return { type: 'condition', field, kind: spec.kind, operator, values: [value] };
