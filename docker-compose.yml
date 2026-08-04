@@ -243,6 +243,11 @@ services:
       - IOC_EXPORT_RETENTION_HOURS=${IOC_EXPORT_RETENTION_HOURS:-24}
       - IOC_EXPORT_HARD_LIMIT=${IOC_EXPORT_HARD_LIMIT:-2000000}
       - IOC_EXPORT_WORKER_CONCURRENCY=${IOC_EXPORT_WORKER_CONCURRENCY:-2}
+      # Read-path flag must match the backend: the export worker re-parses the stored DSL
+      # and runs the same file-artifact canonical/dedup resolution as POST /api/iocs/search.
+      # Without it, hash/type filters (md5/sha1/sha256, type, known_hash_type) would resolve
+      # differently in exports than in the search preview.
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
     volumes:
       - ioc_export_data:/data/ioc-search-exports
     depends_on:
