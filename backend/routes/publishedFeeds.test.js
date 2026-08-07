@@ -35,6 +35,8 @@ function createMockPool(store = { feeds: [] }) {
           time_window: params[12],
           max_items: params[13],
           refresh_interval_minutes: params[14] ?? 15,
+          filter_mode: params[15] ?? 'basic',
+          advanced_query: params[16] ?? null,
           last_generated_at: null,
           last_status: null,
           last_error: null,
@@ -52,9 +54,17 @@ function createMockPool(store = { feeds: [] }) {
         const id = Number(params[0]);
         const row = store.feeds.find((f) => f.id === id);
         if (!row) return { rows: [] };
-        // PATCH only sets ioc_types in these tests (plus updated_at).
-        if (s.includes('ioc_types')) {
-          row.ioc_types = typeof params[1] === 'string' ? JSON.parse(params[1]) : params[1];
+        // Reflect the SET columns present in this PATCH onto the stored row. The route
+        // emits `col = $n[::cast]` in field order after the id ($1); map each back.
+        const assignments = [...s.matchAll(/(\w+)\s*=\s*\$(\d+)/g)];
+        for (const [, col, idx] of assignments) {
+          const val = params[Number(idx) - 1];
+          if (col === 'updated_at') continue;
+          if (col === 'ioc_types' || col === 'include_feed_keys' || col === 'include_tags' || col === 'exclude_tags') {
+            row[col] = typeof val === 'string' ? JSON.parse(val) : val;
+          } else {
+            row[col] = val;
+          }
         }
         row.updated_at = new Date().toISOString();
         return { rows: [row] };
@@ -158,6 +168,93 @@ describe('publishedFeeds ioc_types API', () => {
     const bad = await req(app, 'POST', '/api/published-feeds', { name: 'X', ioc_types: ['mutex'] });
     assert.equal(bad.status, 400);
     assert.match(bad.body.message, /ip, domain, url, or hash/);
+  });
+
+  it('treats a feed with no filter_mode as basic on read', async () => {
+    const pool = createMockPool();
+    const app = makeApp(pool);
+    const created = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Legacy', ioc_types: ['ip'], time_window: 'all'
+    });
+    assert.equal(created.body.feed.filter_mode, 'basic');
+    assert.equal(created.body.feed.advanced_query, null);
+  });
+
+  it('creates an Advanced Query feed with a valid query (ioc_types not required)', async () => {
+    const pool = createMockPool();
+    const app = makeApp(pool);
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Adv',
+      filter_mode: 'query',
+      advanced_query: 'source equals "MalwareBazaar" AND type equals "domain"'
+      // no ioc_types provided on purpose
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.feed.filter_mode, 'query');
+    // Stored query is the canonical/normalized form from the shared parser.
+    assert.match(res.body.feed.advanced_query, /source equals "MalwareBazaar"/);
+    assert.match(res.body.feed.advanced_query, /type equals "domain"/);
+    // A valid non-empty ioc_types default is still persisted for the DB constraint.
+    assert.ok(Array.isArray(res.body.feed.ioc_types) && res.body.feed.ioc_types.length);
+  });
+
+  it('rejects an Advanced Query feed with invalid syntax', async () => {
+    const pool = createMockPool();
+    const app = makeApp(pool);
+    const badSyntax = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Bad', filter_mode: 'query', advanced_query: 'source == bogus ('
+    });
+    assert.equal(badSyntax.status, 400);
+
+    const badField = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Bad2', filter_mode: 'query', advanced_query: 'not_a_field equals "x"'
+    });
+    assert.equal(badField.status, 400);
+
+    const empty = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Bad3', filter_mode: 'query', advanced_query: '   '
+    });
+    assert.equal(empty.status, 400);
+    assert.match(empty.body.message, /required/i);
+  });
+
+  it('switches an existing basic feed to query mode and back via PATCH', async () => {
+    const pool = createMockPool();
+    const app = makeApp(pool);
+    const created = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Switch', ioc_types: ['ip'], time_window: 'all'
+    });
+    const id = created.body.feed.id;
+
+    const toQuery = await req(app, 'PATCH', `/api/published-feeds/${id}`, {
+      filter_mode: 'query',
+      advanced_query: 'ioc contains "example.com"'
+    });
+    assert.equal(toQuery.status, 200);
+    assert.equal(toQuery.body.feed.filter_mode, 'query');
+    assert.match(toQuery.body.feed.advanced_query, /example\.com/);
+    // ioc_types is preserved (Basic values are not destroyed by the switch).
+    assert.deepEqual(toQuery.body.feed.ioc_types, ['ip']);
+
+    const backToBasic = await req(app, 'PATCH', `/api/published-feeds/${id}`, {
+      filter_mode: 'basic'
+    });
+    assert.equal(backToBasic.status, 200);
+    assert.equal(backToBasic.body.feed.filter_mode, 'basic');
+    // The Advanced Query is cleared and inert once back in basic mode.
+    assert.equal(backToBasic.body.feed.advanced_query, null);
+  });
+
+  it('rejects switching to query mode without a query', async () => {
+    const pool = createMockPool();
+    const app = makeApp(pool);
+    const created = await req(app, 'POST', '/api/published-feeds', {
+      name: 'NoQuery', ioc_types: ['ip'], time_window: 'all'
+    });
+    const id = created.body.feed.id;
+    const res = await req(app, 'PATCH', `/api/published-feeds/${id}`, { filter_mode: 'query' });
+    assert.equal(res.status, 400);
+    assert.match(res.body.message, /required/i);
   });
 
   it('regenerate returns 409 generation_in_progress when lock is held', async () => {

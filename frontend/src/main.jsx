@@ -87,6 +87,13 @@ import {
   isCreateUserFormValid
 } from './lib/createUserForm.js';
 import { feedFieldDomIds, mergeAriaDescribedBy } from './lib/feedFormField.js';
+import {
+  emptyFeedForm,
+  feedToForm,
+  toggleFilterMode as toggleFeedFilterMode,
+  validateFeedForm,
+  buildFeedPayload
+} from './lib/publishedFeedForm.js';
 import { DELETE_USER_CONFIRM_PREFER_CANCEL, deleteUserConfirmCopy } from './lib/deleteUserConfirm.js';
 import { APP_CONFIRM_INITIAL, createAppConfirmController } from './lib/appConfirm.js';
 import { createAppFeedbackController, feedbackRoleForTone } from './lib/appFeedback.js';
@@ -5744,15 +5751,48 @@ function FeedFormField({
   );
 }
 
-function FeedFormSection({ title, children }) {
+function FeedFormSection({ title, children, headerRight = null }) {
   const ui = PUBLISHED_FEEDS_UI;
   return (
     <div style={{ marginBottom: 22 }}>
-      <h4 style={ui.sectionHeading}>{title}</h4>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <h4 style={ui.sectionHeading}>{title}</h4>
+        {headerRight}
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
         {children}
       </div>
     </div>
+  );
+}
+
+// Shared IOC Search DSL syntax reference. Rendered by both the IOC List search box and
+// the Published Feed Advanced Query editor so the documented syntax stays in one place.
+function SearchDslSyntaxHelpBody() {
+  return (
+    <>
+      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_changed, created_at</p>
+      <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
+      <p><b>List operators:</b> in, not_in</p>
+      <p><b>Date operators:</b> before, after, between</p>
+      <p><b>Hash fields (equals only):</b> exact <code>md5</code>, <code>sha1</code>, <code>sha256</code> lookup across direct hash IOCs and file-artifact known hashes, resolved to the canonical file-hash IOC. Examples: <code>sha256 equals &quot;dd55…a347e6&quot;</code>, <code>md5 equals &quot;20945449fd11203d79ea5d0d29bf1e22&quot;</code>.</p>
+      <p><b>IOC Type vs file attributes:</b> <code>type</code> filters true IOC identity types only (<code>ip</code>, <code>ipv6</code>, <code>domain</code>, <code>url</code>, <code>md5</code>, <code>sha1</code>, <code>sha256</code>). <code>imphash</code>/<code>tlsh</code>/<code>ssdeep</code> are file-artifact attributes, not IOC types — search them with their own fields, not with <code>type</code>.</p>
+      <p><b>File attribute fields (equals only):</b> exact <code>imphash</code>, <code>tlsh</code>, <code>ssdeep</code> lookup on file-artifact attributes, resolved to the artifact&apos;s canonical file-hash IOC. Examples: <code>imphash equals &quot;f34d5f2d4577ed6d9ceec516c1f5a744&quot;</code>, <code>ssdeep equals &quot;3072:Etd/dEZOS3hE0E9rycyje:M4OS3C3yj&quot;</code> (ssdeep must be quoted).</p>
+      <p><b>Logical:</b> AND, OR, NOT, ( )</p>
+      <p><b>Source:</b> matches the list Source badge (feed/manual display name) or the canonical source identifier. Examples: <code>source contains &quot;Siber&quot;</code>, <code>source contains &quot;USOM&quot;</code>, <code>source equals &quot;USOM:TR-CERT&quot;</code>.</p>
+      <pre style={{ background: '#111827', padding: 10, borderRadius: 8, overflowX: 'auto', color: '#93c5fd' }}>{`ioc contains "example.com"
+ioc contains "example" AND tag contains "mirai"
+type in ("domain", "url") AND status equals "active"
+(source contains "USOM" OR source contains "URLHaus") AND confidence equals "high"
+source equals "USOM:TR-CERT"
+last_changed after "2026-07-01"
+first_seen between "2026-07-01" AND "2026-07-22"
+tag equals "mirai" AND tag equals "botnet"
+md5 equals "20945449fd11203d79ea5d0d29bf1e22"
+sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"
+imphash equals "f34d5f2d4577ed6d9ceec516c1f5a744"
+ssdeep equals "3072:Etd/dEZOS3hE0E9rycyje:M4OS3C3yj"`}</pre>
+    </>
   );
 }
 
@@ -5768,20 +5808,8 @@ function PublishedFeedsPage() {
   const [regenerating, setRegenerating] = useState({});
   const [urlTemplateFeed, setUrlTemplateFeed] = useState(null);
   const [formError, setFormError] = useState('');
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    enabled: true,
-    ioc_types: ['ip'],
-    exclude_false_positive: true,
-    exclude_expired: true,
-    include_feed_keys: [],
-    include_tags: '',
-    exclude_tags: '',
-    time_window: 'all',
-    max_items: '',
-    refresh_interval_minutes: 15
-  });
+  const [feedSyntaxHelpOpen, setFeedSyntaxHelpOpen] = useState(false);
+  const [form, setForm] = useState(emptyFeedForm);
 
   async function loadFeeds() {
     setLoading(true);
@@ -5819,79 +5847,31 @@ function PublishedFeedsPage() {
   function openCreateForm() {
     setEditing(null);
     setFormError('');
-    setForm({
-      name: '',
-      description: '',
-      enabled: true,
-      ioc_types: ['ip'],
-      exclude_false_positive: true,
-      exclude_expired: true,
-      include_feed_keys: [],
-      include_tags: '',
-      exclude_tags: '',
-      time_window: 'all',
-      max_items: '',
-      refresh_interval_minutes: 15
-    });
+    setFeedSyntaxHelpOpen(false);
+    setForm(emptyFeedForm());
     loadSourceFeeds([]).catch(() => {});
     setShowFormModal(true);
   }
 
   function openEditForm(feed) {
-    const selectedKeys = Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : [];
-    const iocTypes = Array.isArray(feed.ioc_types) && feed.ioc_types.length
-      ? feed.ioc_types
-      : (feed.ioc_type ? [feed.ioc_type] : ['ip']);
+    // Open in the feed's persisted mode; never silently convert one mode into the other.
     setEditing(feed);
     setFormError('');
-    setForm({
-      name: feed.name || '',
-      description: feed.description || '',
-      enabled: Boolean(feed.enabled),
-      ioc_types: iocTypes,
-      exclude_false_positive: feed.exclude_false_positive !== false,
-      exclude_expired: feed.exclude_expired !== false,
-      include_feed_keys: selectedKeys,
-      include_tags: (feed.include_tags || []).join(', '),
-      exclude_tags: (feed.exclude_tags || []).join(', '),
-      time_window: feed.time_window || 'all',
-      max_items: feed.max_items ?? '',
-      refresh_interval_minutes: feed.refresh_interval_minutes || 15
-    });
-    loadSourceFeeds(selectedKeys).catch(() => {});
+    setFeedSyntaxHelpOpen(false);
+    setForm(feedToForm(feed));
+    loadSourceFeeds(Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : []).catch(() => {});
     setShowFormModal(true);
-  }
-
-  function splitCsv(s) {
-    return String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
-  }
-
-  function buildPayload() {
-    return {
-      name: form.name.trim(),
-      description: form.description.trim() || null,
-      enabled: Boolean(form.enabled),
-      ioc_types: form.ioc_types,
-      format: 'txt',
-      exclude_false_positive: Boolean(form.exclude_false_positive),
-      exclude_expired: Boolean(form.exclude_expired),
-      include_feed_keys: form.include_feed_keys,
-      include_tags: splitCsv(form.include_tags),
-      exclude_tags: splitCsv(form.exclude_tags),
-      time_window: form.time_window,
-      max_items: form.max_items === '' ? null : Number(form.max_items),
-      refresh_interval_minutes: Number(form.refresh_interval_minutes) || 15
-    };
   }
 
   async function saveFeed(e) {
     e.preventDefault();
     if (!canWrite) return;
-    if (!Array.isArray(form.ioc_types) || !form.ioc_types.length) {
-      setFormError('Select at least one IOC type');
+    const validationError = validateFeedForm(form);
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
-    const payload = buildPayload();
+    const payload = buildFeedPayload(form);
     setFormError('');
     try {
       if (editing?.id) {
@@ -6066,43 +6046,84 @@ function PublishedFeedsPage() {
               </FeedFormField>
             </FeedFormSection>
 
-            <FeedFormSection title="Feed content">
-              <FeedFormField
-                ui={ui}
-                label="IOC Types"
-                helper="Indicators this feed will publish. Select one or more types (ip, domain, url, hash)."
-                fullWidth
-              >
-                <FeedIocTypeMultiSelect
+            <FeedFormSection
+              title="Feed content"
+              headerRight={(
+                <button
+                  type="button"
+                  style={ui.btn}
+                  onClick={() => setForm((x) => toggleFeedFilterMode(x))}
+                >
+                  {form.filter_mode === 'query' ? 'Basic Filters' : 'Advanced Query'}
+                </button>
+              )}
+            >
+              {form.filter_mode === 'query' ? (
+                <FeedFormField
                   ui={ui}
-                  value={form.ioc_types}
-                  onChange={(next) => setForm((x) => ({ ...x, ioc_types: next }))}
-                  errorId={formError && !form.ioc_types?.length ? 'feed-ioc-types-error' : undefined}
-                />
-                {!form.ioc_types?.length ? (
-                  <p id="feed-ioc-types-error" style={{ color: '#fca5a5', fontSize: 12, margin: '6px 0 0' }}>
-                    Select at least one IOC type
-                  </p>
-                ) : null}
-              </FeedFormField>
-              <FeedFormField ui={ui} label="Default Window" helper="Default time range used when the consumer does not pass ?window=.">
-                <select value={form.time_window} onChange={(e) => setForm((x) => ({ ...x, time_window: e.target.value }))} style={ui.select}>
-                  {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </FeedFormField>
-              <FeedFormField
-                ui={ui}
-                label="Threat Feeds"
-                helper="Optional. Leave empty to include all feeds, or select integration feeds, custom threat feeds, and manual IOC sources to limit IOC provenance."
-                fullWidth
-              >
-                <FeedIntegrationMultiSelect
-                  ui={ui}
-                  options={sourceFeeds}
-                  value={form.include_feed_keys}
-                  onChange={(next) => setForm((x) => ({ ...x, include_feed_keys: next }))}
-                />
-              </FeedFormField>
+                  label="Query"
+                  helper="Define the feed contents using the same query syntax as the IOC List search. Only this query determines the feed's base IOCs; the Basic Filters above do not apply."
+                  fullWidth
+                >
+                  <textarea
+                    value={form.advanced_query}
+                    onChange={(e) => setForm((x) => ({ ...x, advanced_query: e.target.value }))}
+                    style={{ ...ui.textarea, fontFamily: 'monospace' }}
+                    rows={4}
+                    placeholder={'type equals "domain" AND source contains "USOM" AND confidence equals "high"'}
+                    spellCheck={false}
+                  />
+                  <div style={{ marginTop: 6 }}>
+                    <button type="button" style={ui.btn} onClick={() => setFeedSyntaxHelpOpen((v) => !v)}>
+                      {feedSyntaxHelpOpen ? 'Hide Syntax Help' : 'Syntax Help'}
+                    </button>
+                  </div>
+                  {feedSyntaxHelpOpen ? (
+                    <div style={{ marginTop: 10, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0b1120', color: '#cbd5e1', fontSize: 13, lineHeight: 1.6 }}>
+                      <SearchDslSyntaxHelpBody />
+                    </div>
+                  ) : null}
+                </FeedFormField>
+              ) : (
+                <>
+                  <FeedFormField
+                    ui={ui}
+                    label="IOC Types"
+                    helper="Indicators this feed will publish. Select one or more types (ip, domain, url, hash)."
+                    fullWidth
+                  >
+                    <FeedIocTypeMultiSelect
+                      ui={ui}
+                      value={form.ioc_types}
+                      onChange={(next) => setForm((x) => ({ ...x, ioc_types: next }))}
+                      errorId={formError && !form.ioc_types?.length ? 'feed-ioc-types-error' : undefined}
+                    />
+                    {!form.ioc_types?.length ? (
+                      <p id="feed-ioc-types-error" style={{ color: '#fca5a5', fontSize: 12, margin: '6px 0 0' }}>
+                        Select at least one IOC type
+                      </p>
+                    ) : null}
+                  </FeedFormField>
+                  <FeedFormField ui={ui} label="Default Window" helper="Default time range used when the consumer does not pass ?window=.">
+                    <select value={form.time_window} onChange={(e) => setForm((x) => ({ ...x, time_window: e.target.value }))} style={ui.select}>
+                      {FEED_WINDOW_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </FeedFormField>
+                  <FeedFormField
+                    ui={ui}
+                    label="Threat Feeds"
+                    helper="Optional. Leave empty to include all feeds, or select integration feeds, custom threat feeds, and manual IOC sources to limit IOC provenance."
+                    fullWidth
+                  >
+                    <FeedIntegrationMultiSelect
+                      ui={ui}
+                      options={sourceFeeds}
+                      value={form.include_feed_keys}
+                      onChange={(next) => setForm((x) => ({ ...x, include_feed_keys: next }))}
+                    />
+                  </FeedFormField>
+                </>
+              )}
             </FeedFormSection>
 
             <FeedFormSection title="Safety filters">
@@ -11265,27 +11286,7 @@ function IOCListPage() {
             <b style={{ color: '#e2e8f0' }}>Search Syntax</b>
             <button onClick={() => setSyntaxHelpOpen(false)}>Close</button>
           </div>
-          <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_changed, created_at</p>
-          <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
-          <p><b>List operators:</b> in, not_in</p>
-          <p><b>Date operators:</b> before, after, between</p>
-          <p><b>Hash fields (equals only):</b> exact <code>md5</code>, <code>sha1</code>, <code>sha256</code> lookup across direct hash IOCs and file-artifact known hashes, resolved to the canonical file-hash IOC. Examples: <code>sha256 equals &quot;dd55…a347e6&quot;</code>, <code>md5 equals &quot;20945449fd11203d79ea5d0d29bf1e22&quot;</code>.</p>
-          <p><b>IOC Type vs file attributes:</b> <code>type</code> filters true IOC identity types only (<code>ip</code>, <code>ipv6</code>, <code>domain</code>, <code>url</code>, <code>md5</code>, <code>sha1</code>, <code>sha256</code>). <code>imphash</code>/<code>tlsh</code>/<code>ssdeep</code> are file-artifact attributes, not IOC types — search them with their own fields, not with <code>type</code>.</p>
-          <p><b>File attribute fields (equals only):</b> exact <code>imphash</code>, <code>tlsh</code>, <code>ssdeep</code> lookup on file-artifact attributes, resolved to the artifact&apos;s canonical file-hash IOC. Examples: <code>imphash equals &quot;f34d5f2d4577ed6d9ceec516c1f5a744&quot;</code>, <code>ssdeep equals &quot;3072:Etd/dEZOS3hE0E9rycyje:M4OS3C3yj&quot;</code> (ssdeep must be quoted).</p>
-          <p><b>Logical:</b> AND, OR, NOT, ( )</p>
-          <p><b>Source:</b> matches the list Source badge (feed/manual display name) or the canonical source identifier. Examples: <code>source contains &quot;Siber&quot;</code>, <code>source contains &quot;USOM&quot;</code>, <code>source equals &quot;USOM:TR-CERT&quot;</code>.</p>
-          <pre style={{ background: '#111827', padding: 10, borderRadius: 8, overflowX: 'auto', color: '#93c5fd' }}>{`ioc contains "example.com"
-ioc contains "example" AND tag contains "mirai"
-type in ("domain", "url") AND status equals "active"
-(source contains "USOM" OR source contains "URLHaus") AND confidence equals "high"
-source equals "USOM:TR-CERT"
-last_changed after "2026-07-01"
-first_seen between "2026-07-01" AND "2026-07-22"
-tag equals "mirai" AND tag equals "botnet"
-md5 equals "20945449fd11203d79ea5d0d29bf1e22"
-sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"
-imphash equals "f34d5f2d4577ed6d9ceec516c1f5a744"
-ssdeep equals "3072:Etd/dEZOS3hE0E9rycyje:M4OS3C3yj"`}</pre>
+          <SearchDslSyntaxHelpBody />
         </div>
       )}
 

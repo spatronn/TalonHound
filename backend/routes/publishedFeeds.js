@@ -1,7 +1,16 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
-import { generatePublishedFeedSnapshot, normalizeFeedConfig, getLatestSnapshotMeta, resolveFeedIocTypes } from '../lib/feedPublisherService.js';
+import {
+  generatePublishedFeedSnapshot,
+  normalizeFeedConfig,
+  getLatestSnapshotMeta,
+  resolveFeedIocTypes,
+  resolveFeedFilterMode,
+  FEED_FILTER_MODES,
+  QUERY_FEED_SNAPSHOT_KEY
+} from '../lib/feedPublisherService.js';
 import { normalizeFeedIocTypes, feedIocTypesKey } from '../lib/feedFormatter.js';
+import { parseSearchQuery, isDslError } from '../lib/iocSearchDsl/index.js';
 import {
   fetchPublishedFeedSourceOptions,
   normalizeIncludeFeedKeys
@@ -18,6 +27,8 @@ function toPublicFeed(row, extra = {}) {
     slug: row.slug,
     description: row.description,
     enabled: Boolean(row.enabled),
+    filter_mode: resolveFeedFilterMode(row),
+    advanced_query: row.advanced_query != null ? String(row.advanced_query) : null,
     ioc_types,
     format: row.format,
     min_confidence: row.min_confidence,
@@ -75,6 +86,35 @@ function resolveIocTypesInput(body) {
   return undefined;
 }
 
+/**
+ * Effective filter mode for a create/update. Prefers the request body; on PATCH falls back
+ * to the persisted mode. Anything other than 'query' resolves to 'basic'.
+ */
+function resolveFilterModeInput(body, existingRow = null) {
+  const raw = body.filter_mode !== undefined
+    ? body.filter_mode
+    : (existingRow ? existingRow.filter_mode : undefined);
+  const mode = String(raw ?? FEED_FILTER_MODES.BASIC).trim().toLowerCase();
+  return mode === FEED_FILTER_MODES.QUERY ? FEED_FILTER_MODES.QUERY : FEED_FILTER_MODES.BASIC;
+}
+
+/**
+ * Validate + normalize an Advanced Query using the SAME IOC List parser. Non-empty and
+ * syntactically valid (fields/operators from the shared allowlist) or an error is returned.
+ * @returns {{ normalized: string } | { error: string, dsl?: object }}
+ */
+function validateAdvancedQuery(text) {
+  const raw = String(text ?? '');
+  if (!raw.trim()) return { error: 'advanced_query is required in query mode' };
+  try {
+    const { normalizedQuery } = parseSearchQuery(raw);
+    return { normalized: normalizedQuery };
+  } catch (err) {
+    if (isDslError(err)) return { error: err.message, dsl: err.toJSON() };
+    return { error: `Invalid advanced_query: ${err.message}` };
+  }
+}
+
 async function resolveIncludeFeedKeys(pool, raw, existingRow = null) {
   const existingKeys = existingRow?.include_feed_keys
     ? (Array.isArray(existingRow.include_feed_keys)
@@ -86,13 +126,21 @@ async function resolveIncludeFeedKeys(pool, raw, existingRow = null) {
   return normalizeIncludeFeedKeys(pool, raw, { existingKeys });
 }
 
-function validateFeedPayload(body, partial = false) {
+function validateFeedPayload(body, partial = false, mode = FEED_FILTER_MODES.BASIC) {
   const errors = [];
   if (!partial || body.name !== undefined) {
     if (!String(body.name || '').trim()) errors.push('name is required');
   }
+  if (body.filter_mode !== undefined) {
+    const fm = String(body.filter_mode).trim().toLowerCase();
+    if (fm !== FEED_FILTER_MODES.BASIC && fm !== FEED_FILTER_MODES.QUERY) {
+      errors.push("filter_mode must be 'basic' or 'query'");
+    }
+  }
+  // IOC Types / Default Window / Threat Feeds are Basic-Filters selectors; do not require
+  // (or reject) them when the feed is in Advanced Query mode.
   const iocInput = resolveIocTypesInput(body);
-  if (!partial || iocInput !== undefined) {
+  if (mode !== FEED_FILTER_MODES.QUERY && (!partial || iocInput !== undefined)) {
     const norm = normalizeFeedIocTypes(iocInput);
     if (!norm.ok) errors.push(norm.error);
   }
@@ -114,16 +162,18 @@ function validateFeedPayload(body, partial = false) {
 async function latestItemCount(pool, feedRow) {
   const feed = normalizeFeedConfig(feedRow);
   if (!feed?.id) return null;
-  const key = feedIocTypesKey(resolveFeedIocTypes(feed));
-  const snapshot = await getLatestSnapshotMeta(pool, feed.id, key, feed.time_window);
+  const queryMode = resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY;
+  const key = queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(resolveFeedIocTypes(feed));
+  const window = queryMode ? 'all' : feed.time_window;
+  const snapshot = await getLatestSnapshotMeta(pool, feed.id, key, window);
   return snapshot?.item_count != null ? Number(snapshot.item_count) : null;
 }
 
 function feedAuditSnapshot(row) {
   const pub = toPublicFeed(normalizeFeedConfig(row));
   return pickSafeFields(pub, [
-    'id', 'name', 'enabled', 'ioc_types', 'min_confidence', 'time_window',
-    'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired'
+    'id', 'name', 'enabled', 'filter_mode', 'advanced_query', 'ioc_types', 'min_confidence',
+    'time_window', 'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired'
   ]);
 }
 
@@ -191,8 +241,17 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
 
   app.post('/api/published-feeds', requireRole(ROLES.ADMIN), async (req, res) => {
     const body = parseBodyArrays(req.body || {});
-    const errors = validateFeedPayload(body, false);
+    const mode = resolveFilterModeInput(body);
+    const errors = validateFeedPayload(body, false, mode);
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
+
+    // Advanced Query mode: query is the base set; validate it with the IOC List parser.
+    let advancedQuery = null;
+    if (mode === FEED_FILTER_MODES.QUERY) {
+      const q = validateAdvancedQuery(body.advanced_query);
+      if (q.error) return res.status(400).json({ message: q.error, ...(q.dsl ? { error: q.dsl } : {}) });
+      advancedQuery = q.normalized;
+    }
 
     const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys);
     if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
@@ -202,18 +261,23 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
 
     try {
       const slug = await generateUniqueFeedSlug(pool, body.name);
-      const iocTypes = normalizeFeedIocTypes(resolveIocTypesInput(body)).value;
+      // ioc_types stays a valid non-empty array even in query mode (DB constraint + Basic
+      // fields are preserved). It never filters a query-mode feed's base set.
+      const iocNorm = normalizeFeedIocTypes(resolveIocTypesInput(body));
+      const iocTypes = iocNorm.ok ? iocNorm.value : ['ip'];
       const { rows } = await pool.query(
         `INSERT INTO published_feeds (
            name, slug, description, enabled, ioc_types, format, min_confidence,
            include_feed_keys, include_tags, exclude_tags,
            exclude_false_positive, exclude_expired,
-           time_window, max_items, refresh_interval_minutes
+           time_window, max_items, refresh_interval_minutes,
+           filter_mode, advanced_query
          ) VALUES (
            $1, $2, $3, COALESCE($4, TRUE), $5::jsonb, COALESCE($6, 'txt'), $7,
            $8::jsonb, $9::jsonb, $10::jsonb,
            COALESCE($11, TRUE), COALESCE($12, TRUE),
-           $13, $14, COALESCE($15, 15)
+           $13, $14, COALESCE($15, 15),
+           $16, $17
          )
          RETURNING *`,
         [
@@ -231,7 +295,9 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
           body.exclude_expired,
           timeWindow,
           body.max_items ?? null,
-          body.refresh_interval_minutes ?? 15
+          body.refresh_interval_minutes ?? 15,
+          mode,
+          advancedQuery
         ]
       );
       const feed = toPublicFeed(normalizeFeedConfig(rows[0]));
@@ -268,13 +334,37 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
     const body = parseBodyArrays(req.body || {});
-    const errors = validateFeedPayload(body, true);
+
+    // Load the existing feed up front: the effective filter mode (and thus which fields are
+    // required/validated) can depend on the persisted mode when the body omits filter_mode.
+    const existingQ = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
+    if (!existingQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
+    const existingRow = existingQ.rows[0];
+    const existingMode = resolveFeedFilterMode(existingRow);
+    const mode = resolveFilterModeInput(body, { filter_mode: existingMode });
+
+    const errors = validateFeedPayload(body, true, mode);
     if (errors.length) return res.status(400).json({ message: errors.join('; ') });
 
+    // Resolve + validate the Advanced Query when the effective mode is 'query'. The query
+    // text may come from the body or, if unchanged, from the persisted row.
+    let advancedQueryUpdate; // undefined = leave column untouched
+    if (body.filter_mode !== undefined || body.advanced_query !== undefined) {
+      if (mode === FEED_FILTER_MODES.QUERY) {
+        const sourceText = body.advanced_query !== undefined
+          ? body.advanced_query
+          : existingRow.advanced_query;
+        const q = validateAdvancedQuery(sourceText);
+        if (q.error) return res.status(400).json({ message: q.error, ...(q.dsl ? { error: q.dsl } : {}) });
+        advancedQueryUpdate = q.normalized;
+      } else {
+        // Basic mode: the Advanced Query is inert; clear it so the row stays unambiguous.
+        advancedQueryUpdate = null;
+      }
+    }
+
     if (body.include_feed_keys !== undefined) {
-      const existingQ = await pool.query('SELECT include_feed_keys FROM published_feeds WHERE id = $1', [id]);
-      if (!existingQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
-      const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys, existingQ.rows[0]);
+      const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys, existingRow);
       if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
       body.include_feed_keys = feedKeys.value;
     }
@@ -286,12 +376,16 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       fields.push(`${col} = $${params.length}${cast}`);
     };
 
+    if (body.filter_mode !== undefined) setField('filter_mode', mode);
+    if (advancedQueryUpdate !== undefined) setField('advanced_query', advancedQueryUpdate);
     if (body.name !== undefined) setField('name', String(body.name).trim());
     if (body.description !== undefined) setField('description', body.description || null);
     if (body.enabled !== undefined) setField('enabled', Boolean(body.enabled));
     const iocInput = resolveIocTypesInput(body);
     if (iocInput !== undefined) {
-      const iocTypes = normalizeFeedIocTypes(iocInput).value;
+      const iocNorm = normalizeFeedIocTypes(iocInput);
+      // In query mode ioc_types is preserved-but-inert; keep a valid array for the DB.
+      const iocTypes = iocNorm.ok ? iocNorm.value : (mode === FEED_FILTER_MODES.QUERY ? ['ip'] : iocNorm.value);
       setField('ioc_types', JSON.stringify(iocTypes), '::jsonb');
     }
     if (body.format !== undefined) setField('format', body.format);

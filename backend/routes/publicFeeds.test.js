@@ -366,6 +366,60 @@ test('content id+hash miss then consistent retry returns 200 with new body', asy
   assert.deepEqual(kinds, ['meta', 'content_by_id', 'meta', 'content_by_id']);
 });
 
+test('a query-mode feed serves the query-keyed snapshot and ignores window/ioc_type overrides', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const metaLookups = [];
+  const pool = {
+    async query(sql, params = []) {
+      const s = String(sql);
+      if (s.includes('FROM published_feed_access_keys') && s.includes('key_type = $2')) {
+        return { rows: [keys[0]], rowCount: 1 };
+      }
+      if (s.includes('FROM published_feeds WHERE slug')) {
+        return {
+          rows: [{
+            id: 7, slug: 'adv', enabled: true, ioc_types: ['ip'], time_window: '1d', max_items: null,
+            filter_mode: 'query', advanced_query: 'source equals "MalwareBazaar"'
+          }],
+          rowCount: 1
+        };
+      }
+      if (s.includes('UPDATE published_feed_access_keys')) return { rows: [], rowCount: 1 };
+      if (s.includes('octet_length(content)')) {
+        metaLookups.push({ feedId: params[0], iocTypeKey: params[1], window: params[2] });
+        return {
+          rows: [{
+            id: 70, content_hash: 'qh', item_count: 1,
+            generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
+            params: { ioc_type: 'query', window: 'all', filter_mode: 'query' }, content_bytes: 12
+          }],
+          rowCount: 1
+        };
+      }
+      if (s.includes('content_hash = $2')) {
+        return {
+          rows: [{
+            id: 70, content: 'evil.example\n', content_hash: 'qh', item_count: 1,
+            generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
+            params: { ioc_type: 'query', window: 'all' }
+          }],
+          rowCount: 1
+        };
+      }
+      throw new Error('unexpected: ' + s.slice(0, 60));
+    }
+  };
+  const app = makeApp(pool);
+  // Pass window/ioc_type overrides that would matter for a basic feed — they must be ignored.
+  const res = await get(app, `/api/published-feeds/adv?api_key=${raw}&window=1d&ioc_type=domain`);
+  assert.equal(res.status, 200);
+  assert.equal(res.text, 'evil.example\n');
+  assert.equal(metaLookups.length, 1);
+  assert.equal(metaLookups[0].iocTypeKey, 'query');
+  assert.equal(metaLookups[0].window, 'all');
+});
+
 test('legacy public endpoint also uses metadata 304 fast path', async () => {
   const raw = 'legacy-token-value';
   const keys = [baseKey({

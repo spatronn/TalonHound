@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import {
   FEED_WINDOWS,
+  FEED_IOC_TYPES,
   buildPlainTextFeed,
   confidenceToScore,
   feedIocTypesKey,
@@ -16,8 +17,37 @@ import {
 } from './publishedFeedSources.js';
 import { isFileArtifactsReadEnabled } from './fileArtifacts/flags.js';
 import { createServiceLogger } from './appLogger.js';
+import { parseSearchQuery, buildWhereClause } from './iocSearchDsl/index.js';
 
 export { buildFeedKeySourceSql };
+
+/**
+ * Published Feed content is defined by exactly one of two mutually-exclusive modes:
+ *   'basic' — IOC Types + Default Window + Threat Feeds (legacy Basic Filters)
+ *   'query' — an Advanced Query using the IOC List DSL
+ * Safety Filters and Delivery apply in BOTH modes.
+ */
+export const FEED_FILTER_MODES = { BASIC: 'basic', QUERY: 'query' };
+
+/** Snapshot ioc_type identity key used for query-mode feeds (no ioc_types partitioning). */
+export const QUERY_FEED_SNAPSHOT_KEY = 'query';
+
+/**
+ * Resolve the effective filter mode. Only 'query' with a non-empty advanced_query is a
+ * query feed; everything else (including legacy rows without filter_mode) is 'basic'.
+ * The inactive mode's fields never influence the active mode's base IOC set.
+ */
+export function resolveFeedFilterMode(feed) {
+  const mode = String(feed?.filter_mode || '').trim().toLowerCase();
+  if (mode === FEED_FILTER_MODES.QUERY && String(feed?.advanced_query || '').trim()) {
+    return FEED_FILTER_MODES.QUERY;
+  }
+  return FEED_FILTER_MODES.BASIC;
+}
+
+export function isQueryModeFeed(feed) {
+  return resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY;
+}
 
 const FEED_IOC_EXPIRY_DAYS = Math.max(Number(process.env.FEED_IOC_EXPIRY_DAYS || 90), 1);
 const FEED_EXPORT_MAX_LIMIT = Math.max(Number(process.env.FEED_EXPORT_MAX_LIMIT || 100000), 1);
@@ -56,6 +86,10 @@ const ARTIFACT_HASH_TYPES_SQL = `'md5','sha1','sha256'`;
  */
 export function shouldCanonicalizePublishedHashFeed(feed) {
   if (!isFileArtifactsReadEnabled()) return false;
+  // Query-mode feeds select an arbitrary IOC population by DSL predicate and format
+  // each row by its own observable type; hash-artifact canonicalization is a
+  // Basic-Filters hash-feed concern only.
+  if (isQueryModeFeed(feed)) return false;
   const types = resolveFeedIocTypes(feed);
   return types.includes('hash');
 }
@@ -107,6 +141,8 @@ export function normalizeFeedConfig(row) {
     id: Number(row.id),
     time_window: normalizeTimeWindow(row.time_window) || 'all',
     ioc_types,
+    filter_mode: resolveFeedFilterMode(row),
+    advanced_query: row.advanced_query != null ? String(row.advanced_query) : null,
     include_feed_keys: parseJsonArray(row.include_feed_keys),
     include_tags: parseJsonArray(row.include_tags),
     exclude_tags: parseJsonArray(row.exclude_tags)
@@ -114,11 +150,19 @@ export function normalizeFeedConfig(row) {
 }
 
 export function filtersHash(feed, window) {
+  const queryMode = isQueryModeFeed(feed);
   const payload = {
-    ioc_types: resolveFeedIocTypes(feed),
-    window,
-    min_confidence: feed.min_confidence,
-    include_feed_keys: feed.include_feed_keys,
+    filter_mode: resolveFeedFilterMode(feed),
+    // Base-set inputs depend on the active mode only.
+    ...(queryMode
+      ? { advanced_query: String(feed.advanced_query || '').trim() }
+      : {
+        ioc_types: resolveFeedIocTypes(feed),
+        window,
+        min_confidence: feed.min_confidence,
+        include_feed_keys: feed.include_feed_keys
+      }),
+    // Safety + delivery apply in both modes.
     include_tags: feed.include_tags,
     exclude_tags: feed.exclude_tags,
     exclude_false_positive: feed.exclude_false_positive,
@@ -169,29 +213,13 @@ async function fetchLatestIntegrationFinishedAt(db, feed = null) {
 }
 
 /**
- * Append shared feed filter SQL fragments (mutates params).
+ * Safety Filter SQL fragments shared by BOTH Basic Filters and Advanced Query modes.
+ * These are intentionally common post-filters: exclude false positives, exclude expired,
+ * Include Tags, Exclude Tags. Their semantics are identical in both modes (mutates params).
  * @returns {string} SQL AND-clauses (may be empty string)
  */
-function buildFeedFilterSql(feed, window, params) {
+function buildSafetyFilterSql(feed, params) {
   let sql = '';
-  const interval = WINDOW_INTERVALS[window];
-  if (interval) {
-    params.push(interval);
-    sql += ` AND COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) >= NOW() - $${params.length}::interval `;
-  }
-
-  if (feed.min_confidence != null && Number.isFinite(Number(feed.min_confidence))) {
-    sql += ` AND (
-      CASE LOWER(COALESCE(i.confidence, ''))
-        WHEN 'high' THEN 100
-        WHEN 'medium' THEN 50
-        WHEN 'low' THEN 25
-        ELSE 0
-      END
-    ) >= ${Number(feed.min_confidence)} `;
-  }
-
-  sql += buildFeedKeySourceSql(feed.include_feed_keys, params);
 
   if (feed.exclude_false_positive) {
     sql += `
@@ -234,6 +262,107 @@ function buildFeedFilterSql(feed, window, params) {
   }
 
   return sql;
+}
+
+/**
+ * Append Basic Filters SQL fragments (mutates params): Default Window, min_confidence,
+ * Threat Feeds (include_feed_keys), then the shared Safety Filters. Used only when the
+ * feed is in Basic Filters mode.
+ * @returns {string} SQL AND-clauses (may be empty string)
+ */
+function buildFeedFilterSql(feed, window, params) {
+  let sql = '';
+  const interval = WINDOW_INTERVALS[window];
+  if (interval) {
+    params.push(interval);
+    sql += ` AND COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) >= NOW() - $${params.length}::interval `;
+  }
+
+  if (feed.min_confidence != null && Number.isFinite(Number(feed.min_confidence))) {
+    sql += ` AND (
+      CASE LOWER(COALESCE(i.confidence, ''))
+        WHEN 'high' THEN 100
+        WHEN 'medium' THEN 50
+        WHEN 'low' THEN 25
+        ELSE 0
+      END
+    ) >= ${Number(feed.min_confidence)} `;
+  }
+
+  sql += buildFeedKeySourceSql(feed.include_feed_keys, params);
+
+  sql += buildSafetyFilterSql(feed, params);
+
+  return sql;
+}
+
+/**
+ * Parse + compile the feed's Advanced Query using the SAME canonical IOC List DSL
+ * (parseSearchQuery + buildWhereClause). Throws DslError on invalid syntax / fields /
+ * operators — never invents a Published-Feed-only query language.
+ * @returns {{ whereSql: string, whereParams: any[] }}
+ */
+function compileAdvancedQuery(feed) {
+  const { ast } = parseSearchQuery(feed.advanced_query);
+  const { sql, params } = buildWhereClause(ast);
+  return { whereSql: sql, whereParams: params };
+}
+
+/**
+ * Query-mode base predicate: (advanced query) AND (safety filters), with suppressed
+ * IOCs always excluded — mirrors the Basic-mode non-canonical WHERE exactly except the
+ * base set comes from the DSL instead of ioc_types/window/source selectors.
+ * `params` starts with the compiled DSL params (positional $1..$n from buildWhereClause);
+ * safety filters push additional params after them.
+ */
+function buildQueryModeWhereSql(feed) {
+  const { whereSql, whereParams } = compileAdvancedQuery(feed);
+  const params = [...whereParams];
+  const safetySql = buildSafetyFilterSql(feed, params);
+  const sql = `(${whereSql})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
+      ${safetySql}`;
+  return { sql, params };
+}
+
+/** Rows for a query-mode feed. Same projection + dedup as the Basic non-canonical path. */
+export async function fetchQueryModeIocRows(pool, feed) {
+  const { sql: whereSql, params } = buildQueryModeWhereSql(feed);
+  const sql = `
+    SELECT DISTINCT ON (lower(i.observable))
+      i.observable,
+      i.observable_type,
+      i.confidence,
+      i.category,
+      i.source_name,
+      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
+    FROM ioc_items i
+    WHERE ${whereSql}
+    ORDER BY lower(i.observable),
+      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
+      CASE LOWER(COALESCE(i.confidence, '')) WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC,
+      i.observable ASC
+  `;
+  const { rows } = await pool.query(sql, params);
+  return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
+}
+
+/** Cheap fingerprint for a query-mode feed (distinct observable count + max recency). */
+export async function fetchQueryModeFingerprint(pool, feed) {
+  const { sql: whereSql, params } = buildQueryModeWhereSql(feed);
+  const sql = `
+    SELECT COUNT(DISTINCT lower(i.observable))::bigint AS item_count,
+           MAX(COALESCE(i.last_seen_log, i.last_seen_at, i.created_at)) AS max_recency
+    FROM ioc_items i
+    WHERE ${whereSql}
+  `;
+  const { rows } = await pool.query(sql, params);
+  const maxRecency = rows[0]?.max_recency;
+  return {
+    itemCount: Number(rows[0]?.item_count || 0),
+    maxRecency: maxRecency instanceof Date ? maxRecency.toISOString() : (maxRecency ? String(maxRecency) : null),
+    filtersHash: filtersHash(feed, 'all')
+  };
 }
 
 const ARTIFACT_IDENTITY_SQL = `
@@ -423,6 +552,9 @@ const FEED_IOC_PARTITION_TABLE = {
 };
 
 function feedHasSourceFilters(feed) {
+  // Query-mode feeds can select from arbitrary joined tables, so the cheap partition
+  // watermark is not a sufficient change signal — force the full fingerprint path.
+  if (isQueryModeFeed(feed)) return true;
   return Boolean(
     feed.include_feed_keys?.length
     || feed.include_tags?.length
@@ -759,15 +891,22 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   if (!feedRows.length) throw new Error('Feed not found');
   const feedBase = normalizeFeedConfig(feedRows[0]);
   const feedName = feedBase.name || null;
+  const queryMode = isQueryModeFeed(feedBase);
   const configuredKeys = feedBase.include_feed_keys || [];
-  const resolvedFeedKeys = await resolveKnownFeedKeysForSnapshot(db, configuredKeys);
-  const allKeysStale = configuredKeys.length > 0 && resolvedFeedKeys.length === 0;
+  // Threat Feeds (include_feed_keys) is a Basic-Filters selector — it must not influence
+  // a query-mode feed, so only resolve it (and gate on staleness) in Basic mode.
+  const resolvedFeedKeys = queryMode ? [] : await resolveKnownFeedKeysForSnapshot(db, configuredKeys);
+  const allKeysStale = !queryMode && configuredKeys.length > 0 && resolvedFeedKeys.length === 0;
   const feed = {
     ...feedBase,
     include_feed_keys: resolvedFeedKeys.length ? resolvedFeedKeys : (configuredKeys.length ? [] : null)
   };
 
-  const windows = options.window ? [normalizeTimeWindow(options.window)].filter(Boolean) : FEED_WINDOWS;
+  // Query-mode feeds produce a single window-agnostic snapshot keyed by QUERY_FEED_SNAPSHOT_KEY;
+  // the base set is the Advanced Query alone (Default Window never applies).
+  const windows = queryMode
+    ? ['all']
+    : (options.window ? [normalizeTimeWindow(options.window)].filter(Boolean) : FEED_WINDOWS);
   const results = [];
   const latestIntegrationFinishedAt = force
     ? null
@@ -777,7 +916,10 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
     ? feed.updated_at.toISOString()
     : (feed.updated_at ? String(feed.updated_at) : null);
   const iocTypes = resolveFeedIocTypes(feed);
-  const iocTypeKey = feedIocTypesKey(iocTypes);
+  // Formatting hint: Basic uses the configured feed types; Query formats each row by its
+  // own observable type (pass all categories so buildPlainTextFeed normalizes per-row).
+  const formatTypes = queryMode ? FEED_IOC_TYPES : iocTypes;
+  const iocTypeKey = queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(iocTypes);
 
   for (const window of windows) {
     try {
@@ -811,7 +953,9 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         fingerprint = { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) };
       } else {
         const t0 = Date.now();
-        fingerprint = await fetchIocExportFingerprint(db, feed, window);
+        fingerprint = queryMode
+          ? await fetchQueryModeFingerprint(db, feed)
+          : await fetchIocExportFingerprint(db, feed, window);
         queryMs += Date.now() - t0;
       }
       const fingerprintKey = exportFingerprintKey(fingerprint);
@@ -838,17 +982,20 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       let iocRows = [];
       if (!allKeysStale) {
         const t0 = Date.now();
-        iocRows = await fetchIocRows(db, feed, window);
+        iocRows = queryMode
+          ? await fetchQueryModeIocRows(db, feed)
+          : await fetchIocRows(db, feed, window);
         queryMs += Date.now() - t0;
       }
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
-      const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, iocTypes, genMax);
+      const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, formatTypes, genMax);
       const bytes = Buffer.byteLength(content, 'utf8');
       snapshotBytes = Math.max(snapshotBytes || 0, bytes);
       maxItemCount = Math.max(maxItemCount, item_count);
       const paramsJson = {
         ioc_type: iocTypeKey,
         ioc_types: iocTypes,
+        filter_mode: resolveFeedFilterMode(feed),
         window,
         filters_hash,
         export_fingerprint: fingerprintKey,

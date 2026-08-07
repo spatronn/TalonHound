@@ -5,7 +5,10 @@ import {
   getSnapshotContentByIdAndHash,
   normalizeFeedConfig,
   FEED_EXPORT_MAX_LIMIT,
-  resolveFeedIocTypes
+  resolveFeedIocTypes,
+  resolveFeedFilterMode,
+  FEED_FILTER_MODES,
+  QUERY_FEED_SNAPSHOT_KEY
 } from '../lib/feedPublisherService.js';
 import {
   PUBLISHED_FEED_KEY_TYPE,
@@ -107,15 +110,27 @@ function conditionalNotModified(req, etag, lastModified) {
  * 304 path loads metadata only (no content TOAST → Node). Body path pins
  * content by snapshot id + content_hash; one retry if a concurrent publish races.
  */
-async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, maxItems }) {
+async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, maxItems, filterMode }) {
   const startedAt = Date.now();
-  const iocTypeResult = parseIocTypeParam(req.query.ioc_type, iocTypes);
-  if (iocTypeResult && typeof iocTypeResult === 'object' && iocTypeResult.error) {
-    return res.status(400).send(iocTypeResult.error);
-  }
-  const windowResult = parseWindowParam(req.query.window, window);
-  if (windowResult && typeof windowResult === 'object' && windowResult.error) {
-    return res.status(400).send(windowResult.error);
+  const queryMode = filterMode === FEED_FILTER_MODES.QUERY;
+
+  // Query-mode feeds have a single window-agnostic snapshot keyed by QUERY_FEED_SNAPSHOT_KEY.
+  // The IOC-type and window request overrides are Basic-Filters concepts and do not apply,
+  // so they are ignored here; only ?limit= still trims the served content.
+  let iocTypeResult;
+  let windowResult;
+  if (queryMode) {
+    iocTypeResult = QUERY_FEED_SNAPSHOT_KEY;
+    windowResult = 'all';
+  } else {
+    iocTypeResult = parseIocTypeParam(req.query.ioc_type, iocTypes);
+    if (iocTypeResult && typeof iocTypeResult === 'object' && iocTypeResult.error) {
+      return res.status(400).send(iocTypeResult.error);
+    }
+    windowResult = parseWindowParam(req.query.window, window);
+    if (windowResult && typeof windowResult === 'object' && windowResult.error) {
+      return res.status(400).send(windowResult.error);
+    }
   }
   const limitResult = parseLimitParam(req.query.limit, maxItems);
   if (limitResult && typeof limitResult === 'object' && limitResult.error) {
@@ -219,7 +234,7 @@ export function registerPublicFeedRoutes(app, pool) {
       }
 
       const { rows: feedRows } = await pool.query(
-        `SELECT id, enabled, ioc_types, time_window, max_items
+        `SELECT id, enabled, ioc_types, time_window, max_items, filter_mode, advanced_query
          FROM published_feeds WHERE slug = $1 LIMIT 1`,
         [slug]
       );
@@ -234,7 +249,8 @@ export function registerPublicFeedRoutes(app, pool) {
         slug,
         iocTypes: resolveFeedIocTypes(feed),
         window: feed.time_window,
-        maxItems: feed.max_items
+        maxItems: feed.max_items,
+        filterMode: resolveFeedFilterMode(feed)
       });
     } catch (err) {
       console.error('[published-feed] error', redactApiKeyInText(err?.message || String(err)));
@@ -257,7 +273,7 @@ export function registerPublicFeedRoutes(app, pool) {
       const { rows: keyRows } = await pool.query(
         `SELECT k.id, k.enabled, k.revoked_at, k.deleted_at, k.expires_at,
                 f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_types, f.time_window, f.max_items,
-                f.slug AS feed_slug
+                f.filter_mode, f.advanced_query, f.slug AS feed_slug
          FROM published_feed_access_keys k
          JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.token_hash = $1 AND k.deleted_at IS NULL
@@ -276,7 +292,8 @@ export function registerPublicFeedRoutes(app, pool) {
         slug: key.feed_slug || null,
         iocTypes: resolveFeedIocTypes(key),
         window: key.time_window,
-        maxItems: key.max_items
+        maxItems: key.max_items,
+        filterMode: resolveFeedFilterMode(key)
       });
     } catch (err) {
       console.error('[public-feed] error', err?.message || err);
