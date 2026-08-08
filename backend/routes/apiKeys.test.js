@@ -26,11 +26,12 @@ function createMockPool(store) {
           key_type: params[2],
           key_prefix: params[3],
           last_four: params[4],
-          secret_ciphertext: params[5],
-          secret_nonce: params[6],
-          secret_tag: params[7],
-          enabled: params[8],
-          created_by: params[9],
+          scopes: typeof params[5] === 'string' ? JSON.parse(params[5]) : (params[5] || []),
+          secret_ciphertext: params[6],
+          secret_nonce: params[7],
+          secret_tag: params[8],
+          enabled: params[9],
+          created_by: params[10],
           expires_at: null,
           last_used_at: null,
           last_used_ip: null,
@@ -139,6 +140,7 @@ test('create Published Feed key returns token + masked, never plaintext in api_k
   assert.ok(res.body.token.startsWith('th_pf_'));
   assert.equal(res.body.api_key.revealable, true);
   assert.equal(res.body.api_key.key_type, 'published_feed');
+  assert.deepEqual(res.body.api_key.scopes, ['published_feeds:read']);
   assert.match(res.body.api_key.masked_key, /^th_pf_•+/);
   assert.ok(!JSON.stringify(res.body.api_key).includes(res.body.token));
   assert.equal(res.headers.get('cache-control'), 'no-store');
@@ -182,9 +184,32 @@ test('legacy hash-only key cannot be revealed', async () => {
   assert.match(res.body.message, /cannot be revealed/);
 });
 
-test('rejects non published_feed key type on create', async () => {
+test('rejects non-creatable key type on create', async () => {
   const res = await req(makeApp([], () => ADMIN), 'POST', '/api/api-keys', { name: 'x', key_type: 'feed_access' });
   assert.equal(res.status, 400);
+});
+
+test('create IOC Management key returns th_ioc_ prefix and scopes', async () => {
+  const store = [];
+  const res = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'Automation',
+    access_profile: 'ioc_management'
+  });
+  assert.equal(res.status, 201);
+  assert.ok(res.body.token.startsWith('th_ioc_'));
+  assert.equal(res.body.api_key.key_type, 'ioc_management');
+  assert.deepEqual(res.body.api_key.scopes, ['ioc:create', 'ioc:update']);
+  assert.equal(res.body.api_key.permission_summary, 'Create + Update IOCs');
+});
+
+test('create Published Feed key includes published_feeds:read scope', async () => {
+  const store = [];
+  const res = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'Fortigate',
+    key_type: 'published_feed'
+  });
+  assert.equal(res.status, 201);
+  assert.deepEqual(res.body.api_key.scopes, ['published_feeds:read']);
 });
 
 test('ACTIVE -> DISABLED then DISABLED -> ACTIVE', async () => {

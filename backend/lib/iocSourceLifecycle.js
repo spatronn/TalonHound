@@ -2,6 +2,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js'
 import { pickSafeFields } from './auditRedaction.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
 import { fetchPublishedFeedDependenciesForManualSource } from './publishedFeedSources.js';
+import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 
 const SOURCE_AUDIT_FIELDS = [
   'name', 'description', 'default_confidence', 'default_threat_classification',
@@ -16,6 +17,9 @@ export function resolveIocSourceState(row) {
 }
 
 export function isIocSourceSelectable(row) {
+  if (!row) return false;
+  // System REST API provenance source — not offered in Add IOC UI.
+  if (String(row.name || '') === API_SYSTEM_SOURCE_NAME) return false;
   return resolveIocSourceState(row) === 'active';
 }
 

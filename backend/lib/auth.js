@@ -202,7 +202,9 @@ export function csrfProtection(req, res, next) {
   if (p === '/api/auth/login' || p === '/api/auth/logout') return next();
   if (p === '/api/setup/complete') return next();
   if (!p.startsWith('/api')) return next();
-  if (req.authVia === 'ingest' || req.authVia === 'bearer') return next();
+  // Machine API key clients and public docs have no CSRF cookie.
+  if (p === '/api/v1' || p.startsWith('/api/v1/')) return next();
+  if (req.authVia === 'ingest' || req.authVia === 'bearer' || req.authVia === 'api_key') return next();
 
   const hdr = req.headers['x-csrf-token'];
   const ck = req.cookies?.[CSRF_COOKIE_NAME];
@@ -210,6 +212,17 @@ export function csrfProtection(req, res, next) {
     return res.status(403).json({ message: 'CSRF token missing or invalid' });
   }
   return next();
+}
+
+function isPublicApiDocsPath(path) {
+  return path === '/api/docs'
+    || path === '/api/openapi.json'
+    || path === '/api/docs/static'
+    || path.startsWith('/api/docs/static/');
+}
+
+function isApiV1Path(path) {
+  return path === '/api/v1' || path.startsWith('/api/v1/');
 }
 
 export function apiAuthGate(req, res, next) {
@@ -222,6 +235,15 @@ export function apiAuthGate(req, res, next) {
     || req.path === '/api/setup/preview'
     || (req.path === '/api/setup/complete' && req.method === 'POST')
   ) {
+    return next();
+  }
+  // OpenAPI docs are public (contract discovery); management calls still need API keys.
+  if (isPublicApiDocsPath(req.path)) {
+    return next();
+  }
+  // /api/v1 is authenticated by Bearer API key middleware on those routes —
+  // not by session cookies. Do not inherit browser-session roles.
+  if (isApiV1Path(req.path)) {
     return next();
   }
   // Public Published Feed pull: authorized by ?api_key=, not by a user session.

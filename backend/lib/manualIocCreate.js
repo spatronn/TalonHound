@@ -201,6 +201,10 @@ export async function createManualIoc(pool, body, opts = {}) {
     resolvedTags = requestedTagIds.map((id) => byId.get(id)).filter(Boolean);
   }
 
+  const createdOrigin = opts.createdOrigin === 'api' ? 'api' : 'manual_add';
+  // API-created rows have no user UUID; web manual-add stamps the session user.
+  const createdByUserId = createdOrigin === 'api' ? null : userId;
+
   const insertQ = `
     INSERT INTO ioc_items (
       observable, observable_type, source_name, source_url, confidence, category, threat_classification, threat_actor_id, note,
@@ -210,7 +214,7 @@ export async function createManualIoc(pool, body, opts = {}) {
       created_origin, created_by_user_id
     )
     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE, 'active', $13, $14, $15::uuid, NOW(),
-           'manual_add', $15::uuid
+           $16, $17::uuid
     WHERE NOT EXISTS (
       SELECT 1 FROM ioc_items
       WHERE observable = $1
@@ -240,7 +244,9 @@ export async function createManualIoc(pool, body, opts = {}) {
     confidenceProvenance.confidence_source_name,
     expiration.manual_expires_at,
     expiration.manual_override_reason,
-    userId
+    userId,
+    createdOrigin,
+    createdByUserId
   ];
 
   const { rows } = await pool.query(insertQ, insertParams);
@@ -352,7 +358,9 @@ export async function createManualIoc(pool, body, opts = {}) {
         'status', 'expires_at', 'manual_expires_at', 'expiration_policy'
       ]),
       metadata: {
-        manual_add: true,
+        manual_add: createdOrigin === 'manual_add',
+        api_create: createdOrigin === 'api',
+        created_origin: createdOrigin,
         source_id: source.id,
         source_name: source.name,
         expiration_policy: expiration.policy,

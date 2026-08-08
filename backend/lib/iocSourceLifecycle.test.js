@@ -22,6 +22,7 @@ test('isIocSourceSelectable only allows active non-archived sources', () => {
   assert.equal(isIocSourceSelectable({ active: true, archived_at: null }), true);
   assert.equal(isIocSourceSelectable({ active: false, archived_at: null }), false);
   assert.equal(isIocSourceSelectable({ active: true, archived_at: '2026-01-01T00:00:00.000Z' }), false);
+  assert.equal(isIocSourceSelectable({ name: 'API', active: true, archived_at: null }), false);
 });
 
 test('serializeIocSourceRow exposes state and ioc_count', () => {

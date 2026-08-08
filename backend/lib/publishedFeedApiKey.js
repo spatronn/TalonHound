@@ -1,19 +1,37 @@
-// Helpers for Published Feed API keys (the `th_pf_` type used by the
-// /api/published-feeds/{slug}?api_key=... pull endpoint).
+// Helpers for TalonHound API keys (Published Feed `th_pf_` + IOC Management `th_ioc_`).
 
 import crypto from 'node:crypto';
 import { hashFeedAccessToken } from './feedAccessToken.js';
+import {
+  ACCESS_PROFILE,
+  LEGACY_FEED_ACCESS_KEY_TYPE,
+  getAccessProfile
+} from './apiKeyProfiles.js';
 
-export const PUBLISHED_FEED_KEY_TYPE = 'published_feed';
-export const LEGACY_FEED_ACCESS_KEY_TYPE = 'feed_access';
+export { ACCESS_PROFILE, LEGACY_FEED_ACCESS_KEY_TYPE };
+
+export const PUBLISHED_FEED_KEY_TYPE = ACCESS_PROFILE.PUBLISHED_FEED;
+export const IOC_MANAGEMENT_KEY_TYPE = ACCESS_PROFILE.IOC_MANAGEMENT;
 export const PUBLISHED_FEED_KEY_PREFIX = 'th_pf_';
+export const IOC_MANAGEMENT_KEY_PREFIX = 'th_ioc_';
 
 const SECRET_BYTES = 32;
 const MASK_BODY = '•'.repeat(12);
 
-/** Generate a new plaintext Published Feed key, e.g. `th_pf_AbC123…`. */
+/** @deprecated Use ACCESS_PROFILE / generateApiKeyForProfile */
 export function generatePublishedFeedApiKey() {
-  return PUBLISHED_FEED_KEY_PREFIX + crypto.randomBytes(SECRET_BYTES).toString('base64url');
+  return generateApiKeyForProfile(PUBLISHED_FEED_KEY_TYPE);
+}
+
+/** Generate a plaintext API key for a creatable access profile. */
+export function generateApiKeyForProfile(profileId) {
+  const profile = getAccessProfile(profileId);
+  if (!profile?.creatable || !profile.key_prefix) {
+    throw Object.assign(new Error('Cannot generate key for this access profile'), {
+      code: 'INVALID_ACCESS_PROFILE'
+    });
+  }
+  return profile.key_prefix + crypto.randomBytes(SECRET_BYTES).toString('base64url');
 }
 
 /** SHA-256 hex hash used for lookup/verification (shared with legacy tokens). */
@@ -28,11 +46,12 @@ export function lastFourOf(rawKey) {
 }
 
 /**
- * Masked display value, e.g. `th_pf_••••••••••••abcd`.
- * @param {{ key_prefix?: string, last_four?: string }} row
+ * Masked display value, e.g. `th_pf_••••••••••••abcd` or `th_ioc_••••••••••••abcd`.
+ * @param {{ key_prefix?: string, last_four?: string, key_type?: string }} row
  */
 export function maskApiKey(row) {
-  const prefix = row?.key_prefix || PUBLISHED_FEED_KEY_PREFIX;
+  const profile = getAccessProfile(row?.key_type);
+  const prefix = row?.key_prefix || profile?.key_prefix || PUBLISHED_FEED_KEY_PREFIX;
   const lastFour = row?.last_four || '';
   return `${prefix}${MASK_BODY}${lastFour}`;
 }
@@ -53,20 +72,23 @@ export function timingSafeHashEqual(aHex, bHex) {
 }
 
 /**
- * Redact any `api_key` query value in a string (URLs, log lines, error messages)
- * so a plaintext key never lands in logs/tracing. Also redacts bare `th_pf_…` tokens.
+ * Redact API key material in strings (URLs, log lines, error messages).
  * @param {string} text
  */
 export function redactApiKeyInText(text) {
   if (text == null) return text;
   return String(text)
     .replace(/([?&](?:api_key|apikey|key|token)=)[^&\s"']+/gi, '$1[REDACTED]')
-    .replace(/th_pf_[A-Za-z0-9_-]+/g, 'th_pf_[REDACTED]');
+    .replace(/th_pf_[A-Za-z0-9_-]+/g, 'th_pf_[REDACTED]')
+    .replace(/th_ioc_[A-Za-z0-9_-]+/g, 'th_ioc_[REDACTED]')
+    .replace(/(Bearer\s+)\S+/gi, '$1[REDACTED]');
 }
 
-/** A stored key is revealable only if it carries an encrypted secret. */
+/** A stored key is revealable only if it carries an encrypted secret and is a modern profile. */
 export function isRevealableKeyRow(row) {
-  return Boolean(row?.secret_ciphertext) && row?.key_type === PUBLISHED_FEED_KEY_TYPE;
+  const t = row?.key_type;
+  return Boolean(row?.secret_ciphertext)
+    && (t === PUBLISHED_FEED_KEY_TYPE || t === IOC_MANAGEMENT_KEY_TYPE);
 }
 
 /**

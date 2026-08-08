@@ -98,6 +98,14 @@ import { DELETE_USER_CONFIRM_PREFER_CANCEL, deleteUserConfirmCopy } from './lib/
 import { APP_CONFIRM_INITIAL, createAppConfirmController } from './lib/appConfirm.js';
 import { createAppFeedbackController, feedbackRoleForTone } from './lib/appFeedback.js';
 import { buildEmptyStateModel } from './lib/emptyState.js';
+import {
+  API_KEYS_PAGE_DESCRIPTION,
+  ACCESS_PROFILE_OPTIONS,
+  apiKeyCreatePayload,
+  accessProfilePermissionSummary,
+  accessProfileLabel,
+  API_DOCS_PATH
+} from './lib/apiKeysPage.js';
 import { AppConfirmContext, AppFeedbackContext, useAppConfirm, useAppFeedback } from './lib/appChromeContext.jsx';
 import {
   DEFAULT_SOURCE_COLOR,
@@ -6471,7 +6479,7 @@ function ApiKeysPage() {
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [form, setForm] = useState({ name: '', enabled: true });
+  const [form, setForm] = useState({ name: '', access_profile: 'published_feed', enabled: true });
   const [formError, setFormError] = useState('');
   // Revealed plaintext values live only in component memory — never persisted.
   const [revealed, setRevealed] = useState({});
@@ -6488,6 +6496,15 @@ function ApiKeysPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  useEffect(() => {
+    if (!showCreateModal) return undefined;
+    function onKey(e) {
+      if (e.key === 'Escape') setShowCreateModal(false);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showCreateModal]);
+
   async function loadAll() {
     setLoading(true);
     try {
@@ -6503,7 +6520,7 @@ function ApiKeysPage() {
   useEffect(() => { loadAll().catch(() => {}); }, []);
 
   function openCreateModal() {
-    setForm({ name: '', enabled: true });
+    setForm({ name: '', access_profile: 'published_feed', enabled: true });
     setFormError('');
     setShowCreateModal(true);
   }
@@ -6554,15 +6571,24 @@ function ApiKeysPage() {
     e.preventDefault();
     if (!isAdmin) return;
     setFormError('');
-    if (!form.name.trim()) { setFormError('Enter a key name.'); return; }
+    const parsed = apiKeyCreatePayload({
+      name: form.name,
+      accessProfile: form.access_profile,
+      enabled: form.enabled
+    });
+    if (!parsed.ok) {
+      setFormError(parsed.errors.includes('name') ? 'Enter a key name.' : 'Select an access profile.');
+      return;
+    }
     try {
-      const { data } = await api.post('/api-keys', {
-        name: form.name.trim(),
-        key_type: 'published_feed',
-        enabled: Boolean(form.enabled)
-      });
+      const { data } = await api.post('/api-keys', parsed.body);
+      const label = accessProfileLabel(parsed.body.access_profile);
       setShowCreateModal(false);
-      setCreatedKey({ title: 'Published Feed API key created', token: data.token });
+      setCreatedKey({
+        title: `${label} API key created`,
+        token: data.token,
+        access_profile: parsed.body.access_profile
+      });
       await loadAll();
     } catch (err) {
       setFormError(err.response?.data?.message || 'Failed to create API key');
@@ -6602,13 +6628,12 @@ function ApiKeysPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
           <div>
             <h2 style={ui.pageTitle}>API Keys</h2>
-            <p style={ui.pageSub}>
-              Published Feed keys let internal tools pull any published threat feed via
-              <code style={{ margin: '0 4px', color: '#cbd5e1' }}>/api/published-feeds/&#123;slug&#125;?api_key=…</code>.
-              They are read-only and grant no access to admin APIs, feed management, or other endpoints.
-            </p>
+            <p style={ui.pageSub}>{API_KEYS_PAGE_DESCRIPTION}</p>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+            <a href={API_DOCS_PATH} target="_blank" rel="noreferrer" style={{ ...ui.btn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+              API Documentation
+            </a>
             <button type="button" style={ui.btn} onClick={() => loadAll().catch(() => {})}>Refresh</button>
             {isAdmin ? (
               <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Create API Key</button>
@@ -6634,61 +6659,75 @@ function ApiKeysPage() {
             <tbody>
               {loading ? (
                 <tr style={ui.tr}><td colSpan={7} style={ui.td}>Loading...</td></tr>
-              ) : keys.length ? keys.map((k) => (
-                <tr key={k.id} style={ui.tr}>
-                  <td style={ui.td}>{k.name}</td>
-                  <td style={ui.td}>
-                    <span style={{ ...apiKeyStatusStyle('active'), background: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid #1e40af' }}>
-                      {k.key_type_label || 'Published Feed'}
-                    </span>
-                  </td>
-                  <td style={ui.td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <code style={{ fontSize: 12, color: '#cbd5e1', wordBreak: 'break-all' }}>
-                        {revealed[k.id] || k.masked_key}
-                      </code>
-                      {isAdmin && k.revealable ? (
-                        <>
-                          <button type="button" style={ui.btnCompact} disabled={revealing[k.id]} onClick={() => toggleReveal(k)}>
-                            {revealing[k.id] ? '…' : (revealed[k.id] ? 'Hide' : 'Show')}
-                          </button>
-                          <button type="button" style={ui.btnCompact} onClick={() => copyKey(k)}>Copy</button>
-                        </>
-                      ) : (
-                        <span style={{ fontSize: 11, color: '#64748b' }} title={k.key_type === 'published_feed' ? 'Encryption key unavailable' : 'This legacy key cannot be revealed.'}>
-                          {k.key_type === 'published_feed' ? 'Not revealable' : 'Legacy — not revealable'}
+              ) : keys.length ? keys.map((k) => {
+                const perm = k.permission_summary || accessProfilePermissionSummary(k.key_type || k.access_profile);
+                const typeLabel = k.key_type_label || accessProfileLabel(k.key_type, 'Published Feed');
+                const isModern = k.key_type === 'published_feed' || k.key_type === 'ioc_management';
+                return (
+                  <tr key={k.id} style={ui.tr}>
+                    <td style={ui.td}>{k.name}</td>
+                    <td style={ui.td}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{
+                          ...apiKeyStatusStyle('active'),
+                          background: k.key_type === 'ioc_management' ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)',
+                          color: k.key_type === 'ioc_management' ? '#6ee7b7' : '#93c5fd',
+                          border: k.key_type === 'ioc_management' ? '1px solid #065f46' : '1px solid #1e40af',
+                          width: 'fit-content'
+                        }}>
+                          {typeLabel}
                         </span>
-                      )}
-                    </div>
-                  </td>
-                  <td style={ui.td}><span style={apiKeyStatusStyle(k.status)}>{k.status}</span></td>
-                  <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
-                  <td style={ui.td}>{formatUserDateTime(k.created_at)}</td>
-                  <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                    {isAdmin ? (
-                      <>
-                        {k.status !== 'expired' ? (
-                          <button type="button" style={ui.btnCompact} onClick={() => toggleEnabled(k)}>
-                            {k.enabled ? 'Disable' : 'Enable'}
+                        {perm ? <span style={{ fontSize: 11, color: '#94a3b8' }}>{perm}</span> : null}
+                      </div>
+                    </td>
+                    <td style={ui.td}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <code style={{ fontSize: 12, color: '#cbd5e1', wordBreak: 'break-all' }}>
+                          {revealed[k.id] || k.masked_key}
+                        </code>
+                        {isAdmin && k.revealable ? (
+                          <>
+                            <button type="button" style={ui.btnCompact} disabled={revealing[k.id]} onClick={() => toggleReveal(k)}>
+                              {revealing[k.id] ? '…' : (revealed[k.id] ? 'Hide' : 'Show')}
+                            </button>
+                            <button type="button" style={ui.btnCompact} onClick={() => copyKey(k)}>Copy</button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#64748b' }} title={isModern ? 'Encryption key unavailable' : 'This legacy key cannot be revealed.'}>
+                            {isModern ? 'Not revealable' : 'Legacy — not revealable'}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={ui.td}><span style={apiKeyStatusStyle(k.status)}>{k.status}</span></td>
+                    <td style={ui.td}>{formatUserDateTime(k.last_used_at)}</td>
+                    <td style={ui.td}>{formatUserDateTime(k.created_at)}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                      {isAdmin ? (
+                        <>
+                          {k.status !== 'expired' ? (
+                            <button type="button" style={ui.btnCompact} onClick={() => toggleEnabled(k)}>
+                              {k.enabled ? 'Disable' : 'Enable'}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            style={{ ...ui.btnCompact, marginLeft: k.status !== 'expired' ? 6 : 0 }}
+                            onClick={() => setDeleteTarget(k)}
+                          >
+                            Delete
                           </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          style={{ ...ui.btnCompact, marginLeft: k.status !== 'expired' ? 6 : 0 }}
-                          onClick={() => setDeleteTarget(k)}
-                        >
-                          Delete
-                        </button>
-                      </>
-                    ) : <span style={ui.muted}>—</span>}
-                  </td>
-                </tr>
-              )) : (
+                        </>
+                      ) : <span style={ui.muted}>—</span>}
+                    </td>
+                  </tr>
+                );
+              }) : (
                 <tr>
                   <td colSpan={7} style={{ ...ui.td, padding: 0 }}>
                     <EmptyState
                       title="No API keys yet"
-                      description="Create a Published Feed key to let internal tools pull any published feed."
+                      description="Create an API key to grant programmatic access with a fixed access profile."
                       ctaLabel="Create API Key"
                       canWrite={isAdmin}
                       onCta={openCreateModal}
@@ -6706,26 +6745,54 @@ function ApiKeysPage() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
           onClick={() => setShowCreateModal(false)}
         >
-          <div style={ui.formModal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-            <h3 style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Create API Key</h3>
+          <div style={ui.formModal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-api-key-title">
+            <h3 id="create-api-key-title" style={{ ...ui.formTitle, fontSize: 18, marginBottom: 6 }}>Create API Key</h3>
             <p style={ui.modalSub}>
-              A Published Feed key can pull any published feed. Authorization is by key type — no per-feed binding.
+              Choose a fixed access profile. Scopes are assigned automatically — there is no custom scope editor.
             </p>
             <form onSubmit={createKey}>
               {formError ? <p style={{ color: '#fca5a5', marginTop: 0 }}>{formError}</p> : null}
-              <FeedFormField ui={ui} label="Key name" fullWidth>
-                <input required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. Fortigate-01" />
+              <FeedFormField ui={ui} label="Name" fullWidth>
+                <input
+                  required
+                  autoFocus
+                  value={form.name}
+                  onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))}
+                  style={ui.input}
+                  placeholder="e.g. Fortigate-01"
+                />
               </FeedFormField>
-              <FeedFormField ui={ui} label="Key type" fullWidth>
-                <select value="published_feed" style={ui.select} disabled>
-                  <option value="published_feed">Published Feed</option>
-                </select>
-              </FeedFormField>
-              <FeedFormField ui={ui} label="Enabled" fullWidth>
-                <label style={ui.checkLabel}>
-                  <input type="checkbox" checked={form.enabled} onChange={(e) => setForm((x) => ({ ...x, enabled: e.target.checked }))} />
-                  Key is active
-                </label>
+              <FeedFormField ui={ui} label="Access profile" fullWidth>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {ACCESS_PROFILE_OPTIONS.map((opt) => (
+                    <label
+                      key={opt.id}
+                      style={{
+                        ...ui.checkLabel,
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: form.access_profile === opt.id ? '1px solid #3b82f6' : '1px solid #334155',
+                        background: form.access_profile === opt.id ? 'rgba(59,130,246,0.08)' : '#020617',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="access_profile"
+                        value={opt.id}
+                        checked={form.access_profile === opt.id}
+                        onChange={() => setForm((x) => ({ ...x, access_profile: opt.id }))}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span>
+                        <strong style={{ color: '#e2e8f0', display: 'block' }}>{opt.label}</strong>
+                        <span style={{ color: '#94a3b8', fontSize: 12, display: 'block', marginTop: 2 }}>{opt.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </FeedFormField>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
                 <button type="button" style={ui.btn} onClick={() => setShowCreateModal(false)}>Cancel</button>
@@ -6741,13 +6808,21 @@ function ApiKeysPage() {
           <div style={{ ...ui.modal, maxWidth: 560, width: '100%' }}>
             <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>{createdKey.title}</h3>
             <p style={ui.modalSub}>
-              This is your Published Feed API key. You can also reveal it again later from the list.
+              You can reveal this key again later from the list. Store it securely.
             </p>
             <code style={ui.code}>{createdKey.token}</code>
             <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copyText(createdKey.token)}>Copy key</button>
             <p style={{ ...ui.helper, marginTop: 12 }}>
-              Use it in a feed pull URL: <code style={{ color: '#cbd5e1' }}>/api/published-feeds/&#123;slug&#125;?api_key=YOUR_KEY</code>.
-              Find the exact URL template on the Published Feeds page.
+              {createdKey.access_profile === 'ioc_management' ? (
+                <>
+                  Authenticate management calls with <code style={{ color: '#cbd5e1' }}>Authorization: Bearer YOUR_KEY</code>.
+                  See <a href={API_DOCS_PATH} target="_blank" rel="noreferrer" style={{ color: '#93c5fd' }}>API Documentation</a>.
+                </>
+              ) : (
+                <>
+                  Use it in a feed pull URL: <code style={{ color: '#cbd5e1' }}>/api/published-feeds/&#123;slug&#125;?api_key=YOUR_KEY</code>.
+                </>
+              )}
             </p>
             <button type="button" style={{ ...ui.btn, marginTop: 16, width: '100%' }} onClick={() => setCreatedKey(null)}>Done</button>
           </div>

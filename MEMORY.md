@@ -12,6 +12,11 @@
 - **Arşiv:** demo-runbook (2026-07 geçişi).
 - **File Artifacts:** Additive md5/sha1/sha256 identity layer (migration `131`). Flags `FILE_ARTIFACTS_DUAL_WRITE_ENABLED` / `FILE_ARTIFACTS_READ_ENABLED`. Docs: `docs/file-artifacts.md`.
 - **IOC Details:** Legacy Source Evidence UI section removed (Intelligence tab); memberships / feed evidence / hash canonicalization kept.
+- **API Keys / REST (2026-08-08):** General-purpose API keys with scope profiles.
+  - Profiles: `published_feed` → `published_feeds:read`; `ioc_management` → `ioc:create` + `ioc:update`.
+  - Management API: `POST/PATCH /api/v1/iocs` (Bearer only). Docs: `/api/docs`, `/api/openapi.json`.
+  - System IOC source name `API` (not selectable in Add IOC). Shared service: `backend/lib/apiIocService.js`.
+  - Migration: `145_api_key_scopes_and_ioc_management.sql` (not yet deployed until explicitly asked).
 - **Entegrasyon (devam):** TalonHound ↔ DNSMania DNS enrichment.
   - DNSMania local path: `C:\Proje\DNSMania`
   - API readiness raporu: `C:\Proje\DNSMania\docs\api-reference.html`

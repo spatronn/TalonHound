@@ -2,16 +2,25 @@ import { requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import {
-  PUBLISHED_FEED_KEY_TYPE,
+  ACCESS_PROFILE,
   LEGACY_FEED_ACCESS_KEY_TYPE,
-  PUBLISHED_FEED_KEY_PREFIX,
-  generatePublishedFeedApiKey,
+  PUBLISHED_FEED_KEY_TYPE,
+  IOC_MANAGEMENT_KEY_TYPE,
+  generateApiKeyForProfile,
   hashApiKey,
   lastFourOf,
   maskApiKey,
   keyStatus,
   isRevealableKeyRow
 } from '../lib/publishedFeedApiKey.js';
+import {
+  getAccessProfile,
+  scopesForAccessProfile,
+  profileLabel,
+  profilePermissionSummary,
+  listCreatableAccessProfiles,
+  normalizeScopes
+} from '../lib/apiKeyProfiles.js';
 import {
   encryptApiKeySecret,
   decryptApiKeySecret,
@@ -22,30 +31,34 @@ import { resolveFeedIocTypes } from '../lib/feedPublisherService.js';
 const LEGACY_REVEAL_MESSAGE = 'This legacy key cannot be revealed.';
 
 const LIST_COLUMNS = `
-  k.id, k.feed_id, k.name, k.key_type, k.key_prefix, k.last_four,
+  k.id, k.feed_id, k.name, k.key_type, k.key_prefix, k.last_four, k.scopes,
   k.enabled, k.expires_at, k.last_used_at, k.last_used_ip,
   k.created_at, k.revoked_at, k.deleted_at,
   (k.secret_ciphertext IS NOT NULL) AS has_secret,
   f.name AS feed_name, f.ioc_types AS feed_ioc_types, f.slug AS feed_slug`;
 
-function typeLabel(keyType) {
-  return keyType === PUBLISHED_FEED_KEY_TYPE ? 'Published Feed' : 'Feed Access (legacy)';
-}
-
 /** Public (never includes the plaintext secret). */
 function toPublicApiKey(row) {
   if (!row) return null;
   const keyType = row.key_type || LEGACY_FEED_ACCESS_KEY_TYPE;
-  const revealable = keyType === PUBLISHED_FEED_KEY_TYPE && Boolean(row.has_secret);
-  // Legacy feed_access tokens have no th_pf_ prefix; show a neutral mask for them.
-  const maskedKey = keyType === PUBLISHED_FEED_KEY_TYPE
-    ? maskApiKey({ key_prefix: row.key_prefix, last_four: row.last_four })
+  const profile = getAccessProfile(keyType);
+  const revealable = isRevealableKeyRow({
+    key_type: keyType,
+    secret_ciphertext: row.has_secret ? true : row.secret_ciphertext
+  }) && Boolean(row.has_secret);
+  const scopes = normalizeScopes(row.scopes?.length ? row.scopes : profile?.scopes);
+  // Legacy feed_access tokens have no th_ prefix; show a neutral mask for them.
+  const maskedKey = profile?.key_prefix
+    ? maskApiKey({ key_prefix: row.key_prefix || profile.key_prefix, last_four: row.last_four, key_type: keyType })
     : '••••••••';
   return {
     id: Number(row.id),
     name: row.name,
     key_type: keyType,
-    key_type_label: typeLabel(keyType),
+    access_profile: keyType,
+    key_type_label: profileLabel(keyType),
+    permission_summary: profilePermissionSummary(keyType),
+    scopes,
     masked_key: maskedKey,
     revealable,
     enabled: Boolean(row.enabled),
@@ -55,7 +68,6 @@ function toPublicApiKey(row) {
     last_used_ip: row.last_used_ip || null,
     created_at: row.created_at,
     revoked_at: row.revoked_at || null,
-    // Legacy feed-bound keys keep their feed context for display.
     feed_id: row.feed_id != null ? Number(row.feed_id) : null,
     feed_name: row.feed_name || null,
     feed_ioc_types: Array.isArray(row.feed_ioc_types)
@@ -67,7 +79,7 @@ function toPublicApiKey(row) {
 
 function apiKeyAuditSnapshot(row) {
   return pickSafeFields(toPublicApiKey(row), [
-    'id', 'name', 'key_type', 'status', 'revealable', 'enabled', 'feed_id', 'feed_name'
+    'id', 'name', 'key_type', 'access_profile', 'scopes', 'status', 'revealable', 'enabled', 'feed_id', 'feed_name'
   ]);
 }
 
@@ -83,6 +95,18 @@ function noStore(res) {
  * @param {{ auditSuccess: Function }} audit
  */
 export function registerApiKeyRoutes(app, pool, audit) {
+  app.get('/api/api-keys/profiles', (_req, res) => {
+    return res.json({
+      profiles: listCreatableAccessProfiles().map((p) => ({
+        id: p.id,
+        label: p.label,
+        description: p.description,
+        permission_summary: p.permission_summary,
+        scopes: [...p.scopes]
+      }))
+    });
+  });
+
   app.get('/api/api-keys', async (_req, res) => {
     try {
       const { rows } = await pool.query(
@@ -98,14 +122,19 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
   });
 
-  // Create a revealable Published Feed key (not bound to a single feed).
+  // Create a revealable key for a fixed access profile (not bound to a single feed).
   app.post('/api/api-keys', requireRole(ROLES.ADMIN), async (req, res) => {
-    const keyType = String(req.body?.key_type || PUBLISHED_FEED_KEY_TYPE).trim().toLowerCase();
+    const profileRaw = String(
+      req.body?.access_profile || req.body?.key_type || PUBLISHED_FEED_KEY_TYPE
+    ).trim().toLowerCase();
     const name = String(req.body?.name || '').trim();
     const enabled = req.body?.enabled !== false;
+    const profile = getAccessProfile(profileRaw);
 
-    if (keyType !== PUBLISHED_FEED_KEY_TYPE) {
-      return res.status(400).json({ message: 'Only the Published Feed key type can be created here' });
+    if (!profile?.creatable) {
+      return res.status(400).json({
+        message: 'access_profile must be published_feed or ioc_management'
+      });
     }
     if (!name) return res.status(400).json({ message: 'name is required' });
     if (!isApiKeyEncryptionConfigured()) {
@@ -115,22 +144,24 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
 
     try {
-      const rawKey = generatePublishedFeedApiKey();
+      const rawKey = generateApiKeyForProfile(profile.id);
       const tokenHash = hashApiKey(rawKey);
+      const scopes = scopesForAccessProfile(profile.id);
       const { ciphertext, nonce, tag } = encryptApiKeySecret(rawKey);
 
       const insertQ = await pool.query(
         `INSERT INTO published_feed_access_keys
-           (feed_id, name, token_hash, key_type, key_prefix, last_four,
+           (feed_id, name, token_hash, key_type, key_prefix, last_four, scopes,
             secret_ciphertext, secret_nonce, secret_tag, enabled, created_by)
-         VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           name,
           tokenHash,
-          PUBLISHED_FEED_KEY_TYPE,
-          PUBLISHED_FEED_KEY_PREFIX,
+          profile.id,
+          profile.key_prefix,
           lastFourOf(rawKey),
+          JSON.stringify(scopes),
           ciphertext,
           nonce,
           tag,
@@ -153,7 +184,12 @@ export function registerApiKeyRoutes(app, pool, audit) {
         entityDisplay: key.name,
         severity: AUDIT_SEVERITY.WARNING,
         after: apiKeyAuditSnapshot(rows[0]),
-        metadata: { key_type: PUBLISHED_FEED_KEY_TYPE, masked_key: key.masked_key }
+        metadata: {
+          key_type: profile.id,
+          access_profile: profile.id,
+          scopes,
+          masked_key: key.masked_key
+        }
       });
 
       noStore(res);
@@ -194,7 +230,6 @@ export function registerApiKeyRoutes(app, pool, audit) {
           tag: row.secret_tag
         });
       } catch {
-        // Do not leak ciphertext/key material in the error.
         return res.status(500).json({ message: 'Failed to decrypt API key' });
       }
 
@@ -226,7 +261,6 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
 
     try {
-      // Deleted keys are gone for good: never match them here.
       const beforeQ = await pool.query(
         `SELECT ${LIST_COLUMNS}
          FROM published_feed_access_keys k
@@ -238,9 +272,6 @@ export function registerApiKeyRoutes(app, pool, audit) {
       const beforeRow = beforeQ.rows[0];
       const before = apiKeyAuditSnapshot(beforeRow);
 
-      // Enforce the enable/disable state machine server-side (do not trust the UI):
-      // enable only applies to a currently-disabled key; disable only to an active one.
-      // Expired keys cannot be toggled.
       if (enabled !== undefined) {
         const currentStatus = keyStatus(beforeRow);
         if (currentStatus === 'expired') {
@@ -296,9 +327,6 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
   });
 
-  // Delete (soft-delete): irreversible. The key is stamped deleted_at/deleted_by,
-  // hidden from the list, and rejected by every auth path. Works for both
-  // Published Feed and legacy Feed Access keys.
   app.delete('/api/api-keys/:keyId', requireRole(ROLES.ADMIN), async (req, res) => {
     const keyId = Number(req.params.keyId);
     if (!Number.isFinite(keyId)) return res.status(400).json({ message: 'Invalid key id' });
@@ -322,7 +350,6 @@ export function registerApiKeyRoutes(app, pool, audit) {
         [keyId, actor]
       );
 
-      // Audit records only safe metadata — never the key secret/material.
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.API_KEY_DELETED,
@@ -344,3 +371,6 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
   });
 }
+
+// Re-export for tests / callers that referenced the old constant name.
+export { ACCESS_PROFILE, PUBLISHED_FEED_KEY_TYPE, IOC_MANAGEMENT_KEY_TYPE };

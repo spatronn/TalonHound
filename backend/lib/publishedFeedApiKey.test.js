@@ -43,17 +43,20 @@ test('timing-safe hash compare', () => {
   assert.equal(timingSafeHashEqual('', ''), false);
 });
 
-test('redacts api_key and th_pf_ tokens in text', () => {
+test('redacts api_key, Bearer, th_pf_ and th_ioc_ tokens in text', () => {
   const url = 'GET /api/published-feeds/malware?api_key=th_pf_SECRETVALUE123 200';
   const out = redactApiKeyInText(url);
   assert.ok(!out.includes('SECRETVALUE123'));
   assert.match(out, /api_key=\[REDACTED\]/);
   assert.equal(redactApiKeyInText('bare th_pf_abcDEF012 token'), 'bare th_pf_[REDACTED] token');
+  assert.equal(redactApiKeyInText('bare th_ioc_abcDEF012 token'), 'bare th_ioc_[REDACTED] token');
+  assert.match(redactApiKeyInText('Authorization: Bearer th_ioc_SECRET'), /Bearer \[REDACTED\]/);
   assert.match(redactApiKeyInText('?token=abc123&x=1'), /token=\[REDACTED\]/);
 });
 
-test('isRevealableKeyRow requires published_feed type + ciphertext', () => {
+test('isRevealableKeyRow requires modern profile + ciphertext', () => {
   assert.equal(isRevealableKeyRow({ key_type: PUBLISHED_FEED_KEY_TYPE, secret_ciphertext: Buffer.from('x') }), true);
+  assert.equal(isRevealableKeyRow({ key_type: 'ioc_management', secret_ciphertext: Buffer.from('x') }), true);
   assert.equal(isRevealableKeyRow({ key_type: PUBLISHED_FEED_KEY_TYPE, secret_ciphertext: null }), false);
   assert.equal(isRevealableKeyRow({ key_type: 'feed_access', secret_ciphertext: Buffer.from('x') }), false);
 });

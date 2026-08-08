@@ -46,9 +46,7 @@
     "test:file-artifacts": "node --test lib/fileArtifacts/*.test.js",
     "test:file-artifacts-db": "node scripts/fileArtifactDbTests.js",
     "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/backup/manifest.test.js lib/backup/checksums.test.js lib/backup/retention.test.js lib/backup/pathSafety.test.js lib/backup/operationLock.test.js lib/backup/encryption.test.js lib/backup/scheduler.test.js routes/backups.test.js lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js lib/fileArtifacts/hashNormalize.test.js",
-
     "test:provider-disable-guard": "node --test lib/enrichmentProviderRegistry.test.js routes/enrichmentDisabledGuard.test.js lib/spamhausDropSyncDisabled.test.js lib/enrichmentProviderConfigAudit.test.js",
-
     "smoke:routes": "node scripts/smoke-routes.js"
   },
   "dependencies": {
@@ -58,8 +56,9 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "ioredis": "^5.4.1",
-    "pg": "^8.16.3",
     "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3",
+    "swagger-ui-dist": "^5.17.14",
     "tldts": "^6.1.86"
   }
 }

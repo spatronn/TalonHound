@@ -14,6 +14,7 @@ export const AUDIT_STATUS = Object.freeze({
 
 export const AUDIT_ACTION = Object.freeze({
   IOC_CREATED: 'ioc.created',
+  IOC_UPDATED: 'ioc.updated',
   IOC_DELETED: 'ioc.deleted',
   IOC_TAG_ADDED: 'ioc.tag.added',
   IOC_TAG_REMOVED: 'ioc.tag.removed',
@@ -204,6 +205,7 @@ export const AUDIT_ENTITY = Object.freeze({
 /** Human-readable labels for UI */
 export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_CREATED]: 'IOC Created',
+  [AUDIT_ACTION.IOC_UPDATED]: 'IOC Updated',
   [AUDIT_ACTION.IOC_DELETED]: 'IOC Deleted',
   [AUDIT_ACTION.IOC_TAG_ADDED]: 'IOC Tag Added',
   [AUDIT_ACTION.IOC_TAG_REMOVED]: 'IOC Tag Removed',
