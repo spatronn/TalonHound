@@ -21,6 +21,7 @@ COPY backend/lib/auditConstants.js ./lib/auditConstants.js
 COPY backend/lib/customThreatFeedUtils.js ./lib/customThreatFeedUtils.js
 COPY backend/lib/customThreatFeedParser.js ./lib/customThreatFeedParser.js
 COPY backend/lib/customThreatFeedAuth.js ./lib/customThreatFeedAuth.js
+COPY backend/lib/customThreatFeedSsrf.js ./lib/customThreatFeedSsrf.js
 COPY backend/lib/customThreatFeedFetch.js ./lib/customThreatFeedFetch.js
 COPY backend/lib/customThreatFeedSync.js ./lib/customThreatFeedSync.js
 COPY backend/lib/customThreatFeedFingerprint.js ./lib/customThreatFeedFingerprint.js
