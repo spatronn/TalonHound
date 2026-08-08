@@ -157,6 +157,14 @@ import {
   taskTypeLabel,
   truncateQuery
 } from './lib/actionCenter.js';
+import {
+  isDeepSearchResponse,
+  deepSearchNotice,
+  deepSearchResultsPath,
+  mergeActionCenterItems,
+  deepSearchMatchLabel,
+  deepSearchDurationLabel
+} from './lib/deepSearch.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 
 // Shared, process-wide cache for the source-color catalog so the many screens
@@ -10370,10 +10378,21 @@ function ActionCenterPage() {
         pageSize: ACTION_CENTER_PAGE_SIZE,
         status: statusOverride ?? statusFilter
       });
-      const { data } = await api.get('/iocs/search-exports', { params });
+      // Action Center is the single home for async jobs: fetch both task types for this
+      // page/status and merge them by created_at. (Cross-source pagination is approximate on
+      // deep pages — each source paginates independently — which is acceptable for a
+      // recent-activity view; totals are summed.)
+      const [exportRes, deepRes] = await Promise.all([
+        api.get('/iocs/search-exports', { params }),
+        api.get('/iocs/deep-searches', { params }).catch(() => ({ data: { items: [], total: 0 } }))
+      ]);
       if (!mountedRef.current) return;
-      setItems(Array.isArray(data?.items) ? data.items : []);
-      setTotal(Number(data?.total || 0));
+      const merged = mergeActionCenterItems(
+        Array.isArray(exportRes.data?.items) ? exportRes.data.items : [],
+        Array.isArray(deepRes.data?.items) ? deepRes.data.items : []
+      );
+      setItems(merged);
+      setTotal(Number(exportRes.data?.total || 0) + Number(deepRes.data?.total || 0));
     } catch (err) {
       if (!mountedRef.current) return;
       if (!silent) {
@@ -10444,8 +10463,66 @@ function ActionCenterPage() {
     }
   }
 
+  // Deep-search actions hit the /iocs/deep-searches endpoints.
+  async function cancelDeepSearch(id) {
+    setActionBusyId(id);
+    try {
+      await api.post(`/iocs/deep-searches/${id}/cancel`);
+      await load({ silent: true });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to cancel deep search'));
+    } finally {
+      setActionBusyId('');
+    }
+  }
+
+  async function runDeepSearchAgain(id) {
+    setActionBusyId(id);
+    try {
+      await api.post(`/iocs/deep-searches/${id}/create-again`);
+      setStatusFilter('all');
+      setPage(1);
+      await load({ silent: true, page: 1, status: 'all' });
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to recreate deep search'));
+    } finally {
+      setActionBusyId('');
+    }
+  }
+
+  function renderDeepSearchActions(row, busy) {
+    if (row.status === 'completed') {
+      return (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button type="button" style={ui.btn} onClick={() => navigate(deepSearchResultsPath(row.id))}>
+            View Results
+          </button>
+        </div>
+      );
+    }
+    if (row.status === 'queued' || row.status === 'running') {
+      return (
+        <button type="button" style={ui.btn} disabled={busy} onClick={() => cancelDeepSearch(row.id)}>
+          {busy ? '…' : 'Cancel'}
+        </button>
+      );
+    }
+    if (row.status === 'failed' || row.status === 'expired' || row.status === 'cancelled') {
+      if (!canWrite) return <span style={{ color: '#64748b' }}>—</span>;
+      return (
+        <button type="button" style={ui.btn} disabled={busy} onClick={() => runDeepSearchAgain(row.id)}>
+          {busy ? '…' : 'Run again'}
+        </button>
+      );
+    }
+    return <span style={{ color: '#64748b' }}>—</span>;
+  }
+
   function renderActions(row) {
     const busy = actionBusyId === row.id;
+    if (row.task_type === 'ioc_deep_search') {
+      return renderDeepSearchActions(row, busy);
+    }
     if (row.status === 'ready') {
       return (
         <a href={`/api/iocs/search-exports/${row.id}/download`} style={{ color: '#86efac', fontWeight: 600 }}>
@@ -10485,7 +10562,7 @@ function ActionCenterPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Action Center</h1>
-            <p style={ui.pageSub}>Track asynchronous jobs such as IOC Search exports. More task types can appear here over time.</p>
+            <p style={ui.pageSub}>Track asynchronous jobs such as IOC Deep Searches and Search exports. More task types can appear here over time.</p>
           </div>
           <button type="button" style={ui.btn} onClick={() => load().catch(() => {})} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
@@ -10524,8 +10601,8 @@ function ActionCenterPage() {
                 <th style={ui.th}>Status</th>
                 <th style={ui.th}>Created</th>
                 <th style={ui.th}>Ready</th>
-                <th style={ui.th}>Records</th>
-                <th style={ui.th}>Size</th>
+                <th style={ui.th}>Records / Matches</th>
+                <th style={ui.th}>Size / Duration</th>
                 <th style={ui.th}>Expiration</th>
                 <th style={ui.th}>Action</th>
               </tr>
@@ -10576,11 +10653,19 @@ function ActionCenterPage() {
                         : '—'}
                     </td>
                     <td style={ui.td}>
-                      {row.record_count == null ? '—' : Number(row.record_count).toLocaleString('en-US')}
+                      {row.task_type === 'ioc_deep_search'
+                        ? (deepSearchMatchLabel(row) ?? '—')
+                        : (row.record_count == null ? '—' : Number(row.record_count).toLocaleString('en-US'))}
                     </td>
-                    <td style={ui.td}>{formatFileSize(row.file_size)}</td>
+                    <td style={ui.td}>
+                      {row.task_type === 'ioc_deep_search'
+                        ? deepSearchDurationLabel(row)
+                        : formatFileSize(row.file_size)}
+                    </td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }} title={row.expires_at || ''}>
-                      {row.status === 'ready' ? formatExpiresIn(row.expires_at, nowTick) : (row.status === 'expired' ? 'Expired' : '—')}
+                      {(row.status === 'ready' || row.status === 'completed')
+                        ? formatExpiresIn(row.expires_at, nowTick)
+                        : (row.status === 'expired' ? 'Expired' : '—')}
                     </td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{renderActions(row)}</td>
                   </tr>
@@ -10641,6 +10726,13 @@ function IOCListPage() {
   const [dslResult, setDslResult] = useState(null); // { normalized_query, conditions, count_display, has_more, next_cursor, warnings, timed_out }
   const [appliedQuery, setAppliedQuery] = useState('');
   const [dslCursorStack, setDslCursorStack] = useState([]); // cursors for previous pages
+  // --- Deep Search (async broad query) state ---
+  const [deepNotice, setDeepNotice] = useState(null); // { fallback, deep_search_id } while queued
+  const [deepResult, setDeepResult] = useState(null); // completed result-browsing metadata
+  const [deepCursorStack, setDeepCursorStack] = useState([]);
+  const [deepLoading, setDeepLoading] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepSearchIdParam = String(searchParams.get('deep_search') || '');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advMatch, setAdvMatch] = useState('all');
   const [advConditions, setAdvConditions] = useState([newCondition('ioc')]);
@@ -10939,12 +11031,33 @@ function IOCListPage() {
     setSearchError('');
     try {
       const { data } = await api.post('/iocs/search', { query, page_size: pageSize, cursor: cursor || null });
-      if (data.timed_out) {
-        setSearchError(data.message || 'Search timed out because the query is too broad. Refine the query or create an asynchronous export.');
+
+      // Expensive / non-index-friendly query (or one auto-converted after the interactive
+      // timeout): the server queued it as a background Deep Search and returned 202. Keep the
+      // entered query + filter chips intact and show a calm informational banner — never the
+      // red timeout error.
+      if (isDeepSearchResponse(data)) {
         setRows([]);
-      } else {
-        setRows(data.items || []);
+        setDeepNotice({ fallback: Boolean(data.fallback), deep_search_id: data.deep_search_id });
+        setDslResult({
+          normalized_query: data.normalized_query,
+          conditions: data.conditions || [],
+          count_display: null,
+          exact_count: null,
+          has_more: false,
+          next_cursor: null,
+          warnings: [],
+          timed_out: false,
+          deep_search: true
+        });
+        setDslActive(true);
+        setAppliedQuery(query);
+        if (prevStack) setDslCursorStack(prevStack);
+        return;
       }
+
+      setDeepNotice(null);
+      setRows(data.items || []);
       setDslResult((prev) => ({
         normalized_query: data.normalized_query,
         conditions: data.conditions || [],
@@ -10954,7 +11067,7 @@ function IOCListPage() {
         has_more: Boolean(data.has_more),
         next_cursor: data.next_cursor || null,
         warnings: data.warnings || [],
-        timed_out: Boolean(data.timed_out)
+        timed_out: false
       }));
       setDslActive(true);
       setAppliedQuery(query);
@@ -10981,6 +11094,17 @@ function IOCListPage() {
     runDsl(query, null, { prevStack: [] });
   }
 
+  function exitDeepSearchResults() {
+    if (deepSearchIdParam) {
+      // Drop the ?deep_search= param without disturbing other query state.
+      const next = new URLSearchParams(searchParams);
+      next.delete('deep_search');
+      setSearchParams(next, { replace: true });
+    }
+    setDeepResult(null);
+    setDeepCursorStack([]);
+  }
+
   function clearDsl() {
     setSearchInput('');
     setSearchError('');
@@ -10988,6 +11112,8 @@ function IOCListPage() {
     setDslResult(null);
     setDslCursorStack([]);
     setDslActive(false);
+    setDeepNotice(null);
+    exitDeepSearchResults();
     setPage(1);
   }
 
@@ -11002,6 +11128,66 @@ function IOCListPage() {
       const next = stack.slice(0, -1);
       const cursor = next.length ? next[next.length - 1] : null;
       runDsl(appliedQuery, cursor, { prevStack: next });
+      return next;
+    });
+  }
+
+  // ---- Deep Search result browsing (opened from Action Center: /ioc?deep_search=<id>) ----
+  // Fetches a keyset page of a COMPLETED deep search's materialized results and renders them
+  // in the IOC table. Never re-runs the expensive original query synchronously.
+  const loadDeepSearchResults = useCallback(async (id, cursor, { prevStack } = {}) => {
+    if (!id) return;
+    setDeepLoading(true);
+    setSearchError('');
+    try {
+      const params = { page_size: pageSize };
+      if (cursor) params.cursor = cursor;
+      const { data } = await api.get(`/iocs/deep-searches/${encodeURIComponent(id)}/results`, { params });
+      setDeepResult({
+        deep_search_id: data.deep_search_id,
+        status: data.status,
+        result_state: data.result_state,
+        normalized_query: data.normalized_query,
+        conditions: data.conditions || [],
+        match_count: data.match_count,
+        has_more: Boolean(data.has_more),
+        next_cursor: data.next_cursor || null
+      });
+      setRows(data.result_state === 'ready' ? (data.items || []) : []);
+      setDslActive(false);
+      setDeepNotice(null);
+      if (prevStack) setDeepCursorStack(prevStack);
+    } catch (err) {
+      setSearchError(apiErrorMessage(err, 'Failed to load deep search results'));
+      setRows([]);
+      setDeepResult((prev) => prev || { result_state: 'error', conditions: [], normalized_query: '' });
+    } finally {
+      setDeepLoading(false);
+    }
+  }, [pageSize]);
+
+  useEffect(() => {
+    if (deepSearchIdParam) {
+      setDeepCursorStack([]);
+      loadDeepSearchResults(deepSearchIdParam, null, { prevStack: [] });
+    } else {
+      setDeepResult(null);
+      setDeepCursorStack([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepSearchIdParam]);
+
+  function deepResultsNextPage() {
+    if (!deepResult?.next_cursor) return;
+    setDeepCursorStack((stack) => [...stack, deepResult.next_cursor]);
+    loadDeepSearchResults(deepSearchIdParam, deepResult.next_cursor);
+  }
+
+  function deepResultsPrevPage() {
+    setDeepCursorStack((stack) => {
+      const next = stack.slice(0, -1);
+      const cursor = next.length ? next[next.length - 1] : null;
+      loadDeepSearchResults(deepSearchIdParam, cursor, { prevStack: next });
       return next;
     });
   }
@@ -11290,6 +11476,56 @@ function IOCListPage() {
         </div>
       )}
 
+      {/* Calm, non-error banner when an expensive query was queued as a background Deep
+          Search (classified up front, or auto-continued after the interactive timeout). */}
+      {deepNotice && !deepResult && (() => {
+        const notice = deepSearchNotice({ fallback: deepNotice.fallback });
+        return (
+          <div style={{ marginBottom: 10, padding: '12px 14px', border: '1px solid #1d4ed8', borderRadius: 10, background: 'rgba(37,99,235,0.12)' }}>
+            <div style={{ color: '#bfdbfe', fontWeight: 600, marginBottom: 4 }}>{notice.title}</div>
+            <div style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 8 }}>{notice.body}</div>
+            <button type="button" onClick={() => navigate('/action-center')} className={buttonClassName({ variant: 'primary' })}>View in Action Center</button>
+          </div>
+        );
+      })()}
+
+      {/* Deep Search RESULT browsing mode (opened from Action Center). */}
+      {deepResult && (
+        <div style={{ marginBottom: 10, padding: '10px 12px', border: '1px solid #1d4ed8', borderRadius: 10, background: '#0f172a' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ padding: '2px 8px', borderRadius: 999, background: '#1e293b', border: '1px solid #2563eb', color: '#93c5fd', fontSize: 12, fontWeight: 600 }}>Deep Search results</span>
+            {(deepResult.conditions || []).map((c, idx) => (
+              <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 999, background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0', fontSize: 12 }}>
+                {chipLabel(c)}
+              </span>
+            ))}
+            <button onClick={exitDeepSearchResults} style={{ fontSize: 12, marginLeft: 'auto' }}>Exit results</button>
+          </div>
+          {deepResult.result_state === 'ready' ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                {deepResult.match_count == null ? '—' : `${Number(deepResult.match_count).toLocaleString('en-US')} matching IOCs`}
+              </span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button onClick={deepResultsPrevPage} disabled={deepCursorStack.length === 0 || deepLoading}>Prev</button>
+                <button onClick={deepResultsNextPage} disabled={!deepResult.has_more || deepLoading}>Next</button>
+                <button onClick={() => { setAppliedQuery(deepResult.normalized_query || ''); setExportScope('all'); setExportModalOpen(true); }} disabled={exportBusy}>Export matching IOCs</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ color: '#cbd5e1', fontSize: 13 }}>
+              {deepResult.result_state === 'expired'
+                ? 'This deep search result set has expired and is no longer available. Run the search again to rebuild it.'
+                : deepResult.result_state === 'error'
+                  ? 'The deep search results could not be loaded.'
+                  : `This deep search is ${deepResult.status || 'processing'}. Results will appear here once it completes.`}
+              {' '}
+              <button type="button" style={{ fontSize: 12 }} onClick={() => navigate('/action-center')}>Open Action Center</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {dslActive && dslResult && (
         <div style={{ marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
@@ -11303,14 +11539,14 @@ function IOCListPage() {
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
             <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
-              {dslResult.timed_out ? '—' : `${dslResult.count_display || '0'} matching IOCs`}
+              {dslResult.deep_search ? 'Running in the background…' : (dslResult.timed_out ? '—' : `${dslResult.count_display || '0'} matching IOCs`)}
             </span>
-            {dslResult.exact_count == null && !dslResult.timed_out && dslResult.count_display && String(dslResult.count_display).includes('+') ? (
+            {!dslResult.deep_search && dslResult.exact_count == null && !dslResult.timed_out && dslResult.count_display && String(dslResult.count_display).includes('+') ? (
               <span style={{ color: '#94a3b8', fontSize: 12 }}>Showing the latest {pageSize} · More results exist. Refine the search or export all matching IOCs.</span>
             ) : null}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={dslPrevPage} disabled={dslCursorStack.length === 0 || dslLoading}>Prev</button>
-              <button onClick={dslNextPage} disabled={!dslResult.has_more || dslLoading}>Next</button>
+              <button onClick={dslPrevPage} disabled={dslResult.deep_search || dslCursorStack.length === 0 || dslLoading}>Prev</button>
+              <button onClick={dslNextPage} disabled={dslResult.deep_search || !dslResult.has_more || dslLoading}>Next</button>
               <button onClick={() => { setAdvancedOpen(true); if (dslSearchInputRef.current) dslSearchInputRef.current.focus(); }}>Refine search</button>
               <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} disabled={exportBusy}>Export matching IOCs</button>
             </div>

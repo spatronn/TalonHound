@@ -29,6 +29,24 @@ export function getQueryTimeoutMs() {
   return intFromEnv('IOC_SEARCH_QUERY_TIMEOUT_MS', 5000, { min: 100, max: 120_000 });
 }
 
+// Deep-search classifier knobs. The classifier decides — from the normalized AST, never
+// raw user text — whether a query is index-friendly enough to run interactively or must
+// be routed to an asynchronous Deep Search. Every threshold lives here so operators can
+// tune it without touching the classifier logic.
+//
+//   trigramMinLength : shortest value for which the observable/source trigram GIN index
+//                      can still serve a `%value%` / `value%` / `%value` pattern. Below
+//                      this a wildcard search degrades to a scan (Postgres pg_trgm needs
+//                      a full 3-gram; default 3).
+//   maxOrBranches    : an OR group wider than this is treated as a broad scan even when
+//                      each branch is individually indexable.
+export function getClassifierConfig() {
+  return {
+    trigramMinLength: intFromEnv('IOC_SEARCH_TRIGRAM_MIN_LENGTH', 3, { min: 1, max: 16 }),
+    maxOrBranches: intFromEnv('IOC_SEARCH_MAX_INTERACTIVE_OR_BRANCHES', 4, { min: 1, max: 64 })
+  };
+}
+
 // Timezone used to interpret bare date/datetime literals in the DSL. Bound explicitly
 // into every date comparison via `($value::timestamp AT TIME ZONE $tz)` so the result
 // is deterministic and never depends on the database session TimeZone. Default UTC.

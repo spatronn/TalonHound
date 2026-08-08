@@ -29,6 +29,10 @@ import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerIocSearchExportRoutes } from './routes/iocSearchExports.js';
 import { EXPORT_QUEUE_NAME } from './lib/iocSearchExport/exportConfig.js';
+import { registerIocDeepSearchRoutes } from './routes/iocDeepSearches.js';
+import { DEEP_SEARCH_QUEUE_NAME } from './lib/iocDeepSearch/deepSearchConfig.js';
+import { enqueueDeepSearch } from './lib/iocDeepSearch/enqueueDeepSearch.js';
+import { queryFingerprint } from './lib/iocDeepSearch/deepSearchStatus.js';
 import { registerBackupRoutes } from './routes/backups.js';
 import { BACKUP_QUEUE_NAME } from './lib/backup/config.js';
 import {
@@ -36,7 +40,9 @@ import {
   buildWhereClause,
   getPreviewLimit,
   getQueryTimeoutMs,
-  isDslError
+  isDslError,
+  classifyQuery,
+  TIMEOUT_FALLBACK_REASON
 } from './lib/iocSearchDsl/index.js';
 import {
   buildSearchPageSql,
@@ -334,6 +340,7 @@ const queueName = process.env.QUEUE_NAME || 'integration-imports';
 const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const iocSearchExportQueue = new Queue(EXPORT_QUEUE_NAME, { connection: redis });
+const iocDeepSearchQueue = new Queue(DEEP_SEARCH_QUEUE_NAME, { connection: redis });
 const systemBackupQueue = new Queue(BACKUP_QUEUE_NAME, { connection: redis });
 const auditLogService = createAuditLogService(pool);
 
@@ -2671,6 +2678,15 @@ registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
 registerIocExportRoutes(app, pool);
 registerIocSearchExportRoutes(app, pool, { exportQueue: iocSearchExportQueue, auditLogService });
+registerIocDeepSearchRoutes(app, pool, {
+  deepSearchQueue: iocDeepSearchQueue,
+  auditLogService,
+  logger: appLog,
+  // Deep Search result rows are shaped through the exact same enrichment path as the
+  // interactive IOC List (byItemIds), so a browsed result is indistinguishable from a live
+  // search row.
+  mapPageItems: (p, pageItems) => mapIocListPageItems(p, pageItems, { statusFilter: 'all', hasSearch: true, byItemIds: true })
+});
 registerBackupRoutes(app, pool, { backupQueue: systemBackupQueue, auditLogService });
 registerRouteModule('audit');
 
@@ -4364,6 +4380,43 @@ function clampSearchPageSize(raw) {
   return Math.min(Math.max(Math.trunc(n), 1), 100);
 }
 
+// Enqueue the current normalized query as a Deep Search and reply with the async contract
+// (HTTP 202). Shared by the classifier path and the statement-timeout fallback so both
+// produce an identical response. Never returns an error for a valid expensive query.
+async function enqueueDeepSearchAndRespond(req, res, { parsed, rawQuery, reason, origin, startedAt }) {
+  try {
+    const { row, deduped } = await enqueueDeepSearch(pool, iocDeepSearchQueue, {
+      originalQuery: String(rawQuery ?? ''),
+      normalizedQuery: parsed.normalizedQuery,
+      normalizedAst: parsed.ast,
+      classificationReason: reason,
+      origin,
+      requestedById: Number.isFinite(Number(req.user?.id)) ? Number(req.user.id) : null,
+      requestedByEmail: String(req.user?.email || req.user?.username || '').trim(),
+      auditLogService,
+      logger: appLog,
+      req
+    });
+    return res.status(202).json({
+      mode: 'deep_search',
+      task_type: 'ioc_deep_search',
+      deep_search_id: row.id,
+      status: row.status,
+      reason,
+      origin,
+      fallback: origin === 'timeout_fallback',
+      deduped,
+      normalized_query: parsed.normalizedQuery,
+      conditions: parsed.conditions,
+      query_duration_ms: Date.now() - startedAt
+    });
+  } catch (err) {
+    if (err.status === 401) return res.status(401).json({ message: err.message });
+    if (err.status === 429) return res.status(429).json({ message: err.message });
+    return res.status(500).json({ message: 'Failed to start deep search' });
+  }
+}
+
 async function handleIocSearch(req, res) {
   const startedAt = Date.now();
   // DSL query + cursor travel in the POST body: the query can be up to
@@ -4381,6 +4434,35 @@ async function handleIocSearch(req, res) {
       return res.status(400).json({ error: err.toJSON(), message: err.message });
     }
     return res.status(400).json({ message: 'Invalid search query', detail: err.message });
+  }
+
+  // Deterministic, AST-based classification: expensive/non-index-friendly queries are routed
+  // to an asynchronous Deep Search instead of being run interactively and timing out. Only
+  // the initial submit (no cursor) is classified — paging always continues on whichever path
+  // produced the first page.
+  const cursorIn = decodeSearchCursor(body.cursor);
+  if (!cursorIn) {
+    const classification = classifyQuery(parsed.ast);
+    if (classification.mode === 'deep_search') {
+      appLog.info('ioc search classified deep_search', {
+        event: 'ioc_search.classified',
+        mode: 'deep_search',
+        reason: classification.reason,
+        query_fingerprint: queryFingerprint(parsed.normalizedQuery)
+      });
+      return enqueueDeepSearchAndRespond(req, res, {
+        parsed,
+        rawQuery,
+        reason: classification.reason,
+        origin: 'classified',
+        startedAt
+      });
+    }
+    appLog.info('ioc search classified interactive', {
+      event: 'ioc_search.classified',
+      mode: 'interactive',
+      query_fingerprint: queryFingerprint(parsed.normalizedQuery)
+    });
   }
 
   const previewLimit = getPreviewLimit();
@@ -4528,20 +4610,26 @@ async function handleIocSearch(req, res) {
     });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    // Only the real statement-timeout / query-cancel condition (SQLSTATE 57014) is converted
+    // to a Deep Search. Every other DB error still fails normally so we never mask a genuine
+    // fault as "just slow". The interactive path already classified this query as cheap, so
+    // this is the classifier under-calling — continue the exact same normalized query as a
+    // background Deep Search instead of returning the old red timeout error. Per-user
+    // fingerprint de-dup guarantees at most one job even if paging retriggers the timeout
+    // (no recursive retry loop).
     if (err && err.code === '57014') {
-      return res.status(200).json({
-        normalized_query: parsed.normalizedQuery,
-        conditions: parsed.conditions,
-        items: [],
-        preview_limit: previewLimit,
-        has_more: false,
-        next_cursor: null,
-        exact_count: null,
-        count_display: null,
-        timed_out: true,
-        query_duration_ms: Date.now() - startedAt,
-        warnings: [],
-        message: 'Search timed out because the query is too broad. Refine the query or create an asynchronous export.'
+      appLog.warn('ioc search interactive statement timeout; continuing as deep_search', {
+        event: 'ioc_search.timeout_fallback',
+        reason: TIMEOUT_FALLBACK_REASON,
+        query_fingerprint: queryFingerprint(parsed.normalizedQuery),
+        query_duration_ms: Date.now() - startedAt
+      });
+      return enqueueDeepSearchAndRespond(req, res, {
+        parsed,
+        rawQuery,
+        reason: TIMEOUT_FALLBACK_REASON,
+        origin: 'timeout_fallback',
+        startedAt
       });
     }
     return res.status(500).json({ message: 'Search failed', detail: err.message });

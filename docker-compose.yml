@@ -255,6 +255,33 @@ services:
       - redis
     restart: unless-stopped
 
+  ioc-deep-search-worker:
+    build: ./backend
+    command: ["npm", "run", "ioc-deep-search-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - IOC_DEEP_SEARCH_QUEUE_NAME=ioc-deep-search
+      - IOC_DEEP_SEARCH_QUERY_TIMEOUT_MS=${IOC_DEEP_SEARCH_QUERY_TIMEOUT_MS:-600000}
+      - IOC_DEEP_SEARCH_RETENTION_HOURS=${IOC_DEEP_SEARCH_RETENTION_HOURS:-24}
+      - IOC_DEEP_SEARCH_WORKER_CONCURRENCY=${IOC_DEEP_SEARCH_WORKER_CONCURRENCY:-2}
+      # Read-path flag must match the backend: the deep-search worker re-parses the stored
+      # DSL and runs the same file-artifact canonical/dedup resolution as POST /api/iocs/search
+      # so materialized results match the interactive preview exactly.
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
   backup-worker:
     build: ./backend
     command: ["npm", "run", "backup-worker"]

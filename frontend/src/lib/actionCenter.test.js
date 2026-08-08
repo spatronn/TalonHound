@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   actionCenterPollIntervalMs,
+  actionCenterStatusBadgeStyle,
   buildActionCenterListParams,
   formatExpiresIn,
   formatFileSize,
@@ -49,6 +50,24 @@ test('buildActionCenterListParams omits status=all', () => {
     page_size: 25,
     status: 'failed'
   });
+});
+
+test('deep-search task type has a label', () => {
+  assert.equal(taskTypeLabel('ioc_deep_search'), 'IOC Deep Search');
+});
+
+test('deep-search statuses share export badge/status vocabulary', () => {
+  // 'completed'/'running' (deep search) render like 'ready'/'processing' (export).
+  assert.deepEqual(actionCenterStatusBadgeStyle('completed'), actionCenterStatusBadgeStyle('ready'));
+  assert.deepEqual(actionCenterStatusBadgeStyle('running'), actionCenterStatusBadgeStyle('processing'));
+  assert.equal(formatActionCenterStatus({ status: 'running', progress: 0 }), 'Running');
+  assert.equal(formatActionCenterStatus({ status: 'running', progress: 40 }), 'Running 40%');
+  assert.equal(formatActionCenterStatus({ status: 'completed' }), 'Completed');
+});
+
+test('poll interval treats running deep searches as active', () => {
+  assert.equal(actionCenterPollIntervalMs([{ status: 'running' }]), 3000);
+  assert.equal(actionCenterPollIntervalMs([{ status: 'completed' }]), 15000);
 });
 
 test('legacy Search Exports modal detector', () => {

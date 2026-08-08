@@ -20,6 +20,8 @@ export {
   buildSearchProbeSql,
   buildFileArtifactSearchPageSql,
   buildLegacyFileArtifactSearchPageSql,
+  buildCanonicalResultSelectSql,
+  buildDeepSearchSpoolInsertSql,
   canonicalSearchPageFromRows
 } from './searchPageSql.js';
 export { FIELD_REGISTRY, FIELD_NAMES } from './fields.js';
@@ -27,8 +29,14 @@ export {
   getSearchLimits,
   getPreviewLimit,
   getQueryTimeoutMs,
-  getSearchTimezone
+  getSearchTimezone,
+  getClassifierConfig
 } from './config.js';
+export {
+  classifyQuery,
+  DEEP_SEARCH_REASONS,
+  TIMEOUT_FALLBACK_REASON
+} from './classifyQuery.js';
 
 // Node precedence for deciding when a child must be parenthesized during rendering.
 const PREC = { or: 1, and: 2, not: 3, condition: 4 };

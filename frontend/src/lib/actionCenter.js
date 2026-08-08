@@ -11,7 +11,8 @@ export const ACTION_CENTER_FILTERS = Object.freeze([
 ]);
 
 export const TASK_TYPE_LABELS = Object.freeze({
-  ioc_search_export: 'IOC Search Export'
+  ioc_search_export: 'IOC Search Export',
+  ioc_deep_search: 'IOC Deep Search'
 });
 
 export function taskTypeLabel(taskType) {
@@ -20,8 +21,10 @@ export function taskTypeLabel(taskType) {
 
 export function actionCenterStatusBadgeStyle(status) {
   const s = String(status || '').toLowerCase();
-  if (s === 'ready') return { background: '#166534', color: '#86efac', border: '1px solid #15803d' };
-  if (s === 'queued' || s === 'processing') return { background: '#1d4ed8', color: '#93c5fd', border: '1px solid #2563eb' };
+  // 'completed' (Deep Search) and 'ready' (Export) are both terminal-success; 'running'
+  // (Deep Search) mirrors 'processing' (Export).
+  if (s === 'ready' || s === 'completed') return { background: '#166534', color: '#86efac', border: '1px solid #15803d' };
+  if (s === 'queued' || s === 'processing' || s === 'running') return { background: '#1d4ed8', color: '#93c5fd', border: '1px solid #2563eb' };
   if (s === 'failed') return { background: '#991b1b', color: '#fca5a5', border: '1px solid #b91c1c' };
   if (s === 'expired' || s === 'cancelled') return { background: '#334155', color: '#cbd5e1', border: '1px solid #475569' };
   return { background: '#1e293b', color: '#94a3b8', border: '1px solid #334155' };
@@ -29,9 +32,10 @@ export function actionCenterStatusBadgeStyle(status) {
 
 export function formatActionCenterStatus(row) {
   const status = String(row?.status || '');
-  if (status === 'processing') {
+  if (status === 'processing' || status === 'running') {
     const p = Number(row?.progress);
-    return Number.isFinite(p) ? `Processing ${p}%` : 'Processing';
+    const label = status === 'running' ? 'Running' : 'Processing';
+    return Number.isFinite(p) && p > 0 ? `${label} ${p}%` : label;
   }
   if (!status) return '—';
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -72,7 +76,7 @@ export function truncateQuery(text, max = 72) {
 /** Polling interval: active jobs every 3s; otherwise refresh every 15s while on the page. */
 export function actionCenterPollIntervalMs(items) {
   const hasActive = Array.isArray(items)
-    && items.some((e) => e.status === 'queued' || e.status === 'processing');
+    && items.some((e) => e.status === 'queued' || e.status === 'processing' || e.status === 'running');
   return hasActive ? 3000 : 15000;
 }
 

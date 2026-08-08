@@ -247,6 +247,109 @@ export function buildSearchPageSql({
   return buildPlainSearchPageSql({ whereSql, keysetClause, limitParamIdx });
 }
 
+/**
+ * Canonical result SELECT with no pagination, for Deep Search spool materialization.
+ *
+ * Produces exactly the same canonical rows (same identity dedup, same representative pick,
+ * same ORDER BY platform_imported_at DESC, id DESC) as the interactive page SQL, but
+ * without a cursor/keyset or LIMIT — so it can be wrapped by a single database-native
+ * INSERT ... SELECT that materializes the whole (bounded) result set once. Reusing the
+ * interactive projection guarantees Deep Search browsing shows byte-for-byte the same rows
+ * the interactive path would have shown.
+ *
+ * Columns: id, public_id, observable, observable_type, status, first_seen_at, created_at,
+ * artifact_id. (created_at is platform_imported_at in the FA path.)
+ */
+export function buildCanonicalResultSelectSql({ fileArtifactsReadEnabled, whereSql }) {
+  if (fileArtifactsReadEnabled) {
+    return `
+    WITH annotated AS (
+      SELECT
+        i.id, i.public_id, i.observable, i.observable_type,
+        COALESCE(i.status, 'active') AS status,
+        i.first_seen_at, i.last_seen_at, i.created_at,
+        ${artifactIdExpr('i')} AS artifact_id,
+        faph.hash_type AS primary_hash_type,
+        faph.normalized_hash_value AS primary_hash_value,
+        ${identityKeyExpr('i')} AS identity_key
+      FROM ioc_items i
+      ${artifactAnnotateJoins('i')}
+      WHERE ${whereSql}
+    ),
+    bounds AS (
+      SELECT
+        identity_key,
+        MIN(created_at) AS platform_imported_at,
+        MIN(first_seen_at) AS first_seen_at,
+        (ARRAY_AGG(status ORDER BY created_at DESC))[1] AS status,
+        (ARRAY_AGG(artifact_id) FILTER (WHERE artifact_id IS NOT NULL))[1] AS artifact_id
+      FROM annotated
+      GROUP BY identity_key
+    ),
+    reps AS (
+      SELECT DISTINCT ON (identity_key)
+        identity_key, id, public_id, observable, observable_type,
+        primary_hash_type, primary_hash_value
+      FROM annotated
+      ORDER BY identity_key, ${PRIMARY_MATCH_RANK_SQL}, ${HASH_TYPE_RANK_SQL}, created_at ASC, id ASC
+    )
+    SELECT
+      r.id,
+      r.public_id,
+      COALESCE(r.primary_hash_value, r.observable) AS observable,
+      COALESCE(r.primary_hash_type, r.observable_type) AS observable_type,
+      b.status,
+      b.first_seen_at,
+      b.platform_imported_at AS created_at,
+      b.artifact_id
+    FROM bounds b
+    JOIN reps r ON r.identity_key = b.identity_key`;
+  }
+  return `
+    SELECT i.id, i.public_id, i.observable, i.observable_type,
+           COALESCE(i.status, 'active') AS status,
+           i.first_seen_at, i.created_at,
+           NULL::uuid AS artifact_id
+    FROM ioc_items i
+    WHERE ${whereSql}`;
+}
+
+/**
+ * Full INSERT ... SELECT that materializes a Deep Search result set into the spool table.
+ *
+ *   whereSql/params : compiled DSL predicate (references alias i) — already includes the
+ *                     snapshot cutoff bound appended by the caller.
+ *   deepSearchIdIdx : $ index of the deep_search_id parameter
+ *
+ * There is deliberately NO LIMIT: a completed Deep Search materializes the COMPLETE matching
+ * set. The only bound is the background statement_timeout the caller sets (a real, named
+ * config) — if the set cannot be materialized within it, the statement is cancelled (57014)
+ * and the search fails honestly rather than silently truncating.
+ *
+ * position is a dense 1-based rank in the canonical ORDER BY, so the spool is keyset-
+ * browsable by (created_at DESC, ioc_item_id DESC) — the same order the interactive list
+ * uses. No result rows are ever loaded into Node.
+ */
+export function buildDeepSearchSpoolInsertSql({ fileArtifactsReadEnabled, whereSql, deepSearchIdIdx }) {
+  const canonical = buildCanonicalResultSelectSql({ fileArtifactsReadEnabled, whereSql });
+  return `
+    INSERT INTO ioc_deep_search_results
+      (deep_search_id, position, ioc_item_id, ioc_observable_type, public_id,
+       observable, status, created_at, first_seen_at, artifact_id)
+    SELECT
+      $${deepSearchIdIdx}::uuid,
+      ROW_NUMBER() OVER (ORDER BY c.created_at DESC, c.id DESC),
+      c.id,
+      c.observable_type,
+      c.public_id,
+      c.observable,
+      c.status,
+      c.created_at,
+      c.first_seen_at,
+      c.artifact_id
+    FROM (${canonical}) c`;
+}
+
 export function buildFileArtifactSearchProbeSql({ whereSql, probeLimit }) {
   const matchedLimit = Math.max(probeLimit * 5, probeLimit);
   return `
