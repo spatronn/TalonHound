@@ -141,6 +141,22 @@ import {
   FEED_RESULT_TONE_COLORS,
   FEED_RESULT_METRIC_TOOLTIPS
 } from './lib/feedLastResult.js';
+import {
+  AUDIT_DEFAULT_RANGE,
+  AUDIT_DEFAULT_PAGE_SIZE,
+  AUDIT_PAGE_SIZE_OPTIONS,
+  AUDIT_RANGE_OPTIONS,
+  AUDIT_EMPTY_STATE,
+  auditRangeLabel,
+  resolvePresetRange,
+  validateCustomRange,
+  auditFooterText,
+  initialCursorStack,
+  currentCursor,
+  canGoPrevious,
+  goNext,
+  goPrevious
+} from './lib/auditLogsView.js';
 import './AppShell.css';
 import './components/LoginPage.css';
 import './components/enrichmentProviders/enrichmentProviders.css';
@@ -6234,48 +6250,74 @@ function AuditLogsPage() {
   const { isAdmin } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
   const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Committed query — every field is enforced server-side. Default: Last 24h.
+  const [committed, setCommitted] = useState(() => {
+    const r = resolvePresetRange(AUDIT_DEFAULT_RANGE) || {};
+    return {
+      rangeKey: AUDIT_DEFAULT_RANGE,
+      from: r.from || null,
+      to: r.to || null,
+      search: '',
+      action: '',
+      entityType: '',
+      severity: '',
+      status: '',
+      limit: AUDIT_DEFAULT_PAGE_SIZE
+    };
+  });
+  // Staged text/custom inputs applied via Apply / Enter (avoids per-keystroke queries).
+  const [rangeKey, setRangeKey] = useState(AUDIT_DEFAULT_RANGE);
   const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [actionFilter, setActionFilter] = useState('');
-  const [entityTypeFilter, setEntityTypeFilter] = useState('');
-  const [severityFilter, setSeverityFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [actionInput, setActionInput] = useState('');
+  const [entityInput, setEntityInput] = useState('');
+  const [customFromInput, setCustomFromInput] = useState('');
+  const [customToInput, setCustomToInput] = useState('');
+  const [filterError, setFilterError] = useState('');
+  // Forward-cursor stack; the exact previous cursor is kept for Previous.
+  const [nav, setNav] = useState(() => initialCursorStack());
   const [detailItem, setDetailItem] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // Merge a committed-filter change and reset pagination to the first page.
+  const commit = useCallback((partial) => {
+    setCommitted((prev) => ({ ...prev, ...partial }));
+    setNav(initialCursorStack());
+  }, []);
+
+  const rangeLabel = committed.rangeKey === 'custom' ? 'Custom' : auditRangeLabel(committed.rangeKey);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
     setLoading(true);
     setError('');
     try {
-      const params = { page, pageSize };
-      if (search) params.search = search;
-      if (actionFilter) params.action = actionFilter;
-      if (entityTypeFilter) params.entity_type = entityTypeFilter;
-      if (severityFilter) params.severity = severityFilter;
-      if (statusFilter) params.status = statusFilter;
-      if (dateFrom) params.date_from = systemLocalInputToUtcIso(dateFrom);
-      if (dateTo) params.date_to = systemLocalInputToUtcIso(dateTo);
+      const params = { limit: committed.limit };
+      if (committed.from) params.from = committed.from;
+      if (committed.to) params.to = committed.to;
+      if (committed.search) params.search = committed.search;
+      if (committed.action) params.action = committed.action;
+      if (committed.entityType) params.entity_type = committed.entityType;
+      if (committed.severity) params.severity = committed.severity;
+      if (committed.status) params.status = committed.status;
+      const cursor = currentCursor(nav);
+      if (cursor) params.cursor = cursor;
       const { data } = await api.get('/audit-logs', { params });
       setItems(Array.isArray(data?.items) ? data.items : []);
-      setTotal(Number(data?.total || 0));
+      setHasMore(Boolean(data?.has_more));
+      setNextCursor(data?.next_cursor || null);
     } catch (err) {
       setItems([]);
-      setTotal(0);
+      setHasMore(false);
+      setNextCursor(null);
       setError(apiErrorMessage(err, 'Failed to load audit logs'));
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, page, pageSize, search, actionFilter, entityTypeFilter, severityFilter, statusFilter, dateFrom, dateTo]);
+  }, [isAdmin, committed, nav]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -6295,21 +6337,48 @@ function AuditLogsPage() {
     }
   }
 
+  // Time-range preset selector — presets commit immediately; Custom waits for Apply.
+  function onRangeChange(value) {
+    setRangeKey(value);
+    setFilterError('');
+    if (value !== 'custom') {
+      const r = resolvePresetRange(value);
+      if (r) commit({ rangeKey: value, from: r.from, to: r.to });
+    }
+  }
+
   function applyFilters() {
-    setPage(1);
-    setSearch(searchInput.trim());
+    const partial = {
+      search: searchInput.trim(),
+      action: actionInput.trim(),
+      entityType: entityInput.trim()
+    };
+    if (rangeKey === 'custom') {
+      const fromIso = systemLocalInputToUtcIso(customFromInput);
+      const toIso = systemLocalInputToUtcIso(customToInput);
+      const check = validateCustomRange(fromIso, toIso);
+      if (!check.ok) {
+        setFilterError(check.error);
+        return;
+      }
+      partial.rangeKey = 'custom';
+      partial.from = check.from;
+      partial.to = check.to;
+    }
+    setFilterError('');
+    commit(partial);
   }
 
   async function exportCsv() {
     try {
       const params = {};
-      if (search) params.search = search;
-      if (actionFilter) params.action = actionFilter;
-      if (entityTypeFilter) params.entity_type = entityTypeFilter;
-      if (severityFilter) params.severity = severityFilter;
-      if (statusFilter) params.status = statusFilter;
-      if (dateFrom) params.date_from = systemLocalInputToUtcIso(dateFrom);
-      if (dateTo) params.date_to = systemLocalInputToUtcIso(dateTo);
+      if (committed.from) params.from = committed.from;
+      if (committed.to) params.to = committed.to;
+      if (committed.search) params.search = committed.search;
+      if (committed.action) params.action = committed.action;
+      if (committed.entityType) params.entity_type = committed.entityType;
+      if (committed.severity) params.severity = committed.severity;
+      if (committed.status) params.status = committed.status;
       const res = await api.get('/audit-logs/export.csv', { params, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
       const a = document.createElement('a');
@@ -6339,37 +6408,46 @@ function AuditLogsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Audit Logs</h1>
-            <p style={ui.pageSub}>Security and operational change history.</p>
+            <p style={ui.pageSub}>Search a time-bounded window of security and operational change history.</p>
           </div>
           <button type="button" style={ui.btn} onClick={exportCsv}>Export CSV</button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginTop: 16 }}>
+          <select style={ui.select} value={rangeKey} onChange={(e) => onRangeChange(e.target.value)} title="Time range">
+            {AUDIT_RANGE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
           <input style={ui.input} placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
-          <input style={ui.input} placeholder="Action (e.g. ioc.created)" value={actionFilter} onChange={(e) => { setActionFilter(e.target.value); setPage(1); }} />
-          <input style={ui.input} placeholder="Entity type" value={entityTypeFilter} onChange={(e) => { setEntityTypeFilter(e.target.value); setPage(1); }} />
-          <select style={ui.select} value={severityFilter} onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}>
+          <input style={ui.input} placeholder="Action (e.g. ioc.created)" value={actionInput} onChange={(e) => setActionInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
+          <input style={ui.input} placeholder="Resource / entity type" value={entityInput} onChange={(e) => setEntityInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
+          <select style={ui.select} value={committed.severity} onChange={(e) => commit({ severity: e.target.value })}>
             <option value="">All severities</option>
             <option value="info">Info</option>
             <option value="warning">Warning</option>
             <option value="critical">Critical</option>
           </select>
-          <select style={ui.select} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
+          <select style={ui.select} value={committed.status} onChange={(e) => commit({ status: e.target.value })}>
             <option value="">All statuses</option>
             <option value="success">Success</option>
             <option value="failed">Failed</option>
           </select>
-          <input style={ui.input} type="datetime-local" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} title="From" />
-          <input style={ui.input} type="datetime-local" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} title="To" />
-          <select style={ui.select} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
-            <option value={10}>10 / page</option>
-            <option value={25}>25 / page</option>
-            <option value={50}>50 / page</option>
-            <option value={100}>100 / page</option>
+          {rangeKey === 'custom' ? (
+            <>
+              <input style={ui.input} type="datetime-local" value={customFromInput} onChange={(e) => setCustomFromInput(e.target.value)} title="From" />
+              <input style={ui.input} type="datetime-local" value={customToInput} onChange={(e) => setCustomToInput(e.target.value)} title="To" />
+            </>
+          ) : null}
+          <select style={ui.select} value={committed.limit} onChange={(e) => commit({ limit: Number(e.target.value) })}>
+            {AUDIT_PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>{n} / page</option>
+            ))}
           </select>
           <button type="button" style={ui.btn} onClick={applyFilters}>Apply</button>
         </div>
 
+        {filterError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{filterError}</div> : null}
         {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
 
         <div style={{ marginTop: 16, overflowX: 'auto' }}>
@@ -6390,7 +6468,7 @@ function AuditLogsPage() {
               {loading ? (
                 <tr><td colSpan={8} style={ui.td}>Loading…</td></tr>
               ) : !items.length ? (
-                <tr><td colSpan={8} style={ui.td}>No audit logs found.</td></tr>
+                <tr><td colSpan={8} style={ui.td}>{AUDIT_EMPTY_STATE}</td></tr>
               ) : items.map((row) => (
                 <tr key={row.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(row)}>
                   <td style={ui.td}>{formatAuditDate(row.created_at)}</td>
@@ -6413,10 +6491,12 @@ function AuditLogsPage() {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ color: '#94a3b8', fontSize: 13 }}>{total} total · page {page} / {totalPages}</span>
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>
+            {auditFooterText({ pageIndex: nav.pageIndex, limit: committed.limit, count: items.length, rangeLabel })}
+          </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" style={ui.btn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
-            <button type="button" style={ui.btn} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
+            <button type="button" style={ui.btn} disabled={loading || !canGoPrevious(nav)} onClick={() => setNav((s) => goPrevious(s))}>Previous</button>
+            <button type="button" style={ui.btn} disabled={loading || !hasMore} onClick={() => setNav((s) => goNext(s, nextCursor))}>Next</button>
           </div>
         </div>
       </section>

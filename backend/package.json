@@ -19,6 +19,7 @@
     "backup:restore": "node scripts/backup-cli.js restore",
     "test:backup": "node --test lib/backup/*.test.js routes/backups.test.js",
     "test:audit": "node --test lib/auditRedaction.test.js",
+    "test:audit-logs": "node --test lib/auditLogQuery.test.js routes/auditLogs.test.js",
     "test:tags": "node --test lib/tagHelpers.test.js lib/tagCatalogService.test.js lib/tagAdminList.test.js",
     "test:domain-root": "node --test lib/domainRoot.test.js lib/rdapBootstrap.test.js services/rdapEnrichmentService.test.js services/rdapPersistentStore.test.js",
     "test:dnsmania": "node --test lib/dnsmaniaTarget.test.js services/dnsmaniaEnrichmentService.test.js",

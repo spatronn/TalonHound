@@ -1,6 +1,13 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { auditActionLabel } from '../lib/auditConstants.js';
 import { buildIocAuditLogsWhere, buildIocAuditMatchContext, isUuid } from '../lib/iocAuditMatch.js';
+import {
+  parseAuditLimit,
+  resolveAuditTimeRange,
+  encodeAuditCursor,
+  decodeAuditCursor,
+  AuditQueryError
+} from '../lib/auditLogQuery.js';
 
 function toPublicAuditRow(row) {
   if (!row) return null;
@@ -85,10 +92,31 @@ export function registerAuditLogRoutes(app, pool) {
     }
   });
 
+  // Time-bounded, keyset-paginated audit log list.
+  //
+  // The window is enforced server-side: a missing range defaults to Last 24 hours
+  // so the endpoint can never fall back to an unbounded history scan. Paging uses
+  // a deterministic keyset cursor on (created_at DESC, id DESC) with LIMIT+1 to
+  // derive `has_more` — no global COUNT(*) is ever run.
   app.get('/api/audit-logs', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
-    const page = Math.max(1, Number(req.query?.page || 1));
-    const pageSize = Math.min(100, Math.max(1, Number(req.query?.pageSize || 25)));
-    const offset = (page - 1) * pageSize;
+    let range;
+    let limit;
+    let cursor;
+    try {
+      // Prefer new `from`/`to`/`limit`; fall back to legacy `date_from`/`date_to`/`pageSize`.
+      range = resolveAuditTimeRange({
+        from: req.query?.from ?? req.query?.date_from,
+        to: req.query?.to ?? req.query?.date_to,
+        now: new Date()
+      });
+      limit = parseAuditLimit(req.query?.limit ?? req.query?.pageSize);
+      cursor = decodeAuditCursor(req.query?.cursor);
+    } catch (err) {
+      if (err instanceof AuditQueryError) {
+        return res.status(400).json({ message: err.message });
+      }
+      return res.status(400).json({ message: 'Invalid audit query' });
+    }
 
     const search = String(req.query?.search || '').trim();
     const action = String(req.query?.action || '').trim();
@@ -97,11 +125,17 @@ export function registerAuditLogRoutes(app, pool) {
     const actorUserId = String(req.query?.actor_user_id || '').trim();
     const severity = String(req.query?.severity || '').trim();
     const status = String(req.query?.status || '').trim();
-    const dateFrom = String(req.query?.date_from || '').trim();
-    const dateTo = String(req.query?.date_to || '').trim();
 
-    const where = ['1=1'];
+    const where = [];
     const params = [];
+
+    // Enforced time window (lower bound always present).
+    params.push(range.from.toISOString());
+    where.push(`created_at >= $${params.length}::timestamptz`);
+    if (range.to) {
+      params.push(range.to.toISOString());
+      where.push(`created_at <= $${params.length}::timestamptz`);
+    }
 
     if (search) {
       params.push(`%${search.toLowerCase()}%`);
@@ -139,39 +173,48 @@ export function registerAuditLogRoutes(app, pool) {
       params.push(status);
       where.push(`status = $${params.length}`);
     }
-    if (dateFrom) {
-      params.push(dateFrom);
-      where.push(`created_at >= $${params.length}::timestamptz`);
-    }
-    if (dateTo) {
-      params.push(dateTo);
-      where.push(`created_at <= $${params.length}::timestamptz`);
+
+    // Keyset cursor: rows strictly older than the last row of the previous page,
+    // using the same deterministic ordering as ORDER BY (row-value comparison).
+    if (cursor) {
+      params.push(cursor.created_at);
+      const ci = params.length;
+      params.push(cursor.id);
+      const ii = params.length;
+      where.push(`(created_at, id) < ($${ci}::timestamptz, $${ii}::bigint)`);
     }
 
     const baseWhere = where.join(' AND ');
+    // Fetch one extra row to detect a further page without a COUNT(*).
+    params.push(limit + 1);
 
     try {
-      const countQ = await pool.query(
-        `SELECT COUNT(*)::int AS total FROM audit_logs WHERE ${baseWhere}`,
-        params
-      );
-      const total = Number(countQ.rows[0]?.total || 0);
-
-      const listParams = [...params, pageSize, offset];
       const listQ = await pool.query(
         `SELECT *
          FROM audit_logs
          WHERE ${baseWhere}
-         ORDER BY created_at DESC
-         LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
-        listParams
+         ORDER BY created_at DESC, id DESC
+         LIMIT $${params.length}`,
+        params
       );
 
+      const rows = listQ.rows;
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const last = pageRows[pageRows.length - 1];
+      const nextCursor = hasMore && last
+        ? encodeAuditCursor({ created_at: last.created_at, id: last.id })
+        : null;
+
       return res.json({
-        items: listQ.rows.map(toPublicAuditRow),
-        total,
-        page,
-        pageSize
+        items: pageRows.map(toPublicAuditRow),
+        next_cursor: nextCursor,
+        has_more: hasMore,
+        limit,
+        range: {
+          from: range.from.toISOString(),
+          to: range.to ? range.to.toISOString() : null
+        }
       });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to list audit logs', detail: err.message });
@@ -184,8 +227,9 @@ export function registerAuditLogRoutes(app, pool) {
     const entityType = String(req.query?.entity_type || '').trim();
     const severity = String(req.query?.severity || '').trim();
     const status = String(req.query?.status || '').trim();
-    const dateFrom = String(req.query?.date_from || '').trim();
-    const dateTo = String(req.query?.date_to || '').trim();
+    // Accept new from/to aliases alongside the legacy date_from/date_to names.
+    const dateFrom = String(req.query?.from ?? req.query?.date_from ?? '').trim();
+    const dateTo = String(req.query?.to ?? req.query?.date_to ?? '').trim();
 
     const where = ['1=1'];
     const params = [];
