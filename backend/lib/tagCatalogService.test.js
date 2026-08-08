@@ -75,6 +75,71 @@ test('ensureCatalogTag creates new tag once and reuses canonical name', async ()
   assert.equal(client.queries.filter((q) => q.sql.startsWith('INSERT INTO tags')).length, 1);
 });
 
+test('ensureCatalogTag applies internal "custom" default when category omitted', async () => {
+  let inserted = null;
+  const client = makeClient([
+    {
+      match: (sql) => sql.includes('FROM tags WHERE name'),
+      respond: () => ({ rows: inserted ? [inserted] : [] })
+    },
+    {
+      match: (sql) => sql.includes('SELECT id FROM tags WHERE slug'),
+      respond: () => ({ rows: [] })
+    },
+    {
+      match: (sql) => sql.startsWith('INSERT INTO tags'),
+      respond: (_sql, params) => {
+        inserted = {
+          id: 21,
+          name: params[0],
+          slug: params[1],
+          description: params[4],
+          color: params[5],
+          category: params[3],
+          type: params[2],
+          enabled: params[6],
+          created_origin: params[7],
+          created_at: 't',
+          updated_at: 't'
+        };
+        return { rows: [inserted], rowCount: 1 };
+      }
+    }
+  ]);
+
+  // Simulates POST /admin/tags with only name/color/active — no category.
+  const result = await ensureCatalogTag(client, { name: 'ransomware', color: '#ef4444' });
+  assert.equal(result.created, true);
+  assert.equal(result.tag.category, 'custom');
+  const insert = client.queries.find((q) => q.sql.startsWith('INSERT INTO tags'));
+  assert.equal(insert.params[3], 'custom'); // category column still populated
+  assert.equal(insert.params[2], 'context'); // legacy type derived from custom
+});
+
+test('ensureCatalogTag coerces an invalid category to the internal default', async () => {
+  let inserted = null;
+  const client = makeClient([
+    {
+      match: (sql) => sql.includes('FROM tags WHERE name'),
+      respond: () => ({ rows: inserted ? [inserted] : [] })
+    },
+    {
+      match: (sql) => sql.includes('SELECT id FROM tags WHERE slug'),
+      respond: () => ({ rows: [] })
+    },
+    {
+      match: (sql) => sql.startsWith('INSERT INTO tags'),
+      respond: (_sql, params) => {
+        inserted = { id: 22, name: params[0], slug: params[1], category: params[3], type: params[2], enabled: params[6], created_origin: params[7] };
+        return { rows: [inserted], rowCount: 1 };
+      }
+    }
+  ]);
+
+  const result = await ensureCatalogTag(client, { name: 'weird', category: 'not-a-real-category' });
+  assert.equal(result.tag.category, 'custom');
+});
+
 test('ensureCatalogTag does not flip enabled on inactive reuse', async () => {
   const inactive = {
     id: 3,

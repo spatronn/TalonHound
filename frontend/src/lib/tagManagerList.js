@@ -1,6 +1,51 @@
 export const TAG_MANAGER_PAGE_SIZE = 25;
 export const TAG_MANAGER_SEARCH_DEBOUNCE_MS = 300;
 
+/**
+ * Tag Manager table columns. Category is intentionally omitted — a tag is just a
+ * tag; the legacy `category` column is retained in the DB but no longer surfaced.
+ */
+export const TAG_MANAGER_TABLE_COLUMNS = ['Name', 'Source', 'Description', 'Active', 'Actions'];
+
+/** Blank Add Tag form. No category — see TAG_MANAGER_TABLE_COLUMNS note. */
+export const EMPTY_TAG_FORM = {
+  name: '',
+  description: '',
+  color: '',
+  is_active: true
+};
+
+/** Populate the Edit Tag form from an existing tag row (category ignored). */
+export function buildTagFormFromTag(tag) {
+  return {
+    name: tag?.name || '',
+    description: tag?.description || '',
+    color: tag?.color || '',
+    is_active: tag?.is_active !== false
+  };
+}
+
+/**
+ * Build the create/update payload for /admin/tags. Category is never sent; the
+ * backend applies its own internal default for the legacy column.
+ */
+export function buildTagSavePayload({ editingTag, form } = {}) {
+  const f = form || {};
+  if (editingTag?.id) {
+    return {
+      description: f.description,
+      color: f.color,
+      is_active: f.is_active
+    };
+  }
+  return {
+    name: f.name,
+    description: f.description,
+    color: f.color,
+    is_active: f.is_active
+  };
+}
+
 export function formatTagManagerShowingLabel({ page, pageSize = TAG_MANAGER_PAGE_SIZE, totalItems }) {
   const total = Math.max(0, Number(totalItems) || 0);
   if (total === 0) return 'Showing 0 of 0';

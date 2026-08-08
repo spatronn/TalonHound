@@ -145,10 +145,14 @@ import './AppShell.css';
 import './components/LoginPage.css';
 import './components/enrichmentProviders/enrichmentProviders.css';
 import {
+  EMPTY_TAG_FORM,
   TAG_MANAGER_PAGE_SIZE,
   TAG_MANAGER_SEARCH_DEBOUNCE_MS,
+  TAG_MANAGER_TABLE_COLUMNS,
+  buildTagFormFromTag,
   buildTagManagerQueryParams,
   buildTagManagerUrlSearchParams,
+  buildTagSavePayload,
   clampTagManagerPage,
   formatTagManagerShowingLabel,
   parseTagManagerUrlState
@@ -6860,8 +6864,6 @@ function ApiKeysPage() {
   );
 }
 
-const TAG_CATEGORY_OPTIONS = ['behavior', 'campaign', 'theme', 'targeting', 'source-context', 'review-state', 'vulnerability', 'custom'];
-
 const IOC_EXPIRE_POLICY_OPTIONS = [
   { value: 'never', label: 'Never expire' },
   { value: 'expire_after_days', label: 'Expire after days' },
@@ -7155,14 +7157,6 @@ const EMPTY_IOC_SOURCE_FORM = {
   active: true
 };
 
-const EMPTY_TAG_FORM = {
-  name: '',
-  category: 'custom',
-  description: '',
-  color: '',
-  is_active: true
-};
-
 function TagManagerPage() {
   const { isAdmin } = useSession();
   const requestConfirm = useAppConfirm();
@@ -7268,13 +7262,7 @@ function TagManagerPage() {
 
   function openEditModal(tag) {
     setEditingTag(tag);
-    setForm({
-      name: tag?.name || '',
-      category: tag?.category || 'custom',
-      description: tag?.description || '',
-      color: tag?.color || '',
-      is_active: tag?.is_active !== false
-    });
+    setForm(buildTagFormFromTag(tag));
     setFormError('');
     setShowFormModal(true);
   }
@@ -7286,22 +7274,9 @@ function TagManagerPage() {
     setFormError('');
     try {
       if (editingTag?.id) {
-        const payload = {
-          category: form.category,
-          description: form.description,
-          color: form.color,
-          is_active: form.is_active
-        };
-        await api.put(`/admin/tags/${editingTag.id}`, payload);
+        await api.put(`/admin/tags/${editingTag.id}`, buildTagSavePayload({ editingTag, form }));
       } else {
-        const payload = {
-          name: form.name,
-          category: form.category,
-          description: form.description,
-          color: form.color,
-          is_active: form.is_active
-        };
-        const { data, status } = await api.post('/admin/tags', payload);
+        const { data, status } = await api.post('/admin/tags', buildTagSavePayload({ editingTag, form }));
         if (status === 200 && data?.existing) {
           setFormError(`Tag "${data?.tag?.name || form.name}" already exists and will be reused.`);
           await load();
@@ -7414,19 +7389,14 @@ function TagManagerPage() {
           <table className="ioc-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={ui.th}>Name</th>
-                <th style={ui.th}>Source</th>
-                <th style={ui.th}>Category</th>
-                <th style={ui.th}>Description</th>
-                <th style={ui.th}>Active</th>
-                <th style={ui.th}>Actions</th>
+                {TAG_MANAGER_TABLE_COLUMNS.map((col) => <th key={col} style={ui.th}>{col}</th>)}
               </tr>
             </thead>
             <tbody>
               {loading && !tags.length ? (
-                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={TAG_MANAGER_TABLE_COLUMNS.length} style={ui.td}>Loading…</td></tr>
               ) : !tags.length ? (
-                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>
+                <tr><td colSpan={TAG_MANAGER_TABLE_COLUMNS.length} style={{ ...ui.td, padding: 0 }}>
                   <EmptyState
                     title="No tags yet"
                     description="Create a tag to start organizing IOCs."
@@ -7446,7 +7416,6 @@ function TagManagerPage() {
                   <td style={{ ...ui.td, maxWidth: 220, whiteSpace: 'normal' }} title={sourceCell.title}>
                     {sourceCell.text}
                   </td>
-                  <td style={ui.td}>{tag.category || '—'}</td>
                   <td style={{ ...ui.td, maxWidth: 280, whiteSpace: 'normal' }}>
                     {tag.description || '—'}
                     {(String(tag.description || '').includes('legacy-migrated') || tag.is_active === false) ? (
@@ -7554,11 +7523,6 @@ function TagManagerPage() {
                   Tag name cannot be renamed here. Disable and create a new tag if needed.
                 </span>
               ) : null}
-            </FeedFormField>
-            <FeedFormField ui={ui} label="Category" fullWidth>
-              <select value={form.category} onChange={(e) => setForm((x) => ({ ...x, category: e.target.value }))} style={ui.select}>
-                {TAG_CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
             </FeedFormField>
             <FeedFormField ui={ui} label="Description" fullWidth>
               <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />

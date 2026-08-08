@@ -95,6 +95,21 @@ test('toPublicTag exposes is_active alias and optional sources', () => {
   assert.equal(tag.created_origin, 'manual');
 });
 
+test('toPublicTag derives category from legacy type when column is null', () => {
+  // Older rows created before the category column existed still render.
+  const tag = toPublicTag({
+    id: 9,
+    name: 'legacy',
+    slug: 'legacy',
+    category: null,
+    type: 'technique',
+    enabled: false,
+    created_origin: 'integration'
+  });
+  assert.equal(tag.category, 'behavior');
+  assert.equal(tag.is_active, false);
+});
+
 test('formatTagSourceLabels puts Manual first and dedupes feeds', () => {
   assert.deepEqual(
     formatTagSourceLabels(['URLhaus abuse.ch', 'Manual', 'URLhaus abuse.ch', 'ThreatFox abuse.ch']),
