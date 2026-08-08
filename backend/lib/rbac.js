@@ -19,12 +19,12 @@ export function normalizeAppRole(value) {
   return null;
 }
 
-/** Legacy JWTs without role are treated as admin so existing sessions keep full access. */
+/**
+ * Strict JWT role claim resolution. Only canonical app roles are trusted.
+ * Missing / empty / unknown / malformed claims return null (fail closed — never admin).
+ */
 export function effectiveRoleFromPayload(roleClaim) {
-  const n = normalizeAppRole(roleClaim);
-  if (n) return n;
-  if (roleClaim === undefined || roleClaim === null || roleClaim === '') return ROLES.ADMIN;
-  return null;
+  return normalizeAppRole(roleClaim);
 }
 
 export function isAdminRole(role) {
@@ -51,8 +51,8 @@ export function requireRole(...allowed) {
     if (req.authVia === 'ingest') {
       return res.status(403).json({ message: 'Forbidden' });
     }
-    const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
-    if (!set.has(role)) {
+    const role = normalizeAppRole(req.user?.role);
+    if (!role || !set.has(role)) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     return next();
@@ -78,7 +78,10 @@ export function rbacHttpPolicy(req, res, next) {
     return next();
   }
 
-  const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
+  const role = normalizeAppRole(req.user?.role);
+  if (!role) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
   if (role !== ROLES.READONLY) {
     return next();
   }

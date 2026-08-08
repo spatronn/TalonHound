@@ -24,8 +24,10 @@ export function createPasswordChangeGate(pool) {
     if (ALLOW_EXACT.has(req.path)) return next();
 
     const userId = req.user?.id;
+    // Fail closed: interactive sessions must carry a resolvable user id so
+    // must_change_password can be enforced. Do not skip the gate when identity is missing.
     if (userId == null || !Number.isFinite(Number(userId))) {
-      return next();
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     try {
@@ -33,7 +35,10 @@ export function createPasswordChangeGate(pool) {
         'SELECT must_change_password FROM users WHERE id = $1',
         [Number(userId)]
       );
-      if (!rows.length || !rows[0].must_change_password) {
+      if (!rows.length) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      if (!rows[0].must_change_password) {
         return next();
       }
       return res.status(403).json({

@@ -76,18 +76,23 @@ export function clearCsrfCookie(req, res) {
 }
 
 /**
- * @param {string | { email?: string, username?: string, userId?: number|null, role?: string }} payload
- * Backward compatible: signUserToken('user@x') issues admin role for legacy demo sessions.
+ * @param {{ email?: string, username?: string, userId?: number|null, role: string }} payload
+ * Role must be an explicit canonical app role. Omitted/invalid role does not default to admin.
  */
 export function signUserToken(payload) {
-  if (typeof payload === 'string') {
-    const email = String(payload || '').trim();
-    return jwt.sign({ email, role: ROLES.ADMIN }, secret, { subject: email, expiresIn });
+  if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new TypeError('signUserToken requires an object payload with an explicit role');
   }
   const username = String(payload.username || payload.email || '').trim();
   const email = String(payload.email || username).trim();
   const sub = email || username;
-  const roleNorm = normalizeAppRole(payload.role) || ROLES.READONLY;
+  if (!sub) {
+    throw new TypeError('signUserToken requires email or username');
+  }
+  const roleNorm = normalizeAppRole(payload.role);
+  if (!roleNorm) {
+    throw new TypeError('signUserToken requires an explicit valid role (admin|analyst|readonly)');
+  }
   const body = { email: sub, username: username || sub, role: roleNorm };
   if (payload.userId != null && Number.isFinite(Number(payload.userId))) {
     body.userId = Number(payload.userId);
@@ -100,9 +105,10 @@ function userFromJwtPayload(payload) {
   if (!email) return null;
   const username = String(payload.username || email).trim();
   const role = effectiveRoleFromPayload(payload.role);
+  if (!role) return null;
   const id =
     payload.userId != null && Number.isFinite(Number(payload.userId)) ? Number(payload.userId) : null;
-  return { email, username, id, role: role || ROLES.ADMIN };
+  return { email, username, id, role };
 }
 
 function extractBearer(req) {

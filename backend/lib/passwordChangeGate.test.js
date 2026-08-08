@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { createPasswordChangeGate } from './passwordChangeGate.js';
 
-function mockPool({ mustChangePassword = false, missingUser = false } = {}) {
+function mockPool({ mustChangePassword = false, missingUser = false, throwOnQuery = false } = {}) {
   return {
     async query(sql, params) {
+      if (throwOnQuery) {
+        throw new Error('simulated db failure');
+      }
       if (String(sql).includes('must_change_password')) {
         if (missingUser) return { rows: [] };
         return { rows: [{ must_change_password: mustChangePassword }] };
@@ -89,4 +92,41 @@ test('password change gate skips ingest auth', async () => {
   });
   const ok = await request(app, '/api/ioc/list');
   assert.equal(ok.status, 200);
+});
+
+test('JWT-02: missing userId does not bypass the gate on protected routes', async () => {
+  const app = withApp(mockPool({ mustChangePassword: true }), {
+    user: { id: null, email: 'legacy@talonhound.local', role: 'admin' }
+  });
+  const blocked = await request(app, '/api/ioc/list');
+  assert.equal(blocked.status, 401);
+  assert.equal(blocked.body.message, 'Unauthorized');
+});
+
+test('JWT-02: allowlisted password-change routes remain reachable without userId', async () => {
+  const app = withApp(mockPool({ mustChangePassword: true }), {
+    user: { id: null, email: 'legacy@talonhound.local', role: 'admin' }
+  });
+  const me = await request(app, '/api/auth/me');
+  assert.equal(me.status, 200);
+  const logout = await request(app, '/api/auth/logout', 'POST');
+  assert.equal(logout.status, 204);
+});
+
+test('JWT-02: nonexistent userId is rejected (fail closed)', async () => {
+  const app = withApp(mockPool({ missingUser: true }), {
+    user: { id: 99999, email: 'gone@talonhound.local', role: 'admin' }
+  });
+  const blocked = await request(app, '/api/ioc/list');
+  assert.equal(blocked.status, 401);
+  assert.equal(blocked.body.message, 'Unauthorized');
+});
+
+test('JWT-02: DB lookup failure does not authorize', async () => {
+  const app = withApp(mockPool({ throwOnQuery: true }), {
+    user: { id: 1, email: 'admin@talonhound.local', role: 'admin' }
+  });
+  const failed = await request(app, '/api/ioc/list');
+  assert.equal(failed.status, 500);
+  assert.match(String(failed.body.message || ''), /Failed to verify password change status/);
 });
