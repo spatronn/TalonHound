@@ -91,15 +91,24 @@ test('JWT-01: effectiveRoleFromPayload never maps missing/invalid role to admin'
   assert.equal(effectiveRoleFromPayload(ROLES.ANALYST), ROLES.ANALYST);
 });
 
-test('JWT-01: rbacHttpPolicy denies requests without a valid role (no admin default)', () => {
-  const missing = runPolicy({ role: undefined });
-  assert.equal(missing.nextCalled, false);
-  assert.equal(missing.statusCode, 403);
+test('JWT-01: rbacHttpPolicy allows unauthenticated API paths (login/docs) without inventing admin', () => {
+  const publicPath = runPolicy({ role: undefined });
+  assert.equal(publicPath.nextCalled, true);
+  assert.equal(publicPath.statusCode, null);
+});
 
+test('JWT-01: rbacHttpPolicy denies authenticated sessions with empty/invalid role (no admin default)', () => {
   const req = { method: 'GET', path: '/api/ioc/list', user: { role: '' } };
   let statusCode = null;
   let nextCalled = false;
   rbacHttpPolicy(req, { status(c) { statusCode = c; return this; }, json() { return this; } }, () => { nextCalled = true; });
+  assert.equal(nextCalled, false);
+  assert.equal(statusCode, 403);
+
+  const unknown = { method: 'GET', path: '/api/ioc/list', user: { role: 'superuser' } };
+  statusCode = null;
+  nextCalled = false;
+  rbacHttpPolicy(unknown, { status(c) { statusCode = c; return this; }, json() { return this; } }, () => { nextCalled = true; });
   assert.equal(nextCalled, false);
   assert.equal(statusCode, 403);
 });

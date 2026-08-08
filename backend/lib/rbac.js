@@ -78,7 +78,12 @@ export function rbacHttpPolicy(req, res, next) {
     return next();
   }
 
-  const role = normalizeAppRole(req.user?.role);
+  // Public / deferred-auth routes (login, docs, /api/v1, ?api_key feeds) skip
+  // requireAuth and have no req.user — do not invent admin or block them here.
+  if (!req.user) return next();
+
+  const role = normalizeAppRole(req.user.role);
+  // Authenticated identity with missing/invalid role: fail closed (never default admin).
   if (!role) {
     return res.status(403).json({ message: 'Forbidden' });
   }
