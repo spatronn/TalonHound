@@ -10,6 +10,7 @@
 
 - **Aktif proje:** TalonHound — threat intel & enrichment odaklı.
 - **Arşiv:** demo-runbook (2026-07 geçişi).
+- **Auth bootstrap:** `DEMO_EMAIL`/`DEMO_PASSWORD` kaldırıldı. Temiz kurulumda tek seferlik `admin@talonhound.local` — parola `INITIAL_ADMIN_PASSWORD` veya generate + `/data/backups/bootstrap-admin-password.once` (bilinen `admin` yok); `must_change_password=true`. Flag `system_settings.default_admin_bootstrapped`. JWT `auth_version` (migration `146`).
 - **File Artifacts:** Additive md5/sha1/sha256 identity layer (migration `131`). Flags `FILE_ARTIFACTS_DUAL_WRITE_ENABLED` / `FILE_ARTIFACTS_READ_ENABLED`. Docs: `docs/file-artifacts.md`.
 - **IOC Details:** Legacy Source Evidence UI section removed (Intelligence tab); memberships / feed evidence / hash canonicalization kept.
 - **API Keys / REST (2026-08-08):** General-purpose API keys with scope profiles.
@@ -34,7 +35,8 @@
   - SSH: `spatronn@192.168.1.190` — Windows host'ta `~/.ssh/id_ed25519` ile erişim doğrulandı (2026-07-11)
   - `root` SSH: mevcut key ile erişim yok (publickey denied)
   - Web: HTTP 80 → HTTPS redirect, HTTPS 443 → 200
-  - Stack: demo-runbook tabanlı docker compose (container isimleri hâlâ `demo-*`)
+  - Stack path: `/opt/TalonHound`; compose project `name: talonhound`; containers `talonhound-*`; volume `talonhound_postgres_data`
+  - PostgreSQL runtime: database/role `talonhound` (renamed from `demo` on 2026-08-01; volume `talonhound_postgres_data` preserved)
 - Eski demo host (arşiv): `192.168.1.251`
 - GitHub repo: `https://github.com/spatronn/TalonHound` (private; web 404, local remote OK)
 - Local path: `C:\Proje\TalonHound`

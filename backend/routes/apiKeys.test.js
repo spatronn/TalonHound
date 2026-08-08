@@ -323,3 +323,20 @@ test('rotate and revoke endpoints no longer exist', async () => {
   const revoke = await req(makeApp(store, () => ADMIN), 'POST', `/api/api-keys/${id}/revoke`, { reason: 'x' });
   assert.equal(revoke.status, 404);
 });
+
+test('AUTH-07: GET /api/api-keys is admin-only (analyst/readonly forbidden)', async () => {
+  const store = [];
+  await createKey(store, 'inventory');
+  const analyst = { role: 'analyst', id: 3, email: 'a@example.com', username: 'a@example.com' };
+  for (const user of [READONLY, analyst]) {
+    const list = await req(makeApp(store, () => user), 'GET', '/api/api-keys');
+    assert.equal(list.status, 403, `${user.role} must not list API keys`);
+    const profiles = await req(makeApp(store, () => user), 'GET', '/api/api-keys/profiles');
+    assert.equal(profiles.status, 403, `${user.role} must not list profiles`);
+  }
+  const adminList = await req(makeApp(store, () => ADMIN), 'GET', '/api/api-keys');
+  assert.equal(adminList.status, 200);
+  assert.ok(Array.isArray(adminList.body.api_keys));
+  assert.equal(adminList.body.api_keys[0].token, undefined);
+  assert.equal(adminList.body.api_keys[0].secret, undefined);
+});

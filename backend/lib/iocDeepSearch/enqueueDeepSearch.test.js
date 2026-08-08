@@ -74,6 +74,7 @@ test('enqueue dedupes an identical in-flight search (at most once)', async () =>
     normalizedAst: parsed.ast,
     classificationReason: 'interactive_statement_timeout',
     origin: 'timeout_fallback',
+    requestedById: 1,
     requestedByEmail: 'a@example.com'
   });
   assert.equal(deduped, true);
@@ -90,6 +91,7 @@ test('enqueue rejects over the per-user concurrency limit (429)', async () => {
       originalQuery: 'source contains "USOM"',
       normalizedQuery: parsed.normalizedQuery,
       normalizedAst: parsed.ast,
+      requestedById: 1,
       requestedByEmail: 'a@example.com'
     }),
     (err) => err.status === 429
@@ -97,7 +99,7 @@ test('enqueue rejects over the per-user concurrency limit (429)', async () => {
   assert.equal(queue.added.length, 0);
 });
 
-test('enqueue requires an actor email (401)', async () => {
+test('enqueue requires an actor email and user id (401)', async () => {
   const pool = makePool();
   const queue = makeQueue();
   await assert.rejects(
@@ -106,6 +108,15 @@ test('enqueue requires an actor email (401)', async () => {
       normalizedQuery: parsed.normalizedQuery,
       normalizedAst: parsed.ast,
       requestedByEmail: ''
+    }),
+    (err) => err.status === 401
+  );
+  await assert.rejects(
+    () => enqueueDeepSearch(pool, queue, {
+      originalQuery: 'x',
+      normalizedQuery: parsed.normalizedQuery,
+      normalizedAst: parsed.ast,
+      requestedByEmail: 'a@example.com'
     }),
     (err) => err.status === 401
   );

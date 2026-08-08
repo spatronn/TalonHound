@@ -89,14 +89,29 @@ export function registerSetupRoutes(app, pool, deps = {}) {
 
   app.post('/api/setup/complete', async (req, res) => {
     try {
+      const cfgBefore = await loadSystemTimeConfig(pool, { force: true });
+
+      // AUTH-05: anonymous complete is greenfield-only. Existing installs flagged for
+      // timezone configuration (timezone_configuration_required) require human admin.
+      if (cfgBefore.timezone_configuration_required) {
+        const role = String(req.user?.role || '').trim().toLowerCase();
+        const via = String(req.authVia || '');
+        if (via === 'ingest' || !req.user || role !== 'admin') {
+          return res.status(401).json({
+            code: 'AUTH_REQUIRED',
+            message: 'Administrator authentication is required to complete timezone configuration on an existing installation'
+          });
+        }
+      }
+
       const timezone = req.body?.timezone;
       const config = await completeInitialSetup(pool, timezone, {
         completedBy: req.user?.email || null,
-        adoptionSource: 'initial_setup'
+        adoptionSource: cfgBefore.timezone_configuration_required ? 'admin_timezone_configuration' : 'initial_setup'
       });
       if (typeof deps.onTimezoneChanged === 'function') {
         await deps.onTimezoneChanged(config.active_system_timezone, {
-          reason: 'initial_setup',
+          reason: cfgBefore.timezone_configuration_required ? 'timezone_configuration' : 'initial_setup',
           active: config.active_system_timezone
         });
       }

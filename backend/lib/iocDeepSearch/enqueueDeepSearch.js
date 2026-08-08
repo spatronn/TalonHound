@@ -32,7 +32,8 @@ export async function enqueueDeepSearch(pool, deepSearchQueue, {
 }) {
   const cfg = getDeepSearchConfig();
   const email = String(requestedByEmail || '').trim();
-  if (!email) {
+  const ownerId = Number.isFinite(Number(requestedById)) ? Number(requestedById) : null;
+  if (!email || !ownerId) {
     const err = new Error('Authentication required');
     err.status = 401;
     throw err;
@@ -41,8 +42,8 @@ export async function enqueueDeepSearch(pool, deepSearchQueue, {
   const fingerprint = queryFingerprint(normalizedQuery);
 
   // Per-user in-flight de-dup: reuse an identical queued/running search instead of spawning a
-  // duplicate. Never dedupes across users.
-  const existing = await findActiveDuplicate(pool, { email, queryFingerprint: fingerprint });
+  // duplicate. Scoped by immutable user id — never across users / recycled emails.
+  const existing = await findActiveDuplicate(pool, { userId: ownerId, queryFingerprint: fingerprint });
   if (existing) {
     logger?.info?.('deep_search queued (deduped)', {
       event: 'deep_search.queued',
@@ -55,7 +56,7 @@ export async function enqueueDeepSearch(pool, deepSearchQueue, {
     return { row: existing, deduped: true };
   }
 
-  const active = await countActiveForUser(pool, email);
+  const active = await countActiveForUser(pool, ownerId);
   if (active >= cfg.maxConcurrentPerUser) {
     const err = new Error(
       `You already have ${active} active deep search(es). Wait for one to finish (limit ${cfg.maxConcurrentPerUser}).`

@@ -102,10 +102,10 @@ See [system-timezone.md](./system-timezone.md) for NTP responsibility, initial s
 **Clean first install only:** the backend creates a default local admin when the `users` table is empty and bootstrap has never run:
 
 ```text
-admin@talonhound.local / admin
+admin@talonhound.local
 ```
 
-Password change is required on first login. This account is **not** recreated on later restarts or after deletion.
+Initial password: set `INITIAL_ADMIN_PASSWORD` (min 12 chars), or allow the backend to generate one and write it once to `BOOTSTRAP_ADMIN_PASSWORD_FILE` (default `/data/backups/bootstrap-admin-password.once`). There is no repository-known default password. Password change is required on first login. This account is **not** recreated on later restarts or after deletion.
 
 On existing installs, create users via **Administration → Users**.
 

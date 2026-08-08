@@ -53,33 +53,42 @@ export async function getDeepSearchById(db, id) {
  * requesting user — never dedupes across users (that would leak one user's search activity
  * to another).
  */
-export async function findActiveDuplicate(db, { email, queryFingerprint }) {
+export async function findActiveDuplicate(db, { userId, queryFingerprint }) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return null;
   const { rows } = await db.query(
     `SELECT ${SELECT_COLUMNS} FROM ioc_deep_searches
-      WHERE requested_by_email = $1 AND query_fingerprint = $2
+      WHERE requested_by_id = $1 AND query_fingerprint = $2
         AND status IN ('queued', 'running')
       ORDER BY created_at DESC
       LIMIT 1`,
-    [email, queryFingerprint]
+    [id, queryFingerprint]
   );
   return rows[0] || null;
 }
 
-export async function countActiveForUser(db, email) {
+export async function countActiveForUser(db, userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return 0;
   const { rows } = await db.query(
     `SELECT COUNT(*)::int AS n FROM ioc_deep_searches
-      WHERE requested_by_email = $1 AND status IN ('queued', 'running')`,
-    [email]
+      WHERE requested_by_id = $1 AND status IN ('queued', 'running')`,
+    [id]
   );
   return rows[0]?.n || 0;
 }
 
-function buildListWhere({ email, includeAll, statuses }) {
+function buildListWhere({ userId, includeAll, statuses }) {
   const params = [];
   const clauses = [];
   if (!includeAll) {
-    params.push(email);
-    clauses.push(`requested_by_email = $${params.length}`);
+    const id = Number(userId);
+    if (Number.isFinite(id) && id > 0) {
+      params.push(id);
+      clauses.push(`requested_by_id = $${params.length}`);
+    } else {
+      clauses.push('FALSE');
+    }
   }
   if (Array.isArray(statuses) && statuses.length) {
     const onlyExpired = statuses.length === 1 && statuses[0] === 'expired';
@@ -100,8 +109,8 @@ function buildListWhere({ email, includeAll, statuses }) {
   return { where, params };
 }
 
-export async function listDeepSearches(db, { email, includeAll = false, limit = 50, offset = 0, statuses = null } = {}) {
-  const { where, params } = buildListWhere({ email, includeAll, statuses });
+export async function listDeepSearches(db, { userId, includeAll = false, limit = 50, offset = 0, statuses = null } = {}) {
+  const { where, params } = buildListWhere({ userId, includeAll, statuses });
   params.push(Math.min(Math.max(limit, 1), 200));
   const limitIdx = params.length;
   params.push(Math.max(offset, 0));
@@ -116,8 +125,8 @@ export async function listDeepSearches(db, { email, includeAll = false, limit = 
   return rows;
 }
 
-export async function countDeepSearches(db, { email, includeAll = false, statuses = null } = {}) {
-  const { where, params } = buildListWhere({ email, includeAll, statuses });
+export async function countDeepSearches(db, { userId, includeAll = false, statuses = null } = {}) {
+  const { where, params } = buildListWhere({ userId, includeAll, statuses });
   const { rows } = await db.query(
     `SELECT COUNT(*)::int AS n FROM ioc_deep_searches ${where}`,
     params

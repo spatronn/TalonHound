@@ -23,17 +23,13 @@ import {
   parseListStatusFilter,
   parseListPagination
 } from '../lib/iocSearchExport/exportStatus.js';
+import { actorEmail, actorUserId, canAccessOwnedArtifact } from '../lib/artifactOwnership.js';
 
 const VALID_FORMATS = new Set(['csv', 'csv_gz']);
 const VALID_SCOPES = new Set(['all', 'preview']);
 
-function actorEmail(req) {
-  return String(req.user?.email || req.user?.username || '').trim();
-}
-
 function canAccessExport(req, row) {
-  if (isAdminRole(normalizeAppRole(req.user?.role))) return true;
-  return row.requested_by_email && row.requested_by_email === actorEmail(req);
+  return canAccessOwnedArtifact(req, row);
 }
 
 // Present an export row to the client without leaking the on-disk path.
@@ -78,13 +74,14 @@ async function enqueueExport(pool, exportQueue, auditLogService, req, {
 }) {
   const cfg = getExportConfig();
   const email = actorEmail(req);
-  if (!email) {
+  const userId = actorUserId(req);
+  if (!email || !userId) {
     const err = new Error('Authentication required');
     err.status = 401;
     throw err;
   }
 
-  const active = await countActiveForUser(pool, email);
+  const active = await countActiveForUser(pool, userId);
   if (active >= cfg.maxConcurrentPerUser) {
     const err = new Error(
       `You already have ${active} active export(s). Wait for one to finish (limit ${cfg.maxConcurrentPerUser}).`
@@ -100,7 +97,7 @@ async function enqueueExport(pool, exportQueue, auditLogService, req, {
     format,
     selectedColumns: columns,
     scope,
-    requestedById: Number.isFinite(Number(req.user?.id)) ? Number(req.user.id) : null,
+    requestedById: userId,
     requestedByEmail: email
   });
 
@@ -236,7 +233,7 @@ export function registerIocSearchExportRoutes(app, pool, { exportQueue, auditLog
   // List the caller's exports (admins may pass ?scope=all to see every user's exports).
   // Action Center uses page/page_size/status; legacy limit/offset still accepted.
   app.get('/api/iocs/search-exports', async (req, res) => {
-    const email = actorEmail(req);
+    const userId = actorUserId(req);
     const wantAll = req.query.scope === 'all' && isAdminRole(normalizeAppRole(req.user?.role));
     const statuses = parseListStatusFilter(req.query.status);
     if (statuses === undefined) {
@@ -253,13 +250,13 @@ export function registerIocSearchExportRoutes(app, pool, { exportQueue, auditLog
     try {
       const [rows, total] = await Promise.all([
         listExports(pool, {
-          email,
+          userId,
           includeAll: wantAll,
           limit: paging.limit,
           offset: paging.offset,
           statuses
         }),
-        countExports(pool, { email, includeAll: wantAll, statuses })
+        countExports(pool, { userId, includeAll: wantAll, statuses })
       ]);
       return res.json({
         items: rows.map((r) => serializeExport(r)),

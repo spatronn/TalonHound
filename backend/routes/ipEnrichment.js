@@ -1,4 +1,4 @@
-import { normalizeAppRole, ROLES } from '../lib/rbac.js';
+import { normalizeAppRole, requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { validatePublicIp } from '../lib/publicIp.js';
 import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
@@ -11,7 +11,8 @@ import {
   MAX_BULK_IPS,
   rowToApiPayload,
   testIpinfoLiteConnection,
-  maskToken
+  maskToken,
+  IPINFO_LITE_TRUSTED_BASE_URL
 } from '../services/ipinfoLiteService.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
@@ -428,7 +429,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
   });
 
-  app.get('/api/admin/enrichment-providers/ipinfo-lite', async (req, res) => {
+  app.get('/api/admin/enrichment-providers/ipinfo-lite', requireRole(ROLES.ADMIN), async (req, res) => {
     try {
       const cfg = await getIpinfoLiteConfig(pool);
       return res.json({
@@ -451,7 +452,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
   });
 
-  app.put('/api/admin/enrichment-providers/ipinfo-lite', async (req, res) => {
+  app.put('/api/admin/enrichment-providers/ipinfo-lite', requireRole(ROLES.ADMIN), async (req, res) => {
     const reasonCheck = parseActionReason(req.body);
     if (!reasonCheck.ok) {
       return res.status(400).json({ message: reasonCheck.message });
@@ -459,15 +460,13 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     try {
       const enabled = req.body?.enabled !== false;
       const token = typeof req.body?.token === 'string' ? req.body.token.trim() : undefined;
-      const baseUrl = typeof req.body?.base_url === 'string' && req.body.base_url.trim()
-        ? req.body.base_url.trim().replace(/\/$/, '')
-        : undefined;
+      // base_url is not user-configurable (SSRF-03). Always persist the trusted origin.
       const timeoutSeconds = Number(req.body?.timeout_seconds);
       const usageNote = typeof req.body?.usage_note === 'string' ? req.body.usage_note.trim() : undefined;
 
       const existing = await getIpinfoLiteConfig(pool);
       const config = {
-        base_url: baseUrl || existing.base_url,
+        base_url: IPINFO_LITE_TRUSTED_BASE_URL,
         timeout_seconds: Number.isFinite(timeoutSeconds) && timeoutSeconds >= 3
           ? Math.min(timeoutSeconds, 30)
           : existing.timeout_seconds,
@@ -512,7 +511,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
   });
 
-  app.post('/api/admin/enrichment-providers/ipinfo-lite/test', async (req, res) => {
+  app.post('/api/admin/enrichment-providers/ipinfo-lite/test', requireRole(ROLES.ADMIN), async (req, res) => {
     const now = new Date().toISOString();
     try {
       const row = await testIpinfoLiteConnection(pool);
@@ -540,7 +539,7 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
   });
 
-  app.post('/api/admin/enrichment-providers/ipinfo-lite/remove-key', async (req, res) => {
+  app.post('/api/admin/enrichment-providers/ipinfo-lite/remove-key', requireRole(ROLES.ADMIN), async (req, res) => {
     try {
       await pool.query(
         `UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`,

@@ -14,12 +14,15 @@ import {
   appendAuthCookie,
   clearAuthCookie,
   appendCsrfCookie,
-  clearCsrfCookie
+  clearCsrfCookie,
+  getRequestTokenAuthVersion
 } from './lib/auth.js';
 import { createPasswordChangeGate } from './lib/passwordChangeGate.js';
+import { bumpAuthVersion, createAuthVersionGate } from './lib/authVersion.js';
 import { ensureDefaultAdminBootstrap } from './lib/defaultAdminBootstrap.js';
 import { ensureSystemAdminAccount, SYSTEM_ADMIN_MANUAL_INSTRUCTION } from './lib/systemAdminBootstrap.js';
 import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
+import { ingestCapabilityPolicy, isHumanAdmin, isIngestAuth } from './lib/ingestPrincipal.js';
 import { registerUserManagementRoutes } from './routes/users.js';
 import { registerAuthPasswordRoutes } from './routes/authPassword.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
@@ -384,8 +387,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(createSetupGate(pool));
 app.use(apiAuthGate);
+app.use(createAuthVersionGate(pool, { getTokenAuthVersion: getRequestTokenAuthVersion }));
 app.use(csrfProtection);
 app.use(createPasswordChangeGate(pool));
+app.use(ingestCapabilityPolicy);
 app.use(rbacHttpPolicy);
 
 // Serialize API timestamps with system-timezone offsets (never bare local / offset-less).
@@ -2350,7 +2355,7 @@ app.get('/api/integrations/:key/credentials', async (req, res) => {
   }
 });
 
-app.put('/api/integrations/:key/credentials', async (req, res) => {
+app.put('/api/integrations/:key/credentials', requireRole(ROLES.ADMIN), async (req, res) => {
   const { key } = req.params;
   if (!AUTH_KEY_FEED_KEYS.has(key)) {
     return res.status(404).json({ message: 'Integration does not support credentials' });
@@ -2421,7 +2426,7 @@ app.put('/api/integrations/:key/credentials', async (req, res) => {
   }
 });
 
-app.post('/api/integrations/:key/credentials/test', async (req, res) => {
+app.post('/api/integrations/:key/credentials/test', requireRole(ROLES.ADMIN), async (req, res) => {
   const { key } = req.params;
   if (!AUTH_KEY_FEED_KEYS.has(key)) {
     return res.status(404).json({ message: 'Integration does not support credentials' });
@@ -2484,7 +2489,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, public_id, username, password_hash, role, status, must_change_password FROM users WHERE username = $1',
+      'SELECT id, public_id, username, password_hash, role, status, must_change_password, auth_version FROM users WHERE username = $1',
       [loginId]
     );
     if (rows.length) {
@@ -2509,7 +2514,8 @@ app.post('/api/auth/login', async (req, res) => {
           userId: u.id,
           username: u.username,
           email: u.username,
-          role: u.role
+          role: u.role,
+          authVersion: Number(u.auth_version) || 1
         });
         appendAuthCookie(req, res, token);
         appendCsrfCookie(req, res);
@@ -2553,13 +2559,17 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/logout', async (req, res) => {
+  // JWT-03: logout invalidates all outstanding JWTs for this user (version bump).
+  if (req.user?.id != null && Number.isFinite(Number(req.user.id)) && req.authVia !== 'ingest') {
+    await bumpAuthVersion(pool, req.user.id).catch(() => {});
+  }
   await auditLogService.auditSuccess({
     req,
     action: AUDIT_ACTION.AUTH_LOGOUT,
     entityType: AUDIT_ENTITY.AUTH,
     entityDisplay: String(req.user?.username || req.user?.email || 'unknown'),
     severity: AUDIT_SEVERITY.INFO,
-    metadata: { auth_via: req.authVia || 'web' }
+    metadata: { auth_via: req.authVia || 'web', sessions: 'all' }
   }).catch(() => {});
   clearAuthCookie(req, res);
   clearCsrfCookie(req, res);
@@ -2768,8 +2778,9 @@ registerRouteModule('ioc_sources');
 registerRouteModule('tags_inline');
 
 function isAdminUser(req) {
-  const role = String(req.user?.role || '').trim().toLowerCase();
-  return role === ROLES.ADMIN;
+  // AUTH-04: ingest synthetic role must not pass human-admin helper checks.
+  if (isIngestAuth(req) || req.user?.principalType === 'machine_ingest') return false;
+  return isHumanAdmin(req);
 }
 
 function isReadOnlyUser(req) {
@@ -6242,7 +6253,7 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
   } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
 });
 
-app.put('/api/admin/enrichment-providers/virustotal', async (req, res) => {
+app.put('/api/admin/enrichment-providers/virustotal', requireRole(ROLES.ADMIN), async (req, res) => {
   try {
     const enabled = req.body?.enabled !== false;
     const ttl = Math.max(1, Number(req.body?.ttl_hours || 24));
@@ -6264,12 +6275,12 @@ app.put('/api/admin/enrichment-providers/virustotal', async (req, res) => {
   } catch { return res.status(500).json({ message: 'Failed to update provider config' }); }
 });
 
-app.post('/api/admin/enrichment-providers/virustotal/remove-key', async (req, res) => {
+app.post('/api/admin/enrichment-providers/virustotal/remove-key', requireRole(ROLES.ADMIN), async (req, res) => {
   try { await pool.query(`UPDATE threat_intel_provider_configs SET api_key=NULL, updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER]); return res.json({ ok: true }); }
   catch { return res.status(500).json({ message: 'Failed to remove key' }); }
 });
 
-app.post('/api/admin/enrichment-providers/virustotal/test', async (req, res) => {
+app.post('/api/admin/enrichment-providers/virustotal/test', requireRole(ROLES.ADMIN), async (req, res) => {
   const now = new Date().toISOString();
   try {
     const cfg = await getThreatIntelProviderConfig(VT_PROVIDER);

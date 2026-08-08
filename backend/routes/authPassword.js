@@ -1,4 +1,5 @@
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { bumpAuthVersion } from '../lib/authVersion.js';
 
 /**
  * Self-service password change endpoint.
@@ -40,7 +41,7 @@ export function registerAuthPasswordRoutes(app, pool, deps) {
 
     try {
       const { rows } = await pool.query(
-        'SELECT id, public_id, username, password_hash, role, must_change_password FROM users WHERE id = $1',
+        'SELECT id, public_id, username, password_hash, role, must_change_password, auth_version FROM users WHERE id = $1',
         [Number(userId)]
       );
       if (!rows.length) {
@@ -56,9 +57,10 @@ export function registerAuthPasswordRoutes(app, pool, deps) {
       const updated = await pool.query(
         `UPDATE users
          SET password_hash = $2,
-             must_change_password = FALSE
+             must_change_password = FALSE,
+             auth_version = auth_version + 1
          WHERE id = $1
-         RETURNING public_id, username, role, must_change_password`,
+         RETURNING public_id, username, role, must_change_password, auth_version`,
         [u.id, hash]
       );
       const next = updated.rows[0];
@@ -66,7 +68,8 @@ export function registerAuthPasswordRoutes(app, pool, deps) {
         userId: u.id,
         username: next.username,
         email: next.username,
-        role: next.role
+        role: next.role,
+        authVersion: Number(next.auth_version) || 1
       });
       appendAuthCookie(req, res, token);
       appendCsrfCookie(req, res);
@@ -78,7 +81,7 @@ export function registerAuthPasswordRoutes(app, pool, deps) {
         entityId: String(next.public_id || u.id),
         entityDisplay: next.username,
         severity: AUDIT_SEVERITY.WARNING,
-        metadata: { source: 'self_change_password' }
+        metadata: { source: 'self_change_password', auth_version: next.auth_version }
       }).catch(() => {});
 
       return res.json({
@@ -95,3 +98,6 @@ export function registerAuthPasswordRoutes(app, pool, deps) {
     }
   });
 }
+
+// bumpAuthVersion re-export for callers that need an explicit bump without password change
+export { bumpAuthVersion };

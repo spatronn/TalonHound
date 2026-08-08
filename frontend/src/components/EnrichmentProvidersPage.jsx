@@ -18,7 +18,7 @@ import {
 import './enrichmentProviders/enrichmentProviders.css';
 
 export default function EnrichmentProvidersPage({ AppShell, useSession, useReasonPrompt }) {
-  const { canWrite, isAdmin } = useSession();
+  const { isAdmin } = useSession();
   const requestRequiredReason = useReasonPrompt();
   const { state: removeConfirm, controller: removeKey } = useRemoveKeyConfirm();
   const { state: disableConfirm, controller: disableAction } = useConfirmAction();
@@ -355,9 +355,9 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
         <h2 className="ep-page-title">Enrichment Providers</h2>
         <p className="ep-page-subtitle">Manage external intelligence providers used for on-demand IOC enrichment.</p>
 
-        {!canWrite ? (
+        {!isAdmin ? (
           <div className="ep-banner ep-banner--info">
-            Readonly users can view provider status but cannot modify settings.
+            Provider credentials and security-sensitive settings require the admin role. Other signed-in users can view status only.
           </div>
         ) : null}
 
@@ -396,7 +396,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         statusLabel={hs.label}
                         enabled={vtForm.enabled}
                         onEnabledChange={(v) => handleEnabledChange('virustotal', v, setVtForm)}
-                        enabledDisabled={!canWrite}
+                        enabledDisabled={!isAdmin}
                         lastTestAt={row.last_success_at || row.last_test_at}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
@@ -413,15 +413,15 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                                 value={vtForm.api_key}
                                 onChange={(e) => setVtForm((x) => ({ ...x, api_key: e.target.value }))}
                                 placeholder={row.masked_key ? 'Leave blank to keep current key' : 'Paste VirusTotal API key'}
-                                disabled={!canWrite}
+                                disabled={!isAdmin}
                               />
                             </ProviderField>
                             <div className="ep-field-grid">
                               <ProviderField id="vt-ttl" label="Cache TTL (hours)">
-                                <input id="vt-ttl" type="number" min="1" value={vtForm.ttl_hours} onChange={(e) => setVtForm((x) => ({ ...x, ttl_hours: Number(e.target.value) }))} disabled={!canWrite} />
+                                <input id="vt-ttl" type="number" min="1" value={vtForm.ttl_hours} onChange={(e) => setVtForm((x) => ({ ...x, ttl_hours: Number(e.target.value) }))} disabled={!isAdmin} />
                               </ProviderField>
                               <ProviderField id="vt-timeout" label="Timeout (ms)">
-                                <input id="vt-timeout" type="number" min="3000" value={vtForm.timeout_ms} onChange={(e) => setVtForm((x) => ({ ...x, timeout_ms: Number(e.target.value) }))} disabled={!canWrite} />
+                                <input id="vt-timeout" type="number" min="3000" value={vtForm.timeout_ms} onChange={(e) => setVtForm((x) => ({ ...x, timeout_ms: Number(e.target.value) }))} disabled={!isAdmin} />
                               </ProviderField>
                             </div>
                           </>
@@ -438,7 +438,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                               onConfirm: removeVtKey
                             })}
                             removeLabel="Remove key"
-                            disabled={!canWrite || anyBusy}
+                            disabled={!isAdmin || anyBusy}
                             busy={{ save: busy.vtSave, test: busy.vtTest, remove: busy.vtRemove }}
                           />
                         )}
@@ -466,7 +466,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         statusLabel={hs.label}
                         enabled={ipForm.enabled}
                         onEnabledChange={(v) => handleEnabledChange('ipinfo_lite', v, setIpForm)}
-                        enabledDisabled={!canWrite}
+                        enabledDisabled={!isAdmin}
                         lastTestAt={row.last_success_at || row.last_test_at}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
@@ -483,19 +483,19 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                                 value={ipForm.token}
                                 onChange={(e) => setIpForm((x) => ({ ...x, token: e.target.value }))}
                                 placeholder={row.masked_key ? 'Leave blank to keep current token' : 'Paste IPinfo Lite token'}
-                                disabled={!canWrite}
+                                disabled={!isAdmin}
                               />
                             </ProviderField>
                             <div className="ep-field-grid">
-                              <ProviderField id="ip-base-url" label="Base URL">
-                                <input id="ip-base-url" value={ipForm.base_url} onChange={(e) => setIpForm((x) => ({ ...x, base_url: e.target.value }))} disabled={!canWrite} />
+                              <ProviderField id="ip-base-url" label="Base URL (fixed)">
+                                <input id="ip-base-url" value={ipForm.base_url} readOnly disabled title="Trusted IPinfo Lite origin is fixed for SSRF protection" />
                               </ProviderField>
                               <ProviderField id="ip-timeout" label="Timeout (seconds)">
-                                <input id="ip-timeout" type="number" min="3" max="30" value={ipForm.timeout_seconds} onChange={(e) => setIpForm((x) => ({ ...x, timeout_seconds: Number(e.target.value) }))} disabled={!canWrite} />
+                                <input id="ip-timeout" type="number" min="3" max="30" value={ipForm.timeout_seconds} onChange={(e) => setIpForm((x) => ({ ...x, timeout_seconds: Number(e.target.value) }))} disabled={!isAdmin} />
                               </ProviderField>
                             </div>
                             <ProviderField id="ip-note" label="Usage note (optional)">
-                              <textarea id="ip-note" value={ipForm.usage_note} onChange={(e) => setIpForm((x) => ({ ...x, usage_note: e.target.value }))} disabled={!canWrite} rows={2} />
+                              <textarea id="ip-note" value={ipForm.usage_note} onChange={(e) => setIpForm((x) => ({ ...x, usage_note: e.target.value }))} disabled={!isAdmin} rows={2} />
                             </ProviderField>
                           </>
                         )}
@@ -511,7 +511,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                               onConfirm: removeIpToken
                             })}
                             removeLabel="Remove token"
-                            disabled={!canWrite || anyBusy}
+                            disabled={!isAdmin || anyBusy}
                             busy={{ save: busy.ipSave, test: busy.ipTest, remove: busy.ipRemove }}
                           />
                         )}

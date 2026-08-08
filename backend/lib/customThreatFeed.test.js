@@ -31,6 +31,19 @@ test('validateFeedUrl rejects file and localhost', () => {
   assert.equal(validateFeedUrl('https://ti.example.com/feed.txt').ok, true);
 });
 
+test('validateFeedUrl SSRF-02 rejects IPv4-mapped and IPv6 special literals', () => {
+  assert.equal(validateFeedUrl('http://[::ffff:127.0.0.1]/feed.txt').ok, false);
+  assert.equal(validateFeedUrl('http://[::ffff:169.254.169.254]/').ok, false);
+  assert.equal(validateFeedUrl('http://[::ffff:10.1.2.3]/').ok, false);
+  assert.equal(validateFeedUrl('http://[::1]/').ok, false);
+  assert.equal(validateFeedUrl('http://[fe80::1]/').ok, false);
+  assert.equal(validateFeedUrl('http://[fd00::1]/').ok, false);
+  assert.equal(validateFeedUrl('http://169.254.169.254/').ok, false);
+  assert.equal(validateFeedUrl('ftp://ti.example.com/feed.txt').ok, false);
+  assert.equal(validateFeedUrl('http://[::ffff:8.8.8.8]/feed.txt').ok, true);
+  assert.equal(validateFeedUrl('http://1.1.1.1/feed.txt').ok, true);
+});
+
 test('sanitizeUrlForDisplay strips credentials', () => {
   const display = sanitizeUrlForDisplay('https://user:secret@ti.example.com/path/feed.txt');
   assert.equal(display.includes('secret'), false);

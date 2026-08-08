@@ -34,7 +34,7 @@ URLhaus/MalwareBazaar use incremental mode because `recent.csv` is not a complet
 
 ## Env vars
 
-- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (URL built in code; password URL-encoded). Optional legacy `REDIS_URL` if set.
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` (required unless `REDIS_URL` is set; URL built in code; password URL-encoded). Optional legacy `REDIS_URL` if set.
 - `QUEUE_NAME` (default: `integration-imports`)
 - `SCHEDULER_CRON` (default: `0 * * * *`)
 - `INTEGRATION_JOB_TIMEOUT_MS` — cooperative job timeout in worker (per-feed overrides: `THREATFOX_JOB_TIMEOUT_MS`, etc.)

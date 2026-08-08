@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { isPrivateOrReservedIp } from './feedFormatter.js';
+import { validateFeedUrlPolicy } from './customThreatFeedSsrf.js';
 
 export const CUSTOM_FEED_JOB_NAME = 'custom-threat-feed-sync';
 export const CUSTOM_FEED_RUN_JOB_TYPE = 'custom_threat_feed_sync';
@@ -51,8 +51,6 @@ export function isCustomFeedNameUniqueViolation(err) {
     && String(err?.constraint || '').includes('integration_feeds_custom_name_unique');
 }
 
-const BLOCKED_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
-
 export function extractUrlHost(urlString) {
   try {
     const u = new URL(String(urlString || '').trim());
@@ -74,36 +72,15 @@ export function sanitizeUrlForDisplay(urlString) {
   }
 }
 
-function isPrivateOrLocalHost(hostname) {
-  const host = String(hostname || '').trim().toLowerCase();
-  if (!host) return true;
-  if (BLOCKED_HOSTS.has(host)) return true;
-  if (host.endsWith('.local') || host.endsWith('.localhost')) return true;
-  if (isPrivateOrReservedIp(host)) return true;
-  if (host.includes(':')) {
-    const h = host.replace(/^\[|\]$/g, '');
-    if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true;
-  }
-  return false;
-}
-
+/**
+ * Sync feed URL gate used by create/update routes.
+ * Shares the same http(s) + destination policy as fetch (SSRF-01/02);
+ * DNS resolve + pin happens in fetchFeedUrl before connect.
+ */
 export function validateFeedUrl(urlString) {
-  const raw = String(urlString || '').trim();
-  if (!raw) return { ok: false, error: 'URL is required' };
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return { ok: false, error: 'URL must be a valid http or https URL' };
-  }
-  const protocol = String(parsed.protocol || '').toLowerCase();
-  if (protocol !== 'http:' && protocol !== 'https:') {
-    return { ok: false, error: 'Only http and https URLs are allowed' };
-  }
-  if (isPrivateOrLocalHost(parsed.hostname)) {
-    return { ok: false, error: 'Private, loopback, and localhost URLs are not allowed' };
-  }
-  return { ok: true, url: raw, url_host: extractUrlHost(raw) };
+  const check = validateFeedUrlPolicy(urlString);
+  if (!check.ok) return { ok: false, error: check.error };
+  return { ok: true, url: check.url, url_host: check.url_host };
 }
 
 export function generateCustomFeedKey() {

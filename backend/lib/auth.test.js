@@ -61,7 +61,8 @@ test('JWT-01: valid admin JWT authenticates as admin', async () => {
     userId: 1,
     email: 'admin@talonhound.local',
     username: 'admin@talonhound.local',
-    role: ROLES.ADMIN
+    role: ROLES.ADMIN,
+    authVersion: 1
   });
   const result = await invokeRequireAuth({ cookieToken: token });
   assert.equal(result.next, true);
@@ -74,7 +75,8 @@ test('JWT-01: valid readonly JWT remains readonly', async () => {
     userId: 2,
     email: 'ro@talonhound.local',
     username: 'ro@talonhound.local',
-    role: ROLES.READONLY
+    role: ROLES.READONLY,
+    authVersion: 1
   });
   const result = await invokeRequireAuth({ cookieToken: token });
   assert.equal(result.next, true);
@@ -86,7 +88,8 @@ test('JWT-01: valid analyst JWT authenticates as analyst', async () => {
     userId: 3,
     email: 'analyst@talonhound.local',
     username: 'analyst@talonhound.local',
-    role: ROLES.ANALYST
+    role: ROLES.ANALYST,
+    authVersion: 1
   });
   const result = await invokeRequireAuth({ cookieToken: token });
   assert.equal(result.next, true);
@@ -144,15 +147,15 @@ test('JWT-01: signUserToken refuses string payload (no implicit admin)', () => {
 
 test('JWT-01: signUserToken refuses omitted or invalid role (no default elevation)', () => {
   assert.throws(
-    () => signUserToken({ email: 'x@talonhound.local', userId: 1 }),
+    () => signUserToken({ email: 'x@talonhound.local', userId: 1, authVersion: 1 }),
     /explicit valid role/i
   );
   assert.throws(
-    () => signUserToken({ email: 'x@talonhound.local', userId: 1, role: 'root' }),
+    () => signUserToken({ email: 'x@talonhound.local', userId: 1, role: 'root', authVersion: 1 }),
     /explicit valid role/i
   );
   assert.throws(
-    () => signUserToken({ email: 'x@talonhound.local', userId: 1, role: '' }),
+    () => signUserToken({ email: 'x@talonhound.local', userId: 1, role: '', authVersion: 1 }),
     /explicit valid role/i
   );
 });

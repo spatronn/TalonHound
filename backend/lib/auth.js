@@ -26,14 +26,23 @@ function cookieMaxAgeMs(inStr) {
   return 24 * 60 * 60 * 1000;
 }
 
-function cookieSecureFlag(req) {
-  if (process.env.AUTH_COOKIE_SECURE === '0') return false;
-  if (process.env.AUTH_COOKIE_SECURE === '1') return true;
-  const fwd = String(req.headers['x-forwarded-proto'] || '')
+/**
+ * Cookie Secure flag (JWT-05).
+ * - AUTH_COOKIE_SECURE=1 → Secure
+ * - NODE_ENV=production → Secure unconditionally (AUTH_COOKIE_SECURE=0 / spoofed
+ *   x-forwarded-proto cannot downgrade production)
+ * - AUTH_COOKIE_SECURE=0 → non-Secure (local HTTP only; ignored in production)
+ * - otherwise: https forwarded proto or req.secure
+ */
+export function cookieSecureFlag(req, env = process.env) {
+  if (env.AUTH_COOKIE_SECURE === '1') return true;
+  if (env.NODE_ENV === 'production') return true;
+  if (env.AUTH_COOKIE_SECURE === '0') return false;
+  const fwd = String(req?.headers?.['x-forwarded-proto'] || '')
     .split(',')[0]
     .trim();
   if (fwd === 'https') return true;
-  return Boolean(req.secure);
+  return Boolean(req?.secure);
 }
 
 export function appendAuthCookie(req, res, token) {
@@ -76,8 +85,9 @@ export function clearCsrfCookie(req, res) {
 }
 
 /**
- * @param {{ email?: string, username?: string, userId?: number|null, role: string }} payload
+ * @param {{ email?: string, username?: string, userId?: number|null, role: string, authVersion?: number|null }} payload
  * Role must be an explicit canonical app role. Omitted/invalid role does not default to admin.
+ * When userId is present, authVersion (users.auth_version) is required in the JWT (JWT-03).
  */
 export function signUserToken(payload) {
   if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) {
@@ -96,9 +106,17 @@ export function signUserToken(payload) {
   const body = { email: sub, username: username || sub, role: roleNorm };
   if (payload.userId != null && Number.isFinite(Number(payload.userId))) {
     body.userId = Number(payload.userId);
+    const av = Number(payload.authVersion);
+    if (!Number.isFinite(av) || av < 1) {
+      throw new TypeError('signUserToken requires a positive authVersion when userId is set');
+    }
+    body.av = Math.floor(av);
   }
   return jwt.sign(body, secret, { subject: sub, expiresIn });
 }
+
+/** Last verified JWT payload attached by tryAttachSession (for auth_version gate). */
+const JWT_PAYLOAD_SYM = Symbol.for('talonhound.jwtPayload');
 
 function userFromJwtPayload(payload) {
   const email = String(payload.email || payload.sub || '').trim();
@@ -109,6 +127,13 @@ function userFromJwtPayload(payload) {
   const id =
     payload.userId != null && Number.isFinite(Number(payload.userId)) ? Number(payload.userId) : null;
   return { email, username, id, role };
+}
+
+export function getRequestTokenAuthVersion(req) {
+  const p = req?.[JWT_PAYLOAD_SYM];
+  if (!p || p.av == null) return null;
+  const n = Number(p.av);
+  return Number.isFinite(n) ? n : null;
 }
 
 function extractBearer(req) {
@@ -147,58 +172,66 @@ function safeEqualUtf8(a, b) {
   }
 }
 
-export function requireAuth(req, res, next) {
+function tryAttachSession(req) {
   const ingestHdr = extractIngestHeader(req);
   if (ingestHdr) {
-    if (!API_INGEST_TOKEN || !ingestTokenOk(ingestHdr)) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
+    if (!API_INGEST_TOKEN || !ingestTokenOk(ingestHdr)) return false;
     req.user = {
       email: 'api-ingest@internal',
       username: 'api-ingest@internal',
       id: null,
-      role: ROLES.ADMIN
+      role: ROLES.ADMIN,
+      principalType: 'machine_ingest'
     };
     req.authVia = 'ingest';
-    return next();
+    return true;
   }
 
   const bearer = extractBearer(req);
   if (bearer) {
-    if (process.env.ALLOW_JWT_BEARER !== '1') {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
+    if (process.env.ALLOW_JWT_BEARER !== '1') return false;
     try {
       const payload = jwt.verify(bearer, secret);
       const u = userFromJwtPayload(payload);
-      if (!u) {
-        return res.status(401).json({ message: 'Invalid token' });
-      }
+      if (!u) return false;
+      req[JWT_PAYLOAD_SYM] = payload;
       req.user = u;
       req.authVia = 'bearer';
-      return next();
+      return true;
     } catch {
-      return res.status(401).json({ message: 'Invalid or expired token' });
+      return false;
     }
   }
 
-  const c = req.cookies && req.cookies[AUTH_COOKIE_NAME];
-  const fromCookie = c && typeof c === 'string' ? c.trim() : '';
-  if (!fromCookie) {
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
+  const fromCookie = req.cookies?.[AUTH_COOKIE_NAME];
+  const token = fromCookie && typeof fromCookie === 'string' ? fromCookie.trim() : '';
+  if (!token) return false;
   try {
-    const payload = jwt.verify(fromCookie, secret);
+    const payload = jwt.verify(token, secret);
     const u = userFromJwtPayload(payload);
-    if (!u) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
+    if (!u) return false;
+    req[JWT_PAYLOAD_SYM] = payload;
     req.user = u;
     req.authVia = 'cookie';
-    return next();
+    return true;
   } catch {
-    return res.status(401).json({ message: 'Invalid or expired token' });
+    return false;
   }
+}
+
+export function requireAuth(req, res, next) {
+  if (tryAttachSession(req)) return next();
+  return res.status(401).json({ message: 'Unauthorized' });
+}
+
+/**
+ * Attach user when credentials are present and valid; otherwise continue unauthenticated.
+ * Used by POST /api/setup/complete so greenfield stays anonymous while existing-install
+ * admin sessions are visible to the handler (AUTH-05).
+ */
+export function optionalAuth(req, _res, next) {
+  tryAttachSession(req);
+  return next();
 }
 
 export function csrfProtection(req, res, next) {
@@ -234,15 +267,21 @@ function isApiV1Path(path) {
 export function apiAuthGate(req, res, next) {
   if (req.method === 'OPTIONS') return next();
   if (req.path === '/api/auth/login' && req.method === 'POST') return next();
-  if (req.path === '/api/auth/logout' && req.method === 'POST') return next();
-  // Initial setup must be reachable before any user session exists.
-  if (
-    req.path === '/api/setup/status'
-    || req.path === '/api/setup/preview'
-    || (req.path === '/api/setup/complete' && req.method === 'POST')
-  ) {
+  if (req.path === '/api/auth/logout' && req.method === 'POST') {
+    // Optional session so we can bump auth_version (logout-all) when a cookie is present.
+    return optionalAuth(req, res, next);
+  }
+  // Setup status/preview stay public (greenfield + read-only discovery).
+  // POST /api/setup/complete: optionally authenticated — handler enforces admin
+  // when timezone_configuration_required (existing install). Keep unauthenticated
+  // path open for true first-run (AUTH-05).
+  if (req.path === '/api/setup/status' || req.path === '/api/setup/preview') {
     return next();
   }
+  if (req.path === '/api/setup/complete' && req.method === 'POST') {
+    return optionalAuth(req, res, next);
+  }
+
   // OpenAPI docs are public (contract discovery); management calls still need API keys.
   if (isPublicApiDocsPath(req.path)) {
     return next();

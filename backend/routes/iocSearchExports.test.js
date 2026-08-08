@@ -48,17 +48,19 @@ function createMockPool(store, { storageDir } = {}) {
       }
 
       if (s.includes('COUNT(*)::int AS n') && s.includes("status IN ('queued', 'processing')")) {
-        const email = params[0];
+        const ownerId = params[0];
         const n = [...store.values()].filter(
-          (r) => r.requested_by_email === email && ['queued', 'processing'].includes(r.status)
+          (r) => Number(r.requested_by_id) === Number(ownerId) && ['queued', 'processing'].includes(r.status)
         ).length;
         return { rows: [{ n }], rowCount: 1 };
       }
 
       if (s.includes('COUNT(*)::int AS n')) {
         let rows = [...store.values()];
-        if (s.includes('requested_by_email = $1')) {
-          rows = rows.filter((r) => r.requested_by_email === params[0]);
+        if (s.includes('requested_by_id = $1')) {
+          rows = rows.filter((r) => Number(r.requested_by_id) === Number(params[0]));
+        } else if (s.includes('FALSE')) {
+          rows = [];
         }
         if (s.includes('status = ANY')) {
           const statuses = params.find((p) => Array.isArray(p)) || [];
@@ -95,8 +97,10 @@ function createMockPool(store, { storageDir } = {}) {
 
       if (s.includes('FROM ioc_search_exports')) {
         let rows = [...store.values()];
-        if (s.includes('requested_by_email = $1')) {
-          rows = rows.filter((r) => r.requested_by_email === params[0]);
+        if (s.includes('requested_by_id = $1')) {
+          rows = rows.filter((r) => Number(r.requested_by_id) === Number(params[0]));
+        } else if (s.includes('FALSE')) {
+          rows = [];
         }
         if (s.includes('status = ANY')) {
           const statuses = params.find((p) => Array.isArray(p)) || [];
@@ -388,4 +392,27 @@ test('double create while at concurrency limit returns 429', async () => {
     if (prev == null) delete process.env.IOC_EXPORT_MAX_CONCURRENT_PER_USER;
     else process.env.IOC_EXPORT_MAX_CONCURRENT_PER_USER = prev;
   }
+});
+
+test('IDOR-01: recycled same email with new user id cannot access prior export', async () => {
+  await withServer(async ({ app, store }) => {
+    const created = await req(app, 'POST', '/api/iocs/search-exports', {
+      user: USER_A,
+      body: { query: 'ioc contains "recycle"' }
+    });
+    assert.equal(created.status, 201);
+    const id = created.data.export_id;
+    // Simulate username recycle: keep requested_by_email, clear/replace ownership id historically;
+    // or a new user with same email but different id attempting access.
+    const recycled = { role: 'analyst', id: 999, email: USER_A.email, username: USER_A.email };
+    const denied = await req(app, 'GET', `/api/iocs/search-exports/${id}`, { user: recycled });
+    assert.equal(denied.status, 403);
+
+    // Historical email-only row must not grant access either.
+    store.get(id).requested_by_id = null;
+    const deniedHistorical = await req(app, 'GET', `/api/iocs/search-exports/${id}`, { user: USER_A });
+    assert.equal(deniedHistorical.status, 403);
+    const adminOk = await req(app, 'GET', `/api/iocs/search-exports/${id}`, { user: ADMIN });
+    assert.equal(adminOk.status, 200);
+  });
 });

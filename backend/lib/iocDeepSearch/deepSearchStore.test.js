@@ -42,14 +42,14 @@ test('createDeepSearch binds AST as jsonb and stores the fingerprint', async () 
   assert.equal(call.params[5], 'classified');
 });
 
-test('findActiveDuplicate scopes to owner + fingerprint + active statuses', async () => {
+test('findActiveDuplicate scopes to owner id + fingerprint + active statuses', async () => {
   const db = recorder({ rows: [], rowCount: 0 });
-  await findActiveDuplicate(db, { email: 'a@example.com', queryFingerprint: 'fp-1' });
+  await findActiveDuplicate(db, { userId: 7, queryFingerprint: 'fp-1' });
   const call = db.calls[0];
-  assert.match(call.sql, /requested_by_email = \$1/);
+  assert.match(call.sql, /requested_by_id = \$1/);
   assert.match(call.sql, /query_fingerprint = \$2/);
   assert.match(call.sql, /status IN \('queued', 'running'\)/);
-  assert.deepEqual(call.params, ['a@example.com', 'fp-1']);
+  assert.deepEqual(call.params, [7, 'fp-1']);
 });
 
 test('claimForProcessing only claims a queued row (atomic status flip)', async () => {

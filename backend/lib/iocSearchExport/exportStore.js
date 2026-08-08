@@ -51,12 +51,18 @@ export async function getExportById(db, id) {
  * expires_at has elapsed so they surface under the expired bucket instead.
  * When filtering "expired", include both stored-expired and ready-past-expiry rows.
  */
-function buildListWhere({ email, includeAll, statuses }) {
+function buildListWhere({ userId, includeAll, statuses }) {
   const params = [];
   const clauses = [];
   if (!includeAll) {
-    params.push(email);
-    clauses.push(`requested_by_email = $${params.length}`);
+    const id = Number(userId);
+    if (Number.isFinite(id) && id > 0) {
+      params.push(id);
+      clauses.push(`requested_by_id = $${params.length}`);
+    } else {
+      // No immutable owner id → empty scope (never fall back to recyclable email).
+      clauses.push('FALSE');
+    }
   }
   if (Array.isArray(statuses) && statuses.length) {
     const onlyExpired = statuses.length === 1 && statuses[0] === 'expired';
@@ -81,8 +87,8 @@ function buildListWhere({ email, includeAll, statuses }) {
   return { where, params };
 }
 
-export async function listExports(db, { email, includeAll = false, limit = 50, offset = 0, statuses = null } = {}) {
-  const { where, params } = buildListWhere({ email, includeAll, statuses });
+export async function listExports(db, { userId, includeAll = false, limit = 50, offset = 0, statuses = null } = {}) {
+  const { where, params } = buildListWhere({ userId, includeAll, statuses });
   params.push(Math.min(Math.max(limit, 1), 200));
   const limitIdx = params.length;
   params.push(Math.max(offset, 0));
@@ -97,8 +103,8 @@ export async function listExports(db, { email, includeAll = false, limit = 50, o
   return rows;
 }
 
-export async function countExports(db, { email, includeAll = false, statuses = null } = {}) {
-  const { where, params } = buildListWhere({ email, includeAll, statuses });
+export async function countExports(db, { userId, includeAll = false, statuses = null } = {}) {
+  const { where, params } = buildListWhere({ userId, includeAll, statuses });
   const { rows } = await db.query(
     `SELECT COUNT(*)::int AS n FROM ioc_search_exports ${where}`,
     params
@@ -106,11 +112,13 @@ export async function countExports(db, { email, includeAll = false, statuses = n
   return rows[0]?.n || 0;
 }
 
-export async function countActiveForUser(db, email) {
+export async function countActiveForUser(db, userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id <= 0) return 0;
   const { rows } = await db.query(
     `SELECT COUNT(*)::int AS n FROM ioc_search_exports
-     WHERE requested_by_email = $1 AND status IN ('queued', 'processing')`,
-    [email]
+     WHERE requested_by_id = $1 AND status IN ('queued', 'processing')`,
+    [id]
   );
   return rows[0]?.n || 0;
 }

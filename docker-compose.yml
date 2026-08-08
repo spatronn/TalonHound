@@ -30,7 +30,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-dev-insecure-redis}"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
     restart: unless-stopped
 
   backend:
@@ -45,7 +45,7 @@ services:
       - DB_NAME=talonhound
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       - QUEUE_NAME=integration-imports
       - INTEGRATION_JOB_TIMEOUT_MS=600000
       - INTEGRATION_JOB_STALE_AFTER_MS=900000
@@ -113,7 +113,7 @@ services:
       - DB_NAME=talonhound
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       - QUEUE_NAME=integration-imports
       - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
       - TZ=${SYSTEM_TIMEZONE:-}
@@ -158,7 +158,7 @@ services:
       - DB_NAME=talonhound
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       - QUEUE_NAME=integration-imports
       - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
       - TZ=${SYSTEM_TIMEZONE:-}
@@ -236,7 +236,7 @@ services:
       - TZ=${SYSTEM_TIMEZONE:-}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       - IOC_EXPORT_QUEUE_NAME=ioc-search-export
       - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
       - IOC_EXPORT_BATCH_SIZE=${IOC_EXPORT_BATCH_SIZE:-5000}
@@ -268,7 +268,7 @@ services:
       - TZ=${SYSTEM_TIMEZONE:-}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       - IOC_DEEP_SEARCH_QUEUE_NAME=ioc-deep-search
       - IOC_DEEP_SEARCH_QUERY_TIMEOUT_MS=${IOC_DEEP_SEARCH_QUERY_TIMEOUT_MS:-600000}
       - IOC_DEEP_SEARCH_RETENTION_HOURS=${IOC_DEEP_SEARCH_RETENTION_HOURS:-24}
@@ -295,7 +295,7 @@ services:
       - TZ=${SYSTEM_TIMEZONE:-}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-dev-insecure-redis}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_CRON=${BACKUP_CRON:-0 0 * * 0}
       - BACKUP_CRON_TIMEZONE=${BACKUP_CRON_TIMEZONE:-}

@@ -162,7 +162,7 @@ docker compose logs --tail=200
 1. Open `http://<VM_IP>`
 2. Show login screen
 3. Try wrong password and show validation
-4. Login with default clean-install admin (`admin@talonhound.local / admin`) and complete forced password change
+4. Login with the clean-install admin (`admin@talonhound.local` + one-time password from `INITIAL_ADMIN_PASSWORD` or `/data/backups/bootstrap-admin-password.once`) and complete forced password change
 5. Show dashboard access
 6. Logout and verify redirect back to login
 

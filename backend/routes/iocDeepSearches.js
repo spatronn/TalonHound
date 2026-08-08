@@ -1,4 +1,5 @@
 import { requireRole, ROLES, isAdminRole, normalizeAppRole } from '../lib/rbac.js';
+import { canAccessOwnedArtifact, actorEmail, actorUserId } from '../lib/artifactOwnership.js';
 import { AUDIT_ACTION, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { parseSearchQuery, isDslError } from '../lib/iocSearchDsl/index.js';
 import { clampDeepSearchPageSize } from '../lib/iocDeepSearch/deepSearchConfig.js';
@@ -18,13 +19,8 @@ import {
 } from '../lib/iocDeepSearch/deepSearchStatus.js';
 import { enqueueDeepSearch } from '../lib/iocDeepSearch/enqueueDeepSearch.js';
 
-function actorEmail(req) {
-  return String(req.user?.email || req.user?.username || '').trim();
-}
-
 function canAccess(req, row) {
-  if (isAdminRole(normalizeAppRole(req.user?.role))) return true;
-  return row.requested_by_email && row.requested_by_email === actorEmail(req);
+  return canAccessOwnedArtifact(req, row);
 }
 
 function encodeCursor(cursor) {
@@ -84,7 +80,7 @@ export function registerIocDeepSearchRoutes(app, pool, { deepSearchQueue, auditL
   // List the caller's deep searches (admins may pass ?scope=all). Shares Action Center
   // filter buckets with exports.
   app.get('/api/iocs/deep-searches', async (req, res) => {
-    const email = actorEmail(req);
+    const userId = actorUserId(req);
     const wantAll = req.query.scope === 'all' && isAdminRole(normalizeAppRole(req.user?.role));
     const statuses = parseListStatusFilter(req.query.status);
     if (statuses === undefined) {
@@ -96,8 +92,8 @@ export function registerIocDeepSearchRoutes(app, pool, { deepSearchQueue, auditL
     const pageSize = Math.min(Math.max(Number.isFinite(sizeRaw) ? Math.trunc(sizeRaw) : 25, 1), 100);
     try {
       const [rows, total] = await Promise.all([
-        listDeepSearches(pool, { email, includeAll: wantAll, limit: pageSize, offset: (page - 1) * pageSize, statuses }),
-        countDeepSearches(pool, { email, includeAll: wantAll, statuses })
+        listDeepSearches(pool, { userId, includeAll: wantAll, limit: pageSize, offset: (page - 1) * pageSize, statuses }),
+        countDeepSearches(pool, { userId, includeAll: wantAll, statuses })
       ]);
       return res.json({ items: rows.map((r) => serializeDeepSearch(r)), total, page, page_size: pageSize });
     } catch {
@@ -244,7 +240,7 @@ export function registerIocDeepSearchRoutes(app, pool, { deepSearchQueue, auditL
         normalizedAst: parsed.ast,
         classificationReason: existing.classification_reason,
         origin: 'classified',
-        requestedById: Number.isFinite(Number(req.user?.id)) ? Number(req.user.id) : null,
+        requestedById: actorUserId(req),
         requestedByEmail: actorEmail(req),
         auditLogService,
         logger,

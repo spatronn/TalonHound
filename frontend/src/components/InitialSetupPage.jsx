@@ -128,9 +128,15 @@ export default function InitialSetupPage({ onCompleted }) {
         <h1 style={styles.title}>{configRequired ? 'Timezone Configuration Required' : 'System Timezone'}</h1>
         <p style={styles.lead}>
           {configRequired
-            ? 'This existing TalonHound installation has no configured system timezone. An administrator must select a valid IANA timezone before feeds, schedulers, exports, and the rest of the application can run. Historical data is not changed.'
+            ? 'This existing TalonHound installation has no configured system timezone. Sign in as an administrator, then select a valid IANA timezone before feeds, schedulers, exports, and the rest of the application can run. Historical data is not changed.'
             : 'Choose the single timezone used across the entire TalonHound installation. Browser local time is never used for display, schedules, logs, or exports.'}
         </p>
+        {configRequired ? (
+          <p style={{ ...styles.lead, marginTop: 0 }}>
+            <a href="/login" style={{ color: '#93c5fd' }}>Sign in as administrator</a>
+            {' '}if you have not already, then return here to complete configuration.
+          </p>
+        ) : null}
 
         <label style={styles.label} htmlFor="setup-tz-filter">Search IANA timezones</label>
         <input

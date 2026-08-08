@@ -68,13 +68,18 @@ export function requireTriageRole() {
  * Read-only users: GET/HEAD only, except:
  *   - PUT /api/users/:id (handler enforces self + fields)
  *   - PUT /api/users/me/preferences (self timezone preference)
- * Ingest / bearer bypass (machine & existing automation).
+ *
+ * Authentication transport must not bypass authorization (AUTH-03):
+ * Bearer JWTs are subject to the same role write policy as cookies.
+ * Ingest is a machine principal gated separately by ingestCapabilityPolicy
+ * (AUTH-04); it skips human readonly policy here after that allowlist.
  */
 export function rbacHttpPolicy(req, res, next) {
   if (!req.path.startsWith('/api')) return next();
   if (req.method === 'OPTIONS') return next();
 
-  if (req.authVia === 'ingest' || req.authVia === 'bearer') {
+  // Machine ingest: capability allowlist runs in ingestCapabilityPolicy.
+  if (req.authVia === 'ingest') {
     return next();
   }
 

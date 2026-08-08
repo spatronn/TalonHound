@@ -95,7 +95,7 @@ function noStore(res) {
  * @param {{ auditSuccess: Function }} audit
  */
 export function registerApiKeyRoutes(app, pool, audit) {
-  app.get('/api/api-keys/profiles', (_req, res) => {
+  app.get('/api/api-keys/profiles', requireRole(ROLES.ADMIN), (_req, res) => {
     return res.json({
       profiles: listCreatableAccessProfiles().map((p) => ({
         id: p.id,
@@ -107,7 +107,8 @@ export function registerApiKeyRoutes(app, pool, audit) {
     });
   });
 
-  app.get('/api/api-keys', async (_req, res) => {
+  // Global inventory (Administration → API Keys) — admin-only; never returns plaintext secrets.
+  app.get('/api/api-keys', requireRole(ROLES.ADMIN), async (_req, res) => {
     try {
       const { rows } = await pool.query(
         `SELECT ${LIST_COLUMNS}

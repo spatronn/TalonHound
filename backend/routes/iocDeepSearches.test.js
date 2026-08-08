@@ -49,6 +49,7 @@ function createMockPool(store) {
           classification_reason: params[4],
           origin: params[5],
           status: 'queued',
+          requested_by_id: params[6],
           requested_by_email: params[7],
           match_count: null
         });
@@ -66,12 +67,14 @@ function createMockPool(store) {
       }
       if (s.includes('COUNT(*)::int AS n')) {
         let rows = [...store.values()];
-        if (s.includes('requested_by_email = $1')) rows = rows.filter((r) => r.requested_by_email === params[0]);
+        if (s.includes('requested_by_id = $1')) rows = rows.filter((r) => Number(r.requested_by_id) === Number(params[0]));
+        else if (s.includes('FALSE')) rows = [];
         return { rows: [{ n: rows.length }], rowCount: 1 };
       }
       if (s.includes('FROM ioc_deep_searches') && s.includes('ORDER BY created_at DESC') && s.includes('LIMIT')) {
         let rows = [...store.values()];
-        if (s.includes('requested_by_email = $1')) rows = rows.filter((r) => r.requested_by_email === params[0]);
+        if (s.includes('requested_by_id = $1')) rows = rows.filter((r) => Number(r.requested_by_id) === Number(params[0]));
+        else if (s.includes('FALSE')) rows = [];
         return { rows, rowCount: rows.length };
       }
       if (s.includes('FROM ioc_deep_searches WHERE id = $1')) {
@@ -227,4 +230,19 @@ test('list merges owner rows with a total', async () => {
     assert.equal(res.data.total, 1);
     assert.equal(res.data.items[0].task_type, 'ioc_deep_search');
   }, (store) => store.set('ds-1', baseRow()));
+});
+
+test('IDOR-01: recycled same email cannot access prior deep search; email-only historical denied', async () => {
+  await withServer(async ({ app }) => {
+    const recycled = { role: 'analyst', id: 999, email: USER_A.email, username: USER_A.email };
+    const denied = await req(app, 'GET', '/api/iocs/deep-searches/ds-1', { user: recycled });
+    assert.equal(denied.status, 403);
+  }, (store) => store.set('ds-1', baseRow()));
+
+  await withServer(async ({ app }) => {
+    const denied = await req(app, 'GET', '/api/iocs/deep-searches/ds-1', { user: USER_A });
+    assert.equal(denied.status, 403);
+    const adminOk = await req(app, 'GET', '/api/iocs/deep-searches/ds-1', { user: ADMIN });
+    assert.equal(adminOk.status, 200);
+  }, (store) => store.set('ds-1', baseRow({ requested_by_id: null })));
 });

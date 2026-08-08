@@ -3,7 +3,8 @@ import { normalizeIpAddress, validatePublicIp } from '../lib/publicIp.js';
 const IPINFO_PROVIDER = 'ipinfo_lite';
 export const MAX_BULK_IPS = 50;
 const MAX_CONCURRENCY = Math.min(Math.max(Number(process.env.IPINFO_LITE_MAX_CONCURRENCY || 3), 1), 5);
-const DEFAULT_BASE_URL = 'https://api.ipinfo.io/lite';
+/** Official IPinfo Lite HTTPS origin — not user/admin configurable (SSRF-03). */
+export const IPINFO_LITE_TRUSTED_BASE_URL = 'https://api.ipinfo.io/lite';
 const DEFAULT_TIMEOUT_SEC = 6;
 
 let activeLookups = 0;
@@ -35,7 +36,8 @@ export function maskToken(token) {
 
 function parseConfig(row) {
   const cfg = row?.config && typeof row.config === 'object' ? row.config : {};
-  const baseUrl = String(cfg.base_url || process.env.IPINFO_LITE_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
+  // Ignore legacy/attacker-written config.base_url and env overrides that are not the trusted origin.
+  const baseUrl = IPINFO_LITE_TRUSTED_BASE_URL;
   const timeoutSeconds = Math.min(Math.max(Number(cfg.timeout_seconds || (row?.timeout_ms ? row.timeout_ms / 1000 : DEFAULT_TIMEOUT_SEC)), 3), 30);
   return { baseUrl, timeoutSeconds, usageNote: cfg.usage_note || null };
 }
@@ -222,12 +224,17 @@ export async function upsertIpEnrichment(pool, record) {
 }
 
 async function fetchIpinfoLite(ip, config) {
-  const url = `${config.base_url}/${encodeURIComponent(ip)}?token=${encodeURIComponent(config.token)}`;
+  // Token remains query-param per IPinfo Lite API contract; destination is locked to trusted HTTPS origin.
+  const url = `${IPINFO_LITE_TRUSTED_BASE_URL}/${encodeURIComponent(ip)}?token=${encodeURIComponent(config.token)}`;
   await acquireSlot();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), config.timeout_ms);
   try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: 'application/json' },
+      redirect: 'error'
+    });
     if (res.status === 401 || res.status === 403) {
       const err = new Error('Invalid IPinfo Lite token / unauthorized');
       err.code = 'auth';

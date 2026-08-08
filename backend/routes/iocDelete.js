@@ -1,7 +1,8 @@
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { isHumanAdmin } from '../lib/ingestPrincipal.js';
 
 function isAdminUser(req) {
-  return String(req.user?.role || '').trim().toLowerCase() === 'admin';
+  return isHumanAdmin(req);
 }
 
 export function registerIocDeleteRoute(app, pool, auditLogService, { invalidateDetailsCache = () => {} } = {}) {

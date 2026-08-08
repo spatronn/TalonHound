@@ -33,6 +33,28 @@ function run(cmd, args, opts = {}) {
 }
 
 /**
+ * Reject ZipSlip / unsafe members before extract (aligned with scripts/lib/backup-common.sh).
+ * @param {string[]} members from listTarGz
+ */
+export function assertSafeTarMembers(members) {
+  const list = Array.isArray(members) ? members : [];
+  for (const raw of list) {
+    const name = String(raw || '').replace(/\\/g, '/');
+    if (!name) continue;
+    if (name.startsWith('/') || /^[A-Za-z]:\//.test(name) || name.includes('://')) {
+      const err = new Error(`Unsafe archive member rejected: ${name}`);
+      err.code = 'UNSAFE_ARCHIVE_MEMBER';
+      throw err;
+    }
+    if (name.split('/').some((p) => p === '..')) {
+      const err = new Error(`Unsafe archive member rejected: ${name}`);
+      err.code = 'UNSAFE_ARCHIVE_MEMBER';
+      throw err;
+    }
+  }
+}
+
+/**
  * Pack directory `bundleDir` (which should be named backup-...) into a temporary
  * .tar.gz under tmpDir, then atomically rename to finalPath.
  */
@@ -71,8 +93,20 @@ export async function createTarGzAtomic(bundleDir, finalPath, { tmpDir } = {}) {
   return { path: finalPath, size, checksum };
 }
 
-/** Extract tar.gz into destDir (created if needed). */
+/** Extract tar.gz into destDir (created if needed). Validates members first. */
 export async function extractTarGz(archivePath, destDir) {
+  const members = await listTarGz(archivePath);
+  assertSafeTarMembers(members);
+  // Verbose listing catches symlink/hardlink type flags (GNU/BSD tar -tvzf).
+  const { stdout: verbose } = await run('tar', ['-tvzf', archivePath]);
+  for (const line of verbose.split(/\r?\n/).filter(Boolean)) {
+    // First field is type+mode; symlink/hardlink start with 'l' or 'h' (UNIX).
+    if (/^[lh]/.test(line.trim())) {
+      const err = new Error('Archive contains symlink or hardlink entries');
+      err.code = 'UNSAFE_ARCHIVE_MEMBER';
+      throw err;
+    }
+  }
   await fs.promises.mkdir(destDir, { recursive: true });
   await run('tar', ['-xzf', archivePath, '-C', destDir]);
   return destDir;

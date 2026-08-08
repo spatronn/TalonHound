@@ -430,7 +430,9 @@ export function registerUserManagementRoutes(app, pool, audit) {
 
       const before = userAuditSnapshot(ctx.row);
       const { rows } = await client.query(
-        `UPDATE users SET status = $2::app_user_status WHERE id = $1
+        `UPDATE users SET status = $2::app_user_status,
+             auth_version = CASE WHEN $2::text = 'passive' THEN auth_version + 1 ELSE auth_version END
+         WHERE id = $1
          RETURNING public_id, username, first_name, last_name, role, status, is_system_admin, created_at`,
         [id, next]
       );
@@ -463,13 +465,8 @@ export function registerUserManagementRoutes(app, pool, audit) {
   });
 
   // Admin-initiated password reset: generates a one-time temporary password and forces a
-  // change at next login (must_change_password).
-  // NOTE: auth is stateless JWT in a cookie with no server-side session/refresh store, so
-  // existing tokens are NOT revoked. Setting must_change_password=TRUE in the same
-  // transaction that rotates password_hash restricts every outstanding token to the
-  // change-password flow (see passwordChangeGate.js), and the rotated hash stops the old
-  // password from authenticating. True per-session revocation would require JWT versioning,
-  // which is out of scope for this first version.
+  // change at next login (must_change_password). Bumps auth_version so outstanding JWTs
+  // fail closed until the next login (JWT-03).
   app.post('/api/admin/users/:id/reset-password', requireRole(ROLES.ADMIN), async (req, res) => {
     if (!isUuid(req.params.id)) {
       return res.status(400).json({ message: 'Invalid user id' });
@@ -545,7 +542,8 @@ export function registerUserManagementRoutes(app, pool, audit) {
         updated = await client.query(
           `UPDATE users SET
              password_hash = $2,
-             must_change_password = TRUE
+             must_change_password = TRUE,
+             auth_version = auth_version + 1
            WHERE id = $1
            RETURNING public_id, username, first_name, last_name, role, status, created_at`,
           [id, hash]

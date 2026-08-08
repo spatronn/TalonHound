@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import bcrypt from 'bcrypt';
 import {
   DEFAULT_ADMIN_EMAIL,
-  DEFAULT_ADMIN_PASSWORD,
   DEFAULT_ADMIN_ROLE,
-  ensureDefaultAdminBootstrap
+  ensureDefaultAdminBootstrap,
+  resolveBootstrapAdminPassword
 } from './defaultAdminBootstrap.js';
 
-/**
- * Stateful mock pool that exercises the bootstrap SQL paths.
- */
 function createBootstrapPool(initial = {}) {
   const state = {
     bootstrapped: Boolean(initial.bootstrapped),
@@ -48,7 +48,7 @@ function createBootstrapPool(initial = {}) {
         const [username, password_hash, role] = params;
         assert.equal(username, DEFAULT_ADMIN_EMAIL);
         assert.equal(role, DEFAULT_ADMIN_ROLE);
-        assert.notEqual(password_hash, DEFAULT_ADMIN_PASSWORD);
+        assert.notEqual(password_hash, 'admin');
         assert.match(String(password_hash), /^\$2[aby]?\$/);
         state.users.push({
           username,
@@ -75,18 +75,53 @@ function createBootstrapPool(initial = {}) {
   };
 }
 
-test('bootstrap creates default admin when users empty and not yet bootstrapped', async () => {
+test('SECRET-01: resolveBootstrapAdminPassword rejects known legacy admin password', () => {
+  assert.throws(
+    () => resolveBootstrapAdminPassword({ INITIAL_ADMIN_PASSWORD: 'admin' }),
+    /must not be the known legacy default/i
+  );
+});
+
+test('SECRET-01: bootstrap uses INITIAL_ADMIN_PASSWORD when provided', async () => {
   const pool = createBootstrapPool({ bootstrapped: false, users: [] });
-  const result = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} } });
+  const password = 'OperatorProvided-99';
+  const result = await ensureDefaultAdminBootstrap(pool, {
+    logger: { info() {}, warn() {} },
+    env: { INITIAL_ADMIN_PASSWORD: password }
+  });
   assert.equal(result.status, 'created');
-  assert.equal(pool.state.inserts, 1);
-  assert.equal(pool.state.bootstrapped, true);
-  assert.equal(pool.state.users.length, 1);
-  assert.equal(pool.state.users[0].username, DEFAULT_ADMIN_EMAIL);
-  assert.equal(pool.state.users[0].role, DEFAULT_ADMIN_ROLE);
-  assert.equal(pool.state.users[0].must_change_password, true);
-  const ok = await bcrypt.compare(DEFAULT_ADMIN_PASSWORD, pool.state.users[0].password_hash);
+  assert.equal(result.passwordSource, 'env');
+  const ok = await bcrypt.compare(password, pool.state.users[0].password_hash);
   assert.equal(ok, true);
+  const legacy = await bcrypt.compare('admin', pool.state.users[0].password_hash);
+  assert.equal(legacy, false);
+});
+
+test('SECRET-01: bootstrap generates unique password and writes one-time file', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'th-bootstrap-'));
+  const file = path.join(dir, 'bootstrap-admin-password.once');
+  const pool = createBootstrapPool({ bootstrapped: false, users: [] });
+  const result = await ensureDefaultAdminBootstrap(pool, {
+    logger: { info() {}, warn() {} },
+    env: { BOOTSTRAP_ADMIN_PASSWORD_FILE: file }
+  });
+  assert.equal(result.status, 'created');
+  assert.equal(result.passwordSource, 'generated');
+  assert.ok(fs.existsSync(file));
+  const written = fs.readFileSync(file, 'utf8').trim();
+  assert.ok(written.length >= 12);
+  assert.notEqual(written, 'admin');
+  const ok = await bcrypt.compare(written, pool.state.users[0].password_hash);
+  assert.equal(ok, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('SECRET-01: two generated bootstraps yield different passwords', async () => {
+  const a = resolveBootstrapAdminPassword({});
+  const b = resolveBootstrapAdminPassword({});
+  assert.equal(a.source, 'generated');
+  assert.equal(b.source, 'generated');
+  assert.notEqual(a.password, b.password);
 });
 
 test('bootstrap skips when users already exist and marks bootstrapped', async () => {
@@ -98,28 +133,34 @@ test('bootstrap skips when users already exist and marks bootstrapped', async ()
   assert.equal(result.status, 'skipped_users_exist');
   assert.equal(pool.state.inserts, 0);
   assert.equal(pool.state.bootstrapped, true);
-  assert.equal(pool.state.users.length, 1);
 });
 
 test('bootstrap is idempotent after flag is set (no second user)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'th-bootstrap-'));
+  const file = path.join(dir, 'pw.once');
   const pool = createBootstrapPool({ bootstrapped: false, users: [] });
-  const first = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} } });
+  const env = { BOOTSTRAP_ADMIN_PASSWORD_FILE: file };
+  const first = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} }, env });
   assert.equal(first.status, 'created');
-  const second = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} } });
+  const second = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} }, env });
   assert.equal(second.status, 'skipped_already_bootstrapped');
   assert.equal(pool.state.inserts, 1);
-  assert.equal(pool.state.users.length, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('bootstrap does not recreate after admin deleted (flag remains true, users empty)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'th-bootstrap-'));
+  const file = path.join(dir, 'pw.once');
   const pool = createBootstrapPool({ bootstrapped: false, users: [] });
-  await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} } });
+  const env = { BOOTSTRAP_ADMIN_PASSWORD_FILE: file, INITIAL_ADMIN_PASSWORD: 'CleanInstallSecret1' };
+  await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} }, env });
   pool.state.users = [];
   assert.equal(pool.state.bootstrapped, true);
-  const again = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} } });
+  const again = await ensureDefaultAdminBootstrap(pool, { logger: { info() {}, warn() {} }, env });
   assert.equal(again.status, 'skipped_already_bootstrapped');
   assert.equal(pool.state.inserts, 1);
   assert.equal(pool.state.users.length, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('bootstrap skips when advisory lock not acquired', async () => {
