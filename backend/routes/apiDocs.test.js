@@ -7,7 +7,8 @@ import {
   registerApiDocsRoutes,
   buildApiDocsHtml,
   hasExternalCdnReferences,
-  getSwaggerUiDistPath
+  getSwaggerUiDistPath,
+  getTalonhoundSwaggerThemePath
 } from './apiDocs.js';
 import { buildOpenApiDocument } from '../lib/openapiDocument.js';
 
@@ -37,8 +38,13 @@ test('buildApiDocsHtml has no external CDN references', () => {
   assert.equal(hasExternalCdnReferences(html), false);
   assert.doesNotMatch(html, /https?:\/\//i);
   assert.match(html, /\/api\/docs\/static\/swagger-ui\.css/);
+  assert.match(html, /\/api\/docs\/static\/talonhound\.css/);
   assert.match(html, /\/api\/docs\/static\/swagger-ui-bundle\.js/);
   assert.match(html, /url:\s*'\/api\/openapi\.json'/);
+  // Theme override must load after stock Swagger CSS.
+  assert.ok(
+    html.indexOf('/api/docs/static/swagger-ui.css') < html.indexOf('/api/docs/static/talonhound.css')
+  );
 });
 
 test('GET /api/docs returns 200 with local asset references only', async () => {
@@ -47,6 +53,7 @@ test('GET /api/docs returns 200 with local asset references only', async () => {
   assert.match(res.headers.get('content-type') || '', /html/i);
   assert.equal(hasExternalCdnReferences(res.text), false);
   assert.doesNotMatch(res.text, /unpkg\.com|jsdelivr|cdnjs|fonts\.googleapis/i);
+  assert.match(res.text, /\/api\/docs\/static\/talonhound\.css/);
 });
 
 test('local Swagger UI static assets are reachable', async () => {
@@ -55,12 +62,26 @@ test('local Swagger UI static assets are reachable', async () => {
   assert.equal(css.status, 200);
   assert.ok(css.text.includes('{') || css.text.length > 100);
 
+  const theme = await http(app, 'GET', '/api/docs/static/talonhound.css');
+  assert.equal(theme.status, 200);
+  assert.match(theme.headers.get('content-type') || '', /css/i);
+  assert.match(theme.text, /--th-bg/);
+  assert.match(theme.text, /\.scheme-container/);
+  assert.equal(hasExternalCdnReferences(theme.text), false);
+  assert.doesNotMatch(theme.text, /https?:\/\//i);
+
   const js = await http(app, 'GET', '/api/docs/static/swagger-ui-bundle.js');
   assert.equal(js.status, 200);
   assert.match(js.text, /SwaggerUIBundle/);
 
   const fav = await http(app, 'GET', '/api/docs/static/favicon-32x32.png');
   assert.equal(fav.status, 200);
+});
+
+test('TalonHound Swagger theme file exists outside node_modules', () => {
+  const themePath = getTalonhoundSwaggerThemePath();
+  assert.ok(fs.existsSync(themePath));
+  assert.doesNotMatch(themePath.replace(/\\/g, '/'), /node_modules\//);
 });
 
 test('swagger-ui-dist resolves from node_modules (offline package)', () => {

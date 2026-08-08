@@ -1,9 +1,16 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import express from 'express';
 import { buildOpenApiDocument } from '../lib/openapiDocument.js';
 
 const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Absolute path to TalonHound Swagger UI theme overrides (not from swagger-ui-dist). */
+export function getTalonhoundSwaggerThemePath() {
+  return path.resolve(__dirname, '../assets/api-docs/swagger-ui-talonhound.css');
+}
 
 /** Absolute directory for locally installed swagger-ui-dist assets. */
 export function getSwaggerUiDistPath() {
@@ -24,10 +31,7 @@ export function buildApiDocsHtml() {
   <link rel="icon" type="image/png" href="/api/docs/static/favicon-32x32.png" sizes="32x32" />
   <link rel="icon" type="image/png" href="/api/docs/static/favicon-16x16.png" sizes="16x16" />
   <link rel="stylesheet" href="/api/docs/static/swagger-ui.css" />
-  <style>
-    body { margin: 0; background: #0b1220; }
-    .topbar { display: none; }
-  </style>
+  <link rel="stylesheet" href="/api/docs/static/talonhound.css" />
 </head>
 <body>
   <div id="swagger-ui"></div>
@@ -57,6 +61,14 @@ export function hasExternalCdnReferences(html) {
  */
 export function registerApiDocsRoutes(app) {
   const distPath = getSwaggerUiDistPath();
+  const themePath = getTalonhoundSwaggerThemePath();
+
+  // Theme override must win over swagger-ui-dist filenames; register before static.
+  app.get('/api/docs/static/talonhound.css', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.type('css');
+    return res.sendFile(themePath);
+  });
 
   // Only expose the dist bundle directory; do not enable directory listing or path escape.
   app.use(
