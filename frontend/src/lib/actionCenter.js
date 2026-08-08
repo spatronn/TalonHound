@@ -89,6 +89,26 @@ export function buildActionCenterListParams({ page = 1, pageSize = ACTION_CENTER
   return params;
 }
 
+/** Read `?task=<id>` from Action Center search params (highlight / scroll target). */
+export function actionCenterTaskIdFromSearch(searchParams) {
+  if (!searchParams) return '';
+  const raw = typeof searchParams.get === 'function'
+    ? searchParams.get('task')
+    : searchParams.task;
+  return String(raw || '').trim();
+}
+
+/** Subtle row highlight when Action Center was opened for a specific task. */
+export function actionCenterTaskRowStyle(rowId, highlightedTaskId, baseStyle = {}) {
+  if (!highlightedTaskId || String(rowId) !== String(highlightedTaskId)) return baseStyle;
+  return {
+    ...baseStyle,
+    outline: '2px solid #2563eb',
+    outlineOffset: -2,
+    background: 'rgba(37,99,235,0.12)'
+  };
+}
+
 /** True when the Search Exports modal string must not appear in the IOC list UI. */
 export function hasLegacySearchExportsModal(sourceText) {
   return /Search Exports/.test(String(sourceText || ''));

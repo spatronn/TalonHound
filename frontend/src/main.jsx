@@ -150,6 +150,8 @@ import {
   ACTION_CENTER_PAGE_SIZE,
   actionCenterPollIntervalMs,
   actionCenterStatusBadgeStyle,
+  actionCenterTaskIdFromSearch,
+  actionCenterTaskRowStyle,
   buildActionCenterListParams,
   formatActionCenterStatus,
   formatExpiresIn,
@@ -159,8 +161,11 @@ import {
 } from './lib/actionCenter.js';
 import {
   isDeepSearchResponse,
+  isDeepSearchPending,
+  shouldShowIocListResultChrome,
   deepSearchNotice,
   deepSearchResultsPath,
+  deepSearchActionCenterPath,
   mergeActionCenterItems,
   deepSearchMatchLabel,
   deepSearchDurationLabel
@@ -10355,6 +10360,8 @@ function IOCSuppressionsPage() {
 
 function ActionCenterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightedTaskId = actionCenterTaskIdFromSearch(searchParams);
   const { canWrite } = useSession();
   const ui = PUBLISHED_FEEDS_UI;
   const [items, setItems] = useState([]);
@@ -10366,6 +10373,7 @@ function ActionCenterPage() {
   const [actionBusyId, setActionBusyId] = useState('');
   const [nowTick, setNowTick] = useState(Date.now());
   const mountedRef = useRef(true);
+  const highlightedRowRef = useRef(null);
 
   const totalPages = Math.max(1, Math.ceil(total / ACTION_CENTER_PAGE_SIZE));
 
@@ -10422,6 +10430,16 @@ function ActionCenterPage() {
     }, intervalMs);
     return () => clearInterval(timer);
   }, [items, load]);
+
+  // When opened via /action-center?task=<id> (e.g. Deep Search "View in Action Center"),
+  // scroll the matching row into view once it is present.
+  useEffect(() => {
+    if (!highlightedTaskId || loading) return;
+    const el = highlightedRowRef.current;
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [highlightedTaskId, loading, items]);
 
   async function cancelTask(id) {
     setActionBusyId(id);
@@ -10620,8 +10638,15 @@ function ActionCenterPage() {
                 </tr>
               ) : items.map((row) => {
                 const queryText = row.normalized_query || row.original_query || '';
+                const isHighlighted = highlightedTaskId && String(row.id) === String(highlightedTaskId);
                 return (
-                  <tr key={row.id} style={ui.tr}>
+                  <tr
+                    key={row.id}
+                    ref={isHighlighted ? highlightedRowRef : null}
+                    data-task-id={row.id}
+                    data-highlighted={isHighlighted ? 'true' : undefined}
+                    style={actionCenterTaskRowStyle(row.id, highlightedTaskId, ui.tr)}
+                  >
                     <td style={ui.td}>{taskTypeLabel(row.task_type)}</td>
                     <td style={{ ...ui.td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={queryText}>
                       {truncateQuery(queryText, 80)}
@@ -11271,6 +11296,8 @@ function IOCListPage() {
 
   const paginationLabel = formatIocListPaginationText(pagination, summary.total, search);
   const isSearchMode = Boolean(search) || dslActive;
+  const deepSearchPending = isDeepSearchPending({ deepNotice, deepResult });
+  const showIocListResultChrome = shouldShowIocListResultChrome({ deepNotice, deepResult });
 
   return (
     <AppShell>
@@ -11478,13 +11505,19 @@ function IOCListPage() {
 
       {/* Calm, non-error banner when an expensive query was queued as a background Deep
           Search (classified up front, or auto-continued after the interactive timeout). */}
-      {deepNotice && !deepResult && (() => {
+      {deepSearchPending && (() => {
         const notice = deepSearchNotice({ fallback: deepNotice.fallback });
         return (
           <div style={{ marginBottom: 10, padding: '12px 14px', border: '1px solid #1d4ed8', borderRadius: 10, background: 'rgba(37,99,235,0.12)' }}>
             <div style={{ color: '#bfdbfe', fontWeight: 600, marginBottom: 4 }}>{notice.title}</div>
             <div style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 8 }}>{notice.body}</div>
-            <button type="button" onClick={() => navigate('/action-center')} className={buttonClassName({ variant: 'primary' })}>View in Action Center</button>
+            <button
+              type="button"
+              onClick={() => navigate(deepSearchActionCenterPath(deepNotice.deep_search_id))}
+              className={buttonClassName({ variant: 'primary' })}
+            >
+              View in Action Center
+            </button>
           </div>
         );
       })()}
@@ -11514,13 +11547,13 @@ function IOCListPage() {
             </div>
           ) : (
             <div style={{ color: '#cbd5e1', fontSize: 13 }}>
-              {deepResult.result_state === 'expired'
-                ? 'This deep search result set has expired and is no longer available. Run the search again to rebuild it.'
-                : deepResult.result_state === 'error'
-                  ? 'The deep search results could not be loaded.'
-                  : `This deep search is ${deepResult.status || 'processing'}. Results will appear here once it completes.`}
-              {' '}
-              <button type="button" style={{ fontSize: 12 }} onClick={() => navigate('/action-center')}>Open Action Center</button>
+                {deepResult.result_state === 'expired'
+                  ? 'This deep search result set has expired and is no longer available. Run the search again to rebuild it.'
+                  : deepResult.result_state === 'error'
+                    ? 'The deep search results could not be loaded.'
+                    : `This deep search is ${deepResult.status || 'processing'}. Results will appear here once it completes.`}
+                {' '}
+                <button type="button" style={{ fontSize: 12 }} onClick={() => navigate(deepSearchActionCenterPath(deepResult.deep_search_id))}>Open Action Center</button>
             </div>
           )}
         </div>
@@ -11537,21 +11570,27 @@ function IOCListPage() {
             ))}
             <button onClick={clearDsl} style={{ fontSize: 12 }}>Clear all</button>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-            <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
-              {dslResult.deep_search ? 'Running in the background…' : (dslResult.timed_out ? '—' : `${dslResult.count_display || '0'} matching IOCs`)}
-            </span>
-            {!dslResult.deep_search && dslResult.exact_count == null && !dslResult.timed_out && dslResult.count_display && String(dslResult.count_display).includes('+') ? (
-              <span style={{ color: '#94a3b8', fontSize: 12 }}>Showing the latest {pageSize} · More results exist. Refine the search or export all matching IOCs.</span>
-            ) : null}
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={dslPrevPage} disabled={dslResult.deep_search || dslCursorStack.length === 0 || dslLoading}>Prev</button>
-              <button onClick={dslNextPage} disabled={dslResult.deep_search || !dslResult.has_more || dslLoading}>Next</button>
+          {deepSearchPending ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
               <button onClick={() => { setAdvancedOpen(true); if (dslSearchInputRef.current) dslSearchInputRef.current.focus(); }}>Refine search</button>
-              <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} disabled={exportBusy}>Export matching IOCs</button>
             </div>
-          </div>
-          {(dslResult.warnings || []).map((w, i) => (
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                {dslResult.timed_out ? '—' : `${dslResult.count_display || '0'} matching IOCs`}
+              </span>
+              {dslResult.exact_count == null && !dslResult.timed_out && dslResult.count_display && String(dslResult.count_display).includes('+') ? (
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Showing the latest {pageSize} · More results exist. Refine the search or export all matching IOCs.</span>
+              ) : null}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button onClick={dslPrevPage} disabled={dslCursorStack.length === 0 || dslLoading}>Prev</button>
+                <button onClick={dslNextPage} disabled={!dslResult.has_more || dslLoading}>Next</button>
+                <button onClick={() => { setAdvancedOpen(true); if (dslSearchInputRef.current) dslSearchInputRef.current.focus(); }}>Refine search</button>
+                <button onClick={() => { setExportScope('all'); setExportModalOpen(true); }} disabled={exportBusy}>Export matching IOCs</button>
+              </div>
+            </div>
+          )}
+          {!deepSearchPending && (dslResult.warnings || []).map((w, i) => (
             <div key={i} style={{ marginTop: 6, color: '#fbbf24', fontSize: 12 }}>{w}</div>
           ))}
         </div>
@@ -11598,6 +11637,7 @@ function IOCListPage() {
         </ModalOverlay>
       )}
 
+      {showIocListResultChrome && (
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0f172a' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <label style={{ fontSize: 14, color: '#cbd5e1' }}>Page size:</label>
@@ -11619,14 +11659,15 @@ function IOCListPage() {
           {dslActive ? (dslResult?.timed_out ? '' : `${dslResult?.count_display || '0'} matching IOCs`) : paginationLabel}
         </div>
       </div>
+      )}
 
-      {(listLoading || listStatusText) && (
+      {showIocListResultChrome && (listLoading || listStatusText) && (
         <div style={{ marginBottom: 10, padding: 10, background: listLoading ? 'rgba(37,99,235,0.12)' : 'rgba(180,83,9,0.15)', border: `1px solid ${listLoading ? '#1d4ed8' : '#b45309'}`, borderRadius: 6, color: listLoading ? '#bfdbfe' : '#fcd34d' }}>
           {listLoading ? 'Query is running. Please wait while IOC results are being processed...' : listStatusText}
         </div>
       )}
 
-      {!listLoading && !listStatusText && rows.length === 0 && (
+      {showIocListResultChrome && !listLoading && !listStatusText && rows.length === 0 && (
         <div style={{ marginBottom: 10, padding: 10, background: '#0f172a', border: '1px solid #334155', borderRadius: 6, color: '#94a3b8' }}>
           {isSearchMode
             ? 'No matching IOC found across active, expired, and suppressed records.'
@@ -11634,6 +11675,7 @@ function IOCListPage() {
         </div>
       )}
 
+      {showIocListResultChrome && (
       <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
         <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
@@ -11742,8 +11784,9 @@ function IOCListPage() {
           </tbody>
         </table>
       </div>
+      )}
 
-      {!dslActive && (
+      {showIocListResultChrome && !dslActive && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
           <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
           <button

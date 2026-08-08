@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   actionCenterPollIntervalMs,
   actionCenterStatusBadgeStyle,
+  actionCenterTaskIdFromSearch,
+  actionCenterTaskRowStyle,
   buildActionCenterListParams,
   formatExpiresIn,
   formatFileSize,
@@ -68,6 +70,32 @@ test('deep-search statuses share export badge/status vocabulary', () => {
 test('poll interval treats running deep searches as active', () => {
   assert.equal(actionCenterPollIntervalMs([{ status: 'running' }]), 3000);
   assert.equal(actionCenterPollIntervalMs([{ status: 'completed' }]), 15000);
+});
+
+test('actionCenterTaskIdFromSearch reads ?task= highlight param', () => {
+  assert.equal(actionCenterTaskIdFromSearch(new URLSearchParams('task=ds-1')), 'ds-1');
+  assert.equal(actionCenterTaskIdFromSearch(new URLSearchParams('')), '');
+  assert.equal(actionCenterTaskIdFromSearch({ get: () => '  abc  ' }), 'abc');
+  assert.equal(actionCenterTaskIdFromSearch(null), '');
+});
+
+test('actionCenterTaskRowStyle highlights only the matching task row', () => {
+  const base = { color: 'inherit' };
+  assert.deepEqual(actionCenterTaskRowStyle('ds-1', 'ds-1', base).outline, '2px solid #2563eb');
+  assert.equal(actionCenterTaskRowStyle('ds-2', 'ds-1', base).outline, undefined);
+  assert.deepEqual(actionCenterTaskRowStyle('ds-2', 'ds-1', base), base);
+});
+
+test('Action Center wires task highlight from query param', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const mainJsx = await fs.readFile(path.join(here, '../main.jsx'), 'utf8');
+  assert.match(mainJsx, /actionCenterTaskIdFromSearch\(searchParams\)/);
+  assert.match(mainJsx, /actionCenterTaskRowStyle\(/);
+  assert.match(mainJsx, /data-highlighted=/);
+  assert.match(mainJsx, /deepSearchActionCenterPath\(/);
 });
 
 test('legacy Search Exports modal detector', () => {

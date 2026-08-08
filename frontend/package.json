@@ -14,7 +14,7 @@
     "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js src/lib/intelligenceSummarySection.test.js",
     "test:tags": "node --test src/lib/iocTagBadges.test.js src/lib/tagManagerList.test.js",
     "test:threat-classification": "node --test src/lib/threatClassificationOrder.test.js src/lib/classificationSummary.test.js",
-    "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js",
+    "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js src/lib/deepSearch.test.js",
     "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js",
     "test:password-change": "node --test src/lib/passwordChangeGate.test.js",
     "test:ux-phase1": "node --test src/lib/uiButtons.test.js src/lib/modalOverlay.test.js src/lib/createUserForm.test.js src/lib/feedFormField.test.js src/lib/publishedFeedForm.test.js src/lib/deleteUserConfirm.test.js src/lib/userRowControls.test.js",

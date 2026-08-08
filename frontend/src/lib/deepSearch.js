@@ -21,17 +21,19 @@ export function deepSearchReasonLabel(reason) {
 /**
  * Calm, non-error banner text shown on the IOC List when a search is (or was auto-)continued
  * as a Deep Search. `fallback` distinguishes the classifier path from the timeout conversion.
+ * Copy directs the analyst to Action Center — never imply results will appear on this page.
  */
 export function deepSearchNotice({ fallback = false } = {}) {
+  const body = 'This search is running in the background. View its progress and results in Action Center.';
   if (fallback) {
     return {
       title: 'Search continued in the background',
-      body: 'The interactive search exceeded the time limit and has been continued as a background search. You can continue using TalonHound.'
+      body
     };
   }
   return {
     title: 'Deep search started',
-    body: 'This query may scan a large portion of the IOC dataset. It is running in the background, and you can continue using TalonHound.'
+    body
   };
 }
 
@@ -40,9 +42,36 @@ export function isDeepSearchResponse(data) {
   return Boolean(data) && data.mode === 'deep_search' && Boolean(data.deep_search_id);
 }
 
+/**
+ * IOC List is in the queued/running handoff state: a Deep Search was created and the analyst
+ * has not opened a completed result set yet. Mutually exclusive with result-browsing mode.
+ */
+export function isDeepSearchPending({ deepNotice, deepResult } = {}) {
+  return Boolean(deepNotice) && !deepResult;
+}
+
+/**
+ * Whether the normal IOC List result chrome (page size, empty-state, table, browse prev/next)
+ * should render. Hidden for pending Deep Search and for non-ready Deep Search result states
+ * (expired / failed / cancelled / still processing / load error) so those never leak a
+ * misleading "0 matching IOCs" empty table.
+ */
+export function shouldShowIocListResultChrome({ deepNotice, deepResult } = {}) {
+  if (isDeepSearchPending({ deepNotice, deepResult })) return false;
+  if (deepResult && deepResult.result_state !== 'ready') return false;
+  return true;
+}
+
 /** URL that opens the IOC List in Deep Search result-browsing mode. */
 export function deepSearchResultsPath(id) {
   return `/ioc?deep_search=${encodeURIComponent(String(id || ''))}`;
+}
+
+/** URL that opens Action Center and highlights a specific Deep Search (or other) task. */
+export function deepSearchActionCenterPath(id) {
+  const tid = String(id || '').trim();
+  if (!tid) return '/action-center';
+  return `/action-center?task=${encodeURIComponent(tid)}`;
 }
 
 /**
