@@ -1490,9 +1490,16 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             });
           }
         } else {
-          // full or bootstrap — streaming rebuild, populate projection when incremental allowed for this feed
+          // full or bootstrap — streaming rebuild.
+          // Only clear/populate projection for the durable `all` window. Sliding-window
+          // full rebuilds must not wipe published_feed_items (that destroyed the all
+          // projection during Domain delta testing).
           const W = captureCutoffNow();
-          const populate = incrementalForFeed;
+          const populate = Boolean(
+            incrementalForFeed
+            && String(window) === 'all'
+            && (mode === 'bootstrap' || mode === 'full')
+          );
           if (populate) {
             await setFeedProjectionState(db, id, { projection_status: PROJECTION_STATUS.BOOTSTRAPPING });
             await clearFeedProjection(db, id);
