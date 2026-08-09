@@ -1585,12 +1585,14 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   const anyGenerated = results.some((r) => r.status === 'success' && !r.skipped);
 
   if (!allSkipped) {
+    // Do NOT bump updated_at on generation — that column is a config watermark.
+    // Bumping it made the next cycle see filtersChanged and forced full rebuilds,
+    // defeating incremental/no-op even when projection was ready.
     await db.query(
       `UPDATE published_feeds
        SET last_generated_at = NOW(),
            last_status = $2,
-           last_error = $3,
-           updated_at = NOW()
+           last_error = $3
        WHERE id = $1`,
       [id, lastStatus, lastError]
     );
