@@ -215,7 +215,7 @@ describe('deferred recompute scheduling', () => {
 });
 
 describe('persistPublishedFeedSnapshot unchanged hash', () => {
-  it('does not UPDATE when content hash is unchanged', async () => {
+  it('refreshes params when content hash is unchanged', async () => {
     const calls = [];
     const client = {
       async query(sql, params = []) {
@@ -227,6 +227,9 @@ describe('persistPublishedFeedSnapshot unchanged hash', () => {
         if (normalized.includes('pg_advisory_xact_lock')) return { rows: [] };
         if (normalized.includes('FOR UPDATE') && normalized.includes("status = 'success'")) {
           return { rows: [{ id: 42, content_hash: 'abc123' }] };
+        }
+        if (normalized.includes('UPDATE published_feed_snapshots') && normalized.includes('SET params')) {
+          return { rows: [] };
         }
         throw new Error(`Unexpected query: ${sql}`);
       },
@@ -244,7 +247,8 @@ describe('persistPublishedFeedSnapshot unchanged hash', () => {
     });
 
     assert.equal(result.skipped, true);
-    assert.ok(!calls.some((c) => c.startsWith('UPDATE published_feed_snapshots')));
+    assert.equal(result.reason, 'unchanged_hash');
+    assert.ok(calls.some((c) => c.includes('UPDATE published_feed_snapshots') && c.includes('SET params')));
   });
 });
 

@@ -51,16 +51,18 @@ export function captureCutoffNow() {
 
 /**
  * Collect distinct ioc_item ids touched since cutoff (exclusive). Bounded by LIMIT.
- * Returns { ids: number[], truncated: boolean, sources: object }.
+ * Returns { ids: number[], truncated: boolean, sources: object, deletes?: object[] }.
  */
 export async function collectDirtyIocIds(db, feed, cutoff, { limit = 100000 } = {}) {
-  if (!cutoff) return { ids: [], truncated: false, sources: {}, forceFull: true };
+  if (!cutoff) return { ids: [], truncated: false, sources: {}, deletes: [], forceFull: true };
   const ids = new Set();
+  const deletes = [];
   const sources = {
     ioc_items: 0,
     memberships: 0,
     enrichment: 0,
     file_artifacts: 0,
+    deletes: 0,
     tags_catalog: false
   };
   let truncated = false;
@@ -83,7 +85,63 @@ export async function collectDirtyIocIds(db, feed, cutoff, { limit = 100000 } = 
   );
   if (catRows[0]?.watermark && new Date(catRows[0].watermark) > cutoff) {
     sources.tags_catalog = true;
-    return { ids: [], truncated: false, sources, forceFull: true, reason: 'tags_catalog' };
+    return { ids: [], truncated: false, sources, deletes: [], forceFull: true, reason: 'tags_catalog' };
+  }
+
+  // Hard DELETE tombstones (migration 151). Also expand to living siblings so
+  // duplicate-observable / hash-canonical winners can be re-selected.
+  const { rows: delRows } = await db.query(
+    `SELECT ioc_item_id, observable, observable_type, artifact_id, deleted_at
+     FROM published_feed_ioc_deletes
+     WHERE deleted_at > $1
+     ORDER BY deleted_at ASC
+     LIMIT $2`,
+    [cutoff, limit + 1]
+  );
+  if (delRows.length > limit) truncated = true;
+  for (const d of delRows.slice(0, limit)) {
+    const id = Number(d.ioc_item_id);
+    deletes.push({
+      ioc_item_id: id,
+      observable: d.observable,
+      observable_type: d.observable_type,
+      artifact_id: d.artifact_id || null,
+      deleted_at: d.deleted_at
+    });
+    if (Number.isFinite(id) && !ids.has(id) && ids.size < limit) {
+      ids.add(id);
+      sources.deletes += 1;
+    }
+  }
+  if (!truncated && deletes.length) {
+    const obsPairs = deletes.map((d) => [String(d.observable || '').toLowerCase(), d.observable_type]);
+    const arts = [...new Set(deletes.map((d) => d.artifact_id).filter(Boolean))];
+    if (obsPairs.length) {
+      const { rows: sib } = await db.query(
+        `SELECT id FROM ioc_items
+         WHERE (lower(observable), observable_type) IN (
+           SELECT lower(x.obs), x.otype
+           FROM unnest($1::text[], $2::text[]) AS x(obs, otype)
+         )
+         LIMIT $3`,
+        [
+          obsPairs.map((p) => p[0]),
+          obsPairs.map((p) => p[1]),
+          Math.max(limit - ids.size, 1)
+        ]
+      );
+      addRows(sib, 'ioc_items');
+    }
+    if (!truncated && arts.length) {
+      const { rows: artSib } = await db.query(
+        `SELECT fal.ioc_item_id AS id
+         FROM file_artifact_ioc_links fal
+         WHERE fal.artifact_id = ANY($1::uuid[])
+         LIMIT $2`,
+        [arts, Math.max(limit - ids.size, 1)]
+      );
+      addRows(artSib, 'file_artifacts');
+    }
   }
 
   const { rows: iocRows } = await db.query(
@@ -149,6 +207,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, { limit = 100000 } = 
 
   return {
     ids: [...ids],
+    deletes,
     truncated,
     sources,
     forceFull: truncated
@@ -161,17 +220,29 @@ export async function collectDirtyIocIds(db, feed, cutoff, { limit = 100000 } = 
  * base SQL (DISTINCT ON / hash collapse) so winners match full generation for those
  * identities — without scanning the rest of the feed.
  */
-export async function evaluateCandidatesAgainstFeed(db, feed, window, candidateIds) {
-  if (!candidateIds?.length) return [];
-  const { rows: idents } = await db.query(
-    `SELECT DISTINCT lower(observable) AS obs, observable_type AS otype
-     FROM ioc_items WHERE id = ANY($1::bigint[])`,
-    [candidateIds]
-  );
-  if (!idents.length) return [];
-  const lowerValues = [...new Set(idents.map((r) => r.obs))];
-  const types = [...new Set(idents.map((r) => r.otype))];
-  const { sql, params } = buildStreamingBaseSql(feed, window, { lowerValues, types });
+export async function evaluateCandidatesAgainstFeed(db, feed, window, candidateIds, { deletes = [] } = {}) {
+  const lowerValues = new Set();
+  const types = new Set();
+  if (candidateIds?.length) {
+    const { rows: idents } = await db.query(
+      `SELECT DISTINCT lower(observable) AS obs, observable_type AS otype
+       FROM ioc_items WHERE id = ANY($1::bigint[])`,
+      [candidateIds]
+    );
+    for (const r of idents) {
+      lowerValues.add(r.obs);
+      types.add(r.otype);
+    }
+  }
+  for (const d of deletes || []) {
+    lowerValues.add(String(d.observable || '').toLowerCase());
+    if (d.observable_type) types.add(d.observable_type);
+  }
+  if (!lowerValues.size) return [];
+  const { sql, params } = buildStreamingBaseSql(feed, window, {
+    lowerValues: [...lowerValues],
+    types: [...types]
+  });
   const { rows } = await db.query(sql, params);
   return rows;
 }
@@ -179,29 +250,81 @@ export async function evaluateCandidatesAgainstFeed(db, feed, window, candidateI
 /**
  * Expand candidate ids to sibling identities currently in the projection (for leave detection)
  * and to lower(observable) siblings that share published identity.
+ * Optional `deletes` supplies tombstone identity when the IOC row is already gone.
  */
-export async function expandCandidateContext(db, feedId, window, candidateIds) {
-  if (!candidateIds?.length) {
+export async function expandCandidateContext(db, feedId, window, candidateIds, { deletes = [] } = {}) {
+  if (!candidateIds?.length && !deletes?.length) {
     return { candidateIds: [], projectedKeys: [], siblingIds: [] };
   }
-  const { rows: proj } = await db.query(
-    `SELECT identity_key, ioc_item_id FROM published_feed_items
-     WHERE feed_id = $1 AND snapshot_window = $2 AND ioc_item_id = ANY($3::bigint[])`,
-    [feedId, window, candidateIds]
-  );
-  const { rows: sib } = await db.query(
-    `SELECT i2.id
-     FROM ioc_items i1
-     JOIN ioc_items i2
-       ON lower(i2.observable) = lower(i1.observable)
-      AND i2.observable_type = i1.observable_type
-     WHERE i1.id = ANY($1::bigint[])`,
-    [candidateIds]
-  );
+  const ids = candidateIds?.length ? candidateIds : [];
+  const projectedKeys = new Set();
+  const siblingIds = new Set();
+
+  if (ids.length) {
+    const { rows: proj } = await db.query(
+      `SELECT identity_key, ioc_item_id FROM published_feed_items
+       WHERE feed_id = $1 AND snapshot_window = $2 AND ioc_item_id = ANY($3::bigint[])`,
+      [feedId, window, ids]
+    );
+    for (const r of proj) projectedKeys.add(r.identity_key);
+
+    const { rows: sib } = await db.query(
+      `SELECT i2.id
+       FROM ioc_items i1
+       JOIN ioc_items i2
+         ON lower(i2.observable) = lower(i1.observable)
+        AND i2.observable_type = i1.observable_type
+       WHERE i1.id = ANY($1::bigint[])`,
+      [ids]
+    );
+    for (const r of sib) siblingIds.add(Number(r.id));
+  }
+
+  if (deletes?.length) {
+    const keys = [];
+    const obs = [];
+    const types = [];
+    const arts = [];
+    for (const d of deletes) {
+      keys.push(projectionIdentityKey(d.observable, d.observable_type, {
+        artifactId: d.artifact_id || null
+      }));
+      keys.push(projectionIdentityKey(d.observable, d.observable_type));
+      obs.push(String(d.observable || '').toLowerCase());
+      types.push(d.observable_type);
+      if (d.artifact_id) arts.push(d.artifact_id);
+    }
+    const { rows: byKey } = await db.query(
+      `SELECT identity_key FROM published_feed_items
+       WHERE feed_id = $1 AND snapshot_window = $2 AND identity_key = ANY($3::text[])`,
+      [feedId, window, [...new Set(keys)]]
+    );
+    for (const r of byKey) projectedKeys.add(r.identity_key);
+
+    const { rows: byObs } = await db.query(
+      `SELECT id FROM ioc_items
+       WHERE (lower(observable), observable_type) IN (
+         SELECT x.obs, x.otype FROM unnest($1::text[], $2::text[]) AS x(obs, otype)
+       )`,
+      [obs, types]
+    );
+    for (const r of byObs) siblingIds.add(Number(r.id));
+
+    if (arts.length) {
+      const { rows: byArt } = await db.query(
+        `SELECT fal.ioc_item_id AS id
+         FROM file_artifact_ioc_links fal
+         WHERE fal.artifact_id = ANY($1::uuid[])`,
+        [arts]
+      );
+      for (const r of byArt) siblingIds.add(Number(r.id));
+    }
+  }
+
   return {
-    candidateIds,
-    projectedKeys: proj.map((r) => r.identity_key),
-    siblingIds: [...new Set(sib.map((r) => Number(r.id)))]
+    candidateIds: ids,
+    projectedKeys: [...projectedKeys],
+    siblingIds: [...siblingIds]
   };
 }
 
@@ -291,16 +414,17 @@ export async function applyIncrementalProjectionUpdate(db, feed, window, formatT
       artifactDirty: false, forceFull: true, reason: dirty.reason || 'dirty_truncated'
     };
   }
-  if (!dirty.ids?.length) {
+  if (!dirty.ids?.length && !dirty.deletes?.length) {
     return {
       entered: 0, updated: 0, removed: 0, unchanged: 0,
       artifactDirty: false, forceFull: false
     };
   }
 
-  const ctx = await expandCandidateContext(db, feed.id, window, dirty.ids);
-  const evalIds = [...new Set([...dirty.ids, ...ctx.siblingIds])];
-  const matched = await evaluateCandidatesAgainstFeed(db, feed, window, evalIds);
+  const deletes = dirty.deletes || [];
+  const ctx = await expandCandidateContext(db, feed.id, window, dirty.ids || [], { deletes });
+  const evalIds = [...new Set([...(dirty.ids || []), ...ctx.siblingIds])];
+  const matched = await evaluateCandidatesAgainstFeed(db, feed, window, evalIds, { deletes });
   const matchedIds = new Set(matched.map((r) => Number(r.id)));
   const newRows = await buildProjectionRowsForMatched(db, feed, window, matched, formatTypes);
   const newKeys = new Set(newRows.map((r) => r.identity_key));
@@ -311,7 +435,7 @@ export async function applyIncrementalProjectionUpdate(db, feed, window, formatT
      FROM published_feed_items
      WHERE feed_id = $1 AND snapshot_window = $2
        AND (ioc_item_id = ANY($3::bigint[]) OR identity_key = ANY($4::text[]))`,
-    [feed.id, window, evalIds, [...newKeys, ...ctx.projectedKeys]]
+    [feed.id, window, evalIds.length ? evalIds : [0], [...newKeys, ...ctx.projectedKeys]]
   );
   const existingByKey = new Map(existing.map((r) => [r.identity_key, r]));
 

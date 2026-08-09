@@ -205,4 +205,139 @@ describe('collectDirtyIocIds / applyIncrementalProjectionUpdate', () => {
     assert.ok(result.entered + result.updated >= 1); // a.com upserted
     assert.equal(result.artifactDirty, true);
   });
+
+  it('collectDirtyIocIds includes hard-delete tombstones and living siblings', async () => {
+    const cutoff = new Date('2026-08-01T00:00:00Z');
+    const db = {
+      async query(sql) {
+        const s = String(sql);
+        if (s.includes('published_feed_global_watermarks')) return { rows: [{ watermark: new Date('2026-07-01T00:00:00Z') }] };
+        if (s.includes('published_feed_ioc_deletes')) {
+          return {
+            rows: [{
+              ioc_item_id: 99,
+              observable: 'gone.example',
+              observable_type: 'domain',
+              artifact_id: null,
+              deleted_at: new Date('2026-08-02T00:00:00Z')
+            }]
+          };
+        }
+        if (s.includes('unnest') && s.includes('ioc_items')) {
+          return { rows: [{ id: 100 }] }; // surviving sibling
+        }
+        return { rows: [] };
+      }
+    };
+    const dirty = await collectDirtyIocIds(db, { include_enrichment: false }, cutoff);
+    assert.equal(dirty.forceFull, false);
+    assert.ok(dirty.deletes.length === 1);
+    assert.equal(dirty.deletes[0].ioc_item_id, 99);
+    assert.ok(dirty.ids.includes(99));
+    assert.ok(dirty.ids.includes(100));
+    assert.ok(dirty.sources.deletes >= 1);
+  });
+
+  it('hard delete with no surviving sibling removes projected identity', async () => {
+    const existing = [
+      { identity_key: 'o:domain:gone.example', ioc_item_id: 99, content_fingerprint: 'x' }
+    ];
+    const db = {
+      async query(sql, params) {
+        const s = String(sql).replace(/\s+/g, ' ');
+        if (s.includes('DELETE FROM published_feed_items')) {
+          assert.ok((params?.[2] || []).includes('o:domain:gone.example'));
+          return { rowCount: 1 };
+        }
+        if (s.includes('FROM published_feed_items')) {
+          if (s.includes('content_fingerprint')) return { rows: existing };
+          return { rows: existing.map((e) => ({ identity_key: e.identity_key, ioc_item_id: e.ioc_item_id })) };
+        }
+        // No living IOC / no streaming match after hard delete
+        return { rows: [] };
+      }
+    };
+    const feed = {
+      id: 11,
+      format: 'txt',
+      filter_mode: 'basic',
+      ioc_types: ['domain'],
+      time_window: 'all',
+      include_enrichment: false
+    };
+    const result = await applyIncrementalProjectionUpdate(
+      db,
+      feed,
+      'all',
+      ['domain'],
+      {
+        ids: [99],
+        deletes: [{ ioc_item_id: 99, observable: 'gone.example', observable_type: 'domain', artifact_id: null }],
+        forceFull: false
+      }
+    );
+    assert.equal(result.removed, 1);
+    assert.equal(result.entered, 0);
+    assert.equal(result.artifactDirty, true);
+  });
+
+  it('hard delete of one sibling keeps identity when another sibling still matches', async () => {
+    const existing = [
+      { identity_key: 'o:domain:twin.example', ioc_item_id: 1, content_fingerprint: 'old' }
+    ];
+    const db = {
+      async query(sql) {
+        const s = String(sql).replace(/\s+/g, ' ');
+        if (s.includes('FROM published_feed_items') && s.includes('identity_key = ANY')) {
+          return { rows: [{ identity_key: 'o:domain:twin.example' }] };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('content_fingerprint')) {
+          return { rows: existing };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('ioc_item_id = ANY')) {
+          return { rows: existing.map((e) => ({ identity_key: e.identity_key, ioc_item_id: e.ioc_item_id })) };
+        }
+        if (s.includes('unnest') || (s.includes('FROM ioc_items') && s.includes('lower(observable)'))) {
+          return { rows: [{ id: 2 }] };
+        }
+        if (s.includes('DISTINCT ON') || s.includes('buildStreaming') || s.includes('FROM (')) {
+          return {
+            rows: [{
+              id: 2,
+              observable: 'twin.example',
+              observable_type: 'domain',
+              confidence: 'medium',
+              category: null,
+              created_at: '2026-08-01T00:00:00Z',
+              recency_ts: '2026-08-09T00:00:00Z'
+            }]
+          };
+        }
+        if (s.includes('INSERT INTO published_feed_items')) return { rowCount: 1 };
+        if (s.includes('DELETE FROM published_feed_items')) return { rowCount: 0 };
+        return { rows: [] };
+      }
+    };
+    const feed = {
+      id: 11,
+      format: 'txt',
+      filter_mode: 'basic',
+      ioc_types: ['domain'],
+      time_window: 'all',
+      include_enrichment: false
+    };
+    const result = await applyIncrementalProjectionUpdate(
+      db,
+      feed,
+      'all',
+      ['domain'],
+      {
+        ids: [1, 2],
+        deletes: [{ ioc_item_id: 1, observable: 'twin.example', observable_type: 'domain', artifact_id: null }],
+        forceFull: false
+      }
+    );
+    assert.equal(result.removed, 0);
+    assert.ok(result.entered + result.updated + result.unchanged >= 1);
+  });
 });
