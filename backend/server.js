@@ -128,7 +128,7 @@ import {
   runIntegrationQueueRecover
 } from './lib/integrationQueueApi.js';
 import { parseActionReason } from './lib/reasonValidation.js';
-import { regenerateAllEnabledFeeds } from './lib/feedPublisherService.js';
+import { regenerateAllEnabledFeeds, resolvePublishedFeedTickMs } from './lib/feedPublisherService.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import {
   resolveFeedHealthState,
@@ -5808,7 +5808,9 @@ async function ensureDefaultAdmin() {
   }
 }
 
-const PUBLISHED_FEED_TICK_MS = Math.max(Number(process.env.PUBLISHED_FEED_TICK_MS || 5 * 60 * 1000), 15 * 1000);
+// Poll resolution for Published Feed due checks (default 60s). Due filtering is cheap;
+// expensive generation only runs for feeds that pass isPublishedFeedDue.
+const PUBLISHED_FEED_TICK_MS = resolvePublishedFeedTickMs();
 const IOC_LIST_STATS_REFRESH_MS = Math.max(Number(process.env.IOC_LIST_STATS_REFRESH_MS || IOC_LIST_STATS_CACHE_TTL_MS), 60 * 60 * 1000);
 let publishedFeedTickInProgress = false;
 let iocListStatsRefreshScheduled = false;

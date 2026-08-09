@@ -1665,18 +1665,57 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   return { feed_id: id, results, last_status: lastStatus, last_error: lastError };
 }
 
-export async function regenerateAllEnabledFeeds(pool) {
+/** Default scheduler poll cadence (ms). Overridable via PUBLISHED_FEED_TICK_MS. */
+export const PUBLISHED_FEED_TICK_MS_DEFAULT = 60 * 1000;
+/** Floor for tick resolution — avoid sub-15s busy loops. */
+export const PUBLISHED_FEED_TICK_MS_MIN = 15 * 1000;
+
+/**
+ * Resolve Published Feed scheduler poll interval from env/config.
+ * Invalid/empty values fall back to the 60s default; values below the floor are clamped.
+ */
+export function resolvePublishedFeedTickMs(envValue = process.env.PUBLISHED_FEED_TICK_MS) {
+  if (envValue == null || envValue === '') return PUBLISHED_FEED_TICK_MS_DEFAULT;
+  const n = Number(envValue);
+  if (!Number.isFinite(n)) return PUBLISHED_FEED_TICK_MS_DEFAULT;
+  return Math.max(n, PUBLISHED_FEED_TICK_MS_MIN);
+}
+
+/**
+ * Cheap due check for scheduled Published Feed refresh.
+ *
+ * Cadence is start-anchored: `last_generated_at` is completion time, so we subtract
+ * `last_refresh_ms` (last window duration) to approximate the previous start. That way a
+ * 5m feed that starts at T and finishes at T+45s becomes due again near T+5m, not T+5m45s
+ * (and not T+10m when the poll interval equals the refresh interval).
+ *
+ * Long jobs (> interval): after completion the feed is immediately due once — no backlog
+ * queue; advisory lock still prevents overlap while a run is in progress.
+ */
+export function isPublishedFeedDue(row, nowMs = Date.now()) {
+  if (row?.enabled === false) return false;
+  const intervalMs = Math.max(Number(row?.refresh_interval_minutes || 15), 5) * 60 * 1000;
+  if (!row?.last_generated_at) return true;
+  const completedAt = new Date(row.last_generated_at).getTime();
+  if (!Number.isFinite(completedAt)) return true;
+  const durationMs = Math.max(0, Number(row.last_refresh_ms) || 0);
+  const cappedDuration = Math.min(durationMs, intervalMs);
+  const anchorMs = completedAt - cappedDuration;
+  return nowMs - anchorMs >= intervalMs;
+}
+
+/**
+ * Scheduler tick: cheap SELECT of scheduling columns, filter due feeds in-process,
+ * then run generation only for due ids (advisory lock prevents overlap).
+ */
+export async function regenerateAllEnabledFeeds(pool, options = {}) {
+  const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const { rows } = await pool.query(
-    `SELECT id, name, refresh_interval_minutes, last_generated_at
+    `SELECT id, name, refresh_interval_minutes, last_generated_at, last_refresh_ms, enabled
      FROM published_feeds
      WHERE enabled = TRUE`
   );
-  const now = Date.now();
-  const due = rows.filter((r) => {
-    const intervalMs = Math.max(Number(r.refresh_interval_minutes || 15), 5) * 60 * 1000;
-    if (!r.last_generated_at) return true;
-    return now - new Date(r.last_generated_at).getTime() >= intervalMs;
-  });
+  const due = rows.filter((r) => isPublishedFeedDue(r, nowMs));
 
   for (const row of due) {
     try {
@@ -1693,6 +1732,7 @@ export async function regenerateAllEnabledFeeds(pool) {
       });
     }
   }
+  return { checked: rows.length, due: due.length, due_ids: due.map((r) => Number(r.id)) };
 }
 
 /** Metadata only — never SELECT content (used for 304 / skip checks). */

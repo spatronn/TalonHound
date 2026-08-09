@@ -86,6 +86,9 @@ services:
       - PUBLISHED_FEED_INCREMENTAL_ENABLED=${PUBLISHED_FEED_INCREMENTAL_ENABLED:-false}
       # Optional comma-separated feed ids for controlled incremental bootstrap/rollout.
       - PUBLISHED_FEED_INCREMENTAL_FEED_IDS=${PUBLISHED_FEED_INCREMENTAL_FEED_IDS:-}
+      # Scheduler poll resolution for due checks (default 60s). Must be << refresh_interval
+      # so a 5m feed is not delayed by a second full tick (~10m effective cadence).
+      - PUBLISHED_FEED_TICK_MS=${PUBLISHED_FEED_TICK_MS:-60000}
       - PUBLISHED_FEED_STORAGE_DIR=/data/published-feeds
     depends_on:
       - db
