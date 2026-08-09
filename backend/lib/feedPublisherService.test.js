@@ -80,19 +80,24 @@ describe('persistPublishedFeedSnapshot', () => {
     assert.equal(calls.at(-1).sql, 'RELEASE');
   });
 
-  it('skips DB update when content hash is unchanged', async () => {
+  it('refreshes params when content hash is unchanged', async () => {
     const { pool, calls } = createMockPool([
       { match: (sql) => sql.includes('pg_advisory_xact_lock'), result: () => ({ rows: [] }) },
       {
         match: (sql) => sql.includes('FOR UPDATE') && sql.includes("status = 'success'"),
         result: () => ({ rows: [{ id: 42, content_hash: 'abc123' }] })
-      }
+      },
+      { match: (sql) => sql.includes('UPDATE published_feed_snapshots'), result: () => ({ rows: [] }) }
     ]);
 
     const result = await persistPublishedFeedSnapshot(pool, { ...baseSnapshot, itemCount: 5 });
 
     assert.equal(result.skipped, true);
-    assert.ok(!calls.some((c) => c.sql.startsWith('UPDATE published_feed_snapshots')));
+    assert.equal(result.reason, 'unchanged_hash');
+    const upd = calls.find((c) => c.sql.includes('UPDATE published_feed_snapshots') && c.sql.includes('SET params'));
+    assert.ok(upd, 'expected params refresh on identical content');
+    assert.equal(upd.params[0], 42);
+    assert.ok(!calls.some((c) => c.sql.includes('SET generated_at') && c.sql.includes('content_hash')));
   });
 
   it('updates content when content hash changes', async () => {
