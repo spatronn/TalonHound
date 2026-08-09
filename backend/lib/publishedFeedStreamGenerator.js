@@ -14,6 +14,13 @@ import { buildStreamingBaseSql, resolvePublishedFeedFormat, resolveJsonIncludeFl
 import { normalizePublishedIoc } from './publishedFeedJson.js';
 import { metaKey } from './publishedFeedJsonData.js';
 import {
+  projectionIdentityKey,
+  projectionContentFingerprint,
+  confidenceRank,
+  upsertProjectionBatch,
+  buildProjectionScanSql
+} from './publishedFeedProjection.js';
+import {
   getPublishedFeedArtifactConfig,
   newGenerationId,
   openArtifactPartStream,
@@ -254,7 +261,7 @@ async function fetchBatchEnrichment(db, rows, byId) {
  * @param {import('pg').PoolClient} db  the generation client (holds the advisory lock)
  * @param {object} feed  normalized feed config
  * @param {string} window
- * @param {{ formatTypes: string[]|string, maxItems: number|null, cfg?: object }} opts
+ * @param {{ formatTypes: string[]|string, maxItems: number|null, cfg?: object, populateProjection?: boolean, projectionWindow?: string }} opts
  */
 export async function generateFeedArtifact(db, feed, window, opts = {}) {
   const cfg = opts.cfg || getPublishedFeedArtifactConfig();
@@ -268,11 +275,14 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
   const lineTypeFor = (observableType) => (multi
     ? (feedCategoryForObservableType(observableType) || types[0])
     : types[0]);
+  const populateProjection = Boolean(opts.populateProjection);
+  const projectionWindow = opts.projectionWindow || window;
 
-  const timings = { base_open_ms: 0, fetch_ms: 0, meta_ms: 0, write_ms: 0 };
+  const timings = { base_open_ms: 0, fetch_ms: 0, meta_ms: 0, write_ms: 0, projection_ms: 0 };
   const t = () => Number(process.hrtime.bigint() / 1000000n);
   let pageCount = 0;
   let scannedRows = 0;
+  let projectionUpserts = 0;
 
   const { sql, params } = buildStreamingBaseSql(feed, window);
 
@@ -330,12 +340,14 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
       timings.meta_ms += t() - tm;
 
       const tw = t();
+      const projBatch = [];
       for (const row of rows) {
         const value = normalizeFeedLine(row, lineTypeFor(row.observable_type));
         if (!value) continue; // e.g. private/reserved IP — same drop as the in-memory path
+        let item = null;
         if (isJson) {
           const m = meta.get(Number(row.id)) || {};
-          const item = normalizePublishedIoc(
+          item = normalizePublishedIoc(
             { value, observable_type: row.observable_type, category: row.category, confidence: row.confidence },
             m, flags
           );
@@ -343,9 +355,32 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
         } else {
           await writer.addValue(value);
         }
+        if (populateProjection) {
+          const fp = projectionContentFingerprint({ txtValue: value, itemJson: item });
+          projBatch.push({
+            feed_id: feed.id,
+            window: projectionWindow,
+            identity_key: projectionIdentityKey(value, row.observable_type),
+            ioc_item_id: Number(row.id),
+            observable: value,
+            observable_type: row.observable_type,
+            recency_ts: row.recency_ts,
+            confidence: row.confidence,
+            category: row.category,
+            confidence_rank: confidenceRank(row.confidence),
+            txt_value: value,
+            item_json: item,
+            content_fingerprint: fp
+          });
+        }
         if (maxItems != null && writer.itemCount >= maxItems) { done = true; break; }
       }
       timings.write_ms += t() - tw;
+      if (projBatch.length) {
+        const tp = t();
+        projectionUpserts += await upsertProjectionBatch(db, projBatch);
+        timings.projection_ms += t() - tp;
+      }
     }
 
     if (openedCursor) await db.query('CLOSE pf_cur').catch(() => {});
@@ -380,11 +415,117 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
       itemCount: item_count,
       pageCount,
       scannedRows,
+      projectionUpserts,
       timings
     };
   } catch (err) {
     // Roll back the cursor transaction and remove all temp/partial files. No artifact is
     // published, so the previous snapshot pointer (if any) remains valid and servable.
+    try { await db.query('ROLLBACK'); } catch { /* ignore */ }
+    await cleanupTemp();
+    throw err;
+  }
+}
+
+/**
+ * Stream-generate an artifact from an already-populated projection (Phase 2 incremental
+ * publish path). No IOC joins / metadata normalization — ordered projection scan only.
+ */
+export async function generateFeedArtifactFromProjection(db, feed, window, opts = {}) {
+  const cfg = opts.cfg || getPublishedFeedArtifactConfig();
+  const format = resolvePublishedFeedFormat(feed);
+  const flags = resolveJsonIncludeFlags(feed);
+  const maxItems = opts.maxItems != null && Number.isFinite(Number(opts.maxItems)) ? Number(opts.maxItems) : null;
+  const generationId = newGenerationId();
+  const isJson = format === 'json';
+  const { stream: finalPartStream, finalPath, partPath } = await openArtifactPartStream(cfg, feed.id, generationId, format);
+  let bodyPath = null;
+  let bodyStream = null;
+  let writer;
+  if (isJson) {
+    bodyPath = `${finalPath}.body`;
+    bodyStream = fs.createWriteStream(bodyPath, { flags: 'w', mode: 0o640 });
+    writer = new StreamingJsonBodyWriter(bodyStream, { name: feed.name, ...flags });
+  } else {
+    writer = new StreamingTxtWriter(finalPartStream);
+  }
+  const destroyAndWait = (stream) => new Promise((resolve) => {
+    if (!stream || stream.destroyed) return resolve();
+    stream.on('close', resolve);
+    stream.on('error', () => resolve());
+    stream.destroy();
+  });
+  const cleanupTemp = async () => {
+    await destroyAndWait(finalPartStream);
+    if (bodyStream) await destroyAndWait(bodyStream);
+    await removeFileQuiet(partPath);
+    if (bodyPath) await removeFileQuiet(bodyPath);
+    await removeFileQuiet(finalPath);
+  };
+
+  const { sql, params } = buildProjectionScanSql(feed.id, window);
+  const timings = { fetch_ms: 0, write_ms: 0 };
+  const t = () => Number(process.hrtime.bigint() / 1000000n);
+  let scannedRows = 0;
+
+  try {
+    await db.query('BEGIN');
+    await db.query(`DECLARE pf_proj_cur NO SCROLL CURSOR FOR ${sql}`, params);
+    let done = false;
+    while (!done) {
+      const tf = t();
+      const batch = await db.query(`FETCH FORWARD ${CURSOR_BATCH} FROM pf_proj_cur`);
+      timings.fetch_ms += t() - tf;
+      const rows = batch.rows;
+      if (!rows.length) break;
+      scannedRows += rows.length;
+      const tw = t();
+      for (const row of rows) {
+        if (isJson) {
+          const item = row.item_json && typeof row.item_json === 'object'
+            ? row.item_json
+            : (typeof row.item_json === 'string' ? JSON.parse(row.item_json) : null);
+          if (!item) continue;
+          await writer.addItem(item);
+        } else {
+          await writer.addValue(row.txt_value);
+        }
+        if (maxItems != null && writer.itemCount >= maxItems) { done = true; break; }
+      }
+      timings.write_ms += t() - tw;
+    }
+    await db.query('CLOSE pf_proj_cur').catch(() => {});
+    await db.query('COMMIT');
+
+    const generatedAt = new Date().toISOString();
+    const { content_hash, item_count } = writer.finish();
+    if (isJson) {
+      await finalizeStream(bodyStream);
+      const finalWrite = makeSinkWriter(finalPartStream);
+      await finalWrite(writer.buildHeader(item_count, generatedAt));
+      await pipeFileInto(bodyPath, finalPartStream);
+      await finalWrite(writer.buildFooter());
+      await finalizeStream(finalPartStream);
+      await removeFileQuiet(bodyPath);
+    } else {
+      await finalizeStream(finalPartStream);
+    }
+    await commitArtifact(partPath, finalPath);
+    const st = await statArtifact(finalPath);
+    return {
+      generationId,
+      format,
+      storagePath: toRelativeStoragePath(feed.id, generationId, format),
+      absolutePath: finalPath,
+      fileSize: st ? st.size : 0,
+      contentHash: content_hash,
+      itemCount: item_count,
+      pageCount: 0,
+      scannedRows,
+      timings,
+      fromProjection: true
+    };
+  } catch (err) {
     try { await db.query('ROLLBACK'); } catch { /* ignore */ }
     await cleanupTemp();
     throw err;

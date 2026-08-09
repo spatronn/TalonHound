@@ -588,9 +588,10 @@ const CONF_RANK_SQL = (col) =>
  * on. Mirrors fetchIocRows' matched→picked CTE (identity_key collapse onto primary hash)
  * but projects the stable ioc id + provenance columns and applies the same outer
  * sortFeedRows order so the server-side cursor can stream without materializing in Node.
+ * @param {{ lowerValues?: string[], types?: string[] }} [restrict]
  * @returns {{ sql: string, params: any[] }}
  */
-export function buildStreamingHashBaseSql(feed, window) {
+export function buildStreamingHashBaseSql(feed, window, restrict = null) {
   const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
   const params = [];
   const typePlaceholders = types.map((t) => {
@@ -598,6 +599,14 @@ export function buildStreamingHashBaseSql(feed, window) {
     return `$${params.length}`;
   });
   const filterSql = buildFeedFilterSql(feed, window, params);
+  let restrictSql = '';
+  if (restrict?.lowerValues?.length && restrict?.types?.length) {
+    params.push(restrict.lowerValues);
+    const lv = `$${params.length}`;
+    params.push(restrict.types);
+    const ty = `$${params.length}`;
+    restrictSql = ` AND lower(i.observable) = ANY(${lv}::text[]) AND i.observable_type = ANY(${ty}::text[]) `;
+  }
 
   const sql = `
     WITH matched AS (
@@ -623,6 +632,7 @@ export function buildStreamingHashBaseSql(feed, window) {
       WHERE i.observable_type IN (${typePlaceholders.join(', ')})
         AND COALESCE(i.status, 'active') <> 'suppressed'
         ${filterSql}
+        ${restrictSql}
     ),
     picked AS (
       SELECT DISTINCT ON (identity_key)
@@ -674,11 +684,12 @@ export function buildStreamingHashBaseSql(feed, window) {
  * Executed via a server-side cursor so the dedup/recency sort happens ONCE in PostgreSQL
  * (spilling to DB temp, not Node) and rows stream in bounded batches. No client keyset,
  * no per-page rescan. Canonical hash feeds use buildStreamingHashBaseSql.
+ * @param {{ lowerValues?: string[], types?: string[] }} [restrict] optional identity scope
  * @returns {{ sql: string, params: any[] }}
  */
-export function buildStreamingBaseSql(feed, window) {
+export function buildStreamingBaseSql(feed, window, restrict = null) {
   if (shouldCanonicalizePublishedHashFeed(feed)) {
-    return buildStreamingHashBaseSql(feed, window);
+    return buildStreamingHashBaseSql(feed, window, restrict);
   }
 
   const queryMode = isQueryModeFeed(feed);
@@ -699,6 +710,13 @@ export function buildStreamingBaseSql(feed, window) {
     innerWhere = `i.observable_type IN (${typePlaceholders.join(', ')})
       AND COALESCE(i.status, 'active') <> 'suppressed'
       ${filterSql}`;
+  }
+  if (restrict?.lowerValues?.length && restrict?.types?.length) {
+    params.push(restrict.lowerValues);
+    const lv = `$${params.length}`;
+    params.push(restrict.types);
+    const ty = `$${params.length}`;
+    innerWhere += ` AND lower(i.observable) = ANY(${lv}::text[]) AND i.observable_type = ANY(${ty}::text[])`;
   }
 
   const sql = `
@@ -1285,14 +1303,173 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       };
 
       if (shouldStreamPublishedFeed(feed)) {
-        // Bounded-memory streaming path: generate a file artifact, persist a metadata-only
-        // snapshot pointer, and clean up the superseded/redundant artifact file.
+        // Phase 1 streaming + Phase 2 incremental/projection (when enabled + ready).
         const artifactCfg = getPublishedFeedArtifactConfig();
-        const { generateFeedArtifact, generateEmptyFeedArtifact } = await import('./publishedFeedStreamGenerator.js');
+        const {
+          generateFeedArtifact,
+          generateEmptyFeedArtifact,
+          generateFeedArtifactFromProjection
+        } = await import('./publishedFeedStreamGenerator.js');
+        const {
+          decideRefreshMode,
+          collectDirtyIocIds,
+          applyIncrementalProjectionUpdate,
+          captureCutoffNow,
+          touchFeedRefreshChecked,
+          setFeedProjectionState,
+          clearFeedProjection,
+          PROJECTION_STATUS,
+          logRefreshMetrics,
+          isIncrementalEnabledForFeed
+        } = await import('./publishedFeedIncremental.js');
+
+        const latestMeta = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
+        const filtersChanged = Boolean(
+          force
+          || (latestMeta?.params?.filters_hash && latestMeta.params.filters_hash !== filters_hash)
+          || (latestMeta?.params?.feed_updated_at && latestMeta.params.feed_updated_at !== feedUpdatedAt)
+        );
+
+        const incrementalForFeed = isIncrementalEnabledForFeed(id);
+        const mode = decideRefreshMode(feed, {
+          force: force || filtersChanged,
+          filtersChanged,
+          incrementalEnabled: incrementalForFeed,
+          streamingEnabled: true,
+          snapshotWindow: window
+        });
+
         const t0 = Date.now();
-        const art = allKeysStale
-          ? await generateEmptyFeedArtifact(feed, { cfg: artifactCfg })
-          : await generateFeedArtifact(db, feed, window, { formatTypes, maxItems: genMax, cfg: artifactCfg });
+        let art;
+        let refreshMode = mode;
+        let changedCount = 0;
+
+        if (allKeysStale) {
+          art = await generateEmptyFeedArtifact(feed, { cfg: artifactCfg });
+          refreshMode = 'full';
+          await clearFeedProjection(db, id).catch(() => {});
+          await setFeedProjectionState(db, id, {
+            projection_status: PROJECTION_STATUS.READY,
+            projection_cutoff: captureCutoffNow(),
+            projection_built_at: new Date()
+          }).catch(() => {});
+        } else if (mode === 'incremental') {
+          const cutoff = feed.projection_cutoff ? new Date(feed.projection_cutoff) : null;
+          const W = captureCutoffNow();
+          const dirty = await collectDirtyIocIds(db, feed, cutoff);
+          if (!dirty.ids.length && !dirty.forceFull) {
+            // True no-op: no artifact rewrite, do not bump published_feeds.updated_at.
+            await touchFeedRefreshChecked(db, id, { mode: 'noop', ms: Date.now() - t0, changed: 0 });
+            logRefreshMetrics({
+              feed_id: id,
+              refresh_mode: 'noop',
+              changed_candidates: 0,
+              total_duration_ms: Date.now() - t0,
+              watermark_from: cutoff ? cutoff.toISOString() : null,
+              watermark_to: W.toISOString()
+            });
+            results.push({
+              window,
+              status: 'success',
+              item_count: latestMeta?.item_count ?? 0,
+              skipped: true,
+              reason: 'noop_incremental'
+            });
+            maxItemCount = Math.max(maxItemCount, Number(latestMeta?.item_count || 0));
+            continue;
+          }
+          const delta = await applyIncrementalProjectionUpdate(db, feed, window, formatTypes, dirty);
+          if (delta.forceFull) {
+            refreshMode = 'full';
+            await setFeedProjectionState(db, id, { projection_status: PROJECTION_STATUS.BOOTSTRAPPING });
+            await clearFeedProjection(db, id);
+            art = await generateFeedArtifact(db, feed, window, {
+              formatTypes, maxItems: genMax, cfg: artifactCfg,
+              populateProjection: true, projectionWindow: window
+            });
+            await setFeedProjectionState(db, id, {
+              projection_status: PROJECTION_STATUS.READY,
+              projection_cutoff: W,
+              projection_built_at: new Date()
+            });
+            changedCount = art.itemCount;
+          } else if (!delta.artifactDirty) {
+            await setFeedProjectionState(db, id, { projection_cutoff: W });
+            await touchFeedRefreshChecked(db, id, {
+              mode: 'noop',
+              ms: Date.now() - t0,
+              changed: 0
+            });
+            logRefreshMetrics({
+              feed_id: id,
+              refresh_mode: 'noop',
+              changed_candidates: dirty.ids.length,
+              entered_count: delta.entered,
+              updated_count: delta.updated,
+              removed_count: delta.removed,
+              unchanged_count: delta.unchanged,
+              total_duration_ms: Date.now() - t0
+            });
+            results.push({
+              window,
+              status: 'success',
+              item_count: latestMeta?.item_count ?? 0,
+              skipped: true,
+              reason: 'noop_incremental'
+            });
+            maxItemCount = Math.max(maxItemCount, Number(latestMeta?.item_count || 0));
+            continue;
+          } else {
+            art = await generateFeedArtifactFromProjection(db, feed, window, {
+              maxItems: genMax, cfg: artifactCfg
+            });
+            changedCount = delta.entered + delta.updated + delta.removed;
+            await setFeedProjectionState(db, id, { projection_cutoff: W });
+            logRefreshMetrics({
+              feed_id: id,
+              refresh_mode: 'incremental',
+              changed_candidates: dirty.ids.length,
+              entered_count: delta.entered,
+              updated_count: delta.updated,
+              removed_count: delta.removed,
+              unchanged_count: delta.unchanged,
+              artifact_bytes: art.fileSize,
+              artifact_duration_ms: Date.now() - t0,
+              total_duration_ms: Date.now() - t0,
+              watermark_from: cutoff ? cutoff.toISOString() : null,
+              watermark_to: W.toISOString()
+            });
+          }
+        } else {
+          // full or bootstrap — streaming rebuild, populate projection when incremental allowed for this feed
+          const W = captureCutoffNow();
+          const populate = incrementalForFeed;
+          if (populate) {
+            await setFeedProjectionState(db, id, { projection_status: PROJECTION_STATUS.BOOTSTRAPPING });
+            await clearFeedProjection(db, id);
+          }
+          art = await generateFeedArtifact(db, feed, window, {
+            formatTypes, maxItems: genMax, cfg: artifactCfg,
+            populateProjection: populate, projectionWindow: window
+          });
+          if (populate) {
+            await setFeedProjectionState(db, id, {
+              projection_status: PROJECTION_STATUS.READY,
+              projection_cutoff: W,
+              projection_built_at: new Date()
+            });
+          }
+          refreshMode = mode === 'bootstrap' ? 'bootstrap' : 'full';
+          changedCount = art.itemCount;
+          logRefreshMetrics({
+            feed_id: id,
+            refresh_mode: refreshMode,
+            changed_candidates: null,
+            artifact_bytes: art.fileSize,
+            total_duration_ms: Date.now() - t0
+          });
+        }
+
         queryMs += Date.now() - t0;
         snapshotBytes = Math.max(snapshotBytes || 0, art.fileSize);
         maxItemCount = Math.max(maxItemCount, art.itemCount);
@@ -1310,8 +1487,6 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             paramsJson
           });
         } catch (persistErr) {
-          // DB pointer update failed AFTER the artifact was published: remove the orphan
-          // file so it cannot leak, and let the previous snapshot pointer stand.
           await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, art.storagePath)).catch(() => {});
           throw persistErr;
         }
@@ -1319,7 +1494,14 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         if (stale) {
           await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, stale)).catch(() => {});
         }
-        results.push({ window, status: 'success', item_count: art.itemCount });
+        await db.query(
+          `UPDATE published_feeds
+           SET last_refresh_mode = $2, last_refresh_ms = $3, last_changed_count = $4,
+               last_refresh_checked_at = NOW()
+           WHERE id = $1`,
+          [id, refreshMode, Date.now() - t0, changedCount]
+        ).catch(() => {});
+        results.push({ window, status: 'success', item_count: art.itemCount, refresh_mode: refreshMode });
       } else {
         let iocRows = [];
         if (!allKeysStale) {
@@ -1383,11 +1565,14 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       [id, lastStatus, lastError]
     );
   } else {
+    // No-op ticks must NOT bump updated_at — that previously defeated the next
+    // watermark/filtersHash skip by making feed_updated_at look dirty.
     await db.query(
       `UPDATE published_feeds
        SET last_generated_at = NOW(),
            last_status = COALESCE(last_status, 'success'),
-           updated_at = NOW()
+           last_refresh_checked_at = NOW(),
+           last_refresh_mode = COALESCE(last_refresh_mode, 'noop')
        WHERE id = $1`,
       [id]
     );

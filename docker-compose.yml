@@ -83,6 +83,9 @@ services:
       # Phase-1 million-scale Published Feeds: file-backed streaming artifacts.
       # Default OFF; enable to activate bounded-memory generation + streamed serving.
       - PUBLISHED_FEED_STREAMING_ENABLED=${PUBLISHED_FEED_STREAMING_ENABLED:-false}
+      - PUBLISHED_FEED_INCREMENTAL_ENABLED=${PUBLISHED_FEED_INCREMENTAL_ENABLED:-false}
+      # Optional comma-separated feed ids for controlled incremental bootstrap/rollout.
+      - PUBLISHED_FEED_INCREMENTAL_FEED_IDS=${PUBLISHED_FEED_INCREMENTAL_FEED_IDS:-}
       - PUBLISHED_FEED_STORAGE_DIR=/data/published-feeds
     depends_on:
       - db
