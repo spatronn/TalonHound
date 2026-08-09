@@ -1231,11 +1231,25 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   const formatTypes = queryMode ? FEED_IOC_TYPES : iocTypes;
   const iocTypeKey = queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(iocTypes);
 
+  // Phase 2: when projection incremental applies, skip the legacy export-fingerprint
+  // pre-check (it scans the full matching IOC set and defeats cheap no-op).
+  let incrementalPreferDirtyPath = false;
+  let canUseIncrementalRefreshFn = null;
+  if (!force && shouldStreamPublishedFeed(feed)) {
+    const proj = await import('./publishedFeedProjection.js');
+    incrementalPreferDirtyPath = proj.isIncrementalEnabledForFeed(id) && proj.isProjectionReady(feed);
+    canUseIncrementalRefreshFn = proj.canUseIncrementalRefresh;
+  }
+
   for (const window of windows) {
     try {
       const filters_hash = filtersHash(feed, window);
+      const useIncrementalDirtyPath = Boolean(
+        incrementalPreferDirtyPath
+        && canUseIncrementalRefreshFn?.(feed, { force: false, filtersChanged: false, snapshotWindow: window })
+      );
 
-      if (!force) {
+      if (!force && !useIncrementalDirtyPath) {
         const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
         const skipCheck = canSkipPublishedFeedRegeneration({
           feed,
@@ -1259,18 +1273,34 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       }
 
       let fingerprint;
-      if (allKeysStale) {
+      let fingerprintKey;
+      if (useIncrementalDirtyPath) {
+        // Reuse prior snapshot fingerprint metadata; dirty detection decides rewrite.
+        const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
+        fingerprintKey = latest?.params?.export_fingerprint
+          || exportFingerprintKey({
+            itemCount: Number(latest?.item_count || 0),
+            maxRecency: null,
+            filtersHash: filters_hash
+          });
+        fingerprint = {
+          itemCount: Number(latest?.item_count || 0),
+          maxRecency: null,
+          filtersHash: filters_hash
+        };
+      } else if (allKeysStale) {
         fingerprint = { itemCount: 0, maxRecency: null, filtersHash: filtersHash(feed, window) };
+        fingerprintKey = exportFingerprintKey(fingerprint);
       } else {
         const t0 = Date.now();
         fingerprint = queryMode
           ? await fetchQueryModeFingerprint(db, feed)
           : await fetchIocExportFingerprint(db, feed, window);
         queryMs += Date.now() - t0;
+        fingerprintKey = exportFingerprintKey(fingerprint);
       }
-      const fingerprintKey = exportFingerprintKey(fingerprint);
 
-      if (!force) {
+      if (!force && !useIncrementalDirtyPath) {
         const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
         const prevKey = latest?.params?.export_fingerprint;
         if (latest?.content_hash && latest.params?.filters_hash === filters_hash && prevKey === fingerprintKey) {
