@@ -80,12 +80,17 @@ services:
       # per-key pull rate limit for /api/published-feeds/{slug}.
       - API_KEY_ENCRYPTION_KEY=${API_KEY_ENCRYPTION_KEY:-}
       - FEED_PUBLIC_RATE_LIMIT_PER_MIN=${FEED_PUBLIC_RATE_LIMIT_PER_MIN:-60}
+      # Phase-1 million-scale Published Feeds: file-backed streaming artifacts.
+      # Default OFF; enable to activate bounded-memory generation + streamed serving.
+      - PUBLISHED_FEED_STREAMING_ENABLED=${PUBLISHED_FEED_STREAMING_ENABLED:-false}
+      - PUBLISHED_FEED_STORAGE_DIR=/data/published-feeds
     depends_on:
       - db
       - redis
     volumes:
       - backup_data:/data/backups
       - ioc_export_data:/data/ioc-search-exports
+      - published_feed_data:/data/published-feeds
     healthcheck:
       test:
         [
@@ -335,3 +340,4 @@ volumes:
   postgres_data:
   ioc_export_data:
   backup_data:
+  published_feed_data:

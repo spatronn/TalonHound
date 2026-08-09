@@ -166,14 +166,19 @@ export function sortFeedRows(rows) {
 }
 
 /**
+ * Canonical, ordered, de-duplicated, capped item selection shared by every output format.
+ * Applies the same sort / per-row normalization / private-IP exclusion / dedup / max_items
+ * cap that the TXT builder uses, so JSON and TXT publish exactly the same item set.
+ *
  * @param {Array<object>} rows
  * @param {string|string[]} feedIocTypes - single category or multi-type list
  * @param {number|null} maxItems
+ * @returns {Array<{ value: string, observable_type: string, row: object }>}
  */
-export function buildPlainTextFeed(rows, feedIocTypes, maxItems = null) {
+export function selectFeedItems(rows, feedIocTypes, maxItems = null) {
   const sorted = sortFeedRows(rows);
   const seen = new Set();
-  const lines = [];
+  const items = [];
   const cap = maxItems != null && Number.isFinite(Number(maxItems)) ? Number(maxItems) : null;
   const norm = normalizeFeedIocTypes(
     Array.isArray(feedIocTypes) || (typeof feedIocTypes === 'string' && feedIocTypes.includes(','))
@@ -192,10 +197,21 @@ export function buildPlainTextFeed(rows, feedIocTypes, maxItems = null) {
     const key = line.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    lines.push(line);
-    if (cap != null && lines.length >= cap) break;
+    items.push({ value: line, observable_type: row.observable_type, row });
+    if (cap != null && items.length >= cap) break;
   }
 
+  return items;
+}
+
+/**
+ * @param {Array<object>} rows
+ * @param {string|string[]} feedIocTypes - single category or multi-type list
+ * @param {number|null} maxItems
+ */
+export function buildPlainTextFeed(rows, feedIocTypes, maxItems = null) {
+  const items = selectFeedItems(rows, feedIocTypes, maxItems);
+  const lines = items.map((it) => it.value);
   const content = lines.length ? `${lines.join('\n')}\n` : '';
   const content_hash = crypto.createHash('sha256').update(content, 'utf8').digest('hex');
   return { content, content_hash, item_count: lines.length, lines };

@@ -6186,6 +6186,67 @@ function PublishedFeedsPage() {
               </FeedFormField>
             </FeedFormSection>
 
+            <FeedFormSection title="Output format">
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={{ display: 'inline-flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }} role="group" aria-label="Output format">
+                  {[{ v: 'txt', label: 'TXT' }, { v: 'json', label: 'JSON' }].map((opt) => {
+                    const active = (form.output_format || 'txt') === opt.v;
+                    return (
+                      <button
+                        key={opt.v}
+                        type="button"
+                        onClick={() => setForm((x) => ({ ...x, output_format: opt.v }))}
+                        style={{
+                          padding: '6px 18px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          background: active ? '#2563eb' : 'transparent',
+                          color: active ? '#f8fafc' : '#94a3b8',
+                          fontWeight: active ? 600 : 400
+                        }}
+                        aria-pressed={active}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ ...ui.helper, marginTop: 8 }}>
+                  {(form.output_format || 'txt') === 'json'
+                    ? 'JSON: structured feed with IOC metadata (schema_version 1.0). Served as application/json.'
+                    : 'TXT: one IOC value per line (default). Served as text/plain.'}
+                </p>
+              </div>
+              {(form.output_format || 'txt') === 'json' ? (
+                <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                  <label style={ui.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={form.include_source_metadata !== false}
+                      onChange={(e) => setForm((x) => ({ ...x, include_source_metadata: e.target.checked }))}
+                    />
+                    Source metadata
+                  </label>
+                  <label style={ui.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={form.include_classification !== false}
+                      onChange={(e) => setForm((x) => ({ ...x, include_classification: e.target.checked }))}
+                    />
+                    Tags &amp; classification
+                  </label>
+                  <label style={ui.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={form.include_enrichment === true}
+                      onChange={(e) => setForm((x) => ({ ...x, include_enrichment: e.target.checked }))}
+                    />
+                    Enrichment data
+                  </label>
+                </div>
+              ) : null}
+            </FeedFormSection>
+
             <FeedFormSection title="Delivery">
               <FeedFormField ui={ui} label="Max Items" helper="Optional cap for products that support limited feed size, e.g. 40,000 IPs.">
                 <input type="number" min={1} placeholder="optional" value={form.max_items} onChange={(e) => setForm((x) => ({ ...x, max_items: e.target.value }))} style={ui.input} />

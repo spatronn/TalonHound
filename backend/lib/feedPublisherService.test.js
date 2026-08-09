@@ -8,6 +8,8 @@ import {
   fetchIocExportFingerprint,
   fetchIocRows,
   shouldCanonicalizePublishedHashFeed,
+  shouldStreamPublishedFeed,
+  buildStreamingBaseSql,
   generatePublishedFeedSnapshot,
   publishedFeedGenerationLockKeys,
   PUBLISHED_FEED_GEN_LOCK_CLASS
@@ -378,6 +380,45 @@ describe('published hash feed artifact canonicalization', () => {
     assert.match(capturedSql, /DISTINCT ON \(identity_key\)/);
     assert.match(capturedSql, /primary_hash_value/);
     assert.match(capturedSql, /GROUP BY|identity_key/);
+  });
+
+  it('streaming gate includes canonical hash feeds when flag is on', () => {
+    const prevStream = process.env.PUBLISHED_FEED_STREAMING_ENABLED;
+    try {
+      delete process.env.PUBLISHED_FEED_STREAMING_ENABLED;
+      process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+      assert.equal(shouldStreamPublishedFeed({ ioc_type: 'hash' }), false);
+
+      process.env.PUBLISHED_FEED_STREAMING_ENABLED = 'true';
+      assert.equal(shouldStreamPublishedFeed({ ioc_type: 'hash' }), true);
+      assert.equal(shouldStreamPublishedFeed({ ioc_types: ['domain', 'hash'] }), true);
+      assert.equal(shouldStreamPublishedFeed({ ioc_type: 'domain' }), true);
+      assert.equal(shouldStreamPublishedFeed({
+        filter_mode: 'query', advanced_query: 'type:domain'
+      }), true);
+    } finally {
+      if (prevStream == null) delete process.env.PUBLISHED_FEED_STREAMING_ENABLED;
+      else process.env.PUBLISHED_FEED_STREAMING_ENABLED = prevStream;
+    }
+  });
+
+  it('buildStreamingBaseSql for hash uses artifact identity CTE (not lower(observable) DISTINCT)', () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    const { sql, params } = buildStreamingBaseSql({ ioc_type: 'hash', exclude_expired: true }, 'all');
+    const normalized = sql.replace(/\s+/g, ' ');
+    assert.match(normalized, /DISTINCT ON \(identity_key\)/);
+    assert.match(normalized, /file_artifact_ioc_links/);
+    assert.match(normalized, /primary_hash_value/);
+    assert.match(normalized, /d\.id/);
+    assert.doesNotMatch(normalized, /DISTINCT ON \(lower\(i\.observable\)\)/);
+    assert.ok(params.includes('md5') || params.includes('sha256'));
+  });
+
+  it('buildStreamingBaseSql for domain keeps lower(observable) DISTINCT path', () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    const { sql } = buildStreamingBaseSql({ ioc_type: 'domain', exclude_expired: true }, 'all');
+    assert.match(sql.replace(/\s+/g, ' '), /DISTINCT ON \(lower\(i\.observable\)\)/);
+    assert.doesNotMatch(sql, /file_artifact_ioc_links/);
   });
 
   it('legacy hash fingerprint stays raw when READ off', async () => {

@@ -6355,6 +6355,12 @@ app.listen(port, async () => {
   setInterval(() => {
     runIocListStatsRefreshTick().catch(() => {});
   }, IOC_LIST_STATS_REFRESH_MS);
+  // Startup reconciliation: reclaim abandoned Published Feed ".part" temp files left by a
+  // crash/restart mid-generation (only touches stale temps, never published artifacts).
+  import('./lib/publishedFeedArtifact/store.js')
+    .then(({ reconcileStaleParts, getPublishedFeedArtifactConfig }) =>
+      reconcileStaleParts(getPublishedFeedArtifactConfig()))
+    .catch(() => {});
   regenerateAllEnabledFeeds(pool).catch(() => {});
   setInterval(() => {
     if (publishedFeedTickInProgress) return;

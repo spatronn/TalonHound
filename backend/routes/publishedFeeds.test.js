@@ -37,6 +37,9 @@ function createMockPool(store = { feeds: [] }) {
           refresh_interval_minutes: params[14] ?? 15,
           filter_mode: params[15] ?? 'basic',
           advanced_query: params[16] ?? null,
+          include_source_metadata: params[17] ?? true,
+          include_classification: params[18] ?? true,
+          include_enrichment: params[19] ?? false,
           last_generated_at: null,
           last_status: null,
           last_error: null,
@@ -276,5 +279,77 @@ describe('publishedFeeds ioc_types API', () => {
     assert.equal(res.body.code, 'generation_in_progress');
     assert.equal(res.body.message, 'Generation already in progress');
     assert.equal(released, 1);
+  });
+});
+
+describe('publishedFeeds output format API', () => {
+  it('existing/legacy create defaults to txt with default include flags', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', { name: 'Default', ioc_types: ['ip'] });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.feed.format, 'txt');
+    assert.equal(res.body.feed.include_source_metadata, true);
+    assert.equal(res.body.feed.include_classification, true);
+    assert.equal(res.body.feed.include_enrichment, false);
+  });
+
+  it('creates a JSON feed and persists include flags', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'JSON Feed', ioc_types: ['domain'],
+      output_format: 'json', include_enrichment: true, include_classification: false
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.feed.format, 'json');
+    assert.equal(res.body.feed.include_enrichment, true);
+    assert.equal(res.body.feed.include_classification, false);
+    assert.equal(res.body.feed.include_source_metadata, true);
+  });
+
+  it('rejects an unknown output_format with 400', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Bad', ioc_types: ['ip'], output_format: 'xml'
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.message, /output_format/);
+  });
+
+  it('rejects a non-boolean include flag with 400', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Bad', ioc_types: ['ip'], output_format: 'json', include_enrichment: 'yes'
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.message, /include_enrichment must be a boolean/);
+  });
+
+  it('updates TXT -> JSON and back to TXT without corrupting config', async () => {
+    const pool = createMockPool();
+    const app = makeApp(pool);
+    const created = await req(app, 'POST', '/api/published-feeds', { name: 'Flip', ioc_types: ['ip'] });
+    const id = created.body.feed.id;
+    assert.equal(created.body.feed.format, 'txt');
+
+    const toJson = await req(app, 'PATCH', `/api/published-feeds/${id}`, {
+      output_format: 'json', include_source_metadata: false
+    });
+    assert.equal(toJson.status, 200);
+    assert.equal(toJson.body.feed.format, 'json');
+    assert.equal(toJson.body.feed.include_source_metadata, false);
+    assert.deepEqual(toJson.body.feed.ioc_types, ['ip']);
+
+    const toTxt = await req(app, 'PATCH', `/api/published-feeds/${id}`, { output_format: 'txt' });
+    assert.equal(toTxt.status, 200);
+    assert.equal(toTxt.body.feed.format, 'txt');
+    // Saved JSON include config is preserved even while serving as TXT.
+    assert.equal(toTxt.body.feed.include_source_metadata, false);
+  });
+
+  it('accepts the legacy `format` field alias on create', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', { name: 'Alias', ioc_types: ['ip'], format: 'json' });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.feed.format, 'json');
   });
 });

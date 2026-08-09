@@ -3,11 +3,14 @@ import {
   FEED_WINDOWS,
   FEED_IOC_TYPES,
   buildPlainTextFeed,
+  selectFeedItems,
   confidenceToScore,
   feedIocTypesKey,
   normalizeFeedIocTypes,
   observableTypesForFeedIocTypes
 } from './feedFormatter.js';
+import { JsonFeedWriter, normalizePublishedIoc } from './publishedFeedJson.js';
+import { fetchPublishedFeedItemMetadata, metaKey } from './publishedFeedJsonData.js';
 import {
   buildFeedKeySourceSql,
   extractManualFeedSourceIds,
@@ -16,6 +19,11 @@ import {
   resolveKnownFeedKeysForSnapshot
 } from './publishedFeedSources.js';
 import { isFileArtifactsReadEnabled } from './fileArtifacts/flags.js';
+import {
+  getPublishedFeedArtifactConfig,
+  removeFileQuiet,
+  resolveStoredArtifactPath
+} from './publishedFeedArtifact/store.js';
 import { createServiceLogger } from './appLogger.js';
 import { parseSearchQuery, buildWhereClause } from './iocSearchDsl/index.js';
 
@@ -107,6 +115,77 @@ export function resolveFeedIocTypes(feed) {
   return [];
 }
 
+/** Supported output formats. TXT is the default / backward-compatible behavior. */
+export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json' };
+
+/** Resolve a feed's output format; anything other than 'json' is 'txt'. */
+export function resolvePublishedFeedFormat(feed) {
+  return String(feed?.format || '').trim().toLowerCase() === FEED_OUTPUT_FORMATS.JSON
+    ? FEED_OUTPUT_FORMATS.JSON
+    : FEED_OUTPUT_FORMATS.TXT;
+}
+
+export function isJsonFormatFeed(feed) {
+  return resolvePublishedFeedFormat(feed) === FEED_OUTPUT_FORMATS.JSON;
+}
+
+/**
+ * Phase-1 streaming/file-artifact generation gate. Default OFF so existing in-memory
+ * generation + DB-backed snapshots are unchanged until an operator opts in
+ * (PUBLISHED_FEED_STREAMING_ENABLED=true). Serving auto-detects file-backed rows regardless.
+ */
+export function isPublishedFeedStreamingEnabled() {
+  const v = String(process.env.PUBLISHED_FEED_STREAMING_ENABLED ?? 'false').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+/**
+ * Whether this feed uses the bounded-memory streaming/file-artifact path.
+ * When the feature flag is on, ALL supported generation modes stream (including
+ * canonical hash/file-artifact feeds, which use a dedicated cursor SQL shape).
+ */
+export function shouldStreamPublishedFeed(feed) {
+  if (!isPublishedFeedStreamingEnabled()) return false;
+  void feed;
+  return true;
+}
+
+/** JSON include flags, honoring the documented defaults (metadata+classification on, enrichment off). */
+export function resolveJsonIncludeFlags(feed) {
+  return {
+    includeSourceMetadata: feed?.include_source_metadata !== false,
+    includeClassification: feed?.include_classification !== false,
+    includeEnrichment: feed?.include_enrichment === true
+  };
+}
+
+/**
+ * Build the snapshot content for a feed in its configured output format.
+ * TXT is byte-for-byte identical to the legacy path. JSON serializes the public contract
+ * incrementally and fetches per-item metadata in bounded batches (no N+1, no giant object).
+ * @returns {Promise<{ content: string, content_hash: string, item_count: number }>}
+ */
+export async function buildFeedContent(db, feed, iocRows, formatTypes, maxItems) {
+  if (!isJsonFormatFeed(feed)) {
+    return buildPlainTextFeed(iocRows, formatTypes, maxItems);
+  }
+  const items = selectFeedItems(iocRows, formatTypes, maxItems);
+  const flags = resolveJsonIncludeFlags(feed);
+  const metaByKey = await fetchPublishedFeedItemMetadata(db, items, flags);
+  const writer = new JsonFeedWriter({ name: feed.name, ...flags });
+  for (const it of items) {
+    const meta = metaByKey.get(metaKey(it.observable_type, it.value)) || {};
+    const base = {
+      value: it.value,
+      observable_type: it.observable_type,
+      category: it.row?.category,
+      confidence: it.row?.confidence
+    };
+    writer.addItem(normalizePublishedIoc(base, meta, flags));
+  }
+  return writer.finish();
+}
+
 function parseJsonArray(val) {
   if (val == null) return null;
   if (Array.isArray(val)) return val.map((x) => String(x).trim()).filter(Boolean);
@@ -142,6 +221,10 @@ export function normalizeFeedConfig(row) {
     time_window: normalizeTimeWindow(row.time_window) || 'all',
     ioc_types,
     filter_mode: resolveFeedFilterMode(row),
+    format: resolvePublishedFeedFormat(row),
+    include_source_metadata: row.include_source_metadata !== false,
+    include_classification: row.include_classification !== false,
+    include_enrichment: row.include_enrichment === true,
     advanced_query: row.advanced_query != null ? String(row.advanced_query) : null,
     include_feed_keys: parseJsonArray(row.include_feed_keys),
     include_tags: parseJsonArray(row.include_tags),
@@ -151,8 +234,14 @@ export function normalizeFeedConfig(row) {
 
 export function filtersHash(feed, window) {
   const queryMode = isQueryModeFeed(feed);
+  const jsonFeed = isJsonFormatFeed(feed);
   const payload = {
     filter_mode: resolveFeedFilterMode(feed),
+    // JSON output + include flags change the artifact bytes, so a change must force
+    // regeneration even when the underlying IOC set is unchanged. These keys are only
+    // added for JSON feeds so a TXT feed's hash stays byte-identical to the legacy value
+    // (no regeneration churn for existing feeds on upgrade).
+    ...(jsonFeed ? { output_format: 'json', json_include: resolveJsonIncludeFlags(feed) } : {}),
     // Base-set inputs depend on the active mode only.
     ...(queryMode
       ? { advanced_query: String(feed.advanced_query || '').trim() }
@@ -490,6 +579,148 @@ export async function fetchIocRows(pool, feed, window) {
   return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
 }
 
+/** SQL confidence-rank expression shared by the streaming base query's ORDER BYs. */
+const CONF_RANK_SQL = (col) =>
+  `CASE LOWER(COALESCE(${col}, '')) WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END`;
+
+/**
+ * Streaming cursor SQL for Basic hash feeds when File Artifact read/canonicalization is
+ * on. Mirrors fetchIocRows' matched→picked CTE (identity_key collapse onto primary hash)
+ * but projects the stable ioc id + provenance columns and applies the same outer
+ * sortFeedRows order so the server-side cursor can stream without materializing in Node.
+ * @returns {{ sql: string, params: any[] }}
+ */
+export function buildStreamingHashBaseSql(feed, window) {
+  const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
+  const params = [];
+  const typePlaceholders = types.map((t) => {
+    params.push(t);
+    return `$${params.length}`;
+  });
+  const filterSql = buildFeedFilterSql(feed, window, params);
+
+  const sql = `
+    WITH matched AS (
+      SELECT
+        i.id,
+        i.observable,
+        i.observable_type,
+        i.confidence,
+        i.category,
+        i.source_name,
+        i.created_at,
+        i.ioc_source_id,
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts,
+        (${ARTIFACT_IDENTITY_SQL}) AS identity_key,
+        faph.hash_type AS primary_hash_type,
+        faph.normalized_hash_value AS primary_hash_value,
+        CASE
+          WHEN i.observable_type IN (${ARTIFACT_HASH_TYPES_SQL}) AND fa.id IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END AS has_artifact
+      FROM ioc_items i
+      ${ARTIFACT_ANNOTATE_JOINS}
+      WHERE i.observable_type IN (${typePlaceholders.join(', ')})
+        AND COALESCE(i.status, 'active') <> 'suppressed'
+        ${filterSql}
+    ),
+    picked AS (
+      SELECT DISTINCT ON (identity_key)
+        id,
+        COALESCE(
+          CASE WHEN has_artifact THEN primary_hash_value END,
+          observable
+        ) AS observable,
+        COALESCE(
+          CASE WHEN has_artifact THEN primary_hash_type END,
+          observable_type
+        ) AS observable_type,
+        confidence,
+        category,
+        source_name,
+        created_at,
+        ioc_source_id,
+        recency_ts
+      FROM matched
+      ORDER BY identity_key,
+        CASE
+          WHEN has_artifact
+            AND primary_hash_value IS NOT NULL
+            AND LOWER(observable) = LOWER(primary_hash_value)
+            AND LOWER(observable_type) = LOWER(primary_hash_type)
+            THEN 0 ELSE 1
+        END,
+        CASE LOWER(observable_type)
+          WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9
+        END,
+        recency_ts DESC NULLS LAST,
+        observable ASC
+    )
+    SELECT d.id, d.observable, d.observable_type, d.confidence, d.category,
+           d.created_at, d.ioc_source_id, d.source_name, d.recency_ts
+    FROM picked d
+    ORDER BY d.recency_ts DESC, ${CONF_RANK_SQL('d.confidence')} DESC, d.observable ASC`;
+
+  return { sql, params };
+}
+
+/**
+ * Base query for the bounded-memory STREAMING generator. Produces one row per distinct
+ * output identity (lower(observable) for non-hash; file-artifact identity_key for
+ * canonical hash feeds), in the same canonical output order as sortFeedRows
+ * (recency DESC, confidence DESC, observable ASC), and carries the stable ioc id +
+ * provenance columns needed for sibling-aware enrichment.
+ *
+ * Executed via a server-side cursor so the dedup/recency sort happens ONCE in PostgreSQL
+ * (spilling to DB temp, not Node) and rows stream in bounded batches. No client keyset,
+ * no per-page rescan. Canonical hash feeds use buildStreamingHashBaseSql.
+ * @returns {{ sql: string, params: any[] }}
+ */
+export function buildStreamingBaseSql(feed, window) {
+  if (shouldCanonicalizePublishedHashFeed(feed)) {
+    return buildStreamingHashBaseSql(feed, window);
+  }
+
+  const queryMode = isQueryModeFeed(feed);
+  let innerWhere;
+  let params;
+  if (queryMode) {
+    const q = buildQueryModeWhereSql(feed);
+    innerWhere = q.sql;
+    params = q.params;
+  } else {
+    const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
+    params = [];
+    const typePlaceholders = types.map((t) => {
+      params.push(t);
+      return `$${params.length}`;
+    });
+    const filterSql = buildFeedFilterSql(feed, window, params);
+    innerWhere = `i.observable_type IN (${typePlaceholders.join(', ')})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
+      ${filterSql}`;
+  }
+
+  const sql = `
+    SELECT d.id, d.observable, d.observable_type, d.confidence, d.category,
+           d.created_at, d.ioc_source_id, d.source_name, d.recency_ts
+    FROM (
+      SELECT DISTINCT ON (lower(i.observable))
+        i.id, i.observable, i.observable_type, i.confidence, i.category,
+        i.created_at, i.ioc_source_id, i.source_name,
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
+      FROM ioc_items i
+      WHERE ${innerWhere}
+      ORDER BY lower(i.observable),
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
+        ${CONF_RANK_SQL('i.confidence')} DESC,
+        i.observable ASC
+    ) d
+    ORDER BY d.recency_ts DESC, ${CONF_RANK_SQL('d.confidence')} DESC, d.observable ASC`;
+
+  return { sql, params };
+}
+
 /** Conservative export fingerprint — same filters as fetchIocRows without DISTINCT ON sort cost. */
 export async function fetchIocExportFingerprint(pool, feed, window) {
   const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
@@ -820,6 +1051,67 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
   });
 }
 
+/**
+ * Persist a FILE-BACKED snapshot (content NULL, storage_path set). Mirrors the success path
+ * of persistPublishedFeedSnapshot: xact-locked per (feed, ioc_type, window); dedups on
+ * content_hash. Returns which artifact files the caller must clean up:
+ *   - redundantStoragePath: the just-written artifact is identical → delete it, keep old.
+ *   - previousStoragePath:  the row was repointed → delete the superseded old artifact.
+ */
+export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
+  const feedId = Number(snapshot.feedId);
+  const paramsJson = snapshot.paramsJson || {};
+  const iocTypeKey = String(paramsJson.ioc_type || feedIocTypesKey(paramsJson.ioc_types) || '');
+  const window = String(paramsJson.window || '');
+  const paramsText = JSON.stringify(paramsJson);
+
+  return withTransaction(pool, async (client) => {
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}`]
+    );
+
+    const { rows } = await client.query(
+      `SELECT id, content_hash, storage_path
+       FROM published_feed_snapshots
+       WHERE feed_id = $1 AND status = 'success'
+         AND params->>'ioc_type' = $2 AND params->>'window' = $3
+       ORDER BY generated_at DESC LIMIT 1 FOR UPDATE`,
+      [feedId, iocTypeKey, window]
+    );
+    const prev = rows[0];
+
+    if (!prev?.id) {
+      await client.query(
+        `INSERT INTO published_feed_snapshots
+           (feed_id, item_count, content_hash, content, status, error_message, params,
+            storage_path, file_size, artifact_format, generation_id)
+         VALUES ($1, $2, $3, NULL, 'success', NULL, $4::jsonb, $5, $6, $7, $8)`,
+        [feedId, snapshot.itemCount, snapshot.contentHash, paramsText,
+          snapshot.storagePath, snapshot.fileSize, snapshot.artifactFormat, snapshot.generationId]
+      );
+      return { inserted: true };
+    }
+
+    if (prev.content_hash === snapshot.contentHash) {
+      // Identical logical content → keep the existing artifact; the new one is redundant.
+      return { skipped: true, reason: 'unchanged_hash', redundantStoragePath: snapshot.storagePath };
+    }
+
+    await client.query(
+      `UPDATE published_feed_snapshots
+       SET generated_at = NOW(), item_count = $2, content_hash = $3, content = NULL,
+           status = 'success', error_message = NULL, params = $4::jsonb,
+           storage_path = $5, file_size = $6, artifact_format = $7, generation_id = $8
+       WHERE id = $1`,
+      [prev.id, snapshot.itemCount, snapshot.contentHash, paramsText,
+        snapshot.storagePath, snapshot.fileSize, snapshot.artifactFormat, snapshot.generationId]
+    );
+    // Old artifact is now superseded; caller deletes it after this commit.
+    return { updated: true, previousStoragePath: prev.storage_path || null };
+  });
+}
+
 export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) {
   const id = Number(feedId);
   if (!Number.isFinite(id) || id <= 0) {
@@ -979,23 +1271,12 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         }
       }
 
-      let iocRows = [];
-      if (!allKeysStale) {
-        const t0 = Date.now();
-        iocRows = queryMode
-          ? await fetchQueryModeIocRows(db, feed)
-          : await fetchIocRows(db, feed, window);
-        queryMs += Date.now() - t0;
-      }
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
-      const { content, content_hash, item_count } = buildPlainTextFeed(iocRows, formatTypes, genMax);
-      const bytes = Buffer.byteLength(content, 'utf8');
-      snapshotBytes = Math.max(snapshotBytes || 0, bytes);
-      maxItemCount = Math.max(maxItemCount, item_count);
       const paramsJson = {
         ioc_type: iocTypeKey,
         ioc_types: iocTypes,
         filter_mode: resolveFeedFilterMode(feed),
+        output_format: resolvePublishedFeedFormat(feed),
         window,
         filters_hash,
         export_fingerprint: fingerprintKey,
@@ -1003,16 +1284,67 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         ioc_watermark: cheapWatermark || await fetchCheapIocWatermark(db, feed)
       };
 
-      await persistPublishedFeedSnapshot(db, {
-        feedId: id,
-        itemCount: item_count,
-        contentHash: content_hash,
-        content,
-        status: 'success',
-        paramsJson
-      });
+      if (shouldStreamPublishedFeed(feed)) {
+        // Bounded-memory streaming path: generate a file artifact, persist a metadata-only
+        // snapshot pointer, and clean up the superseded/redundant artifact file.
+        const artifactCfg = getPublishedFeedArtifactConfig();
+        const { generateFeedArtifact, generateEmptyFeedArtifact } = await import('./publishedFeedStreamGenerator.js');
+        const t0 = Date.now();
+        const art = allKeysStale
+          ? await generateEmptyFeedArtifact(feed, { cfg: artifactCfg })
+          : await generateFeedArtifact(db, feed, window, { formatTypes, maxItems: genMax, cfg: artifactCfg });
+        queryMs += Date.now() - t0;
+        snapshotBytes = Math.max(snapshotBytes || 0, art.fileSize);
+        maxItemCount = Math.max(maxItemCount, art.itemCount);
 
-      results.push({ window, status: 'success', item_count });
+        let persistRes;
+        try {
+          persistRes = await persistPublishedFeedArtifactSnapshot(db, {
+            feedId: id,
+            itemCount: art.itemCount,
+            contentHash: art.contentHash,
+            storagePath: art.storagePath,
+            fileSize: art.fileSize,
+            artifactFormat: art.format,
+            generationId: art.generationId,
+            paramsJson
+          });
+        } catch (persistErr) {
+          // DB pointer update failed AFTER the artifact was published: remove the orphan
+          // file so it cannot leak, and let the previous snapshot pointer stand.
+          await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, art.storagePath)).catch(() => {});
+          throw persistErr;
+        }
+        const stale = persistRes?.redundantStoragePath || persistRes?.previousStoragePath;
+        if (stale) {
+          await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, stale)).catch(() => {});
+        }
+        results.push({ window, status: 'success', item_count: art.itemCount });
+      } else {
+        let iocRows = [];
+        if (!allKeysStale) {
+          const t0 = Date.now();
+          iocRows = queryMode
+            ? await fetchQueryModeIocRows(db, feed)
+            : await fetchIocRows(db, feed, window);
+          queryMs += Date.now() - t0;
+        }
+        const { content, content_hash, item_count } = await buildFeedContent(db, feed, iocRows, formatTypes, genMax);
+        const bytes = Buffer.byteLength(content, 'utf8');
+        snapshotBytes = Math.max(snapshotBytes || 0, bytes);
+        maxItemCount = Math.max(maxItemCount, item_count);
+
+        await persistPublishedFeedSnapshot(db, {
+          feedId: id,
+          itemCount: item_count,
+          contentHash: content_hash,
+          content,
+          status: 'success',
+          paramsJson
+        });
+
+        results.push({ window, status: 'success', item_count });
+      }
     } catch (err) {
       const msg = String(err?.message || err);
       const paramsJson = {
@@ -1124,7 +1456,8 @@ export async function regenerateAllEnabledFeeds(pool) {
 export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window) {
   const { rows } = await db.query(
     `SELECT id, content_hash, item_count, generated_at, params,
-            octet_length(content) AS content_bytes
+            storage_path, artifact_format,
+            COALESCE(octet_length(content), file_size) AS content_bytes
      FROM published_feed_snapshots
      WHERE feed_id = $1
        AND status = 'success'
@@ -1133,6 +1466,18 @@ export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window) {
      ORDER BY generated_at DESC
      LIMIT 1`,
     [Number(feedId), String(iocTypeKey), String(window)]
+  );
+  return rows[0] || null;
+}
+
+/** Load the file-artifact pointer pinned to snapshot id + content_hash (publish-race safe). */
+export async function getSnapshotArtifactByIdAndHash(db, snapshotId, contentHash) {
+  const { rows } = await db.query(
+    `SELECT id, storage_path, file_size, artifact_format, content_hash, generated_at
+     FROM published_feed_snapshots
+     WHERE id = $1 AND content_hash = $2 AND status = 'success' AND storage_path IS NOT NULL
+     LIMIT 1`,
+    [Number(snapshotId), String(contentHash)]
   );
   return rows[0] || null;
 }

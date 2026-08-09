@@ -17,6 +17,7 @@ import {
 } from '../lib/publishedFeedSources.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
+import { getPublishedFeedArtifactConfig, removeFeedArtifacts } from '../lib/publishedFeedArtifact/store.js';
 
 function toPublicFeed(row, extra = {}) {
   if (!row) return null;
@@ -30,7 +31,10 @@ function toPublicFeed(row, extra = {}) {
     filter_mode: resolveFeedFilterMode(row),
     advanced_query: row.advanced_query != null ? String(row.advanced_query) : null,
     ioc_types,
-    format: row.format,
+    format: row.format === 'json' ? 'json' : 'txt',
+    include_source_metadata: row.include_source_metadata !== false,
+    include_classification: row.include_classification !== false,
+    include_enrichment: row.include_enrichment === true,
     min_confidence: row.min_confidence,
     include_feed_keys: row.include_feed_keys,
     include_tags: row.include_tags,
@@ -153,10 +157,26 @@ function validateFeedPayload(body, partial = false, mode = FEED_FILTER_MODES.BAS
     const n = Number(body.refresh_interval_minutes);
     if (!Number.isFinite(n) || n < 5) errors.push('refresh_interval_minutes must be >= 5');
   }
-  if (body.format !== undefined && body.format !== 'txt') {
-    errors.push('only txt format is supported');
+  // Output format: `format` (canonical) or `output_format` (spec alias). txt | json only.
+  const rawFormat = body.output_format !== undefined ? body.output_format : body.format;
+  if (rawFormat !== undefined) {
+    const fmt = String(rawFormat).trim().toLowerCase();
+    if (fmt !== 'txt' && fmt !== 'json') errors.push("output_format must be 'txt' or 'json'");
+  }
+  for (const key of ['include_source_metadata', 'include_classification', 'include_enrichment']) {
+    if (body[key] !== undefined && typeof body[key] !== 'boolean') {
+      errors.push(`${key} must be a boolean`);
+    }
   }
   return errors;
+}
+
+/** Canonical output format from a create/update body. Accepts `format` or `output_format`. */
+function resolveOutputFormatInput(body, fallback = 'txt') {
+  const raw = body.output_format !== undefined ? body.output_format
+    : (body.format !== undefined ? body.format : undefined);
+  if (raw === undefined) return fallback;
+  return String(raw).trim().toLowerCase() === 'json' ? 'json' : 'txt';
 }
 
 async function latestItemCount(pool, feedRow) {
@@ -173,7 +193,8 @@ function feedAuditSnapshot(row) {
   const pub = toPublicFeed(normalizeFeedConfig(row));
   return pickSafeFields(pub, [
     'id', 'name', 'enabled', 'filter_mode', 'advanced_query', 'ioc_types', 'min_confidence',
-    'time_window', 'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired'
+    'time_window', 'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired',
+    'format', 'include_source_metadata', 'include_classification', 'include_enrichment'
   ]);
 }
 
@@ -271,13 +292,15 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
            include_feed_keys, include_tags, exclude_tags,
            exclude_false_positive, exclude_expired,
            time_window, max_items, refresh_interval_minutes,
-           filter_mode, advanced_query
+           filter_mode, advanced_query,
+           include_source_metadata, include_classification, include_enrichment
          ) VALUES (
            $1, $2, $3, COALESCE($4, TRUE), $5::jsonb, COALESCE($6, 'txt'), $7,
            $8::jsonb, $9::jsonb, $10::jsonb,
            COALESCE($11, TRUE), COALESCE($12, TRUE),
            $13, $14, COALESCE($15, 15),
-           $16, $17
+           $16, $17,
+           COALESCE($18, TRUE), COALESCE($19, TRUE), COALESCE($20, FALSE)
          )
          RETURNING *`,
         [
@@ -286,7 +309,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
           body.description || null,
           body.enabled,
           JSON.stringify(iocTypes),
-          body.format || 'txt',
+          resolveOutputFormatInput(body),
           body.min_confidence ?? null,
           feedKeys.value.length ? JSON.stringify(feedKeys.value) : null,
           body.include_tags ? JSON.stringify(body.include_tags) : null,
@@ -297,7 +320,10 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
           body.max_items ?? null,
           body.refresh_interval_minutes ?? 15,
           mode,
-          advancedQuery
+          advancedQuery,
+          body.include_source_metadata ?? null,
+          body.include_classification ?? null,
+          body.include_enrichment ?? null
         ]
       );
       const feed = toPublicFeed(normalizeFeedConfig(rows[0]));
@@ -388,7 +414,12 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       const iocTypes = iocNorm.ok ? iocNorm.value : (mode === FEED_FILTER_MODES.QUERY ? ['ip'] : iocNorm.value);
       setField('ioc_types', JSON.stringify(iocTypes), '::jsonb');
     }
-    if (body.format !== undefined) setField('format', body.format);
+    if (body.format !== undefined || body.output_format !== undefined) {
+      setField('format', resolveOutputFormatInput(body, existingRow.format || 'txt'));
+    }
+    if (body.include_source_metadata !== undefined) setField('include_source_metadata', Boolean(body.include_source_metadata));
+    if (body.include_classification !== undefined) setField('include_classification', Boolean(body.include_classification));
+    if (body.include_enrichment !== undefined) setField('include_enrichment', Boolean(body.include_enrichment));
     if (body.min_confidence !== undefined) setField('min_confidence', body.min_confidence);
     if (body.include_feed_keys !== undefined) {
       setField('include_feed_keys', JSON.stringify(body.include_feed_keys || []), '::jsonb');
@@ -445,6 +476,9 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
 
       const { rowCount } = await pool.query('DELETE FROM published_feeds WHERE id = $1', [id]);
       if (!rowCount) return res.status(404).json({ message: 'Feed not found' });
+
+      // Best-effort removal of any file-backed artifacts for this feed (snapshots cascade in DB).
+      removeFeedArtifacts(getPublishedFeedArtifactConfig(), id).catch(() => {});
 
       audit?.auditSuccess({
         req,

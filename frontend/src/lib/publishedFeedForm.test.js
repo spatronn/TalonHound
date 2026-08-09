@@ -6,7 +6,8 @@ import {
   toggleFilterMode,
   validateFeedForm,
   buildFeedPayload,
-  normalizeFilterMode
+  normalizeFilterMode,
+  normalizeOutputFormat
 } from './publishedFeedForm.js';
 
 describe('publishedFeedForm mode handling', () => {
@@ -109,5 +110,52 @@ describe('publishedFeedForm payload', () => {
     const payload = buildFeedPayload(form);
     assert.equal(payload.filter_mode, 'basic');
     assert.equal(payload.advanced_query, null);
+  });
+});
+
+describe('publishedFeedForm output format', () => {
+  it('default format is txt with default include flags', () => {
+    const form = emptyFeedForm();
+    assert.equal(form.output_format, 'txt');
+    assert.equal(form.include_source_metadata, true);
+    assert.equal(form.include_classification, true);
+    assert.equal(form.include_enrichment, false);
+  });
+
+  it('a legacy feed with no format opens as txt', () => {
+    const form = feedToForm({ name: 'Legacy', ioc_types: ['ip'] });
+    assert.equal(form.output_format, 'txt');
+  });
+
+  it('saved JSON config reloads correctly (format + flags)', () => {
+    const form = feedToForm({
+      name: 'J', ioc_types: ['domain'], format: 'json',
+      include_source_metadata: false, include_classification: true, include_enrichment: true
+    });
+    assert.equal(form.output_format, 'json');
+    assert.equal(form.include_source_metadata, false);
+    assert.equal(form.include_classification, true);
+    assert.equal(form.include_enrichment, true);
+  });
+
+  it('buildFeedPayload sends output_format and include flags', () => {
+    const txt = buildFeedPayload({ ...emptyFeedForm(), name: 'T' });
+    assert.equal(txt.output_format, 'txt');
+    assert.equal(txt.include_source_metadata, true);
+    assert.equal(txt.include_enrichment, false);
+
+    const json = buildFeedPayload({
+      ...emptyFeedForm(), name: 'J', output_format: 'json', include_enrichment: true, include_classification: false
+    });
+    assert.equal(json.output_format, 'json');
+    assert.equal(json.include_enrichment, true);
+    assert.equal(json.include_classification, false);
+  });
+
+  it('normalizeOutputFormat defaults unknown values to txt', () => {
+    assert.equal(normalizeOutputFormat('json'), 'json');
+    assert.equal(normalizeOutputFormat('JSON'), 'json');
+    assert.equal(normalizeOutputFormat(undefined), 'txt');
+    assert.equal(normalizeOutputFormat('xml'), 'txt');
   });
 });

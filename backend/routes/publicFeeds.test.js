@@ -114,7 +114,8 @@ async function get(app, path, headers = {}) {
       headers: {
         etag: res.headers.get('etag'),
         lastModified: res.headers.get('last-modified'),
-        cacheControl: res.headers.get('cache-control')
+        cacheControl: res.headers.get('cache-control'),
+        contentType: res.headers.get('content-type')
       }
     };
   } finally {
@@ -418,6 +419,56 @@ test('a query-mode feed serves the query-keyed snapshot and ignores window/ioc_t
   assert.equal(metaLookups.length, 1);
   assert.equal(metaLookups[0].iocTypeKey, 'query');
   assert.equal(metaLookups[0].window, 'all');
+});
+
+test('TXT feed is served as text/plain', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const app = makeApp(createMockPool({ keys, feeds: FEEDS }));
+  const res = await get(app, `/api/published-feeds/malware-domains?api_key=${raw}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.contentType, /text\/plain/);
+});
+
+const JSON_BODY = '{"schema_version":"1.0","feed":{"name":"J","generated_at":"2026-08-01T12:00:00.000Z","item_count":1},"items":[{"type":"ip","value":"9.9.9.9","timestamps":{}}]}\n';
+const JSON_FEEDS = [{ id: 5, slug: 'json-feed', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, format: 'json' }];
+function jsonSnapshot() {
+  return {
+    id: 50, content: JSON_BODY, content_hash: 'jh', content_bytes: JSON_BODY.length,
+    item_count: 1, generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
+    params: { ioc_type: 'ip', window: 'all', output_format: 'json' }
+  };
+}
+
+test('JSON feed is served as application/json with the full document', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const app = makeApp(createMockPool({ keys, feeds: JSON_FEEDS, snapshotsByFeedId: () => jsonSnapshot() }));
+  const res = await get(app, `/api/published-feeds/json-feed?api_key=${raw}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.contentType, /application\/json/);
+  const parsed = JSON.parse(res.text);
+  assert.equal(parsed.schema_version, '1.0');
+  assert.equal(parsed.items[0].value, '9.9.9.9');
+});
+
+test('JSON feed ignores ?limit= (serves the whole valid document)', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const app = makeApp(createMockPool({ keys, feeds: JSON_FEEDS, snapshotsByFeedId: () => jsonSnapshot() }));
+  const res = await get(app, `/api/published-feeds/json-feed?api_key=${raw}&limit=1`);
+  assert.equal(res.status, 200);
+  // Full body, still valid JSON (not line-sliced).
+  assert.doesNotThrow(() => JSON.parse(res.text));
+});
+
+test('JSON feed ETag/304 continues to work', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const app = makeApp(createMockPool({ keys, feeds: JSON_FEEDS, snapshotsByFeedId: () => jsonSnapshot() }));
+  const etag = computeResponseEtag('jh', 'ip', 'all', 'all');
+  const res = await get(app, `/api/published-feeds/json-feed?api_key=${raw}`, { 'if-none-match': etag });
+  assert.equal(res.status, 304);
 });
 
 test('legacy public endpoint also uses metadata 304 fast path', async () => {

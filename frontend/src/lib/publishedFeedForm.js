@@ -8,11 +8,20 @@
 
 export const FEED_FILTER_MODES = { BASIC: 'basic', QUERY: 'query' };
 
+export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json' };
+
 /** Normalize any persisted/typed value to one of the two known modes ('basic' default). */
 export function normalizeFilterMode(value) {
   return String(value || '').trim().toLowerCase() === FEED_FILTER_MODES.QUERY
     ? FEED_FILTER_MODES.QUERY
     : FEED_FILTER_MODES.BASIC;
+}
+
+/** Normalize any persisted/typed output format to 'txt' (default) or 'json'. */
+export function normalizeOutputFormat(value) {
+  return String(value || '').trim().toLowerCase() === FEED_OUTPUT_FORMATS.JSON
+    ? FEED_OUTPUT_FORMATS.JSON
+    : FEED_OUTPUT_FORMATS.TXT;
 }
 
 function splitCsv(s) {
@@ -27,6 +36,10 @@ export function emptyFeedForm() {
     enabled: true,
     filter_mode: FEED_FILTER_MODES.BASIC,
     advanced_query: '',
+    output_format: FEED_OUTPUT_FORMATS.TXT,
+    include_source_metadata: true,
+    include_classification: true,
+    include_enrichment: false,
     ioc_types: ['ip'],
     exclude_false_positive: true,
     exclude_expired: true,
@@ -54,6 +67,10 @@ export function feedToForm(feed) {
     enabled: Boolean(feed.enabled),
     filter_mode: normalizeFilterMode(feed.filter_mode),
     advanced_query: feed.advanced_query || '',
+    output_format: normalizeOutputFormat(feed.output_format || feed.format),
+    include_source_metadata: feed.include_source_metadata !== false,
+    include_classification: feed.include_classification !== false,
+    include_enrichment: feed.include_enrichment === true,
     ioc_types: iocTypes,
     exclude_false_positive: feed.exclude_false_positive !== false,
     exclude_expired: feed.exclude_expired !== false,
@@ -96,6 +113,7 @@ export function validateFeedForm(form) {
  */
 export function buildFeedPayload(form) {
   const queryMode = form.filter_mode === FEED_FILTER_MODES.QUERY;
+  const jsonFormat = normalizeOutputFormat(form.output_format) === FEED_OUTPUT_FORMATS.JSON;
   return {
     name: String(form.name || '').trim(),
     description: String(form.description || '').trim() || null,
@@ -103,7 +121,11 @@ export function buildFeedPayload(form) {
     filter_mode: queryMode ? FEED_FILTER_MODES.QUERY : FEED_FILTER_MODES.BASIC,
     advanced_query: queryMode ? String(form.advanced_query || '').trim() : null,
     ioc_types: form.ioc_types,
-    format: 'txt',
+    output_format: jsonFormat ? FEED_OUTPUT_FORMATS.JSON : FEED_OUTPUT_FORMATS.TXT,
+    // JSON include flags are always sent; the backend ignores them for TXT feeds.
+    include_source_metadata: Boolean(form.include_source_metadata),
+    include_classification: Boolean(form.include_classification),
+    include_enrichment: Boolean(form.include_enrichment),
     exclude_false_positive: Boolean(form.exclude_false_positive),
     exclude_expired: Boolean(form.exclude_expired),
     include_feed_keys: form.include_feed_keys,
