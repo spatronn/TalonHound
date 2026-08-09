@@ -101,7 +101,7 @@ export async function upsertProjectionBatch(db, rows) {
     );
     params.push(
       r.feed_id,
-      r.window,
+      r.snapshot_window ?? r.window,
       r.identity_key,
       r.ioc_item_id,
       r.observable,
@@ -117,11 +117,11 @@ export async function upsertProjectionBatch(db, rows) {
   }
   const sql = `
     INSERT INTO published_feed_items (
-      feed_id, window, identity_key, ioc_item_id, observable, observable_type,
+      feed_id, snapshot_window, identity_key, ioc_item_id, observable, observable_type,
       recency_ts, confidence, category, confidence_rank, txt_value, item_json,
       content_fingerprint, updated_at
     ) VALUES ${values.join(',')}
-    ON CONFLICT (feed_id, window, identity_key) DO UPDATE SET
+    ON CONFLICT (feed_id, snapshot_window, identity_key) DO UPDATE SET
       ioc_item_id = EXCLUDED.ioc_item_id,
       observable = EXCLUDED.observable,
       observable_type = EXCLUDED.observable_type,
@@ -145,7 +145,7 @@ export async function deleteProjectionIdentities(db, feedId, window, identityKey
   if (!identityKeys?.length) return 0;
   const res = await db.query(
     `DELETE FROM published_feed_items
-     WHERE feed_id = $1 AND window = $2 AND identity_key = ANY($3::text[])`,
+     WHERE feed_id = $1 AND snapshot_window = $2 AND identity_key = ANY($3::text[])`,
     [feedId, window, identityKeys]
   );
   return res.rowCount || 0;
@@ -202,7 +202,7 @@ export function buildProjectionScanSql(feedId, window) {
       SELECT identity_key, ioc_item_id, observable, observable_type, recency_ts,
              confidence, category, txt_value, item_json, content_fingerprint
       FROM published_feed_items
-      WHERE feed_id = $1 AND window = $2
+      WHERE feed_id = $1 AND snapshot_window = $2
       ORDER BY recency_ts DESC NULLS LAST, confidence_rank DESC, observable ASC`,
     params: [feedId, window]
   };
@@ -210,7 +210,7 @@ export function buildProjectionScanSql(feedId, window) {
 
 export async function countProjectionItems(db, feedId, window) {
   const { rows } = await db.query(
-    `SELECT COUNT(*)::bigint AS n FROM published_feed_items WHERE feed_id = $1 AND window = $2`,
+    `SELECT COUNT(*)::bigint AS n FROM published_feed_items WHERE feed_id = $1 AND snapshot_window = $2`,
     [feedId, window]
   );
   return Number(rows[0]?.n || 0);

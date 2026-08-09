@@ -1,6 +1,6 @@
 -- Phase 2: Published Feed projection + incremental refresh state.
 --
--- Materializes one row per published identity per (feed, window) so scheduled
+-- Materializes one row per published identity per (feed, snapshot_window) so scheduled
 -- refreshes can:
 --   * no-op when nothing relevant changed
 --   * re-normalize only dirty identities
@@ -8,13 +8,14 @@
 --
 -- Additive / non-destructive. Existing file-backed and TEXT snapshots remain valid.
 -- Projection-based refresh activates only after bootstrap sets projection_status='ready'.
+-- Column is snapshot_window (not "window") — WINDOW is a PostgreSQL reserved keyword.
 
 SET LOCAL statement_timeout = 0;
 SET LOCAL lock_timeout = '120s';
 
 CREATE TABLE IF NOT EXISTS published_feed_items (
   feed_id BIGINT NOT NULL REFERENCES published_feeds(id) ON DELETE CASCADE,
-  window TEXT NOT NULL,
+  snapshot_window TEXT NOT NULL,
   identity_key TEXT NOT NULL,
   ioc_item_id BIGINT NOT NULL,
   observable TEXT NOT NULL,
@@ -27,12 +28,12 @@ CREATE TABLE IF NOT EXISTS published_feed_items (
   item_json JSONB,
   content_fingerprint TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (feed_id, window, identity_key)
+  PRIMARY KEY (feed_id, snapshot_window, identity_key)
 );
 
 -- Ordered scan for artifact generation from projection.
 CREATE INDEX IF NOT EXISTS idx_pf_items_feed_window_order
-  ON published_feed_items (feed_id, window, recency_ts DESC NULLS LAST, confidence_rank DESC, observable ASC);
+  ON published_feed_items (feed_id, snapshot_window, recency_ts DESC NULLS LAST, confidence_rank DESC, observable ASC);
 
 CREATE INDEX IF NOT EXISTS idx_pf_items_feed_ioc
   ON published_feed_items (feed_id, ioc_item_id);

@@ -103,7 +103,8 @@ describe('upsertProjectionBatch', () => {
       content_fingerprint: 'abc'
     }]);
     assert.equal(n, 1);
-    assert.match(calls[0].sql, /ON CONFLICT \(feed_id, window, identity_key\) DO UPDATE/);
+    assert.match(calls[0].sql, /ON CONFLICT \(feed_id, snapshot_window, identity_key\) DO UPDATE/);
+    assert.match(calls[0].sql, /INSERT INTO published_feed_items \(\s*feed_id, snapshot_window,/);
     assert.equal(calls[0].params[0], 1);
     assert.equal(calls[0].params[2], 'o:domain:evil.com');
   });

@@ -186,7 +186,7 @@ export async function expandCandidateContext(db, feedId, window, candidateIds) {
   }
   const { rows: proj } = await db.query(
     `SELECT identity_key, ioc_item_id FROM published_feed_items
-     WHERE feed_id = $1 AND window = $2 AND ioc_item_id = ANY($3::bigint[])`,
+     WHERE feed_id = $1 AND snapshot_window = $2 AND ioc_item_id = ANY($3::bigint[])`,
     [feedId, window, candidateIds]
   );
   const { rows: sib } = await db.query(
@@ -309,7 +309,7 @@ export async function applyIncrementalProjectionUpdate(db, feed, window, formatT
   const { rows: existing } = await db.query(
     `SELECT identity_key, ioc_item_id, content_fingerprint
      FROM published_feed_items
-     WHERE feed_id = $1 AND window = $2
+     WHERE feed_id = $1 AND snapshot_window = $2
        AND (ioc_item_id = ANY($3::bigint[]) OR identity_key = ANY($4::text[]))`,
     [feed.id, window, evalIds, [...newKeys, ...ctx.projectedKeys]]
   );
