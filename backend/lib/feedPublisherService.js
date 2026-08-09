@@ -1051,6 +1051,14 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
     }
 
     if (rows[0].content_hash === snapshot.contentHash) {
+      // Content identical — still refresh params so config watermarks (feed_updated_at,
+      // export_fingerprint, filters_hash) stay aligned for the next skip/incremental check.
+      await client.query(
+        `UPDATE published_feed_snapshots
+         SET params = $2::jsonb
+         WHERE id = $1`,
+        [rows[0].id, paramsText]
+      );
       return { skipped: true, reason: 'unchanged_hash' };
     }
 
@@ -1113,6 +1121,15 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
 
     if (prev.content_hash === snapshot.contentHash) {
       // Identical logical content → keep the existing artifact; the new one is redundant.
+      // Still refresh params so feed_updated_at / fingerprints stay current.
+      await client.query(
+        `UPDATE published_feed_snapshots
+         SET params = $2::jsonb,
+             item_count = COALESCE($3, item_count),
+             file_size = COALESCE($4, file_size)
+         WHERE id = $1`,
+        [prev.id, paramsText, snapshot.itemCount ?? null, snapshot.fileSize ?? null]
+      );
       return { skipped: true, reason: 'unchanged_hash', redundantStoragePath: snapshot.storagePath };
     }
 
@@ -1354,10 +1371,12 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         } = await import('./publishedFeedIncremental.js');
 
         const latestMeta = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
+        // filters_hash is the generation config watermark. Do not use feed_updated_at here:
+        // identical-content snapshot dedupe historically left feed_updated_at stale and
+        // forced permanent full rebuilds. Config edits that affect membership change filters_hash.
         const filtersChanged = Boolean(
           force
           || (latestMeta?.params?.filters_hash && latestMeta.params.filters_hash !== filters_hash)
-          || (latestMeta?.params?.feed_updated_at && latestMeta.params.feed_updated_at !== feedUpdatedAt)
         );
 
         const incrementalForFeed = isIncrementalEnabledForFeed(id);
