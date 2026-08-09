@@ -26,8 +26,28 @@ import {
 } from './publishedFeedArtifact/store.js';
 import { createServiceLogger } from './appLogger.js';
 import { parseSearchQuery, buildWhereClause } from './iocSearchDsl/index.js';
+import {
+  FEED_OUTPUT_FORMATS,
+  normalizeFeedFormats,
+  resolvePublishedFeedFormats,
+  resolvePublishedFeedFormat,
+  feedHasJsonFormat,
+  isJsonFormatFeed,
+  resolveFormatsInput,
+  resolveRequestedFeedFormat
+} from './publishedFeedFormats.js';
 
 export { buildFeedKeySourceSql };
+export {
+  FEED_OUTPUT_FORMATS,
+  normalizeFeedFormats,
+  resolvePublishedFeedFormats,
+  resolvePublishedFeedFormat,
+  feedHasJsonFormat,
+  isJsonFormatFeed,
+  resolveFormatsInput,
+  resolveRequestedFeedFormat
+};
 
 /**
  * Published Feed content is defined by exactly one of two mutually-exclusive modes:
@@ -113,20 +133,6 @@ export function resolveFeedIocTypes(feed) {
     if (norm.ok) return norm.value;
   }
   return [];
-}
-
-/** Supported output formats. TXT is the default / backward-compatible behavior. */
-export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json' };
-
-/** Resolve a feed's output format; anything other than 'json' is 'txt'. */
-export function resolvePublishedFeedFormat(feed) {
-  return String(feed?.format || '').trim().toLowerCase() === FEED_OUTPUT_FORMATS.JSON
-    ? FEED_OUTPUT_FORMATS.JSON
-    : FEED_OUTPUT_FORMATS.TXT;
-}
-
-export function isJsonFormatFeed(feed) {
-  return resolvePublishedFeedFormat(feed) === FEED_OUTPUT_FORMATS.JSON;
 }
 
 /**
@@ -215,13 +221,19 @@ export function normalizeFeedConfig(row) {
     ioc_types: parseJsonArray(row.ioc_types) || row.ioc_types,
     ioc_type: row.ioc_type
   });
+  const formats = resolvePublishedFeedFormats({
+    formats: parseJsonArray(row.formats) || row.formats,
+    format: row.format
+  });
   return {
     ...row,
     id: Number(row.id),
     time_window: normalizeTimeWindow(row.time_window) || 'all',
     ioc_types,
     filter_mode: resolveFeedFilterMode(row),
-    format: resolvePublishedFeedFormat(row),
+    formats,
+    // Derived primary format (prefer txt) for callers that still read `format`.
+    format: resolvePublishedFeedFormat({ formats, format: row.format }),
     include_source_metadata: row.include_source_metadata !== false,
     include_classification: row.include_classification !== false,
     include_enrichment: row.include_enrichment === true,
@@ -234,14 +246,24 @@ export function normalizeFeedConfig(row) {
 
 export function filtersHash(feed, window) {
   const queryMode = isQueryModeFeed(feed);
-  const jsonFeed = isJsonFormatFeed(feed);
+  const formats = resolvePublishedFeedFormats(feed);
+  const jsonFeed = formats.includes(FEED_OUTPUT_FORMATS.JSON);
+  // TXT-only keeps the legacy fingerprint (no formats/output_format keys) so existing
+  // feeds do not churn on upgrade. Dual or JSON-only include sorted formats; JSON
+  // include flags only when JSON is enabled.
+  const formatKeys = (() => {
+    if (formats.length === 1 && formats[0] === FEED_OUTPUT_FORMATS.TXT) return {};
+    if (formats.length === 1 && formats[0] === FEED_OUTPUT_FORMATS.JSON) {
+      return { output_format: 'json', json_include: resolveJsonIncludeFlags(feed) };
+    }
+    return {
+      formats,
+      ...(jsonFeed ? { json_include: resolveJsonIncludeFlags(feed) } : {})
+    };
+  })();
   const payload = {
     filter_mode: resolveFeedFilterMode(feed),
-    // JSON output + include flags change the artifact bytes, so a change must force
-    // regeneration even when the underlying IOC set is unchanged. These keys are only
-    // added for JSON feeds so a TXT feed's hash stays byte-identical to the legacy value
-    // (no regeneration churn for existing feeds on upgrade).
-    ...(jsonFeed ? { output_format: 'json', json_include: resolveJsonIncludeFlags(feed) } : {}),
+    ...formatKeys,
     // Base-set inputs depend on the active mode only.
     ...(queryMode
       ? { advanced_query: String(feed.advanced_query || '').trim() }
@@ -979,13 +1001,18 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
     || ''
   );
   const window = String(paramsJson.window || '');
+  const artifactFormat = String(
+    snapshot.artifactFormat
+    || paramsJson.output_format
+    || 'txt'
+  ).toLowerCase() === 'json' ? 'json' : 'txt';
   const status = String(snapshot.status || 'success');
-  const paramsText = JSON.stringify(paramsJson);
+  const paramsText = JSON.stringify({ ...paramsJson, output_format: artifactFormat });
 
   return withTransaction(pool, async (client) => {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
-      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}`]
+      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}:${artifactFormat}`]
     );
 
     if (status !== 'success') {
@@ -996,10 +1023,11 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
            AND status = 'failed'
            AND params->>'ioc_type' = $2
            AND params->>'window' = $3
+           AND COALESCE(artifact_format, params->>'output_format', 'txt') = $4
          ORDER BY generated_at DESC
          LIMIT 1
          FOR UPDATE`,
-        [feedId, iocTypeKey, window]
+        [feedId, iocTypeKey, window, artifactFormat]
       );
 
       if (rows[0]?.id) {
@@ -1011,18 +1039,19 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
                content = '',
                status = 'failed',
                error_message = $2,
-               params = $3::jsonb
+               params = $3::jsonb,
+               artifact_format = $4
            WHERE id = $1`,
-          [rows[0].id, snapshot.errorMessage || null, paramsText]
+          [rows[0].id, snapshot.errorMessage || null, paramsText, artifactFormat]
         );
         return;
       }
 
       await client.query(
         `INSERT INTO published_feed_snapshots
-           (feed_id, item_count, content_hash, content, status, error_message, params)
-         VALUES ($1, 0, NULL, '', 'failed', $2, $3::jsonb)`,
-        [feedId, snapshot.errorMessage || null, paramsText]
+           (feed_id, item_count, content_hash, content, status, error_message, params, artifact_format)
+         VALUES ($1, 0, NULL, '', 'failed', $2, $3::jsonb, $4)`,
+        [feedId, snapshot.errorMessage || null, paramsText, artifactFormat]
       );
       return;
     }
@@ -1034,18 +1063,19 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
          AND status = 'success'
          AND params->>'ioc_type' = $2
          AND params->>'window' = $3
+         AND COALESCE(artifact_format, params->>'output_format', 'txt') = $4
        ORDER BY generated_at DESC
        LIMIT 1
        FOR UPDATE`,
-      [feedId, iocTypeKey, window]
+      [feedId, iocTypeKey, window, artifactFormat]
     );
 
     if (!rows[0]?.id) {
       await client.query(
         `INSERT INTO published_feed_snapshots
-           (feed_id, item_count, content_hash, content, status, error_message, params)
-         VALUES ($1, $2, $3, $4, 'success', NULL, $5::jsonb)`,
-        [feedId, snapshot.itemCount, snapshot.contentHash, snapshot.content, paramsText]
+           (feed_id, item_count, content_hash, content, status, error_message, params, artifact_format)
+         VALUES ($1, $2, $3, $4, 'success', NULL, $5::jsonb, $6)`,
+        [feedId, snapshot.itemCount, snapshot.contentHash, snapshot.content, paramsText, artifactFormat]
       );
       return;
     }
@@ -1055,9 +1085,10 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
       // export_fingerprint, filters_hash) stay aligned for the next skip/incremental check.
       await client.query(
         `UPDATE published_feed_snapshots
-         SET params = $2::jsonb
+         SET params = $2::jsonb,
+             artifact_format = COALESCE(artifact_format, $3)
          WHERE id = $1`,
-        [rows[0].id, paramsText]
+        [rows[0].id, paramsText, artifactFormat]
       );
       return { skipped: true, reason: 'unchanged_hash' };
     }
@@ -1070,16 +1101,17 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
            content = $4,
            status = 'success',
            error_message = NULL,
-           params = $5::jsonb
+           params = $5::jsonb,
+           artifact_format = $6
        WHERE id = $1`,
-      [rows[0].id, snapshot.itemCount, snapshot.contentHash, snapshot.content, paramsText]
+      [rows[0].id, snapshot.itemCount, snapshot.contentHash, snapshot.content, paramsText, artifactFormat]
     );
   });
 }
 
 /**
  * Persist a FILE-BACKED snapshot (content NULL, storage_path set). Mirrors the success path
- * of persistPublishedFeedSnapshot: xact-locked per (feed, ioc_type, window); dedups on
+ * of persistPublishedFeedSnapshot: xact-locked per (feed, ioc_type, window, format); dedups on
  * content_hash. Returns which artifact files the caller must clean up:
  *   - redundantStoragePath: the just-written artifact is identical → delete it, keep old.
  *   - previousStoragePath:  the row was repointed → delete the superseded old artifact.
@@ -1089,12 +1121,17 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
   const paramsJson = snapshot.paramsJson || {};
   const iocTypeKey = String(paramsJson.ioc_type || feedIocTypesKey(paramsJson.ioc_types) || '');
   const window = String(paramsJson.window || '');
-  const paramsText = JSON.stringify(paramsJson);
+  const artifactFormat = String(
+    snapshot.artifactFormat
+    || paramsJson.output_format
+    || 'txt'
+  ).toLowerCase() === 'json' ? 'json' : 'txt';
+  const paramsText = JSON.stringify({ ...paramsJson, output_format: artifactFormat });
 
   return withTransaction(pool, async (client) => {
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
-      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}`]
+      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}:${artifactFormat}`]
     );
 
     const { rows } = await client.query(
@@ -1102,8 +1139,9 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
        FROM published_feed_snapshots
        WHERE feed_id = $1 AND status = 'success'
          AND params->>'ioc_type' = $2 AND params->>'window' = $3
+         AND COALESCE(artifact_format, params->>'output_format', 'txt') = $4
        ORDER BY generated_at DESC LIMIT 1 FOR UPDATE`,
-      [feedId, iocTypeKey, window]
+      [feedId, iocTypeKey, window, artifactFormat]
     );
     const prev = rows[0];
 
@@ -1114,7 +1152,7 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
             storage_path, file_size, artifact_format, generation_id)
          VALUES ($1, $2, $3, NULL, 'success', NULL, $4::jsonb, $5, $6, $7, $8)`,
         [feedId, snapshot.itemCount, snapshot.contentHash, paramsText,
-          snapshot.storagePath, snapshot.fileSize, snapshot.artifactFormat, snapshot.generationId]
+          snapshot.storagePath, snapshot.fileSize, artifactFormat, snapshot.generationId]
       );
       return { inserted: true };
     }
@@ -1126,9 +1164,10 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
         `UPDATE published_feed_snapshots
          SET params = $2::jsonb,
              item_count = COALESCE($3, item_count),
-             file_size = COALESCE($4, file_size)
+             file_size = COALESCE($4, file_size),
+             artifact_format = COALESCE(artifact_format, $5)
          WHERE id = $1`,
-        [prev.id, paramsText, snapshot.itemCount ?? null, snapshot.fileSize ?? null]
+        [prev.id, paramsText, snapshot.itemCount ?? null, snapshot.fileSize ?? null, artifactFormat]
       );
       return { skipped: true, reason: 'unchanged_hash', redundantStoragePath: snapshot.storagePath };
     }
@@ -1140,10 +1179,99 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
            storage_path = $5, file_size = $6, artifact_format = $7, generation_id = $8
        WHERE id = $1`,
       [prev.id, snapshot.itemCount, snapshot.contentHash, paramsText,
-        snapshot.storagePath, snapshot.fileSize, snapshot.artifactFormat, snapshot.generationId]
+        snapshot.storagePath, snapshot.fileSize, artifactFormat, snapshot.generationId]
     );
     // Old artifact is now superseded; caller deletes it after this commit.
     return { updated: true, previousStoragePath: prev.storage_path || null };
+  });
+}
+
+/**
+ * Persist multiple format artifacts for one generation in a single transaction.
+ * On failure, nothing is committed — caller deletes the new on-disk paths.
+ */
+export async function persistPublishedFeedArtifactSnapshots(pool, snapshots) {
+  if (!Array.isArray(snapshots) || !snapshots.length) return [];
+  if (snapshots.length === 1) {
+    return [await persistPublishedFeedArtifactSnapshot(pool, snapshots[0])];
+  }
+
+  const first = snapshots[0];
+  const feedId = Number(first.feedId);
+  const paramsJson = first.paramsJson || {};
+  const iocTypeKey = String(paramsJson.ioc_type || feedIocTypesKey(paramsJson.ioc_types) || '');
+  const window = String(paramsJson.window || '');
+
+  return withTransaction(pool, async (client) => {
+    // One lock for the whole (feed, ioc, window) multi-format publish set.
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [`published_feed_snapshots:${feedId}:${iocTypeKey}:${window}:multi`]
+    );
+
+    const results = [];
+    for (const snapshot of snapshots) {
+      const artifactFormat = String(
+        snapshot.artifactFormat
+        || snapshot.paramsJson?.output_format
+        || 'txt'
+      ).toLowerCase() === 'json' ? 'json' : 'txt';
+      const snapParams = {
+        ...(snapshot.paramsJson || paramsJson),
+        output_format: artifactFormat
+      };
+      const paramsText = JSON.stringify(snapParams);
+
+      const { rows } = await client.query(
+        `SELECT id, content_hash, storage_path
+         FROM published_feed_snapshots
+         WHERE feed_id = $1 AND status = 'success'
+           AND params->>'ioc_type' = $2 AND params->>'window' = $3
+           AND COALESCE(artifact_format, params->>'output_format', 'txt') = $4
+         ORDER BY generated_at DESC LIMIT 1 FOR UPDATE`,
+        [feedId, iocTypeKey, window, artifactFormat]
+      );
+      const prev = rows[0];
+
+      if (!prev?.id) {
+        await client.query(
+          `INSERT INTO published_feed_snapshots
+             (feed_id, item_count, content_hash, content, status, error_message, params,
+              storage_path, file_size, artifact_format, generation_id)
+           VALUES ($1, $2, $3, NULL, 'success', NULL, $4::jsonb, $5, $6, $7, $8)`,
+          [feedId, snapshot.itemCount, snapshot.contentHash, paramsText,
+            snapshot.storagePath, snapshot.fileSize, artifactFormat, snapshot.generationId]
+        );
+        results.push({ inserted: true });
+        continue;
+      }
+
+      if (prev.content_hash === snapshot.contentHash) {
+        await client.query(
+          `UPDATE published_feed_snapshots
+           SET params = $2::jsonb,
+               item_count = COALESCE($3, item_count),
+               file_size = COALESCE($4, file_size),
+               artifact_format = COALESCE(artifact_format, $5)
+           WHERE id = $1`,
+          [prev.id, paramsText, snapshot.itemCount ?? null, snapshot.fileSize ?? null, artifactFormat]
+        );
+        results.push({ skipped: true, reason: 'unchanged_hash', redundantStoragePath: snapshot.storagePath });
+        continue;
+      }
+
+      await client.query(
+        `UPDATE published_feed_snapshots
+         SET generated_at = NOW(), item_count = $2, content_hash = $3, content = NULL,
+             status = 'success', error_message = NULL, params = $4::jsonb,
+             storage_path = $5, file_size = $6, artifact_format = $7, generation_id = $8
+         WHERE id = $1`,
+        [prev.id, snapshot.itemCount, snapshot.contentHash, paramsText,
+          snapshot.storagePath, snapshot.fileSize, artifactFormat, snapshot.generationId]
+      );
+      results.push({ updated: true, previousStoragePath: prev.storage_path || null });
+    }
+    return results;
   });
 }
 
@@ -1267,7 +1395,8 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       );
 
       if (!force && !useIncrementalDirtyPath) {
-        const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
+        const formats = resolvePublishedFeedFormats(feed);
+        const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window, formats[0]);
         const skipCheck = canSkipPublishedFeedRegeneration({
           feed,
           window,
@@ -1277,15 +1406,33 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           force
         });
         if (skipCheck.skip) {
-          results.push({
-            window,
-            status: 'success',
-            item_count: latest?.item_count ?? 0,
-            skipped: true,
-            reason: skipCheck.reason
-          });
-          maxItemCount = Math.max(maxItemCount, Number(latest?.item_count || 0));
-          continue;
+          // Multi-format: only skip when EVERY enabled format is present with same config.
+          let allOk = true;
+          for (const f of formats.slice(1)) {
+            const m = await getLatestSnapshotMeta(db, id, iocTypeKey, window, f);
+            if (!m?.content_hash || m.params?.filters_hash !== filters_hash) {
+              allOk = false;
+              break;
+            }
+            const feedUpdatedAtSkip = feed.updated_at instanceof Date
+              ? feed.updated_at.toISOString()
+              : (feed.updated_at ? String(feed.updated_at) : null);
+            if (m.params?.feed_updated_at !== feedUpdatedAtSkip) {
+              allOk = false;
+              break;
+            }
+          }
+          if (allOk) {
+            results.push({
+              window,
+              status: 'success',
+              item_count: latest?.item_count ?? 0,
+              skipped: true,
+              reason: skipCheck.reason
+            });
+            maxItemCount = Math.max(maxItemCount, Number(latest?.item_count || 0));
+            continue;
+          }
         }
       }
 
@@ -1318,9 +1465,12 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       }
 
       if (!force && !useIncrementalDirtyPath) {
-        const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
-        const prevKey = latest?.params?.export_fingerprint;
-        if (latest?.content_hash && latest.params?.filters_hash === filters_hash && prevKey === fingerprintKey) {
+        const formats = resolvePublishedFeedFormats(feed);
+        const matched = await allFormatsMatchFingerprint(
+          db, id, iocTypeKey, window, formats, filters_hash, fingerprintKey
+        );
+        if (matched) {
+          const latest = await getLatestSnapshotMeta(db, id, iocTypeKey, window, formats[0]);
           results.push({
             window,
             status: 'success',
@@ -1337,10 +1487,12 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       }
 
       const genMax = feed.max_items != null ? Math.min(Number(feed.max_items), FEED_EXPORT_MAX_LIMIT) : null;
+      const feedFormats = resolvePublishedFeedFormats(feed);
       const paramsJson = {
         ioc_type: iocTypeKey,
         ioc_types: iocTypes,
         filter_mode: resolveFeedFilterMode(feed),
+        formats: feedFormats,
         output_format: resolvePublishedFeedFormat(feed),
         window,
         filters_hash,
@@ -1370,12 +1522,19 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           isIncrementalEnabledForFeed
         } = await import('./publishedFeedIncremental.js');
 
-        const latestMeta = await getLatestSnapshotMeta(db, id, iocTypeKey, window);
+        const latestMeta = await getLatestSnapshotMeta(db, id, iocTypeKey, window, feedFormats[0]);
         // filters_hash is the generation config watermark. Do not use feed_updated_at here:
         // identical-content snapshot dedupe historically left feed_updated_at stale and
         // forced permanent full rebuilds. Config edits that affect membership change filters_hash.
+        let missingFormat = false;
+        for (const f of feedFormats) {
+          // eslint-disable-next-line no-await-in-loop
+          const m = await getLatestSnapshotMeta(db, id, iocTypeKey, window, f);
+          if (!m?.content_hash) { missingFormat = true; break; }
+        }
         const filtersChanged = Boolean(
           force
+          || missingFormat
           || (latestMeta?.params?.filters_hash && latestMeta.params.filters_hash !== filters_hash)
         );
 
@@ -1527,28 +1686,49 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         }
 
         queryMs += Date.now() - t0;
-        snapshotBytes = Math.max(snapshotBytes || 0, art.fileSize);
-        maxItemCount = Math.max(maxItemCount, art.itemCount);
-
-        let persistRes;
-        try {
-          persistRes = await persistPublishedFeedArtifactSnapshot(db, {
-            feedId: id,
-            itemCount: art.itemCount,
-            contentHash: art.contentHash,
+        const artifacts = Array.isArray(art.artifacts) && art.artifacts.length
+          ? art.artifacts
+          : [{
+            format: art.format,
             storagePath: art.storagePath,
             fileSize: art.fileSize,
-            artifactFormat: art.format,
-            generationId: art.generationId,
-            paramsJson
-          });
+            contentHash: art.contentHash,
+            itemCount: art.itemCount,
+            generationId: art.generationId
+          }];
+        const itemCount = Number(art.itemCount ?? artifacts[0]?.itemCount ?? 0);
+        snapshotBytes = Math.max(
+          snapshotBytes || 0,
+          ...artifacts.map((a) => Number(a.fileSize || 0))
+        );
+        maxItemCount = Math.max(maxItemCount, itemCount);
+
+        let persistResults;
+        try {
+          persistResults = await persistPublishedFeedArtifactSnapshots(
+            db,
+            artifacts.map((a) => ({
+              feedId: id,
+              itemCount,
+              contentHash: a.contentHash,
+              storagePath: a.storagePath,
+              fileSize: a.fileSize,
+              artifactFormat: a.format,
+              generationId: a.generationId || art.generationId,
+              paramsJson: { ...paramsJson, output_format: a.format, formats: feedFormats }
+            }))
+          );
         } catch (persistErr) {
-          await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, art.storagePath)).catch(() => {});
+          for (const a of artifacts) {
+            await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, a.storagePath)).catch(() => {});
+          }
           throw persistErr;
         }
-        const stale = persistRes?.redundantStoragePath || persistRes?.previousStoragePath;
-        if (stale) {
-          await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, stale)).catch(() => {});
+        for (const persistRes of persistResults || []) {
+          const stale = persistRes?.redundantStoragePath || persistRes?.previousStoragePath;
+          if (stale) {
+            await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, stale)).catch(() => {});
+          }
         }
         await db.query(
           `UPDATE published_feeds
@@ -1557,7 +1737,7 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
            WHERE id = $1`,
           [id, refreshMode, Date.now() - t0, changedCount]
         ).catch(() => {});
-        results.push({ window, status: 'success', item_count: art.itemCount, refresh_mode: refreshMode });
+        results.push({ window, status: 'success', item_count: itemCount, refresh_mode: refreshMode });
       } else {
         let iocRows = [];
         if (!allKeysStale) {
@@ -1567,21 +1747,29 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             : await fetchIocRows(db, feed, window);
           queryMs += Date.now() - t0;
         }
-        const { content, content_hash, item_count } = await buildFeedContent(db, feed, iocRows, formatTypes, genMax);
-        const bytes = Buffer.byteLength(content, 'utf8');
-        snapshotBytes = Math.max(snapshotBytes || 0, bytes);
-        maxItemCount = Math.max(maxItemCount, item_count);
+        // Non-streaming path: build each enabled format independently (same IOC rows).
+        let sharedItemCount = 0;
+        for (const fmt of feedFormats) {
+          const fmtFeed = { ...feed, formats: [fmt], format: fmt };
+          const { content, content_hash, item_count } = await buildFeedContent(
+            db, fmtFeed, iocRows, formatTypes, genMax
+          );
+          sharedItemCount = item_count;
+          const bytes = Buffer.byteLength(content, 'utf8');
+          snapshotBytes = Math.max(snapshotBytes || 0, bytes);
+          maxItemCount = Math.max(maxItemCount, item_count);
+          await persistPublishedFeedSnapshot(db, {
+            feedId: id,
+            itemCount: item_count,
+            contentHash: content_hash,
+            content,
+            status: 'success',
+            artifactFormat: fmt,
+            paramsJson: { ...paramsJson, output_format: fmt, formats: feedFormats }
+          });
+        }
 
-        await persistPublishedFeedSnapshot(db, {
-          feedId: id,
-          itemCount: item_count,
-          contentHash: content_hash,
-          content,
-          status: 'success',
-          paramsJson
-        });
-
-        results.push({ window, status: 'success', item_count });
+        results.push({ window, status: 'success', item_count: sharedItemCount });
       }
     } catch (err) {
       const msg = String(err?.message || err);
@@ -1735,8 +1923,31 @@ export async function regenerateAllEnabledFeeds(pool, options = {}) {
   return { checked: rows.length, due: due.length, due_ids: due.map((r) => Number(r.id)) };
 }
 
-/** Metadata only — never SELECT content (used for 304 / skip checks). */
-export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window) {
+/** Metadata only — never SELECT content (used for 304 / skip checks).
+ * @param {string} [format] when set, filter by artifact_format; when omitted prefer txt then any.
+ */
+export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window, format) {
+  const fmt = format != null && String(format).trim() !== ''
+    ? (String(format).trim().toLowerCase() === 'json' ? 'json' : 'txt')
+    : null;
+  if (fmt) {
+    const { rows } = await db.query(
+      `SELECT id, content_hash, item_count, generated_at, params,
+              storage_path, artifact_format,
+              COALESCE(octet_length(content), file_size) AS content_bytes
+       FROM published_feed_snapshots
+       WHERE feed_id = $1
+         AND status = 'success'
+         AND params->>'ioc_type' = $2
+         AND params->>'window' = $3
+         AND COALESCE(artifact_format, params->>'output_format', 'txt') = $4
+       ORDER BY generated_at DESC
+       LIMIT 1`,
+      [Number(feedId), String(iocTypeKey), String(window), fmt]
+    );
+    return rows[0] || null;
+  }
+  // Prefer TXT when format omitted (multi-format feeds), else newest success row.
   const { rows } = await db.query(
     `SELECT id, content_hash, item_count, generated_at, params,
             storage_path, artifact_format,
@@ -1746,11 +1957,26 @@ export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window) {
        AND status = 'success'
        AND params->>'ioc_type' = $2
        AND params->>'window' = $3
-     ORDER BY generated_at DESC
+     ORDER BY
+       CASE COALESCE(artifact_format, params->>'output_format', 'txt')
+         WHEN 'txt' THEN 0 ELSE 1 END,
+       generated_at DESC
      LIMIT 1`,
     [Number(feedId), String(iocTypeKey), String(window)]
   );
   return rows[0] || null;
+}
+
+/** True when every enabled format has a matching filters_hash + export_fingerprint. */
+export async function allFormatsMatchFingerprint(db, feedId, iocTypeKey, window, formats, filters_hash, fingerprintKey) {
+  const list = Array.isArray(formats) && formats.length ? formats : ['txt'];
+  for (const f of list) {
+    const latest = await getLatestSnapshotMeta(db, feedId, iocTypeKey, window, f);
+    if (!latest?.content_hash) return false;
+    if (latest.params?.filters_hash !== filters_hash) return false;
+    if (latest.params?.export_fingerprint !== fingerprintKey) return false;
+  }
+  return true;
 }
 
 /** Load the file-artifact pointer pinned to snapshot id + content_hash (publish-race safe). */

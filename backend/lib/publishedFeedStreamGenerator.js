@@ -10,7 +10,11 @@
 
 import fs from 'node:fs';
 import { normalizeFeedIocTypes, feedCategoryForObservableType, normalizeFeedLine } from './feedFormatter.js';
-import { buildStreamingBaseSql, resolvePublishedFeedFormat, resolveJsonIncludeFlags } from './feedPublisherService.js';
+import {
+  buildStreamingBaseSql,
+  resolvePublishedFeedFormats,
+  resolveJsonIncludeFlags
+} from './feedPublisherService.js';
 import { normalizePublishedIoc } from './publishedFeedJson.js';
 import { metaKey } from './publishedFeedJsonData.js';
 import {
@@ -34,6 +38,118 @@ import {
 import { StreamingTxtWriter, StreamingJsonBodyWriter, makeSinkWriter } from './publishedFeedArtifact/streamWriter.js';
 
 const CURSOR_BATCH = Math.max(Number(process.env.PUBLISHED_FEED_CURSOR_BATCH || 5000), 100);
+
+function destroyAndWait(stream) {
+  return new Promise((resolve) => {
+    if (!stream || stream.destroyed) return resolve();
+    stream.on('close', resolve);
+    stream.on('error', () => resolve());
+    stream.destroy();
+  });
+}
+
+/**
+ * Open TXT and/or JSON writers for a shared generationId.
+ * @returns {Promise<{ formats: string[], slots: object, cleanupTemp: Function }>}
+ */
+async function openMultiFormatWriters(cfg, feed, generationId, formats) {
+  const slots = {};
+  for (const format of formats) {
+    const { stream: finalPartStream, finalPath, partPath } = await openArtifactPartStream(
+      cfg, feed.id, generationId, format
+    );
+    if (format === 'json') {
+      const bodyPath = `${finalPath}.body`;
+      const bodyStream = fs.createWriteStream(bodyPath, { flags: 'w', mode: 0o640 });
+      slots.json = {
+        format: 'json',
+        finalPartStream,
+        finalPath,
+        partPath,
+        bodyPath,
+        bodyStream,
+        writer: new StreamingJsonBodyWriter(bodyStream, {
+          name: feed.name,
+          ...resolveJsonIncludeFlags(feed)
+        })
+      };
+    } else {
+      slots.txt = {
+        format: 'txt',
+        finalPartStream,
+        finalPath,
+        partPath,
+        bodyPath: null,
+        bodyStream: null,
+        writer: new StreamingTxtWriter(finalPartStream)
+      };
+    }
+  }
+  const cleanupTemp = async () => {
+    for (const slot of Object.values(slots)) {
+      await destroyAndWait(slot.finalPartStream);
+      if (slot.bodyStream) await destroyAndWait(slot.bodyStream);
+      await removeFileQuiet(slot.partPath);
+      if (slot.bodyPath) await removeFileQuiet(slot.bodyPath);
+      await removeFileQuiet(slot.finalPath);
+    }
+  };
+  return { formats, slots, cleanupTemp };
+}
+
+async function finalizeMultiFormatWriters(feed, generationId, slots) {
+  const generatedAt = new Date().toISOString();
+  const artifacts = [];
+  let itemCount = 0;
+  for (const slot of Object.values(slots)) {
+    const finished = slot.writer.finish();
+    itemCount = finished.item_count;
+    if (slot.format === 'json') {
+      await finalizeStream(slot.bodyStream);
+      const finalWrite = makeSinkWriter(slot.finalPartStream);
+      await finalWrite(slot.writer.buildHeader(finished.item_count, generatedAt));
+      await pipeFileInto(slot.bodyPath, slot.finalPartStream);
+      await finalWrite(slot.writer.buildFooter());
+      await finalizeStream(slot.finalPartStream);
+      await removeFileQuiet(slot.bodyPath);
+    } else {
+      await finalizeStream(slot.finalPartStream);
+    }
+    await commitArtifact(slot.partPath, slot.finalPath);
+    const st = await statArtifact(slot.finalPath);
+    artifacts.push({
+      generationId,
+      format: slot.format,
+      storagePath: toRelativeStoragePath(feed.id, generationId, slot.format),
+      absolutePath: slot.finalPath,
+      fileSize: st ? st.size : 0,
+      contentHash: finished.content_hash,
+      itemCount: finished.item_count
+    });
+  }
+  // Canonical order: txt then json
+  artifacts.sort((a, b) => {
+    if (a.format === b.format) return 0;
+    return a.format === 'txt' ? -1 : 1;
+  });
+  return { artifacts, itemCount, generationId };
+}
+
+function wrapArtifactResult(base, extras = {}) {
+  const primary = base.artifacts[0];
+  return {
+    generationId: base.generationId,
+    itemCount: base.itemCount,
+    artifacts: base.artifacts,
+    // Backward-compatible single-artifact fields (primary / first format).
+    format: primary?.format,
+    storagePath: primary?.storagePath,
+    absolutePath: primary?.absolutePath,
+    fileSize: primary?.fileSize,
+    contentHash: primary?.contentHash,
+    ...extras
+  };
+}
 
 /**
  * Bounded metadata fetch for one base batch.
@@ -254,19 +370,23 @@ async function fetchBatchEnrichment(db, rows, byId) {
 }
 
 /**
- * Stream-generate a feed artifact to a file. Returns snapshot metadata (relative
- * storage_path, size, hash, item_count) — the caller commits the DB pointer. On any error
- * the .part/body temp files are cleaned up and no artifact is published.
+ * Stream-generate feed artifact(s) to file(s). One DB cursor fans out to every enabled
+ * format writer. Returns snapshot metadata including `artifacts[]` (same generationId /
+ * itemCount). On any error, all .part/body temps are cleaned up and nothing is published.
  *
  * @param {import('pg').PoolClient} db  the generation client (holds the advisory lock)
  * @param {object} feed  normalized feed config
  * @param {string} window
- * @param {{ formatTypes: string[]|string, maxItems: number|null, cfg?: object, populateProjection?: boolean, projectionWindow?: string }} opts
+ * @param {{ formatTypes: string[]|string, maxItems: number|null, cfg?: object, populateProjection?: boolean, projectionWindow?: string, formats?: string[] }} opts
  */
 export async function generateFeedArtifact(db, feed, window, opts = {}) {
   const cfg = opts.cfg || getPublishedFeedArtifactConfig();
-  const format = resolvePublishedFeedFormat(feed);
+  const formats = opts.formats
+    ? resolvePublishedFeedFormats({ formats: opts.formats })
+    : resolvePublishedFeedFormats(feed);
   const flags = resolveJsonIncludeFlags(feed);
+  const wantTxt = formats.includes('txt');
+  const wantJson = formats.includes('json');
   const maxItems = opts.maxItems != null && Number.isFinite(Number(opts.maxItems)) ? Number(opts.maxItems) : null;
   const generationId = newGenerationId();
   const norm = normalizeFeedIocTypes(opts.formatTypes);
@@ -277,6 +397,9 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
     : types[0]);
   const populateProjection = Boolean(opts.populateProjection);
   const projectionWindow = opts.projectionWindow || window;
+  // Metadata / item_json needed when JSON is written OR projection is being bootstrapped
+  // (projection stays format-agnostic so later enable-JSON can use item_json).
+  const needJsonItems = wantJson || populateProjection;
 
   const timings = { base_open_ms: 0, fetch_ms: 0, meta_ms: 0, write_ms: 0, projection_ms: 0 };
   const t = () => Number(process.hrtime.bigint() / 1000000n);
@@ -285,37 +408,7 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
   let projectionUpserts = 0;
 
   const { sql, params } = buildStreamingBaseSql(feed, window);
-
-  // Open the primary output stream: TXT writes the final .part directly; JSON writes items
-  // to a body temp file first (so the envelope's item_count can be exact without buffering).
-  const isJson = format === 'json';
-  const { stream: finalPartStream, finalPath, partPath } = await openArtifactPartStream(cfg, feed.id, generationId, format);
-  let bodyPath = null;
-  let bodyStream = null;
-  let writer;
-  if (isJson) {
-    bodyPath = `${finalPath}.body`;
-    bodyStream = fs.createWriteStream(bodyPath, { flags: 'w', mode: 0o640 });
-    writer = new StreamingJsonBodyWriter(bodyStream, { name: feed.name, ...flags });
-  } else {
-    writer = new StreamingTxtWriter(finalPartStream);
-  }
-
-  // Close a stream and wait for its handle to be released before unlinking (Windows cannot
-  // unlink an open file; on Linux this just makes cleanup deterministic).
-  const destroyAndWait = (stream) => new Promise((resolve) => {
-    if (!stream || stream.destroyed) return resolve();
-    stream.on('close', resolve);
-    stream.on('error', () => resolve());
-    stream.destroy();
-  });
-  const cleanupTemp = async () => {
-    await destroyAndWait(finalPartStream);
-    if (bodyStream) await destroyAndWait(bodyStream);
-    await removeFileQuiet(partPath);
-    if (bodyPath) await removeFileQuiet(bodyPath);
-    await removeFileQuiet(finalPath); // only if a prior failed run left one
-  };
+  const { slots, cleanupTemp } = await openMultiFormatWriters(cfg, feed, generationId, formats);
 
   try {
     let openedCursor = false;
@@ -336,25 +429,24 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
       scannedRows += rows.length;
 
       const tm = t();
-      const meta = await fetchBatchMetadataById(db, rows, flags);
+      const meta = needJsonItems ? await fetchBatchMetadataById(db, rows, flags) : null;
       timings.meta_ms += t() - tm;
 
       const tw = t();
       const projBatch = [];
       for (const row of rows) {
         const value = normalizeFeedLine(row, lineTypeFor(row.observable_type));
-        if (!value) continue; // e.g. private/reserved IP — same drop as the in-memory path
+        if (!value) continue;
         let item = null;
-        if (isJson) {
+        if (needJsonItems) {
           const m = meta.get(Number(row.id)) || {};
           item = normalizePublishedIoc(
             { value, observable_type: row.observable_type, category: row.category, confidence: row.confidence },
             m, flags
           );
-          await writer.addItem(item);
-        } else {
-          await writer.addValue(value);
         }
+        if (wantTxt) await slots.txt.writer.addValue(value);
+        if (wantJson) await slots.json.writer.addItem(item);
         if (populateProjection) {
           const fp = projectionContentFingerprint({ txtValue: value, itemJson: item });
           projBatch.push({
@@ -373,7 +465,10 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
             content_fingerprint: fp
           });
         }
-        if (maxItems != null && writer.itemCount >= maxItems) { done = true; break; }
+        const count = wantTxt
+          ? slots.txt.writer.itemCount
+          : slots.json.writer.itemCount;
+        if (maxItems != null && count >= maxItems) { done = true; break; }
       }
       timings.write_ms += t() - tw;
       if (projBatch.length) {
@@ -386,41 +481,9 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
     if (openedCursor) await db.query('CLOSE pf_cur').catch(() => {});
     await db.query('COMMIT');
 
-    const generatedAt = new Date().toISOString();
-    const { content_hash, item_count } = writer.finish();
-
-    if (isJson) {
-      // Assemble final artifact: header(item_count) + body + footer, streamed (bounded memory).
-      await finalizeStream(bodyStream);
-      const finalWrite = makeSinkWriter(finalPartStream);
-      await finalWrite(writer.buildHeader(item_count, generatedAt));
-      await pipeFileInto(bodyPath, finalPartStream);
-      await finalWrite(writer.buildFooter());
-      await finalizeStream(finalPartStream);
-      await removeFileQuiet(bodyPath);
-    } else {
-      await finalizeStream(finalPartStream);
-    }
-
-    await commitArtifact(partPath, finalPath);
-    const st = await statArtifact(finalPath);
-
-    return {
-      generationId,
-      format,
-      storagePath: toRelativeStoragePath(feed.id, generationId, format),
-      absolutePath: finalPath,
-      fileSize: st ? st.size : 0,
-      contentHash: content_hash,
-      itemCount: item_count,
-      pageCount,
-      scannedRows,
-      projectionUpserts,
-      timings
-    };
+    const finalized = await finalizeMultiFormatWriters(feed, generationId, slots);
+    return wrapArtifactResult(finalized, { pageCount, scannedRows, projectionUpserts, timings });
   } catch (err) {
-    // Roll back the cursor transaction and remove all temp/partial files. No artifact is
-    // published, so the previous snapshot pointer (if any) remains valid and servable.
     try { await db.query('ROLLBACK'); } catch { /* ignore */ }
     await cleanupTemp();
     throw err;
@@ -428,40 +491,19 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
 }
 
 /**
- * Stream-generate an artifact from an already-populated projection (Phase 2 incremental
- * publish path). No IOC joins / metadata normalization — ordered projection scan only.
+ * Stream-generate artifacts from an already-populated projection (Phase 2 incremental
+ * publish path). One projection scan fans out to all enabled format writers.
  */
 export async function generateFeedArtifactFromProjection(db, feed, window, opts = {}) {
   const cfg = opts.cfg || getPublishedFeedArtifactConfig();
-  const format = resolvePublishedFeedFormat(feed);
-  const flags = resolveJsonIncludeFlags(feed);
+  const formats = opts.formats
+    ? resolvePublishedFeedFormats({ formats: opts.formats })
+    : resolvePublishedFeedFormats(feed);
+  const wantTxt = formats.includes('txt');
+  const wantJson = formats.includes('json');
   const maxItems = opts.maxItems != null && Number.isFinite(Number(opts.maxItems)) ? Number(opts.maxItems) : null;
   const generationId = newGenerationId();
-  const isJson = format === 'json';
-  const { stream: finalPartStream, finalPath, partPath } = await openArtifactPartStream(cfg, feed.id, generationId, format);
-  let bodyPath = null;
-  let bodyStream = null;
-  let writer;
-  if (isJson) {
-    bodyPath = `${finalPath}.body`;
-    bodyStream = fs.createWriteStream(bodyPath, { flags: 'w', mode: 0o640 });
-    writer = new StreamingJsonBodyWriter(bodyStream, { name: feed.name, ...flags });
-  } else {
-    writer = new StreamingTxtWriter(finalPartStream);
-  }
-  const destroyAndWait = (stream) => new Promise((resolve) => {
-    if (!stream || stream.destroyed) return resolve();
-    stream.on('close', resolve);
-    stream.on('error', () => resolve());
-    stream.destroy();
-  });
-  const cleanupTemp = async () => {
-    await destroyAndWait(finalPartStream);
-    if (bodyStream) await destroyAndWait(bodyStream);
-    await removeFileQuiet(partPath);
-    if (bodyPath) await removeFileQuiet(bodyPath);
-    await removeFileQuiet(finalPath);
-  };
+  const { slots, cleanupTemp } = await openMultiFormatWriters(cfg, feed, generationId, formats);
 
   const { sql, params } = buildProjectionScanSql(feed.id, window);
   const timings = { fetch_ms: 0, write_ms: 0 };
@@ -481,50 +523,25 @@ export async function generateFeedArtifactFromProjection(db, feed, window, opts 
       scannedRows += rows.length;
       const tw = t();
       for (const row of rows) {
-        if (isJson) {
+        if (wantTxt) await slots.txt.writer.addValue(row.txt_value);
+        if (wantJson) {
           const item = row.item_json && typeof row.item_json === 'object'
             ? row.item_json
             : (typeof row.item_json === 'string' ? JSON.parse(row.item_json) : null);
-          if (!item) continue;
-          await writer.addItem(item);
-        } else {
-          await writer.addValue(row.txt_value);
+          if (item) await slots.json.writer.addItem(item);
         }
-        if (maxItems != null && writer.itemCount >= maxItems) { done = true; break; }
+        const count = wantTxt
+          ? slots.txt.writer.itemCount
+          : slots.json.writer.itemCount;
+        if (maxItems != null && count >= maxItems) { done = true; break; }
       }
       timings.write_ms += t() - tw;
     }
     await db.query('CLOSE pf_proj_cur').catch(() => {});
     await db.query('COMMIT');
 
-    const generatedAt = new Date().toISOString();
-    const { content_hash, item_count } = writer.finish();
-    if (isJson) {
-      await finalizeStream(bodyStream);
-      const finalWrite = makeSinkWriter(finalPartStream);
-      await finalWrite(writer.buildHeader(item_count, generatedAt));
-      await pipeFileInto(bodyPath, finalPartStream);
-      await finalWrite(writer.buildFooter());
-      await finalizeStream(finalPartStream);
-      await removeFileQuiet(bodyPath);
-    } else {
-      await finalizeStream(finalPartStream);
-    }
-    await commitArtifact(partPath, finalPath);
-    const st = await statArtifact(finalPath);
-    return {
-      generationId,
-      format,
-      storagePath: toRelativeStoragePath(feed.id, generationId, format),
-      absolutePath: finalPath,
-      fileSize: st ? st.size : 0,
-      contentHash: content_hash,
-      itemCount: item_count,
-      pageCount: 0,
-      scannedRows,
-      timings,
-      fromProjection: true
-    };
+    const finalized = await finalizeMultiFormatWriters(feed, generationId, slots);
+    return wrapArtifactResult(finalized, { pageCount: 0, scannedRows, timings, fromProjection: true });
   } catch (err) {
     try { await db.query('ROLLBACK'); } catch { /* ignore */ }
     await cleanupTemp();
@@ -533,41 +550,29 @@ export async function generateFeedArtifactFromProjection(db, feed, window, opts 
 }
 
 /**
- * Produce a valid EMPTY artifact (0 items) without opening a cursor — used when the feed's
+ * Produce valid EMPTY artifacts (0 items) without opening a cursor — used when the feed's
  * effective population is empty (e.g. all configured source keys are stale).
  */
 export async function generateEmptyFeedArtifact(feed, opts = {}) {
   const cfg = opts.cfg || getPublishedFeedArtifactConfig();
-  const format = resolvePublishedFeedFormat(feed);
+  const formats = opts.formats
+    ? resolvePublishedFeedFormats({ formats: opts.formats })
+    : resolvePublishedFeedFormats(feed);
   const flags = resolveJsonIncludeFlags(feed);
   const generationId = newGenerationId();
-  const { stream, finalPath, partPath } = await openArtifactPartStream(cfg, feed.id, generationId, format);
+  const { slots, cleanupTemp } = await openMultiFormatWriters(cfg, feed, generationId, formats);
   try {
-    const generatedAt = new Date().toISOString();
-    let content_hash;
-    if (format === 'json') {
-      const bw = new StreamingJsonBodyWriter(stream, { name: feed.name, ...flags });
-      ({ content_hash } = bw.finish());
-      const write = makeSinkWriter(stream);
-      await write(`${bw.buildHeader(0, generatedAt)}${bw.buildFooter()}`);
-    } else {
-      const tw = new StreamingTxtWriter(stream);
-      ({ content_hash } = tw.finish());
-    }
-    await finalizeStream(stream);
-    await commitArtifact(partPath, finalPath);
-    const st = await statArtifact(finalPath);
-    return {
-      generationId, format,
-      storagePath: toRelativeStoragePath(feed.id, generationId, format),
-      absolutePath: finalPath, fileSize: st ? st.size : 0,
-      contentHash: content_hash, itemCount: 0, pageCount: 0, scannedRows: 0,
+    const finalized = await finalizeMultiFormatWriters(feed, generationId, slots);
+    // Empty JSON still needs header/footer from finish()+finalize; finalizeMultiFormatWriters
+    // already handles that. Ensure flags are applied via writer ctor above.
+    void flags;
+    return wrapArtifactResult(finalized, {
+      pageCount: 0,
+      scannedRows: 0,
       timings: { base_open_ms: 0, fetch_ms: 0, meta_ms: 0, write_ms: 0 }
-    };
+    });
   } catch (err) {
-    try { stream.destroy(); } catch { /* ignore */ }
-    await removeFileQuiet(partPath);
-    await removeFileQuiet(finalPath);
+    await cleanupTemp();
     throw err;
   }
 }

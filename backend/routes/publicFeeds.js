@@ -10,7 +10,8 @@ import {
   resolveFeedIocTypes,
   resolveFeedFilterMode,
   FEED_FILTER_MODES,
-  QUERY_FEED_SNAPSHOT_KEY
+  QUERY_FEED_SNAPSHOT_KEY,
+  resolveRequestedFeedFormat
 } from '../lib/feedPublisherService.js';
 import {
   getPublishedFeedArtifactConfig,
@@ -191,7 +192,7 @@ async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, m
 
   // attempt 0 = first try; attempt 1 = one retry after id+hash miss
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const meta = await getLatestSnapshotMeta(pool, feedId, iocTypeResult, windowResult);
+    const meta = await getLatestSnapshotMeta(pool, feedId, iocTypeResult, windowResult, format);
     if (!meta) {
       res.set('Content-Type', feedContentType(format));
       res.set('Cache-Control', 'private, max-age=300');
@@ -312,13 +313,18 @@ export function registerPublicFeedRoutes(app, pool) {
       }
 
       const { rows: feedRows } = await pool.query(
-        `SELECT id, enabled, ioc_types, time_window, max_items, filter_mode, advanced_query, format
+        `SELECT id, enabled, ioc_types, time_window, max_items, filter_mode, advanced_query, formats
          FROM published_feeds WHERE slug = $1 LIMIT 1`,
         [slug]
       );
       const feed = feedRows[0];
       if (!feed || !feed.enabled) {
         return res.status(404).json({ message: 'Feed not found' });
+      }
+
+      const requested = resolveRequestedFeedFormat(feed, req.query.format);
+      if (requested.error) {
+        return res.status(requested.status).json({ message: requested.error });
       }
 
       touchAccessKey(pool, key.id, clientIp(req));
@@ -329,7 +335,7 @@ export function registerPublicFeedRoutes(app, pool) {
         window: feed.time_window,
         maxItems: feed.max_items,
         filterMode: resolveFeedFilterMode(feed),
-        format: feed.format
+        format: requested.format
       });
     } catch (err) {
       console.error('[published-feed] error', redactApiKeyInText(err?.message || String(err)));
@@ -339,7 +345,7 @@ export function registerPublicFeedRoutes(app, pool) {
 
   // Legacy per-feed token endpoint (feed-bound hash-only keys). Kept for backward
   // compatibility until consumers rotate onto Published Feed keys.
-  app.get('/public/feeds/:token/feed.txt', async (req, res) => {
+  const serveLegacyTokenFeed = async (req, res, pathFormat) => {
     const rawToken = String(req.params.token || '').trim();
     if (!rawToken) return res.status(404).send('Not found');
 
@@ -352,7 +358,7 @@ export function registerPublicFeedRoutes(app, pool) {
       const { rows: keyRows } = await pool.query(
         `SELECT k.id, k.enabled, k.revoked_at, k.deleted_at, k.expires_at,
                 f.id AS feed_id, f.enabled AS feed_enabled, f.ioc_types, f.time_window, f.max_items,
-                f.filter_mode, f.advanced_query, f.slug AS feed_slug, f.format
+                f.filter_mode, f.advanced_query, f.slug AS feed_slug, f.formats
          FROM published_feed_access_keys k
          JOIN published_feeds f ON f.id = k.feed_id
          WHERE k.token_hash = $1 AND k.deleted_at IS NULL
@@ -365,6 +371,17 @@ export function registerPublicFeedRoutes(app, pool) {
       if (keyStatus(key) !== 'active') return res.status(403).send('Forbidden');
       if (!key.feed_enabled) return res.status(403).send('Forbidden');
 
+      const rawFormat = req.query.format != null && req.query.format !== ''
+        ? req.query.format
+        : pathFormat;
+      const requested = resolveRequestedFeedFormat(
+        { formats: key.formats },
+        rawFormat
+      );
+      if (requested.error) {
+        return res.status(requested.status).send(requested.error);
+      }
+
       touchAccessKey(pool, key.id, clientIp(req));
       return await serveSnapshot(pool, res, req, {
         feedId: key.feed_id,
@@ -373,11 +390,14 @@ export function registerPublicFeedRoutes(app, pool) {
         window: key.time_window,
         maxItems: key.max_items,
         filterMode: resolveFeedFilterMode(key),
-        format: key.format
+        format: requested.format
       });
     } catch (err) {
       console.error('[public-feed] error', err?.message || err);
       return res.status(500).send('Internal error');
     }
-  });
+  };
+
+  app.get('/public/feeds/:token/feed.txt', (req, res) => serveLegacyTokenFeed(req, res, 'txt'));
+  app.get('/public/feeds/:token/feed.json', (req, res) => serveLegacyTokenFeed(req, res, 'json'));
 }

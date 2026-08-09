@@ -91,6 +91,9 @@ import {
   emptyFeedForm,
   feedToForm,
   toggleFilterMode as toggleFeedFilterMode,
+  toggleFeedFormat,
+  feedHasJsonFormat,
+  normalizeFeedFormats,
   validateFeedForm,
   buildFeedPayload
 } from './lib/publishedFeedForm.js';
@@ -5724,14 +5727,16 @@ const PUBLISHED_FEEDS_UI = {
 };
 
 // Standard Published Feed pull URL. Replace {API_KEY} with a Published Feed type key.
-function publishedFeedUrlTemplate(slug) {
+function publishedFeedUrlTemplate(slug, format = null) {
   const s = slug || '{slug}';
-  return `${window.location.origin}/api/published-feeds/${s}?api_key={API_KEY}`;
+  const base = `${window.location.origin}/api/published-feeds/${s}?api_key={API_KEY}`;
+  return format ? `${base}&format=${format}` : base;
 }
 
-function publishedFeedCurlExample(slug) {
+function publishedFeedCurlExample(slug, format = null) {
   const s = slug || '{slug}';
-  return `curl "${window.location.origin}/api/published-feeds/${s}?api_key=YOUR_API_KEY"`;
+  const fmt = format ? `&format=${format}` : '';
+  return `curl "${window.location.origin}/api/published-feeds/${s}?api_key=YOUR_API_KEY${fmt}"`;
 }
 
 function FeedFormField({
@@ -6003,7 +6008,20 @@ function PublishedFeedsPage() {
                     <td style={ui.td}>
                       <span style={{ fontWeight: 600 }}>{f.name}</span>
                       {!f.enabled ? <span style={ui.badge(false)}>disabled</span> : null}
-                      <span style={{ ...ui.badge(true), marginLeft: 6, background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', border: '1px solid #1e40af' }}>txt</span>
+                      {normalizeFeedFormats(f.formats || (f.format ? [f.format] : ['txt'])).map((fmt) => (
+                        <span
+                          key={fmt}
+                          style={{
+                            ...ui.badge(true),
+                            marginLeft: 6,
+                            background: fmt === 'json' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                            color: fmt === 'json' ? '#d8b4fe' : '#93c5fd',
+                            border: `1px solid ${fmt === 'json' ? '#6b21a8' : '#1e40af'}`
+                          }}
+                        >
+                          {fmt}
+                        </span>
+                      ))}
                       {f.last_error ? <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 4 }}>Last error: {f.last_error}</div> : null}
                     </td>
                     <td style={ui.td} title={(Array.isArray(f.ioc_types) ? f.ioc_types : [f.ioc_type]).filter(Boolean).join(', ')}>
@@ -6188,36 +6206,32 @@ function PublishedFeedsPage() {
 
             <FeedFormSection title="Output format">
               <div style={{ gridColumn: '1 / -1' }}>
-                <div style={{ display: 'inline-flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }} role="group" aria-label="Output format">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }} role="group" aria-label="Output formats">
                   {[{ v: 'txt', label: 'TXT' }, { v: 'json', label: 'JSON' }].map((opt) => {
-                    const active = (form.output_format || 'txt') === opt.v;
+                    const checked = normalizeFeedFormats(form.formats).includes(opt.v);
                     return (
-                      <button
-                        key={opt.v}
-                        type="button"
-                        onClick={() => setForm((x) => ({ ...x, output_format: opt.v }))}
-                        style={{
-                          padding: '6px 18px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          background: active ? '#2563eb' : 'transparent',
-                          color: active ? '#f8fafc' : '#94a3b8',
-                          fontWeight: active ? 600 : 400
-                        }}
-                        aria-pressed={active}
-                      >
+                      <label key={opt.v} style={ui.checkLabel}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setForm((x) => toggleFeedFormat(x, opt.v))}
+                        />
                         {opt.label}
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
-                <p style={{ ...ui.helper, marginTop: 8 }}>
-                  {(form.output_format || 'txt') === 'json'
-                    ? 'JSON: structured feed with IOC metadata (schema_version 1.0). Served as application/json.'
-                    : 'TXT: one IOC value per line (default). Served as text/plain.'}
-                </p>
+                {!normalizeFeedFormats(form.formats).length ? (
+                  <p style={{ color: '#fca5a5', fontSize: 12, margin: '8px 0 0' }}>
+                    Select at least one output format
+                  </p>
+                ) : (
+                  <p style={{ ...ui.helper, marginTop: 8 }}>
+                    Enable one or both formats. Public pull defaults to TXT when enabled; use ?format=json for JSON.
+                  </p>
+                )}
               </div>
-              {(form.output_format || 'txt') === 'json' ? (
+              {feedHasJsonFormat(form) ? (
                 <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                   <label style={ui.checkLabel}>
                     <input
@@ -6275,8 +6289,7 @@ function PublishedFeedsPage() {
 
 function FeedUrlTemplateModal({ ui, feed, onClose }) {
   const feedback = useAppFeedback();
-  const template = publishedFeedUrlTemplate(feed.slug);
-  const curl = publishedFeedCurlExample(feed.slug);
+  const formats = normalizeFeedFormats(feed.formats || (feed.format ? [feed.format] : ['txt']));
   const copy = (text) => navigator.clipboard?.writeText(text).then(() => feedback.success('Copied')).catch(() => feedback.info(text));
   return (
     <div
@@ -6287,17 +6300,26 @@ function FeedUrlTemplateModal({ ui, feed, onClose }) {
         <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Feed URL Template — {feed.name}</h3>
         <p style={ui.modalSub}>Replace <code style={{ color: '#cbd5e1' }}>&#123;API_KEY&#125;</code> with a Published Feed type API key.</p>
 
-        <span style={ui.label}>Feed URL Template</span>
-        <code style={ui.code}>{template}</code>
-        <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copy(template)}>Copy URL Template</button>
+        {formats.map((fmt) => {
+          const template = publishedFeedUrlTemplate(feed.slug, formats.length > 1 || fmt === 'json' ? fmt : null);
+          const curl = publishedFeedCurlExample(feed.slug, formats.length > 1 || fmt === 'json' ? fmt : null);
+          return (
+            <div key={fmt} style={{ marginBottom: 16 }}>
+              <span style={ui.label}>{fmt.toUpperCase()} URL</span>
+              <code style={ui.code}>{template}</code>
+              <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copy(template)}>
+                Copy {fmt.toUpperCase()} URL
+              </button>
+              <div style={{ marginTop: 12 }}>
+                <span style={ui.label}>Example (curl)</span>
+                <code style={ui.code}>{curl}</code>
+                <button type="button" style={{ ...ui.btn, marginTop: 10 }} onClick={() => copy(curl)}>Copy curl</button>
+              </div>
+            </div>
+          );
+        })}
 
-        <div style={{ marginTop: 18 }}>
-          <span style={ui.label}>Example (curl)</span>
-          <code style={ui.code}>{curl}</code>
-          <button type="button" style={{ ...ui.btn, marginTop: 10 }} onClick={() => copy(curl)}>Copy curl</button>
-        </div>
-
-        <p style={{ ...ui.helper, marginTop: 16 }}>
+        <p style={{ ...ui.helper, marginTop: 8 }}>
           Create or reveal a Published Feed key under{' '}
           <Link to="/administration/api-keys" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration › API Keys</Link>.
         </p>

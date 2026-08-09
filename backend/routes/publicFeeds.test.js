@@ -46,11 +46,14 @@ function createMockPool({ keys = [], feeds = [], snapshotsByFeedId = null, onSna
         const row = keys.find((k) => k.token_hash === params[0] && !k.deleted_at);
         if (!row) return { rows: [], rowCount: 0 };
         const feed = feeds.find((f) => f.id === row.feed_id);
+        const formats = feed?.formats
+          || (feed?.format ? [feed.format] : ['txt']);
         return {
           rows: [{
             ...row, feed_id: row.feed_id, feed_enabled: feed?.enabled ?? false,
             ioc_types: feed?.ioc_types, time_window: feed?.time_window, max_items: feed?.max_items,
-            feed_slug: feed?.slug
+            filter_mode: feed?.filter_mode, advanced_query: feed?.advanced_query,
+            feed_slug: feed?.slug, formats
           }],
           rowCount: 1
         };
@@ -67,7 +70,8 @@ function createMockPool({ keys = [], feeds = [], snapshotsByFeedId = null, onSna
 
         if (kind === 'meta') {
           const feedId = params[0];
-          const snap = snapshotsByFeedId?.(feedId) ?? (feeds.find((f) => f.id === feedId) ? snapshotRow(feedId) : null);
+          const formatHint = params[3] || null;
+          const snap = snapshotsByFeedId?.(feedId, formatHint) ?? (feeds.find((f) => f.id === feedId) ? snapshotRow(feedId) : null);
           if (!snap) return { rows: [], rowCount: 0 };
           const { content, ...meta } = snap;
           return { rows: [meta], rowCount: 1 };
@@ -76,9 +80,11 @@ function createMockPool({ keys = [], feeds = [], snapshotsByFeedId = null, onSna
           const id = Number(params[0]);
           const hash = String(params[1]);
           for (const feed of feeds) {
-            const snap = snapshotsByFeedId?.(feed.id) ?? snapshotRow(feed.id);
-            if (snap && Number(snap.id) === id && String(snap.content_hash) === hash) {
-              return { rows: [snap], rowCount: 1 };
+            for (const fmt of [null, 'txt', 'json']) {
+              const snap = snapshotsByFeedId?.(feed.id, fmt) ?? snapshotRow(feed.id);
+              if (snap && Number(snap.id) === id && String(snap.content_hash) === hash) {
+                return { rows: [snap], rowCount: 1 };
+              }
             }
           }
           return { rows: [], rowCount: 0 };
@@ -124,8 +130,8 @@ async function get(app, path, headers = {}) {
 }
 
 const FEEDS = [
-  { id: 1, slug: 'malware-domains', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null },
-  { id: 2, slug: 'phishing-urls', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null }
+  { id: 1, slug: 'malware-domains', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, formats: ['txt'] },
+  { id: 2, slug: 'phishing-urls', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, formats: ['txt'] }
 ];
 
 test('valid Published Feed key pulls a feed by slug', async () => {
@@ -431,12 +437,13 @@ test('TXT feed is served as text/plain', async () => {
 });
 
 const JSON_BODY = '{"schema_version":"1.0","feed":{"name":"J","generated_at":"2026-08-01T12:00:00.000Z","item_count":1},"items":[{"type":"ip","value":"9.9.9.9","timestamps":{}}]}\n';
-const JSON_FEEDS = [{ id: 5, slug: 'json-feed', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, format: 'json' }];
+const JSON_FEEDS = [{ id: 5, slug: 'json-feed', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, formats: ['json'] }];
 function jsonSnapshot() {
   return {
     id: 50, content: JSON_BODY, content_hash: 'jh', content_bytes: JSON_BODY.length,
     item_count: 1, generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
-    params: { ioc_type: 'ip', window: 'all', output_format: 'json' }
+    params: { ioc_type: 'ip', window: 'all', output_format: 'json' },
+    artifact_format: 'json'
   };
 }
 
@@ -469,6 +476,50 @@ test('JSON feed ETag/304 continues to work', async () => {
   const etag = computeResponseEtag('jh', 'ip', 'all', 'all');
   const res = await get(app, `/api/published-feeds/json-feed?api_key=${raw}`, { 'if-none-match': etag });
   assert.equal(res.status, 304);
+});
+
+test('dual-format feed: omit format serves TXT; ?format=json serves JSON; disabled 404', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const dual = [{
+    id: 7, slug: 'dual-feed', enabled: true, ioc_types: ['ip'], time_window: 'all',
+    max_items: null, formats: ['txt', 'json']
+  }];
+  const txtOnly = [{
+    id: 8, slug: 'txt-only', enabled: true, ioc_types: ['ip'], time_window: 'all',
+    max_items: null, formats: ['txt']
+  }];
+  const txtSnap = snapshotRow(7, { artifact_format: 'txt', params: { ioc_type: 'ip', window: 'all', output_format: 'txt' } });
+  const jsonSnap = {
+    id: 71, content: JSON_BODY, content_hash: 'jh7', content_bytes: JSON_BODY.length,
+    item_count: 1, generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
+    params: { ioc_type: 'ip', window: 'all', output_format: 'json' },
+    artifact_format: 'json'
+  };
+  const byFormat = (id, fmt) => {
+    if (Number(id) !== 7) return null;
+    if (fmt === 'json') return jsonSnap;
+    return txtSnap;
+  };
+
+  const dualApp = makeApp(createMockPool({ keys, feeds: dual, snapshotsByFeedId: byFormat }));
+  const def = await get(dualApp, `/api/published-feeds/dual-feed?api_key=${raw}`);
+  assert.equal(def.status, 200);
+  assert.match(def.headers.contentType, /text\/plain/);
+  assert.match(def.text, /1\.1\.1\.7/);
+
+  const asJson = await get(dualApp, `/api/published-feeds/dual-feed?api_key=${raw}&format=json`);
+  assert.equal(asJson.status, 200);
+  assert.match(asJson.headers.contentType, /application\/json/);
+  assert.equal(JSON.parse(asJson.text).items[0].value, '9.9.9.9');
+
+  const txtOnlyApp = makeApp(createMockPool({
+    keys,
+    feeds: txtOnly,
+    snapshotsByFeedId: () => snapshotRow(8)
+  }));
+  const disabled = await get(txtOnlyApp, `/api/published-feeds/txt-only?api_key=${raw}&format=json`);
+  assert.equal(disabled.status, 404);
 });
 
 test('legacy public endpoint also uses metadata 304 fast path', async () => {

@@ -11,7 +11,7 @@ import { computeResponseEtag } from '../lib/feedFormatter.js';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pfserve-'));
 process.env.PUBLISHED_FEED_STORAGE_DIR = dir;
 
-const FEED = { id: 5, slug: 'json-feed', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, format: 'json' };
+const FEED = { id: 5, slug: 'json-feed', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, formats: ['json'] };
 const BODY = '{"schema_version":"1.0","feed":{"name":"J","generated_at":"2026-08-01T12:00:00.000Z","item_count":1},"items":[{"type":"ip","value":"9.9.9.9","timestamps":{}}]}\n';
 const GEN = 'gen1';
 const STORAGE_PATH = `${FEED.id}/${GEN}.json`;

@@ -196,7 +196,7 @@ describe('generatePublishedFeedSnapshot in query mode', () => {
     assert.equal(result.results[0].item_count, 1);
     // Snapshot is keyed by the query sentinel, window "all".
     const insert = capture.inserts.at(-1);
-    const paramsJson = JSON.parse(insert.params.at(-1));
+    const paramsJson = JSON.parse(insert.params.find((p) => typeof p === 'string' && p.startsWith('{')));
     assert.equal(paramsJson.ioc_type, QUERY_FEED_SNAPSHOT_KEY);
     assert.equal(paramsJson.window, 'all');
     assert.equal(paramsJson.filter_mode, 'query');

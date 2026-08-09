@@ -282,6 +282,41 @@ describe('generateEmptyFeedArtifact', () => {
     const art = await generateEmptyFeedArtifact(feedBase({ format: 'txt' }), { cfg: cfg() });
     assert.equal(fs.readFileSync(art.absolutePath, 'utf8'), '');
   });
+  it('dual empty produces both artifacts with shared generationId', async () => {
+    const art = await generateEmptyFeedArtifact(
+      feedBase({ formats: ['txt', 'json'] }),
+      { cfg: cfg() }
+    );
+    assert.equal(art.artifacts.length, 2);
+    assert.equal(art.artifacts[0].generationId, art.artifacts[1].generationId);
+    assert.equal(art.itemCount, 0);
+  });
+});
+
+describe('generateFeedArtifact — dual format one-pass', () => {
+  it('writes TXT+JSON from a single cursor (one DECLARE)', async () => {
+    const rows = [
+      { id: 1, observable: 'a.com', observable_type: 'domain', confidence: 'high', category: null, created_at: '2026-08-01T00:00:00Z', ioc_source_id: null, source_name: 's', recency_ts: '2026-08-09T00:00:00Z' },
+      { id: 2, observable: 'b.com', observable_type: 'domain', confidence: 'low', category: null, created_at: '2026-08-01T00:00:00Z', ioc_source_id: null, source_name: 's', recency_ts: '2026-08-08T00:00:00Z' }
+    ];
+    const db = mockDb(rows);
+    const art = await generateFeedArtifact(
+      db,
+      feedBase({ formats: ['txt', 'json'], format: undefined }),
+      'all',
+      { formatTypes: ['domain'], maxItems: null, cfg: cfg() }
+    );
+    assert.equal(art.artifacts.length, 2);
+    assert.equal(art.itemCount, 2);
+    assert.equal(art.artifacts[0].itemCount, art.artifacts[1].itemCount);
+    assert.equal(art.artifacts[0].generationId, art.artifacts[1].generationId);
+    const declares = db.log.filter((l) => l.startsWith('DECLARE'));
+    assert.equal(declares.length, 1, 'dual format must use one base cursor');
+    const txtPath = art.artifacts.find((a) => a.format === 'txt').absolutePath;
+    const jsonPath = art.artifacts.find((a) => a.format === 'json').absolutePath;
+    assert.equal(fs.readFileSync(txtPath, 'utf8').trim().split('\n').length, 2);
+    assert.equal(JSON.parse(fs.readFileSync(jsonPath, 'utf8')).feed.item_count, 2);
+  });
 });
 
 describe('generateFeedArtifact — atomicity', () => {

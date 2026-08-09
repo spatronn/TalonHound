@@ -7,7 +7,10 @@ import {
   resolveFeedIocTypes,
   resolveFeedFilterMode,
   FEED_FILTER_MODES,
-  QUERY_FEED_SNAPSHOT_KEY
+  QUERY_FEED_SNAPSHOT_KEY,
+  resolveFormatsInput,
+  resolvePublishedFeedFormats,
+  resolvePublishedFeedFormat
 } from '../lib/feedPublisherService.js';
 import { normalizeFeedIocTypes, feedIocTypesKey } from '../lib/feedFormatter.js';
 import { parseSearchQuery, isDslError } from '../lib/iocSearchDsl/index.js';
@@ -22,6 +25,7 @@ import { getPublishedFeedArtifactConfig, removeFeedArtifacts } from '../lib/publ
 function toPublicFeed(row, extra = {}) {
   if (!row) return null;
   const ioc_types = resolveFeedIocTypes(row);
+  const formats = resolvePublishedFeedFormats(row);
   return {
     id: Number(row.id),
     name: row.name,
@@ -31,7 +35,8 @@ function toPublicFeed(row, extra = {}) {
     filter_mode: resolveFeedFilterMode(row),
     advanced_query: row.advanced_query != null ? String(row.advanced_query) : null,
     ioc_types,
-    format: row.format === 'json' ? 'json' : 'txt',
+    formats,
+    format: resolvePublishedFeedFormat({ formats }),
     include_source_metadata: row.include_source_metadata !== false,
     include_classification: row.include_classification !== false,
     include_enrichment: row.include_enrichment === true,
@@ -157,11 +162,10 @@ function validateFeedPayload(body, partial = false, mode = FEED_FILTER_MODES.BAS
     const n = Number(body.refresh_interval_minutes);
     if (!Number.isFinite(n) || n < 5) errors.push('refresh_interval_minutes must be >= 5');
   }
-  // Output format: `format` (canonical) or `output_format` (spec alias). txt | json only.
-  const rawFormat = body.output_format !== undefined ? body.output_format : body.format;
-  if (rawFormat !== undefined) {
-    const fmt = String(rawFormat).trim().toLowerCase();
-    if (fmt !== 'txt' && fmt !== 'json') errors.push("output_format must be 'txt' or 'json'");
+  // Output formats: `formats[]` (canonical) or legacy `output_format` / `format`.
+  if (body.formats !== undefined || body.output_format !== undefined || body.format !== undefined) {
+    const resolved = resolveFormatsInput(body);
+    if (!resolved.ok) errors.push(resolved.error);
   }
   for (const key of ['include_source_metadata', 'include_classification', 'include_enrichment']) {
     if (body[key] !== undefined && typeof body[key] !== 'boolean') {
@@ -171,21 +175,13 @@ function validateFeedPayload(body, partial = false, mode = FEED_FILTER_MODES.BAS
   return errors;
 }
 
-/** Canonical output format from a create/update body. Accepts `format` or `output_format`. */
-function resolveOutputFormatInput(body, fallback = 'txt') {
-  const raw = body.output_format !== undefined ? body.output_format
-    : (body.format !== undefined ? body.format : undefined);
-  if (raw === undefined) return fallback;
-  return String(raw).trim().toLowerCase() === 'json' ? 'json' : 'txt';
-}
-
 async function latestItemCount(pool, feedRow) {
   const feed = normalizeFeedConfig(feedRow);
   if (!feed?.id) return null;
   const queryMode = resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY;
   const key = queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(resolveFeedIocTypes(feed));
   const window = queryMode ? 'all' : feed.time_window;
-  const snapshot = await getLatestSnapshotMeta(pool, feed.id, key, window);
+  const snapshot = await getLatestSnapshotMeta(pool, feed.id, key, window, resolvePublishedFeedFormat(feed));
   return snapshot?.item_count != null ? Number(snapshot.item_count) : null;
 }
 
@@ -194,7 +190,7 @@ function feedAuditSnapshot(row) {
   return pickSafeFields(pub, [
     'id', 'name', 'enabled', 'filter_mode', 'advanced_query', 'ioc_types', 'min_confidence',
     'time_window', 'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired',
-    'format', 'include_source_metadata', 'include_classification', 'include_enrichment'
+    'formats', 'format', 'include_source_metadata', 'include_classification', 'include_enrichment'
   ]);
 }
 
@@ -286,16 +282,18 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       // fields are preserved). It never filters a query-mode feed's base set.
       const iocNorm = normalizeFeedIocTypes(resolveIocTypesInput(body));
       const iocTypes = iocNorm.ok ? iocNorm.value : ['ip'];
+      const formatsIn = resolveFormatsInput(body);
+      if (!formatsIn.ok) return res.status(400).json({ message: formatsIn.error });
       const { rows } = await pool.query(
         `INSERT INTO published_feeds (
-           name, slug, description, enabled, ioc_types, format, min_confidence,
+           name, slug, description, enabled, ioc_types, formats, min_confidence,
            include_feed_keys, include_tags, exclude_tags,
            exclude_false_positive, exclude_expired,
            time_window, max_items, refresh_interval_minutes,
            filter_mode, advanced_query,
            include_source_metadata, include_classification, include_enrichment
          ) VALUES (
-           $1, $2, $3, COALESCE($4, TRUE), $5::jsonb, COALESCE($6, 'txt'), $7,
+           $1, $2, $3, COALESCE($4, TRUE), $5::jsonb, $6::jsonb, $7,
            $8::jsonb, $9::jsonb, $10::jsonb,
            COALESCE($11, TRUE), COALESCE($12, TRUE),
            $13, $14, COALESCE($15, 15),
@@ -309,7 +307,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
           body.description || null,
           body.enabled,
           JSON.stringify(iocTypes),
-          resolveOutputFormatInput(body),
+          JSON.stringify(formatsIn.value),
           body.min_confidence ?? null,
           feedKeys.value.length ? JSON.stringify(feedKeys.value) : null,
           body.include_tags ? JSON.stringify(body.include_tags) : null,
@@ -414,8 +412,10 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       const iocTypes = iocNorm.ok ? iocNorm.value : (mode === FEED_FILTER_MODES.QUERY ? ['ip'] : iocNorm.value);
       setField('ioc_types', JSON.stringify(iocTypes), '::jsonb');
     }
-    if (body.format !== undefined || body.output_format !== undefined) {
-      setField('format', resolveOutputFormatInput(body, existingRow.format || 'txt'));
+    if (body.formats !== undefined || body.format !== undefined || body.output_format !== undefined) {
+      const formatsIn = resolveFormatsInput(body, resolvePublishedFeedFormats(existingRow));
+      if (!formatsIn.ok) return res.status(400).json({ message: formatsIn.error });
+      setField('formats', JSON.stringify(formatsIn.value), '::jsonb');
     }
     if (body.include_source_metadata !== undefined) setField('include_source_metadata', Boolean(body.include_source_metadata));
     if (body.include_classification !== undefined) setField('include_classification', Boolean(body.include_classification));

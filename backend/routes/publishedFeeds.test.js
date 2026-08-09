@@ -18,6 +18,7 @@ function createMockPool(store = { feeds: [] }) {
         return { rows: store.feeds.map((f) => ({ slug: f.slug })) };
       }
       if (s.startsWith('INSERT INTO published_feeds')) {
+        const formats = typeof params[5] === 'string' ? JSON.parse(params[5]) : (params[5] || ['txt']);
         const row = {
           id: nextId++,
           name: params[0],
@@ -25,7 +26,8 @@ function createMockPool(store = { feeds: [] }) {
           description: params[2],
           enabled: params[3] ?? true,
           ioc_types: typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4],
-          format: params[5] || 'txt',
+          formats,
+          format: Array.isArray(formats) && formats.includes('json') && !formats.includes('txt') ? 'json' : 'txt',
           min_confidence: params[6],
           include_feed_keys: params[7] ? JSON.parse(params[7]) : null,
           include_tags: params[8] ? JSON.parse(params[8]) : null,
@@ -63,8 +65,11 @@ function createMockPool(store = { feeds: [] }) {
         for (const [, col, idx] of assignments) {
           const val = params[Number(idx) - 1];
           if (col === 'updated_at') continue;
-          if (col === 'ioc_types' || col === 'include_feed_keys' || col === 'include_tags' || col === 'exclude_tags') {
+          if (col === 'ioc_types' || col === 'include_feed_keys' || col === 'include_tags' || col === 'exclude_tags' || col === 'formats') {
             row[col] = typeof val === 'string' ? JSON.parse(val) : val;
+            if (col === 'formats' && Array.isArray(row.formats)) {
+              row.format = row.formats.includes('json') && !row.formats.includes('txt') ? 'json' : 'txt';
+            }
           } else {
             row[col] = val;
           }
@@ -287,6 +292,7 @@ describe('publishedFeeds output format API', () => {
     const app = makeApp(createMockPool());
     const res = await req(app, 'POST', '/api/published-feeds', { name: 'Default', ioc_types: ['ip'] });
     assert.equal(res.status, 201);
+    assert.deepEqual(res.body.feed.formats, ['txt']);
     assert.equal(res.body.feed.format, 'txt');
     assert.equal(res.body.feed.include_source_metadata, true);
     assert.equal(res.body.feed.include_classification, true);
@@ -300,10 +306,21 @@ describe('publishedFeeds output format API', () => {
       output_format: 'json', include_enrichment: true, include_classification: false
     });
     assert.equal(res.status, 201);
+    assert.deepEqual(res.body.feed.formats, ['json']);
     assert.equal(res.body.feed.format, 'json');
     assert.equal(res.body.feed.include_enrichment, true);
     assert.equal(res.body.feed.include_classification, false);
     assert.equal(res.body.feed.include_source_metadata, true);
+  });
+
+  it('creates a dual-format feed via formats[]', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Dual', ioc_types: ['ip'], formats: ['json', 'txt']
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(res.body.feed.formats, ['txt', 'json']);
+    assert.equal(res.body.feed.format, 'txt');
   });
 
   it('rejects an unknown output_format with 400', async () => {
@@ -313,6 +330,15 @@ describe('publishedFeeds output format API', () => {
     });
     assert.equal(res.status, 400);
     assert.match(res.body.message, /output_format/);
+  });
+
+  it('rejects empty formats with 400', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'Bad', ioc_types: ['ip'], formats: []
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.message, /formats/);
   });
 
   it('rejects a non-boolean include flag with 400', async () => {
@@ -335,12 +361,14 @@ describe('publishedFeeds output format API', () => {
       output_format: 'json', include_source_metadata: false
     });
     assert.equal(toJson.status, 200);
+    assert.deepEqual(toJson.body.feed.formats, ['json']);
     assert.equal(toJson.body.feed.format, 'json');
     assert.equal(toJson.body.feed.include_source_metadata, false);
     assert.deepEqual(toJson.body.feed.ioc_types, ['ip']);
 
     const toTxt = await req(app, 'PATCH', `/api/published-feeds/${id}`, { output_format: 'txt' });
     assert.equal(toTxt.status, 200);
+    assert.deepEqual(toTxt.body.feed.formats, ['txt']);
     assert.equal(toTxt.body.feed.format, 'txt');
     // Saved JSON include config is preserved even while serving as TXT.
     assert.equal(toTxt.body.feed.include_source_metadata, false);
@@ -350,6 +378,7 @@ describe('publishedFeeds output format API', () => {
     const app = makeApp(createMockPool());
     const res = await req(app, 'POST', '/api/published-feeds', { name: 'Alias', ioc_types: ['ip'], format: 'json' });
     assert.equal(res.status, 201);
+    assert.deepEqual(res.body.feed.formats, ['json']);
     assert.equal(res.body.feed.format, 'json');
   });
 });

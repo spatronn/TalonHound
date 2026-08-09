@@ -114,9 +114,9 @@ describe('publishedFeedForm payload', () => {
 });
 
 describe('publishedFeedForm output format', () => {
-  it('default format is txt with default include flags', () => {
+  it('default formats is txt-only with default include flags', () => {
     const form = emptyFeedForm();
-    assert.equal(form.output_format, 'txt');
+    assert.deepEqual(form.formats, ['txt']);
     assert.equal(form.include_source_metadata, true);
     assert.equal(form.include_classification, true);
     assert.equal(form.include_enrichment, false);
@@ -124,30 +124,43 @@ describe('publishedFeedForm output format', () => {
 
   it('a legacy feed with no format opens as txt', () => {
     const form = feedToForm({ name: 'Legacy', ioc_types: ['ip'] });
-    assert.equal(form.output_format, 'txt');
+    assert.deepEqual(form.formats, ['txt']);
   });
 
-  it('saved JSON config reloads correctly (format + flags)', () => {
+  it('saved JSON config reloads correctly (formats + flags)', () => {
     const form = feedToForm({
       name: 'J', ioc_types: ['domain'], format: 'json',
       include_source_metadata: false, include_classification: true, include_enrichment: true
     });
-    assert.equal(form.output_format, 'json');
+    assert.deepEqual(form.formats, ['json']);
     assert.equal(form.include_source_metadata, false);
     assert.equal(form.include_classification, true);
     assert.equal(form.include_enrichment, true);
   });
 
-  it('buildFeedPayload sends output_format and include flags', () => {
+  it('dual formats reload and payload uses formats[]', () => {
+    const form = feedToForm({ name: 'D', ioc_types: ['ip'], formats: ['json', 'txt'] });
+    assert.deepEqual(form.formats, ['txt', 'json']);
+    const payload = buildFeedPayload(form);
+    assert.deepEqual(payload.formats, ['txt', 'json']);
+    assert.equal(payload.output_format, undefined);
+  });
+
+  it('cannot save with zero formats selected', () => {
+    const form = { ...emptyFeedForm(), name: 'X', formats: [] };
+    assert.match(validateFeedForm(form), /output format/i);
+  });
+
+  it('buildFeedPayload sends formats and include flags', () => {
     const txt = buildFeedPayload({ ...emptyFeedForm(), name: 'T' });
-    assert.equal(txt.output_format, 'txt');
+    assert.deepEqual(txt.formats, ['txt']);
     assert.equal(txt.include_source_metadata, true);
     assert.equal(txt.include_enrichment, false);
 
     const json = buildFeedPayload({
-      ...emptyFeedForm(), name: 'J', output_format: 'json', include_enrichment: true, include_classification: false
+      ...emptyFeedForm(), name: 'J', formats: ['json'], include_enrichment: true, include_classification: false
     });
-    assert.equal(json.output_format, 'json');
+    assert.deepEqual(json.formats, ['json']);
     assert.equal(json.include_enrichment, true);
     assert.equal(json.include_classification, false);
   });

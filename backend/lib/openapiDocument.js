@@ -271,15 +271,18 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
           description: [
             `Requires a Published Feed API key (\`${API_SCOPE.PUBLISHED_FEEDS_READ}\`).`,
             'Authenticate with the `api_key` query parameter (Bearer is not used for this legacy pull path).',
-            'The response format is fixed by the feed configuration:',
-            '- **TXT** feeds return `text/plain` — one IOC value per line (default; unchanged).',
-            '- **JSON** feeds return `application/json` — a `schema_version` "1.0" envelope with a `feed` block '
+            'A feed may enable one or both output formats (`formats: ["txt"]`, `["json"]`, or `["txt","json"]`):',
+            '- Omit `format` → serve **TXT** when enabled; otherwise the sole enabled format.',
+            '- `?format=txt` or `?format=json` selects an enabled format; a disabled format returns **404**.',
+            '- Legacy token paths: `/public/feeds/{token}/feed.txt` and `/feed.json`.',
+            '- **TXT** returns `text/plain` — one IOC value per line.',
+            '- **JSON** returns `application/json` — a `schema_version` "1.0" envelope with a `feed` block '
               + '(name, generated_at, item_count) and an `items` array. Each item carries `type`, `value`, and '
               + '`timestamps`, plus optional `sources`, `classification`, and `enrichment` sections depending on '
               + 'the feed\'s include options. Example:',
             '```json\n{\n  "schema_version": "1.0",\n  "feed": { "name": "Malicious Domains", "generated_at": "2026-08-09T12:30:00Z", "item_count": 1 },\n  "items": [\n    {\n      "type": "domain",\n      "value": "evil-example.com",\n      "timestamps": { "imported_at": "2026-08-07T09:15:22Z", "first_seen_in_source": "2026-08-05T14:22:10Z", "last_confirmed_in_source": "2026-08-09T08:42:31Z" },\n      "sources": [ { "feed_key": "threatfox", "feed_name": "ThreatFox", "first_seen_in_source": "2026-08-05T14:22:10Z", "last_confirmed_in_source": "2026-08-09T08:42:31Z" } ],\n      "classification": { "category": "malware", "confidence": 85, "tags": ["c2", "malware"] },\n      "enrichment": { "virustotal": { "malicious": 12, "suspicious": 3, "harmless": 48, "last_analysis_at": "2026-08-08T17:20:10Z" } }\n    }\n  ]\n}\n```',
             'For JSON feeds `?limit=` does not apply (max_items is enforced at generation). ETag / If-None-Match / '
-              + 'If-Modified-Since 304 behavior is identical for both formats.'
+              + 'If-Modified-Since 304 behavior is independent per format.'
           ].join('\n\n'),
           parameters: [
             { name: 'slug', in: 'path', required: true, schema: { type: 'string' } },
@@ -289,6 +292,13 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
               required: true,
               schema: { type: 'string' },
               description: 'Published Feed API key'
+            },
+            {
+              name: 'format',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['txt', 'json'] },
+              description: 'Output format. Default: txt when enabled, else the only enabled format.'
             }
           ],
           responses: {

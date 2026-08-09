@@ -75,7 +75,11 @@ describe('persistPublishedFeedSnapshot', () => {
     assert.ok(calls.some((c) => c.sql.includes('FOR UPDATE')));
     const insert = calls.find((c) => c.sql.startsWith('INSERT INTO published_feed_snapshots'));
     assert.ok(insert);
-    assert.deepEqual(insert.params, [7, 3, 'abc123', '1.2.3.4\n5.6.7.8', JSON.stringify(baseSnapshot.paramsJson)]);
+    assert.deepEqual(insert.params, [
+      7, 3, 'abc123', '1.2.3.4\n5.6.7.8',
+      JSON.stringify({ ...baseSnapshot.paramsJson, output_format: 'txt' }),
+      'txt'
+    ]);
     assert.equal(calls.at(-2).sql, 'COMMIT');
     assert.equal(calls.at(-1).sql, 'RELEASE');
   });
@@ -118,7 +122,11 @@ describe('persistPublishedFeedSnapshot', () => {
 
     const update = calls.find((c) => c.sql.startsWith('UPDATE published_feed_snapshots'));
     assert.ok(update);
-    assert.deepEqual(update.params, [99, 3, 'new-hash', '9.9.9.9', JSON.stringify(baseSnapshot.paramsJson)]);
+    assert.deepEqual(update.params, [
+      99, 3, 'new-hash', '9.9.9.9',
+      JSON.stringify({ ...baseSnapshot.paramsJson, output_format: 'txt' }),
+      'txt'
+    ]);
     assert.ok(update.sql.includes('content ='));
   });
 
@@ -141,7 +149,11 @@ describe('persistPublishedFeedSnapshot', () => {
 
     const update = calls.find((c) => c.sql.startsWith('UPDATE published_feed_snapshots'));
     assert.ok(update);
-    assert.deepEqual(update.params, [12, 'boom', JSON.stringify({ ioc_type: 'ip', window: '1d' })]);
+    assert.deepEqual(update.params, [
+      12, 'boom',
+      JSON.stringify({ ioc_type: 'ip', window: '1d', output_format: 'txt' }),
+      'txt'
+    ]);
     assert.ok(!calls.some((c) => c.sql.startsWith('INSERT INTO published_feed_snapshots')));
   });
 
