@@ -35,11 +35,21 @@ export function effectiveExportStatus(row, now = new Date()) {
 
 /**
  * Sanitize worker/API failure text before returning it to clients.
- * Strips absolute paths and truncates aggressively.
+ *
+ * The worker already classifies failures into safe messages (see exportFailure.js), so in
+ * normal operation this only trims/passes through a clean string. This stays as a hard
+ * defense-in-depth net for any raw DB text that might reach a row via another path or an
+ * older stored value: it redacts PostgreSQL shared-memory object names and absolute paths,
+ * and truncates. It must NOT mangle the safe classified messages (which contain the phrase
+ * "shared memory" but never "shared memory segment" or a "/PostgreSQL..." object name).
  */
 export function publicFailureReason(reason) {
   if (reason == null || reason === '') return null;
   let text = String(reason);
+  // Redact PostgreSQL dynamic shared-memory segment object names, e.g. "/PostgreSQL.123".
+  text = text.replace(/"?\/?PostgreSQL\.[0-9]+"?/gi, '[segment]');
+  // Collapse the raw "could not resize shared memory segment ..." internals if present.
+  text = text.replace(/shared memory segment[^.]*/gi, 'shared memory');
   // Drop Windows and POSIX absolute path segments that may appear in worker errors.
   text = text.replace(/[A-Za-z]:\\[^\s]+/g, '[path]');
   text = text.replace(/\/(?:data|var|tmp|home|usr|opt|app)\/[^\s]+/g, '[path]');

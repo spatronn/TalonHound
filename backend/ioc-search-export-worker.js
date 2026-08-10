@@ -12,6 +12,7 @@ import { AUDIT_ACTION, AUDIT_SEVERITY } from './lib/auditConstants.js';
 import { parseSearchQuery, buildWhereClause, getPreviewLimit } from './lib/iocSearchDsl/index.js';
 import { getExportConfig, EXPORT_QUEUE_NAME, resolveExportFilePath } from './lib/iocSearchExport/exportConfig.js';
 import { streamExportToSink } from './lib/iocSearchExport/exportStream.js';
+import { classifyExportFailure } from './lib/iocSearchExport/exportFailure.js';
 import {
   getExportById,
   claimForProcessing,
@@ -192,11 +193,17 @@ async function runExport(exportId) {
   } catch (err) {
     try { await endStream(sink); } catch { /* ignore */ }
     await cleanupFile(filePath);
-    await markFailed(pool, exportId, err.message);
+    // Persist only a sanitized, classified reason on the row (shown verbatim in Action
+    // Center). The full technical error stays server-side: audit metadata + container log,
+    // both correlated by the export id.
+    const { code, publicMessage } = classifyExportFailure(err);
+    await markFailed(pool, exportId, publicMessage);
     await auditExport(AUDIT_ACTION.IOC_SEARCH_EXPORT_FAILED, { ...row }, {
-      status: 'failed', severity: AUDIT_SEVERITY.WARNING, extra: { reason: err.message }
+      status: 'failed',
+      severity: AUDIT_SEVERITY.WARNING,
+      extra: { reason: publicMessage, reason_code: code, technical_detail: String(err?.message || err).slice(0, 2000) }
     });
-    console.error(`[ioc-search-export] export ${exportId} failed:`, err.message);
+    console.error(`[ioc-search-export] export ${exportId} failed [${code}]:`, err?.message || err);
   }
 }
 

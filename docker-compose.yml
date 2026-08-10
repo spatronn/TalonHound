@@ -7,6 +7,14 @@ name: talonhound
 services:
   db:
     image: postgres:16-alpine
+    # Docker's default /dev/shm is 64 MB. PostgreSQL 16 places dynamic shared-memory (DSM)
+    # segments for parallel plans (parallel hash/bitmap, Gather, parallel sort) in /dev/shm
+    # (dynamic_shared_memory_type=posix). A broad IOC search export can plan a parallel
+    # query whose DSM segment (observed ~32 MB) exceeds 64 MB, aborting with
+    # "could not resize shared memory segment ... No space left on device". 256 MB gives
+    # ample headroom for concurrent parallel queries without being wasteful given
+    # shared_buffers=1GB. Declared here so it survives container recreation.
+    shm_size: 256mb
     command:
       - postgres
       - -c

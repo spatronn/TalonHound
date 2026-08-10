@@ -1,9 +1,10 @@
-// Streaming, batched reader for export jobs.
+// Streaming reader for export jobs.
 //
-// The worker calls buildExportBatchQuery() to fetch one keyset page of base rows, then
-// enrichExportBatch() to attach one-to-many data (tags, classifications) and the
+// The worker builds the export query once with buildExportQuery(), opens a server-side
+// cursor over it (see exportStream.js), and FETCHes fixed-size pages. Each page is passed
+// to enrichExportBatch() to attach one-to-many data (tags, classifications) and the
 // analyst source timestamps — all via a fixed number of batch queries per page, never
-// per-IOC. Nothing loads the full result set into memory.
+// per-IOC. Nothing loads the full result set into Node memory.
 
 import {
   CANONICAL_FIRST_SEEN_AGG_SQL,
@@ -13,25 +14,32 @@ import {
 } from '../iocListTimestamps.js';
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 
-// Build one keyset batch of base rows.
+// Build the full export query for the matched set — executed exactly ONCE by
+// streamExportToSink through a NO SCROLL server-side cursor, then streamed in FETCH-sized
+// pages. This deliberately carries no LIMIT and no keyset predicate:
+//
+//   * A cursor gives bounded Node memory (one FETCH page at a time) with the SAME output
+//     rows and ordering as a full scan, so nothing is materialized in Node.
+//   * The previous design re-ran this query once per keyset page. With FILE_ARTIFACTS read
+//     enabled the query aggregates the whole matched set (GROUP BY identity_key), so paging
+//     re-computed a full parallel hash-join + GroupAggregate + Sort on EVERY batch —
+//     O(batches × full_set) work, and each pass allocated a large dynamic-shared-memory
+//     segment for the parallel Sort/Hash. On a broad predicate (e.g. `ioc contains ".com"`)
+//     that segment exceeds Docker's default 64 MB /dev/shm and Postgres aborts with
+//     "could not resize shared memory segment ... No space left on device". Running the
+//     query once under a cursor computes the aggregate a single time and (because Postgres
+//     does not parallelize cursor-driven execution) avoids the parallel DSM segment entirely.
+//
+// Deterministic order is preserved exactly:
+//   non-FA: ORDER BY i.created_at DESC, i.id DESC
+//   FA:     ORDER BY g.platform_imported_at DESC, g.id DESC
+//
 //   whereSql/dslParams : compiled DSL predicate (references alias i)
 //   cutoff             : snapshot_cutoff timestamp (stable export boundary)
-//   cursor             : { t, id } from the previous batch's last row, or null
-//   batchSize          : max rows to return
-export function buildExportBatchQuery({ whereSql, dslParams, cutoff, cursor, batchSize }) {
+export function buildExportQuery({ whereSql, dslParams, cutoff }) {
   const params = [...dslParams];
   params.push(cutoff);
   const cutoffIdx = params.length;
-
-  let keyset = '';
-  if (cursor) {
-    params.push(cursor.t);
-    params.push(String(cursor.id));
-    keyset = ` AND (i.created_at, i.id) < ($${params.length - 1}::timestamptz, $${params.length}::bigint)`;
-  }
-
-  params.push(batchSize);
-  const limitIdx = params.length;
 
   if (!isFileArtifactsReadEnabled()) {
     const sql = `
@@ -42,18 +50,12 @@ export function buildExportBatchQuery({ whereSql, dslParams, cutoff, cursor, bat
            ta.name AS threat_actor_name
     FROM ioc_items i
     LEFT JOIN threat_actors ta ON ta.id = i.threat_actor_id
-    WHERE ${whereSql} AND i.created_at <= $${cutoffIdx}::timestamptz${keyset}
-    ORDER BY i.created_at DESC, i.id DESC
-    LIMIT $${limitIdx}`;
+    WHERE ${whereSql} AND i.created_at <= $${cutoffIdx}::timestamptz
+    ORDER BY i.created_at DESC, i.id DESC`;
     return { sql, params };
   }
 
-  // Canonical identity export (1 artifact = 1 row). Keyset on platform_imported_at + representative id.
-  let artKeyset = '';
-  if (cursor) {
-    artKeyset = ` AND (platform_imported_at, id) < ($${params.length - 2}::timestamptz, $${params.length - 1}::bigint)`;
-  }
-
+  // Canonical identity export (1 artifact = 1 row), ordered by platform_imported_at + representative id.
   const sql = `
     WITH matched AS (
       SELECT i.id, i.public_id, i.observable, i.observable_type,
@@ -120,9 +122,7 @@ export function buildExportBatchQuery({ whereSql, dslParams, cutoff, cursor, bat
            g.linked_ioc_public_ids
     FROM grouped g
     LEFT JOIN threat_actors ta ON ta.id = g.threat_actor_id
-    WHERE TRUE${artKeyset}
-    ORDER BY g.platform_imported_at DESC, g.id DESC
-    LIMIT $${limitIdx}`;
+    ORDER BY g.platform_imported_at DESC, g.id DESC`;
 
   return { sql, params };
 }

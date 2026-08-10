@@ -34,7 +34,7 @@ import {
   collectFileArtifactValidationMetrics,
   countEmptyOrphanArtifacts
 } from '../lib/fileArtifacts/index.js';
-import { buildExportBatchQuery } from '../lib/iocSearchExport/exportRows.js';
+import { buildExportQuery } from '../lib/iocSearchExport/exportRows.js';
 import { queryActiveIocCanonicalBrowsePage } from '../lib/iocActiveSources.js';
 
 const { Pool } = pg;
@@ -454,12 +454,10 @@ async function main() {
       process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
       const list = await runSqlListPage(pool, 500, 0);
       const identityTotal = list[0]?.total_count ?? 0;
-      const { sql, params } = buildExportBatchQuery({
+      const { sql, params } = buildExportQuery({
         whereSql: `COALESCE(i.status,'active') = 'active'`,
         dslParams: [],
-        cutoff: new Date().toISOString(),
-        cursor: null,
-        batchSize: 1000
+        cutoff: new Date().toISOString()
       });
       const { rows } = await pool.query(sql, params);
       if (rows.length !== identityTotal) {
@@ -472,12 +470,10 @@ async function main() {
       const { rows: raw } = await pool.query(
         `SELECT COUNT(*)::int AS c FROM ioc_items WHERE COALESCE(status,'active') = 'active'`
       );
-      const { sql, params } = buildExportBatchQuery({
+      const { sql, params } = buildExportQuery({
         whereSql: `COALESCE(i.status,'active') = 'active'`,
         dslParams: [],
-        cutoff: new Date().toISOString(),
-        cursor: null,
-        batchSize: 5000
+        cutoff: new Date().toISOString()
       });
       const { rows } = await pool.query(sql, params);
       if (rows.length !== raw[0].c) {

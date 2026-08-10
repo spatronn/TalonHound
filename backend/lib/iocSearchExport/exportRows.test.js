@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildExportBatchQuery } from './exportRows.js';
+import { buildExportQuery } from './exportRows.js';
 import { parseSearchQuery, buildWhereClause } from '../iocSearchDsl/index.js';
 
 function compile(q) {
@@ -15,37 +15,38 @@ function assertPlaceholdersAligned(sql, params) {
   for (let i = 1; i <= params.length; i += 1) assert.ok(refs.includes(i));
 }
 
-test('first batch: snapshot cutoff appended, no keyset', () => {
+test('single-pass query: snapshot cutoff appended, no keyset, no LIMIT', () => {
   const { sql: whereSql, params: dslParams } = compile('ioc contains "evil"');
   const cutoff = '2026-07-22T00:00:00.000Z';
-  const { sql, params } = buildExportBatchQuery({ whereSql, dslParams, cutoff, cursor: null, batchSize: 5000 });
+  const { sql, params } = buildExportQuery({ whereSql, dslParams, cutoff });
+  // cutoff is the last bound param and gates the snapshot boundary.
   assert.match(sql, /i\.created_at <= \$2::timestamptz/);
+  assert.equal(params[params.length - 1], cutoff);
+  // The query is executed once through a cursor: no per-batch keyset, no LIMIT.
   assert.doesNotMatch(sql, /\(i\.created_at, i\.id\) </);
+  assert.doesNotMatch(sql, /LIMIT/i);
+  // Deterministic export order preserved.
   assert.match(sql, /ORDER BY i\.created_at DESC, i\.id DESC/);
-  assert.equal(params[params.length - 1], 5000); // limit last
-  assert.equal(params[1], cutoff);
   assertPlaceholdersAligned(sql, params);
 });
 
-test('subsequent batch: keyset predicate added with cursor params', () => {
-  const { sql: whereSql, params: dslParams } = compile('ioc contains "evil"');
-  const cutoff = '2026-07-22T00:00:00.000Z';
-  const cursor = { t: '2026-07-20T10:00:00.000Z', id: '12345' };
-  const { sql, params } = buildExportBatchQuery({ whereSql, dslParams, cutoff, cursor, batchSize: 5000 });
-  assert.match(sql, /\(i\.created_at, i\.id\) < \(\$3::timestamptz, \$4::bigint\)/);
-  assert.equal(params[2], cursor.t);
-  assert.equal(params[3], '12345');
-  assertPlaceholdersAligned(sql, params);
+test('predicate semantics for `ioc contains ".com"` are an ILIKE substring match', () => {
+  const { sql: whereSql, params: dslParams } = compile('ioc contains ".com"');
+  // The compiled predicate must remain a case-insensitive substring match on observable.
+  assert.match(whereSql, /i\.observable ILIKE \$1 ESCAPE/);
+  assert.equal(dslParams[0], '%.com%');
+  // And the export query embeds exactly that predicate — export filtering is not weakened
+  // or diverged from IOC list search semantics.
+  const { sql } = buildExportQuery({ whereSql, dslParams, cutoff: 'x' });
+  assert.ok(sql.includes(whereSql));
 });
 
-test('multi-condition DSL params precede cutoff/keyset/limit', () => {
+test('multi-condition DSL params precede the cutoff', () => {
   const { sql: whereSql, params: dslParams } = compile('tag in ("a","b") AND status equals "active"');
   const cutoff = '2026-07-22T00:00:00.000Z';
-  const cursor = { t: '2026-07-20T10:00:00.000Z', id: '99' };
-  const { sql, params } = buildExportBatchQuery({ whereSql, dslParams, cutoff, cursor, batchSize: 1000 });
-  // dslParams first, then cutoff, then cursor(t,id), then limit
-  assert.equal(params.length, dslParams.length + 4);
+  const { sql, params } = buildExportQuery({ whereSql, dslParams, cutoff });
+  // dslParams first, then cutoff (last).
+  assert.equal(params.length, dslParams.length + 1);
   assert.equal(params[dslParams.length], cutoff);
-  assert.equal(params[params.length - 1], 1000);
   assertPlaceholdersAligned(sql, params);
 });

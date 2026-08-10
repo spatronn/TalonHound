@@ -29,6 +29,20 @@ test('publicFailureReason redacts paths and truncates', () => {
   assert.ok(publicFailureReason(long).length <= 280);
 });
 
+test('publicFailureReason redacts raw PostgreSQL shared-memory internals (defense in depth)', () => {
+  const raw = 'could not resize shared memory segment "/PostgreSQL.1786937221" to 33554432 bytes: No space left on device';
+  const out = publicFailureReason(raw);
+  // The DSM object name and the "shared memory segment ..." internals must not survive.
+  assert.doesNotMatch(out, /PostgreSQL\.\d+/);
+  assert.doesNotMatch(out, /shared memory segment/i);
+  assert.doesNotMatch(out, /33554432/); // segment size stripped along with the segment clause
+});
+
+test('publicFailureReason leaves the classified safe message intact', () => {
+  const safe = 'Export failed due to insufficient database shared memory. Check server resources and retry.';
+  assert.equal(publicFailureReason(safe), safe);
+});
+
 test('parseListStatusFilter validates buckets', () => {
   assert.equal(parseListStatusFilter('all'), null);
   assert.deepEqual(parseListStatusFilter('processing'), ['queued', 'processing']);
