@@ -85,7 +85,11 @@ export async function streamExportToSink({
         return { status: 'hard_limit', recordCount };
       }
 
-      const enriched = await enrichExportBatch(client, baseRows);
+      // Enrichment runs its fixed set of batch lookups concurrently (Promise.all), so it
+      // must use the POOL (independent connections), not the cursor client — a single
+      // connection cannot execute overlapping queries. Enrichment reads committed metadata
+      // (tags/classifications/timestamps) for this page's ids, matching prior behavior.
+      const enriched = await enrichExportBatch(db, baseRows);
       let chunk = '';
       for (const rec of enriched) chunk += `${csvRow(formatRecord(rec, columns, tz))}\n`;
       await write(chunk);

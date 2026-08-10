@@ -30,11 +30,40 @@ function makeRows(n) {
   return rows; // already id-descending
 }
 
-// Mock pg Pool. connect() hands out a client backed by a NO SCROLL cursor over `rows`.
-// `fetchFailAt` (1-based) makes the Nth FETCH throw, to exercise mid-stream failure.
+// Mock pg Pool. connect() hands out a client backed by a NO SCROLL cursor over `rows`
+// (cursor control + FETCH). Enrichment goes through the pool-level query() — matching the
+// real code, where enrichExportBatch uses the pool (independent connections), never the
+// cursor client. `fetchFailAt` (1-based) makes the Nth FETCH throw, to exercise mid-stream
+// failure.
 function makeDb(rows, { fetchFailAt = 0 } = {}) {
   const calls = { base: 0, tags: 0, classifications: 0, memberships: 0, actors: 0 };
   const state = { connects: 0, released: 0, rolledBack: 0, closed: 0 };
+
+  // Enrichment lookups — served by the pool (db.query), on connections separate from the
+  // cursor client. Returns null when the sql is not an enrichment query.
+  function aux(sql, params = []) {
+    const s = String(sql);
+    if (s.includes('FROM ioc_tags')) {
+      calls.tags += 1;
+      const ids = params[0];
+      return { rows: ids.map((id) => ({ ioc_id: id, names: [`tag-${id}`, 'malware'] })) };
+    }
+    if (s.includes('FROM ioc_threat_classifications')) {
+      calls.classifications += 1;
+      const ids = params[0];
+      return { rows: ids.map((id) => ({ ioc_id: id, names: ['phishing'] })) };
+    }
+    if (s.includes('FROM ioc_threat_actors')) {
+      calls.actors += 1;
+      return { rows: [] };
+    }
+    if (s.includes('FROM ioc_feed_memberships')) {
+      calls.memberships += 1;
+      const ids = params[0];
+      return { rows: ids.map((id) => ({ ioc_item_id: id, first_seen_in_source: '2026-01-01T00:00:00.000Z', last_changed_in_source: '2026-02-01T00:00:00.000Z' })) };
+    }
+    return null;
+  }
 
   function makeClient() {
     let pos = 0;        // cursor position into rows
@@ -56,26 +85,7 @@ function makeDb(rows, { fetchFailAt = 0 } = {}) {
           pos += slice.length;
           return { rows: slice };
         }
-        if (s.includes('FROM ioc_tags')) {
-          calls.tags += 1;
-          const ids = params[0];
-          return { rows: ids.map((id) => ({ ioc_id: id, names: [`tag-${id}`, 'malware'] })) };
-        }
-        if (s.includes('FROM ioc_threat_classifications')) {
-          calls.classifications += 1;
-          const ids = params[0];
-          return { rows: ids.map((id) => ({ ioc_id: id, names: ['phishing'] })) };
-        }
-        if (s.includes('FROM ioc_threat_actors')) {
-          calls.actors += 1;
-          return { rows: [] };
-        }
-        if (s.includes('FROM ioc_feed_memberships')) {
-          calls.memberships += 1;
-          const ids = params[0];
-          return { rows: ids.map((id) => ({ ioc_item_id: id, first_seen_in_source: '2026-01-01T00:00:00.000Z', last_changed_in_source: '2026-02-01T00:00:00.000Z' })) };
-        }
-        return { rows: [] };
+        return aux(s, params) || { rows: [] };
       },
       release() { state.released += 1; }
     };
@@ -84,6 +94,7 @@ function makeDb(rows, { fetchFailAt = 0 } = {}) {
   return {
     calls,
     state,
+    async query(sql, params = []) { return aux(sql, params) || { rows: [] }; },
     async connect() { state.connects += 1; return makeClient(); }
   };
 }
