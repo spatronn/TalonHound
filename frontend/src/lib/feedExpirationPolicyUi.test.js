@@ -117,4 +117,12 @@ test('main.jsx no longer shows Last seen TTL or the old missing-from-feed label'
   assert.ok(mainSrc.includes('expirationModeOptionDisabled'));
   assert.ok(mainSrc.includes('EXPIRATION_TYPE_OVERRIDE_MODES'));
   assert.ok(mainSrc.includes('expirationPolicyModeHint'));
+  assert.ok(
+    /import\s*\{[\s\S]*\bdefaultTypeOverridesDraft\b[\s\S]*\}\s*from\s*'\.\/lib\/feedExpirationPolicyUi\.js'/.test(mainSrc),
+    'IocSourcesPage calls defaultTypeOverridesDraft on mount; it must be imported'
+  );
+  assert.ok(
+    /import\s*\{[\s\S]*\bbuildExpirationTypePoliciesPayload\b[\s\S]*\}\s*from\s*'\.\/lib\/feedExpirationPolicyUi\.js'/.test(mainSrc),
+    'IocSourcesPage save path calls buildExpirationTypePoliciesPayload; it must be imported'
+  );
 });
