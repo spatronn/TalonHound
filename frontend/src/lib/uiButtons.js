@@ -57,3 +57,32 @@ export function buttonClassName({ variant = 'secondary', size, className = '', l
 export function confirmButtonVariant(_tone) {
   return 'secondary';
 }
+
+/** Previous Custom Threat Feeds Enable feed text color (positive / green). */
+export const FEED_ENABLE_POSITIVE_COLOR = '#86efac';
+
+/** Restored Enable feed appearance — not a th-btn variant (success is visually neutralized). */
+export const FEED_ENABLE_TOGGLE_STYLE = Object.freeze({
+  fontSize: 12,
+  padding: '4px 10px',
+  borderRadius: 6,
+  border: '1px solid #475569',
+  background: 'transparent',
+  color: FEED_ENABLE_POSITIVE_COLOR,
+  cursor: 'pointer'
+});
+
+/**
+ * Custom Threat Feeds enable/disable toggle presentation (asymmetric).
+ * Disable (active): compact secondary matching built-in Feed settings — never danger/red.
+ * Enable (inactive): previous positive/green appearance.
+ *
+ * @param {boolean} isActive
+ * @returns {{ className?: string, style?: typeof FEED_ENABLE_TOGGLE_STYLE }}
+ */
+export function feedActiveToggleButtonProps(isActive) {
+  if (isActive) {
+    return { className: buttonClassName({ size: 'compact' }) };
+  }
+  return { style: FEED_ENABLE_TOGGLE_STYLE };
+}

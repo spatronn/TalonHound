@@ -5,7 +5,10 @@ import {
   BTN_VARIANTS,
   BTN_SIZES,
   buttonClassName,
-  confirmButtonVariant
+  confirmButtonVariant,
+  FEED_ENABLE_POSITIVE_COLOR,
+  FEED_ENABLE_TOGGLE_STYLE,
+  feedActiveToggleButtonProps
 } from './uiButtons.js';
 
 test('buttonClassName defaults to secondary', () => {
@@ -49,4 +52,23 @@ test('confirmButtonVariant always returns secondary (universal shell)', () => {
   assert.equal(confirmButtonVariant('warning'), 'secondary');
   assert.equal(confirmButtonVariant('primary'), 'secondary');
   assert.equal(confirmButtonVariant(undefined), 'secondary');
+});
+
+test('feed active toggle: Disable is compact secondary never danger/red; Enable keeps positive green', () => {
+  const disable = feedActiveToggleButtonProps(true);
+  assert.equal(disable.className, `${BTN_BASE} ${BTN_VARIANTS.secondary} ${BTN_SIZES.compact}`);
+  assert.equal(Boolean(disable.className?.includes('danger')), false);
+  assert.equal(disable.style, undefined);
+  assert.equal(JSON.stringify(disable).includes('#fca5a5'), false);
+
+  const enable = feedActiveToggleButtonProps(false);
+  assert.equal(enable.className, undefined);
+  assert.equal(enable.style, FEED_ENABLE_TOGGLE_STYLE);
+  assert.equal(enable.style.color, FEED_ENABLE_POSITIVE_COLOR);
+  assert.equal(enable.style.color, '#86efac');
+  assert.equal(enable.style.background, 'transparent');
+  assert.equal(JSON.stringify(enable).includes('#fca5a5'), false);
+  assert.equal(Boolean(enable.className?.includes('danger')), false);
+
+  assert.equal(buttonClassName({ variant: 'dangerSolid' }), `${BTN_BASE} ${BTN_VARIANTS.dangerSolid}`);
 });

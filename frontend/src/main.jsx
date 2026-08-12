@@ -73,7 +73,7 @@ import { buildIocTagBadges, formatTagSourcesCell } from './lib/iocTagBadges.js';
 import { resolveRowPasswordAction, clearTemporaryPasswordState } from './lib/passwordResetActions.js';
 import { submitChangePassword } from './lib/changePasswordForm.js';
 import { resolveUserRowControls } from './lib/userRowControls.js';
-import { buttonClassName, confirmButtonVariant } from './lib/uiButtons.js';
+import { buttonClassName, confirmButtonVariant, feedActiveToggleButtonProps } from './lib/uiButtons.js';
 import {
   canCloseModal,
   modalSizeClass,
@@ -4522,16 +4522,8 @@ function CustomFeedLifecycleFields({
         {!disabled ? (
           <button
             type="button"
+            {...feedActiveToggleButtonProps(feedActive !== false)}
             onClick={onRequestActiveChange}
-            style={{
-              fontSize: 12,
-              padding: '4px 10px',
-              borderRadius: 6,
-              border: '1px solid #475569',
-              background: 'transparent',
-              color: feedActive !== false ? '#fca5a5' : '#86efac',
-              cursor: 'pointer'
-            }}
           >
             {feedActive !== false ? 'Disable feed' : 'Enable feed'}
           </button>
