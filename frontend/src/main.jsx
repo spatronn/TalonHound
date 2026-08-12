@@ -42,6 +42,13 @@ import {
   mergeVisibleThreatClassificationOrder,
   sortThreatClassificationsForDisplay
 } from './lib/threatClassificationOrder.js';
+import {
+  MULTI_SELECT_MAX_CHIPS,
+  MULTI_SELECT_LIST_MAX_HEIGHT,
+  filterMultiSelectOptions,
+  toggleMultiSelectValue,
+  summarizeMultiSelectChips
+} from './lib/searchableMultiSelect.js';
 import { ThreatClassificationSortableTable } from './components/threatClassifications/ThreatClassificationSortableTable.jsx';
 import { getDnsmaniaPresentation } from './lib/dnsmaniaPresentation.js';
 import {
@@ -7113,6 +7120,232 @@ function ThreatClassificationBadges({ classifications, max = 5, emptyLabel = 'Un
   );
 }
 
+/**
+ * Collapsed, searchable multi-select popover.
+ *
+ * Closed: a compact field summarizing the selection as chips + "+N more"
+ * (or a placeholder / "none" label when empty). Open: a bounded, internally
+ * scrolling listbox with a search filter. Escape / outside-click close it;
+ * it stays open while toggling multiple values. Selection state is owned by
+ * the caller — this component is presentation + interaction only.
+ */
+function SearchableMultiSelect({
+  selectedValues,
+  options,
+  onToggle,
+  onClear,
+  disabled = false,
+  placeholder = 'Select…',
+  searchPlaceholder = 'Search…',
+  noneOption = null,
+  chipLabelFor,
+  renderOptionMeta,
+  ariaLabel,
+  emptyOptionsLabel = 'No options available',
+  noMatchLabel = 'No matches'
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef(null);
+  const searchRef = useRef(null);
+  const triggerRef = useRef(null);
+  const listboxIdRef = useRef(`msel-${Math.random().toString(36).slice(2, 9)}`);
+
+  const selected = Array.isArray(selectedValues) ? selectedValues.map(String) : [];
+  const optionList = Array.isArray(options) ? options : [];
+
+  const labelFor = useCallback((value) => {
+    if (typeof chipLabelFor === 'function') {
+      const custom = chipLabelFor(value);
+      if (custom) return custom;
+    }
+    const opt = optionList.find((o) => String(o.value) === String(value));
+    return opt?.label || String(value);
+  }, [chipLabelFor, optionList]);
+
+  const filtered = useMemo(
+    () => filterMultiSelectOptions(optionList, query, (o) => o.label),
+    [optionList, query]
+  );
+  const { chips, overflowCount } = summarizeMultiSelectChips(selected, labelFor, MULTI_SELECT_MAX_CHIPS);
+  const showNoneRow = Boolean(noneOption) && !String(query || '').trim();
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDocMouseDown = (evt) => {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(evt.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const t = setTimeout(() => { try { searchRef.current?.focus(); } catch { /* ignore */ } }, 0);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  function closeMenu({ restoreFocus = false } = {}) {
+    setOpen(false);
+    setQuery('');
+    if (restoreFocus) {
+      try { triggerRef.current?.focus(); } catch { /* ignore */ }
+    }
+  }
+
+  function onTriggerKeyDown(e) {
+    if (disabled) return;
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(true);
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      closeMenu({ restoreFocus: true });
+    }
+  }
+
+  function onMenuKeyDown(e) {
+    if (e.key === 'Escape') {
+      // Close only the popover; don't let an enclosing modal also close.
+      e.stopPropagation();
+      e.preventDefault();
+      closeMenu({ restoreFocus: true });
+    }
+  }
+
+  const fieldStyle = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+    minHeight: 42,
+    padding: '7px 10px',
+    borderRadius: 10,
+    border: `1px solid ${open ? '#2563eb' : '#334155'}`,
+    background: '#020617',
+    color: '#e2e8f0',
+    boxSizing: 'border-box',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.6 : 1
+  };
+  const chipStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 12,
+    padding: '2px 8px',
+    borderRadius: 999,
+    background: '#172554',
+    border: '1px solid #334155',
+    color: '#bfdbfe'
+  };
+  const optionRowStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    padding: '6px 4px',
+    borderRadius: 6,
+    cursor: disabled ? 'not-allowed' : 'pointer'
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <div
+        ref={triggerRef}
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listboxIdRef.current}
+        aria-label={ariaLabel}
+        aria-disabled={disabled || undefined}
+        tabIndex={disabled ? -1 : 0}
+        onClick={() => { if (!disabled) setOpen((v) => !v); }}
+        onKeyDown={onTriggerKeyDown}
+        style={fieldStyle}
+      >
+        {chips.length ? (
+          <>
+            {chips.map((chip) => (
+              <span key={chip.value} style={chipStyle}>
+                {chip.label}
+                {!disabled ? (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onToggle(chip.value); }}
+                    aria-label={`Remove ${chip.label}`}
+                    style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: 14 }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </span>
+            ))}
+            {overflowCount > 0 ? (
+              <span style={{ color: '#94a3b8', fontSize: 12 }}>+{overflowCount} more</span>
+            ) : null}
+          </>
+        ) : (
+          <span style={{ color: '#64748b', fontSize: 13 }}>
+            {noneOption ? noneOption.label : placeholder}
+          </span>
+        )}
+        <span aria-hidden="true" style={{ marginLeft: 'auto', color: '#64748b', fontSize: 11, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}>▾</span>
+      </div>
+
+      {open ? (
+        <div
+          onKeyDown={onMenuKeyDown}
+          style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', boxShadow: '0 12px 32px rgba(2,6,23,0.5)', padding: 8 }}
+        >
+          <input
+            ref={searchRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            spellCheck={false}
+            style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
+          />
+          <div
+            role="listbox"
+            id={listboxIdRef.current}
+            aria-multiselectable="true"
+            aria-label={ariaLabel}
+            style={{ maxHeight: MULTI_SELECT_LIST_MAX_HEIGHT, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}
+          >
+            {showNoneRow ? (
+              <label role="option" aria-selected={!selected.length} style={optionRowStyle}>
+                <input type="checkbox" checked={!selected.length} onChange={() => onClear?.()} disabled={disabled} />
+                <span>{noneOption.label}</span>
+              </label>
+            ) : null}
+            {filtered.map((opt) => {
+              const value = String(opt.value);
+              const checked = selected.includes(value);
+              return (
+                <label key={value} role="option" aria-selected={checked} style={optionRowStyle}>
+                  <input type="checkbox" checked={checked} onChange={() => onToggle(opt.value)} disabled={disabled} />
+                  <span>{opt.label}</span>
+                  {typeof renderOptionMeta === 'function' ? renderOptionMeta(opt) : null}
+                </label>
+              );
+            })}
+            {!filtered.length ? (
+              <div style={{ color: '#94a3b8', fontSize: 12, padding: '6px 4px' }}>
+                {optionList.length ? noMatchLabel : emptyOptionsLabel}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ThreatClassificationMultiSelect({
   value,
   onChange,
@@ -7122,6 +7355,10 @@ function ThreatClassificationMultiSelect({
 }) {
   const selected = normalizeSelectedThreatClasses(value);
   const allOptions = mergeThreatClassificationPickerOptions(options, inactiveOptions);
+  const pickerOptions = allOptions
+    .filter((o) => o.value !== 'unknown')
+    .map((o) => ({ value: o.value, label: o.label || formatThreatClassificationLabel(o.value) }));
+  const inactiveValues = new Set((inactiveOptions || []).map((x) => x.value));
 
   function toggle(slug) {
     if (disabled) return;
@@ -7129,65 +7366,24 @@ function ThreatClassificationMultiSelect({
       onChange([]);
       return;
     }
-    const set = new Set(selected);
-    if (set.has(slug)) set.delete(slug);
-    else set.add(slug);
-    onChange([...set]);
+    onChange(toggleMultiSelectValue(selected, slug));
   }
 
   return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}>
-        {selected.length ? selected.map((slug) => {
-          const label = allOptions.find((o) => o.value === slug)?.label || formatThreatClassificationLabel(slug);
-          return (
-            <span
-              key={slug}
-              style={{
-                fontSize: 12,
-                padding: '2px 8px',
-                borderRadius: 999,
-                background: '#172554',
-                border: '1px solid #334155',
-                color: '#bfdbfe'
-              }}
-            >
-              {label}
-              {!disabled ? (
-                <button
-                  type="button"
-                  onClick={() => toggle(slug)}
-                  style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
-                  aria-label={`Remove ${label}`}
-                >
-                  ×
-                </button>
-              ) : null}
-            </span>
-          );
-        }) : <span style={{ color: '#94a3b8', fontSize: 13 }}>Unknown (no classifications selected)</span>}
-      </div>
-      <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 220, overflowY: 'auto', background: '#0f172a' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13 }}>
-          <input type="checkbox" checked={!selected.length} onChange={() => onChange([])} disabled={disabled} />
-          Unknown
-        </label>
-        {allOptions.filter((o) => o.value !== 'unknown').map((opt) => (
-          <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={selected.includes(opt.value)}
-              onChange={() => toggle(opt.value)}
-              disabled={disabled}
-            />
-            <span>{opt.label}</span>
-            {inactiveOptions.some((x) => x.value === opt.value) ? (
-              <span style={{ color: '#94a3b8', fontSize: 11 }}>Inactive</span>
-            ) : null}
-          </label>
-        ))}
-      </div>
-    </div>
+    <SearchableMultiSelect
+      selectedValues={selected}
+      options={pickerOptions}
+      onToggle={toggle}
+      onClear={() => onChange([])}
+      disabled={disabled}
+      ariaLabel="Threat classifications"
+      searchPlaceholder="Search classifications…"
+      noneOption={{ label: 'Unknown' }}
+      chipLabelFor={(slug) => pickerOptions.find((o) => o.value === String(slug))?.label || formatThreatClassificationLabel(slug)}
+      renderOptionMeta={(opt) => (inactiveValues.has(opt.value)
+        ? <span style={{ color: '#94a3b8', fontSize: 11 }}>Inactive</span>
+        : null)}
+    />
   );
 }
 
@@ -7244,68 +7440,25 @@ function ThreatActorMultiSelect({
 }) {
   const selected = Array.isArray(value) ? value.map(String).filter(Boolean) : [];
   const optionList = Array.isArray(options) ? options : [];
+  const pickerOptions = optionList.map((o) => ({ value: String(o.id), label: o.name || String(o.id) }));
 
   function toggle(id) {
     if (disabled) return;
-    const set = new Set(selected);
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    onChange([...set]);
+    onChange(toggleMultiSelectValue(selected, id));
   }
 
   return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 28 }}>
-        {selected.length ? selected.map((id) => {
-          const label = optionList.find((o) => String(o.id) === String(id))?.name || id;
-          return (
-            <span
-              key={id}
-              style={{
-                fontSize: 12,
-                padding: '2px 8px',
-                borderRadius: 999,
-                background: '#172554',
-                border: '1px solid #334155',
-                color: '#bfdbfe'
-              }}
-            >
-              {label}
-              {!disabled ? (
-                <button
-                  type="button"
-                  onClick={() => toggle(id)}
-                  style={{ marginLeft: 6, border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
-                  aria-label={`Remove ${label}`}
-                >
-                  ×
-                </button>
-              ) : null}
-            </span>
-          );
-        }) : <span style={{ color: '#94a3b8', fontSize: 13 }}>Not selected</span>}
-      </div>
-      <div style={{ border: '1px solid #334155', borderRadius: 8, padding: 10, maxHeight: 220, overflowY: 'auto', background: '#0f172a' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13 }}>
-          <input type="checkbox" checked={!selected.length} onChange={() => onChange([])} disabled={disabled} />
-          Not selected
-        </label>
-        {optionList.map((opt) => {
-          const id = String(opt.id);
-          return (
-            <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={selected.includes(id)}
-                onChange={() => toggle(id)}
-                disabled={disabled}
-              />
-              <span>{opt.name}</span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
+    <SearchableMultiSelect
+      selectedValues={selected}
+      options={pickerOptions}
+      onToggle={toggle}
+      disabled={disabled}
+      ariaLabel="Threat actors"
+      placeholder="Select threat actors…"
+      searchPlaceholder="Search threat actors…"
+      emptyOptionsLabel="No threat actors available"
+      chipLabelFor={(id) => pickerOptions.find((o) => o.value === String(id))?.label || String(id)}
+    />
   );
 }
 
