@@ -37,12 +37,12 @@ describe('computeMembershipFieldPatch no-op detection', () => {
 describe('pickFeedPolicyFromRows', () => {
   const rows = [
     { feed_id: '11111111-1111-1111-1111-111111111111', observable_type: 'all', expiration_mode: 'never', enabled: true },
-    { feed_id: '11111111-1111-1111-1111-111111111111', observable_type: 'domain', expiration_mode: 'last_seen_ttl', ttl_days: 30, enabled: true }
+    { feed_id: '11111111-1111-1111-1111-111111111111', observable_type: 'domain', expiration_mode: 'fixed_ttl', ttl_days: 30, enabled: true }
   ];
 
   it('prefers specific observable_type over all', () => {
     const policy = pickFeedPolicyFromRows(rows, '11111111-1111-1111-1111-111111111111', 'domain');
-    assert.equal(policy.expiration_mode, 'last_seen_ttl');
+    assert.equal(policy.expiration_mode, 'fixed_ttl');
   });
 
   it('resolveFeedPolicyFromContext caches by feed/type', () => {

@@ -489,11 +489,11 @@ test('list sort: unchanged run does not advance last_seen_in_feed, so IOCs do no
     'the only writer must be fingerprint-guarded'
   );
 
-  // With expiration off, the last_seen_ttl presence write must not run at all.
+  // Presence-only last_seen_ttl writes are gone; unchanged rows must not bump last_seen.
   assert.equal(find(client.calls, 'SET last_seen_in_feed = $3::timestamptz').length, 0);
 });
 
-test('list sort: last_seen_ttl feeds still record presence, but touch nothing else', async () => {
+test('list sort: last_seen_ttl no longer triggers a presence write', async () => {
   const client = makeClient({
     classification: { created: 0, changed: 0, unchanged: 2, reactivated: 0 },
     expirationMode: 'last_seen_ttl',
@@ -501,11 +501,11 @@ test('list sort: last_seen_ttl feeds still record presence, but touch nothing el
   });
   await finalizeUsomImport(client, { stats: {}, seenAt: SEEN_AT, mode: 'full_reconciliation', runId: 21 });
 
-  const presence = find(client.calls, 'SET last_seen_in_feed = $3::timestamptz')[0];
-  assert.ok(presence, 'last_seen_ttl expiry is computed from last_seen_in_feed, so it must be written');
-  assert.equal(/updated_at/.test(presence.sql), false);
-  assert.equal(/last_changed_in_source/.test(presence.sql), false);
-  assert.match(presence.sql, /IS DISTINCT FROM \$3::timestamptz/, 'idempotent re-write guard');
+  assert.equal(
+    find(client.calls, 'SET last_seen_in_feed = $3::timestamptz').length,
+    0,
+    'legacy last_seen_ttl is canonicalized to fixed_ttl; no presence UPDATE'
+  );
 });
 
 // ---------------------------------------------------------------------------

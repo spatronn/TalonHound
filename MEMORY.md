@@ -18,6 +18,7 @@
   - Management API: `POST/PATCH /api/v1/iocs` (Bearer only). Docs: `/api/docs`, `/api/openapi.json`.
   - System IOC source name `API` (not selectable in Add IOC). Shared service: `backend/lib/apiIocService.js`.
   - Migration: `145_api_key_scopes_and_ioc_management.sql` (not yet deployed until explicitly asked).
+- **Feed expiration (2026-08-13):** 3 modes only — `never`, `fixed_ttl` (first seen), `missing_from_feed_ttl` (UI: Expire when removed from source). `last_seen_ttl` removed; migration `154` converts leftover rows to `fixed_ttl`. Snapshot gate: `feed_update_mode`.
 - **Entegrasyon (devam):** TalonHound ↔ DNSMania DNS enrichment.
   - DNSMania local path: `C:\Proje\DNSMania`
   - API readiness raporu: `C:\Proje\DNSMania\docs\api-reference.html`
@@ -37,6 +38,7 @@
   - Web: HTTP 80 → HTTPS redirect, HTTPS 443 → 200
   - Stack path: `/opt/TalonHound`; compose project `name: talonhound`; containers `talonhound-*`; volume `talonhound_postgres_data`
   - PostgreSQL runtime: database/role `talonhound` (renamed from `demo` on 2026-08-01; volume `talonhound_postgres_data` preserved)
+  - **System timezone (2026-08-13):** canonical `system_settings.active_system_timezone=Europe/Istanbul`. Prod `.env` must keep `SYSTEM_TIMEZONE=Europe/Istanbul` (compose also sets `TZ` from it) so backend pool `-c TimeZone=...` matches; leftover `UTC` caused `date_time=degraded` / Enrichment Usage `CURRENT_DATE` UTC bucketing. Do not change DB timezone columns when only env is wrong.
 - Eski demo host (arşiv): `192.168.1.251`
 - GitHub repo: `https://github.com/spatronn/TalonHound` (private; web 404, local remote OK)
 - Local path: `C:\Proje\TalonHound`

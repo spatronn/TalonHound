@@ -209,6 +209,18 @@ import {
   deepSearchMatchLabel,
   deepSearchDurationLabel
 } from './lib/deepSearch.js';
+import {
+  EXPIRATION_MODE_OPTIONS,
+  EXPIRATION_TYPE_OVERRIDE_TYPES,
+  EXPIRATION_TYPE_OVERRIDE_MODES,
+  defaultExpirationDraft,
+  buildExpirationFullPatchPayload,
+  formatTypeOverridePreview,
+  expirationShowsTtlDays,
+  expirationShowsGraceDays,
+  expirationModeOptionDisabled,
+  expirationPolicyModeHint
+} from './lib/feedExpirationPolicyUi.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
 
 // Shared, process-wide cache for the source-color catalog so the many screens
@@ -885,80 +897,6 @@ function IocExpirationActionModal({
       </div>
     </ModalOverlay>
   );
-}
-
-function buildExpirationPatchPayload(exp) {
-  const enabled = Boolean(exp?.enabled);
-  const mode = enabled ? String(exp?.expiration_mode || 'never') : 'never';
-  const payload = {
-    observable_type: 'all',
-    enabled,
-    expiration_mode: mode,
-    ttl_days: null,
-    grace_days: null
-  };
-  if (!enabled) return payload;
-
-  if (['fixed_ttl', 'last_seen_ttl'].includes(mode)) {
-    const raw = exp?.ttl_days;
-    if (raw !== '' && raw != null) {
-      const n = parseInt(String(raw), 10);
-      if (Number.isFinite(n) && n > 0) payload.ttl_days = n;
-    }
-  }
-  if (mode === 'missing_from_feed_ttl') {
-    const raw = exp?.grace_days !== '' && exp?.grace_days != null ? exp.grace_days : exp?.ttl_days;
-    if (raw !== '' && raw != null) {
-      const n = parseInt(String(raw), 10);
-      if (Number.isFinite(n) && n > 0) payload.grace_days = n;
-    }
-  }
-  return payload;
-}
-
-const EXPIRATION_OVERRIDE_IOC_TYPES = ['domain', 'ip', 'url', 'file_hash'];
-const EXPIRATION_OVERRIDE_MODES = ['inherit', 'no_expire', 'fixed_ttl'];
-
-function buildExpirationTypePoliciesPayload(overrides) {
-  const out = [];
-  const src = overrides || {};
-  for (const iocType of EXPIRATION_OVERRIDE_IOC_TYPES) {
-    const o = src[iocType] || {};
-    const mode = EXPIRATION_OVERRIDE_MODES.includes(o.mode) ? o.mode : 'inherit';
-    const entry = { ioc_type: iocType, mode, ttl_days: null };
-    if (mode === 'fixed_ttl') {
-      const raw = o.ttl_days;
-      const n = raw === '' || raw == null ? NaN : parseInt(String(raw), 10);
-      if (Number.isFinite(n) && n > 0) entry.ttl_days = n;
-    }
-    out.push(entry);
-  }
-  return out;
-}
-
-function buildExpirationFullPatchPayload(exp) {
-  return {
-    ...buildExpirationPatchPayload(exp),
-    expiration_type_policies: buildExpirationTypePoliciesPayload(exp?.type_overrides)
-  };
-}
-
-/** Human-readable effective policy preview for one IOC type. */
-function formatTypeOverridePreview(label, override, feedExp) {
-  const mode = override?.mode || 'inherit';
-  if (mode === 'no_expire') return `${label}: No expire`;
-  if (mode === 'fixed_ttl') {
-    const n = parseInt(String(override?.ttl_days), 10);
-    return Number.isFinite(n) && n > 0 ? `${label}: Fixed TTL ${n} days` : `${label}: Fixed TTL (set days)`;
-  }
-  // inherit
-  if (!feedExp?.enabled || feedExp?.expiration_mode === 'never') {
-    return `${label}: Inherits default (no expiration)`;
-  }
-  const days = parseInt(String(feedExp?.ttl_days ?? feedExp?.grace_days), 10);
-  return Number.isFinite(days) && days > 0
-    ? `${label}: Inherits default ${days} days`
-    : `${label}: Inherits default`;
 }
 
 function auditSeverityBadgeStyle(severity) {
@@ -2130,13 +2068,6 @@ function feedStatePresentation(enabled) {
   return { label: 'Disabled', color: '#94a3b8', bg: 'rgba(100,116,139,0.18)', border: '#475569' };
 }
 
-const EXPIRATION_MODE_OPTIONS = [
-  { id: 'never', label: 'Never' },
-  { id: 'fixed_ttl', label: 'Fixed TTL (from first seen in feed)' },
-  { id: 'last_seen_ttl', label: 'Last seen TTL' },
-  { id: 'missing_from_feed_ttl', label: 'Missing from feed (snapshot feeds)' }
-];
-
 function iocStatusBadge(status) {
   const s = String(status || 'active').toLowerCase();
   const map = {
@@ -2168,46 +2099,6 @@ function iocSourceStatusBadge(source) {
 function iocSourceTypeLabel(source) {
   if (!source) return 'Source';
   return source.source_type === 'manual' ? 'Manual source' : 'Feed';
-}
-
-const EXPIRATION_TYPE_OVERRIDE_TYPES = [
-  { id: 'domain', label: 'Domain' },
-  { id: 'ip', label: 'IP' },
-  { id: 'url', label: 'URL' },
-  { id: 'file_hash', label: 'Hash' }
-];
-
-const EXPIRATION_TYPE_OVERRIDE_MODES = [
-  { id: 'inherit', label: 'Inherit' },
-  { id: 'no_expire', label: 'No expire' },
-  { id: 'fixed_ttl', label: 'Fixed TTL' }
-];
-
-function defaultTypeOverridesDraft(typePolicies) {
-  const byType = {};
-  for (const entry of Array.isArray(typePolicies) ? typePolicies : []) {
-    if (entry?.ioc_type) byType[entry.ioc_type] = entry;
-  }
-  const draft = {};
-  for (const t of EXPIRATION_TYPE_OVERRIDE_TYPES) {
-    const p = byType[t.id];
-    draft[t.id] = {
-      mode: p?.mode || 'inherit',
-      ttl_days: p?.ttl_days ?? ''
-    };
-  }
-  return draft;
-}
-
-function defaultExpirationDraft(policy, typePolicies) {
-  const p = policy || {};
-  return {
-    enabled: Boolean(p.enabled),
-    expiration_mode: p.expiration_mode || 'never',
-    ttl_days: p.ttl_days ?? '',
-    grace_days: p.grace_days ?? '',
-    type_overrides: defaultTypeOverridesDraft(typePolicies)
-  };
 }
 
 function FeedHealthModal({ title, children, onClose, actions }) {
@@ -2303,6 +2194,7 @@ function feedSupportsAuthKey(feedKey) {
 
 function FeedSettingsModal({
   feed,
+  feedUpdateMode,
   draftCron,
   onDraftChange,
   draftExpiration,
@@ -2360,8 +2252,9 @@ function FeedSettingsModal({
   const currentCron = feed?.schedule || '0 * * * *';
   const scheduleUnchanged = draftCron === currentCron;
   const exp = draftExpiration || defaultExpirationDraft();
-  const showTtl = exp.enabled && ['fixed_ttl', 'last_seen_ttl'].includes(exp.expiration_mode);
-  const showGrace = exp.enabled && exp.expiration_mode === 'missing_from_feed_ttl';
+  const showTtl = expirationShowsTtlDays(exp);
+  const showGrace = expirationShowsGraceDays(exp);
+  const expirationHint = expirationPolicyModeHint(exp.expiration_mode, feedUpdateMode);
 
   const settingsBusy = savingSchedule || savingExpiration || savingConfidence || savingCredentials || testingCredentials || savingColor;
 
@@ -2679,9 +2572,18 @@ function FeedSettingsModal({
                 style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #475569', background: '#111827', color: '#e2e8f0', fontSize: 13 }}
               >
                 {EXPIRATION_MODE_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  <option
+                    key={opt.id}
+                    value={opt.id}
+                    disabled={expirationModeOptionDisabled(opt.id, feedUpdateMode)}
+                  >
+                    {opt.label}
+                  </option>
                 ))}
               </select>
+              {expirationHint ? (
+                <span style={{ color: '#64748b', fontSize: 11, lineHeight: 1.5 }}>{expirationHint}</span>
+              ) : null}
             </label>
             {showTtl ? (
               <label style={{ display: 'grid', gap: 6 }}>
@@ -3162,6 +3064,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [editingFeed, setEditingFeed] = useState(null);
   const [settingsDraftCron, setSettingsDraftCron] = useState('0 * * * *');
   const [settingsDraftExpiration, setSettingsDraftExpiration] = useState(defaultExpirationDraft());
+  const [settingsFeedUpdateMode, setSettingsFeedUpdateMode] = useState(null);
   const [settingsError, setSettingsError] = useState('');
   const [settingsExpirationError, setSettingsExpirationError] = useState('');
   const [settingsExpirationSuccess, setSettingsExpirationSuccess] = useState('');
@@ -3318,6 +3221,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     setSettingsDraftCron(feed.schedule || '0 * * * *');
     setSettingsDraftConfidence(String(feed.default_confidence || '').trim().toLowerCase());
     setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
+    setSettingsFeedUpdateMode(feed.feed_update_mode || null);
     const credSummary = feed.credentials_summary || null;
     setSettingsMaskedAuthKey(credSummary?.masked_auth_key || null);
     setSettingsAuthKeyConfigured(Boolean(credSummary?.auth_key_configured));
@@ -3337,6 +3241,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
     try {
       const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feed.key)}/expiration-policy`);
       setSettingsDraftExpiration(defaultExpirationDraft(data?.policy, data?.expiration_type_policies));
+      if (data?.feed_update_mode) setSettingsFeedUpdateMode(data.feed_update_mode);
     } catch {
       setSettingsDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
     }
@@ -3843,6 +3748,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       {editingFeed ? (
         <FeedSettingsModal
           feed={editingFeed}
+          feedUpdateMode={settingsFeedUpdateMode}
           draftCron={settingsDraftCron}
           onDraftChange={setSettingsDraftCron}
           draftExpiration={settingsDraftExpiration}
@@ -4488,6 +4394,7 @@ function CustomFeedAuthSection({ draftAuth, onAuthChange, existingAuth, disabled
 
 function CustomFeedLifecycleFields({
   feedActive,
+  feedUpdateMode = 'snapshot',
   draftCron,
   onCronChange,
   draftConfidence,
@@ -4498,8 +4405,9 @@ function CustomFeedLifecycleFields({
   disabled = false
 }) {
   const exp = draftExpiration || defaultExpirationDraft();
-  const showTtl = exp.enabled && ['fixed_ttl', 'last_seen_ttl'].includes(exp.expiration_mode);
-  const showGrace = exp.enabled && exp.expiration_mode === 'missing_from_feed_ttl';
+  const showTtl = expirationShowsTtlDays(exp);
+  const showGrace = expirationShowsGraceDays(exp);
+  const expirationHint = expirationPolicyModeHint(exp.expiration_mode, feedUpdateMode);
   const state = feedStatePresentation(feedActive !== false);
 
   return (
@@ -4581,9 +4489,18 @@ function CustomFeedLifecycleFields({
             style={CTF_INPUT_STYLE}
           >
             {EXPIRATION_MODE_OPTIONS.map((opt) => (
-              <option key={opt.id} value={opt.id}>{opt.label}</option>
+              <option
+                key={opt.id}
+                value={opt.id}
+                disabled={expirationModeOptionDisabled(opt.id, feedUpdateMode)}
+              >
+                {opt.label}
+              </option>
             ))}
           </select>
+          {expirationHint ? (
+            <span style={{ color: '#64748b', fontSize: 11, lineHeight: 1.5 }}>{expirationHint}</span>
+          ) : null}
         </label>
         {showTtl ? (
           <label style={CTF_FIELD_LABEL}>
@@ -5128,6 +5045,7 @@ function CustomThreatFeedsPage() {
                 <>
                   <CustomFeedLifecycleFields
                     feedActive={editActive}
+                    feedUpdateMode={editingFeed?.feed_update_mode || 'snapshot'}
                     draftCron={draftCron}
                     onCronChange={setDraftCron}
                     draftConfidence={draftConfidence}

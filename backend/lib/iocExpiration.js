@@ -24,9 +24,24 @@ import {
 export const EXPIRATION_MODES = Object.freeze([
   'never',
   'fixed_ttl',
-  'last_seen_ttl',
   'missing_from_feed_ttl'
 ]);
+
+/** Removed from the product policy set; persisted rows are migrated to fixed_ttl. */
+export const LEGACY_EXPIRATION_MODE_LAST_SEEN_TTL = 'last_seen_ttl';
+
+export function canonicalExpirationMode(mode) {
+  const m = String(mode || 'never').trim();
+  if (m === LEGACY_EXPIRATION_MODE_LAST_SEEN_TTL) return 'fixed_ttl';
+  return m || 'never';
+}
+
+function withCanonicalExpirationMode(policy) {
+  if (!policy) return policy;
+  const mode = canonicalExpirationMode(policy.expiration_mode);
+  if (mode === policy.expiration_mode) return policy;
+  return { ...policy, expiration_mode: mode };
+}
 
 export const MEMBERSHIP_STATUSES = Object.freeze(['active', 'expired']);
 export const IOC_STATUSES = Object.freeze(['active', 'expired', 'disabled', 'suppressed']);
@@ -69,12 +84,11 @@ export function feedKeyForSourceName(sourceName) {
 
 export function formatExpirationSummary(policy) {
   if (!policy || policy.enabled === false) return 'Disabled';
-  const mode = String(policy.expiration_mode || 'never');
+  const mode = canonicalExpirationMode(policy.expiration_mode);
   if (mode === 'never') return 'Never';
   const ttl = policy.ttl_days != null ? `${policy.ttl_days}d` : '';
   const grace = policy.grace_days != null ? `${policy.grace_days}d` : '';
   if (mode === 'fixed_ttl') return ttl ? `${ttl} fixed` : 'fixed';
-  if (mode === 'last_seen_ttl') return ttl ? `${ttl} last_seen` : 'last_seen';
   if (mode === 'missing_from_feed_ttl') return grace ? `${grace} missing_from_feed` : 'missing_from_feed';
   return mode;
 }
@@ -126,21 +140,25 @@ export function buildIocExpirationSummary({ activeSources = [], historicalMember
 export function validateExpirationPolicyInput(body, feedUpdateMode = 'incremental') {
   const errors = [];
   const enabled = Boolean(body?.enabled);
-  const mode = String(body?.expiration_mode || 'never').trim();
+  const rawMode = String(body?.expiration_mode || 'never').trim();
   const ttlDays = body?.ttl_days == null || body?.ttl_days === '' ? null : Number(body.ttl_days);
   const graceDays = body?.grace_days == null || body?.grace_days === '' ? null : Number(body.grace_days);
 
-  if (!EXPIRATION_MODES.includes(mode)) {
+  if (rawMode === LEGACY_EXPIRATION_MODE_LAST_SEEN_TTL) {
+    errors.push('expiration_mode last_seen_ttl is no longer supported; use fixed_ttl (from first seen in feed)');
+  } else if (!EXPIRATION_MODES.includes(rawMode)) {
     errors.push(`expiration_mode must be one of: ${EXPIRATION_MODES.join(', ')}`);
   }
+
+  const mode = canonicalExpirationMode(rawMode);
 
   if (enabled && mode === 'never') {
     // allowed: enabled with never = no expiry but flag on
   }
 
-  if (enabled && (mode === 'fixed_ttl' || mode === 'last_seen_ttl')) {
+  if (enabled && mode === 'fixed_ttl') {
     if (!Number.isInteger(ttlDays) || ttlDays <= 0) {
-      errors.push('ttl_days is required and must be a positive integer for fixed_ttl and last_seen_ttl');
+      errors.push('ttl_days is required and must be a positive integer for fixed_ttl');
     }
   }
 
@@ -175,17 +193,14 @@ export function validateExpirationPolicyInput(body, feedUpdateMode = 'incrementa
 }
 
 export function computePolicyExpiresAt(policy, { firstSeenInFeed, lastSeenInFeed, missingSince }) {
-  if (!policy?.enabled || policy.expiration_mode === 'never') return null;
+  if (!policy?.enabled || canonicalExpirationMode(policy.expiration_mode) === 'never') return null;
 
-  const mode = policy.expiration_mode;
+  const mode = canonicalExpirationMode(policy.expiration_mode);
   const ttl = Number(policy.ttl_days);
   const grace = Number(policy.grace_days ?? policy.ttl_days);
 
   if (mode === 'fixed_ttl' && firstSeenInFeed && Number.isFinite(ttl) && ttl > 0) {
     return addDays(firstSeenInFeed, ttl);
-  }
-  if (mode === 'last_seen_ttl' && lastSeenInFeed && Number.isFinite(ttl) && ttl > 0) {
-    return addDays(lastSeenInFeed, ttl);
   }
   if (mode === 'missing_from_feed_ttl' && missingSince && Number.isFinite(grace) && grace > 0) {
     return addDays(missingSince, grace);
@@ -312,9 +327,9 @@ export async function getFeedPolicy(client, feedId, observableType = 'all', opts
   }
 
   // Type overrides only apply to concrete IOC types, never to the 'all' lookup.
-  if (!observableType || observableType === 'all') return basePolicy;
+  if (!observableType || observableType === 'all') return withCanonicalExpirationMode(basePolicy);
   const typeOverrideRow = await loadTypeOverrideRow(client, feedId, observableType, { importContext: ctx });
-  return applyTypeOverrideToFeedPolicy(basePolicy, typeOverrideRow);
+  return withCanonicalExpirationMode(applyTypeOverrideToFeedPolicy(basePolicy, typeOverrideRow));
 }
 
 async function queryIocSuppressedFromDb(client, observable, observableType) {
@@ -602,7 +617,6 @@ async function applyMembershipComputedFields(client, membershipId, policy, now =
  * - identical fingerprint + healthy membership => no analyst-visible timestamp writes
  * - NULL stored fingerprint => one-time silent adoption (no last_changed / updated_at bump)
  * - fingerprint change or reactivation => write fingerprint + last_changed_in_source + last_seen
- * - last_seen_ttl presence-only write still allowed on unchanged rows (no updated_at)
  *
  * Callers that only need the id can use result?.membershipId.
  */
@@ -627,9 +641,6 @@ export async function upsertMembershipOnImport(client, {
   const fp = contentFingerprint != null && String(contentFingerprint).trim()
     ? String(contentFingerprint).trim()
     : null;
-  const needsPresenceWrite = Boolean(
-    policy?.enabled && String(policy.expiration_mode || '') === 'last_seen_ttl'
-  );
 
   const existing = await client.query(
     `SELECT * FROM ioc_feed_memberships
@@ -744,25 +755,6 @@ export async function upsertMembershipOnImport(client, {
         } else {
           membershipRow = row;
           outcome = 'unchanged';
-        }
-
-        if (needsPresenceWrite) {
-          const presence = await client.query(
-            `UPDATE ioc_feed_memberships
-             SET last_seen_in_feed = $2
-             WHERE id = $1
-               AND last_seen_in_feed IS DISTINCT FROM $2
-             RETURNING *`,
-            [membershipId, now]
-          );
-          if (presence.rowCount) {
-            membershipRow = presence.rows[0];
-          }
-          // last_seen_ttl expiry depends on last_seen_in_feed — recompute only then.
-          const computedPresence = await applyMembershipComputedFields(
-            client, membershipId, policy, now, membershipRow
-          );
-          if (computedPresence?.updated) membershipTouched = true;
         }
 
         // fixed_ttl / never: first_seen-based policy fields cannot change on unchanged/adopt.
@@ -1174,15 +1166,15 @@ function pgIocTypeFromMatchType(iocType) {
  * Respects enabled flag; returns null when policy does not define a finite TTL.
  */
 export function computeMatchReactivationExpiresAt(policy, now = new Date()) {
-  if (!policy?.enabled || policy.expiration_mode === 'never') return null;
-  const mode = String(policy.expiration_mode || '');
+  if (!policy?.enabled || canonicalExpirationMode(policy.expiration_mode) === 'never') return null;
+  const mode = canonicalExpirationMode(policy.expiration_mode);
   const ttl = Number(policy.ttl_days);
   const grace = Number(policy.grace_days ?? policy.ttl_days);
   if (mode === 'missing_from_feed_ttl') {
     if (!Number.isFinite(grace) || grace <= 0) return null;
     return addDays(now, grace);
   }
-  if (mode === 'fixed_ttl' || mode === 'last_seen_ttl') {
+  if (mode === 'fixed_ttl') {
     if (!Number.isFinite(ttl) || ttl <= 0) return null;
     return addDays(now, ttl);
   }

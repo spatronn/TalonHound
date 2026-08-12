@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { isRunnableMigrationFile, sortMigrationFiles } from './migrationFiles.js';
 
 test('isRunnableMigrationFile accepts plain .sql migrations', () => {
@@ -22,6 +25,19 @@ test('sortMigrationFiles is deterministic', () => {
   assert.deepEqual(sorted, ['001_core.sql', '002_a.sql', '010_b.sql']);
 });
 
-test('145 api key scopes migration is runnable', () => {
-  assert.equal(isRunnableMigrationFile('145_api_key_scopes_and_ioc_management.sql'), true);
+test('154 last_seen_ttl migration is runnable', () => {
+  assert.equal(isRunnableMigrationFile('154_drop_last_seen_ttl_expiration.sql'), true);
+});
+
+test('154 migration converts last_seen_ttl to fixed_ttl and tightens CHECK', () => {
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/154_drop_last_seen_ttl_expiration.sql'),
+    'utf8'
+  );
+  assert.ok(sql.includes("WHERE expiration_mode = 'last_seen_ttl'"));
+  assert.ok(sql.includes("expiration_mode = 'fixed_ttl'"));
+  assert.ok(sql.includes('first_seen_in_feed'));
+  assert.ok(sql.includes("CHECK (expiration_mode IN ('never', 'fixed_ttl', 'missing_from_feed_ttl'))"));
+  assert.equal(sql.includes("'last_seen_ttl'") && sql.includes('IN ('), true);
+  assert.equal(/CHECK \(expiration_mode IN \([^)]*last_seen_ttl/.test(sql), false);
 });

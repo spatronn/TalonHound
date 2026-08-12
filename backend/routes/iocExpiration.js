@@ -6,7 +6,8 @@ import {
   recomputeIocGlobalStatus,
   resolveFeedIdByKey,
   computePolicyExpiresAt,
-  resolveMembershipStatus
+  resolveMembershipStatus,
+  canonicalExpirationMode
 } from '../lib/iocExpiration.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import { assertCustomFeedSettingsAllowed } from '../lib/customThreatFeedAccess.js';
@@ -97,7 +98,7 @@ export function serializeExpirationPolicy(row, feedId) {
     feed_id: String(row.feed_id || feedId || ''),
     observable_type: row.observable_type || 'all',
     enabled: Boolean(row.enabled),
-    expiration_mode: row.expiration_mode || 'never',
+    expiration_mode: canonicalExpirationMode(row.expiration_mode),
     ttl_days: row.ttl_days == null ? null : Number(row.ttl_days),
     grace_days: row.grace_days == null ? null : Number(row.grace_days),
     updated_at: updatedAt instanceof Date ? updatedAt.toISOString() : (updatedAt || null)

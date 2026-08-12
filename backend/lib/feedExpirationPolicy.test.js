@@ -93,6 +93,14 @@ describe('validateExpirationTypePolicies', () => {
     assert.ok(r.errors.some((e) => e.includes('ttl_days')));
   });
 
+  it('rejects last_seen_ttl as a type override mode', () => {
+    const r = validateExpirationTypePolicies([
+      { ioc_type: 'domain', mode: 'last_seen_ttl', ttl_days: 30 }
+    ]);
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes('must be one of')));
+  });
+
   it('rejects unknown ioc_type and duplicate entries', () => {
     assert.equal(validateExpirationTypePolicies([{ ioc_type: 'mutex', mode: 'inherit' }]).ok, false);
     const dup = validateExpirationTypePolicies([

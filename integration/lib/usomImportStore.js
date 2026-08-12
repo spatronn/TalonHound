@@ -497,47 +497,6 @@ async function upsertMemberships(client, feedId, seenAt) {
   return Number(rowCount || 0);
 }
 
-/**
- * Expiration-driven presence write. Runs ONLY for expiration_mode = 'last_seen_ttl'.
- *
- * Snapshot presence is derived transactionally from the staging-table anti-join (see
- * markMissingMemberships) and needs no per-row write, so in every other configuration
- * unchanged rows are left completely untouched — no statement is even issued.
- *
- * The single exception is last_seen_ttl, where policySql computes expiry as
- * `last_seen_in_feed + ttl`. There, continued presence MUST be recorded or IOCs that
- * are still in the feed would silently expire. Note this deliberately writes
- * last_seen_in_feed itself (the column policySql actually reads) rather than a parallel
- * column: a second "observed at" field would have to be maintained on the same hundreds
- * of thousands of rows while changing no behaviour.
- *
- * Guarantees: touches exactly one column, never updated_at, never
- * last_changed_in_source, never an analyst-visible value, and emits no audit or event.
- */
-async function recordExpirationPresence(client, feedId, seenAt) {
-  let touched = 0;
-  for (const observableType of STORED_IOC_TYPES) {
-    const policy = await getFeedPolicy(client, feedId, observableType);
-    if (!policy?.enabled || policy.expiration_mode !== 'last_seen_ttl') continue;
-    const { rowCount } = await client.query(
-      `UPDATE ioc_feed_memberships m
-       SET last_seen_in_feed = $3::timestamptz
-       FROM ioc_items i
-       JOIN ${STAGE_TABLE} s
-         ON s.observable_type = i.observable_type
-        AND s.observable = i.observable
-       WHERE m.ioc_item_id = i.id
-         AND m.ioc_observable_type = i.observable_type
-         AND m.feed_id = $1::uuid
-         AND m.ioc_observable_type = $2
-         AND m.last_seen_in_feed IS DISTINCT FROM $3::timestamptz`,
-      [feedId, observableType, seenAt]
-    );
-    touched += Number(rowCount || 0);
-  }
-  return touched;
-}
-
 async function upsertEvidence(client, feedId) {
   await client.query(
     `WITH canonical AS (
@@ -584,9 +543,6 @@ function policySql(policy) {
   const grace = Number(policy.grace_days ?? policy.ttl_days);
   if (policy.expiration_mode === 'fixed_ttl' && Number.isFinite(ttl) && ttl > 0) {
     return { expression: `m.first_seen_in_feed + ($3::int * INTERVAL '1 day')`, params: [ttl] };
-  }
-  if (policy.expiration_mode === 'last_seen_ttl' && Number.isFinite(ttl) && ttl > 0) {
-    return { expression: `m.last_seen_in_feed + ($3::int * INTERVAL '1 day')`, params: [ttl] };
   }
   if (policy.expiration_mode === 'missing_from_feed_ttl' && Number.isFinite(grace) && grace > 0) {
     return { expression: `m.missing_since + ($3::int * INTERVAL '1 day')`, params: [grace] };
@@ -944,7 +900,6 @@ export async function finalizeUsomImport(client, {
     await adoptMissingFingerprints(client, feed.integration_id);
     await upsertMemberships(client, feed.integration_id, seenAt);
     await upsertEvidence(client, feed.integration_id);
-    await recordExpirationPresence(client, feed.integration_id, seenAt);
     await applyPoliciesForSeenMemberships(client, feed.integration_id, seenAt);
     const snapshotUnchanged = mode === 'full_reconciliation'
       && Boolean(snapshotHash)

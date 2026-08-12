@@ -10,17 +10,27 @@ import {
   feedKeyForSourceName,
   syncMembershipAfterIocImport,
   reactivateIocOnCorrelationMatch,
-  runExpirationWorkerBatch
+  runExpirationWorkerBatch,
+  EXPIRATION_MODES,
+  canonicalExpirationMode
 } from './iocExpiration.js';
 
+describe('EXPIRATION_MODES', () => {
+  it('is the 3-policy set without last_seen_ttl', () => {
+    assert.deepEqual([...EXPIRATION_MODES], ['never', 'fixed_ttl', 'missing_from_feed_ttl']);
+    assert.equal(canonicalExpirationMode('last_seen_ttl'), 'fixed_ttl');
+  });
+});
+
 describe('validateExpirationPolicyInput', () => {
-  it('requires ttl_days for last_seen_ttl when enabled', () => {
+  it('rejects last_seen_ttl as unsupported', () => {
     const r = validateExpirationPolicyInput({
       enabled: true,
-      expiration_mode: 'last_seen_ttl'
+      expiration_mode: 'last_seen_ttl',
+      ttl_days: 30
     }, 'incremental');
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some((e) => e.includes('ttl_days')));
+    assert.ok(r.errors.some((e) => e.includes('last_seen_ttl is no longer supported')));
   });
 
   it('rejects missing_from_feed_ttl on incremental feeds', () => {
@@ -30,16 +40,47 @@ describe('validateExpirationPolicyInput', () => {
       grace_days: 7
     }, 'incremental');
     assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes('snapshot')));
   });
 
-  it('accepts valid last_seen policy', () => {
+  it('accepts missing_from_feed_ttl on snapshot feeds', () => {
     const r = validateExpirationPolicyInput({
       enabled: true,
-      expiration_mode: 'last_seen_ttl',
+      expiration_mode: 'missing_from_feed_ttl',
+      grace_days: 7
+    }, 'snapshot');
+    assert.equal(r.ok, true);
+    assert.equal(r.normalized.expiration_mode, 'missing_from_feed_ttl');
+    assert.equal(r.normalized.grace_days, 7);
+  });
+
+  it('accepts fixed_ttl with ttl_days', () => {
+    const r = validateExpirationPolicyInput({
+      enabled: true,
+      expiration_mode: 'fixed_ttl',
       ttl_days: 30
     }, 'incremental');
     assert.equal(r.ok, true);
+    assert.equal(r.normalized.expiration_mode, 'fixed_ttl');
     assert.equal(r.normalized.ttl_days, 30);
+  });
+
+  it('accepts never', () => {
+    const r = validateExpirationPolicyInput({
+      enabled: false,
+      expiration_mode: 'never'
+    }, 'incremental');
+    assert.equal(r.ok, true);
+    assert.equal(r.normalized.expiration_mode, 'never');
+  });
+
+  it('requires ttl_days for fixed_ttl when enabled', () => {
+    const r = validateExpirationPolicyInput({
+      enabled: true,
+      expiration_mode: 'fixed_ttl'
+    }, 'incremental');
+    assert.equal(r.ok, false);
+    assert.ok(r.errors.some((e) => e.includes('ttl_days')));
   });
 });
 
@@ -55,12 +96,41 @@ describe('computePolicyExpiresAt', () => {
     assert.equal(at.toISOString(), '2026-01-11T00:00:00.000Z');
   });
 
-  it('computes last_seen_ttl from last_seen', () => {
+  it('does not reset fixed_ttl when last_seen is later (re-seen)', () => {
+    const first = computePolicyExpiresAt(
+      { enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 10 },
+      { firstSeenInFeed: base, lastSeenInFeed: base }
+    );
+    const reseen = computePolicyExpiresAt(
+      { enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 10 },
+      { firstSeenInFeed: base, lastSeenInFeed: last }
+    );
+    assert.equal(first.toISOString(), '2026-01-11T00:00:00.000Z');
+    assert.equal(reseen.toISOString(), first.toISOString());
+  });
+
+  it('treats legacy last_seen_ttl as fixed_ttl (first_seen, not last_seen)', () => {
     const at = computePolicyExpiresAt(
       { enabled: true, expiration_mode: 'last_seen_ttl', ttl_days: 5 },
       { firstSeenInFeed: base, lastSeenInFeed: last }
     );
-    assert.equal(at.toISOString(), '2026-01-25T00:00:00.000Z');
+    assert.equal(at.toISOString(), '2026-01-06T00:00:00.000Z');
+  });
+
+  it('computes missing_from_feed_ttl from missing_since', () => {
+    const missing = new Date('2026-01-10T00:00:00Z');
+    const at = computePolicyExpiresAt(
+      { enabled: true, expiration_mode: 'missing_from_feed_ttl', grace_days: 7 },
+      { firstSeenInFeed: base, lastSeenInFeed: last, missingSince: missing }
+    );
+    assert.equal(at.toISOString(), '2026-01-17T00:00:00.000Z');
+  });
+
+  it('returns null for never', () => {
+    assert.equal(computePolicyExpiresAt(
+      { enabled: true, expiration_mode: 'never', ttl_days: 10 },
+      { firstSeenInFeed: base, lastSeenInFeed: last }
+    ), null);
   });
 });
 
@@ -88,10 +158,17 @@ describe('formatExpirationSummary', () => {
     assert.equal(formatExpirationSummary({ enabled: false }), 'Disabled');
   });
 
-  it('formats last_seen summary', () => {
+  it('formats fixed_ttl summary', () => {
+    assert.equal(
+      formatExpirationSummary({ enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 30 }),
+      '30d fixed'
+    );
+  });
+
+  it('formats legacy last_seen_ttl as fixed', () => {
     assert.equal(
       formatExpirationSummary({ enabled: true, expiration_mode: 'last_seen_ttl', ttl_days: 30 }),
-      '30d last_seen'
+      '30d fixed'
     );
   });
 });
@@ -106,16 +183,16 @@ describe('source mapping', () => {
 describe('computeMatchReactivationExpiresAt', () => {
   const now = new Date('2026-06-14T12:00:00Z');
 
-  it('returns now + ttl_days for last_seen_ttl', () => {
+  it('returns now + ttl_days for fixed_ttl', () => {
     const at = computeMatchReactivationExpiresAt(
-      { enabled: true, expiration_mode: 'last_seen_ttl', ttl_days: 30 },
+      { enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 30 },
       now
     );
     assert.equal(at.toISOString(), '2026-07-14T12:00:00.000Z');
   });
 
   it('returns null when policy disabled', () => {
-    assert.equal(computeMatchReactivationExpiresAt({ enabled: false, expiration_mode: 'last_seen_ttl', ttl_days: 30 }, now), null);
+    assert.equal(computeMatchReactivationExpiresAt({ enabled: false, expiration_mode: 'fixed_ttl', ttl_days: 30 }, now), null);
   });
 });
 
