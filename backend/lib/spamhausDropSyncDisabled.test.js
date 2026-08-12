@@ -27,3 +27,30 @@ test('runSpamhausDropSync skips cleanly when provider is disabled (no external f
 
   assert.equal(fetchCalled, false, 'no external fetch for a disabled provider');
 });
+
+test('runSpamhausDropSync does not record per-IOC Enrichment Usage', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql) {
+      calls.push(String(sql));
+      if (String(sql).includes('threat_intel_provider_configs')) {
+        return { rows: [{ enabled: true, timeout_ms: 1000, config: { sync_interval_hours: 24 } }] };
+      }
+      return { rows: [] };
+    }
+  };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('network down'); };
+  try {
+    await runSpamhausDropSync(pool, { triggeredBy: 'scheduler' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(
+    calls.some((s) => /enrichment_usage_daily/i.test(s)),
+    false,
+    'dataset sync/import must not increment per-IOC usage telemetry'
+  );
+});

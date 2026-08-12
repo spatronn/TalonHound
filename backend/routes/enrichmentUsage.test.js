@@ -168,3 +168,35 @@ test('GET is served without any role gate (readonly-compatible; RBAC is the glob
     assert.equal(res.status, 200);
   });
 });
+
+test('Spamhaus DROP local-lookup counters surface with no external latency', async () => {
+  const spamRow = {
+    provider_key: 'spamhaus_drop',
+    request_count: '2', external_call_count: '0', cache_hit_count: '0',
+    success_count: '2', failure_count: '0', rate_limit_count: '0',
+    total_external_response_time_ms: '0', external_response_count: '0'
+  };
+  const pool = createPool({ providerRows: [VT_ROW, spamRow] });
+  await withServer(pool, async (base) => {
+    const res = await fetch(`${base}/api/enrichment-usage?provider=spamhaus_drop`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.filters.provider, 'spamhaus_drop');
+    assert.equal(body.summary.request_count, 2);
+    assert.equal(body.summary.external_call_count, 0);
+    assert.equal(body.summary.cache_hit_count, 0);
+    assert.equal(body.summary.success_count, 2);
+    assert.equal(body.summary.failure_count, 0);
+    assert.equal(body.summary.rate_limit_count, 0);
+    assert.equal(body.summary.avg_external_response_time_ms, null);
+    assert.equal(body.providers.length, 1);
+    const spam = body.providers[0];
+    assert.equal(spam.provider_key, 'spamhaus_drop');
+    assert.equal(spam.display_name, 'Spamhaus DROP');
+    assert.equal(spam.request_count, 2);
+    assert.equal(spam.external_call_count, 0);
+    assert.equal(spam.cache_hit_count, 0);
+    assert.equal(spam.success_count, 2);
+    assert.equal(spam.avg_external_response_time_ms, null);
+  });
+});

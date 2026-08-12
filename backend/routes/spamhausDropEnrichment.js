@@ -17,6 +17,24 @@ import {
 } from '../services/spamhausDropEnrichmentService.js';
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
+import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
+
+/**
+ * One logical Enrichment Usage event for a user-triggered Spamhaus DROP lookup.
+ * Local dataset membership is not an external call and not a cache hit; listed and
+ * not_listed are both success. Callers must not invoke this for disabled /
+ * not_applicable / dataset_not_synced / invalid-input rejections.
+ */
+function recordSpamhausLookupUsage(pool, iocType, outcome) {
+  recordEnrichmentUsage(pool, {
+    provider: SPAMHAUS_DROP_PROVIDER,
+    iocType,
+    outcome,
+    external: false,
+    cacheHit: false,
+    rateLimited: false
+  });
+}
 
 export function extractIpFromIoc(iocValue, iocType) {
   const type = String(iocType || '').trim().toLowerCase();
@@ -122,6 +140,7 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
           iocType,
           response: failResp
         }).catch(() => {});
+        recordSpamhausLookupUsage(pool, iocType, 'failure');
         throw err;
       }
 
@@ -157,6 +176,11 @@ export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options =
       }).catch(() => {});
 
       const resp = buildSpamhausLookupResponse({ lookup, syncState, config, targetIp });
+      // listed and not_listed are both a completed lookup. disabled / dataset_not_synced
+      // are preconditions, not usage events (and GET hydrate never records).
+      if (resp.status === 'listed' || resp.status === 'not_listed') {
+        recordSpamhausLookupUsage(pool, iocType, 'success');
+      }
       await persistSpamhausLookupResult(pool, {
         targetIp,
         iocValue,

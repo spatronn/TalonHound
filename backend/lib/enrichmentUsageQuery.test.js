@@ -123,6 +123,16 @@ test('deriveMetrics computes rates and avg latency defensively', () => {
   assert.equal(zero.cache_hit_rate, null);
   assert.equal(zero.success_rate, null);
   assert.equal(zero.avg_external_response_time_ms, null);
+
+  const localLookup = deriveMetrics({
+    request_count: 2, external_call_count: 0, cache_hit_count: 0,
+    success_count: 2, failure_count: 0, rate_limit_count: 0,
+    total_external_response_time_ms: 0, external_response_count: 0
+  });
+  assert.equal(localLookup.request_count, 2);
+  assert.equal(localLookup.success_count, 2);
+  assert.equal(localLookup.cache_hit_rate, 0);
+  assert.equal(localLookup.avg_external_response_time_ms, null);
 });
 
 test('summarizeProviderRows sums across providers', () => {
