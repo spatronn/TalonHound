@@ -697,3 +697,15 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* "View usage" drill-down link inside an expanded provider card. */
+.eu-viewusage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #93c5fd;
+  font-size: 12.5px;
+  text-decoration: none;
+  margin-bottom: 12px;
+}
+.eu-viewusage:hover { text-decoration: underline; }

@@ -126,6 +126,7 @@ import {
   resolveSourceBadgeStyle
 } from './lib/sourceBadge.js';
 import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.jsx';
+import EnrichmentUsagePageView from './components/EnrichmentUsagePage.jsx';
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import InitialSetupPage from './components/InitialSetupPage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
@@ -2047,6 +2048,7 @@ function AppShell({ children }) {
             {isAdmin ? <Link to="/administration/threat-classifications" className={navLinkClass(isActive('/administration/threat-classifications'))}>{NavIcons.classifications}<span>Threat Classifications</span></Link> : null}
             <Link to="/administration/tags" className={navLinkClass(isActive('/administration/tags'))}>{NavIcons.tags}<span>Tags</span></Link>
             <Link to="/administration/enrichment-providers" className={navLinkClass(isActive('/administration/enrichment-providers'))}>{NavIcons.enrichmentProviders}<span>Enrichment Providers</span></Link>
+            <Link to="/administration/enrichment-usage" className={navLinkClass(isActive('/administration/enrichment-usage'))}>{NavIcons.enrichmentUsage}<span>Enrichment Usage</span></Link>
           </div>
 
           <div className="sidebar-nav-section">
@@ -9173,6 +9175,15 @@ function EnrichmentProvidersPage() {
 function BackupRestorePage() {
   return (
     <BackupRestorePageView
+      AppShell={AppShell}
+      useSession={useSession}
+    />
+  );
+}
+
+function EnrichmentUsagePage() {
+  return (
+    <EnrichmentUsagePageView
       AppShell={AppShell}
       useSession={useSession}
     />
@@ -17262,6 +17273,7 @@ function App() {
           <Route path="/administration/ioc-sources" element={<Protected><IocSourcesPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
+          <Route path="/administration/enrichment-usage" element={<Protected><EnrichmentUsagePage /></Protected>} />
           <Route path="/administration/backup-restore" element={<Protected><BackupRestorePage /></Protected>} />
           <Route path="/administration/users" element={<Protected><UsersPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationSettingsPage /></Protected>} />

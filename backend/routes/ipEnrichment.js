@@ -17,6 +17,12 @@ import {
 import { parseActionReason } from '../lib/reasonValidation.js';
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
+import {
+  recordEnrichmentUsage,
+  writeEnrichmentUsage,
+  buildUsageDelta,
+  sumUsageDeltas
+} from '../lib/enrichmentUsageTelemetry.js';
 
 const IPINFO_PROVIDER = 'ipinfo_lite';
 
@@ -158,6 +164,22 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
 
       const results = await enrichIpsWithIpinfoLite(pool, requestedIps, { force });
       const summary = bulkSummary(results);
+
+      // Usage telemetry: fold the bulk outcome into one atomic upsert. invalid_ip is
+      // never a provider request; cached => cache hit; enriched/not_found => successful
+      // external calls; provider_error => failed external calls. Per-item latency is
+      // not available for the bulk path, so no provider-latency is recorded here.
+      writeEnrichmentUsage(pool, {
+        provider: IPINFO_PROVIDER,
+        iocType: 'ip',
+        delta: sumUsageDeltas([
+          buildUsageDelta({ outcome: 'success', cacheHit: true, count: summary.cached }),
+          buildUsageDelta({ outcome: 'success', external: true, count: summary.enriched }),
+          buildUsageDelta({ outcome: 'success', external: true, count: summary.not_found }),
+          buildUsageDelta({ outcome: 'failure', external: true, count: summary.provider_error })
+        ])
+      });
+
       const attempted = results.some((item) => item.state !== 'cached' && item.state !== 'invalid_ip');
       if (!attempted) {
         return res.json({ provider: IPINFO_PROVIDER, results, summary });
@@ -263,6 +285,8 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
       if (!force) {
         const existing = await getEnrichmentByIp(pool, publicIp);
         if (existing?.provider_status === 'success') {
+          // Served from cache — a logical request with no external provider call.
+          recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'success', cacheHit: true });
           return res.json(rowToApiPayload(existing, { enriched: true, cached: true }));
         }
       }
@@ -307,13 +331,24 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         metadata: requestedScope.metadata
       }).catch(() => {});
 
+      const ipStartedAt = Date.now();
       const result = await enrichIpWithIpinfoLite(pool, publicIp, { force });
+      const ipExternal = result.cached !== true;
       const payload = rowToApiPayload(result.row, {
         enriched: result.row?.provider_status === 'success',
         cached: result.cached
       });
 
       if (result.row?.provider_status === 'success' && !result.error) {
+        // success — external call unless the service short-circuited to cache.
+        recordEnrichmentUsage(pool, {
+          provider: IPINFO_PROVIDER,
+          iocType: 'ip',
+          outcome: 'success',
+          external: ipExternal,
+          cacheHit: !ipExternal,
+          responseTimeMs: ipExternal ? Date.now() - ipStartedAt : null
+        });
         const completedScope = buildEnrichmentAuditScope({
           subject,
           subjectIocValue: subject?.observable || req.body?.value || publicIp,
@@ -379,6 +414,18 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         metadata: failedScope.metadata
       }).catch(() => {});
 
+      // 'unavailable' is a completed lookup with no dataset match (not an error);
+      // anything else here is a failed external attempt.
+      const ipUnavailable = result.row?.provider_status === 'unavailable';
+      recordEnrichmentUsage(pool, {
+        provider: IPINFO_PROVIDER,
+        iocType: 'ip',
+        outcome: ipUnavailable ? 'success' : 'failure',
+        external: ipExternal,
+        cacheHit: !ipExternal,
+        responseTimeMs: ipExternal ? Date.now() - ipStartedAt : null
+      });
+
       return res.status(result.row?.provider_status === 'unavailable' ? 404 : 502).json({
         ...payload,
         state: result.state || 'provider_error',
@@ -392,15 +439,18 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
         return res.status(409).json({ error: err.message, message: err.message });
       }
       if (err?.code === 'auth') {
+        recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
         return res.status(401).json({ error: err.message, message: err.message });
       }
       if (err?.code === 'rate_limit') {
+        recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true, rateLimited: true });
         return res.status(429).json({
           error: err.message,
           message: err.message,
           retry_after: err.retryAfter || null
         });
       }
+      recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
       const subject = await resolveSubjectIocFromRequest(pool, req).catch(() => null);
       const failedScope = buildEnrichmentAuditScope({
         subject,

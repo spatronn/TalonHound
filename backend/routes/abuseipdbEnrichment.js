@@ -15,6 +15,7 @@ import {
 } from '../services/abuseipdbService.js';
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
+import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
 
 function decodeRouteIp(raw) {
   try {
@@ -118,7 +119,9 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
       // Central disable guard: no external call for a disabled provider.
       if (!(await guardProviderEnabled(pool, ABUSEIPDB_PROVIDER, res))) return;
 
+      const abuseStartedAt = Date.now();
       const result = await enrichIpWithAbuseIpdb(pool, publicIp, { force });
+      const abuseExternal = result.cached !== true && !result.skipped;
 
       if (result.skipped && result.provider_status === 'not_configured') {
         return res.status(409).json({
@@ -178,8 +181,25 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
       });
 
       if (result.provider_status === 'success') {
+        recordEnrichmentUsage(pool, {
+          provider: ABUSEIPDB_PROVIDER,
+          iocType: 'ip',
+          outcome: 'success',
+          external: abuseExternal,
+          cacheHit: !abuseExternal,
+          responseTimeMs: abuseExternal ? Date.now() - abuseStartedAt : null
+        });
         return res.json(payload);
       }
+
+      recordEnrichmentUsage(pool, {
+        provider: ABUSEIPDB_PROVIDER,
+        iocType: 'ip',
+        outcome: 'failure',
+        external: abuseExternal,
+        rateLimited: result.provider_status === 'rate_limited',
+        responseTimeMs: abuseExternal ? Date.now() - abuseStartedAt : null
+      });
 
       const httpStatus = result.provider_status === 'rate_limited' ? 429
         : (result.provider_status === 'auth_error' ? 401 : 502);
@@ -195,9 +215,11 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
         return res.status(400).json({ error: err.message, message: err.message, provider_status: 'invalid_ip' });
       }
       if (err?.code === 'auth') {
+        recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
         return res.status(401).json({ error: err.message, message: err.message, provider_status: 'auth_error' });
       }
       if (err?.code === 'rate_limit') {
+        recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true, rateLimited: true });
         return res.status(429).json({
           error: err.message,
           message: err.message,
@@ -205,6 +227,7 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
           retry_after: err.retryAfter || null
         });
       }
+      recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
       return res.status(500).json({ error: 'AbuseIPDB enrichment failed', message: 'AbuseIPDB enrichment failed' });
     }
   });

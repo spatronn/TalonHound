@@ -58,6 +58,8 @@ import { registerDnsmaniaEnrichmentRoutes } from './routes/dnsmaniaEnrichment.js
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
 import { registerSpamhausDropEnrichmentRoutes } from './routes/spamhausDropEnrichment.js';
+import { registerEnrichmentUsageRoutes } from './routes/enrichmentUsage.js';
+import { recordEnrichmentUsage } from './lib/enrichmentUsageTelemetry.js';
 import {
   registerAnalystIntelligenceRoutes,
   enrichItemsWithAnalystIntelligenceCounts,
@@ -2714,6 +2716,8 @@ registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
 registerSpamhausDropEnrichmentRoutes(app, pool, auditLogService, { importQueue });
+registerEnrichmentUsageRoutes(app, pool);
+registerRouteModule('enrichment_usage');
 registerAnalystIntelligenceRoutes(app, pool, auditLogService);
 registerRouteModule('analyst_intelligence');
 registerRouteModule('ip_enrichment');
@@ -5948,6 +5952,9 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
 
   let item = null;
   let iocType = null;
+  // Usage telemetry timing (hoisted so the catch block can read them).
+  let vtStartedAt = 0;
+  let vtExternalAttempted = false;
 
   try {
     // Central disable guard: no external call for a disabled provider.
@@ -5985,14 +5992,20 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     else if (iocType === 'hash' || iocType === 'sha256' || iocType === 'sha1' || iocType === 'md5') endpoint = `/files/${encodeURIComponent(item.ioc_value)}`;
     else return res.status(400).json({ message: 'IOC type not supported for VirusTotal enrichment' });
 
+    // Usage telemetry: VT refresh always performs a real outbound provider call
+    // (there is no cache short-circuit here). Time it for provider-latency metrics.
+    vtStartedAt = Date.now();
+
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), providerCfg.timeout_ms || VT_TIMEOUT_MS);
     let vtRes;
     try {
+      vtExternalAttempted = true;
       vtRes = await fetch(`https://www.virustotal.com/api/v3${endpoint}`, { headers: { 'x-apikey': vtKey }, signal: ctrl.signal });
     } finally { clearTimeout(t); }
 
     if (vtRes.status === 429) {
+      recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, rateLimited: true, responseTimeMs: Date.now() - vtStartedAt });
       const msg = vtHttpErrorMessage(429);
       await auditLogService.auditFailure({
         req,
@@ -6006,6 +6019,8 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       return res.status(429).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
     }
     if (isVtResourceNotFound(vtRes.status)) {
+      // A 404 is a completed lookup ("no report yet"), not a failure.
+      recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'success', external: true, responseTimeMs: Date.now() - vtStartedAt });
       const fetchedAt = new Date();
       const expiresAt = new Date(fetchedAt.getTime() + (providerCfg.ttl_hours || VT_TTL_HOURS) * 3600 * 1000);
       const payload = buildVtNotIndexedResponse({
@@ -6045,6 +6060,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       return res.json(payload);
     }
     if (vtRes.status === 401 || vtRes.status === 403) {
+      recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, responseTimeMs: Date.now() - vtStartedAt });
       const msg = vtHttpErrorMessage(vtRes.status);
       await auditLogService.auditFailure({
         req,
@@ -6058,6 +6074,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       return res.status(502).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
     }
     if (!vtRes.ok) {
+      recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, responseTimeMs: Date.now() - vtStartedAt });
       const msg = vtHttpErrorMessage(vtRes.status);
       await auditLogService.auditFailure({
         req,
@@ -6127,8 +6144,14 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       }
     }).catch(() => {});
 
+    recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'success', external: true, responseTimeMs: Date.now() - vtStartedAt });
     return res.json({ status: 'success', provider: VT_PROVIDER, is_error: false, summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
   } catch (err) {
+    // Telemetry: only count a provider consumption when the outbound call was actually
+    // attempted (timeouts/network errors); pre-fetch failures are not provider calls.
+    if (vtExternalAttempted) {
+      recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, responseTimeMs: Date.now() - vtStartedAt });
+    }
     const msg = String(err?.name) === 'AbortError' ? 'VirusTotal enrichment timed out' : 'VirusTotal enrichment failed';
     if (item?.ioc_value) {
       await auditLogService.auditFailure({

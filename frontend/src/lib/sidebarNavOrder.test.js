@@ -63,7 +63,8 @@ const EXPECTED_ITEMS = {
     'Threat Actors',
     'Threat Classifications',
     'Tags',
-    'Enrichment Providers'
+    'Enrichment Providers',
+    'Enrichment Usage'
   ],
   Administration: ['Users', 'API Keys', 'Audit Logs'],
   System: ['Settings', 'Job Queue Status', 'Backup & Restore']
@@ -82,6 +83,7 @@ const EXPECTED_ROUTES = {
   'Threat Classifications': '/administration/threat-classifications',
   Tags: '/administration/tags',
   'Enrichment Providers': '/administration/enrichment-providers',
+  'Enrichment Usage': '/administration/enrichment-usage',
   Users: '/administration/users',
   'API Keys': '/administration/api-keys',
   'Audit Logs': '/administration/audit-logs',
@@ -102,6 +104,14 @@ test('sidebar items match target IA order per section', () => {
       `section "${section}" item order`
     );
   }
+});
+
+test('Enrichment Usage appears immediately below Enrichment Providers', () => {
+  const ti = labelsInSection(navSrc, 'Threat Intelligence');
+  const providersIdx = ti.indexOf('Enrichment Providers');
+  const usageIdx = ti.indexOf('Enrichment Usage');
+  assert.ok(providersIdx >= 0, 'Enrichment Providers present');
+  assert.equal(usageIdx, providersIdx + 1, 'Enrichment Usage must directly follow Enrichment Providers');
 });
 
 test('sidebar links keep prior routes', () => {

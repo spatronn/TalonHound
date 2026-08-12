@@ -9,6 +9,7 @@ import {
   rowToApiPayload
 } from '../services/dnsmaniaEnrichmentService.js';
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
 
 function decodeRouteValue(raw) {
   try {
@@ -197,6 +198,7 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
         metadata: requestedScope.metadata
       })?.catch?.(() => {});
 
+      const dnsStartedAt = Date.now();
       const result = await enrichIocWithDnsmania(pool, parsed, { config: cfg });
       const row = result.row;
       const payload = rowToApiPayload(row, {
@@ -237,6 +239,15 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
           severity: AUDIT_SEVERITY.INFO,
           metadata: completedScope.metadata
         })?.catch?.(() => {});
+        // DNSMania refresh always performs a fresh passive-DNS lookup (no cache
+        // short-circuit); completed/no_data are successful external calls.
+        recordEnrichmentUsage(pool, {
+          provider: DNSMANIA_PROVIDER,
+          iocType: parsed.ioc_type,
+          outcome: 'success',
+          external: true,
+          responseTimeMs: Date.now() - dnsStartedAt
+        });
         return res.json(payload);
       }
 
@@ -273,6 +284,13 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
         metadata: failedScope.metadata
       })?.catch?.(() => {});
 
+      recordEnrichmentUsage(pool, {
+        provider: DNSMANIA_PROVIDER,
+        iocType: parsed.ioc_type,
+        outcome: 'failure',
+        external: true,
+        responseTimeMs: Date.now() - dnsStartedAt
+      });
       const statusCode = row.error_code === 'timeout' ? 504 : 502;
       return res.status(statusCode).json({
         ...payload,
@@ -281,6 +299,7 @@ export function registerDnsmaniaEnrichmentRoutes(app, pool, audit) {
       });
     } catch (err) {
       console.error('[dnsmania-enrichment] POST refresh failed', err?.message || err);
+      recordEnrichmentUsage(pool, { provider: DNSMANIA_PROVIDER, iocType: 'domain', outcome: 'failure', external: true });
       return res.status(500).json({
         error: 'DNSMania enrichment failed',
         message: 'DNSMania enrichment failed',

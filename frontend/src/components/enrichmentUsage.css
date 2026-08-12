@@ -1,0 +1,211 @@
+/* Enrichment Usage page. Reuses the Enrichment Providers theme tokens
+   (#0f172a surfaces, #334155 borders, #94a3b8 muted, #f8fafc text). */
+
+.eu-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.eu-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.eu-filter-label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.eu-segment {
+  display: inline-flex;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.eu-segment button {
+  background: #0f172a;
+  color: #cbd5e1;
+  border: none;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border-right: 1px solid #334155;
+}
+
+.eu-segment button:last-child { border-right: none; }
+.eu-segment button.is-active { background: #1e293b; color: #f8fafc; font-weight: 600; }
+.eu-segment button:hover:not(.is-active) { background: #16233b; }
+
+.eu-select,
+.eu-date {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  min-width: 140px;
+}
+
+.eu-date { min-width: 0; }
+
+.eu-refresh {
+  margin-left: auto;
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.eu-refresh:hover { background: #24314c; }
+
+/* Summary cards — responsive 3x2 (down to 2, then 1). */
+.eu-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.eu-cards--secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.eu-card {
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  padding: 12px 14px;
+  min-width: 0;
+}
+.eu-card--accent { border-color: #b45309; }
+.eu-card--ok { border-color: #166534; }
+.eu-card--warn { border-color: #92400e; }
+
+.eu-card-label { color: #94a3b8; font-size: 12px; font-weight: 500; }
+.eu-card-value { color: #f8fafc; font-size: 22px; font-weight: 700; line-height: 1.1; margin-top: 6px; }
+.eu-card--accent .eu-card-value { color: #fbbf24; }
+.eu-card-hint { color: #64748b; font-size: 10.5px; margin-top: 4px; }
+.eu-card--secondary .eu-card-value { font-size: 18px; }
+
+/* Section chrome */
+.eu-section {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: #0f172a;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.eu-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.eu-section-title { color: #f1f5f9; font-size: 14px; font-weight: 600; }
+
+/* Chart */
+.eu-legend { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+.eu-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: 0.55;
+}
+.eu-legend button.is-on { opacity: 1; }
+.eu-legend .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.eu-chart-wrap { width: 100%; overflow-x: auto; }
+.eu-chart { display: block; width: 100%; height: auto; }
+.eu-axis text { fill: #64748b; font-size: 10px; }
+.eu-grid line { stroke: #1e293b; stroke-width: 1; }
+.eu-state { color: #94a3b8; font-size: 13px; padding: 28px 8px; text-align: center; }
+.eu-state--error { color: #fca5a5; }
+
+/* Table */
+.eu-table-wrap { width: 100%; overflow-x: auto; }
+.eu-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+.eu-table th {
+  text-align: right;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 8px 10px;
+  border-bottom: 1px solid #334155;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.eu-table th:first-child { text-align: left; }
+.eu-table th.is-sorted { color: #e2e8f0; }
+.eu-table td { padding: 9px 10px; text-align: right; color: #e2e8f0; border-bottom: 1px solid #1e293b; white-space: nowrap; }
+.eu-table td:first-child { text-align: left; }
+.eu-table tbody tr { cursor: pointer; }
+.eu-table tbody tr:hover { background: #131f36; }
+.eu-table tbody tr.is-selected { background: #16233b; }
+.eu-prov { display: inline-flex; align-items: center; gap: 8px; }
+.eu-prov-name { color: #f1f5f9; font-weight: 600; }
+.eu-muted { color: #64748b; }
+.eu-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #334155;
+  color: #94a3b8;
+}
+.eu-chip--disabled { border-color: #7f1d1d; color: #fca5a5; }
+.eu-chip--unknown { border-color: #78350f; color: #fbbf24; }
+
+/* Quota */
+.eu-quota-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.eu-quota { border: 1px solid #334155; border-radius: 10px; padding: 10px 12px; background: #0b1526; }
+.eu-quota-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.eu-quota-name { color: #f1f5f9; font-weight: 600; font-size: 13px; }
+.eu-quota-val { color: #cbd5e1; font-size: 12px; }
+.eu-quota-bar { height: 8px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+.eu-quota-bar > span { display: block; height: 100%; background: #38bdf8; }
+.eu-quota-bar > span.is-high { background: #f59e0b; }
+.eu-quota-bar > span.is-crit { background: #ef4444; }
+.eu-quota-unavailable { color: #64748b; font-size: 12px; }
+
+/* IOC type bars */
+.eu-type-row { display: grid; grid-template-columns: 64px 1fr 120px; align-items: center; gap: 10px; padding: 5px 0; }
+.eu-type-label { color: #cbd5e1; font-size: 12px; text-transform: uppercase; }
+.eu-type-track { height: 10px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+.eu-type-track > span { display: block; height: 100%; background: #34d399; }
+.eu-type-val { color: #94a3b8; font-size: 12px; text-align: right; }
+
+.eu-viewusage {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #93c5fd;
+  font-size: 12.5px;
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+.eu-viewusage:hover { text-decoration: underline; }
+
+@media (max-width: 900px) {
+  .eu-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .eu-cards, .eu-cards--secondary { grid-template-columns: 1fr; }
+}

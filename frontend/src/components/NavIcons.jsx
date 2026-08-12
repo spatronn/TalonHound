@@ -155,6 +155,14 @@ export const NavIcons = {
       <path d="M18 16h4" />
     </Icon>
   ),
+  enrichmentUsage: (
+    <Icon>
+      <path d="M3 3v18h18" />
+      <rect x="7" y="12" width="3" height="5" />
+      <rect x="12" y="8" width="3" height="9" />
+      <rect x="17" y="4" width="3" height="13" />
+    </Icon>
+  ),
   backupRestore: (
     <Icon>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />

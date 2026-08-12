@@ -7,6 +7,9 @@ import {
   refreshRdapEnrichment,
   rowToApiPayload
 } from '../services/rdapEnrichmentService.js';
+import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
+
+const RDAP_PROVIDER = 'rdap';
 
 function decodeRouteValue(raw) {
   try {
@@ -112,7 +115,9 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
     metadata: auditScope.metadata
   }).catch(() => {});
 
+  const rdapStartedAt = Date.now();
   const result = await refreshRdapEnrichment(pool, parsed, { force });
+  const rdapExternal = result.cached !== true;
   const row = result.row;
   const extra = targetFields(parsed);
   const payload = rowToApiPayload(row, {
@@ -165,6 +170,14 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
       severity: AUDIT_SEVERITY.INFO,
       metadata: completedScope.metadata
     }).catch(() => {});
+    recordEnrichmentUsage(pool, {
+      provider: RDAP_PROVIDER,
+      iocType: parsed.ioc_type,
+      outcome: 'success',
+      external: rdapExternal,
+      cacheHit: !rdapExternal,
+      responseTimeMs: rdapExternal ? Date.now() - rdapStartedAt : null
+    });
     return { status: 200, body: payload };
   }
 
@@ -199,6 +212,14 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
     metadata: failedScope.metadata
   }).catch(() => {});
 
+  recordEnrichmentUsage(pool, {
+    provider: RDAP_PROVIDER,
+    iocType: parsed.ioc_type,
+    outcome: 'failure',
+    external: rdapExternal,
+    cacheHit: !rdapExternal,
+    responseTimeMs: rdapExternal ? Date.now() - rdapStartedAt : null
+  });
   return {
     status: 502,
     body: {
@@ -270,6 +291,7 @@ export function registerRdapEnrichmentRoutes(app, pool, audit) {
     } catch (err) {
       console.error('[rdap-enrichment] POST refresh failed', err?.message || err);
       if (err?.code === 'rate_limit') {
+        recordEnrichmentUsage(pool, { provider: RDAP_PROVIDER, iocType: parsed?.ioc_type, outcome: 'failure', external: true, rateLimited: true });
         return res.status(429).json({
           error: err.message || 'RDAP rate limit reached',
           message: err.message || 'RDAP rate limit reached',
@@ -338,6 +360,7 @@ export function registerRdapEnrichmentRoutes(app, pool, audit) {
     } catch (err) {
       console.error('[rdap-enrichment] POST legacy failed', err?.message || err);
       if (err?.code === 'rate_limit') {
+        recordEnrichmentUsage(pool, { provider: RDAP_PROVIDER, iocType: parsed?.ioc_type, outcome: 'failure', external: true, rateLimited: true });
         return res.status(429).json({
           error: err.message || 'RDAP rate limit reached',
           message: err.message || 'RDAP rate limit reached',
