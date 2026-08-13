@@ -33,6 +33,7 @@ import {
   resolvePublishedFeedFormat,
   feedHasJsonFormat,
   feedHasStixFormat,
+  canonicalPublishedFeedArtifactFormat,
   isJsonFormatFeed,
   resolveFormatsInput,
   resolveRequestedFeedFormat
@@ -47,6 +48,7 @@ export {
   resolvePublishedFeedFormat,
   feedHasJsonFormat,
   feedHasStixFormat,
+  canonicalPublishedFeedArtifactFormat,
   isJsonFormatFeed,
   resolveFormatsInput,
   resolveRequestedFeedFormat
@@ -1030,11 +1032,11 @@ export async function persistPublishedFeedSnapshot(pool, snapshot) {
     || ''
   );
   const window = String(paramsJson.window || '');
-  const artifactFormat = String(
+  const artifactFormat = canonicalPublishedFeedArtifactFormat(
     snapshot.artifactFormat
     || paramsJson.output_format
     || 'txt'
-  ).toLowerCase() === 'json' ? 'json' : 'txt';
+  );
   const status = String(snapshot.status || 'success');
   const paramsText = JSON.stringify({ ...paramsJson, output_format: artifactFormat });
 
@@ -1150,11 +1152,11 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
   const paramsJson = snapshot.paramsJson || {};
   const iocTypeKey = String(paramsJson.ioc_type || feedIocTypesKey(paramsJson.ioc_types) || '');
   const window = String(paramsJson.window || '');
-  const artifactFormat = String(
+  const artifactFormat = canonicalPublishedFeedArtifactFormat(
     snapshot.artifactFormat
     || paramsJson.output_format
     || 'txt'
-  ).toLowerCase() === 'json' ? 'json' : 'txt';
+  );
   const paramsText = JSON.stringify({ ...paramsJson, output_format: artifactFormat });
 
   return withTransaction(pool, async (client) => {
@@ -1240,11 +1242,11 @@ export async function persistPublishedFeedArtifactSnapshots(pool, snapshots) {
 
     const results = [];
     for (const snapshot of snapshots) {
-      const artifactFormat = String(
+      const artifactFormat = canonicalPublishedFeedArtifactFormat(
         snapshot.artifactFormat
         || snapshot.paramsJson?.output_format
         || 'txt'
-      ).toLowerCase() === 'json' ? 'json' : 'txt';
+      );
       const snapParams = {
         ...(snapshot.paramsJson || paramsJson),
         output_format: artifactFormat
@@ -1957,7 +1959,7 @@ export async function regenerateAllEnabledFeeds(pool, options = {}) {
  */
 export async function getLatestSnapshotMeta(db, feedId, iocTypeKey, window, format) {
   const fmt = format != null && String(format).trim() !== ''
-    ? (String(format).trim().toLowerCase() === 'json' ? 'json' : 'txt')
+    ? canonicalPublishedFeedArtifactFormat(format)
     : null;
   if (fmt) {
     const { rows } = await db.query(

@@ -84,6 +84,26 @@ describe('persistPublishedFeedSnapshot', () => {
     assert.equal(calls.at(-1).sql, 'RELEASE');
   });
 
+  it('persists STIX snapshots as artifact_format stix, not txt', async () => {
+    const { pool, calls } = createMockPool([
+      { match: (sql) => sql.includes('pg_advisory_xact_lock'), result: () => ({ rows: [] }) },
+      {
+        match: (sql) => sql.includes('FOR UPDATE') && sql.includes("status = 'success'"),
+        result: () => ({ rows: [] })
+      },
+      { match: (sql) => sql.includes('INSERT INTO published_feed_snapshots'), result: () => ({ rows: [] }) }
+    ]);
+
+    await persistPublishedFeedSnapshot(pool, {
+      ...baseSnapshot,
+      artifactFormat: 'stix',
+      content: '{"type":"bundle"}'
+    });
+    const insert = calls.find((c) => c.sql.startsWith('INSERT INTO published_feed_snapshots'));
+    assert.equal(insert.params.at(-1), 'stix');
+    assert.match(String(insert.params[4]), /"output_format":"stix"/);
+  });
+
   it('refreshes params when content hash is unchanged', async () => {
     const { pool, calls } = createMockPool([
       { match: (sql) => sql.includes('pg_advisory_xact_lock'), result: () => ({ rows: [] }) },

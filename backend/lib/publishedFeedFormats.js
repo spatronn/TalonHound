@@ -71,6 +71,12 @@ export function feedHasStixFormat(feed) {
   return resolvePublishedFeedFormats(feed).includes(FEED_OUTPUT_FORMATS.STIX);
 }
 
+/** Canonical snapshot/artifact format token. Unknown values fall back to txt. */
+export function canonicalPublishedFeedArtifactFormat(format) {
+  const f = String(format || '').trim().toLowerCase();
+  return ALLOWED.has(f) ? f : FEED_OUTPUT_FORMATS.TXT;
+}
+
 /**
  * Primary format for Content-Type default / legacy single-format APIs:
  * prefer txt when both enabled; otherwise the sole format.

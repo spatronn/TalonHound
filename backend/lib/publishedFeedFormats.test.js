@@ -5,7 +5,8 @@ import {
   resolvePublishedFeedFormats,
   resolvePublishedFeedFormat,
   resolveRequestedFeedFormat,
-  resolveFormatsInput
+  resolveFormatsInput,
+  canonicalPublishedFeedArtifactFormat
 } from './publishedFeedFormats.js';
 import { filtersHash as serviceFiltersHash, normalizeFeedConfig } from './feedPublisherService.js';
 
@@ -76,6 +77,16 @@ describe('resolveFormatsInput', () => {
 
   it('rejects unknown legacy format', () => {
     assert.equal(resolveFormatsInput({ output_format: 'xml' }).ok, false);
+  });
+});
+
+describe('canonicalPublishedFeedArtifactFormat', () => {
+  it('preserves txt, json, and stix; unknown falls back to txt', () => {
+    assert.equal(canonicalPublishedFeedArtifactFormat('stix'), 'stix');
+    assert.equal(canonicalPublishedFeedArtifactFormat('JSON'), 'json');
+    assert.equal(canonicalPublishedFeedArtifactFormat('txt'), 'txt');
+    assert.equal(canonicalPublishedFeedArtifactFormat('xml'), 'txt');
+    assert.equal(canonicalPublishedFeedArtifactFormat(null), 'txt');
   });
 });
 
