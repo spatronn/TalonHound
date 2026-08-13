@@ -33,6 +33,8 @@ describe('publishedFeedArtifact store — path safety', () => {
     assert.ok(p.endsWith('.json'));
     assert.equal(toRelativeStoragePath(7, gen, 'json'), `7/${gen}.json`);
     assert.equal(toRelativeStoragePath(7, gen, 'txt'), `7/${gen}.txt`);
+    assert.ok(resolveArtifactPath(dir, 7, gen, 'stix').endsWith('.stix'));
+    assert.equal(toRelativeStoragePath(7, gen, 'stix'), `7/${gen}.stix`);
   });
 });
 

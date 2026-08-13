@@ -14,12 +14,13 @@ describe('normalizeFeedFormats', () => {
     assert.deepEqual(normalizeFeedFormats(null).value, ['txt']);
   });
 
-  it('canonicalizes order and dedupes', () => {
+  it('canonicalizes order and dedupes including stix', () => {
     assert.deepEqual(normalizeFeedFormats(['json', 'txt', 'txt']).value, ['txt', 'json']);
+    assert.deepEqual(normalizeFeedFormats(['stix', 'txt', 'json']).value, ['txt', 'json', 'stix']);
   });
 
-  it('rejects empty and unknown', () => {
-    assert.equal(normalizeFeedFormats([]).ok, false);
+  it('accepts stix and rejects unknown', () => {
+    assert.deepEqual(normalizeFeedFormats(['stix']).value, ['stix']);
     assert.equal(normalizeFeedFormats(['xml']).ok, false);
   });
 });
@@ -57,8 +58,12 @@ describe('resolveRequestedFeedFormat', () => {
     assert.equal(r.status, 404);
   });
 
-  it('invalid format returns 400', () => {
-    assert.equal(resolveRequestedFeedFormat(dual, 'xml').status, 400);
+  it('disabled stix returns 404; enabled stix is selectable', () => {
+    const txtOnly = { formats: ['txt'] };
+    const withStix = { formats: ['txt', 'stix'] };
+    assert.equal(resolveRequestedFeedFormat(txtOnly, 'stix').status, 404);
+    assert.equal(resolveRequestedFeedFormat(withStix, 'stix').format, 'stix');
+    assert.equal(resolveRequestedFeedFormat(withStix, undefined).format, 'txt');
   });
 });
 

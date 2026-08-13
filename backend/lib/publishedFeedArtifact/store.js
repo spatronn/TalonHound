@@ -46,12 +46,19 @@ export function resolveFeedDir(storageDir, feedId) {
   return resolved;
 }
 
+export function artifactExtension(format) {
+  const f = String(format || '').trim().toLowerCase();
+  if (f === 'json') return 'json';
+  if (f === 'stix') return 'stix';
+  return 'txt';
+}
+
 /**
  * Absolute artifact path for a (feed, generation, format). fileName is composed from a
  * server-generated generation id; a traversal guard is still applied as defence in depth.
  */
 export function resolveArtifactPath(storageDir, feedId, generationId, format) {
-  const ext = format === 'json' ? 'json' : 'txt';
+  const ext = artifactExtension(format);
   const gen = String(generationId);
   if (!/^[a-z0-9-]+$/i.test(gen)) throw new Error('Invalid generation id');
   const dir = resolveFeedDir(storageDir, feedId);
@@ -73,7 +80,7 @@ export function resolveStoredArtifactPath(storageDir, storagePath) {
 
 /** Relative storage_path persisted in the DB (portable across storageDir moves). */
 export function toRelativeStoragePath(feedId, generationId, format) {
-  const ext = format === 'json' ? 'json' : 'txt';
+  const ext = artifactExtension(format);
   return `${Number(feedId)}/${generationId}.${ext}`;
 }
 

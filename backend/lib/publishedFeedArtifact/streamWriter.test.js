@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
-import { StreamingTxtWriter, StreamingJsonBodyWriter } from './streamWriter.js';
+import { StreamingTxtWriter, StreamingJsonBodyWriter, StreamingStixBodyWriter } from './streamWriter.js';
 import { buildPlainTextFeed } from '../feedFormatter.js';
 import { JsonFeedWriter } from '../publishedFeedJson.js';
+import { StixBundleWriter, indicatorFromPublishedItem } from '../publishedFeedStix.js';
 
 function sink() {
   const s = new PassThrough();
@@ -79,5 +80,27 @@ describe('StreamingJsonBodyWriter — hash parity with JsonFeedWriter', () => {
     const parsed = JSON.parse(full);
     assert.deepEqual(parsed.items, []);
     assert.equal(res.item_count, 0);
+  });
+});
+
+describe('StreamingStixBodyWriter — hash parity with StixBundleWriter', () => {
+  const items = [
+    { type: 'ip', value: '1.2.3.4', timestamps: { imported_at: '2026-08-01T00:00:00.000Z' } },
+    { type: 'domain', value: 'evil.example', timestamps: { imported_at: '2026-08-01T00:00:00.000Z' } }
+  ];
+
+  it('logical content_hash and assembled bytes match StixBundleWriter', async () => {
+    const inMem = new StixBundleWriter({ slug: 'parity-feed' });
+    for (const it of items) inMem.addIndicator(indicatorFromPublishedItem(it));
+    const mem = inMem.finish();
+
+    const { s, text } = sink();
+    const w = new StreamingStixBodyWriter(s, { slug: 'parity-feed' });
+    for (const it of items) await w.addIndicator(indicatorFromPublishedItem(it));
+    const res = w.finish();
+    const assembled = `${w.buildHeader()}${text()}${w.buildFooter()}`;
+    assert.equal(assembled, mem.content);
+    assert.equal(res.content_hash, mem.content_hash);
+    assert.equal(res.item_count, mem.item_count);
   });
 });

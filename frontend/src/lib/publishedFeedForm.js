@@ -6,13 +6,13 @@
 // Safety Filters and Delivery apply in both modes. Toggling modes preserves the unsaved
 // values of the inactive mode, and only the active mode is sent as effective on save.
 //
-// Output formats are multi-select: at least one of TXT / JSON must be enabled.
+// Output formats are multi-select: at least one of TXT / JSON / STIX must be enabled.
 
 export const FEED_FILTER_MODES = { BASIC: 'basic', QUERY: 'query' };
 
-export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json' };
+export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json', STIX: 'stix' };
 
-const FORMAT_ORDER = [FEED_OUTPUT_FORMATS.TXT, FEED_OUTPUT_FORMATS.JSON];
+const FORMAT_ORDER = [FEED_OUTPUT_FORMATS.TXT, FEED_OUTPUT_FORMATS.JSON, FEED_OUTPUT_FORMATS.STIX];
 
 /** Normalize any persisted/typed value to one of the two known modes ('basic' default). */
 export function normalizeFilterMode(value) {
@@ -21,7 +21,7 @@ export function normalizeFilterMode(value) {
     : FEED_FILTER_MODES.BASIC;
 }
 
-/** Canonical formats array: non-empty subset of ['txt','json'] in fixed order. */
+/** Canonical formats array: non-empty subset of ['txt','json','stix'] in fixed order. */
 export function normalizeFeedFormats(input) {
   let raw = input;
   if (raw == null) return [FEED_OUTPUT_FORMATS.TXT];
@@ -38,7 +38,7 @@ export function normalizeFeedFormats(input) {
   const seen = new Set();
   for (const item of raw) {
     const v = String(item || '').trim().toLowerCase();
-    if (v === 'txt' || v === 'json') seen.add(v);
+    if (v === 'txt' || v === 'json' || v === 'stix') seen.add(v);
   }
   if (!seen.size) return [FEED_OUTPUT_FORMATS.TXT];
   return FORMAT_ORDER.filter((f) => seen.has(f));
@@ -132,7 +132,7 @@ export function toggleFilterMode(form) {
 /** Toggle one output format checkbox. Returns updated form (formats may be empty — validate on save). */
 export function toggleFeedFormat(form, format) {
   const v = String(format || '').trim().toLowerCase();
-  if (v !== 'txt' && v !== 'json') return form;
+  if (v !== 'txt' && v !== 'json' && v !== 'stix') return form;
   const current = new Set(normalizeFeedFormats(form.formats));
   if (current.has(v)) current.delete(v);
   else current.add(v);
@@ -143,15 +143,19 @@ export function feedHasJsonFormat(form) {
   return normalizeFeedFormats(form?.formats).includes(FEED_OUTPUT_FORMATS.JSON);
 }
 
+export function feedHasStixFormat(form) {
+  return normalizeFeedFormats(form?.formats).includes(FEED_OUTPUT_FORMATS.STIX);
+}
+
 /** Client-side validation. Returns an error string, or null when the form is submittable. */
 export function validateFeedForm(form) {
   if (!String(form.name || '').trim()) return 'Name is required';
   const formats = normalizeFeedFormats(form.formats);
   // Allow empty formats only if caller cleared both; reject before save.
   if (!Array.isArray(form.formats) || !form.formats.length) {
-    return 'Select at least one output format (TXT or JSON)';
+    return 'Select at least one output format (TXT, JSON, or STIX)';
   }
-  if (!formats.length) return 'Select at least one output format (TXT or JSON)';
+  if (!formats.length) return 'Select at least one output format (TXT, JSON, or STIX)';
   if (form.filter_mode === FEED_FILTER_MODES.QUERY) {
     if (!String(form.advanced_query || '').trim()) return 'Enter an Advanced Query';
     return null;

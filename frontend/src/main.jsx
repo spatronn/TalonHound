@@ -100,6 +100,7 @@ import {
   toggleFilterMode as toggleFeedFilterMode,
   toggleFeedFormat,
   feedHasJsonFormat,
+  feedHasStixFormat,
   normalizeFeedFormats,
   validateFeedForm,
   buildFeedPayload
@@ -5935,9 +5936,13 @@ function PublishedFeedsPage() {
                           style={{
                             ...ui.badge(true),
                             marginLeft: 6,
-                            background: fmt === 'json' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                            color: fmt === 'json' ? '#d8b4fe' : '#93c5fd',
-                            border: `1px solid ${fmt === 'json' ? '#6b21a8' : '#1e40af'}`
+                            background: fmt === 'stix'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : fmt === 'json' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                            color: fmt === 'stix'
+                              ? '#6ee7b7'
+                              : fmt === 'json' ? '#d8b4fe' : '#93c5fd',
+                            border: `1px solid ${fmt === 'stix' ? '#047857' : fmt === 'json' ? '#6b21a8' : '#1e40af'}`
                           }}
                         >
                           {fmt}
@@ -6128,7 +6133,7 @@ function PublishedFeedsPage() {
             <FeedFormSection title="Output format">
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }} role="group" aria-label="Output formats">
-                  {[{ v: 'txt', label: 'TXT' }, { v: 'json', label: 'JSON' }].map((opt) => {
+                  {[{ v: 'txt', label: 'TXT' }, { v: 'json', label: 'JSON' }, { v: 'stix', label: 'STIX 2.1' }].map((opt) => {
                     const checked = normalizeFeedFormats(form.formats).includes(opt.v);
                     return (
                       <label key={opt.v} style={ui.checkLabel}>
@@ -6148,20 +6153,22 @@ function PublishedFeedsPage() {
                   </p>
                 ) : (
                   <p style={{ ...ui.helper, marginTop: 8 }}>
-                    Enable one or both formats. Public pull defaults to TXT when enabled; use ?format=json for JSON.
+                    Enable at least one format. Public pull defaults to TXT when enabled; use ?format=json or ?format=stix for those formats.
                   </p>
                 )}
               </div>
-              {feedHasJsonFormat(form) ? (
+              {feedHasJsonFormat(form) || feedHasStixFormat(form) ? (
                 <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                  <label style={ui.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={form.include_source_metadata !== false}
-                      onChange={(e) => setForm((x) => ({ ...x, include_source_metadata: e.target.checked }))}
-                    />
-                    Source metadata
-                  </label>
+                  {feedHasJsonFormat(form) ? (
+                    <label style={ui.checkLabel}>
+                      <input
+                        type="checkbox"
+                        checked={form.include_source_metadata !== false}
+                        onChange={(e) => setForm((x) => ({ ...x, include_source_metadata: e.target.checked }))}
+                      />
+                      Source metadata
+                    </label>
+                  ) : null}
                   <label style={ui.checkLabel}>
                     <input
                       type="checkbox"
@@ -6170,14 +6177,16 @@ function PublishedFeedsPage() {
                     />
                     Tags &amp; classification
                   </label>
-                  <label style={ui.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={form.include_enrichment === true}
-                      onChange={(e) => setForm((x) => ({ ...x, include_enrichment: e.target.checked }))}
-                    />
-                    Enrichment data
-                  </label>
+                  {feedHasJsonFormat(form) ? (
+                    <label style={ui.checkLabel}>
+                      <input
+                        type="checkbox"
+                        checked={form.include_enrichment === true}
+                        onChange={(e) => setForm((x) => ({ ...x, include_enrichment: e.target.checked }))}
+                      />
+                      Enrichment data
+                    </label>
+                  ) : null}
                 </div>
               ) : null}
             </FeedFormSection>
@@ -6222,8 +6231,8 @@ function FeedUrlTemplateModal({ ui, feed, onClose }) {
         <p style={ui.modalSub}>Replace <code style={{ color: '#cbd5e1' }}>&#123;API_KEY&#125;</code> with a Published Feed type API key.</p>
 
         {formats.map((fmt) => {
-          const template = publishedFeedUrlTemplate(feed.slug, formats.length > 1 || fmt === 'json' ? fmt : null);
-          const curl = publishedFeedCurlExample(feed.slug, formats.length > 1 || fmt === 'json' ? fmt : null);
+          const template = publishedFeedUrlTemplate(feed.slug, formats.length > 1 || fmt !== 'txt' ? fmt : null);
+          const curl = publishedFeedCurlExample(feed.slug, formats.length > 1 || fmt !== 'txt' ? fmt : null);
           return (
             <div key={fmt} style={{ marginBottom: 16 }}>
               <span style={ui.label}>{fmt.toUpperCase()} URL</span>

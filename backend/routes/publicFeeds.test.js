@@ -522,6 +522,55 @@ test('dual-format feed: omit format serves TXT; ?format=json serves JSON; disabl
   assert.equal(disabled.status, 404);
 });
 
+const STIX_BODY = '{"type":"bundle","id":"bundle--00000000-0000-5000-8000-000000000001","spec_version":"2.1","objects":[{"type":"indicator","spec_version":"2.1","id":"indicator--00000000-0000-5000-8000-000000000002","created":"2026-08-01T00:00:00.000Z","modified":"2026-08-01T00:00:00.000Z","name":"1.2.3.4","pattern":"[ipv4-addr:value = \'1.2.3.4\']","pattern_type":"stix","valid_from":"2026-08-01T00:00:00.000Z"}]}\n';
+const STIX_FEEDS = [{ id: 9, slug: 'stix-feed', enabled: true, ioc_types: ['ip'], time_window: 'all', max_items: null, formats: ['stix'] }];
+function stixSnapshot() {
+  return {
+    id: 90, content: STIX_BODY, content_hash: 'sh', content_bytes: STIX_BODY.length,
+    item_count: 1, generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
+    params: { ioc_type: 'ip', window: 'all', output_format: 'stix' },
+    artifact_format: 'stix'
+  };
+}
+
+test('STIX feed is served as application/stix+json with a valid Bundle', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const app = makeApp(createMockPool({ keys, feeds: STIX_FEEDS, snapshotsByFeedId: () => stixSnapshot() }));
+  const res = await get(app, `/api/published-feeds/stix-feed?api_key=${raw}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.contentType, /application\/stix\+json/);
+  const parsed = JSON.parse(res.text);
+  assert.equal(parsed.type, 'bundle');
+  assert.equal(parsed.spec_version, '2.1');
+  assert.equal(parsed.objects[0].pattern, "[ipv4-addr:value = '1.2.3.4']");
+});
+
+test('STIX feed ETag/304 continues to work', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const app = makeApp(createMockPool({ keys, feeds: STIX_FEEDS, snapshotsByFeedId: () => stixSnapshot() }));
+  const etag = computeResponseEtag('sh', 'ip', 'all', 'all');
+  const res = await get(app, `/api/published-feeds/stix-feed?api_key=${raw}`, { 'if-none-match': etag });
+  assert.equal(res.status, 304);
+});
+
+test('disabled STIX format returns 404', async () => {
+  const raw = generatePublishedFeedApiKey();
+  const keys = [baseKey({ token_hash: hashApiKey(raw) })];
+  const txtOnly = [{
+    id: 8, slug: 'txt-only', enabled: true, ioc_types: ['ip'], time_window: 'all',
+    max_items: null, formats: ['txt']
+  }];
+  const app = makeApp(createMockPool({
+    keys,
+    feeds: txtOnly,
+    snapshotsByFeedId: () => snapshotRow(8)
+  }));
+  const res = await get(app, `/api/published-feeds/txt-only?api_key=${raw}&format=stix`);
+  assert.equal(res.status, 404);
+});
+
 test('legacy public endpoint also uses metadata 304 fast path', async () => {
   const raw = 'legacy-token-value';
   const keys = [baseKey({

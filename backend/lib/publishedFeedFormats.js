@@ -1,11 +1,12 @@
-// Published Feed multi-output format helpers (TXT / JSON checkbox model).
+// Published Feed multi-output format helpers (TXT / JSON / STIX checkbox model).
 
-export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json' };
+export const FEED_OUTPUT_FORMATS = { TXT: 'txt', JSON: 'json', STIX: 'stix' };
 
-const ORDER = [FEED_OUTPUT_FORMATS.TXT, FEED_OUTPUT_FORMATS.JSON];
+const ORDER = [FEED_OUTPUT_FORMATS.TXT, FEED_OUTPUT_FORMATS.JSON, FEED_OUTPUT_FORMATS.STIX];
+const ALLOWED = new Set(ORDER);
 
 /**
- * Canonicalize formats to a non-empty subset of ['txt','json'] in fixed order.
+ * Canonicalize formats to a non-empty subset of ['txt','json','stix'] in fixed order.
  * @returns {{ ok: true, value: string[] } | { ok: false, error: string }}
  */
 export function normalizeFeedFormats(input) {
@@ -23,18 +24,18 @@ export function normalizeFeedFormats(input) {
     }
   }
   if (!Array.isArray(raw)) {
-    return { ok: false, error: 'formats must be an array of txt and/or json' };
+    return { ok: false, error: 'formats must be an array of txt, json, and/or stix' };
   }
   const seen = new Set();
   for (const item of raw) {
     const v = String(item || '').trim().toLowerCase();
-    if (v !== 'txt' && v !== 'json') {
-      return { ok: false, error: "formats may only include 'txt' and 'json'" };
+    if (!ALLOWED.has(v)) {
+      return { ok: false, error: "formats may only include 'txt', 'json', and 'stix'" };
     }
     seen.add(v);
   }
   if (!seen.size) {
-    return { ok: false, error: 'formats must include at least one of txt, json' };
+    return { ok: false, error: 'formats must include at least one of txt, json, stix' };
   }
   const value = ORDER.filter((f) => seen.has(f));
   return { ok: true, value };
@@ -63,6 +64,11 @@ export function feedHasJsonFormat(feed) {
 /** True when TXT is among enabled formats. */
 export function feedHasTxtFormat(feed) {
   return resolvePublishedFeedFormats(feed).includes(FEED_OUTPUT_FORMATS.TXT);
+}
+
+/** True when STIX 2.1 is among enabled formats. */
+export function feedHasStixFormat(feed) {
+  return resolvePublishedFeedFormats(feed).includes(FEED_OUTPUT_FORMATS.STIX);
 }
 
 /**
@@ -94,8 +100,8 @@ export function resolveRequestedFeedFormat(feed, rawFormat) {
     return { format: enabled[0] };
   }
   const v = String(rawFormat).trim().toLowerCase();
-  if (v !== 'txt' && v !== 'json') {
-    return { error: "format must be 'txt' or 'json'", status: 400 };
+  if (!ALLOWED.has(v)) {
+    return { error: "format must be 'txt', 'json', or 'stix'", status: 400 };
   }
   if (!enabled.includes(v)) {
     return { error: 'Requested format is not enabled for this feed', status: 404 };
@@ -117,8 +123,8 @@ export function resolveFormatsInput(body, fallbackFormats = [FEED_OUTPUT_FORMATS
     return { ok: true, value: [...fallbackFormats] };
   }
   const v = String(raw).trim().toLowerCase();
-  if (v !== 'txt' && v !== 'json') {
-    return { ok: false, error: "output_format must be 'txt' or 'json'" };
+  if (!ALLOWED.has(v)) {
+    return { ok: false, error: "output_format must be 'txt', 'json', or 'stix'" };
   }
   return { ok: true, value: [v] };
 }

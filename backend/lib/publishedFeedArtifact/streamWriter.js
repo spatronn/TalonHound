@@ -8,6 +8,7 @@
 
 import crypto from 'node:crypto';
 import { PUBLISHED_FEED_SCHEMA_VERSION } from '../publishedFeedJson.js';
+import { STIX_SPEC_VERSION, stixBundleIdForFeed } from '../publishedFeedStix.js';
 
 /** Promise-based sink write that honors backpressure. */
 export function makeSinkWriter(stream) {
@@ -89,6 +90,51 @@ export class StreamingJsonBodyWriter {
         include_classification: this._flags.include_classification,
         include_enrichment: this._flags.include_enrichment
       })},"items":[`;
+  }
+
+  buildFooter() { return ']}\n'; }
+
+  finish() {
+    return { content_hash: this._hash.digest('hex'), item_count: this._count };
+  }
+}
+
+/**
+ * Streaming STIX 2.1 body writer: emits comma-separated Indicator objects to a body
+ * sink. Header/footer (bundle envelope) are assembled after the body, matching
+ * StixBundleWriter hashing (spec_version + bundle_id + each object).
+ */
+export class StreamingStixBodyWriter {
+  constructor(stream, { slug } = {}) {
+    this._write = makeSinkWriter(stream);
+    this._count = 0;
+    this._first = true;
+    this._slug = slug != null ? String(slug) : '';
+    this._bundleId = stixBundleIdForFeed(this._slug);
+    this._hash = crypto.createHash('sha256');
+    this._hash.update(JSON.stringify({
+      spec_version: STIX_SPEC_VERSION,
+      bundle_id: this._bundleId
+    }));
+  }
+
+  get bundleId() { return this._bundleId; }
+
+  async addIndicator(indicator) {
+    if (!indicator) return false;
+    const chunk = JSON.stringify(indicator);
+    this._hash.update('\n');
+    this._hash.update(chunk);
+    this._count += 1;
+    await this._write(this._first ? chunk : `,${chunk}`);
+    this._first = false;
+    return true;
+  }
+
+  get itemCount() { return this._count; }
+
+  buildHeader() {
+    return `{"type":"bundle","id":${JSON.stringify(this._bundleId)},"spec_version":${JSON.stringify(STIX_SPEC_VERSION)},"objects":[`;
   }
 
   buildFooter() { return ']}\n'; }

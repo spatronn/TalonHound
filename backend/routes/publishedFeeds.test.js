@@ -27,7 +27,9 @@ function createMockPool(store = { feeds: [] }) {
           enabled: params[3] ?? true,
           ioc_types: typeof params[4] === 'string' ? JSON.parse(params[4]) : params[4],
           formats,
-          format: Array.isArray(formats) && formats.includes('json') && !formats.includes('txt') ? 'json' : 'txt',
+          format: Array.isArray(formats) && formats.includes('txt')
+            ? 'txt'
+            : (Array.isArray(formats) && formats[0] ? formats[0] : 'txt'),
           min_confidence: params[6],
           include_feed_keys: params[7] ? JSON.parse(params[7]) : null,
           include_tags: params[8] ? JSON.parse(params[8]) : null,
@@ -68,7 +70,7 @@ function createMockPool(store = { feeds: [] }) {
           if (col === 'ioc_types' || col === 'include_feed_keys' || col === 'include_tags' || col === 'exclude_tags' || col === 'formats') {
             row[col] = typeof val === 'string' ? JSON.parse(val) : val;
             if (col === 'formats' && Array.isArray(row.formats)) {
-              row.format = row.formats.includes('json') && !row.formats.includes('txt') ? 'json' : 'txt';
+              row.format = row.formats.includes('txt') ? 'txt' : (row.formats[0] || 'txt');
             }
           } else {
             row[col] = val;
@@ -321,6 +323,16 @@ describe('publishedFeeds output format API', () => {
     assert.equal(res.status, 201);
     assert.deepEqual(res.body.feed.formats, ['txt', 'json']);
     assert.equal(res.body.feed.format, 'txt');
+  });
+
+  it('creates a STIX feed via formats[]', async () => {
+    const app = makeApp(createMockPool());
+    const res = await req(app, 'POST', '/api/published-feeds', {
+      name: 'STIX', ioc_types: ['ip'], formats: ['stix']
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(res.body.feed.formats, ['stix']);
+    assert.equal(res.body.feed.format, 'stix');
   });
 
   it('rejects an unknown output_format with 400', async () => {

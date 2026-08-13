@@ -32,10 +32,12 @@ import {
   resolvePublishedFeedFormats,
   resolvePublishedFeedFormat,
   feedHasJsonFormat,
+  feedHasStixFormat,
   isJsonFormatFeed,
   resolveFormatsInput,
   resolveRequestedFeedFormat
 } from './publishedFeedFormats.js';
+import { StixBundleWriter, indicatorFromPublishedItem } from './publishedFeedStix.js';
 
 export { buildFeedKeySourceSql };
 export {
@@ -44,6 +46,7 @@ export {
   resolvePublishedFeedFormats,
   resolvePublishedFeedFormat,
   feedHasJsonFormat,
+  feedHasStixFormat,
   isJsonFormatFeed,
   resolveFormatsInput,
   resolveRequestedFeedFormat
@@ -151,6 +154,9 @@ export function isPublishedFeedStreamingEnabled() {
  * canonical hash/file-artifact feeds, which use a dedicated cursor SQL shape).
  */
 export function shouldStreamPublishedFeed(feed) {
+  // STIX generation is file-backed (bundle streaming). Force that path even when
+  // the general streaming flag is off so STIX never falls through to TXT.
+  if (feedHasStixFormat(feed)) return true;
   if (!isPublishedFeedStreamingEnabled()) return false;
   void feed;
   return true;
@@ -172,6 +178,10 @@ export function resolveJsonIncludeFlags(feed) {
  * @returns {Promise<{ content: string, content_hash: string, item_count: number }>}
  */
 export async function buildFeedContent(db, feed, iocRows, formatTypes, maxItems) {
+  const formats = resolvePublishedFeedFormats(feed);
+  if (formats.includes(FEED_OUTPUT_FORMATS.STIX)) {
+    return buildStixFeedContent(db, feed, iocRows, formatTypes, maxItems);
+  }
   if (!isJsonFormatFeed(feed)) {
     return buildPlainTextFeed(iocRows, formatTypes, maxItems);
   }
@@ -188,6 +198,24 @@ export async function buildFeedContent(db, feed, iocRows, formatTypes, maxItems)
       confidence: it.row?.confidence
     };
     writer.addItem(normalizePublishedIoc(base, meta, flags));
+  }
+  return writer.finish();
+}
+
+async function buildStixFeedContent(db, feed, iocRows, formatTypes, maxItems) {
+  const items = selectFeedItems(iocRows, formatTypes, maxItems);
+  const flags = resolveJsonIncludeFlags(feed);
+  const metaByKey = await fetchPublishedFeedItemMetadata(db, items, flags);
+  const writer = new StixBundleWriter({ slug: feed.slug });
+  for (const it of items) {
+    const meta = metaByKey.get(metaKey(it.observable_type, it.value)) || {};
+    const base = {
+      value: it.value,
+      observable_type: it.observable_type,
+      category: it.row?.category,
+      confidence: it.row?.confidence
+    };
+    writer.addIndicator(indicatorFromPublishedItem(normalizePublishedIoc(base, meta, flags)));
   }
   return writer.finish();
 }
@@ -248,9 +276,10 @@ export function filtersHash(feed, window) {
   const queryMode = isQueryModeFeed(feed);
   const formats = resolvePublishedFeedFormats(feed);
   const jsonFeed = formats.includes(FEED_OUTPUT_FORMATS.JSON);
+  const stixFeed = formats.includes(FEED_OUTPUT_FORMATS.STIX);
   // TXT-only keeps the legacy fingerprint (no formats/output_format keys) so existing
   // feeds do not churn on upgrade. Dual or JSON-only include sorted formats; JSON
-  // include flags only when JSON is enabled.
+  // include flags apply when JSON or STIX is enabled (STIX labels use classification tags).
   const formatKeys = (() => {
     if (formats.length === 1 && formats[0] === FEED_OUTPUT_FORMATS.TXT) return {};
     if (formats.length === 1 && formats[0] === FEED_OUTPUT_FORMATS.JSON) {
@@ -258,7 +287,7 @@ export function filtersHash(feed, window) {
     }
     return {
       formats,
-      ...(jsonFeed ? { json_include: resolveJsonIncludeFlags(feed) } : {})
+      ...((jsonFeed || stixFeed) ? { json_include: resolveJsonIncludeFlags(feed) } : {})
     };
   })();
   const payload = {

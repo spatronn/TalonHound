@@ -25,8 +25,18 @@ test('sortMigrationFiles is deterministic', () => {
   assert.deepEqual(sorted, ['001_core.sql', '002_a.sql', '010_b.sql']);
 });
 
-test('154 last_seen_ttl migration is runnable', () => {
-  assert.equal(isRunnableMigrationFile('154_drop_last_seen_ttl_expiration.sql'), true);
+test('155 STIX formats migration is runnable', () => {
+  assert.equal(isRunnableMigrationFile('155_published_feeds_stix_format.sql'), true);
+});
+
+test('155 migration allows stix in published_feeds formats CHECK', () => {
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/155_published_feeds_stix_format.sql'),
+    'utf8'
+  );
+  assert.ok(sql.includes('stix'));
+  assert.ok(sql.includes('chk_published_feeds_formats'));
+  assert.ok(sql.includes("jsonb_array_length(formats) <= 3"));
 });
 
 test('154 migration converts last_seen_ttl to fixed_ttl and tightens CHECK', () => {

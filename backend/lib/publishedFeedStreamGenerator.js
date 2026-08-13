@@ -35,7 +35,8 @@ import {
   toRelativeStoragePath,
   resolveArtifactPath
 } from './publishedFeedArtifact/store.js';
-import { StreamingTxtWriter, StreamingJsonBodyWriter, makeSinkWriter } from './publishedFeedArtifact/streamWriter.js';
+import { StreamingTxtWriter, StreamingJsonBodyWriter, StreamingStixBodyWriter, makeSinkWriter } from './publishedFeedArtifact/streamWriter.js';
+import { indicatorFromPublishedItem } from './publishedFeedStix.js';
 
 const CURSOR_BATCH = Math.max(Number(process.env.PUBLISHED_FEED_CURSOR_BATCH || 5000), 100);
 
@@ -73,6 +74,18 @@ async function openMultiFormatWriters(cfg, feed, generationId, formats) {
           ...resolveJsonIncludeFlags(feed)
         })
       };
+    } else if (format === 'stix') {
+      const bodyPath = `${finalPath}.body`;
+      const bodyStream = fs.createWriteStream(bodyPath, { flags: 'w', mode: 0o640 });
+      slots.stix = {
+        format: 'stix',
+        finalPartStream,
+        finalPath,
+        partPath,
+        bodyPath,
+        bodyStream,
+        writer: new StreamingStixBodyWriter(bodyStream, { slug: feed.slug })
+      };
     } else {
       slots.txt = {
         format: 'txt',
@@ -104,7 +117,7 @@ async function finalizeMultiFormatWriters(feed, generationId, slots) {
   for (const slot of Object.values(slots)) {
     const finished = slot.writer.finish();
     itemCount = finished.item_count;
-    if (slot.format === 'json') {
+    if (slot.format === 'json' || slot.format === 'stix') {
       await finalizeStream(slot.bodyStream);
       const finalWrite = makeSinkWriter(slot.finalPartStream);
       await finalWrite(slot.writer.buildHeader(finished.item_count, generatedAt));
@@ -127,11 +140,8 @@ async function finalizeMultiFormatWriters(feed, generationId, slots) {
       itemCount: finished.item_count
     });
   }
-  // Canonical order: txt then json
-  artifacts.sort((a, b) => {
-    if (a.format === b.format) return 0;
-    return a.format === 'txt' ? -1 : 1;
-  });
+  const FORMAT_ORDER = ['txt', 'json', 'stix'];
+  artifacts.sort((a, b) => FORMAT_ORDER.indexOf(a.format) - FORMAT_ORDER.indexOf(b.format));
   return { artifacts, itemCount, generationId };
 }
 
@@ -387,6 +397,7 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
   const flags = resolveJsonIncludeFlags(feed);
   const wantTxt = formats.includes('txt');
   const wantJson = formats.includes('json');
+  const wantStix = formats.includes('stix');
   const maxItems = opts.maxItems != null && Number.isFinite(Number(opts.maxItems)) ? Number(opts.maxItems) : null;
   const generationId = newGenerationId();
   const norm = normalizeFeedIocTypes(opts.formatTypes);
@@ -397,9 +408,9 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
     : types[0]);
   const populateProjection = Boolean(opts.populateProjection);
   const projectionWindow = opts.projectionWindow || window;
-  // Metadata / item_json needed when JSON is written OR projection is being bootstrapped
-  // (projection stays format-agnostic so later enable-JSON can use item_json).
-  const needJsonItems = wantJson || populateProjection;
+  // Metadata / item_json needed when JSON or STIX is written OR projection is being bootstrapped
+  // (projection stays format-agnostic so later enable-JSON/STIX can use item_json).
+  const needJsonItems = wantJson || wantStix || populateProjection;
 
   const timings = { base_open_ms: 0, fetch_ms: 0, meta_ms: 0, write_ms: 0, projection_ms: 0 };
   const t = () => Number(process.hrtime.bigint() / 1000000n);
@@ -447,6 +458,10 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
         }
         if (wantTxt) await slots.txt.writer.addValue(value);
         if (wantJson) await slots.json.writer.addItem(item);
+        if (wantStix) {
+          const indicator = indicatorFromPublishedItem(item);
+          if (indicator) await slots.stix.writer.addIndicator(indicator);
+        }
         if (populateProjection) {
           const fp = projectionContentFingerprint({ txtValue: value, itemJson: item });
           projBatch.push({
@@ -467,7 +482,7 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
         }
         const count = wantTxt
           ? slots.txt.writer.itemCount
-          : slots.json.writer.itemCount;
+          : (wantJson ? slots.json.writer.itemCount : slots.stix.writer.itemCount);
         if (maxItems != null && count >= maxItems) { done = true; break; }
       }
       timings.write_ms += t() - tw;
@@ -501,6 +516,7 @@ export async function generateFeedArtifactFromProjection(db, feed, window, opts 
     : resolvePublishedFeedFormats(feed);
   const wantTxt = formats.includes('txt');
   const wantJson = formats.includes('json');
+  const wantStix = formats.includes('stix');
   const maxItems = opts.maxItems != null && Number.isFinite(Number(opts.maxItems)) ? Number(opts.maxItems) : null;
   const generationId = newGenerationId();
   const { slots, cleanupTemp } = await openMultiFormatWriters(cfg, feed, generationId, formats);
@@ -523,16 +539,20 @@ export async function generateFeedArtifactFromProjection(db, feed, window, opts 
       scannedRows += rows.length;
       const tw = t();
       for (const row of rows) {
-        if (wantTxt) await slots.txt.writer.addValue(row.txt_value);
-        if (wantJson) {
-          const item = row.item_json && typeof row.item_json === 'object'
+        const item = (wantJson || wantStix)
+          ? (row.item_json && typeof row.item_json === 'object'
             ? row.item_json
-            : (typeof row.item_json === 'string' ? JSON.parse(row.item_json) : null);
-          if (item) await slots.json.writer.addItem(item);
+            : (typeof row.item_json === 'string' ? JSON.parse(row.item_json) : null))
+          : null;
+        if (wantTxt) await slots.txt.writer.addValue(row.txt_value);
+        if (wantJson && item) await slots.json.writer.addItem(item);
+        if (wantStix) {
+          const indicator = indicatorFromPublishedItem(item);
+          if (indicator) await slots.stix.writer.addIndicator(indicator);
         }
         const count = wantTxt
           ? slots.txt.writer.itemCount
-          : slots.json.writer.itemCount;
+          : (wantJson ? slots.json.writer.itemCount : slots.stix.writer.itemCount);
         if (maxItems != null && count >= maxItems) { done = true; break; }
       }
       timings.write_ms += t() - tw;

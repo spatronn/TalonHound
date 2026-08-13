@@ -27,7 +27,7 @@
     "test:abuseipdb": "node --test lib/abuseipdbEnrichment.test.js services/abuseipdbService.test.js routes/abuseipdbEnrichment.test.js",
     "test:analyst-intelligence": "node --test lib/analystIntelligence.test.js routes/analystIntelligence.test.js",
     "test:ioc-expiration": "node --test lib/iocExpiration.test.js lib/feedExpirationPolicy.test.js lib/iocExpiration.churn.test.js lib/iocExpiration.customFeedFingerprint.test.js lib/auditIocContext.test.js lib/feedLifecycle.test.js lib/feedPublisherService.test.js lib/feedPublisherService.queryMode.test.js lib/publishedFeedSources.test.js",
-    "test:published-feeds": "node --test lib/feedPublisherService.test.js lib/feedPublisherService.queryMode.test.js lib/publishedFeedScheduler.test.js lib/publishedFeedStreamGenerator.test.js lib/publishedFeedJson.test.js lib/publishedFeedProjection.test.js lib/publishedFeedFormats.test.js routes/publishedFeeds.test.js routes/publicFeeds.test.js",
+    "test:published-feeds": "node --test lib/feedPublisherService.test.js lib/feedPublisherService.queryMode.test.js lib/publishedFeedScheduler.test.js lib/publishedFeedStreamGenerator.test.js lib/publishedFeedJson.test.js lib/publishedFeedProjection.test.js lib/publishedFeedFormats.test.js lib/publishedFeedStix.test.js lib/publishedFeedArtifact/store.test.js lib/publishedFeedArtifact/streamWriter.test.js routes/publishedFeeds.test.js routes/publicFeeds.test.js",
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-suppression": "node --test lib/suppressionInput.test.js lib/manualSuppressionCreate.test.js lib/iocSuppressionEffective.test.js lib/iocSuppressionStatus.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",

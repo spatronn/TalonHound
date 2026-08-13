@@ -413,6 +413,10 @@ describe('published hash feed artifact canonicalization', () => {
       assert.equal(shouldStreamPublishedFeed({
         filter_mode: 'query', advanced_query: 'type:domain'
       }), true);
+
+      delete process.env.PUBLISHED_FEED_STREAMING_ENABLED;
+      assert.equal(shouldStreamPublishedFeed({ formats: ['stix'] }), true);
+      assert.equal(shouldStreamPublishedFeed({ formats: ['txt'] }), false);
     } finally {
       if (prevStream == null) delete process.env.PUBLISHED_FEED_STREAMING_ENABLED;
       else process.env.PUBLISHED_FEED_STREAMING_ENABLED = prevStream;

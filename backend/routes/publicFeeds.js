@@ -25,6 +25,7 @@ import {
   keyStatus,
   redactApiKeyInText
 } from '../lib/publishedFeedApiKey.js';
+import { STIX_CONTENT_TYPE } from '../lib/publishedFeedStix.js';
 import { createServiceLogger } from '../lib/appLogger.js';
 
 const feedLog = createServiceLogger('published-feeds');
@@ -95,9 +96,10 @@ function touchAccessKey(pool, keyId, ip) {
 }
 
 function feedContentType(format) {
-  return String(format || '').toLowerCase() === 'json'
-    ? 'application/json; charset=utf-8'
-    : 'text/plain; charset=utf-8';
+  const f = String(format || '').toLowerCase();
+  if (f === 'json') return 'application/json; charset=utf-8';
+  if (f === 'stix') return STIX_CONTENT_TYPE;
+  return 'text/plain; charset=utf-8';
 }
 
 /**
@@ -153,7 +155,8 @@ function conditionalNotModified(req, etag, lastModified) {
 async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, maxItems, filterMode, format }) {
   const startedAt = Date.now();
   const queryMode = filterMode === FEED_FILTER_MODES.QUERY;
-  const isJson = String(format || '').toLowerCase() === 'json';
+  const isStructured = String(format || '').toLowerCase() === 'json'
+    || String(format || '').toLowerCase() === 'stix';
 
   // Query-mode feeds have a single window-agnostic snapshot keyed by QUERY_FEED_SNAPSHOT_KEY.
   // The IOC-type and window request overrides are Basic-Filters concepts and do not apply,
@@ -177,9 +180,9 @@ async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, m
   if (limitResult && typeof limitResult === 'object' && limitResult.error) {
     return res.status(400).send(limitResult.error);
   }
-  // JSON feeds are a single structured document — line-based ?limit= slicing would produce
-  // invalid JSON, so it does not apply (max_items is already enforced at generation time).
-  const effectiveLimit = isJson ? null : limitResult;
+  // JSON/STIX feeds are a single structured document — line-based ?limit= slicing would
+  // produce invalid output, so it does not apply (max_items is already enforced at generation).
+  const effectiveLimit = isStructured ? null : limitResult;
 
   const logServe = (fields) => {
     feedLog.info('published feed serve', {
@@ -236,8 +239,8 @@ async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, m
         return res.status(503).send('Feed momentarily unavailable');
       }
       // TXT with ?limit= streams only the first N lines; otherwise the whole artifact
-      // (with Content-Length). JSON always streams the whole document.
-      const lineLimit = (!isJson && effectiveLimit != null) ? effectiveLimit : null;
+      // (with Content-Length). JSON/STIX always stream the whole document.
+      const lineLimit = (!isStructured && effectiveLimit != null) ? effectiveLimit : null;
       if (lineLimit == null) res.set('Content-Length', String(st.size));
       const fileStream = createReadStream(absPath);
       fileStream.on('error', () => { if (!res.headersSent) res.status(503); res.end(); });
@@ -254,8 +257,8 @@ async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, m
       return res.status(503).send('Feed momentarily unavailable');
     }
 
-    // JSON serves the whole document; TXT may be trimmed by ?limit=/max_items.
-    const outContent = isJson ? snapshot.content : sliceFeedContent(snapshot.content, effectiveLimit).content;
+    // JSON/STIX serve the whole document; TXT may be trimmed by ?limit=/max_items.
+    const outContent = isStructured ? snapshot.content : sliceFeedContent(snapshot.content, effectiveLimit).content;
     // Headers already set from the meta that matches this content_hash.
     const bytes = meta.content_bytes != null
       ? Number(meta.content_bytes)

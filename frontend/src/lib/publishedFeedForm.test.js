@@ -4,10 +4,12 @@ import {
   emptyFeedForm,
   feedToForm,
   toggleFilterMode,
+  toggleFeedFormat,
   validateFeedForm,
   buildFeedPayload,
   normalizeFilterMode,
-  normalizeOutputFormat
+  normalizeOutputFormat,
+  normalizeFeedFormats
 } from './publishedFeedForm.js';
 
 describe('publishedFeedForm mode handling', () => {
@@ -149,6 +151,16 @@ describe('publishedFeedForm output format', () => {
   it('cannot save with zero formats selected', () => {
     const form = { ...emptyFeedForm(), name: 'X', formats: [] };
     assert.match(validateFeedForm(form), /output format/i);
+  });
+
+  it('accepts STIX as a format and preserves TXT/JSON', () => {
+    let form = emptyFeedForm();
+    form = toggleFeedFormat(form, 'stix');
+    assert.deepEqual(normalizeFeedFormats(form.formats), ['txt', 'stix']);
+    const payload = buildFeedPayload({ ...form, name: 'S' });
+    assert.deepEqual(payload.formats, ['txt', 'stix']);
+    const reloaded = feedToForm({ name: 'S', ioc_types: ['ip'], formats: ['stix', 'json'] });
+    assert.deepEqual(reloaded.formats, ['json', 'stix']);
   });
 
   it('buildFeedPayload sends formats and include flags', () => {
