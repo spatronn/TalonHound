@@ -75,6 +75,17 @@ import { submitChangePassword } from './lib/changePasswordForm.js';
 import { resolveUserRowControls } from './lib/userRowControls.js';
 import { buttonClassName, confirmButtonVariant, feedActiveToggleButtonProps } from './lib/uiButtons.js';
 import {
+  BULK_TRIAGE_MAX,
+  parseIocRowId,
+  toggleSelectedId,
+  selectPageIds,
+  deselectPageIds,
+  pageSelectionState,
+  formatBulkTriageSummary,
+  remainingSelectedAfterBulk,
+  bulkConfirmDisabled
+} from './lib/iocBulkTriage.js';
+import {
   canCloseModal,
   modalSizeClass,
   resolveModalInitialFocus,
@@ -1640,8 +1651,6 @@ const SAVED_VIEW_STORAGE = {
   incidents: 'demo.savedViews.incidents'
 };
 
-const BULK_TRIAGE_MAX = 100;
-
 function loadSavedViews(storageKey) {
   try {
     const raw = localStorage.getItem(storageKey);
@@ -1672,36 +1681,41 @@ function BulkActionConfirmModal({
   onReasonChange,
   onCancel,
   onConfirm,
-  extraContent = null
+  extraContent = null,
+  requireReason = true,
+  confirmDisabled = false
 }) {
   if (!open) return null;
+  const reasonBlocked = requireReason && String(reason || '').trim().length < 3;
   return (
     <ModalOverlay onClose={loading ? undefined : onCancel}>
       <h3 style={{ marginTop: 0, color: '#f1f5f9', fontSize: 18 }}>{title}</h3>
       <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}>{description}</p>
       {extraContent}
-      <label style={{ display: 'grid', gap: 6 }}>
-        <span style={{ color: '#94a3b8', fontSize: 13 }}>Reason (required, min 3 characters)</span>
-        <textarea
-          value={reason}
-          onChange={(e) => onReasonChange(e.target.value)}
-          rows={4}
-          placeholder="Enter reason…"
-          style={{
-            padding: '8px 10px',
-            borderRadius: 6,
-            border: '1px solid #475569',
-            background: '#0f172a',
-            color: '#e2e8f0',
-            fontSize: 13,
-            width: '100%',
-            boxSizing: 'border-box',
-            minHeight: 72,
-            resize: 'vertical'
-          }}
-          autoFocus
-        />
-      </label>
+      {requireReason ? (
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>Reason (required, min 3 characters)</span>
+          <textarea
+            value={reason}
+            onChange={(e) => onReasonChange(e.target.value)}
+            rows={4}
+            placeholder="Enter reason…"
+            style={{
+              padding: '8px 10px',
+              borderRadius: 6,
+              border: '1px solid #475569',
+              background: '#0f172a',
+              color: '#e2e8f0',
+              fontSize: 13,
+              width: '100%',
+              boxSizing: 'border-box',
+              minHeight: 72,
+              resize: 'vertical'
+            }}
+            autoFocus
+          />
+        </label>
+      ) : null}
       {error ? (
         <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
           {error}
@@ -1709,7 +1723,7 @@ function BulkActionConfirmModal({
       ) : null}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
         <button type="button" onClick={onCancel} disabled={loading}>Cancel</button>
-        <button type="button" onClick={onConfirm} disabled={loading}>{loading ? 'Working…' : confirmLabel}</button>
+        <button type="button" onClick={onConfirm} disabled={loading || reasonBlocked || confirmDisabled}>{loading ? 'Working…' : confirmLabel}</button>
       </div>
     </ModalOverlay>
   );
@@ -11011,6 +11025,7 @@ function IOCListPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [columnWidths, setColumnWidths] = useState({
+    select: 36,
     index: 52,
     ip: 360,
     asn: 84,
@@ -11062,6 +11077,16 @@ function IOCListPage() {
   const statsPollRef = useRef(null);
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkToast, setBulkToast] = useState('');
+  const [bulkModal, setBulkModal] = useState(null);
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkError, setBulkError] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkTagId, setBulkTagId] = useState('');
+  const [bulkClassSlug, setBulkClassSlug] = useState('');
+  const [bulkTagOptions, setBulkTagOptions] = useState([]);
+  const [bulkClassOptions, setBulkClassOptions] = useState([]);
 
   const loadSummary = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setSummaryLoading(true);
@@ -11254,6 +11279,113 @@ function IOCListPage() {
     });
     return copy;
   }, [rows, sortState]);
+
+  const pageIds = useMemo(
+    () => sortedRows.map(parseIocRowId).filter((id) => id != null),
+    [sortedRows]
+  );
+  const selectedCount = selectedIds.size;
+  const pageSel = pageSelectionState(selectedIds, pageIds);
+
+  function toggleRowSelected(id) {
+    if (!id || !canWrite) return;
+    const next = toggleSelectedId(selectedIds, id);
+    setSelectedIds(next.selected);
+    if (next.capped) {
+      setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
+    }
+  }
+
+  function togglePageSelected() {
+    if (!canWrite) return;
+    if (pageSel.all) {
+      setSelectedIds(deselectPageIds(selectedIds, pageIds));
+      return;
+    }
+    const next = selectPageIds(selectedIds, pageIds);
+    setSelectedIds(next.selected);
+    if (next.capped) setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
+  }
+
+  async function openBulkModal(kind) {
+    if (!canWrite || selectedCount === 0) return;
+    setBulkError('');
+    setBulkReason('');
+    setBulkTagId('');
+    setBulkClassSlug('');
+    if (kind === 'tag') {
+      try {
+        const res = await api.get('/tags', { params: { active: true, limit: 100 } });
+        setBulkTagOptions(Array.isArray(res.data) ? res.data : []);
+      } catch {
+        setBulkTagOptions([]);
+      }
+    }
+    if (kind === 'classification') {
+      try {
+        const { data } = await api.get('/threat-classifications');
+        setBulkClassOptions(Array.isArray(data) ? data : []);
+      } catch {
+        setBulkClassOptions([]);
+      }
+    }
+    setBulkModal(kind);
+  }
+
+  function closeBulkModal() {
+    if (bulkBusy) return;
+    setBulkModal(null);
+    setBulkError('');
+  }
+
+  async function confirmBulkAction() {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    const requireReason = bulkModal === 'suppress' || bulkModal === 'expire';
+    const requireChoice = bulkModal === 'tag' || bulkModal === 'classification';
+    const choice = bulkModal === 'tag' ? bulkTagId : bulkClassSlug;
+    if (bulkConfirmDisabled({ requireReason, reason: bulkReason, requireChoice, choice })) {
+      setBulkError(requireReason ? 'Reason is required (min 3 characters).' : 'Select a value to apply.');
+      return;
+    }
+    setBulkBusy(true);
+    setBulkError('');
+    try {
+      let path = '';
+      let body = { ioc_ids: ids };
+      if (bulkModal === 'tag') {
+        path = '/iocs/bulk/tags';
+        body.tag_id = Number(bulkTagId);
+      } else if (bulkModal === 'classification') {
+        path = '/iocs/bulk/classifications';
+        body.classification_slug = bulkClassSlug;
+      } else if (bulkModal === 'suppress') {
+        path = '/iocs/bulk/suppress';
+        body.reason = bulkReason.trim();
+      } else if (bulkModal === 'expire') {
+        path = '/iocs/bulk/expire';
+        body.reason = bulkReason.trim();
+      } else {
+        return;
+      }
+      const { data } = await api.post(path, body);
+      setBulkToast(formatBulkTriageSummary(data || {}));
+      setSelectedIds(remainingSelectedAfterBulk(data?.results || []));
+      setBulkModal(null);
+      if (dslActive && appliedQuery) {
+        await runDsl(appliedQuery);
+      } else {
+        await loadData(page, pageSize);
+      }
+      fetchActiveSuppressionIndex()
+        .then((idx) => setSuppressionIndex(idx))
+        .catch(() => {});
+    } catch (err) {
+      setBulkError(apiErrorMessage(err, 'Bulk action failed'));
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   async function openSourceDetails(row) {
     const obs = row.observable || row.ip;
@@ -11616,6 +11748,9 @@ function IOCListPage() {
         {statsToast ? (
           <div style={{ marginBottom: 10, fontSize: 12, color: '#93c5fd' }}>{statsToast}</div>
         ) : null}
+        {bulkToast ? (
+          <div style={{ marginBottom: 10, fontSize: 12, color: '#93c5fd' }}>{bulkToast}</div>
+        ) : null}
         {exportToast ? (
           <div style={{
             marginBottom: 10,
@@ -11948,6 +12083,30 @@ function IOCListPage() {
       </div>
       )}
 
+      {showIocListResultChrome && canWrite && selectedCount > 0 && (
+        <div style={{
+          marginBottom: 10,
+          padding: '10px 12px',
+          border: '1px solid #334155',
+          borderRadius: 10,
+          background: '#0f172a',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          alignItems: 'center'
+        }}>
+          <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>
+            {selectedCount} selected
+            {selectedCount >= BULK_TRIAGE_MAX ? ` (max ${BULK_TRIAGE_MAX})` : ''}
+          </span>
+          <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('tag')}>Add tag</button>
+          <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('classification')}>Add classification</button>
+          <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('suppress')}>Suppress</button>
+          <button type="button" className={buttonClassName({ size: 'compact', variant: 'danger' })} onClick={() => openBulkModal('expire')}>Expire</button>
+          <button type="button" className={buttonClassName({ size: 'compact', variant: 'ghost' })} onClick={() => setSelectedIds(new Set())}>Clear selection</button>
+        </div>
+      )}
+
       {showIocListResultChrome && (listLoading || listStatusText) && (
         <div style={{ marginBottom: 10, padding: 10, background: listLoading ? 'rgba(37,99,235,0.12)' : 'rgba(180,83,9,0.15)', border: `1px solid ${listLoading ? '#1d4ed8' : '#b45309'}`, borderRadius: 6, color: listLoading ? '#bfdbfe' : '#fcd34d' }}>
           {listLoading ? 'Query is running. Please wait while IOC results are being processed...' : listStatusText}
@@ -11966,6 +12125,7 @@ function IOCListPage() {
       <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
         <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
+            {canWrite ? <col style={{ width: columnWidths.select }} /> : null}
             <col className="ioc-list-col-secondary" style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
             <col style={{ width: columnWidths.category }} />
@@ -11977,6 +12137,17 @@ function IOCListPage() {
           </colgroup>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937' }}>
+              {canWrite ? (
+                <th style={{ width: columnWidths.select }}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all IOCs on this page"
+                    checked={pageSel.all}
+                    ref={(el) => { if (el) el.indeterminate = pageSel.some; }}
+                    onChange={togglePageSelected}
+                  />
+                </th>
+              ) : null}
               <th className="ioc-list-col-secondary" style={{ position: 'relative' }}>
                 #
                 <div onMouseDown={(e) => startResize('index', e)} style={{ position: 'absolute', top: 0, right: 0, width: 8, height: '100%', cursor: 'col-resize' }} />
@@ -12009,8 +12180,21 @@ function IOCListPage() {
               const classTitle = classVisible.length
                 ? classVisible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ')
                 : 'Unknown';
+              const rowId = parseIocRowId(r);
+              const isSelected = rowId != null && selectedIds.has(rowId);
               return (
-              <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #334155' }}>
+              <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #334155', background: isSelected ? 'rgba(37,99,235,0.12)' : undefined }}>
+                {canWrite ? (
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${obs}`}
+                      disabled={rowId == null}
+                      checked={isSelected}
+                      onChange={() => toggleRowSelected(rowId)}
+                    />
+                  </td>
+                ) : null}
                 <td className="ioc-list-col-secondary" style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td title={obs} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
                   <button
@@ -12114,6 +12298,71 @@ function IOCListPage() {
           )}
         </div>
       )}
+      <BulkActionConfirmModal
+        open={Boolean(bulkModal)}
+        title={
+          bulkModal === 'tag' ? `Add tag to ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+            : bulkModal === 'classification' ? `Add classification to ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+              : bulkModal === 'suppress' ? `Suppress ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+                : bulkModal === 'expire' ? `Expire ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+                  : 'Bulk action'
+        }
+        description={
+          bulkModal === 'tag' || bulkModal === 'classification'
+            ? 'This applies only to the IOCs you selected on this list. It does not apply to all search matches.'
+            : 'This applies only to the IOCs you selected on this list. It does not apply to all search matches. A reason is required and will be written to the audit log.'
+        }
+        confirmLabel={
+          bulkModal === 'tag' ? 'Add tag'
+            : bulkModal === 'classification' ? 'Add classification'
+              : bulkModal === 'suppress' ? 'Suppress'
+                : 'Expire'
+        }
+        loading={bulkBusy}
+        error={bulkError}
+        reason={bulkReason}
+        onReasonChange={setBulkReason}
+        onCancel={closeBulkModal}
+        onConfirm={() => confirmBulkAction().catch(() => {})}
+        requireReason={bulkModal === 'suppress' || bulkModal === 'expire'}
+        confirmDisabled={bulkConfirmDisabled({
+          requireReason: bulkModal === 'suppress' || bulkModal === 'expire',
+          reason: bulkReason,
+          requireChoice: bulkModal === 'tag' || bulkModal === 'classification',
+          choice: bulkModal === 'tag' ? bulkTagId : bulkClassSlug
+        })}
+        extraContent={
+          bulkModal === 'tag' ? (
+            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+              <span style={{ color: '#94a3b8', fontSize: 13 }}>Tag</span>
+              <select
+                value={bulkTagId}
+                onChange={(e) => setBulkTagId(e.target.value)}
+                style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+              >
+                <option value="">Select a tag…</option>
+                {bulkTagOptions.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </label>
+          ) : bulkModal === 'classification' ? (
+            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+              <span style={{ color: '#94a3b8', fontSize: 13 }}>Classification</span>
+              <select
+                value={bulkClassSlug}
+                onChange={(e) => setBulkClassSlug(e.target.value)}
+                style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+              >
+                <option value="">Select a classification…</option>
+                {bulkClassOptions.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label || c.value}</option>
+                ))}
+              </select>
+            </label>
+          ) : null
+        }
+      />
       </section>
     </AppShell>
   );

@@ -66,6 +66,7 @@ import {
   mergeAnalystIntelligenceItem
 } from './routes/analystIntelligence.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
+import { registerIocBulkTriageRoutes } from './routes/iocBulkTriage.js';
 import { registerIocDeleteRoute } from './routes/iocDelete.js';
 import { formatExpirationSummary, buildIocExpirationSummary, recomputeIocGlobalStatus } from './lib/iocExpiration.js';
 import {
@@ -2723,6 +2724,8 @@ registerRouteModule('analyst_intelligence');
 registerRouteModule('ip_enrichment');
 registerIocExpirationRoutes(app, pool, auditLogService);
 registerRouteModule('ioc_expiration');
+registerIocBulkTriageRoutes(app, pool, auditLogService);
+registerRouteModule('ioc_bulk_triage');
 registerIocConfidenceRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache
 });
