@@ -85,6 +85,7 @@ import {
   remainingSelectedAfterBulk,
   bulkConfirmDisabled
 } from './lib/iocBulkTriage.js';
+import { savedSearchCreatePayload, savedSearchErrorMessage } from './lib/iocSavedSearches.js';
 import {
   canCloseModal,
   modalSizeClass,
@@ -11090,6 +11091,12 @@ function IOCListPage() {
   const [bulkClassSlug, setBulkClassSlug] = useState('');
   const [bulkTagOptions, setBulkTagOptions] = useState([]);
   const [bulkClassOptions, setBulkClassOptions] = useState([]);
+  const [savedSearches, setSavedSearches] = useState([]);
+  const [savedSelectedId, setSavedSelectedId] = useState('');
+  const [savedModal, setSavedModal] = useState(null);
+  const [savedName, setSavedName] = useState('');
+  const [savedError, setSavedError] = useState('');
+  const [savedBusy, setSavedBusy] = useState(false);
 
   const loadSummary = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setSummaryLoading(true);
@@ -11541,6 +11548,88 @@ function IOCListPage() {
     runDsl(query, null, { prevStack: [] });
   }
 
+  const refreshSavedSearches = useCallback(async () => {
+    try {
+      const { data } = await api.get('/iocs/saved-searches');
+      setSavedSearches(Array.isArray(data?.saved_searches) ? data.saved_searches : []);
+    } catch {
+      /* listing is best-effort */
+    }
+  }, []);
+
+  useEffect(() => { refreshSavedSearches(); }, [refreshSavedSearches]);
+
+  function applySavedSearch(id) {
+    setSavedSelectedId(id);
+    if (!id) return;
+    const found = savedSearches.find((s) => s.id === id);
+    const query = String(found?.original_query || '').trim();
+    if (!query) return;
+    setSearchInput(query);
+    setDslCursorStack([]);
+    runDsl(query, null, { prevStack: [] });
+  }
+
+  function openSaveSearchModal() {
+    setSavedError('');
+    setSavedName('');
+    setSavedModal('save');
+  }
+
+  function openRenameSearchModal() {
+    const found = savedSearches.find((s) => s.id === savedSelectedId);
+    setSavedError('');
+    setSavedName(found?.name || '');
+    setSavedModal('rename');
+  }
+
+  async function submitSavedSearchModal() {
+    const query = String(searchInput || appliedQuery || '').trim();
+    setSavedBusy(true);
+    setSavedError('');
+    try {
+      if (savedModal === 'save') {
+        const payload = savedSearchCreatePayload({ name: savedName, query });
+        if (!payload.ok) {
+          setSavedError('Name and a search query are required.');
+          return;
+        }
+        const { data } = await api.post('/iocs/saved-searches', payload.body);
+        await refreshSavedSearches();
+        setSavedSelectedId(data?.saved_search?.id || '');
+        setSavedModal(null);
+      } else if (savedModal === 'rename' && savedSelectedId) {
+        const name = String(savedName || '').trim();
+        if (!name) {
+          setSavedError('Name is required.');
+          return;
+        }
+        await api.patch(`/iocs/saved-searches/${savedSelectedId}`, { name });
+        await refreshSavedSearches();
+        setSavedModal(null);
+      }
+    } catch (err) {
+      setSavedError(savedSearchErrorMessage(err?.response?.data));
+    } finally {
+      setSavedBusy(false);
+    }
+  }
+
+  async function deleteSelectedSavedSearch() {
+    if (!savedSelectedId) return;
+    setSavedBusy(true);
+    setSavedError('');
+    try {
+      await api.delete(`/iocs/saved-searches/${savedSelectedId}`);
+      setSavedSelectedId('');
+      await refreshSavedSearches();
+    } catch (err) {
+      setSavedError(savedSearchErrorMessage(err?.response?.data, 'Failed to delete saved search'));
+    } finally {
+      setSavedBusy(false);
+    }
+  }
+
   function exitDeepSearchResults() {
     if (deepSearchIdParam) {
       // Drop the ?deep_search= param without disturbing other query state.
@@ -11853,6 +11942,56 @@ function IOCListPage() {
         <button onClick={clearDsl}>Clear</button>
         <button onClick={() => setSyntaxHelpOpen((v) => !v)}>Syntax Help</button>
       </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          value={savedSelectedId}
+          onChange={(e) => applySavedSearch(e.target.value)}
+          style={{ minWidth: 220, maxWidth: 360 }}
+          aria-label="Saved searches"
+        >
+          <option value="">Saved searches</option>
+          {savedSearches.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        {canWrite ? (
+          <>
+            <button type="button" onClick={openSaveSearchModal} disabled={savedBusy || !(String(searchInput || appliedQuery || '').trim())}>
+              Save search
+            </button>
+            <button type="button" onClick={openRenameSearchModal} disabled={savedBusy || !savedSelectedId}>Rename</button>
+            <button type="button" onClick={deleteSelectedSavedSearch} disabled={savedBusy || !savedSelectedId}>Delete</button>
+          </>
+        ) : null}
+        {savedError && !savedModal ? <span style={{ color: '#fca5a5', fontSize: 13 }}>{savedError}</span> : null}
+      </div>
+
+      {savedModal ? (
+        <ModalOverlay
+          title={savedModal === 'rename' ? 'Rename saved search' : 'Save search'}
+          onClose={savedBusy ? undefined : () => setSavedModal(null)}
+          footer={(
+            <>
+              <button type="button" onClick={() => setSavedModal(null)} disabled={savedBusy}>Cancel</button>
+              <button type="button" onClick={submitSavedSearchModal} disabled={savedBusy}>
+                {savedBusy ? 'Saving…' : (savedModal === 'rename' ? 'Rename' : 'Save')}
+              </button>
+            </>
+          )}
+        >
+          <label style={{ display: 'grid', gap: 6, color: '#e2e8f0', fontSize: 13 }}>
+            Name
+            <input
+              value={savedName}
+              onChange={(e) => setSavedName(e.target.value)}
+              autoFocus
+              maxLength={120}
+            />
+          </label>
+          {savedError ? <div style={{ marginTop: 10, color: '#fca5a5', fontSize: 13 }}>{savedError}</div> : null}
+        </ModalOverlay>
+      ) : null}
 
       {searchError && (
         <div style={{ marginBottom: 10, padding: 10, background: 'rgba(127,29,29,0.2)', border: '1px solid #7f1d1d', borderRadius: 6, color: '#fca5a5', fontWeight: 600 }}>

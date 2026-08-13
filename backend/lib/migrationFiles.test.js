@@ -29,6 +29,18 @@ test('155 STIX formats migration is runnable', () => {
   assert.equal(isRunnableMigrationFile('155_published_feeds_stix_format.sql'), true);
 });
 
+test('157 saved IOC searches migration is runnable', () => {
+  assert.equal(isRunnableMigrationFile('157_ioc_saved_searches.sql'), true);
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/157_ioc_saved_searches.sql'),
+    'utf8'
+  );
+  assert.ok(sql.includes('ioc_saved_searches'));
+  assert.ok(sql.includes('owner_id'));
+  assert.ok(sql.includes('REFERENCES users(id)'));
+  assert.ok(sql.includes('lower(name)'));
+});
+
 test('156 IOC read/export scopes migration is runnable and expands CHECKs', () => {
   assert.equal(isRunnableMigrationFile('156_api_ioc_read_export_scopes.sql'), true);
   const sql = readFileSync(

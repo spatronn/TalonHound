@@ -33,6 +33,7 @@ import { registerApiDocsRoutes } from './routes/apiDocs.js';
 import { registerAuditLogRoutes } from './routes/auditLogs.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerIocSearchExportRoutes } from './routes/iocSearchExports.js';
+import { registerIocSavedSearchRoutes } from './routes/iocSavedSearches.js';
 import { EXPORT_QUEUE_NAME } from './lib/iocSearchExport/exportConfig.js';
 import { registerIocDeepSearchRoutes } from './routes/iocDeepSearches.js';
 import { DEEP_SEARCH_QUEUE_NAME } from './lib/iocDeepSearch/deepSearchConfig.js';
@@ -2697,6 +2698,8 @@ registerRouteModule('api_keys');
 registerAuditLogRoutes(app, pool);
 registerIocExportRoutes(app, pool);
 registerIocSearchExportRoutes(app, pool, { exportQueue: iocSearchExportQueue, auditLogService });
+registerIocSavedSearchRoutes(app, pool, auditLogService);
+registerRouteModule('ioc_saved_searches');
 registerIocDeepSearchRoutes(app, pool, {
   deepSearchQueue: iocDeepSearchQueue,
   auditLogService,

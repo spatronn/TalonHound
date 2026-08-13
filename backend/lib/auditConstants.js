@@ -117,6 +117,9 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_SEARCH_EXPORT_CANCELLED: 'ioc.search_export.cancelled',
   IOC_SEARCH_EXPORT_DOWNLOADED: 'ioc.search_export.downloaded',
   IOC_SEARCH_EXPORT_EXPIRED: 'ioc.search_export.expired',
+  IOC_SAVED_SEARCH_CREATED: 'ioc.saved_search.created',
+  IOC_SAVED_SEARCH_UPDATED: 'ioc.saved_search.updated',
+  IOC_SAVED_SEARCH_DELETED: 'ioc.saved_search.deleted',
   IOC_DEEP_SEARCH_CREATED: 'ioc.deep_search.created',
   IOC_DEEP_SEARCH_STARTED: 'ioc.deep_search.started',
   IOC_DEEP_SEARCH_COMPLETED: 'ioc.deep_search.completed',
@@ -199,7 +202,8 @@ export const AUDIT_ENTITY = Object.freeze({
   CUSTOM_THREAT_FEED: 'custom_threat_feed',
   SYSTEM_BACKUP: 'system_backup',
   SYSTEM_RESTORE: 'system_restore',
-  FILE_ARTIFACT: 'file_artifact'
+  FILE_ARTIFACT: 'file_artifact',
+  IOC_SAVED_SEARCH: 'ioc_saved_search'
 });
 
 /** Human-readable labels for UI */
@@ -296,6 +300,9 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_SOURCE_IOCS_MOVED]: 'IOC Source IOCs Moved',
   [AUDIT_ACTION.IOC_SOURCE_MOVE_FAILED]: 'IOC Source Move Failed',
   [AUDIT_ACTION.IOC_SOURCE_ARCHIVED_AFTER_MOVE]: 'IOC Source Archived After Move',
+  [AUDIT_ACTION.IOC_SAVED_SEARCH_CREATED]: 'IOC Saved Search Created',
+  [AUDIT_ACTION.IOC_SAVED_SEARCH_UPDATED]: 'IOC Saved Search Updated',
+  [AUDIT_ACTION.IOC_SAVED_SEARCH_DELETED]: 'IOC Saved Search Deleted',
   [AUDIT_ACTION.SETTINGS_UPDATED]: 'Settings Updated',
   [AUDIT_ACTION.ENRICHMENT_SETTINGS_UPDATED]: 'Enrichment Settings Updated',
   [AUDIT_ACTION.ENRICHMENT_KEY_REMOVED]: 'Enrichment API Key Removed',
