@@ -172,7 +172,7 @@ export function isStixEnabledFeed(feed) {
 
 export async function listStixEnabledFeeds(pool) {
   const { rows } = await pool.query(
-    `SELECT id, name, slug, description, enabled, formats, format,
+    `SELECT id, name, slug, description, enabled, formats,
             ioc_types, ioc_type, time_window, filter_mode, advanced_query
      FROM published_feeds
      WHERE enabled = TRUE
@@ -185,7 +185,7 @@ export async function getStixEnabledFeedBySlug(pool, slug) {
   const id = String(slug || '').trim();
   if (!isValidTaxiiCollectionId(id)) return null;
   const { rows } = await pool.query(
-    `SELECT id, name, slug, description, enabled, formats, format,
+    `SELECT id, name, slug, description, enabled, formats,
             ioc_types, ioc_type, time_window, filter_mode, advanced_query
      FROM published_feeds
      WHERE slug = $1

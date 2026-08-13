@@ -74,3 +74,11 @@ test('taxiiAcceptOk allows missing, taxii, stix, and json', () => {
   assert.equal(taxiiAcceptOk({ headers: { accept: 'application/stix+json;version=2.1' } }), true);
   assert.equal(taxiiAcceptOk({ headers: { accept: 'text/html' } }), false);
 });
+
+test('list/get SQL does not select dropped published_feeds.format column', async () => {
+  const src = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('./taxii21.js', import.meta.url), 'utf8')
+  );
+  assert.doesNotMatch(src, /formats,\s*format/);
+  assert.match(src, /SELECT id, name, slug, description, enabled, formats/);
+});
