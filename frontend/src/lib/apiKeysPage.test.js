@@ -14,11 +14,11 @@ test('page description is generic (not Published Feed-only)', () => {
   assert.doesNotMatch(API_KEYS_PAGE_DESCRIPTION, /Published Feed keys let/i);
 });
 
-test('two fixed access profiles are exposed', () => {
-  assert.equal(ACCESS_PROFILE_OPTIONS.length, 2);
+test('three fixed access profiles are exposed', () => {
+  assert.equal(ACCESS_PROFILE_OPTIONS.length, 3);
   assert.deepEqual(
     ACCESS_PROFILE_OPTIONS.map((o) => o.id).sort(),
-    ['ioc_management', 'published_feed']
+    ['ioc_management', 'ioc_read', 'published_feed']
   );
 });
 
@@ -32,6 +32,10 @@ test('create payload maps profile selection correctly', () => {
   assert.equal(ioc.ok, true);
   assert.equal(ioc.body.access_profile, 'ioc_management');
 
+  const read = apiKeyCreatePayload({ name: 'siem', accessProfile: 'ioc_read' });
+  assert.equal(read.ok, true);
+  assert.equal(read.body.access_profile, 'ioc_read');
+
   const bad = apiKeyCreatePayload({ name: '', accessProfile: 'published_feed' });
   assert.equal(bad.ok, false);
 });
@@ -41,5 +45,7 @@ test('table labels and permission summaries', () => {
   assert.equal(accessProfileLabel('ioc_management'), 'IOC Management');
   assert.equal(accessProfilePermissionSummary('published_feed'), 'Read feeds');
   assert.equal(accessProfilePermissionSummary('ioc_management'), 'Create + Update IOCs');
+  assert.equal(accessProfileLabel('ioc_read'), 'IOC Read');
+  assert.equal(accessProfilePermissionSummary('ioc_read'), 'Read + Search + Export IOCs');
   assert.equal(API_DOCS_PATH, '/api/docs');
 });

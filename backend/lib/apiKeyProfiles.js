@@ -5,18 +5,23 @@
 export const API_SCOPE = Object.freeze({
   PUBLISHED_FEEDS_READ: 'published_feeds:read',
   IOC_CREATE: 'ioc:create',
-  IOC_UPDATE: 'ioc:update'
+  IOC_UPDATE: 'ioc:update',
+  IOC_READ: 'ioc:read',
+  IOC_EXPORT: 'ioc:export'
 });
 
 export const ALL_API_SCOPES = Object.freeze([
   API_SCOPE.PUBLISHED_FEEDS_READ,
   API_SCOPE.IOC_CREATE,
-  API_SCOPE.IOC_UPDATE
+  API_SCOPE.IOC_UPDATE,
+  API_SCOPE.IOC_READ,
+  API_SCOPE.IOC_EXPORT
 ]);
 
 export const ACCESS_PROFILE = Object.freeze({
   PUBLISHED_FEED: 'published_feed',
   IOC_MANAGEMENT: 'ioc_management',
+  IOC_READ: 'ioc_read',
   /** Legacy hash-only per-feed keys — still mapped to feed-read scope. */
   FEED_ACCESS: 'feed_access'
 });
@@ -40,6 +45,15 @@ const PROFILE_DEFS = Object.freeze({
     permission_summary: 'Create + Update IOCs',
     key_prefix: 'th_ioc_',
     scopes: Object.freeze([API_SCOPE.IOC_CREATE, API_SCOPE.IOC_UPDATE]),
+    creatable: true
+  }),
+  [ACCESS_PROFILE.IOC_READ]: Object.freeze({
+    id: ACCESS_PROFILE.IOC_READ,
+    label: 'IOC Read',
+    description: 'Read, search, and export IOC data. Cannot create, update, or delete IOCs.',
+    permission_summary: 'Read + Search + Export IOCs',
+    key_prefix: 'th_read_',
+    scopes: Object.freeze([API_SCOPE.IOC_READ, API_SCOPE.IOC_EXPORT]),
     creatable: true
   }),
   [ACCESS_PROFILE.FEED_ACCESS]: Object.freeze({

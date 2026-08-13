@@ -35,13 +35,14 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
         `| --- | --- |`,
         `| Published Feed (\`${ACCESS_PROFILE.PUBLISHED_FEED}\`) | \`${API_SCOPE.PUBLISHED_FEEDS_READ}\` |`,
         `| IOC Management (\`${ACCESS_PROFILE.IOC_MANAGEMENT}\`) | \`${API_SCOPE.IOC_CREATE}\`, \`${API_SCOPE.IOC_UPDATE}\` |`,
+        `| IOC Read (\`${ACCESS_PROFILE.IOC_READ}\`) | \`${API_SCOPE.IOC_READ}\`, \`${API_SCOPE.IOC_EXPORT}\` |`,
         '',
         'Authorization is scope-based. Profiles are fixed presets — there is no custom scope selector.'
       ].join('\n')
     },
     servers: [{ url: serverUrl }],
     tags: [
-      { name: 'IOCs', description: 'Create and update indicators of compromise' },
+      { name: 'IOCs', description: 'Create, update, read, search, and export indicators of compromise' },
       { name: 'Published Feeds', description: 'Read-only published feed pull (compatibility)' }
     ],
     components: {
@@ -50,7 +51,7 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'API Key',
-          description: 'TalonHound API key (th_pf_… or th_ioc_…)'
+          description: 'TalonHound API key (th_pf_…, th_ioc_…, or th_read_…)'
         }
       },
       schemas: {
@@ -73,6 +74,7 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
                     'API_KEY_DISABLED',
                     'INSUFFICIENT_SCOPE',
                     'RATE_LIMIT_EXCEEDED',
+                    'QUERY_TOO_EXPENSIVE',
                     'INTERNAL_ERROR'
                   ]
                 },
@@ -136,6 +138,28 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
     },
     paths: {
       '/api/v1/iocs': {
+        get: {
+          tags: ['IOCs'],
+          summary: 'List IOCs',
+          description: [
+            `Requires scope \`${API_SCOPE.IOC_READ}\`.`,
+            'Bounded keyset pagination. Default `limit` is 50, maximum 100.',
+            'This is not a full-table dump. Use `cursor` from `next_cursor` to page.'
+          ].join('\n\n'),
+          security: [{ ApiKeyBearer: [] }],
+          'x-required-scopes': [API_SCOPE.IOC_READ],
+          parameters: [
+            { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+            { name: 'cursor', in: 'query', schema: { type: 'string' } },
+            { name: 'type', in: 'query', schema: { type: 'string' } },
+            { name: 'status', in: 'query', schema: { type: 'string', enum: ['active', 'expired', 'suppressed', 'disabled'] } }
+          ],
+          responses: {
+            '200': { description: 'Page of IOCs' },
+            '401': { description: 'Invalid or missing API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '403': { description: 'Disabled key or insufficient scope', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } }
+          }
+        },
         post: {
           tags: ['IOCs'],
           summary: 'Create IOC',
@@ -213,6 +237,28 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
         }
       },
       '/api/v1/iocs/{id}': {
+        get: {
+          tags: ['IOCs'],
+          summary: 'Get IOC',
+          description: [
+            `Requires scope \`${API_SCOPE.IOC_READ}\`.`,
+            'Accepts numeric `id` or `public_id` UUID.'
+          ].join('\n\n'),
+          security: [{ ApiKeyBearer: [] }],
+          'x-required-scopes': [API_SCOPE.IOC_READ],
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' } }
+          ],
+          responses: {
+            '200': {
+              description: 'IOC',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/IocResponse' } } }
+            },
+            '401': { description: 'Invalid or missing API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '403': { description: 'Disabled key or insufficient scope', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '404': { description: 'IOC not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } }
+          }
+        },
         patch: {
           tags: ['IOCs'],
           summary: 'Update IOC metadata',
@@ -261,6 +307,75 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
             '403': { description: 'Disabled key or insufficient scope', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             '404': { description: 'IOC not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             '500': { description: 'Internal error', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } }
+          }
+        }
+      },
+      '/api/v1/iocs/search': {
+        post: {
+          tags: ['IOCs'],
+          summary: 'Search IOCs',
+          description: [
+            `Requires scope \`${API_SCOPE.IOC_READ}\`.`,
+            'Uses the IOC Search DSL. Expensive queries (leading wildcards, NOT, source scans, broad OR) are rejected.',
+            'Bounded pagination: default 50, maximum 100 per page.'
+          ].join('\n\n'),
+          security: [{ ApiKeyBearer: [] }],
+          'x-required-scopes': [API_SCOPE.IOC_READ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: { type: 'string' },
+                    cursor: { type: 'string' },
+                    limit: { type: 'integer', minimum: 1, maximum: 100 }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Search page' },
+            '400': { description: 'Invalid or too-expensive query', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '401': { description: 'Invalid or missing API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '403': { description: 'Disabled key or insufficient scope', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } }
+          }
+        }
+      },
+      '/api/v1/iocs/export': {
+        post: {
+          tags: ['IOCs'],
+          summary: 'Export IOCs',
+          description: [
+            `Requires scope \`${API_SCOPE.IOC_EXPORT}\`.`,
+            'Bounded export of a Search DSL query (maximum 10,000 rows).',
+            'Expensive queries are rejected. `format` is `json` (default) or `csv`.'
+          ].join('\n\n'),
+          security: [{ ApiKeyBearer: [] }],
+          'x-required-scopes': [API_SCOPE.IOC_EXPORT],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: { type: 'string' },
+                    format: { type: 'string', enum: ['json', 'csv'] }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': { description: 'Export payload (JSON envelope or CSV body)' },
+            '400': { description: 'Invalid or too-expensive query', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '401': { description: 'Invalid or missing API key', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            '403': { description: 'Disabled key or insufficient scope', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } }
           }
         }
       },

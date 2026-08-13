@@ -134,7 +134,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
 
     if (!profile?.creatable) {
       return res.status(400).json({
-        message: 'access_profile must be published_feed or ioc_management'
+        message: `access_profile must be ${listCreatableAccessProfiles().map((p) => p.id).join(', ')}`
       });
     }
     if (!name) return res.status(400).json({ message: 'name is required' });

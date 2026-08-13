@@ -31,6 +31,7 @@
     "test:ioc-match-reactivation": "node --test lib/iocMatchReactivation.test.js",
     "test:ioc-suppression": "node --test lib/suppressionInput.test.js lib/manualSuppressionCreate.test.js lib/iocSuppressionEffective.test.js lib/iocSuppressionStatus.test.js",
     "test:ioc-bulk-triage": "node --test lib/iocBulkTriage.test.js",
+    "test:api-v1": "node --test routes/apiV1Iocs.test.js lib/apiIocReadService.test.js lib/apiKeyProfiles.test.js lib/publishedFeedApiKey.test.js routes/apiKeys.test.js routes/apiDocs.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js lib/iocListPagination.test.js lib/iocListDisplay.test.js lib/iocListStatsSnapshot.test.js",
     "test:ioc-sources": "node --test lib/iocSourceLifecycle.test.js lib/manualIocCreate.test.js",

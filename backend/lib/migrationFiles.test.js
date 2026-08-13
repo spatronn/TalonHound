@@ -29,6 +29,19 @@ test('155 STIX formats migration is runnable', () => {
   assert.equal(isRunnableMigrationFile('155_published_feeds_stix_format.sql'), true);
 });
 
+test('156 IOC read/export scopes migration is runnable and expands CHECKs', () => {
+  assert.equal(isRunnableMigrationFile('156_api_ioc_read_export_scopes.sql'), true);
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/156_api_ioc_read_export_scopes.sql'),
+    'utf8'
+  );
+  assert.ok(sql.includes('ioc_read'));
+  assert.ok(sql.includes('ioc:read'));
+  assert.ok(sql.includes('ioc:export'));
+  assert.ok(sql.includes('chk_pf_access_keys_key_type'));
+  assert.ok(sql.includes('chk_pf_access_keys_scopes'));
+});
+
 test('155 migration allows stix in published_feeds formats CHECK', () => {
   const sql = readFileSync(
     path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/155_published_feeds_stix_format.sql'),

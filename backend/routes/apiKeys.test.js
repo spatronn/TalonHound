@@ -189,17 +189,18 @@ test('rejects non-creatable key type on create', async () => {
   assert.equal(res.status, 400);
 });
 
-test('create IOC Management key returns th_ioc_ prefix and scopes', async () => {
+test('create IOC Read key returns th_read_ prefix and read/export scopes', async () => {
   const store = [];
   const res = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', {
-    name: 'Automation',
-    access_profile: 'ioc_management'
+    name: 'SIEM',
+    access_profile: 'ioc_read'
   });
   assert.equal(res.status, 201);
-  assert.ok(res.body.token.startsWith('th_ioc_'));
-  assert.equal(res.body.api_key.key_type, 'ioc_management');
-  assert.deepEqual(res.body.api_key.scopes, ['ioc:create', 'ioc:update']);
-  assert.equal(res.body.api_key.permission_summary, 'Create + Update IOCs');
+  assert.ok(res.body.token.startsWith('th_read_'));
+  assert.equal(res.body.api_key.key_type, 'ioc_read');
+  assert.deepEqual(res.body.api_key.scopes, ['ioc:read', 'ioc:export']);
+  assert.equal(res.body.api_key.permission_summary, 'Read + Search + Export IOCs');
+  assert.equal(res.body.api_key.revealable, true);
 });
 
 test('create Published Feed key includes published_feeds:read scope', async () => {

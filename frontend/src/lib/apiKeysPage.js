@@ -17,6 +17,12 @@ export const ACCESS_PROFILE_OPTIONS = Object.freeze([
     label: 'IOC Management',
     description: 'Create and update IOCs through the API. Cannot delete IOCs or access administrative APIs.',
     permission_summary: 'Create + Update IOCs'
+  }),
+  Object.freeze({
+    id: 'ioc_read',
+    label: 'IOC Read',
+    description: 'Read, search, and export IOC data. Cannot create, update, or delete IOCs.',
+    permission_summary: 'Read + Search + Export IOCs'
   })
 ]);
 
@@ -25,7 +31,7 @@ export function apiKeyCreatePayload({ name, accessProfile, enabled = true } = {}
   const profile = String(accessProfile || '').trim().toLowerCase();
   const errors = [];
   if (!trimmed) errors.push('name');
-  if (profile !== 'published_feed' && profile !== 'ioc_management') errors.push('access_profile');
+  if (profile !== 'published_feed' && profile !== 'ioc_management' && profile !== 'ioc_read') errors.push('access_profile');
   if (errors.length) {
     return { ok: false, errors };
   }

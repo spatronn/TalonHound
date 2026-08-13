@@ -96,7 +96,11 @@ test('GET /api/openapi.json returns valid OpenAPI 3.1', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.json.openapi, '3.1.0');
   assert.ok(res.json.paths['/api/v1/iocs']?.post);
+  assert.ok(res.json.paths['/api/v1/iocs']?.get);
   assert.ok(res.json.paths['/api/v1/iocs/{id}']?.patch);
+  assert.ok(res.json.paths['/api/v1/iocs/{id}']?.get);
+  assert.ok(res.json.paths['/api/v1/iocs/search']?.post);
+  assert.ok(res.json.paths['/api/v1/iocs/export']?.post);
   assert.ok(res.json.components.securitySchemes.ApiKeyBearer);
   // Canonical doc helper stays in sync with the HTTP response.
   assert.equal(buildOpenApiDocument().openapi, '3.1.0');
@@ -107,6 +111,7 @@ test('openapi.json contains no secret-like key material fields', async () => {
   const blob = JSON.stringify(res.json);
   assert.doesNotMatch(blob, /th_pf_[A-Za-z0-9_-]{20,}/);
   assert.doesNotMatch(blob, /th_ioc_[A-Za-z0-9_-]{20,}/);
+  assert.doesNotMatch(blob, /th_read_[A-Za-z0-9_-]{20,}/);
   assert.doesNotMatch(blob, /"token_hash"\s*:/);
   assert.doesNotMatch(blob, /secret_ciphertext/);
 });

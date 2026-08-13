@@ -200,7 +200,7 @@ export async function resolveTagNames(pool, tagsRaw) {
   };
 }
 
-function toApiIocResponse(row, extras = {}) {
+export function toApiIocResponse(row, extras = {}) {
   return {
     id: Number(row.id),
     public_id: row.public_id || null,
@@ -232,7 +232,7 @@ async function findExistingIoc(pool, type, value) {
   return rows[0] || null;
 }
 
-async function loadManualTags(pool, iocId, observableType) {
+export async function loadManualTags(pool, iocId, observableType) {
   const { rows } = await pool.query(
     `SELECT t.id, t.name, t.type
      FROM ioc_tags it

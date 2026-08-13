@@ -4,6 +4,7 @@ import {
   PUBLISHED_FEED_KEY_TYPE,
   PUBLISHED_FEED_KEY_PREFIX,
   generatePublishedFeedApiKey,
+  generateApiKeyForProfile,
   hashApiKey,
   lastFourOf,
   maskApiKey,
@@ -12,12 +13,15 @@ import {
   isRevealableKeyRow,
   keyStatus
 } from './publishedFeedApiKey.js';
+import { ACCESS_PROFILE } from './apiKeyProfiles.js';
 
 test('generates prefixed, unique keys', () => {
   const a = generatePublishedFeedApiKey();
   const b = generatePublishedFeedApiKey();
   assert.ok(a.startsWith(PUBLISHED_FEED_KEY_PREFIX));
   assert.notEqual(a, b);
+  const read = generateApiKeyForProfile(ACCESS_PROFILE.IOC_READ);
+  assert.ok(read.startsWith('th_read_'));
 });
 
 test('hashApiKey is deterministic 64-hex', () => {
@@ -43,13 +47,14 @@ test('timing-safe hash compare', () => {
   assert.equal(timingSafeHashEqual('', ''), false);
 });
 
-test('redacts api_key, Bearer, th_pf_ and th_ioc_ tokens in text', () => {
+test('redacts api_key, Bearer, th_pf_, th_ioc_ and th_read_ tokens in text', () => {
   const url = 'GET /api/published-feeds/malware?api_key=th_pf_SECRETVALUE123 200';
   const out = redactApiKeyInText(url);
   assert.ok(!out.includes('SECRETVALUE123'));
   assert.match(out, /api_key=\[REDACTED\]/);
   assert.equal(redactApiKeyInText('bare th_pf_abcDEF012 token'), 'bare th_pf_[REDACTED] token');
   assert.equal(redactApiKeyInText('bare th_ioc_abcDEF012 token'), 'bare th_ioc_[REDACTED] token');
+  assert.equal(redactApiKeyInText('bare th_read_abcDEF012 token'), 'bare th_read_[REDACTED] token');
   assert.match(redactApiKeyInText('Authorization: Bearer th_ioc_SECRET'), /Bearer \[REDACTED\]/);
   assert.match(redactApiKeyInText('?token=abc123&x=1'), /token=\[REDACTED\]/);
 });
@@ -57,6 +62,7 @@ test('redacts api_key, Bearer, th_pf_ and th_ioc_ tokens in text', () => {
 test('isRevealableKeyRow requires modern profile + ciphertext', () => {
   assert.equal(isRevealableKeyRow({ key_type: PUBLISHED_FEED_KEY_TYPE, secret_ciphertext: Buffer.from('x') }), true);
   assert.equal(isRevealableKeyRow({ key_type: 'ioc_management', secret_ciphertext: Buffer.from('x') }), true);
+  assert.equal(isRevealableKeyRow({ key_type: 'ioc_read', secret_ciphertext: Buffer.from('x') }), true);
   assert.equal(isRevealableKeyRow({ key_type: PUBLISHED_FEED_KEY_TYPE, secret_ciphertext: null }), false);
   assert.equal(isRevealableKeyRow({ key_type: 'feed_access', secret_ciphertext: Buffer.from('x') }), false);
 });

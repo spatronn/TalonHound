@@ -6773,7 +6773,12 @@ function ApiKeysPage() {
               ) : keys.length ? keys.map((k) => {
                 const perm = k.permission_summary || accessProfilePermissionSummary(k.key_type || k.access_profile);
                 const typeLabel = k.key_type_label || accessProfileLabel(k.key_type, 'Published Feed');
-                const isModern = k.key_type === 'published_feed' || k.key_type === 'ioc_management';
+                const isModern = k.key_type === 'published_feed' || k.key_type === 'ioc_management' || k.key_type === 'ioc_read';
+                const typeColors = k.key_type === 'ioc_management'
+                  ? { background: 'rgba(16,185,129,0.15)', color: '#6ee7b7', border: '1px solid #065f46' }
+                  : k.key_type === 'ioc_read'
+                    ? { background: 'rgba(245,158,11,0.15)', color: '#fcd34d', border: '1px solid #92400e' }
+                    : { background: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid #1e40af' };
                 return (
                   <tr key={k.id} style={ui.tr}>
                     <td style={ui.td}>{k.name}</td>
@@ -6781,9 +6786,7 @@ function ApiKeysPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <span style={{
                           ...apiKeyStatusStyle('active'),
-                          background: k.key_type === 'ioc_management' ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)',
-                          color: k.key_type === 'ioc_management' ? '#6ee7b7' : '#93c5fd',
-                          border: k.key_type === 'ioc_management' ? '1px solid #065f46' : '1px solid #1e40af',
+                          ...typeColors,
                           width: 'fit-content'
                         }}>
                           {typeLabel}
@@ -6924,7 +6927,7 @@ function ApiKeysPage() {
             <code style={ui.code}>{createdKey.token}</code>
             <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copyText(createdKey.token)}>Copy key</button>
             <p style={{ ...ui.helper, marginTop: 12 }}>
-              {createdKey.access_profile === 'ioc_management' ? (
+              {createdKey.access_profile === 'ioc_management' || createdKey.access_profile === 'ioc_read' ? (
                 <>
                   Authenticate management calls with <code style={{ color: '#cbd5e1' }}>Authorization: Bearer YOUR_KEY</code>.
                   See <a href={API_DOCS_PATH} target="_blank" rel="noreferrer" style={{ color: '#93c5fd' }}>API Documentation</a>.

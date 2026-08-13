@@ -1,4 +1,4 @@
-// Helpers for TalonHound API keys (Published Feed `th_pf_` + IOC Management `th_ioc_`).
+// Helpers for TalonHound API keys (th_pf_ / th_ioc_ / th_read_).
 
 import crypto from 'node:crypto';
 import { hashFeedAccessToken } from './feedAccessToken.js';
@@ -12,8 +12,10 @@ export { ACCESS_PROFILE, LEGACY_FEED_ACCESS_KEY_TYPE };
 
 export const PUBLISHED_FEED_KEY_TYPE = ACCESS_PROFILE.PUBLISHED_FEED;
 export const IOC_MANAGEMENT_KEY_TYPE = ACCESS_PROFILE.IOC_MANAGEMENT;
+export const IOC_READ_KEY_TYPE = ACCESS_PROFILE.IOC_READ;
 export const PUBLISHED_FEED_KEY_PREFIX = 'th_pf_';
 export const IOC_MANAGEMENT_KEY_PREFIX = 'th_ioc_';
+export const IOC_READ_KEY_PREFIX = 'th_read_';
 
 const SECRET_BYTES = 32;
 const MASK_BODY = '•'.repeat(12);
@@ -81,14 +83,15 @@ export function redactApiKeyInText(text) {
     .replace(/([?&](?:api_key|apikey|key|token)=)[^&\s"']+/gi, '$1[REDACTED]')
     .replace(/th_pf_[A-Za-z0-9_-]+/g, 'th_pf_[REDACTED]')
     .replace(/th_ioc_[A-Za-z0-9_-]+/g, 'th_ioc_[REDACTED]')
+    .replace(/th_read_[A-Za-z0-9_-]+/g, 'th_read_[REDACTED]')
     .replace(/(Bearer\s+)\S+/gi, '$1[REDACTED]');
 }
 
 /** A stored key is revealable only if it carries an encrypted secret and is a modern profile. */
 export function isRevealableKeyRow(row) {
-  const t = row?.key_type;
+  const profile = getAccessProfile(row?.key_type);
   return Boolean(row?.secret_ciphertext)
-    && (t === PUBLISHED_FEED_KEY_TYPE || t === IOC_MANAGEMENT_KEY_TYPE);
+    && Boolean(profile?.creatable && profile.key_prefix);
 }
 
 /**
