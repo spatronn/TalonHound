@@ -6168,7 +6168,7 @@ function PublishedFeedsPage() {
                   </p>
                 ) : (
                   <p style={{ ...ui.helper, marginTop: 8 }}>
-                    Enable at least one format. Public pull defaults to TXT when enabled; use ?format=json or ?format=stix for those formats.
+                    Enable at least one format. Public pull defaults to TXT when enabled; use ?format=json or ?format=stix. STIX 2.1 Bundles import into MISP and are also served read-only at /taxii2/.
                   </p>
                 )}
               </div>
@@ -6263,6 +6263,15 @@ function FeedUrlTemplateModal({ ui, feed, onClose }) {
             </div>
           );
         })}
+        {formats.includes('stix') ? (
+          <div style={{ marginBottom: 16 }}>
+            <span style={ui.label}>TAXII 2.1</span>
+            <code style={ui.code}>{`${window.location.origin}/taxii2/talonhound/collections/${feed.slug || '{slug}'}/objects/`}</code>
+            <p style={{ ...ui.helper, marginTop: 8 }}>
+              Authenticate with a Published Feed API key (Bearer or api_key). Read-only. Collection id is this feed&apos;s slug.
+            </p>
+          </div>
+        ) : null}
 
         <p style={{ ...ui.helper, marginTop: 8 }}>
           Create or reveal a Published Feed key under{' '}

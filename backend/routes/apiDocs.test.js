@@ -101,6 +101,8 @@ test('GET /api/openapi.json returns valid OpenAPI 3.1', async () => {
   assert.ok(res.json.paths['/api/v1/iocs/{id}']?.get);
   assert.ok(res.json.paths['/api/v1/iocs/search']?.post);
   assert.ok(res.json.paths['/api/v1/iocs/export']?.post);
+  assert.ok(res.json.paths['/taxii2/']?.get);
+  assert.ok(res.json.paths['/taxii2/talonhound/collections/{id}/objects/']?.get);
   assert.ok(res.json.components.securitySchemes.ApiKeyBearer);
   // Canonical doc helper stays in sync with the HTTP response.
   assert.equal(buildOpenApiDocument().openapi, '3.1.0');

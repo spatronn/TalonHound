@@ -29,6 +29,17 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
         'GET /api/published-feeds/{slug}?api_key=<API_KEY>',
         '```',
         '',
+        'TAXII 2.1 is a read-only server over STIX-enabled Published Feeds:',
+        '',
+        '```',
+        'GET /taxii2/',
+        'Authorization: Bearer <PUBLISHED_FEED_API_KEY>',
+        '```',
+        '',
+        '`?api_key=` is also accepted on TAXII for clients that cannot set Bearer. Collection id is the feed slug. Write/import is not supported.',
+        '',
+        'MISP: import the Published Feed STIX 2.1 Bundle. Supported Indicator patterns map to ip-dst, domain, url, md5, sha1, and sha256. Types without a STIX pattern (ssdeep, imphash, tlsh, email, ja3) are omitted.',
+        '',
         '## Access profiles & scopes',
         '',
         `| Profile | Scopes |`,
@@ -43,7 +54,8 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
     servers: [{ url: serverUrl }],
     tags: [
       { name: 'IOCs', description: 'Create, update, read, search, and export indicators of compromise' },
-      { name: 'Published Feeds', description: 'Read-only published feed pull (compatibility)' }
+      { name: 'Published Feeds', description: 'Read-only published feed pull (compatibility)' },
+      { name: 'TAXII', description: 'TAXII 2.1 read-only server over STIX-enabled Published Feeds' }
     ],
     components: {
       securitySchemes: {
@@ -461,6 +473,99 @@ export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
             '401': { description: 'Invalid API key' },
             '403': { description: 'API key disabled/expired' },
             '404': { description: 'Feed not found' }
+          }
+        }
+      },
+      '/taxii2/': {
+        get: {
+          tags: ['TAXII'],
+          summary: 'TAXII 2.1 discovery',
+          description: [
+            `Requires a Published Feed API key (\`${API_SCOPE.PUBLISHED_FEEDS_READ}\`).`,
+            'Authenticate with `Authorization: Bearer` or `?api_key=`.',
+            'Returns TAXII discovery (`application/taxii+json;version=2.1`).',
+            'Only STIX-enabled enabled Published Feeds appear as collections under `/taxii2/talonhound/collections/`.',
+            'Collection id is the feed slug. Disabled STIX or unknown slug is **404**.',
+            'Objects are Indicator SDOs from the latest STIX snapshot, paginated with `limit` (default 100, max 1000) and opaque `next`.',
+            'TAXII write/import is not supported (**405**).',
+            'MISP: import the same STIX 2.1 Bundle from `?format=stix` or TAXII objects. Unsupported IOC types are omitted from STIX.'
+          ].join('\n\n'),
+          security: [{ ApiKeyBearer: [] }],
+          parameters: [
+            {
+              name: 'api_key',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional Published Feed API key when Bearer cannot be set. Never copied into `next` URLs.'
+            }
+          ],
+          responses: {
+            '200': { description: 'TAXII discovery resource' },
+            '401': { description: 'Missing or invalid API key' },
+            '403': { description: 'Disabled key or insufficient scope' }
+          }
+        }
+      },
+      '/taxii2/talonhound/': {
+        get: {
+          tags: ['TAXII'],
+          summary: 'TAXII 2.1 API root',
+          security: [{ ApiKeyBearer: [] }],
+          responses: {
+            '200': { description: 'TAXII API root' },
+            '401': { description: 'Missing or invalid API key' },
+            '403': { description: 'Disabled key or insufficient scope' }
+          }
+        }
+      },
+      '/taxii2/talonhound/collections/': {
+        get: {
+          tags: ['TAXII'],
+          summary: 'List STIX-enabled Published Feed collections',
+          security: [{ ApiKeyBearer: [] }],
+          responses: {
+            '200': { description: 'TAXII collections resource (`can_write` is always false)' },
+            '401': { description: 'Missing or invalid API key' },
+            '403': { description: 'Disabled key or insufficient scope' }
+          }
+        }
+      },
+      '/taxii2/talonhound/collections/{id}/': {
+        get: {
+          tags: ['TAXII'],
+          summary: 'Get one TAXII collection',
+          security: [{ ApiKeyBearer: [] }],
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Published Feed slug' }
+          ],
+          responses: {
+            '200': { description: 'TAXII collection' },
+            '401': { description: 'Missing or invalid API key' },
+            '403': { description: 'Disabled key or insufficient scope' },
+            '404': { description: 'Unknown, disabled, or non-STIX feed' }
+          }
+        }
+      },
+      '/taxii2/talonhound/collections/{id}/objects/': {
+        get: {
+          tags: ['TAXII'],
+          summary: 'Get STIX objects for a collection',
+          description: 'Returns a TAXII envelope `{ objects, more, next }` of STIX 2.1 Indicator objects from the latest STIX snapshot. Snapshots larger than 32 MiB are refused; use Published Feed STIX pull for those feeds.',
+          security: [{ ApiKeyBearer: [] }],
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+            { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 1000, default: 100 } },
+            { name: 'next', in: 'query', required: false, schema: { type: 'string' }, description: 'Opaque pagination cursor from a previous response' },
+            { name: 'api_key', in: 'query', required: false, schema: { type: 'string' } }
+          ],
+          responses: {
+            '200': { description: 'TAXII objects envelope' },
+            '400': { description: 'Invalid limit or next cursor' },
+            '401': { description: 'Missing or invalid API key' },
+            '403': { description: 'Disabled key or insufficient scope' },
+            '404': { description: 'Unknown collection or no STIX snapshot' },
+            '413': { description: 'STIX snapshot too large for TAXII pagination' }
           }
         }
       }
