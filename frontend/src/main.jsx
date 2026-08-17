@@ -5712,12 +5712,6 @@ function publishedFeedUrlTemplate(slug, format = null) {
   return format ? `${base}&format=${format}` : base;
 }
 
-function publishedFeedCurlExample(slug, format = null) {
-  const s = slug || '{slug}';
-  const fmt = format ? `&format=${format}` : '';
-  return `curl "${window.location.origin}/api/published-feeds/${s}?api_key=YOUR_API_KEY${fmt}"`;
-}
-
 function FeedFormField({
   ui,
   label,
@@ -6274,52 +6268,115 @@ function PublishedFeedsPage() {
   );
 }
 
+// Per-endpoint badge colors, matching the format badges used in the feeds table.
+function feedUrlBadgeStyle(key) {
+  const variants = {
+    txt: { background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', border: '1px solid #1e40af' },
+    json: { background: 'rgba(168, 85, 247, 0.15)', color: '#d8b4fe', border: '1px solid #6b21a8' },
+    stix: { background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', border: '1px solid #047857' },
+    taxii: { background: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1', border: '1px solid #475569' }
+  };
+  return variants[key] || variants.taxii;
+}
+
+// One endpoint row inside the Feed URLs panel: badge + readonly URL field + inline-feedback Copy.
+function FeedUrlRow({ ui, row, isLast }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (!navigator.clipboard?.writeText) return;
+    navigator.clipboard.writeText(row.url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: isLast ? 'none' : '1px solid #1e293b' }}>
+      <span
+        style={{
+          flexShrink: 0,
+          minWidth: 56,
+          textAlign: 'center',
+          padding: '4px 6px',
+          borderRadius: 6,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: '0.04em',
+          ...feedUrlBadgeStyle(row.key)
+        }}
+      >
+        {row.label}
+      </span>
+      <input
+        type="text"
+        readOnly
+        value={row.url}
+        title={row.url}
+        onFocus={(e) => e.target.select()}
+        aria-label={`${row.label} feed URL`}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          padding: '7px 10px',
+          borderRadius: 6,
+          border: '1px solid #334155',
+          background: '#020617',
+          color: '#cbd5e1',
+          fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+          fontSize: 12,
+          boxSizing: 'border-box'
+        }}
+      />
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={row.copyAria}
+        style={{ ...ui.btnCompact, flexShrink: 0, minWidth: 72, whiteSpace: 'nowrap' }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  );
+}
+
 function FeedUrlTemplateModal({ ui, feed, onClose }) {
-  const feedback = useAppFeedback();
   const formats = normalizeFeedFormats(feed.formats || (feed.format ? [feed.format] : ['txt']));
-  const copy = (text) => navigator.clipboard?.writeText(text).then(() => feedback.success('Copied')).catch(() => feedback.info(text));
+  const rows = formats.map((fmt) => ({
+    key: fmt,
+    label: fmt.toUpperCase(),
+    url: publishedFeedUrlTemplate(feed.slug, formats.length > 1 || fmt !== 'txt' ? fmt : null),
+    copyAria: `Copy ${fmt.toUpperCase()} feed URL`
+  }));
+  // STIX feeds are also served read-only over TAXII 2.1; keep that endpoint discoverable.
+  if (formats.includes('stix')) {
+    rows.push({
+      key: 'taxii',
+      label: 'TAXII',
+      url: `${window.location.origin}/taxii2/talonhound/collections/${feed.slug || '{slug}'}/objects/`,
+      copyAria: 'Copy TAXII 2.1 collection URL'
+    });
+  }
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: 16 }}
       onClick={onClose}
     >
-      <div style={{ ...ui.modal, maxWidth: 640, width: '100%' }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Feed URL Template — {feed.name}</h3>
-        <p style={ui.modalSub}>Replace <code style={{ color: '#cbd5e1' }}>&#123;API_KEY&#125;</code> with a Published Feed type API key.</p>
+      <div style={{ ...ui.modal, maxWidth: 620, width: '100%' }} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Feed URLs for ${feed.name}`}>
+        <h3 style={{ marginTop: 0, marginBottom: 4, color: '#f1f5f9' }}>Feed URLs — {feed.name}</h3>
+        <p style={ui.modalSub}>
+          Use a Published Feed API key to access this feed — replace <code style={{ color: '#cbd5e1' }}>&#123;API_KEY&#125;</code> with your key.
+        </p>
 
-        {formats.map((fmt) => {
-          const template = publishedFeedUrlTemplate(feed.slug, formats.length > 1 || fmt !== 'txt' ? fmt : null);
-          const curl = publishedFeedCurlExample(feed.slug, formats.length > 1 || fmt !== 'txt' ? fmt : null);
-          return (
-            <div key={fmt} style={{ marginBottom: 16 }}>
-              <span style={ui.label}>{fmt.toUpperCase()} URL</span>
-              <code style={ui.code}>{template}</code>
-              <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copy(template)}>
-                Copy {fmt.toUpperCase()} URL
-              </button>
-              <div style={{ marginTop: 12 }}>
-                <span style={ui.label}>Example (curl)</span>
-                <code style={ui.code}>{curl}</code>
-                <button type="button" style={{ ...ui.btn, marginTop: 10 }} onClick={() => copy(curl)}>Copy curl</button>
-              </div>
-            </div>
-          );
-        })}
-        {formats.includes('stix') ? (
-          <div style={{ marginBottom: 16 }}>
-            <span style={ui.label}>TAXII 2.1</span>
-            <code style={ui.code}>{`${window.location.origin}/taxii2/talonhound/collections/${feed.slug || '{slug}'}/objects/`}</code>
-            <p style={{ ...ui.helper, marginTop: 8 }}>
-              Authenticate with a Published Feed API key (Bearer or api_key). Read-only. Collection id is this feed&apos;s slug.
-            </p>
-          </div>
-        ) : null}
+        <div style={{ border: '1px solid #334155', borderRadius: 8, background: '#0f172a', overflow: 'hidden' }}>
+          {rows.map((row, i) => (
+            <FeedUrlRow key={row.key} ui={ui} row={row} isLast={i === rows.length - 1} />
+          ))}
+        </div>
 
-        <p style={{ ...ui.helper, marginTop: 8 }}>
+        <p style={{ ...ui.helper, marginTop: 12 }}>
           Create or reveal a Published Feed key under{' '}
           <Link to="/administration/api-keys" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration › API Keys</Link>.
         </p>
-        <button type="button" style={{ ...ui.btn, marginTop: 8, width: '100%' }} onClick={onClose}>Done</button>
+        <button type="button" style={{ ...ui.btn, marginTop: 12, width: '100%' }} onClick={onClose}>Done</button>
       </div>
     </div>
   );
