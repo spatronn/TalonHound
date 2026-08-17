@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   BULK_TRIAGE_MAX,
   IOC_LIST_BROWSE_CONTEXT,
+  IOC_LIST_DEFAULT_PAGE_SIZE,
   parseIocRowId,
   toggleSelectedId,
   selectPageIds,
@@ -14,7 +15,9 @@ import {
   iocListResultContextKey,
   selectedIdsForResultContext,
   applyIocSelectionContext,
-  bulkIocIdsForContext
+  bulkIocIdsForContext,
+  bulkIocIdsForVisiblePage,
+  formatPageSelectionLabel
 } from './iocBulkTriage.js';
 
 test('parseIocRowId accepts positive integers only', () => {
@@ -100,12 +103,12 @@ test('bulkConfirmDisabled requires reason and picker choice when asked', () => {
   assert.equal(bulkConfirmDisabled({}), false);
 });
 
-function browseContext() {
-  return iocListResultContextKey({ dslActive: false });
+function browseContext({ page = 1, pageSize = IOC_LIST_DEFAULT_PAGE_SIZE } = {}) {
+  return iocListResultContextKey({ dslActive: false, page, pageSize });
 }
 
-function searchContext(query) {
-  return iocListResultContextKey({ dslActive: true, executedQuery: query });
+function searchContext(query, { cursor = '', pageSize = IOC_LIST_DEFAULT_PAGE_SIZE } = {}) {
+  return iocListResultContextKey({ dslActive: true, executedQuery: query, cursor, pageSize });
 }
 
 function selectIds(state, ids) {
@@ -116,19 +119,31 @@ function selectIds(state, ids) {
   return { contextKey: state.contextKey, selectedIds: selected };
 }
 
-test('iocListResultContextKey ignores page, cursor, page size, and unexecuted input', () => {
+test('iocListResultContextKey includes visible page identity and ignores unexecuted input', () => {
   assert.equal(browseContext(), IOC_LIST_BROWSE_CONTEXT);
   assert.equal(
     searchContext('tag contains "mirai"'),
     searchContext('  tag contains "mirai"  ')
   );
-  assert.equal(
-    iocListResultContextKey({ dslActive: true, executedQuery: 'tag contains "mirai"', page: 2, cursor: 'abc', pageSize: 50 }),
-    searchContext('tag contains "mirai"')
+  assert.notEqual(
+    browseContext({ page: 1 }),
+    browseContext({ page: 2 })
+  );
+  assert.notEqual(
+    searchContext('tag contains "mirai"'),
+    searchContext('tag contains "mirai"', { cursor: 'page-2' })
+  );
+  assert.notEqual(
+    searchContext('tag contains "mirai"', { pageSize: 25 }),
+    searchContext('tag contains "mirai"', { pageSize: 50 })
   );
   assert.equal(
-    iocListResultContextKey({ deepSearchId: 'ds-1', dslActive: false }),
-    'deep:ds-1'
+    iocListResultContextKey({ dslActive: false, searchInput: 'tag contains "mirai"' }),
+    IOC_LIST_BROWSE_CONTEXT
+  );
+  assert.equal(
+    iocListResultContextKey({ deepSearchId: 'ds-1', pageSize: 25, cursor: '' }),
+    'deep:ds-1:s25:c'
   );
 });
 
@@ -142,8 +157,6 @@ test('browse selection is cleared when a search is executed and cannot leak into
   assert.equal(state.selectedIds.size, 0);
   assert.deepEqual(bulkIocIdsForContext(state, search), []);
   assert.equal(bulkIocIdsForContext(state, search).includes(11), false);
-  assert.equal(bulkIocIdsForContext(state, search).includes(12), false);
-  assert.equal(bulkIocIdsForContext(state, search).includes(13), false);
 });
 
 test('search A selection is cleared when search B is executed', () => {
@@ -176,61 +189,115 @@ test('search A selection is cleared when Advanced Search applies a different exe
   assert.equal(state.selectedIds.size, 0);
 });
 
-test('same-search pagination preserves selection', () => {
+test('browse page 1 selection is cleared when going to page 2', () => {
+  let state = { contextKey: browseContext({ page: 1 }), selectedIds: new Set() };
+  state = selectIds(state, [71, 72, 73]);
+  const page2 = browseContext({ page: 2 });
+  state = applyIocSelectionContext(state, page2);
+  assert.equal(state.selectedIds.size, 0);
+  assert.deepEqual(bulkIocIdsForVisiblePage(state, page2, [81, 82, 83]), []);
+});
+
+test('search page 1 selection is cleared when going to the next cursor', () => {
   const query = 'tag contains "mirai"';
   let state = { contextKey: searchContext(query), selectedIds: new Set() };
-  state = selectIds(state, [61, 62]);
-  const page2 = iocListResultContextKey({
-    dslActive: true,
-    executedQuery: query,
-    cursor: 'page-2',
-    page: 2
-  });
+  state = selectIds(state, [61, 62, 63, 64, 65]);
+  const page2 = searchContext(query, { cursor: 'page-2' });
   state = applyIocSelectionContext(state, page2);
-  assert.deepEqual([...state.selectedIds].sort((a, b) => a - b), [61, 62]);
+  assert.equal(state.selectedIds.size, 0);
 });
 
-test('same default-browse pagination preserves selection', () => {
-  let state = { contextKey: browseContext(), selectedIds: new Set() };
-  state = selectIds(state, [71, 72, 73]);
-  const page2 = iocListResultContextKey({ dslActive: false, page: 2, pageSize: 25 });
-  state = applyIocSelectionContext(state, page2);
-  assert.equal(state.selectedIds.size, 3);
+test('header select-all is current-page only and resets after pagination', () => {
+  const page1Ids = [1, 2, 3, 4, 5];
+  const selected = selectPageIds(new Set(), page1Ids).selected;
+  assert.equal(selected.size, 5);
+  assert.deepEqual(pageSelectionState(selected, page1Ids), { all: true, some: false });
+
+  const after = applyIocSelectionContext(
+    { contextKey: browseContext({ page: 1 }), selectedIds: selected },
+    browseContext({ page: 2 })
+  );
+  assert.equal(after.selectedIds.size, 0);
+  assert.deepEqual(pageSelectionState(after.selectedIds, [6, 7, 8]), { all: false, some: false });
 });
 
-test('header checkbox / indeterminate state resets after result context change', () => {
+test('manual partial selection is indeterminate and resets on page change', () => {
+  const pageIds = [1, 2, 3];
+  const selected = new Set([1]);
+  assert.deepEqual(pageSelectionState(selected, pageIds), { all: false, some: true });
+  const after = applyIocSelectionContext(
+    { contextKey: browseContext({ page: 1 }), selectedIds: selected },
+    browseContext({ page: 2 })
+  );
+  assert.deepEqual(pageSelectionState(after.selectedIds, [4, 5, 6]), { all: false, some: false });
+});
+
+test('page-size change clears selection', () => {
+  let state = { contextKey: browseContext({ pageSize: 25 }), selectedIds: new Set() };
+  state = selectIds(state, [81, 82]);
+  state = applyIocSelectionContext(state, browseContext({ pageSize: 50 }));
+  assert.equal(state.selectedIds.size, 0);
+});
+
+test('null row ids do not affect header select-all math', () => {
+  const pageIds = [1, null, 2];
+  assert.deepEqual(pageSelectionState(new Set([1, 2]), pageIds), { all: true, some: false });
+  assert.deepEqual(pageSelectionState(new Set([1]), pageIds), { all: false, some: true });
+});
+
+test('same-page row toggle still selects and deselects', () => {
+  const ctx = browseContext({ page: 1 });
+  let state = { contextKey: ctx, selectedIds: new Set() };
+  state = selectIds(state, [91]);
+  assert.deepEqual([...state.selectedIds], [91]);
+  state = selectIds(state, [91]);
+  assert.equal(state.selectedIds.size, 0);
+});
+
+test('bulk payload after page change cannot include prior-page IDs', () => {
+  const page1 = browseContext({ page: 1 });
+  const page2 = browseContext({ page: 2 });
+  const stale = { contextKey: page1, selectedIds: new Set([101, 102, 103]) };
+  assert.deepEqual(bulkIocIdsForVisiblePage(stale, page2, [201, 202]), []);
+  const page2State = applyIocSelectionContext(stale, page2);
+  const selectedPage2 = selectIds(page2State, [201]);
+  assert.deepEqual(bulkIocIdsForVisiblePage(selectedPage2, page2, [201, 202]), [201]);
+  assert.equal(bulkIocIdsForVisiblePage(selectedPage2, page2, [201, 202]).includes(101), false);
+});
+
+test('header checkbox / indeterminate state resets after search-context change', () => {
   const browse = browseContext();
   const search = searchContext('tag contains "mirai"');
   const selected = new Set([1, 2, 3]);
   const newPageIds = [1, 10, 11];
   assert.deepEqual(pageSelectionState(selected, newPageIds), { all: false, some: true });
-
   const after = applyIocSelectionContext({ contextKey: browse, selectedIds: selected }, search);
   assert.deepEqual(pageSelectionState(after.selectedIds, newPageIds), { all: false, some: false });
   assert.equal(selectedIdsForResultContext(selected, browse, search).size, 0);
 });
 
-test('bulk action after context change cannot include stale IDs from previous context', () => {
-  const browse = browseContext();
-  const search = searchContext('tag contains "mirai"');
-  const stale = { contextKey: browse, selectedIds: new Set([101, 102, 103]) };
-  const payload = bulkIocIdsForContext(stale, search);
-  assert.deepEqual(payload, []);
-  assert.equal(payload.some((id) => [101, 102, 103].includes(id)), false);
+test('unexecuted search-box text does not change the result context', () => {
+  const browse = iocListResultContextKey({ dslActive: false, searchInput: 'tag contains "mirai"', page: 1, pageSize: 25 });
+  assert.equal(browse, IOC_LIST_BROWSE_CONTEXT);
 });
 
-test('page-size change on the same executed query preserves selection', () => {
+test('re-running the same search on the same visible page preserves selection', () => {
   const query = 'tag contains "mirai"';
   let state = { contextKey: searchContext(query), selectedIds: new Set() };
-  state = selectIds(state, [81]);
-  state = applyIocSelectionContext(
-    state,
-    iocListResultContextKey({ dslActive: true, executedQuery: query, pageSize: 100 })
-  );
-  assert.deepEqual([...state.selectedIds], [81]);
+  state = selectIds(state, [11]);
+  state = applyIocSelectionContext(state, searchContext(query, { cursor: '' }));
+  assert.deepEqual([...state.selectedIds], [11]);
 });
 
-test('unexecuted search-box text does not change the result context', () => {
-  const browse = iocListResultContextKey({ dslActive: false, searchInput: 'tag contains "mirai"' });
-  assert.equal(browse, IOC_LIST_BROWSE_CONTEXT);
+test('re-running the same search after resetting to the first page clears page-2 selection', () => {
+  const query = 'tag contains "mirai"';
+  let state = { contextKey: searchContext(query, { cursor: 'page-2' }), selectedIds: new Set() };
+  state = selectIds(state, [12]);
+  state = applyIocSelectionContext(state, searchContext(query, { cursor: '' }));
+  assert.equal(state.selectedIds.size, 0);
+});
+
+test('formatPageSelectionLabel is page-scoped copy', () => {
+  assert.equal(formatPageSelectionLabel(1), '1 selected on this page');
+  assert.equal(formatPageSelectionLabel(25), '25 selected on this page');
 });

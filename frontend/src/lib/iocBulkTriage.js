@@ -1,22 +1,44 @@
 export const BULK_TRIAGE_MAX = 100;
-export const IOC_LIST_BROWSE_CONTEXT = 'browse';
+export const IOC_LIST_DEFAULT_PAGE_SIZE = 25;
 
 const EMPTY_IOC_SELECTION = new Set();
 
+function normalizedPageSize(pageSize) {
+  const n = Number(pageSize);
+  return Number.isInteger(n) && n > 0 ? n : IOC_LIST_DEFAULT_PAGE_SIZE;
+}
+
+function normalizedPage(page) {
+  const n = Number(page);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
 /**
- * Selection is valid only for one executed IOC result context.
- * Page number, cursor, page size, and unexecuted search-box text are excluded.
+ * Selection is valid only for the current visible IOC page.
+ * Includes executed query/mode plus page number or cursor and page size.
+ * Unexecuted search-box text is excluded.
  */
 export function iocListResultContextKey({
   dslActive = false,
   executedQuery = '',
-  deepSearchId = ''
+  deepSearchId = '',
+  page = 1,
+  pageSize = IOC_LIST_DEFAULT_PAGE_SIZE,
+  cursor = ''
 } = {}) {
+  const size = normalizedPageSize(pageSize);
+  const cursorPart = String(cursor || '').trim();
   const deepId = String(deepSearchId || '').trim();
-  if (deepId) return `deep:${deepId}`;
-  if (dslActive) return `search:${String(executedQuery || '').trim()}`;
-  return IOC_LIST_BROWSE_CONTEXT;
+  if (deepId) return `deep:${deepId}:s${size}:c${cursorPart}`;
+  if (dslActive) return `search:${String(executedQuery || '').trim()}:s${size}:c${cursorPart}`;
+  return `browse:p${normalizedPage(page)}:s${size}`;
 }
+
+export const IOC_LIST_BROWSE_CONTEXT = iocListResultContextKey({
+  dslActive: false,
+  page: 1,
+  pageSize: IOC_LIST_DEFAULT_PAGE_SIZE
+});
 
 export function selectedIdsForResultContext(selectedIds, selectedContextKey, currentContextKey) {
   if (String(selectedContextKey || '') !== String(currentContextKey || '')) {
@@ -40,6 +62,17 @@ export function applyIocSelectionContext(state, nextContextKey) {
 /** Defensive bulk payload: stale IDs from a previous result context are never sent. */
 export function bulkIocIdsForContext(state, currentContextKey) {
   return [...applyIocSelectionContext(state, currentContextKey).selectedIds];
+}
+
+/** Bulk payload may only include IDs selected on the current visible page. */
+export function bulkIocIdsForVisiblePage(state, currentContextKey, pageIds) {
+  const allowed = new Set((pageIds || []).filter((id) => id != null));
+  return bulkIocIdsForContext(state, currentContextKey).filter((id) => allowed.has(id));
+}
+
+export function formatPageSelectionLabel(count) {
+  const n = Number(count) || 0;
+  return n === 1 ? '1 selected on this page' : `${n} selected on this page`;
 }
 
 export function parseIocRowId(row) {

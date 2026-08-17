@@ -80,14 +80,14 @@ import {
   parseIocRowId,
   toggleSelectedId,
   selectPageIds,
-  deselectPageIds,
   pageSelectionState,
   formatBulkTriageSummary,
   remainingSelectedAfterBulk,
   bulkConfirmDisabled,
   iocListResultContextKey,
   selectedIdsForResultContext,
-  bulkIocIdsForContext
+  bulkIocIdsForVisiblePage,
+  formatPageSelectionLabel
 } from './lib/iocBulkTriage.js';
 import { savedSearchCreatePayload, savedSearchErrorMessage } from './lib/iocSavedSearches.js';
 import {
@@ -11311,7 +11311,12 @@ function IOCListPage() {
   const resultContextKey = iocListResultContextKey({
     dslActive,
     executedQuery: appliedQuery,
-    deepSearchId: deepSearchIdParam
+    deepSearchId: deepSearchIdParam,
+    page,
+    pageSize,
+    cursor: deepSearchIdParam
+      ? (deepCursorStack[deepCursorStack.length - 1] || '')
+      : (dslCursorStack[dslCursorStack.length - 1] || '')
   });
   if (selectionContextKey !== resultContextKey) {
     setSelectionContextKey(resultContextKey);
@@ -11342,11 +11347,11 @@ function IOCListPage() {
   function togglePageSelected() {
     if (!canWrite) return;
     if (pageSel.all) {
-      setSelectedIds(deselectPageIds(activeSelectedIds, pageIds));
+      setSelectedIds(new Set());
       setSelectionContextKey(resultContextKey);
       return;
     }
-    const next = selectPageIds(activeSelectedIds, pageIds);
+    const next = selectPageIds(new Set(), pageIds);
     setSelectedIds(next.selected);
     setSelectionContextKey(resultContextKey);
     if (next.capped) setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
@@ -11384,9 +11389,10 @@ function IOCListPage() {
   }
 
   async function confirmBulkAction() {
-    const ids = bulkIocIdsForContext(
+    const ids = bulkIocIdsForVisiblePage(
       { selectedIds: activeSelectedIds, contextKey: selectionContextKey },
-      resultContextKey
+      resultContextKey,
+      pageIds
     );
     if (!ids.length) {
       setSelectedIds(new Set());
@@ -12280,7 +12286,7 @@ function IOCListPage() {
           alignItems: 'center'
         }}>
           <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>
-            {selectedCount} selected
+            {formatPageSelectionLabel(selectedCount)}
             {selectedCount >= BULK_TRIAGE_MAX ? ` (max ${BULK_TRIAGE_MAX})` : ''}
           </span>
           <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('tag')}>Add tag</button>
@@ -12493,8 +12499,8 @@ function IOCListPage() {
         }
         description={
           bulkModal === 'tag' || bulkModal === 'classification'
-            ? 'This applies only to the IOCs you selected on this list. It does not apply to all search matches.'
-            : 'This applies only to the IOCs you selected on this list. It does not apply to all search matches. A reason is required and will be written to the audit log.'
+            ? 'This applies only to the IOCs you selected on this page. It does not apply to all search matches.'
+            : 'This applies only to the IOCs you selected on this page. It does not apply to all search matches. A reason is required and will be written to the audit log.'
         }
         confirmLabel={
           bulkModal === 'tag' ? 'Add tag'
