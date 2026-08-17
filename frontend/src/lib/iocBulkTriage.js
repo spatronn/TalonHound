@@ -94,10 +94,149 @@ export function iocListQueryContextKey({
   return 'browse';
 }
 
+export const QUERY_WIDE_PREVIEW_IDLE = 'idle';
+export const QUERY_WIDE_PREVIEW_LOADING = 'loading';
+export const QUERY_WIDE_PREVIEW_READY = 'ready';
+export const QUERY_WIDE_PREVIEW_ERROR = 'error';
+export const QUERY_WIDE_PREVIEW_UNSUPPORTED = 'unsupported';
+
+export function isFiniteExactMatchCount(value) {
+  if (value == null || value === '') return false;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0;
+}
+
+/**
+ * Whether the current search result set is larger than the visible page.
+ * Uses has_more / capped `2,000+` display only as a gate — never as a mutation count.
+ */
+export function searchHasMoreMatchesThanPage({
+  searchExactCount = null,
+  pageSelectableCount = 0,
+  hasMore = false,
+  countDisplay = ''
+} = {}) {
+  const pageN = Number(pageSelectableCount) || 0;
+  if (isFiniteExactMatchCount(searchExactCount) && Number(searchExactCount) > pageN) return true;
+  if (hasMore) return true;
+  return String(countDisplay || '').includes('+');
+}
+
+/**
+ * Preview state is valid only for the exact executed query currently producing results.
+ * Stale counts from a previous query never attach to a new result set.
+ */
+export function bindQueryWidePreview(preview, executedQuery) {
+  if (!preview) return null;
+  if (String(preview.query || '').trim() !== String(executedQuery || '').trim()) return null;
+  return preview;
+}
+
+export function previewCountForExecutedQuery(preview, executedQuery) {
+  const bound = bindQueryWidePreview(preview, executedQuery);
+  if (!bound || bound.status !== QUERY_WIDE_PREVIEW_READY) return null;
+  return isFiniteExactMatchCount(bound.count) ? Number(bound.count) : null;
+}
+
+export function resolvedExactMatchCount(searchExactCount, preview, executedQuery) {
+  if (isFiniteExactMatchCount(searchExactCount)) return Number(searchExactCount);
+  return previewCountForExecutedQuery(preview, executedQuery);
+}
+
+/** Query-wide preview body. Executed DSL only — never textbox drafts or IOC IDs. */
+export function buildQueryWidePreviewPayload(query) {
+  return {
+    selection_mode: SELECTION_MODE_ALL_MATCHING,
+    query: String(query || '')
+  };
+}
+
+export function formatQueryWidePreviewLoadingLabel() {
+  return 'Checking total matches…';
+}
+
+export function queryWidePreviewFromSuccess(data) {
+  const n = Number(data?.match_count);
+  if (!Number.isFinite(n) || n < 0) {
+    return {
+      status: QUERY_WIDE_PREVIEW_ERROR,
+      count: null,
+      error: 'Exact match count was not returned.',
+      code: 'INVALID_COUNT'
+    };
+  }
+  return {
+    status: QUERY_WIDE_PREVIEW_READY,
+    count: n,
+    error: '',
+    code: ''
+  };
+}
+
+export function queryWidePreviewFromFailure(err) {
+  const code = String(err?.response?.data?.code || err?.code || '').trim();
+  const message = String(
+    err?.response?.data?.message || err?.message || 'Failed to check total matches.'
+  ).trim();
+  if (code === 'QUERY_TOO_EXPENSIVE' || code === 'COUNT_UNAVAILABLE') {
+    return {
+      status: QUERY_WIDE_PREVIEW_UNSUPPORTED,
+      count: null,
+      error: message,
+      code
+    };
+  }
+  return {
+    status: QUERY_WIDE_PREVIEW_ERROR,
+    count: null,
+    error: message || 'Failed to check total matches.',
+    code: code || 'PREVIEW_FAILED'
+  };
+}
+
+function previewHasTerminalResult(preview, query) {
+  if (!preview) return false;
+  if (String(preview.query || '').trim() !== query) return false;
+  return preview.status === QUERY_WIDE_PREVIEW_READY
+    || preview.status === QUERY_WIDE_PREVIEW_ERROR
+    || preview.status === QUERY_WIDE_PREVIEW_UNSUPPORTED
+    || preview.status === QUERY_WIDE_PREVIEW_LOADING;
+}
+
+/**
+ * Call POST /iocs/bulk/query/preview only when the page is fully selected, more
+ * matches exist than the page, and search did not already return an exact total.
+ */
+export function shouldRequestQueryWidePreview({
+  canWrite = false,
+  dslActive = false,
+  executedQuery = '',
+  deepSearchId = '',
+  pageSelectionAll = false,
+  pageSelectableCount = 0,
+  searchExactCount = null,
+  hasMoreMatches = false,
+  preview = null
+} = {}) {
+  if (!canWrite) return false;
+  if (String(deepSearchId || '').trim()) return false;
+  if (!dslActive) return false;
+  const query = String(executedQuery || '').trim();
+  if (!query) return false;
+  if (!pageSelectionAll) return false;
+  const pageN = Number(pageSelectableCount) || 0;
+  if (pageN <= 0) return false;
+  if (isFiniteExactMatchCount(searchExactCount)) return false;
+  if (!hasMoreMatches) return false;
+  if (previewHasTerminalResult(preview, query)) return false;
+  return true;
+}
+
 /**
  * Gmail-like second-stage offer. Requires an executed non-empty search, a full
  * current-page selection, a finite exact match count greater than the page, and write access.
- * Unfiltered browse, Deep Search snapshots, and `2,000+` (null exact count) never qualify.
+ * Unfiltered browse, Deep Search snapshots, and `2,000+` never qualify until preview
+ * (or search) provides an exact backend count.
  */
 export function shouldOfferSelectAllMatching({
   canWrite = false,

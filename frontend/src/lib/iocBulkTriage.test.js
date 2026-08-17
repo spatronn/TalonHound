@@ -30,7 +30,21 @@ import {
   buildQueryWideBulkPayload,
   formatQueryWideConfirmTitle,
   formatQueryWideConfirmDescription,
-  formatQueryWideConfirmButton
+  formatQueryWideConfirmButton,
+  QUERY_WIDE_PREVIEW_LOADING,
+  QUERY_WIDE_PREVIEW_READY,
+  QUERY_WIDE_PREVIEW_ERROR,
+  QUERY_WIDE_PREVIEW_UNSUPPORTED,
+  isFiniteExactMatchCount,
+  searchHasMoreMatchesThanPage,
+  bindQueryWidePreview,
+  previewCountForExecutedQuery,
+  resolvedExactMatchCount,
+  buildQueryWidePreviewPayload,
+  formatQueryWidePreviewLoadingLabel,
+  queryWidePreviewFromSuccess,
+  queryWidePreviewFromFailure,
+  shouldRequestQueryWidePreview
 } from './iocBulkTriage.js';
 
 test('parseIocRowId accepts positive integers only', () => {
@@ -511,6 +525,225 @@ test('select-all-matching is hidden without an exact count, when the page holds 
   assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, executedQuery: '   ' }), false);
 });
 
+const PREVIEW_GATES = {
+  canWrite: true,
+  dslActive: true,
+  executedQuery: 'tag contains "mirai"',
+  pageSelectionAll: true,
+  pageSelectableCount: 25,
+  searchExactCount: null,
+  hasMoreMatches: true,
+  preview: null
+};
+
+test('null exact_count from a 2,000+ search is not coerced to 0', () => {
+  assert.equal(isFiniteExactMatchCount(null), false);
+  assert.equal(isFiniteExactMatchCount(undefined), false);
+  assert.equal(isFiniteExactMatchCount(''), false);
+  assert.equal(isFiniteExactMatchCount(0), true);
+  assert.equal(isFiniteExactMatchCount(2143), true);
+});
+
+test('exact search count of 143 offers select-all without a preview request', () => {
+  const searchExactCount = 143;
+  assert.equal(shouldRequestQueryWidePreview({
+    ...PREVIEW_GATES,
+    executedQuery: 'tag contains "emotet"',
+    searchExactCount,
+    hasMoreMatches: true
+  }), false);
+  assert.equal(resolvedExactMatchCount(searchExactCount, null, 'tag contains "emotet"'), 143);
+  assert.equal(shouldOfferSelectAllMatching({
+    ...GMAIL_OFFER,
+    executedQuery: 'tag contains "emotet"',
+    exactMatchCount: 143
+  }), true);
+  assert.equal(formatSelectAllMatchingActionLabel(143), 'Select all 143 matching IOCs');
+});
+
+test('2,000+ page select-all requests preview for the executed query and shows loading then exact offer', () => {
+  assert.equal(searchHasMoreMatchesThanPage({
+    searchExactCount: null,
+    pageSelectableCount: 25,
+    hasMore: true,
+    countDisplay: '2,000+'
+  }), true);
+  assert.equal(shouldRequestQueryWidePreview(PREVIEW_GATES), true);
+  assert.equal(shouldRequestQueryWidePreview({
+    ...PREVIEW_GATES,
+    preview: { query: PREVIEW_GATES.executedQuery, status: QUERY_WIDE_PREVIEW_LOADING, count: null }
+  }), false);
+  assert.equal(formatQueryWidePreviewLoadingLabel(), 'Checking total matches…');
+  const payload = buildQueryWidePreviewPayload('tag contains "mirai"');
+  assert.equal(payload.query, 'tag contains "mirai"');
+  assert.equal(payload.selection_mode, SELECTION_MODE_ALL_MATCHING);
+  assert.equal(Object.prototype.hasOwnProperty.call(payload, 'ioc_ids'), false);
+  const ready = queryWidePreviewFromSuccess({ match_count: 2143 });
+  assert.equal(ready.status, QUERY_WIDE_PREVIEW_READY);
+  assert.equal(ready.count, 2143);
+  const preview = { query: 'tag contains "mirai"', ...ready };
+  assert.equal(resolvedExactMatchCount(null, preview, 'tag contains "mirai"'), 2143);
+  assert.equal(shouldOfferSelectAllMatching({
+    ...GMAIL_OFFER,
+    exactMatchCount: 2143
+  }), true);
+  assert.equal(formatSelectAllMatchingActionLabel(2143), 'Select all 2,143 matching IOCs');
+  assert.equal(formatAllMatchingSelectionLabel(2143), 'All 2,143 matching IOCs selected');
+});
+
+test('preview payload uses executed query and ignores unexecuted textbox edits', () => {
+  const executed = 'tag contains "mirai"';
+  const body = buildQueryWidePreviewPayload(executed);
+  assert.equal(body.query, executed);
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'ioc_ids'), false);
+  assert.equal(
+    iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: executed,
+      searchInput: 'tag contains "botnet"'
+    }),
+    iocListQueryContextKey({ dslActive: true, executedQuery: executed })
+  );
+  assert.equal(
+    previewCountForExecutedQuery(
+      { query: executed, status: QUERY_WIDE_PREVIEW_READY, count: 2143 },
+      'tag contains "botnet"'
+    ),
+    null
+  );
+});
+
+test('stale preview response for a previous query is ignored', () => {
+  const stale = {
+    query: 'tag contains "mirai"',
+    status: QUERY_WIDE_PREVIEW_READY,
+    count: 2143
+  };
+  assert.equal(bindQueryWidePreview(stale, 'tag contains "emotet"'), null);
+  assert.equal(previewCountForExecutedQuery(stale, 'tag contains "emotet"'), null);
+  assert.equal(resolvedExactMatchCount(null, stale, 'tag contains "emotet"'), null);
+  assert.equal(shouldOfferSelectAllMatching({
+    ...GMAIL_OFFER,
+    executedQuery: 'tag contains "emotet"',
+    exactMatchCount: resolvedExactMatchCount(null, stale, 'tag contains "emotet"')
+  }), false);
+});
+
+test('preview failure keeps page selection usable and does not invent a count', () => {
+  const failed = queryWidePreviewFromFailure({ message: 'network down' });
+  assert.equal(failed.status, QUERY_WIDE_PREVIEW_ERROR);
+  assert.equal(failed.count, null);
+  const preview = { query: PREVIEW_GATES.executedQuery, ...failed };
+  assert.equal(resolvedExactMatchCount(null, preview, PREVIEW_GATES.executedQuery), null);
+  assert.equal(shouldOfferSelectAllMatching({
+    ...GMAIL_OFFER,
+    exactMatchCount: null
+  }), false);
+  assert.equal(shouldRequestQueryWidePreview({ ...PREVIEW_GATES, preview }), false);
+});
+
+test('QUERY_TOO_EXPENSIVE does not offer all-matching and preserves page selection gates', () => {
+  const unsupported = queryWidePreviewFromFailure({
+    response: {
+      data: {
+        code: 'QUERY_TOO_EXPENSIVE',
+        message: 'This search is too broad for query-wide bulk. Narrow the query or use Deep Search, then act on a page.'
+      }
+    }
+  });
+  assert.equal(unsupported.status, QUERY_WIDE_PREVIEW_UNSUPPORTED);
+  assert.equal(unsupported.count, null);
+  assert.match(unsupported.error, /too broad for query-wide bulk/);
+  const preview = { query: PREVIEW_GATES.executedQuery, ...unsupported };
+  assert.equal(shouldOfferSelectAllMatching({
+    ...GMAIL_OFFER,
+    exactMatchCount: resolvedExactMatchCount(null, preview, PREVIEW_GATES.executedQuery)
+  }), false);
+  assert.equal(shouldRequestQueryWidePreview({ ...PREVIEW_GATES, preview }), false);
+});
+
+test('default browse and partial page selection never request preview', () => {
+  assert.equal(shouldRequestQueryWidePreview({
+    ...PREVIEW_GATES,
+    dslActive: false,
+    executedQuery: '',
+    searchExactCount: 5000,
+    hasMoreMatches: true
+  }), false);
+  assert.equal(shouldRequestQueryWidePreview({
+    ...PREVIEW_GATES,
+    pageSelectionAll: false
+  }), false);
+  assert.equal(shouldOfferSelectAllMatching({
+    canWrite: true,
+    dslActive: false,
+    executedQuery: '',
+    pageSelectionAll: true,
+    pageSelectableCount: 25,
+    exactMatchCount: 5000
+  }), false);
+});
+
+test('cached exact preview is not requested again for the same executed query', () => {
+  const preview = {
+    query: 'tag contains "mirai"',
+    status: QUERY_WIDE_PREVIEW_READY,
+    count: 2143
+  };
+  assert.equal(shouldRequestQueryWidePreview({ ...PREVIEW_GATES, preview }), false);
+});
+
+test('Saved Search and Advanced Search resolve approximate counts from the executed query', () => {
+  const saved = 'type equals "ip" AND tag contains "mirai"';
+  assert.equal(shouldRequestQueryWidePreview({
+    ...PREVIEW_GATES,
+    executedQuery: saved,
+    searchExactCount: null,
+    hasMoreMatches: true
+  }), true);
+  assert.equal(buildQueryWidePreviewPayload(saved).query, saved);
+  const advanced = 'tag contains "mirai" AND type equals "domain"';
+  const preview = {
+    query: advanced,
+    ...queryWidePreviewFromSuccess({ match_count: 2143 })
+  };
+  assert.equal(resolvedExactMatchCount(null, preview, advanced), 2143);
+});
+
+test('Clear / browse drops bound preview count so all-matching cannot linger', () => {
+  const preview = {
+    query: 'tag contains "mirai"',
+    status: QUERY_WIDE_PREVIEW_READY,
+    count: 2143
+  };
+  assert.equal(bindQueryWidePreview(preview, ''), null);
+  assert.equal(resolvedExactMatchCount(null, preview, ''), null);
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: 'tag contains "mirai"'
+    }),
+    queryContextKey: iocListQueryContextKey({ dslActive: false }),
+    pageContextKey: browseContext(),
+    selectionContextKey: searchContext('tag contains "mirai"')
+  });
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+});
+
+test('query-wide confirmation still uses exact count after preview resolution', () => {
+  assert.equal(formatQueryWideConfirmTitle('tag', 2143), 'Add tag to 2,143 matching IOCs');
+  assert.equal(formatQueryWideConfirmTitle('suppress', 2143), 'Suppress 2,143 matching IOCs');
+  assert.match(formatQueryWideConfirmDescription('suppress', 25), /A reason is required/);
+  assert.equal(formatQueryWideConfirmButton('suppress', 2143), 'Suppress 2,143 IOCs');
+});
+
+test('2,000+ display is never used as the select-all label', () => {
+  assert.notEqual(formatSelectAllMatchingActionLabel(null), 'Select all 2,000+ matching IOCs');
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, exactMatchCount: null }), false);
+  assert.equal(queryWidePreviewFromSuccess({ match_count: '2000+' }).status, QUERY_WIDE_PREVIEW_ERROR);
+});
+
 test('unexecuted search-box text does not change the query-wide context', () => {
   const executed = iocListQueryContextKey({
     dslActive: true,
@@ -537,6 +770,13 @@ test('IOC List wires query-wide selection, confirmation copy, and query-bound pa
   assert.match(mainJsx, /formatQueryWideConfirmDescription/);
   assert.match(mainJsx, /formatQueryWideConfirmTitle/);
   assert.match(mainJsx, /Matching IOCs:/);
+  assert.match(mainJsx, /shouldRequestQueryWidePreview/);
+  assert.match(mainJsx, /buildQueryWidePreviewPayload/);
+  assert.match(mainJsx, /formatQueryWidePreviewLoadingLabel/);
+  assert.match(mainJsx, /queryWidePreviewFromSuccess/);
+  assert.match(mainJsx, /queryWidePreviewFromFailure/);
+  assert.match(mainJsx, /bindQueryWidePreview/);
+  assert.match(mainJsx, /formatQueryWidePreviewLoadingLabel/);
   assert.match(mainJsx, /\/iocs\/bulk\/query\/preview/);
   assert.match(mainJsx, /SELECTION_MODE_ALL_MATCHING/);
   assert.match(mainJsx, /applySelectionForContexts/);

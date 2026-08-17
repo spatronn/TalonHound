@@ -101,7 +101,19 @@ import {
   formatQueryWideConfirmTitle,
   formatQueryWideConfirmDescription,
   formatQueryWideConfirmButton,
-  formatQueryWideAsyncToast
+  formatQueryWideAsyncToast,
+  QUERY_WIDE_PREVIEW_LOADING,
+  QUERY_WIDE_PREVIEW_ERROR,
+  QUERY_WIDE_PREVIEW_UNSUPPORTED,
+  isFiniteExactMatchCount,
+  searchHasMoreMatchesThanPage,
+  bindQueryWidePreview,
+  resolvedExactMatchCount,
+  buildQueryWidePreviewPayload,
+  formatQueryWidePreviewLoadingLabel,
+  queryWidePreviewFromSuccess,
+  queryWidePreviewFromFailure,
+  shouldRequestQueryWidePreview
 } from './lib/iocBulkTriage.js';
 import { savedSearchCreatePayload, savedSearchErrorMessage } from './lib/iocSavedSearches.js';
 import {
@@ -11125,6 +11137,7 @@ function IOCListPage() {
   const [allMatchingQueryContext, setAllMatchingQueryContext] = useState('');
   const [allMatchingCount, setAllMatchingCount] = useState(0);
   const [queryWidePreview, setQueryWidePreview] = useState(null);
+  const [queryWidePreviewRetry, setQueryWidePreviewRetry] = useState(0);
   const [bulkToast, setBulkToast] = useState('');
   const [bulkModal, setBulkModal] = useState(null);
   const [bulkReason, setBulkReason] = useState('');
@@ -11384,13 +11397,17 @@ function IOCListPage() {
   );
   const selectedCount = activeSelectedIds.size;
   const pageSel = pageSelectionState(activeSelectedIds, pageIds);
-  const searchExactCount = Number.isFinite(Number(dslResult?.exact_count))
+  const searchExactCount = isFiniteExactMatchCount(dslResult?.exact_count)
     ? Number(dslResult.exact_count)
     : null;
-  const previewExactCount = queryWidePreview?.query === appliedQuery && Number.isFinite(Number(queryWidePreview?.count))
-    ? Number(queryWidePreview.count)
-    : null;
-  const exactMatchCount = searchExactCount ?? previewExactCount;
+  const hasMoreMatches = searchHasMoreMatchesThanPage({
+    searchExactCount,
+    pageSelectableCount: pageIds.length,
+    hasMore: Boolean(dslResult?.has_more),
+    countDisplay: dslResult?.count_display
+  });
+  const boundQueryWidePreview = bindQueryWidePreview(queryWidePreview, appliedQuery);
+  const exactMatchCount = resolvedExactMatchCount(searchExactCount, queryWidePreview, appliedQuery);
   const offerSelectAllMatching = shouldOfferSelectAllMatching({
     canWrite,
     dslActive,
@@ -11400,31 +11417,60 @@ function IOCListPage() {
     pageSelectableCount: pageIds.length,
     exactMatchCount
   });
+  const queryWidePreviewRequestKey = [
+    Number(canWrite),
+    Number(dslActive),
+    String(deepSearchIdParam || ''),
+    String(appliedQuery || ''),
+    Number(pageSel.all),
+    String(searchExactCount),
+    Number(hasMoreMatches),
+    pageIds.length,
+    queryWidePreviewRetry
+  ].join('|');
 
   useEffect(() => {
     setQueryWidePreview(null);
-  }, [appliedQuery, dslActive, deepSearchIdParam]);
+    setQueryWidePreviewRetry(0);
+  }, [queryContextKey]);
 
   useEffect(() => {
-    if (!canWrite || !dslActive || deepSearchIdParam || !String(appliedQuery || '').trim()) return;
-    if (!pageSel.all) return;
-    if (searchExactCount != null) return;
-    if (queryWidePreview?.query === appliedQuery) return;
+    if (!shouldRequestQueryWidePreview({
+      canWrite,
+      dslActive,
+      executedQuery: appliedQuery,
+      deepSearchId: deepSearchIdParam,
+      pageSelectionAll: pageSel.all,
+      pageSelectableCount: pageIds.length,
+      searchExactCount,
+      hasMoreMatches,
+      preview: queryWidePreview
+    })) return undefined;
+    const query = String(appliedQuery || '').trim();
     let cancelled = false;
-    api.post('/iocs/bulk/query/preview', { query: appliedQuery, selection_mode: 'all_matching' })
+    setQueryWidePreview({
+      query,
+      status: QUERY_WIDE_PREVIEW_LOADING,
+      count: null,
+      error: '',
+      code: ''
+    });
+    api.post('/iocs/bulk/query/preview', buildQueryWidePreviewPayload(query))
       .then(({ data }) => {
         if (cancelled) return;
-        const n = Number(data?.match_count);
-        setQueryWidePreview({
-          query: appliedQuery,
-          count: Number.isFinite(n) ? n : null
-        });
+        setQueryWidePreview({ query, ...queryWidePreviewFromSuccess(data) });
       })
-      .catch(() => {
-        if (!cancelled) setQueryWidePreview({ query: appliedQuery, count: null });
+      .catch((err) => {
+        if (cancelled) return;
+        setQueryWidePreview({ query, ...queryWidePreviewFromFailure(err) });
       });
-    return () => { cancelled = true; };
-  }, [canWrite, dslActive, deepSearchIdParam, appliedQuery, pageSel.all, searchExactCount, queryWidePreview]);
+    return () => {
+      cancelled = true;
+      setQueryWidePreview((prev) => (
+        prev?.status === QUERY_WIDE_PREVIEW_LOADING && prev.query === query ? null : prev
+      ));
+    };
+  }, [queryWidePreviewRequestKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function clearIocSelection() {
     setSelectedIds(new Set());
@@ -11432,6 +11478,11 @@ function IOCListPage() {
     setAllMatchingQueryContext('');
     setAllMatchingCount(0);
     setSelectionContextKey(resultContextKey);
+  }
+
+  function retryQueryWidePreview() {
+    setQueryWidePreview(null);
+    setQueryWidePreviewRetry((n) => n + 1);
   }
 
   function selectAllMatching() {
@@ -12445,6 +12496,9 @@ function IOCListPage() {
               : formatPageSelectionLabel(selectedCount)}
             {!isAllMatching && selectedCount >= BULK_TRIAGE_MAX ? ` (max ${BULK_TRIAGE_MAX})` : ''}
           </span>
+          {!isAllMatching && pageSel.all && boundQueryWidePreview?.status === QUERY_WIDE_PREVIEW_LOADING ? (
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{formatQueryWidePreviewLoadingLabel()}</span>
+          ) : null}
           {offerSelectAllMatching && !isAllMatching ? (
             <button
               type="button"
@@ -12453,6 +12507,25 @@ function IOCListPage() {
             >
               {formatSelectAllMatchingActionLabel(exactMatchCount)}
             </button>
+          ) : null}
+          {!isAllMatching && pageSel.all && (
+            boundQueryWidePreview?.status === QUERY_WIDE_PREVIEW_ERROR
+            || boundQueryWidePreview?.status === QUERY_WIDE_PREVIEW_UNSUPPORTED
+          ) ? (
+            <>
+              <span style={{ color: '#fbbf24', fontSize: 12 }}>
+                {boundQueryWidePreview.error || 'Could not resolve the exact matching count.'}
+              </span>
+              {boundQueryWidePreview.status === QUERY_WIDE_PREVIEW_ERROR ? (
+                <button
+                  type="button"
+                  className={buttonClassName({ size: 'compact', variant: 'ghost' })}
+                  onClick={retryQueryWidePreview}
+                >
+                  Retry
+                </button>
+              ) : null}
+            </>
           ) : null}
           <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('tag')}>Add tag</button>
           <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('classification')}>Add classification</button>
