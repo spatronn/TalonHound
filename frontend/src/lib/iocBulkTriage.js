@@ -1,4 +1,46 @@
 export const BULK_TRIAGE_MAX = 100;
+export const IOC_LIST_BROWSE_CONTEXT = 'browse';
+
+const EMPTY_IOC_SELECTION = new Set();
+
+/**
+ * Selection is valid only for one executed IOC result context.
+ * Page number, cursor, page size, and unexecuted search-box text are excluded.
+ */
+export function iocListResultContextKey({
+  dslActive = false,
+  executedQuery = '',
+  deepSearchId = ''
+} = {}) {
+  const deepId = String(deepSearchId || '').trim();
+  if (deepId) return `deep:${deepId}`;
+  if (dslActive) return `search:${String(executedQuery || '').trim()}`;
+  return IOC_LIST_BROWSE_CONTEXT;
+}
+
+export function selectedIdsForResultContext(selectedIds, selectedContextKey, currentContextKey) {
+  if (String(selectedContextKey || '') !== String(currentContextKey || '')) {
+    return EMPTY_IOC_SELECTION;
+  }
+  return selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+}
+
+export function applyIocSelectionContext(state, nextContextKey) {
+  const currentKey = String(state?.contextKey || '');
+  const nextKey = String(nextContextKey || '');
+  const selectedIds = state?.selectedIds instanceof Set
+    ? state.selectedIds
+    : new Set(state?.selectedIds || []);
+  if (currentKey === nextKey) {
+    return { contextKey: nextKey, selectedIds };
+  }
+  return { contextKey: nextKey, selectedIds: new Set() };
+}
+
+/** Defensive bulk payload: stale IDs from a previous result context are never sent. */
+export function bulkIocIdsForContext(state, currentContextKey) {
+  return [...applyIocSelectionContext(state, currentContextKey).selectedIds];
+}
 
 export function parseIocRowId(row) {
   const n = Number(row?.id);

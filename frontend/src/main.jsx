@@ -76,6 +76,7 @@ import { resolveUserRowControls } from './lib/userRowControls.js';
 import { buttonClassName, confirmButtonVariant, feedActiveToggleButtonProps } from './lib/uiButtons.js';
 import {
   BULK_TRIAGE_MAX,
+  IOC_LIST_BROWSE_CONTEXT,
   parseIocRowId,
   toggleSelectedId,
   selectPageIds,
@@ -83,7 +84,10 @@ import {
   pageSelectionState,
   formatBulkTriageSummary,
   remainingSelectedAfterBulk,
-  bulkConfirmDisabled
+  bulkConfirmDisabled,
+  iocListResultContextKey,
+  selectedIdsForResultContext,
+  bulkIocIdsForContext
 } from './lib/iocBulkTriage.js';
 import { savedSearchCreatePayload, savedSearchErrorMessage } from './lib/iocSavedSearches.js';
 import {
@@ -11091,6 +11095,7 @@ function IOCListPage() {
   const [suppressionIndex, setSuppressionIndex] = useState(new Map());
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [selectionContextKey, setSelectionContextKey] = useState(IOC_LIST_BROWSE_CONTEXT);
   const [bulkToast, setBulkToast] = useState('');
   const [bulkModal, setBulkModal] = useState(null);
   const [bulkReason, setBulkReason] = useState('');
@@ -11303,13 +11308,32 @@ function IOCListPage() {
     () => sortedRows.map(parseIocRowId).filter((id) => id != null),
     [sortedRows]
   );
-  const selectedCount = selectedIds.size;
-  const pageSel = pageSelectionState(selectedIds, pageIds);
+  const resultContextKey = iocListResultContextKey({
+    dslActive,
+    executedQuery: appliedQuery,
+    deepSearchId: deepSearchIdParam
+  });
+  if (selectionContextKey !== resultContextKey) {
+    setSelectionContextKey(resultContextKey);
+    setSelectedIds(new Set());
+    if (bulkModal) {
+      setBulkModal(null);
+      setBulkError('');
+    }
+  }
+  const activeSelectedIds = selectedIdsForResultContext(
+    selectedIds,
+    selectionContextKey,
+    resultContextKey
+  );
+  const selectedCount = activeSelectedIds.size;
+  const pageSel = pageSelectionState(activeSelectedIds, pageIds);
 
   function toggleRowSelected(id) {
     if (!id || !canWrite) return;
-    const next = toggleSelectedId(selectedIds, id);
+    const next = toggleSelectedId(activeSelectedIds, id);
     setSelectedIds(next.selected);
+    setSelectionContextKey(resultContextKey);
     if (next.capped) {
       setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
     }
@@ -11318,11 +11342,13 @@ function IOCListPage() {
   function togglePageSelected() {
     if (!canWrite) return;
     if (pageSel.all) {
-      setSelectedIds(deselectPageIds(selectedIds, pageIds));
+      setSelectedIds(deselectPageIds(activeSelectedIds, pageIds));
+      setSelectionContextKey(resultContextKey);
       return;
     }
-    const next = selectPageIds(selectedIds, pageIds);
+    const next = selectPageIds(activeSelectedIds, pageIds);
     setSelectedIds(next.selected);
+    setSelectionContextKey(resultContextKey);
     if (next.capped) setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
   }
 
@@ -11358,8 +11384,15 @@ function IOCListPage() {
   }
 
   async function confirmBulkAction() {
-    const ids = [...selectedIds];
-    if (!ids.length) return;
+    const ids = bulkIocIdsForContext(
+      { selectedIds: activeSelectedIds, contextKey: selectionContextKey },
+      resultContextKey
+    );
+    if (!ids.length) {
+      setSelectedIds(new Set());
+      setBulkModal(null);
+      return;
+    }
     const requireReason = bulkModal === 'suppress' || bulkModal === 'expire';
     const requireChoice = bulkModal === 'tag' || bulkModal === 'classification';
     const choice = bulkModal === 'tag' ? bulkTagId : bulkClassSlug;
@@ -12332,7 +12365,7 @@ function IOCListPage() {
                 ? classVisible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ')
                 : 'Unknown';
               const rowId = parseIocRowId(r);
-              const isSelected = rowId != null && selectedIds.has(rowId);
+              const isSelected = rowId != null && activeSelectedIds.has(rowId);
               return (
               <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #334155', background: isSelected ? 'rgba(37,99,235,0.12)' : undefined }}>
                 {canWrite ? (
