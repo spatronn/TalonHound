@@ -115,7 +115,15 @@ import {
   queryWidePreviewFromFailure,
   shouldRequestQueryWidePreview
 } from './lib/iocBulkTriage.js';
-import { savedSearchCreatePayload, savedSearchErrorMessage } from './lib/iocSavedSearches.js';
+import {
+  savedSearchCreatePayload,
+  savedSearchErrorMessage,
+  SAVED_SEARCH_DELETE_CONFIRM_INITIAL,
+  captureSavedSearchDeleteTarget,
+  savedSearchDeleteConfirmCopy,
+  savedSelectedIdAfterDelete,
+  createSavedSearchDeleteConfirmController
+} from './lib/iocSavedSearches.js';
 import {
   canCloseModal,
   modalSizeClass,
@@ -11153,6 +11161,11 @@ function IOCListPage() {
   const [savedName, setSavedName] = useState('');
   const [savedError, setSavedError] = useState('');
   const [savedBusy, setSavedBusy] = useState(false);
+  const [savedDeleteConfirm, setSavedDeleteConfirm] = useState({ ...SAVED_SEARCH_DELETE_CONFIRM_INITIAL });
+  const savedDeleteConfirmRef = useRef(null);
+  if (!savedDeleteConfirmRef.current) {
+    savedDeleteConfirmRef.current = createSavedSearchDeleteConfirmController(setSavedDeleteConfirm);
+  }
 
   const loadSummary = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setSummaryLoading(true);
@@ -11868,19 +11881,25 @@ function IOCListPage() {
     }
   }
 
-  async function deleteSelectedSavedSearch() {
-    if (!savedSelectedId) return;
-    setSavedBusy(true);
+  function openDeleteSavedSearchConfirm() {
+    const target = captureSavedSearchDeleteTarget(savedSearches, savedSelectedId);
+    if (!target) return;
     setSavedError('');
-    try {
-      await api.delete(`/iocs/saved-searches/${savedSelectedId}`);
-      setSavedSelectedId('');
-      await refreshSavedSearches();
-    } catch (err) {
-      setSavedError(savedSearchErrorMessage(err?.response?.data, 'Failed to delete saved search'));
-    } finally {
-      setSavedBusy(false);
-    }
+    savedDeleteConfirmRef.current.request(target);
+  }
+
+  function cancelDeleteSavedSearchConfirm() {
+    savedDeleteConfirmRef.current.cancel();
+  }
+
+  async function confirmDeleteSavedSearch() {
+    const result = await savedDeleteConfirmRef.current.confirm(
+      (id) => api.delete(`/iocs/saved-searches/${id}`)
+    );
+    if (!result.ok) return;
+    setSavedError('');
+    setSavedSelectedId((cur) => savedSelectedIdAfterDelete(cur, result.deletedId));
+    await refreshSavedSearches();
   }
 
   function exitDeepSearchResults() {
@@ -12062,6 +12081,7 @@ function IOCListPage() {
   const isSearchMode = Boolean(search) || dslActive;
   const deepSearchPending = isDeepSearchPending({ deepNotice, deepResult });
   const showIocListResultChrome = shouldShowIocListResultChrome({ deepNotice, deepResult });
+  const savedDeleteCopy = savedSearchDeleteConfirmCopy(savedDeleteConfirm.target?.name);
 
   return (
     <AppShell>
@@ -12210,14 +12230,14 @@ function IOCListPage() {
         </select>
         {canWrite ? (
           <>
-            <button type="button" onClick={openSaveSearchModal} disabled={savedBusy || !(String(searchInput || appliedQuery || '').trim())}>
+            <button type="button" onClick={openSaveSearchModal} disabled={savedBusy || savedDeleteConfirm.submitting || !(String(searchInput || appliedQuery || '').trim())}>
               Save search
             </button>
-            <button type="button" onClick={openRenameSearchModal} disabled={savedBusy || !savedSelectedId}>Rename</button>
-            <button type="button" onClick={deleteSelectedSavedSearch} disabled={savedBusy || !savedSelectedId}>Delete</button>
+            <button type="button" onClick={openRenameSearchModal} disabled={savedBusy || savedDeleteConfirm.submitting || !savedSelectedId}>Rename</button>
+            <button type="button" onClick={openDeleteSavedSearchConfirm} disabled={savedBusy || savedDeleteConfirm.submitting || !savedSelectedId}>Delete</button>
           </>
         ) : null}
-        {savedError && !savedModal ? <span style={{ color: '#fca5a5', fontSize: 13 }}>{savedError}</span> : null}
+        {savedError && !savedModal && !savedDeleteConfirm.open ? <span style={{ color: '#fca5a5', fontSize: 13 }}>{savedError}</span> : null}
       </div>
 
       {savedModal ? (
@@ -12243,6 +12263,46 @@ function IOCListPage() {
             />
           </label>
           {savedError ? <div style={{ marginTop: 10, color: '#fca5a5', fontSize: 13 }}>{savedError}</div> : null}
+        </ModalOverlay>
+      ) : null}
+
+      {savedDeleteConfirm.open ? (
+        <ModalOverlay
+          size="sm"
+          title={savedDeleteCopy.title}
+          description={savedDeleteCopy.description}
+          onClose={savedDeleteConfirm.submitting ? undefined : cancelDeleteSavedSearchConfirm}
+          initialFocus="cancel"
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={cancelDeleteSavedSearchConfirm}
+                disabled={savedDeleteConfirm.submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'dangerSolid' })}
+                onClick={() => { confirmDeleteSavedSearch().catch(() => {}); }}
+                disabled={savedDeleteConfirm.submitting}
+              >
+                {savedDeleteConfirm.submitting ? 'Deleting…' : 'Delete saved search'}
+              </button>
+            </>
+          )}
+        >
+          {savedDeleteConfirm.error ? (
+            <div
+              role="alert"
+              style={{ marginTop: 4, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}
+            >
+              {savedDeleteConfirm.error}
+            </div>
+          ) : null}
         </ModalOverlay>
       ) : null}
 
