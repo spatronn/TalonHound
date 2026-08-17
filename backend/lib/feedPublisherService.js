@@ -1375,6 +1375,19 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
 
   const { rows: feedRows } = await db.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
   if (!feedRows.length) throw new Error('Feed not found');
+  // Forced/manual regenerations run the full multi-format rebuild, which for large feeds
+  // (e.g. Domain: ~1.2M items × txt/json/stix) can take minutes. Surface a visible
+  // in-progress status so the UI does not keep showing the PREVIOUS 'success' while the
+  // rebuild churns. Runs on the advisory-locked client; overwritten to success/partial/
+  // failed by the terminal UPDATE below. Scheduled (non-forced) ticks are fast/no-op and
+  // intentionally left untouched. Serving reads published_feed_snapshots, never this
+  // column, so 'processing' cannot interrupt public pulls.
+  if (force) {
+    await db.query(
+      `UPDATE published_feeds SET last_status = 'processing' WHERE id = $1`,
+      [id]
+    ).catch(() => {});
+  }
   const feedBase = normalizeFeedConfig(feedRows[0]);
   const feedName = feedBase.name || null;
   const queryMode = isQueryModeFeed(feedBase);
@@ -1847,7 +1860,8 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
     await db.query(
       `UPDATE published_feeds
        SET last_generated_at = NOW(),
-           last_status = COALESCE(last_status, 'success'),
+           last_status = CASE WHEN last_status = 'processing' THEN 'success'
+                              ELSE COALESCE(last_status, 'success') END,
            last_refresh_checked_at = NOW(),
            last_refresh_mode = COALESCE(last_refresh_mode, 'noop')
        WHERE id = $1`,
