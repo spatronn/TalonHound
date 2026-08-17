@@ -12,7 +12,7 @@ import {
   requireRole
 } from './rbac.js';
 
-function runPolicy({ method = 'GET', path = '/api/ioc/recent-manual', role, authVia } = {}) {
+function runPolicy({ method = 'GET', path = '/api/ioc/list', role, authVia } = {}) {
   const req = { method, path, user: role ? { role } : undefined, authVia };
   let statusCode = null;
   let nextCalled = false;
@@ -60,11 +60,9 @@ test('bulk triage max limit is defined', () => {
   assert.equal(BULK_TRIAGE_MAX_ITEMS, 100);
 });
 
-// GET /api/ioc/recent-manual authorization: consistent with who can view the
-// Add IOC page (all authenticated roles; read-only sees it read-only) and with
-// the documented rbacHttpPolicy that intentionally grants read-only users GET
-// access. Same posture as the /api/ioc/recent endpoint it replaces.
-test('rbacHttpPolicy allows every signed-in role to GET recent-manual', () => {
+// GET authorization on an IOC read path: the documented rbacHttpPolicy
+// intentionally grants every authenticated role (including read-only) GET access.
+test('rbacHttpPolicy allows every signed-in role to GET IOC read paths', () => {
   for (const role of [ROLES.ADMIN, ROLES.ANALYST, ROLES.READONLY]) {
     const { nextCalled, statusCode } = runPolicy({ role });
     assert.equal(nextCalled, true, `${role} should be allowed to GET`);
@@ -72,7 +70,7 @@ test('rbacHttpPolicy allows every signed-in role to GET recent-manual', () => {
   }
 });
 
-test('rbacHttpPolicy still blocks read-only writes on the recent-manual path', () => {
+test('rbacHttpPolicy still blocks read-only writes on IOC paths', () => {
   const { nextCalled, statusCode } = runPolicy({ method: 'POST', role: ROLES.READONLY });
   assert.equal(nextCalled, false);
   assert.equal(statusCode, 403);

@@ -16666,17 +16666,12 @@ function formatIocSourceDefaultsHelper(source, threatClassOptions) {
 }
 
 function IOCAddPage() {
-  const navigate = useNavigate();
   const { canWrite } = useSession();
   const { options: threatClassOptions } = useThreatClassifications();
   const [threatActors, setThreatActors] = useState([]);
   const [threatActorsLoading, setThreatActorsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
-  const [recentRows, setRecentRows] = useState([]);
-  const [recentSort, setRecentSort] = useState({ key: null, dir: null });
-  const [recentWidths, setRecentWidths] = useState({ observable: 420, type: 140, addedBy: 220, addedAt: 200 });
-  const [recentResize, setRecentResize] = useState(null);
   const [iocValue, setIocValue] = useState('');
   const [confidenceValue, setConfidenceValue] = useState('medium');
   const [sourceId, setSourceId] = useState('');
@@ -16868,71 +16863,6 @@ function IOCAddPage() {
     return formatUserDateTime(dateVal);
   }
 
-  async function loadRecent() {
-    const res = await api.get('/ioc/recent-manual', { params: { limit: 10 } });
-    setRecentRows(res.data?.items || []);
-  }
-
-  useEffect(() => {
-    loadRecent().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!recentResize) return undefined;
-    function onMove(e) {
-      const delta = e.clientX - recentResize.startX;
-      const next = Math.max(70, recentResize.startWidth + delta);
-      setRecentWidths((prev) => ({ ...prev, [recentResize.col]: next }));
-    }
-    function onUp() { setRecentResize(null); }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [recentResize]);
-
-  function toggleRecentSort(key) {
-    setRecentSort((prev) => {
-      if (prev.key !== key) return { key, dir: 'asc' };
-      if (prev.dir === 'asc') return { key, dir: 'desc' };
-      if (prev.dir === 'desc') return { key: null, dir: null };
-      return { key, dir: 'asc' };
-    });
-  }
-
-  function recentIndicator(key) {
-    if (recentSort.key !== key || !recentSort.dir) return '';
-    return recentSort.dir === 'asc' ? ' ?' : ' ?';
-  }
-
-  function startRecentResize(col, e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setRecentResize({ col, startX: e.clientX, startWidth: recentWidths[col] || 120 });
-  }
-
-
-  const sortedRecentRows = useMemo(() => {
-    if (!recentSort.key || !recentSort.dir) return recentRows;
-    const copy = [...recentRows];
-    const value = (r, k) => {
-      if (k === 'observable') return r.observable;
-      if (k === 'type') return r.observable_type;
-      if (k === 'addedBy') return r.added_by || '';
-      if (k === 'addedAt') return new Date(r.created_at || 0).getTime();
-      return '';
-    };
-    copy.sort((a, b) => {
-      const av = value(a, recentSort.key);
-      const bv = value(b, recentSort.key);
-      const cmp = (typeof av === 'number' && typeof bv === 'number') ? av - bv : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
-      return recentSort.dir === 'asc' ? cmp : -cmp;
-    });
-    return copy;
-  }, [recentRows, recentSort]);
-
   const selectedSource = useMemo(
     () => sources.find((s) => String(s.id) === String(sourceId)) || null,
     [sources, sourceId]
@@ -16972,7 +16902,6 @@ function IOCAddPage() {
     try {
       const { data } = await api.post('/ioc/ip', payload);
       resetFormFields();
-      loadRecent().catch(() => {});
       if (data?.skipped) {
         setMessage({ type: 'duplicate', text: 'Already in list (duplicate).' });
       } else {
@@ -17210,50 +17139,6 @@ function IOCAddPage() {
               {submitting ? 'Adding...' : '+ Add IOC'}
             </button>
           </form>
-        </div>
-
-        <div style={{ border: '1px solid #334155', borderRadius: 14, background: '#0f172a', boxShadow: '0 8px 28px rgba(2, 6, 23, 0.35)' }}>
-          <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #334155' }}>
-            <h3 style={{ margin: 0 }}>Last 10 Manually Added IOCs</h3>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="ioc-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 860, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
-              <colgroup>
-                <col style={{ width: recentWidths.observable }} /><col style={{ width: recentWidths.type }} /><col style={{ width: recentWidths.addedBy }} /><col style={{ width: recentWidths.addedAt }} />
-              </colgroup>
-              <thead>
-                <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#111827' }}>
-                  <th onClick={() => toggleRecentSort('observable')} style={{ position: 'relative', cursor:'pointer' }}>IOC{recentIndicator('observable')}<div onMouseDown={(e) => startRecentResize('observable', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleRecentSort('type')} style={{ position: 'relative', cursor:'pointer' }}>IOC Type{recentIndicator('type')}<div onMouseDown={(e) => startRecentResize('type', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleRecentSort('addedBy')} style={{ position: 'relative', cursor:'pointer' }}>Added By{recentIndicator('addedBy')}<div onMouseDown={(e) => startRecentResize('addedBy', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                  <th onClick={() => toggleRecentSort('addedAt')} style={{ position: 'relative', cursor:'pointer' }}>Added At{recentIndicator('addedAt')}<div onMouseDown={(e) => startRecentResize('addedAt', e)} style={{ position:'absolute', right:0, top:0, width:8, height:'100%', cursor:'col-resize' }} /></th>
-                </tr>
-              </thead>
-              <tbody>
-                {!sortedRecentRows.length ? (
-                  <tr>
-                    <td colSpan={4} style={{ color: '#94a3b8', textAlign: 'center', padding: '18px 10px' }}>No manually added IOCs yet.</td>
-                  </tr>
-                ) : sortedRecentRows.map((r, idx) => (
-                    <tr key={`${r.observable_type}-${r.id}-${idx}`} style={{ borderBottom: '1px solid #1f2937', transition: 'background 0.15s ease-in-out' }} onMouseEnter={(e) => { e.currentTarget.style.background = '#111827'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
-                      <td title={r.observable} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <button
-                            onClick={() => r.public_id ? navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`) : navigate('/ioc')}
-                            style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
-                          >
-                            <code style={{ whiteSpace: 'inherit', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{r.observable}</code>
-                          </button>
-                        </div>
-                      </td>
-                      <td>{r.observable_type || '-'}</td>
-                      <td title={r.added_by || ''} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>{r.added_by || '-'}</td>
-                      <td>{formatUserDateTime(r.created_at)}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
         </div>
       </section>
     </AppShell>
