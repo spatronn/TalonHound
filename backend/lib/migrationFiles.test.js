@@ -67,6 +67,24 @@ test('159 MalwareBazaar coverage state migration is runnable and additive', () =
   assert.equal(/CREATE INDEX CONCURRENTLY/i.test(sql), false);
 });
 
+test('160 Published Feed chunk generation migration is additive and transaction-safe', () => {
+  const name = '160_published_feed_chunk_generations.sql';
+  assert.equal(isRunnableMigrationFile(name), true);
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), `../migrations/${name}`),
+    'utf8'
+  );
+  assert.ok(sql.includes('published_feed_generations'));
+  assert.ok(sql.includes('published_feed_chunks'));
+  assert.ok(sql.includes('published_feed_generation_chunks'));
+  assert.ok(sql.includes('published_feed_active_generations'));
+  assert.ok(sql.includes('partition_identity'));
+  assert.ok(sql.includes('projection_pending_cutoff'));
+  assert.equal(/CREATE\s+INDEX\s+CONCURRENTLY/i.test(
+    sql.replace(/--.*$/gm, '')
+  ), false);
+});
+
 test('156 IOC read/export scopes migration is runnable and expands CHECKs', () => {
   assert.equal(isRunnableMigrationFile('156_api_ioc_read_export_scopes.sql'), true);
   const sql = readFileSync(

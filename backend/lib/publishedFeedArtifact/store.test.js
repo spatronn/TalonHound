@@ -81,6 +81,24 @@ describe('publishedFeedArtifact store — write + publish + cleanup', () => {
     assert.ok(!fs.existsSync(old));
   });
 
+  it('cleanupSupersededArtifacts keeps every referenced format/window file', async () => {
+    const feedDir = resolveFeedDir(cfg().storageDir, 14);
+    fs.mkdirSync(feedDir, { recursive: true });
+    const txt = path.join(feedDir, 'a.txt');
+    const json = path.join(feedDir, 'b.json');
+    const old = path.join(feedDir, 'c.stix');
+    fs.writeFileSync(txt, 't');
+    fs.writeFileSync(json, 'j');
+    fs.writeFileSync(old, 's');
+    const past = Date.now() / 1000 - 7200;
+    fs.utimesSync(old, past, past);
+    const removed = await cleanupSupersededArtifacts(cfg(), 14, ['14/a.txt', '14/b.json']);
+    assert.equal(removed, 1);
+    assert.ok(fs.existsSync(txt));
+    assert.ok(fs.existsSync(json));
+    assert.ok(!fs.existsSync(old));
+  });
+
   it('removeFeedArtifacts deletes the whole feed dir', async () => {
     const feedDir = resolveFeedDir(cfg().storageDir, 13);
     fs.mkdirSync(feedDir, { recursive: true });

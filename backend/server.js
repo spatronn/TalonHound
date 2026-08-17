@@ -140,7 +140,7 @@ import {
   runIntegrationQueueRecover
 } from './lib/integrationQueueApi.js';
 import { parseActionReason } from './lib/reasonValidation.js';
-import { regenerateAllEnabledFeeds, resolvePublishedFeedTickMs } from './lib/feedPublisherService.js';
+import { regenerateAllEnabledFeeds, resolvePublishedFeedTickMs, cleanupPublishedFeedLegacyArtifacts } from './lib/feedPublisherService.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import {
   resolveFeedHealthState,
@@ -6581,12 +6581,21 @@ app.listen(port, async () => {
     .then(({ reconcileStaleParts, getPublishedFeedArtifactConfig }) =>
       reconcileStaleParts(getPublishedFeedArtifactConfig()))
     .catch(() => {});
+  import('./lib/publishedFeedChunkGeneration.js')
+    .then(({ cleanupPublishedFeedChunkGenerations }) =>
+      cleanupPublishedFeedChunkGenerations(pool))
+    .catch(() => {});
   regenerateAllEnabledFeeds(pool).catch(() => {});
   setInterval(() => {
     if (publishedFeedTickInProgress) return;
     publishedFeedTickInProgress = true;
     regenerateAllEnabledFeeds(pool)
       .catch((err) => console.error('[published-feeds] tick failed', err?.message || err))
+      .then(() => import('./lib/publishedFeedChunkGeneration.js'))
+      .then(({ cleanupPublishedFeedChunkGenerations }) =>
+        cleanupPublishedFeedChunkGenerations(pool))
+      .then(() => cleanupPublishedFeedLegacyArtifacts(pool))
+      .catch((err) => console.error('[published-feeds] cleanup failed', err?.message || err))
       .finally(() => {
         publishedFeedTickInProgress = false;
       });

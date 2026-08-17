@@ -6009,9 +6009,19 @@ function PublishedFeedsPage() {
                     <td style={ui.td}>{formatUserDateTime(f.last_generated_at)}</td>
                     <td style={{
                       ...ui.td,
-                      color: f.last_status === 'success' ? '#86efac' : f.last_status === 'failed' ? '#fca5a5' : '#fcd34d',
+                      color: f.last_status === 'success' ? '#86efac'
+                        : f.last_status === 'failed' ? '#fca5a5'
+                        : f.last_status === 'processing' ? '#93c5fd'
+                        : '#fcd34d',
                       fontWeight: 600
-                    }}>{f.last_status || '—'}</td>
+                    }}>
+                      {f.last_status === 'processing' ? 'Generating' : (f.last_status || '—')}
+                      {f.last_status === 'processing' && f.last_generated_at ? (
+                        <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500, marginTop: 4 }}>
+                          Last successful: {formatUserDateTime(f.last_generated_at)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td style={ui.td}>{f.last_item_count ?? '—'}</td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
                       {canWrite ? (

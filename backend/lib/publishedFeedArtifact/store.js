@@ -53,6 +53,94 @@ export function artifactExtension(format) {
   return 'txt';
 }
 
+function safeWindow(value) {
+  const window = String(value || '').trim().toLowerCase();
+  if (!['1d', '3d', '7d', 'all'].includes(window)) {
+    throw new Error('Invalid Published Feed snapshot window');
+  }
+  return window;
+}
+
+export function resolveChunkDir(storageDir, {
+  feedId,
+  window,
+  algoVersion,
+  chunkCount,
+  format
+}) {
+  const base = path.resolve(storageDir);
+  const ext = artifactExtension(format);
+  const version = Number(algoVersion);
+  const count = Number(chunkCount);
+  if (!Number.isInteger(version) || version <= 0) throw new Error('Invalid chunk algorithm version');
+  if (!Number.isInteger(count) || count <= 0) throw new Error('Invalid chunk count');
+  const resolved = path.resolve(
+    base,
+    'chunks',
+    `feed-${Number(feedId)}`,
+    safeWindow(window),
+    `v${version}`,
+    `n${count}`,
+    ext
+  );
+  if (!resolved.startsWith(base + path.sep)) throw new Error('Resolved chunk dir escapes storage directory');
+  return resolved;
+}
+
+export async function openChunkPartStream(cfg, identity) {
+  const dir = resolveChunkDir(cfg.storageDir, identity);
+  await fs.promises.mkdir(dir, { recursive: true });
+  const nonce = crypto.randomBytes(8).toString('hex');
+  const partPath = path.join(dir, `.chunk-${Number(identity.chunkKey)}-${nonce}.part`);
+  const stream = fs.createWriteStream(partPath, { flags: 'wx', mode: 0o640 });
+  return { stream, partPath, dir };
+}
+
+export function resolveChunkFinalPath(dir, chunkKey, contentHash, format) {
+  const key = Number(chunkKey);
+  const hash = String(contentHash || '').toLowerCase();
+  if (!Number.isInteger(key) || key < 0) throw new Error('Invalid chunk key');
+  if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid chunk content hash');
+  const resolved = path.resolve(dir, `${key}-${hash}.${artifactExtension(format)}`);
+  if (!resolved.startsWith(path.resolve(dir) + path.sep)) {
+    throw new Error('Resolved chunk path escapes chunk dir');
+  }
+  return resolved;
+}
+
+export async function commitContentAddressedPart(partPath, finalPath) {
+  const existing = await statArtifact(finalPath);
+  if (existing) {
+    await removeFileQuiet(partPath);
+    return { reused: true };
+  }
+  try {
+    await fs.promises.rename(partPath, finalPath);
+    await fsyncDirectory(path.dirname(finalPath));
+    return { reused: false };
+  } catch (err) {
+    if (err?.code !== 'EEXIST') throw err;
+    await removeFileQuiet(partPath);
+    return { reused: true };
+  }
+}
+
+export function toRelativeChunkPath(storageDir, absolutePath) {
+  const base = path.resolve(storageDir);
+  const absolute = path.resolve(absolutePath);
+  if (!absolute.startsWith(base + path.sep)) throw new Error('Chunk path escapes storage directory');
+  return path.relative(base, absolute).split(path.sep).join('/');
+}
+
+export function resolveGenerationHeadPath(storageDir, feedId, generationId) {
+  const gen = String(generationId || '');
+  if (!/^[a-z0-9-]+$/i.test(gen)) throw new Error('Invalid generation id');
+  const base = path.resolve(storageDir);
+  const resolved = path.resolve(base, 'generations', `feed-${Number(feedId)}`, `${gen}.txt-head`);
+  if (!resolved.startsWith(base + path.sep)) throw new Error('Resolved generation head escapes storage directory');
+  return resolved;
+}
+
 /**
  * Absolute artifact path for a (feed, generation, format). fileName is composed from a
  * server-generated generation id; a traversal guard is still applied as defence in depth.
@@ -102,8 +190,13 @@ export function finalizeStream(stream) {
     stream.on('error', reject);
     stream.on('finish', () => {
       fs.open(stream.path, 'r', (openErr, fd) => {
-        if (openErr) return resolve(); // best-effort fsync; finish already flushed to OS
-        fs.fsync(fd, () => fs.close(fd, () => resolve()));
+        if (openErr) return reject(openErr);
+        fs.fsync(fd, (syncErr) => {
+          fs.close(fd, (closeErr) => {
+            if (syncErr || closeErr) reject(syncErr || closeErr);
+            else resolve();
+          });
+        });
       });
     });
     stream.end();
@@ -113,6 +206,20 @@ export function finalizeStream(stream) {
 /** Atomically publish the finished .part as the final artifact (rename is atomic on one fs). */
 export async function commitArtifact(partPath, finalPath) {
   await fs.promises.rename(partPath, finalPath);
+  await fsyncDirectory(path.dirname(finalPath));
+}
+
+async function fsyncDirectory(dir) {
+  let handle;
+  try {
+    handle = await fs.promises.open(dir, 'r');
+    await handle.sync();
+  } catch (err) {
+    // Production runs on Linux. Windows does not support directory fsync.
+    if (process.platform !== 'win32') throw err;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
 }
 
 /** Best-effort removal of a temp/part or superseded artifact. Never throws on ENOENT. */
@@ -142,24 +249,29 @@ export async function statArtifact(filePath) {
 export async function reconcileStaleParts(cfg) {
   const root = path.resolve(cfg.storageDir);
   let removed = 0;
-  let feedDirs;
-  try {
-    feedDirs = await fs.promises.readdir(root, { withFileTypes: true });
-  } catch (err) {
-    if (err && err.code === 'ENOENT') return 0;
-    throw err;
-  }
   const cutoff = Date.now() - cfg.stalePartMinutes * 60 * 1000;
-  for (const d of feedDirs) {
-    if (!d.isDirectory()) continue;
-    const dir = path.join(root, d.name);
-    let files;
-    try { files = await fs.promises.readdir(dir); } catch { continue; }
-    for (const f of files) {
-      if (!f.endsWith('.part')) continue;
-      const p = path.join(dir, f);
+  const pending = [root];
+  while (pending.length) {
+    const dir = pending.pop();
+    let entries;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if (err?.code === 'ENOENT') continue;
+      throw err;
+    }
+    for (const entry of entries) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(p);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.part')) continue;
+      // eslint-disable-next-line no-await-in-loop
       const st = await statArtifact(p);
       if (st && st.mtimeMs < cutoff) {
+        // eslint-disable-next-line no-await-in-loop
         await removeFileQuiet(p);
         removed += 1;
       }
@@ -173,19 +285,21 @@ export async function reconcileStaleParts(cfg) {
  * currently-referenced storage_path and whose mtime is older than the retention window.
  * Keeps the current artifact and recent ones (in-flight download / pointer-race safety).
  */
-export async function cleanupSupersededArtifacts(cfg, feedId, currentStoragePath) {
+export async function cleanupSupersededArtifacts(cfg, feedId, currentStoragePaths) {
   let dir;
   try { dir = resolveFeedDir(cfg.storageDir, feedId); } catch { return 0; }
-  const currentAbs = currentStoragePath
-    ? resolveStoredArtifactPath(cfg.storageDir, currentStoragePath)
-    : null;
+  const keep = new Set(
+    (Array.isArray(currentStoragePaths) ? currentStoragePaths : [currentStoragePaths])
+      .filter(Boolean)
+      .map((storagePath) => resolveStoredArtifactPath(cfg.storageDir, storagePath))
+  );
   let files;
   try { files = await fs.promises.readdir(dir); } catch { return 0; }
   const cutoff = Date.now() - cfg.supersededRetentionMinutes * 60 * 1000;
   let removed = 0;
   for (const f of files) {
     const p = path.join(dir, f);
-    if (currentAbs && p === currentAbs) continue;
+    if (keep.has(p)) continue;
     if (f.endsWith('.part')) continue; // handled by reconcileStaleParts
     const st = await statArtifact(p);
     if (st && st.mtimeMs < cutoff) {
@@ -201,4 +315,14 @@ export async function removeFeedArtifacts(cfg, feedId) {
   let dir;
   try { dir = resolveFeedDir(cfg.storageDir, feedId); } catch { return; }
   await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+  const base = path.resolve(cfg.storageDir);
+  for (const extra of [
+    path.resolve(base, 'chunks', `feed-${Number(feedId)}`),
+    path.resolve(base, 'generations', `feed-${Number(feedId)}`)
+  ]) {
+    if (extra.startsWith(base + path.sep)) {
+      // eslint-disable-next-line no-await-in-loop
+      await fs.promises.rm(extra, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 }

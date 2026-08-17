@@ -8,6 +8,10 @@
 
 import crypto from 'crypto';
 import { confidenceToScore } from './feedFormatter.js';
+import {
+  partitionIdentityForProjectionRow,
+  publishedFeedChunkKey
+} from './publishedFeedChunks.js';
 
 export const PROJECTION_STATUS = {
   ABSENT: 'absent',
@@ -25,6 +29,19 @@ export function confidenceRank(confidence) {
 export function projectionIdentityKey(observable, observableType, { artifactId = null } = {}) {
   if (artifactId) return `a:${artifactId}`;
   return `o:${String(observableType || '').toLowerCase()}:${String(observable || '').toLowerCase()}`;
+}
+
+export function projectionPartitionMetadata(row, feed) {
+  const partition_identity = partitionIdentityForProjectionRow(row);
+  const chunkCount = Number(feed?.chunk_count);
+  return {
+    partition_identity,
+    chunk_key: Number.isInteger(chunkCount) && chunkCount > 0
+      ? publishedFeedChunkKey(partition_identity, chunkCount, {
+        version: Number(feed?.chunk_algo_version || 1)
+      })
+      : null
+  };
 }
 
 /** Fingerprint of the public bytes for one item (TXT value and/or JSON item body). */
@@ -97,7 +114,7 @@ export async function upsertProjectionBatch(db, rows) {
   let i = 1;
   for (const r of rows) {
     values.push(
-      `($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++}::jsonb,$${i++},NOW())`
+      `($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++}::jsonb,$${i++},$${i++},$${i++},NOW())`
     );
     params.push(
       r.feed_id,
@@ -112,14 +129,16 @@ export async function upsertProjectionBatch(db, rows) {
       r.confidence_rank ?? confidenceRank(r.confidence),
       r.txt_value,
       r.item_json == null ? null : JSON.stringify(r.item_json),
-      r.content_fingerprint
+      r.content_fingerprint,
+      r.partition_identity ?? null,
+      r.chunk_key ?? null
     );
   }
   const sql = `
     INSERT INTO published_feed_items (
       feed_id, snapshot_window, identity_key, ioc_item_id, observable, observable_type,
       recency_ts, confidence, category, confidence_rank, txt_value, item_json,
-      content_fingerprint, updated_at
+      content_fingerprint, partition_identity, chunk_key, updated_at
     ) VALUES ${values.join(',')}
     ON CONFLICT (feed_id, snapshot_window, identity_key) DO UPDATE SET
       ioc_item_id = EXCLUDED.ioc_item_id,
@@ -132,11 +151,15 @@ export async function upsertProjectionBatch(db, rows) {
       txt_value = EXCLUDED.txt_value,
       item_json = EXCLUDED.item_json,
       content_fingerprint = EXCLUDED.content_fingerprint,
+      partition_identity = EXCLUDED.partition_identity,
+      chunk_key = EXCLUDED.chunk_key,
       updated_at = NOW()
     WHERE published_feed_items.content_fingerprint IS DISTINCT FROM EXCLUDED.content_fingerprint
        OR published_feed_items.ioc_item_id IS DISTINCT FROM EXCLUDED.ioc_item_id
        OR published_feed_items.recency_ts IS DISTINCT FROM EXCLUDED.recency_ts
-       OR published_feed_items.txt_value IS DISTINCT FROM EXCLUDED.txt_value`;
+       OR published_feed_items.txt_value IS DISTINCT FROM EXCLUDED.txt_value
+       OR published_feed_items.partition_identity IS DISTINCT FROM EXCLUDED.partition_identity
+       OR published_feed_items.chunk_key IS DISTINCT FROM EXCLUDED.chunk_key`;
   const res = await db.query(sql, params);
   return res.rowCount || 0;
 }
@@ -164,6 +187,7 @@ export async function setFeedProjectionState(db, feedId, patch) {
   };
   if (patch.projection_status != null) add('projection_status', patch.projection_status);
   if (patch.projection_cutoff !== undefined) add('projection_cutoff', patch.projection_cutoff);
+  if (patch.projection_pending_cutoff !== undefined) add('projection_pending_cutoff', patch.projection_pending_cutoff);
   if (patch.projection_built_at !== undefined) add('projection_built_at', patch.projection_built_at);
   if (patch.last_refresh_checked_at !== undefined) add('last_refresh_checked_at', patch.last_refresh_checked_at);
   if (patch.last_refresh_mode !== undefined) add('last_refresh_mode', patch.last_refresh_mode);

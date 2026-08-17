@@ -22,6 +22,12 @@ import {
   resolveStoredArtifactPath
 } from './publishedFeedArtifact/store.js';
 import { STIX_CONTENT_TYPE } from './publishedFeedStix.js';
+import {
+  getActiveChunkGeneration,
+  getChunkGenerationFiles,
+  isPublishedFeedChunkedEnabledForFeed,
+  pinPublishedFeedGeneration
+} from './publishedFeedChunkGeneration.js';
 
 export const TAXII_CONTENT_TYPE = 'application/taxii+json;version=2.1';
 export const STIX_OASIS_CONTENT_TYPE = 'application/vnd.oasis.stix+json;version=2.1';
@@ -222,6 +228,45 @@ export function parseStixBundleObjects(text) {
  */
 export async function loadStixObjectsFromFeed(pool, feed) {
   const { iocTypeKey, window } = snapshotKeysForFeed(feed);
+  if (isPublishedFeedChunkedEnabledForFeed(feed.id) && window === 'all') {
+    const generation = await getActiveChunkGeneration(pool, feed.id, iocTypeKey, window, 'stix');
+    if (generation) {
+      if (Number(generation.byte_length) > TAXII_PARSE_MAX_BYTES) {
+        return {
+          ok: false,
+          code: 'SNAPSHOT_TOO_LARGE',
+          status: 413,
+          title: 'Payload Too Large',
+          description: 'STIX snapshot exceeds the TAXII pagination size cap; use the Published Feed STIX pull instead'
+        };
+      }
+      const release = pinPublishedFeedGeneration(generation.id);
+      try {
+        const cfg = getPublishedFeedArtifactConfig();
+        const chunks = await getChunkGenerationFiles(pool, generation.id, 'stix');
+        const parts = [generation.header_bytes];
+        for (let i = 0; i < chunks.length; i += 1) {
+          if (i > 0) parts.push(generation.separator_bytes);
+          const absolute = resolveStoredArtifactPath(cfg.storageDir, chunks[i].storage_path);
+          // TAXII already has a strict 32 MiB aggregate cap.
+          // eslint-disable-next-line no-await-in-loop
+          parts.push(await fs.readFile(absolute, 'utf8'));
+        }
+        parts.push(generation.footer_bytes);
+        return { ok: true, objects: parseStixBundleObjects(parts.join('')) };
+      } catch {
+        return {
+          ok: false,
+          code: 'SNAPSHOT_UNAVAILABLE',
+          status: 503,
+          title: 'Service Unavailable',
+          description: 'STIX snapshot is momentarily unavailable'
+        };
+      } finally {
+        release();
+      }
+    }
+  }
   const meta = await getLatestSnapshotMeta(pool, feed.id, iocTypeKey, window, 'stix');
   if (!meta) {
     return {

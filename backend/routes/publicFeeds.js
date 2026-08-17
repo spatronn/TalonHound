@@ -1,4 +1,6 @@
+import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { hashFeedAccessToken } from '../lib/feedAccessToken.js';
 import { FEED_WINDOWS, computeResponseEtag, sliceFeedContent, feedIocTypesKey, normalizeFeedIocTypes } from '../lib/feedFormatter.js';
 import {
@@ -27,6 +29,13 @@ import {
 } from '../lib/publishedFeedApiKey.js';
 import { STIX_CONTENT_TYPE } from '../lib/publishedFeedStix.js';
 import { createServiceLogger } from '../lib/appLogger.js';
+import {
+  getActiveChunkGeneration,
+  getChunkGenerationFiles,
+  isPublishedFeedChunkedEnabledForFeed,
+  pinPublishedFeedGeneration,
+  streamChunkGeneration
+} from '../lib/publishedFeedChunkGeneration.js';
 
 const feedLog = createServiceLogger('published-feeds');
 const FEED_PUBLIC_RATE_LIMIT_PER_MIN = Math.max(Number(process.env.FEED_PUBLIC_RATE_LIMIT_PER_MIN || 60), 1);
@@ -138,11 +147,162 @@ function applySnapshotHeaders(res, { etag, lastModified, format }) {
 function conditionalNotModified(req, etag, lastModified) {
   const inm = req.headers['if-none-match'];
   const ims = req.headers['if-modified-since'];
-  if (inm && inm === etag) return true;
+  if (inm) return inm === etag;
   if (ims && lastModified && new Date(ims).getTime() >= new Date(lastModified).getTime()) {
     return true;
   }
   return false;
+}
+
+export function computeLegacySnapshotEtag(meta, iocTypeKey, window, limit, format) {
+  const exactRepresentationKey = [
+    meta?.content_hash,
+    meta?.generated_at ? new Date(meta.generated_at).toISOString() : '',
+    meta?.content_bytes ?? '',
+    format
+  ].join('|');
+  return computeResponseEtag(exactRepresentationKey, iocTypeKey, window, limit);
+}
+
+function takeNewlinePrefix(buffer, maxLines) {
+  if (maxLines == null) return buffer;
+  let lines = 0;
+  for (let i = 0; i < buffer.length; i += 1) {
+    if (buffer[i] !== 0x0a) continue;
+    lines += 1;
+    if (lines >= maxLines) return buffer.subarray(0, i + 1);
+  }
+  return buffer;
+}
+
+async function serveChunkedSnapshot(pool, res, req, {
+  feedId,
+  iocTypeKey,
+  window,
+  format,
+  effectiveLimit,
+  logServe
+}) {
+  if (!isPublishedFeedChunkedEnabledForFeed(feedId) || window !== 'all') return false;
+  const generation = await getActiveChunkGeneration(pool, feedId, iocTypeKey, window, format);
+  if (!generation) return false;
+  const cfg = getPublishedFeedArtifactConfig();
+  const lastModified = generation.generated_at
+    ? new Date(generation.generated_at).toUTCString()
+    : undefined;
+
+  if (format === 'txt' && effectiveLimit != null) {
+    if (!generation.recency_head_path) return false;
+    const release = pinPublishedFeedGeneration(generation.id);
+    try {
+      const absolute = resolveStoredArtifactPath(cfg.storageDir, generation.recency_head_path);
+      const head = await readFile(absolute);
+      const body = takeNewlinePrefix(head, effectiveLimit);
+      const etag = `"${crypto.createHash('sha256').update(body).digest('hex')}"`;
+      applySnapshotHeaders(res, { etag, lastModified, format });
+      res.set('Content-Length', String(body.length));
+      if (conditionalNotModified(req, etag, lastModified)) {
+        logServe({ status: 304, content_loaded: false, generation_id: generation.id });
+        res.status(304).end();
+        return true;
+      }
+      logServe({
+        status: 200,
+        content_loaded: true,
+        snapshot_bytes: body.length,
+        generation_id: generation.id,
+        recency_limit: effectiveLimit
+      });
+      if (req.method === 'HEAD') res.end();
+      else res.end(body);
+      return true;
+    } catch {
+      if (!res.headersSent) res.status(503);
+      res.end('Feed momentarily unavailable');
+      return true;
+    } finally {
+      release();
+    }
+  }
+
+  const chunks = await getChunkGenerationFiles(pool, generation.id, format);
+  for (const chunk of chunks) {
+    let absolute;
+    try {
+      absolute = resolveStoredArtifactPath(cfg.storageDir, chunk.storage_path);
+    } catch {
+      res.status(503).send('Feed momentarily unavailable');
+      return true;
+    }
+    // Preflight every immutable reference before sending the envelope. This prevents a
+    // missing/short chunk from turning into a syntactically partial JSON/STIX response.
+    // eslint-disable-next-line no-await-in-loop
+    const st = await statArtifact(absolute);
+    if (!st || Number(st.size) !== Number(chunk.byte_length)) {
+      res.status(503).send('Feed momentarily unavailable');
+      return true;
+    }
+  }
+  const etag = generation.strong_etag;
+  applySnapshotHeaders(res, { etag, lastModified, format });
+  res.set('Content-Length', String(generation.byte_length));
+  if (conditionalNotModified(req, etag, lastModified)) {
+    logServe({
+      status: 304,
+      content_loaded: false,
+      snapshot_bytes: Number(generation.byte_length),
+      generation_id: generation.id
+    });
+    res.status(304).end();
+    return true;
+  }
+  logServe({
+    status: 200,
+    content_loaded: true,
+    snapshot_bytes: Number(generation.byte_length),
+    generation_id: generation.id,
+    chunk_count: chunks.length
+  });
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+  await streamChunkGeneration(res, req, generation, chunks, cfg);
+  return true;
+}
+
+async function resolvePublicRequestFormat(pool, feed, rawFormat, rawWindow) {
+  const requestedWindow = rawWindow == null || rawWindow === ''
+    ? String(feed.time_window || 'all')
+    : String(rawWindow).toLowerCase();
+  if (
+    isPublishedFeedChunkedEnabledForFeed(feed.id || feed.feed_id)
+    && requestedWindow === 'all'
+  ) {
+    const iocTypeKey = resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY
+      ? QUERY_FEED_SNAPSHOT_KEY
+      : feedIocTypesKey(resolveFeedIocTypes(feed));
+    const active = await getActiveChunkGeneration(
+      pool,
+      feed.id || feed.feed_id,
+      iocTypeKey,
+      'all'
+    );
+    if (active.length) {
+      const formats = active.map((row) => row.format);
+      const requested = rawFormat == null || rawFormat === ''
+        ? (formats.includes('txt') ? 'txt' : formats[0])
+        : String(rawFormat).trim().toLowerCase();
+      if (!['txt', 'json', 'stix'].includes(requested)) {
+        return { error: "format must be 'txt', 'json', or 'stix'", status: 400 };
+      }
+      if (!formats.includes(requested)) {
+        return { error: 'Requested format is not enabled for the active feed generation', status: 404 };
+      }
+      return { format: requested };
+    }
+  }
+  return resolveRequestedFeedFormat(feed, rawFormat);
 }
 
 /**
@@ -193,6 +353,17 @@ async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, m
     });
   };
 
+  if (await serveChunkedSnapshot(pool, res, req, {
+    feedId,
+    iocTypeKey: iocTypeResult,
+    window: windowResult,
+    format,
+    effectiveLimit,
+    logServe
+  })) {
+    return;
+  }
+
   // attempt 0 = first try; attempt 1 = one retry after id+hash miss
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const meta = await getLatestSnapshotMeta(pool, feedId, iocTypeResult, windowResult, format);
@@ -203,7 +374,13 @@ async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, m
       return res.status(404).send('');
     }
 
-    const etag = computeResponseEtag(meta.content_hash, iocTypeResult, windowResult, effectiveLimit ?? 'all');
+    const etag = computeLegacySnapshotEtag(
+      meta,
+      iocTypeResult,
+      windowResult,
+      effectiveLimit ?? 'all',
+      format
+    );
     const lastModified = meta.generated_at ? new Date(meta.generated_at).toUTCString() : undefined;
     applySnapshotHeaders(res, { etag, lastModified, format });
 
@@ -325,7 +502,12 @@ export function registerPublicFeedRoutes(app, pool) {
         return res.status(404).json({ message: 'Feed not found' });
       }
 
-      const requested = resolveRequestedFeedFormat(feed, req.query.format);
+      const requested = await resolvePublicRequestFormat(
+        pool,
+        feed,
+        req.query.format,
+        req.query.window
+      );
       if (requested.error) {
         return res.status(requested.status).json({ message: requested.error });
       }
@@ -377,9 +559,11 @@ export function registerPublicFeedRoutes(app, pool) {
       const rawFormat = req.query.format != null && req.query.format !== ''
         ? req.query.format
         : pathFormat;
-      const requested = resolveRequestedFeedFormat(
-        { formats: key.formats },
-        rawFormat
+      const requested = await resolvePublicRequestFormat(
+        pool,
+        key,
+        rawFormat,
+        req.query.window
       );
       if (requested.error) {
         return res.status(requested.status).send(requested.error);

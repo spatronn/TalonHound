@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import {
   isPublishedFeedDue,
   regenerateAllEnabledFeeds,
+  publishedFeedDueAtMs,
+  resolvePublishedFeedMaxConcurrency,
   resolvePublishedFeedTickMs,
   PUBLISHED_FEED_TICK_MS_DEFAULT,
   PUBLISHED_FEED_TICK_MS_MIN
@@ -21,6 +23,26 @@ describe('resolvePublishedFeedTickMs', () => {
     assert.equal(resolvePublishedFeedTickMs('60000'), 60_000);
     assert.equal(resolvePublishedFeedTickMs('120000'), 120_000);
     assert.equal(resolvePublishedFeedTickMs('1000'), PUBLISHED_FEED_TICK_MS_MIN);
+  });
+});
+
+describe('bounded scheduler helpers', () => {
+  it('defaults to two workers and clamps unsafe values', () => {
+    assert.equal(resolvePublishedFeedMaxConcurrency(undefined), 2);
+    assert.equal(resolvePublishedFeedMaxConcurrency('1'), 1);
+    assert.equal(resolvePublishedFeedMaxConcurrency('3'), 3);
+    assert.equal(resolvePublishedFeedMaxConcurrency('99'), 8);
+    assert.equal(resolvePublishedFeedMaxConcurrency('invalid'), 2);
+  });
+
+  it('computes start-anchored due time for fairness ordering', () => {
+    const start = Date.parse('2026-08-09T12:00:00.000Z');
+    assert.equal(publishedFeedDueAtMs({
+      refresh_interval_minutes: 5,
+      last_generated_at: new Date(start + 45_000).toISOString(),
+      last_refresh_ms: 45_000
+    }), start + 5 * MIN);
+    assert.equal(publishedFeedDueAtMs({ last_generated_at: null }), 0);
   });
 });
 
@@ -262,5 +284,80 @@ describe('regenerateAllEnabledFeeds — cheap due gate', () => {
     assert.equal(result.due, 1);
     assert.deepEqual(result.due_ids, [11]);
     assert.equal(connects, 1);
+  });
+
+  it('runs independent due feeds concurrently without starting the same feed twice', async () => {
+    const start = Date.parse('2026-08-09T12:00:00.000Z');
+    const active = [];
+    let peak = 0;
+    const starts = [];
+    const pool = {
+      async query(sql) {
+        if (String(sql).includes('FROM published_feeds') && String(sql).includes('enabled = TRUE')) {
+          return {
+            rows: [11, 12, 15].map((id) => ({
+              id,
+              name: `Feed ${id}`,
+              enabled: true,
+              refresh_interval_minutes: 5,
+              last_generated_at: new Date(start + 45_000).toISOString(),
+              last_refresh_ms: 45_000
+            }))
+          };
+        }
+        return { rows: [] };
+      },
+      async connect() {
+        return {
+          async query(sql, params) {
+            const s = String(sql);
+            if (s.includes('pg_try_advisory_lock')) return { rows: [{ ok: true }] };
+            if (s.includes('pg_advisory_unlock')) return { rows: [] };
+            if (s.includes('FROM published_feeds WHERE id')) {
+              const feedId = Number(params?.[0]);
+              starts.push(feedId);
+              active.push(feedId);
+              peak = Math.max(peak, active.length);
+              await new Promise((resolve) => setTimeout(resolve, 40));
+              active.splice(active.indexOf(feedId), 1);
+              return {
+                rows: [{
+                  id: feedId,
+                  name: `Feed ${feedId}`,
+                  ioc_types: ['domain'],
+                  time_window: 'all',
+                  max_items: 1,
+                  exclude_false_positive: true,
+                  exclude_expired: true,
+                  include_feed_keys: null,
+                  include_tags: null,
+                  exclude_tags: null,
+                  min_confidence: null,
+                  updated_at: '2026-08-01T00:00:00.000Z',
+                  enabled: true,
+                  format: 'txt',
+                  refresh_interval_minutes: 5,
+                  filter_mode: 'basic',
+                  projection_status: 'absent'
+                }]
+              };
+            }
+            if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [] };
+            return { rows: [] };
+          },
+          release() {}
+        };
+      }
+    };
+
+    const result = await regenerateAllEnabledFeeds(pool, {
+      nowMs: start + 5 * MIN,
+      maxConcurrency: 2
+    });
+    assert.equal(result.due, 3);
+    assert.equal(result.concurrency, 2);
+    assert.deepEqual(result.due_ids, [11, 12, 15]);
+    assert.ok(peak <= 2, `peak concurrency ${peak} exceeded 2`);
+    assert.equal(new Set(starts).size, 3);
   });
 });

@@ -95,6 +95,11 @@ services:
       - PUBLISHED_FEED_INCREMENTAL_ENABLED=${PUBLISHED_FEED_INCREMENTAL_ENABLED:-false}
       # Optional comma-separated feed ids for controlled incremental bootstrap/rollout.
       - PUBLISHED_FEED_INCREMENTAL_FEED_IDS=${PUBLISHED_FEED_INCREMENTAL_FEED_IDS:-}
+      # Stable chunk generations remain off until migration/backfill/equivalence gates pass.
+      - PUBLISHED_FEED_CHUNKED_ENABLED=${PUBLISHED_FEED_CHUNKED_ENABLED:-false}
+      - PUBLISHED_FEED_CHUNKED_FEED_IDS=${PUBLISHED_FEED_CHUNKED_FEED_IDS:-}
+      - PUBLISHED_FEED_MAX_CONCURRENCY=${PUBLISHED_FEED_MAX_CONCURRENCY:-2}
+      - PUBLISHED_FEED_ARTIFACT_RETENTION_MINUTES=${PUBLISHED_FEED_ARTIFACT_RETENTION_MINUTES:-60}
       # Scheduler poll resolution for due checks (default 60s). Must be << refresh_interval
       # so a 5m feed is not delayed by a second full tick (~10m effective cadence).
       - PUBLISHED_FEED_TICK_MS=${PUBLISHED_FEED_TICK_MS:-60000}

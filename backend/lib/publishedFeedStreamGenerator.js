@@ -19,6 +19,7 @@ import { normalizePublishedIoc } from './publishedFeedJson.js';
 import { metaKey } from './publishedFeedJsonData.js';
 import {
   projectionIdentityKey,
+  projectionPartitionMetadata,
   projectionContentFingerprint,
   confidenceRank,
   upsertProjectionBatch,
@@ -464,6 +465,11 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
         }
         if (populateProjection) {
           const fp = projectionContentFingerprint({ txtValue: value, itemJson: item });
+          const partition = projectionPartitionMetadata({
+            partition_identity: row.partition_identity || null,
+            observable: value,
+            observable_type: row.observable_type
+          }, feed);
           projBatch.push({
             feed_id: feed.id,
             window: projectionWindow,
@@ -477,7 +483,8 @@ export async function generateFeedArtifact(db, feed, window, opts = {}) {
             confidence_rank: confidenceRank(row.confidence),
             txt_value: value,
             item_json: item,
-            content_fingerprint: fp
+            content_fingerprint: fp,
+            ...partition
           });
         }
         const count = wantTxt

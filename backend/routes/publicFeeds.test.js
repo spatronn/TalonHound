@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import { registerPublicFeedRoutes } from './publicFeeds.js';
+import { computeLegacySnapshotEtag, registerPublicFeedRoutes } from './publicFeeds.js';
 import { hashApiKey, generatePublishedFeedApiKey } from '../lib/publishedFeedApiKey.js';
 import { hashFeedAccessToken } from '../lib/feedAccessToken.js';
-import { computeResponseEtag } from '../lib/feedFormatter.js';
 
 function baseKey(over = {}) {
   return {
@@ -228,7 +227,7 @@ test('If-None-Match returns 304 without loading snapshot content', async () => {
     snapshotsByFeedId: () => snap,
     onSnapshotQuery: (kind) => kinds.push(kind)
   }));
-  const etag = computeResponseEtag(snap.content_hash, 'ip', 'all', 'all');
+  const etag = computeLegacySnapshotEtag(snap, 'ip', 'all', 'all', 'txt');
   const res = await get(app, `/api/published-feeds/malware-domains?api_key=${raw}`, {
     'if-none-match': etag
   });
@@ -369,7 +368,11 @@ test('content id+hash miss then consistent retry returns 200 with new body', asy
   const res = await get(app, `/api/published-feeds/malware-domains?api_key=${raw}`);
   assert.equal(res.status, 200);
   assert.equal(res.text, 'fresh\n');
-  assert.equal(res.headers.etag, computeResponseEtag('hash-new', 'ip', 'all', 'all'));
+  assert.equal(res.headers.etag, computeLegacySnapshotEtag({
+    content_hash: 'hash-new',
+    generated_at: new Date('2026-08-01T12:00:00.000Z').toISOString(),
+    content_bytes: 8
+  }, 'ip', 'all', 'all', 'txt'));
   assert.deepEqual(kinds, ['meta', 'content_by_id', 'meta', 'content_by_id']);
 });
 
@@ -473,7 +476,7 @@ test('JSON feed ETag/304 continues to work', async () => {
   const raw = generatePublishedFeedApiKey();
   const keys = [baseKey({ token_hash: hashApiKey(raw) })];
   const app = makeApp(createMockPool({ keys, feeds: JSON_FEEDS, snapshotsByFeedId: () => jsonSnapshot() }));
-  const etag = computeResponseEtag('jh', 'ip', 'all', 'all');
+  const etag = computeLegacySnapshotEtag(jsonSnapshot(), 'ip', 'all', 'all', 'json');
   const res = await get(app, `/api/published-feeds/json-feed?api_key=${raw}`, { 'if-none-match': etag });
   assert.equal(res.status, 304);
 });
@@ -550,7 +553,7 @@ test('STIX feed ETag/304 continues to work', async () => {
   const raw = generatePublishedFeedApiKey();
   const keys = [baseKey({ token_hash: hashApiKey(raw) })];
   const app = makeApp(createMockPool({ keys, feeds: STIX_FEEDS, snapshotsByFeedId: () => stixSnapshot() }));
-  const etag = computeResponseEtag('sh', 'ip', 'all', 'all');
+  const etag = computeLegacySnapshotEtag(stixSnapshot(), 'ip', 'all', 'all', 'stix');
   const res = await get(app, `/api/published-feeds/stix-feed?api_key=${raw}`, { 'if-none-match': etag });
   assert.equal(res.status, 304);
 });
@@ -584,7 +587,7 @@ test('legacy public endpoint also uses metadata 304 fast path', async () => {
     snapshotsByFeedId: () => snap,
     onSnapshotQuery: (kind) => kinds.push(kind)
   }));
-  const etag = computeResponseEtag(snap.content_hash, 'ip', 'all', 'all');
+  const etag = computeLegacySnapshotEtag(snap, 'ip', 'all', 'all', 'txt');
   const res = await get(app, `/public/feeds/${raw}/feed.txt`, { 'if-none-match': etag });
   assert.equal(res.status, 304);
   assert.deepEqual(kinds, ['meta']);

@@ -10,6 +10,33 @@ import crypto from 'node:crypto';
 import { PUBLISHED_FEED_SCHEMA_VERSION } from '../publishedFeedJson.js';
 import { STIX_SPEC_VERSION, stixBundleIdForFeed } from '../publishedFeedStix.js';
 
+export const JSON_FEED_FOOTER = ']}\n';
+export const STIX_FEED_FOOTER = ']}\n';
+
+export function buildJsonFeedHeader({
+  name = null,
+  generatedAt,
+  itemCount,
+  includeSourceMetadata = false,
+  includeClassification = false,
+  includeEnrichment = false
+}) {
+  return `{"schema_version":${JSON.stringify(PUBLISHED_FEED_SCHEMA_VERSION)},`
+    + `"feed":${JSON.stringify({
+      name: name != null ? String(name) : null,
+      generated_at: generatedAt,
+      item_count: Number(itemCount || 0),
+      include_source_metadata: Boolean(includeSourceMetadata),
+      include_classification: Boolean(includeClassification),
+      include_enrichment: Boolean(includeEnrichment)
+    })},"items":[`;
+}
+
+export function buildStixFeedHeader(slug) {
+  return `{"type":"bundle","id":${JSON.stringify(stixBundleIdForFeed(slug))},`
+    + `"spec_version":${JSON.stringify(STIX_SPEC_VERSION)},"objects":[`;
+}
+
 /** Promise-based sink write that honors backpressure. */
 export function makeSinkWriter(stream) {
   return (chunk) => new Promise((resolve, reject) => {
@@ -26,11 +53,13 @@ export class StreamingTxtWriter {
     this._write = makeSinkWriter(stream);
     this._hash = crypto.createHash('sha256');
     this._count = 0;
+    this._bytes = 0;
   }
 
   async addValue(value) {
     const line = `${value}\n`;
     this._hash.update(line, 'utf8');
+    this._bytes += Buffer.byteLength(line, 'utf8');
     this._count += 1;
     await this._write(line);
   }
@@ -38,7 +67,12 @@ export class StreamingTxtWriter {
   get itemCount() { return this._count; }
 
   finish() {
-    return { content_hash: this._hash.digest('hex'), item_count: this._count };
+    return {
+      content_hash: this._hash.digest('hex'),
+      fragment_hash: null,
+      byte_length: this._bytes,
+      item_count: this._count
+    };
   }
 }
 
@@ -61,6 +95,8 @@ export class StreamingJsonBodyWriter {
       include_enrichment: Boolean(feedMeta.includeEnrichment)
     };
     this._hash = crypto.createHash('sha256');
+    this._fragmentHash = crypto.createHash('sha256');
+    this._bytes = 0;
     this._hash.update(JSON.stringify({
       schema_version: PUBLISHED_FEED_SCHEMA_VERSION,
       name: this._name,
@@ -70,10 +106,13 @@ export class StreamingJsonBodyWriter {
 
   async addItem(item) {
     const chunk = JSON.stringify(item);
+    const bytes = this._first ? chunk : `,${chunk}`;
     this._hash.update('\n');
     this._hash.update(chunk);
+    this._fragmentHash.update(bytes, 'utf8');
+    this._bytes += Buffer.byteLength(bytes, 'utf8');
     this._count += 1;
-    await this._write(this._first ? chunk : `,${chunk}`);
+    await this._write(bytes);
     this._first = false;
   }
 
@@ -81,21 +120,25 @@ export class StreamingJsonBodyWriter {
 
   /** The header bytes for the final artifact, with the now-known item_count + generated_at. */
   buildHeader(itemCount, generatedAt) {
-    return `{"schema_version":${JSON.stringify(PUBLISHED_FEED_SCHEMA_VERSION)},`
-      + `"feed":${JSON.stringify({
-        name: this._name,
-        generated_at: generatedAt,
-        item_count: itemCount,
-        include_source_metadata: this._flags.include_source_metadata,
-        include_classification: this._flags.include_classification,
-        include_enrichment: this._flags.include_enrichment
-      })},"items":[`;
+    return buildJsonFeedHeader({
+      name: this._name,
+      generatedAt,
+      itemCount,
+      includeSourceMetadata: this._flags.include_source_metadata,
+      includeClassification: this._flags.include_classification,
+      includeEnrichment: this._flags.include_enrichment
+    });
   }
 
-  buildFooter() { return ']}\n'; }
+  buildFooter() { return JSON_FEED_FOOTER; }
 
   finish() {
-    return { content_hash: this._hash.digest('hex'), item_count: this._count };
+    return {
+      content_hash: this._hash.digest('hex'),
+      fragment_hash: this._fragmentHash.digest('hex'),
+      byte_length: this._bytes,
+      item_count: this._count
+    };
   }
 }
 
@@ -112,6 +155,8 @@ export class StreamingStixBodyWriter {
     this._slug = slug != null ? String(slug) : '';
     this._bundleId = stixBundleIdForFeed(this._slug);
     this._hash = crypto.createHash('sha256');
+    this._fragmentHash = crypto.createHash('sha256');
+    this._bytes = 0;
     this._hash.update(JSON.stringify({
       spec_version: STIX_SPEC_VERSION,
       bundle_id: this._bundleId
@@ -123,10 +168,13 @@ export class StreamingStixBodyWriter {
   async addIndicator(indicator) {
     if (!indicator) return false;
     const chunk = JSON.stringify(indicator);
+    const bytes = this._first ? chunk : `,${chunk}`;
     this._hash.update('\n');
     this._hash.update(chunk);
+    this._fragmentHash.update(bytes, 'utf8');
+    this._bytes += Buffer.byteLength(bytes, 'utf8');
     this._count += 1;
-    await this._write(this._first ? chunk : `,${chunk}`);
+    await this._write(bytes);
     this._first = false;
     return true;
   }
@@ -134,12 +182,17 @@ export class StreamingStixBodyWriter {
   get itemCount() { return this._count; }
 
   buildHeader() {
-    return `{"type":"bundle","id":${JSON.stringify(this._bundleId)},"spec_version":${JSON.stringify(STIX_SPEC_VERSION)},"objects":[`;
+    return buildStixFeedHeader(this._slug);
   }
 
-  buildFooter() { return ']}\n'; }
+  buildFooter() { return STIX_FEED_FOOTER; }
 
   finish() {
-    return { content_hash: this._hash.digest('hex'), item_count: this._count };
+    return {
+      content_hash: this._hash.digest('hex'),
+      fragment_hash: this._fragmentHash.digest('hex'),
+      byte_length: this._bytes,
+      item_count: this._count
+    };
   }
 }

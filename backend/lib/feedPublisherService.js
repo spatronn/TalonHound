@@ -22,7 +22,8 @@ import { isFileArtifactsReadEnabled } from './fileArtifacts/flags.js';
 import {
   getPublishedFeedArtifactConfig,
   removeFileQuiet,
-  resolveStoredArtifactPath
+  resolveStoredArtifactPath,
+  cleanupSupersededArtifacts
 } from './publishedFeedArtifact/store.js';
 import { createServiceLogger } from './appLogger.js';
 import { parseSearchQuery, buildWhereClause } from './iocSearchDsl/index.js';
@@ -39,6 +40,10 @@ import {
   resolveRequestedFeedFormat
 } from './publishedFeedFormats.js';
 import { StixBundleWriter, indicatorFromPublishedItem } from './publishedFeedStix.js';
+import {
+  PUBLISHED_FEED_CHUNK_ALGO_VERSION,
+  PUBLISHED_FEED_CHUNK_SERIALIZER_VERSION
+} from './publishedFeedChunks.js';
 
 export { buildFeedKeySourceSql };
 export {
@@ -311,7 +316,14 @@ export function filtersHash(feed, window) {
     exclude_expired: feed.exclude_expired,
     max_items: feed.max_items,
     // Bump hash-feed snapshots when artifact canonicalization is active.
-    artifact_canonical: shouldCanonicalizePublishedHashFeed(feed) ? 1 : 0
+    artifact_canonical: shouldCanonicalizePublishedHashFeed(feed) ? 1 : 0,
+    ...(feed?.chunk_count
+      ? {
+        chunk_algo_version: Number(feed.chunk_algo_version || PUBLISHED_FEED_CHUNK_ALGO_VERSION),
+        chunk_count: Number(feed.chunk_count),
+        chunk_serializer_versions: PUBLISHED_FEED_CHUNK_SERIALIZER_VERSION
+      }
+      : {})
   };
   return crypto.createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex').slice(0, 16);
 }
@@ -690,6 +702,7 @@ export function buildStreamingHashBaseSql(feed, window, restrict = null) {
     picked AS (
       SELECT DISTINCT ON (identity_key)
         id,
+        identity_key AS partition_identity,
         COALESCE(
           CASE WHEN has_artifact THEN primary_hash_value END,
           observable
@@ -720,7 +733,8 @@ export function buildStreamingHashBaseSql(feed, window, restrict = null) {
         observable ASC
     )
     SELECT d.id, d.observable, d.observable_type, d.confidence, d.category,
-           d.created_at, d.ioc_source_id, d.source_name, d.recency_ts
+           d.created_at, d.ioc_source_id, d.source_name, d.recency_ts,
+           d.partition_identity
     FROM picked d
     ORDER BY d.recency_ts DESC, ${CONF_RANK_SQL('d.confidence')} DESC, d.observable ASC`;
 
@@ -1221,9 +1235,9 @@ export async function persistPublishedFeedArtifactSnapshot(pool, snapshot) {
  * Persist multiple format artifacts for one generation in a single transaction.
  * On failure, nothing is committed — caller deletes the new on-disk paths.
  */
-export async function persistPublishedFeedArtifactSnapshots(pool, snapshots) {
+export async function persistPublishedFeedArtifactSnapshots(pool, snapshots, { afterPersist = null } = {}) {
   if (!Array.isArray(snapshots) || !snapshots.length) return [];
-  if (snapshots.length === 1) {
+  if (snapshots.length === 1 && typeof afterPersist !== 'function') {
     return [await persistPublishedFeedArtifactSnapshot(pool, snapshots[0])];
   }
 
@@ -1301,6 +1315,9 @@ export async function persistPublishedFeedArtifactSnapshots(pool, snapshots) {
           snapshot.storagePath, snapshot.fileSize, artifactFormat, snapshot.generationId]
       );
       results.push({ updated: true, previousStoragePath: prev.storage_path || null });
+    }
+    if (typeof afterPersist === 'function') {
+      await afterPersist(client, results);
     }
     return results;
   });
@@ -1565,6 +1582,11 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           logRefreshMetrics,
           isIncrementalEnabledForFeed
         } = await import('./publishedFeedIncremental.js');
+        const {
+          isPublishedFeedChunkedEnabledForFeed,
+          getActiveChunkGeneration,
+          buildAndActivateChunkGeneration
+        } = await import('./publishedFeedChunkGeneration.js');
 
         const latestMeta = await getLatestSnapshotMeta(db, id, iocTypeKey, window, feedFormats[0]);
         // filters_hash is the generation config watermark. Do not use feed_updated_at here:
@@ -1595,23 +1617,66 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         let art;
         let refreshMode = mode;
         let changedCount = 0;
+        let pendingProjectionCutoff = null;
+        let bootstrapChunkGeneration = false;
 
         if (allKeysStale) {
+          const W = captureCutoffNow();
           art = await generateEmptyFeedArtifact(feed, { cfg: artifactCfg });
           refreshMode = 'full';
           await clearFeedProjection(db, id).catch(() => {});
           await setFeedProjectionState(db, id, {
             projection_status: PROJECTION_STATUS.READY,
-            projection_cutoff: captureCutoffNow(),
+            projection_pending_cutoff: W,
             projection_built_at: new Date()
           }).catch(() => {});
+          pendingProjectionCutoff = W;
+          bootstrapChunkGeneration = Boolean(
+            isPublishedFeedChunkedEnabledForFeed(id)
+            && String(window) === 'all'
+            && genMax == null
+            && String(feed.chunk_backfill_status || '') === 'ready'
+          );
         } else if (mode === 'incremental') {
           const cutoff = feed.projection_cutoff ? new Date(feed.projection_cutoff) : null;
           const W = captureCutoffNow();
-          const dirty = await collectDirtyIocIds(db, feed, cutoff);
-          if (!dirty.ids.length && !dirty.forceFull) {
+          let dirty = await collectDirtyIocIds(db, feed, cutoff, { candidateCutoff: W });
+          if (feed.projection_pending_cutoff && !dirty.forceFull) {
+            dirty = {
+              ...dirty,
+              forceFull: true,
+              reason: 'pending_publication_recovery'
+            };
+          }
+          const chunkedEligible = Boolean(
+            isPublishedFeedChunkedEnabledForFeed(id)
+            && String(window) === 'all'
+            && genMax == null
+            && String(feed.chunk_backfill_status || '') === 'ready'
+          );
+          const activeChunkGeneration = chunkedEligible
+            ? await getActiveChunkGeneration(db, id, iocTypeKey, window, feedFormats[0])
+            : null;
+          bootstrapChunkGeneration = Boolean(chunkedEligible && !activeChunkGeneration);
+
+          if (!dirty.ids.length && !dirty.deletes?.length && !dirty.forceFull) {
             // True no-op: no artifact rewrite, do not bump published_feeds.updated_at.
-            await touchFeedRefreshChecked(db, id, { mode: 'noop', ms: Date.now() - t0, changed: 0 });
+            await db.query('BEGIN');
+            try {
+              await setFeedProjectionState(db, id, {
+                projection_cutoff: W,
+                projection_pending_cutoff: null
+              });
+              await touchFeedRefreshChecked(db, id, {
+                mode: 'noop',
+                ms: Date.now() - t0,
+                changed: 0
+              });
+              await db.query('COMMIT');
+            } catch (err) {
+              await db.query('ROLLBACK').catch(() => {});
+              throw err;
+            }
             logRefreshMetrics({
               feed_id: id,
               refresh_mode: 'noop',
@@ -1623,16 +1688,107 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             results.push({
               window,
               status: 'success',
-              item_count: latestMeta?.item_count ?? 0,
+              item_count: activeChunkGeneration?.item_count ?? latestMeta?.item_count ?? 0,
               skipped: true,
               reason: 'noop_incremental'
             });
-            maxItemCount = Math.max(maxItemCount, Number(latestMeta?.item_count || 0));
+            maxItemCount = Math.max(
+              maxItemCount,
+              Number(activeChunkGeneration?.item_count ?? latestMeta?.item_count ?? 0)
+            );
             continue;
           }
+
+          if (activeChunkGeneration && !dirty.forceFull) {
+            await db.query('BEGIN');
+            try {
+              const delta = await applyIncrementalProjectionUpdate(db, feed, window, formatTypes, dirty);
+              if (delta.forceFull) throw new Error(`Chunked incremental forced full: ${delta.reason || 'unknown'}`);
+              if (!delta.artifactDirty) {
+                await setFeedProjectionState(db, id, {
+                  projection_cutoff: W,
+                  projection_pending_cutoff: null
+                });
+                await touchFeedRefreshChecked(db, id, {
+                  mode: 'noop',
+                  ms: Date.now() - t0,
+                  changed: 0
+                });
+                await db.query('COMMIT');
+                results.push({
+                  window,
+                  status: 'success',
+                  item_count: Number(activeChunkGeneration.item_count || 0),
+                  skipped: true,
+                  reason: 'noop_incremental'
+                });
+                maxItemCount = Math.max(maxItemCount, Number(activeChunkGeneration.item_count || 0));
+                continue;
+              }
+              changedCount = delta.entered + delta.updated + delta.removed;
+              const expectedItemCount = Number(activeChunkGeneration.item_count || 0)
+                + delta.entered - delta.removed;
+              const allChunksAffected = delta.affectedChunkKeys.length
+                >= Number(activeChunkGeneration.chunk_count || feed.chunk_count || 0);
+              const chunkResult = await buildAndActivateChunkGeneration(db, feed, {
+                window,
+                iocTypeKey,
+                configHash: filters_hash,
+                candidateCutoff: W,
+                affectedChunkKeys: allChunksAffected ? null : delta.affectedChunkKeys,
+                expectedItemCount,
+                fullRebuildReason: allChunksAffected ? 'all_chunks_affected' : null,
+                metrics: {
+                  dirty_candidates: dirty.ids.length,
+                  semantic_changes: changedCount,
+                  entered: delta.entered,
+                  updated: delta.updated,
+                  removed: delta.removed,
+                  projection_ms: Date.now() - t0,
+                  scheduler_delay_ms: Number(options.schedulerDelayMs || 0)
+                }
+              });
+              await db.query('COMMIT');
+              refreshMode = allChunksAffected ? 'chunked_full' : 'chunked_incremental';
+              queryMs += Date.now() - t0;
+              snapshotBytes = chunkResult.physicalBytesWritten;
+              maxItemCount = Math.max(maxItemCount, chunkResult.itemCount);
+              logRefreshMetrics({
+                feed_id: id,
+                window,
+                generation_id: chunkResult.generationId,
+                mode: refreshMode,
+                dirty_candidates: dirty.ids.length,
+                semantic_changes: changedCount,
+                affected_chunks: chunkResult.affectedChunks,
+                generated_chunks: chunkResult.generatedChunks,
+                reused_chunks: chunkResult.reusedChunks,
+                total_chunks: chunkResult.chunkCount,
+                rows_read: chunkResult.rowsRead,
+                physical_bytes_written: chunkResult.physicalBytesWritten,
+                item_count: chunkResult.itemCount,
+                refresh_ms: Date.now() - t0,
+                scheduler_delay_ms: Number(options.schedulerDelayMs || 0)
+              });
+              results.push({
+                window,
+                status: 'success',
+                item_count: chunkResult.itemCount,
+                refresh_mode: refreshMode,
+                generation_id: chunkResult.generationId
+              });
+              continue;
+            } catch (err) {
+              await db.query('ROLLBACK').catch(() => {});
+              throw err;
+            }
+          }
+
+          await setFeedProjectionState(db, id, { projection_pending_cutoff: W });
           const delta = await applyIncrementalProjectionUpdate(db, feed, window, formatTypes, dirty);
           if (delta.forceFull) {
             refreshMode = 'full';
+            bootstrapChunkGeneration = chunkedEligible;
             await setFeedProjectionState(db, id, { projection_status: PROJECTION_STATUS.BOOTSTRAPPING });
             await clearFeedProjection(db, id);
             art = await generateFeedArtifact(db, feed, window, {
@@ -1641,12 +1797,15 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             });
             await setFeedProjectionState(db, id, {
               projection_status: PROJECTION_STATUS.READY,
-              projection_cutoff: W,
               projection_built_at: new Date()
             });
+            pendingProjectionCutoff = W;
             changedCount = art.itemCount;
           } else if (!delta.artifactDirty) {
-            await setFeedProjectionState(db, id, { projection_cutoff: W });
+            await setFeedProjectionState(db, id, {
+              projection_cutoff: W,
+              projection_pending_cutoff: null
+            });
             await touchFeedRefreshChecked(db, id, {
               mode: 'noop',
               ms: Date.now() - t0,
@@ -1676,7 +1835,7 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
               maxItems: genMax, cfg: artifactCfg
             });
             changedCount = delta.entered + delta.updated + delta.removed;
-            await setFeedProjectionState(db, id, { projection_cutoff: W });
+            pendingProjectionCutoff = W;
             logRefreshMetrics({
               feed_id: id,
               refresh_mode: 'incremental',
@@ -1704,7 +1863,10 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             && (mode === 'bootstrap' || mode === 'full')
           );
           if (populate) {
-            await setFeedProjectionState(db, id, { projection_status: PROJECTION_STATUS.BOOTSTRAPPING });
+            await setFeedProjectionState(db, id, {
+              projection_status: PROJECTION_STATUS.BOOTSTRAPPING,
+              projection_pending_cutoff: W
+            });
             await clearFeedProjection(db, id);
           }
           art = await generateFeedArtifact(db, feed, window, {
@@ -1714,12 +1876,19 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           if (populate) {
             await setFeedProjectionState(db, id, {
               projection_status: PROJECTION_STATUS.READY,
-              projection_cutoff: W,
               projection_built_at: new Date()
             });
+            pendingProjectionCutoff = W;
           }
           refreshMode = mode === 'bootstrap' ? 'bootstrap' : 'full';
           changedCount = art.itemCount;
+          bootstrapChunkGeneration = Boolean(
+            populate
+            && isPublishedFeedChunkedEnabledForFeed(id)
+            && String(window) === 'all'
+            && genMax == null
+            && String(feed.chunk_backfill_status || '') === 'ready'
+          );
           logRefreshMetrics({
             feed_id: id,
             refresh_mode: refreshMode,
@@ -1760,7 +1929,35 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
               artifactFormat: a.format,
               generationId: a.generationId || art.generationId,
               paramsJson: { ...paramsJson, output_format: a.format, formats: feedFormats }
-            }))
+            })),
+            {
+              afterPersist: async (client) => {
+                if (bootstrapChunkGeneration) {
+                  await buildAndActivateChunkGeneration(client, feed, {
+                    window,
+                    iocTypeKey,
+                    configHash: filters_hash,
+                    candidateCutoff: pendingProjectionCutoff || captureCutoffNow(),
+                    affectedChunkKeys: null,
+                    expectedItemCount: itemCount,
+                    fullRebuildReason: refreshMode,
+                    metrics: {
+                      dirty_candidates: null,
+                      semantic_changes: changedCount,
+                      projection_ms: Date.now() - t0,
+                      scheduler_delay_ms: Number(options.schedulerDelayMs || 0)
+                    }
+                  });
+                } else if (pendingProjectionCutoff) {
+                  await client.query(
+                    `UPDATE published_feeds
+                     SET projection_cutoff = $2, projection_pending_cutoff = NULL
+                     WHERE id = $1`,
+                    [id, pendingProjectionCutoff]
+                  );
+                }
+              }
+            }
           );
         } catch (persistErr) {
           for (const a of artifacts) {
@@ -1769,9 +1966,12 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           throw persistErr;
         }
         for (const persistRes of persistResults || []) {
-          const stale = persistRes?.redundantStoragePath || persistRes?.previousStoragePath;
-          if (stale) {
-            await removeFileQuiet(resolveStoredArtifactPath(artifactCfg.storageDir, stale)).catch(() => {});
+          // A redundant newly-written artifact was never public and can be removed.
+          // Superseded public artifacts are retained for in-flight requests/rollback.
+          if (persistRes?.redundantStoragePath) {
+            await removeFileQuiet(
+              resolveStoredArtifactPath(artifactCfg.storageDir, persistRes.redundantStoragePath)
+            ).catch(() => {});
           }
         }
         await db.query(
@@ -1892,7 +2092,9 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
     snapshot_bytes: snapshotBytes,
     result: resultLabel,
     skip_reason: skipReason,
-    force
+    force,
+    scheduled_due_at: options.scheduledDueAt || null,
+    scheduler_delay_ms: Number(options.schedulerDelayMs || 0)
   });
 
   return { feed_id: id, results, last_status: lastStatus, last_error: lastError };
@@ -1937,6 +2139,23 @@ export function isPublishedFeedDue(row, nowMs = Date.now()) {
   return nowMs - anchorMs >= intervalMs;
 }
 
+export function publishedFeedDueAtMs(row) {
+  if (!row?.last_generated_at) return 0;
+  const completedAt = new Date(row.last_generated_at).getTime();
+  if (!Number.isFinite(completedAt)) return 0;
+  const intervalMs = Math.max(Number(row?.refresh_interval_minutes || 15), 5) * 60 * 1000;
+  const durationMs = Math.max(0, Number(row.last_refresh_ms) || 0);
+  return completedAt - Math.min(durationMs, intervalMs) + intervalMs;
+}
+
+export function resolvePublishedFeedMaxConcurrency(
+  value = process.env.PUBLISHED_FEED_MAX_CONCURRENCY
+) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 2;
+  return Math.max(1, Math.min(8, Math.trunc(parsed)));
+}
+
 /**
  * Scheduler tick: cheap SELECT of scheduling columns, filter due feeds in-process,
  * then run generation only for due ids (advisory lock prevents overlap).
@@ -1948,24 +2167,76 @@ export async function regenerateAllEnabledFeeds(pool, options = {}) {
      FROM published_feeds
      WHERE enabled = TRUE`
   );
-  const due = rows.filter((r) => isPublishedFeedDue(r, nowMs));
-
-  for (const row of due) {
-    try {
-      const result = await generatePublishedFeedSnapshot(pool, row.id);
-      if (result?.reason === 'generation_in_progress') {
-        // Structured log already emitted by generatePublishedFeedSnapshot.
-        continue;
+  const due = rows
+    .filter((r) => isPublishedFeedDue(r, nowMs))
+    .map((row) => ({ ...row, scheduledDueAtMs: publishedFeedDueAtMs(row) }))
+    .sort((a, b) => a.scheduledDueAtMs - b.scheduledDueAtMs || Number(a.id) - Number(b.id));
+  const concurrency = Math.min(
+    resolvePublishedFeedMaxConcurrency(options.maxConcurrency),
+    Math.max(due.length, 1)
+  );
+  let cursor = 0;
+  let completed = 0;
+  async function worker() {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= due.length) return;
+      const row = due[index];
+      const actualStartAt = Date.now();
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await generatePublishedFeedSnapshot(pool, row.id, {
+          schedulerDelayMs: Math.max(0, actualStartAt - row.scheduledDueAtMs),
+          scheduledDueAt: row.scheduledDueAtMs
+            ? new Date(row.scheduledDueAtMs).toISOString()
+            : null
+        });
+        if (result?.reason !== 'generation_in_progress') completed += 1;
+      } catch (err) {
+        feedLog.error('published feed scheduled regenerate failed', {
+          feed_id: row.id,
+          scheduled_due_at: row.scheduledDueAtMs
+            ? new Date(row.scheduledDueAtMs).toISOString()
+            : null,
+          actual_start_at: new Date(actualStartAt).toISOString(),
+          scheduler_delay_ms: Math.max(0, actualStartAt - row.scheduledDueAtMs),
+          error: String(err?.message || err)
+        });
       }
-      // Per-run structured log is emitted inside runPublishedFeedGeneration.
-    } catch (err) {
-      feedLog.error('published feed scheduled regenerate failed', {
-        feed_id: row.id,
-        error: String(err?.message || err)
-      });
     }
   }
-  return { checked: rows.length, due: due.length, due_ids: due.map((r) => Number(r.id)) };
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return {
+    checked: rows.length,
+    due: due.length,
+    completed,
+    concurrency,
+    due_ids: due.map((r) => Number(r.id))
+  };
+}
+
+/** Reachability GC for legacy monolithic artifacts. Never unlinks files still referenced by snapshots. */
+export async function cleanupPublishedFeedLegacyArtifacts(pool) {
+  const cfg = getPublishedFeedArtifactConfig();
+  const { rows: feeds } = await pool.query('SELECT id FROM published_feeds');
+  let removed = 0;
+  for (const feed of feeds) {
+    // eslint-disable-next-line no-await-in-loop
+    const refs = await pool.query(
+      `SELECT storage_path
+       FROM published_feed_snapshots
+       WHERE feed_id = $1 AND storage_path IS NOT NULL`,
+      [feed.id]
+    );
+    // eslint-disable-next-line no-await-in-loop
+    removed += await cleanupSupersededArtifacts(
+      cfg,
+      feed.id,
+      refs.rows.map((row) => row.storage_path)
+    );
+  }
+  return removed;
 }
 
 /** Metadata only — never SELECT content (used for 304 / skip checks).
