@@ -113,21 +113,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
 
   function headerStatus(row, formEnabled) {
     const status = resolveProviderStatus({ ...row, enabled: formEnabled ?? row?.enabled });
-    if (formEnabled === false || row?.enabled === false) {
-      return { status: 'disabled', label: 'Disabled' };
-    }
-    if (row?.provider === 'rdap' && status === 'healthy') {
-      return { status: 'healthy', label: 'Healthy' };
-    }
-    if (row?.provider === 'spamhaus_drop' && row?.status === 'never_synced') {
-      return { status: 'never_synced', label: 'Never synced' };
-    }
-    if (status === 'healthy') return { status, label: 'Healthy' };
-    if (status === 'error') return { status, label: 'Error' };
-    if (status === 'rate_limited') return { status, label: 'Rate limited' };
-    if (status === 'configured') return { status, label: 'Configured' };
-    if (status === 'not_configured') return { status, label: 'Not configured' };
-    return { status, label: getProviderMeta(row?.provider).name };
+    const labels = {
+      healthy: 'Healthy',
+      degraded: 'Degraded',
+      unhealthy: 'Unhealthy',
+      unknown: 'Unknown'
+    };
+    return { status, label: labels[status] || 'Unknown' };
   }
 
   async function saveVt() {
@@ -397,7 +389,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         enabled={vtForm.enabled}
                         onEnabledChange={(v) => handleEnabledChange('virustotal', v, setVtForm)}
                         enabledDisabled={!isAdmin}
-                        lastTestAt={row.last_success_at || row.last_test_at}
+                        health={row.health}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
                         left={(
@@ -467,7 +459,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         enabled={ipForm.enabled}
                         onEnabledChange={(v) => handleEnabledChange('ipinfo_lite', v, setIpForm)}
                         enabledDisabled={!isAdmin}
-                        lastTestAt={row.last_success_at || row.last_test_at}
+                        health={row.health}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
                         left={(
@@ -540,7 +532,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         enabled={abuseForm.enabled}
                         onEnabledChange={(v) => handleEnabledChange('abuseipdb', v, setAbuseForm)}
                         enabledDisabled={!isAdmin}
-                        lastTestAt={row.last_success_at || row.last_test_at}
+                        health={row.health}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
                         left={(
@@ -622,7 +614,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         statusLabel={hs.label}
                         enabled={row.enabled !== false}
                         showEnabledToggle={false}
-                        showLastTest={false}
+                        health={row.health}
                         description={row.description || meta.longDescription}
                         left={(
                           <>
@@ -666,7 +658,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         statusLabel={hs.label}
                         enabled={row.enabled !== false && row.configured !== false}
                         showEnabledToggle={false}
-                        showLastTest={false}
+                        health={row.health}
                         description={row.description || meta.longDescription}
                         left={(
                           <>
@@ -711,8 +703,8 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         enabled={spamhausForm.enabled}
                         onEnabledChange={(v) => handleEnabledChange('spamhaus_drop', v, setSpamhausForm)}
                         enabledDisabled={!isAdmin}
-                        lastTestAt={row.last_success_at}
-                        lastTestLabel="Last Sync"
+                        health={row.health}
+                        lastTestLabel="Last successful sync"
                         description={meta.longDescription}
                         left={(
                           <>

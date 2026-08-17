@@ -67,7 +67,7 @@ const EXPECTED_ITEMS = {
     'Enrichment Usage'
   ],
   Administration: ['Users', 'API Keys', 'Audit Logs'],
-  System: ['Settings', 'Job Queue Status', 'Backup & Restore']
+  System: ['Health', 'Settings', 'Job Queue Status', 'Backup & Restore']
 };
 
 const EXPECTED_ROUTES = {
@@ -87,6 +87,7 @@ const EXPECTED_ROUTES = {
   Users: '/administration/users',
   'API Keys': '/administration/api-keys',
   'Audit Logs': '/administration/audit-logs',
+  Health: '/system/health',
   Settings: '/administration',
   'Job Queue Status': '/threat-intelligence/queue',
   'Backup & Restore': '/administration/backup-restore'

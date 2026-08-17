@@ -516,7 +516,9 @@ export function getRdapProviderAdminSummary() {
     enabled,
     configured: true,
     auth_required: false,
-    status: enabled ? 'healthy' : 'disabled',
+    // Configuration is not runtime health. The admin/system health endpoints
+    // attach canonical evidence-based health after loading persisted activity.
+    status: 'unknown',
     rdap_base_url: RDAP_BASE,
     iana_bootstrap_url: 'https://data.iana.org/rdap/dns.json',
     cache_ttl_hours: Math.round(CACHE_TTL_MS / (60 * 60 * 1000)),

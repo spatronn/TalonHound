@@ -109,6 +109,11 @@ import {
 import { registerRouteModule, logRegisteredRouteModules } from './lib/routeRegistry.js';
 import { runReadinessChecks, buildHealthPayload } from './lib/healthChecks.js';
 import {
+  normalizeComponentStatus,
+  resolveOverallSystemHealth,
+  summarizeHealth
+} from './lib/systemHealth.js';
+import {
   loadSystemTimeConfig,
   buildTimeHealth,
   convertPayloadTimestamps,
@@ -153,6 +158,7 @@ import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './lib/spamhausDropSync.js';
 import { guardProviderEnabled } from './lib/enrichmentProviderRegistry.js';
+import { attachProviderHealth } from './lib/enrichmentProviderHealth.js';
 import { auditProviderConfigUpdate } from './lib/enrichmentProviderConfigAudit.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { getDnsmaniaProviderAdminSummary } from './services/dnsmaniaEnrichmentService.js';
@@ -6207,28 +6213,18 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
   }
 });
 
-app.get('/api/admin/enrichment-providers', async (req, res) => {
-  try {
-    const cfg = await getThreatIntelProviderConfig(VT_PROVIDER);
-    let status = 'not_configured';
-    if (cfg.configured && cfg.last_error_at && (!cfg.last_success_at || new Date(cfg.last_error_at) > new Date(cfg.last_success_at))) status = 'error';
-    else if (cfg.configured && cfg.last_success_at) status = 'healthy';
-    else if (cfg.configured) status = 'configured';
+async function loadEnrichmentProviderSummaries() {
+  const [cfg, ipinfo, abuseipdb, sdCfg, sdState] = await Promise.all([
+    getThreatIntelProviderConfig(VT_PROVIDER),
+    getIpinfoLiteConfig(pool),
+    getAbuseIpdbConfig(pool),
+    getSpamhausDropConfig(pool),
+    getSpamhausDropSyncState(pool)
+  ]);
+  const lastSpamhausSuccess = sdState.map((s) => s.last_success_at).filter(Boolean)
+    .reduce((a, b) => (a && new Date(a) > new Date(b) ? a : b), null);
 
-    const ipinfo = await getIpinfoLiteConfig(pool);
-    let ipinfoStatus = 'not_configured';
-    if (ipinfo.configured && ipinfo.last_error_at && (!ipinfo.last_success_at || new Date(ipinfo.last_error_at) > new Date(ipinfo.last_success_at))) ipinfoStatus = 'error';
-    else if (ipinfo.configured && ipinfo.last_success_at) ipinfoStatus = 'healthy';
-    else if (ipinfo.configured) ipinfoStatus = 'configured';
-
-    const abuseipdb = await getAbuseIpdbConfig(pool);
-    let abuseStatus = 'not_configured';
-    if (!abuseipdb.enabled && abuseipdb.configured) abuseStatus = 'disabled';
-    else if (abuseipdb.configured && abuseipdb.last_error_at && (!abuseipdb.last_success_at || new Date(abuseipdb.last_error_at) > new Date(abuseipdb.last_success_at))) abuseStatus = 'error';
-    else if (abuseipdb.configured && abuseipdb.last_success_at) abuseStatus = 'healthy';
-    else if (abuseipdb.configured) abuseStatus = 'configured';
-
-    return res.json({ providers: [
+  return attachProviderHealth(pool, [
       {
         provider: VT_PROVIDER,
         name: 'VirusTotal',
@@ -6238,7 +6234,6 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
         source: cfg.source,
         ttl_hours: cfg.ttl_hours,
         timeout_ms: cfg.timeout_ms,
-        status,
         last_test_at: cfg.last_test_at,
         last_success_at: cfg.last_success_at,
         last_error_at: cfg.last_error_at,
@@ -6253,7 +6248,6 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
         source: ipinfo.source,
         base_url: ipinfo.base_url,
         timeout_seconds: ipinfo.timeout_seconds,
-        status: ipinfoStatus,
         last_test_at: ipinfo.last_test_at,
         last_success_at: ipinfo.last_success_at,
         last_error_at: ipinfo.last_error_at,
@@ -6270,7 +6264,6 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
         timeout_ms: abuseipdb.timeout_ms,
         max_age_days: abuseipdb.max_age_days,
         verbose: abuseipdb.verbose,
-        status: abuseStatus,
         last_test_at: abuseipdb.last_test_at,
         last_success_at: abuseipdb.last_success_at,
         last_error_at: abuseipdb.last_error_at,
@@ -6278,34 +6271,206 @@ app.get('/api/admin/enrichment-providers', async (req, res) => {
       },
       getRdapProviderAdminSummary(),
       getDnsmaniaProviderAdminSummary(),
-      await (async () => {
-        const sdCfg = await getSpamhausDropConfig(pool);
-        const sdState = await getSpamhausDropSyncState(pool);
-        const v4 = sdState.find((s) => s.list_type === 'drop_v4');
-        const v6 = sdState.find((s) => s.list_type === 'drop_v6');
-        const lastSuccess = [v4?.last_success_at, v6?.last_success_at].filter(Boolean)
-          .reduce((a, b) => (a && new Date(a) > new Date(b) ? a : b), null);
-        const anyFailed = [v4?.status, v6?.status].some((s) => s === 'failed');
-        const allHealthy = [v4?.status, v6?.status].every((s) => s === 'healthy');
-        const sdStatus = !sdCfg.enabled ? 'disabled'
-          : !lastSuccess ? 'never_synced'
-          : anyFailed ? 'error'
-          : allHealthy ? 'healthy'
-          : 'running';
-        return {
-          provider: 'spamhaus_drop',
-          name: 'Spamhaus DROP',
-          enabled: sdCfg.enabled,
-          configured: true,
-          sync_interval_hours: sdCfg.sync_interval_hours,
-          timeout_ms: sdCfg.timeout_ms,
-          status: sdStatus,
-          last_success_at: lastSuccess,
-          sync_state: sdState
-        };
-      })(),
-    ]});
+      {
+        provider: 'spamhaus_drop',
+        name: 'Spamhaus DROP',
+        enabled: sdCfg.enabled,
+        configured: true,
+        sync_interval_hours: sdCfg.sync_interval_hours,
+        timeout_ms: sdCfg.timeout_ms,
+        last_success_at: lastSpamhausSuccess,
+        sync_state: sdState
+      }
+    ]);
+}
+
+app.get('/api/admin/enrichment-providers', async (_req, res) => {
+  try {
+    return res.json({ providers: await loadEnrichmentProviderSummaries() });
   } catch { return res.status(500).json({ message: 'Failed to load enrichment providers' }); }
+});
+
+async function loadSystemFeedHealth() {
+  const feedsRes = await pool.query(`
+    SELECT key, name, active, schedule_cron
+    FROM integration_feeds
+    WHERE archived_at IS NULL
+      AND COALESCE(feed_kind, 'built_in') <> 'custom'
+    ORDER BY name
+  `);
+  const feeds = feedsRes.rows || [];
+  const jobTypes = [...new Set(feeds.map((feed) => feedJobType(feed.key)))];
+  if (!jobTypes.length) return [];
+
+  const [latestRes, successRes, recentRes] = await Promise.all([
+    pool.query(`
+      SELECT DISTINCT ON (job_type)
+        job_type, status, started_at, finished_at, error_message, run_details
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+      ORDER BY job_type, started_at DESC
+    `, [jobTypes]),
+    pool.query(`
+      SELECT DISTINCT ON (job_type)
+        job_type, status, started_at, finished_at
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+        AND status IN ('success','skipped','skipped_unchanged')
+      ORDER BY job_type, started_at DESC
+    `, [jobTypes]),
+    pool.query(`
+      SELECT job_type, status, started_at
+      FROM integration_runs
+      WHERE job_type = ANY($1::text[])
+      ORDER BY job_type, started_at DESC
+      LIMIT 300
+    `, [jobTypes])
+  ]);
+  const latestByJob = new Map(latestRes.rows.map((row) => [row.job_type, row]));
+  const successByJob = new Map(successRes.rows.map((row) => [row.job_type, row]));
+
+  return feeds.map((feed) => {
+    const jobType = feedJobType(feed.key);
+    const latest = latestByJob.get(jobType) || null;
+    const lastSuccess = successByJob.get(jobType) || null;
+    const consecutiveFailures = computeConsecutiveFailures(recentRes.rows, jobType);
+    const healthStatus = pickHealthStatus(latest, lastSuccess);
+    const state = resolveFeedHealthState(
+      feed.active !== false,
+      healthStatus,
+      consecutiveFailures,
+      [],
+      { runDetails: latest?.run_details || null }
+    );
+    const status = feed.active === false
+      ? 'unknown'
+      : state === 'success'
+        ? 'healthy'
+        : state === 'failed'
+          ? 'unhealthy'
+          : state === 'warning' || state === 'degraded'
+            ? 'degraded'
+            : 'unknown';
+    return {
+      key: feed.key,
+      name: feed.name,
+      enabled: feed.active !== false,
+      status,
+      reason: feed.active === false ? 'disabled' : state === 'never' ? 'never_run' : `last_result_${state}`,
+      runtime_state: resolveFeedRuntimeState(latest?.status),
+      last_success_at: lastSuccess?.finished_at || lastSuccess?.started_at || null,
+      last_failure_at: latest?.status === 'failed' ? (latest.finished_at || latest.started_at) : null,
+      last_error: latest?.status === 'failed' ? latest.error_message || null : null,
+      consecutive_failures: consecutiveFailures,
+      include_in_overall: feed.active !== false
+    };
+  });
+}
+
+async function loadBullWorkerHealth(queue, key, name) {
+  try {
+    const workers = await queue.getWorkers();
+    const count = Array.isArray(workers) ? workers.length : 0;
+    return {
+      key,
+      name,
+      status: count > 0 ? 'healthy' : 'unknown',
+      reason: count > 0 ? 'worker_registered' : 'no_registered_worker',
+      worker_count: count
+    };
+  } catch {
+    return { key, name, status: 'unknown', reason: 'worker_lookup_failed', worker_count: null };
+  }
+}
+
+app.get('/api/system/health', async (_req, res) => {
+  const checkedAt = new Date().toISOString();
+  const readiness = await runReadinessChecks(pool, redis);
+  const timeHealth = await buildTimeHealth(pool).catch(() => null);
+  const core = [
+    { key: 'backend', name: 'Backend API', status: 'healthy', required: true },
+    {
+      key: 'postgres',
+      name: 'PostgreSQL',
+      status: readiness.checks.postgres === 'ok' ? 'healthy' : readiness.checks.postgres === 'error' ? 'unhealthy' : 'unknown',
+      required: true
+    },
+    {
+      key: 'redis',
+      name: 'Redis',
+      status: readiness.checks.redis === 'ok' ? 'healthy' : readiness.checks.redis === 'error' ? 'unhealthy' : 'unknown',
+      required: true
+    },
+    {
+      key: 'date_time',
+      name: 'Date & time',
+      status: timeHealth ? normalizeComponentStatus(timeHealth.status) : 'unknown',
+      reason: timeHealth?.reason || timeHealth?.error || null,
+      required: true
+    }
+  ];
+
+  const [providerResult, feedResult, workerResult, queueResult] = await Promise.all([
+    loadEnrichmentProviderSummaries().catch(() => null),
+    readiness.checks.postgres === 'ok' ? loadSystemFeedHealth().catch(() => null) : Promise.resolve(null),
+    Promise.all([
+      loadBullWorkerHealth(importQueue, 'integration_worker', 'Integration worker'),
+      loadBullWorkerHealth(iocSearchExportQueue, 'ioc_search_export_worker', 'IOC search export worker'),
+      loadBullWorkerHealth(iocDeepSearchQueue, 'ioc_deep_search_worker', 'IOC deep search worker'),
+      loadBullWorkerHealth(iocBulkQueryQueue, 'ioc_bulk_query_worker', 'IOC bulk query worker'),
+      loadBullWorkerHealth(systemBackupQueue, 'backup_worker', 'Backup worker')
+    ]),
+    readiness.ok
+      ? loadIntegrationQueueHealthSnapshot(pool, importQueue).catch(() => null)
+      : Promise.resolve(null)
+  ]);
+
+  const providers = providerResult
+    ? providerResult.map((provider) => ({
+        key: provider.provider,
+        name: provider.name,
+        enabled: provider.enabled !== false,
+        configured: provider.configured !== false,
+        status: provider.health.status,
+        reason: provider.health.reason,
+        last_success_at: provider.health.last_success_at,
+        last_failure_at: provider.health.last_failure_at,
+        last_checked_at: provider.health.last_checked_at,
+        include_in_overall: provider.enabled !== false
+      }))
+    : [{ key: 'providers', name: 'Enrichment providers', status: 'unknown', reason: 'evidence_unavailable' }];
+  const feeds = feedResult || [{ key: 'feeds', name: 'Threat feeds', status: 'unknown', reason: 'evidence_unavailable' }];
+  const workers = [
+    ...workerResult,
+    { key: 'integration_scheduler', name: 'Integration scheduler', status: 'unknown', reason: 'heartbeat_unavailable' },
+    { key: 'ioc_expiration_worker', name: 'IOC expiration worker', status: 'unknown', reason: 'heartbeat_unavailable' }
+  ];
+  const queues = queueResult
+    ? [{
+        key: 'integration_queue',
+        name: 'Integration queue',
+        status: normalizeComponentStatus(queueResult.health?.queue_health),
+        reason: queueResult.health?.warnings?.[0] || null,
+        waiting: queueResult.health?.bullmq_waiting ?? null,
+        active: queueResult.health?.bullmq_active ?? null,
+        stalled: queueResult.health?.bullmq_stalled ?? null,
+        worker_count: queueResult.worker_count
+      }]
+    : [{ key: 'integration_queue', name: 'Integration queue', status: 'unknown', reason: 'snapshot_unavailable' }];
+  const overall = resolveOverallSystemHealth({ core, workers, feeds, providers, queues });
+
+  return res.json({
+    checked_at: checkedAt,
+    overall,
+    summary: {
+      core: summarizeHealth(core),
+      workers: summarizeHealth(workers),
+      feeds: summarizeHealth(feeds.filter((feed) => feed.enabled !== false)),
+      providers: summarizeHealth(providers.filter((provider) => provider.enabled !== false)),
+      queues: summarizeHealth(queues)
+    },
+    sections: { core, workers, feeds, providers, queues }
+  });
 });
 
 app.put('/api/admin/enrichment-providers/virustotal', requireRole(ROLES.ADMIN), async (req, res) => {

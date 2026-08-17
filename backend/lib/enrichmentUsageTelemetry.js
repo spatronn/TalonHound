@@ -21,6 +21,7 @@
 // per real outbound attempt while keeping request_count at one per logical request.
 
 import { createServiceLogger } from './appLogger.js';
+import { recordProviderHealthSignal } from './enrichmentProviderHealth.js';
 
 const defaultLogger = createServiceLogger('enrichment-usage');
 
@@ -199,5 +200,9 @@ export async function recordEnrichmentUsage(pool, {
   logger = defaultLogger
 } = {}) {
   const delta = buildUsageDelta({ outcome, external, cacheHit, rateLimited, responseTimeMs, count });
-  return writeEnrichmentUsage(pool, { provider, iocType, delta, logger });
+  const written = await writeEnrichmentUsage(pool, { provider, iocType, delta, logger });
+  if (external) {
+    await recordProviderHealthSignal(pool, { provider, outcome, rateLimited });
+  }
+  return written;
 }

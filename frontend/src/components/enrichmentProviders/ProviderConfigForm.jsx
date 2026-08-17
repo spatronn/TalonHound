@@ -1,5 +1,6 @@
 import React from 'react';
 import ProviderStatusBadge from './ProviderStatusBadge.jsx';
+import { utcIsoTooltip } from '../../lib/formatDate.js';
 
 function formatRelativeTime(value) {
   if (!value) return 'Never';
@@ -27,14 +28,18 @@ export default function ProviderConfigForm({
   onEnabledChange,
   enabledDisabled = false,
   showEnabledToggle = true,
+  health,
   lastTestAt,
-  lastTestLabel = 'Last Test',
+  lastTestLabel = 'Last successful check',
   showLastTest = true,
   description,
   extraRight,
   actions,
   errorMessage
 }) {
+  const lastSuccessAt = health?.last_success_at || lastTestAt || null;
+  const lastFailureAt = health?.last_failure_at || null;
+  const noRecentEvidence = String(health?.status || status || '').toLowerCase() === 'unknown';
   return (
     <div className="ep-config">
       <div className="ep-config-grid">
@@ -72,15 +77,26 @@ export default function ProviderConfigForm({
             <div className="ep-side-row">
               <span className="ep-side-label">{lastTestLabel}</span>
               <div className="ep-side-value ep-side-muted">
-                {lastTestAt ? (
-                  <>
-                    <span className="ep-check-ok" aria-hidden="true">✓</span>
-                    {formatRelativeTime(lastTestAt)}
-                  </>
-                ) : (
-                  'Never'
-                )}
+                <span title={utcIsoTooltip(lastSuccessAt)}>
+                  {lastSuccessAt ? formatRelativeTime(lastSuccessAt) : 'Never'}
+                </span>
               </div>
+            </div>
+          ) : null}
+
+          {lastFailureAt ? (
+            <div className="ep-side-row">
+              <span className="ep-side-label">Last failure</span>
+              <div className="ep-side-value ep-side-muted">
+                <span title={utcIsoTooltip(lastFailureAt)}>{formatRelativeTime(lastFailureAt)}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {noRecentEvidence ? (
+            <div className="ep-side-row">
+              <span className="ep-side-label">Health evidence</span>
+              <div className="ep-side-value ep-side-muted">No recent health evidence</div>
             </div>
           ) : null}
 

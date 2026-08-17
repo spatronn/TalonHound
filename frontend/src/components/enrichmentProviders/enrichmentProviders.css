@@ -324,15 +324,10 @@
 }
 
 .ep-status-dot--healthy { background: #22c55e; }
-.ep-status-dot--error { background: #ef4444; }
-.ep-status-dot--rate_limited,
+.ep-status-dot--unhealthy { background: #ef4444; }
+.ep-status-dot--degraded,
 .ep-status-dot--warn { background: #f59e0b; }
-.ep-status-dot--configured,
-.ep-status-dot--running,
-.ep-status-dot--info { background: #3b82f6; }
-.ep-status-dot--disabled,
-.ep-status-dot--not_configured,
-.ep-status-dot--never_synced,
+.ep-status-dot--unknown,
 .ep-status-dot--muted { background: #64748b; }
 
 .ep-check-ok {

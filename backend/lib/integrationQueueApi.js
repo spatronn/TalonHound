@@ -7,7 +7,9 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
   const [bullCounts, stalledJobs, workers, dbStatusRes, dbRunningRes, oldestQueuedRes] = await Promise.all([
     queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused'),
     loadTrulyStalledBullJobs(queue, 500),
-    queue.getWorkers().catch(() => []),
+    queue.getWorkers()
+      .then((value) => ({ available: true, value: Array.isArray(value) ? value : [] }))
+      .catch(() => ({ available: false, value: [] })),
     pool.query(
       `SELECT status, COUNT(*)::int AS cnt
        FROM integration_queue_jobs
@@ -41,7 +43,7 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
   const dryLocks = await releaseOrphanDbSourceLocks({ pool, queue, dryRun: true, logPrefix: '[queue-health]' });
   const dryStaleQueued = await detectOrphanDbQueuedJobs({ pool, queue, dryRun: true, logPrefix: '[queue-health]' });
 
-  const workerConsuming = Array.isArray(workers) && workers.length > 0;
+  const workerConsuming = workers.available ? workers.value.length > 0 : null;
   const recoveryNeeded = dryBull.reconciled_count > 0 || dryLocks.released_count > 0;
 
   const health = computeQueueHealth({
@@ -74,7 +76,8 @@ export async function loadIntegrationQueueHealthSnapshot(pool, queue) {
     stale_queued_count: dryStaleQueued.stale_queued_count,
     dry_run_reconcile: dryBull,
     dry_run_locks: dryLocks,
-    worker_count: workers?.length || 0
+    worker_count: workers.available ? workers.value.length : null,
+    worker_evidence_available: workers.available
   };
 }
 

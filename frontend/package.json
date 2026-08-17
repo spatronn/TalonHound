@@ -21,7 +21,7 @@
     "test:ux-phase1": "node --test src/lib/uiButtons.test.js src/lib/modalOverlay.test.js src/lib/createUserForm.test.js src/lib/feedFormField.test.js src/lib/publishedFeedForm.test.js src/lib/deleteUserConfirm.test.js src/lib/userRowControls.test.js",
     "test:ux-shared": "node --test src/lib/appConfirm.test.js src/lib/appFeedback.test.js src/lib/emptyState.test.js src/lib/uiButtons.test.js src/lib/modalOverlay.test.js",
     "test:integration-queue": "node --test src/lib/integrationJobDuration.test.js src/lib/integrationQueueStatusView.test.js src/lib/feedLastResult.test.js src/lib/jobQueueResult.test.js",
-    "test:enrichment-providers": "node --test src/components/enrichmentProviders/removeKeyConfirm.test.js src/components/enrichmentProviders/confirmActionController.test.js src/lib/intelligenceSummaryDisabled.test.js",
+    "test:enrichment-providers": "node --test src/components/enrichmentProviders/removeKeyConfirm.test.js src/components/enrichmentProviders/confirmActionController.test.js src/components/enrichmentProviders/providerMeta.test.js src/lib/intelligenceSummaryDisabled.test.js src/lib/systemHealthView.test.js",
     "test": "node --test src/lib/*.test.js src/components/enrichmentProviders/*.test.js"
   },
   "dependencies": {

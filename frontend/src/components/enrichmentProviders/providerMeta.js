@@ -63,15 +63,10 @@ export function getProviderMeta(providerKey) {
 }
 
 export function resolveProviderStatus(row) {
-  if (!row) return 'not_configured';
-  const raw = String(row.status || '').toLowerCase();
-  if (row.enabled === false || raw === 'disabled') return 'disabled';
-  if (raw === 'healthy') return 'healthy';
-  if (raw === 'error') return 'error';
-  if (raw === 'rate_limited') return 'rate_limited';
-  if (raw === 'configured') return 'configured';
-  if (raw === 'never_synced') return 'never_synced';
-  if (raw === 'running') return 'running';
-  if (raw === 'built-in' || (row.provider === 'rdap' && row.enabled !== false)) return 'healthy';
-  return raw || 'not_configured';
+  if (!row) return 'unknown';
+  const raw = String(row.health?.status || row.status || '').toLowerCase();
+  if (['healthy', 'degraded', 'unhealthy', 'unknown'].includes(raw)) return raw;
+  if (raw === 'error' || raw === 'failed') return 'unhealthy';
+  if (raw === 'rate_limited' || raw === 'warning') return 'degraded';
+  return 'unknown';
 }

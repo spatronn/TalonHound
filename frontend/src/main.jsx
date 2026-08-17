@@ -180,6 +180,7 @@ import {
 } from './lib/sourceBadge.js';
 import EnrichmentProvidersPageView from './components/EnrichmentProvidersPage.jsx';
 import EnrichmentUsagePageView from './components/EnrichmentUsagePage.jsx';
+import SystemHealthPageView from './components/SystemHealthPage.jsx';
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import InitialSetupPage from './components/InitialSetupPage.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
@@ -2056,6 +2057,7 @@ function AppShell({ children }) {
 
           <div className="sidebar-nav-section">
             <div className="sidebar-nav-section-label">System</div>
+            <Link to="/system/health" className={navLinkClass(isActive('/system/health'))}>{NavIcons.health}<span>Health</span></Link>
             <Link to="/administration" className={navLinkClass(isAdminSettingsActive)}>{NavIcons.settings}<span>Settings</span></Link>
             <Link to="/threat-intelligence/queue" className={navLinkClass(isActive('/threat-intelligence/queue'))}>{NavIcons.jobQueue}<span>Job Queue Status</span></Link>
             {isAdmin ? <Link to="/administration/backup-restore" className={navLinkClass(isActive('/administration/backup-restore'))}>{NavIcons.backupRestore}<span>Backup &amp; Restore</span></Link> : null}
@@ -9201,6 +9203,10 @@ function EnrichmentProvidersPage() {
       useReasonPrompt={useReasonPrompt}
     />
   );
+}
+
+function SystemHealthPage() {
+  return <SystemHealthPageView AppShell={AppShell} />;
 }
 
 function BackupRestorePage() {
@@ -17951,6 +17957,7 @@ function App() {
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />
           <Route path="/administration/enrichment-usage" element={<Protected><EnrichmentUsagePage /></Protected>} />
+          <Route path="/system/health" element={<Protected><SystemHealthPage /></Protected>} />
           <Route path="/administration/backup-restore" element={<Protected><BackupRestorePage /></Protected>} />
           <Route path="/administration/users" element={<Protected><UsersPage /></Protected>} />
           <Route path="/administration" element={<Protected><AdministrationSettingsPage /></Protected>} />

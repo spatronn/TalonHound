@@ -661,7 +661,8 @@ export function getDnsmaniaProviderAdminSummary() {
     enabled: cfg.enabled && cfg.configured,
     configured: cfg.configured,
     auth_required: false,
-    status: !cfg.configured ? 'not_configured' : (cfg.enabled ? 'healthy' : 'disabled'),
+    // Enabled/configured describe availability, not current runtime health.
+    status: 'unknown',
     dnsmania_base_url: cfg.baseUrl || null,
     timeout_ms: cfg.timeoutMs,
     max_concurrency: MAX_CONCURRENCY,
