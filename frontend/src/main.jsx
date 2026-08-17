@@ -1991,14 +1991,14 @@ function AppShell({ children }) {
   const displayName = userEmail || 'user';
 
   return (
-    <div className="app-shell" style={{ width: '100%', margin: '16px 0', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '0 16px', boxSizing: 'border-box' }}>
+    <div className="app-shell" style={{ width: '100%', fontFamily: 'sans-serif', display: 'flex', gap: 16, alignItems: 'stretch', padding: 16, boxSizing: 'border-box' }}>
       <div className="mobile-topbar">
         <button className="mobile-menu-btn" onClick={() => setIsMobileNavOpen((v) => !v)} aria-label="Toggle navigation menu">?</button>
         <span className="mobile-topbar-title">TalonHound</span>
         <span className="mobile-topbar-user">{userEmail ? userEmail.split('@')[0] : 'user'}</span>
       </div>
       {isMobileNavOpen && <div className="mobile-backdrop" onClick={() => setIsMobileNavOpen(false)} />}
-      <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 260px', border: '1px solid #334155', borderRadius: 10, padding: 0, height: 'fit-content', position: 'sticky', top: 16, background: '#0f172a', overflow: 'hidden' }}>
+      <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 260px', border: '1px solid #334155', borderRadius: 10, padding: 0, background: '#0f172a', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div className="mobile-sidebar-close"><button onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu">?</button></div>
 
         <div className="sidebar-brand">
@@ -2075,7 +2075,7 @@ function AppShell({ children }) {
         </div>
       </aside>
 
-      <main className="main-content" style={{ flex: 1, minWidth: 0 }}>
+      <main className="main-content" style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto' }}>
         {children}
       </main>
     </div>
@@ -17350,13 +17350,22 @@ function App() {
         body.modal-scroll-lock .app-shell {
           overflow: hidden;
         }
+        html.modal-scroll-lock .main-content,
+        body.modal-scroll-lock .main-content {
+          overflow: hidden;
+        }
         .app-shell {
           width: 100%;
           box-sizing: border-box;
+          height: 100vh;
+          height: 100dvh;
+          overflow: hidden;
         }
         .main-content {
           flex: 1;
           min-width: 0;
+          min-height: 0;
+          overflow-y: auto;
         }
         .page-content {
           width: 100%;
@@ -17566,6 +17575,9 @@ function App() {
         html, body, #root {
           background: #0b1220 !important;
           color: #e2e8f0 !important;
+        }
+        body {
+          margin: 0;
         }
         * { scrollbar-color: #334155 #0b1220; }
         aside, section, main, table, thead, tbody, tr, th, td, div {
@@ -17943,6 +17955,13 @@ function App() {
             margin: 0 !important;
             gap: 0 !important;
             align-items: stretch !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .sidebar-nav {
+            flex: 0 0 auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
           }
           .mobile-topbar {
             display: flex !important;
@@ -17976,6 +17995,7 @@ function App() {
             min-width: 0 !important;
             box-sizing: border-box !important;
             padding: 16px 14px !important;
+            overflow: visible !important;
           }
         }
 
