@@ -3,6 +3,7 @@ import { actorEmail, actorUserId, canAccessOwnedArtifact } from '../lib/artifact
 import {
   parseQueryWideRequest,
   compileQueryWideTarget,
+  resolveQueryWideTarget,
   countMatchingIocs,
   executeQueryWideBulk,
   decideExecutionMode,
@@ -41,26 +42,36 @@ export function registerIocBulkQueryTriageRoutes(app, pool, {
   const countFn = deps.countMatchingIocs || countMatchingIocs;
   const executeFn = deps.executeQueryWideBulk || executeQueryWideBulk;
   const compileFn = deps.compileQueryWideTarget || compileQueryWideTarget;
+  const resolveFn = deps.resolveQueryWideTarget || resolveQueryWideTarget;
   const triage = requireTriageRole();
 
   async function preview(req, res) {
-    const parsed = parseQueryWideRequest({ query: req.body?.query, selection_mode: 'all_matching' }, 'tag');
+    const parsed = parseQueryWideRequest({
+      query: req.body?.query,
+      selection_mode: 'all_matching',
+      deep_search_id: req.body?.deep_search_id
+    }, 'tag');
     if (!parsed.ok) return sendErr(res, parsed);
     let compiled;
     try {
-      compiled = compileFn(parsed.query);
+      compiled = parsed.deepSearchId
+        ? await resolveFn(pool, parsed, { req })
+        : compileFn(parsed.query);
     } catch {
       return res.status(500).json({ message: 'Failed to compile search query' });
     }
     if (!compiled.ok) return sendErr(res, compiled);
     try {
-      const counted = await countFn(pool, compiled);
+      const counted = compiled.deepSearchId != null && compiled.matchCount != null
+        ? { ok: true, matchCount: compiled.matchCount }
+        : await countFn(pool, compiled);
       if (!counted.ok) return sendErr(res, counted);
       return res.json({
         ok: true,
         query: compiled.originalQuery,
         normalized_query: compiled.normalizedQuery,
-        match_count: counted.matchCount
+        match_count: counted.matchCount,
+        ...(compiled.deepSearchId ? { deep_search_id: compiled.deepSearchId } : {})
       });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to count matching IOCs', detail: err.message });
@@ -72,25 +83,33 @@ export function registerIocBulkQueryTriageRoutes(app, pool, {
     if (!parsed.ok) return sendErr(res, parsed);
     let compiled;
     try {
-      compiled = compileFn(parsed.query);
+      compiled = parsed.deepSearchId
+        ? await resolveFn(pool, parsed, { req })
+        : compileFn(parsed.query);
     } catch {
       return res.status(500).json({ message: 'Failed to compile search query' });
     }
     if (!compiled.ok) return sendErr(res, compiled);
 
     const payload = payloadFromBody(action, req.body);
+    if (compiled.deepSearchId) payload.deep_search_id = compiled.deepSearchId;
     const cfg = getBulkQueryConfig();
 
     let counted;
     try {
-      counted = await countFn(pool, compiled);
+      counted = compiled.deepSearchId != null && compiled.matchCount != null
+        ? { ok: true, matchCount: compiled.matchCount }
+        : await countFn(pool, compiled);
     } catch (err) {
       return res.status(500).json({ message: 'Failed to count matching IOCs', detail: err.message });
     }
     if (!counted.ok) return sendErr(res, counted);
     // Client-supplied match_count is ignored; counted.matchCount is authoritative.
+    if (compiled.deepSearchId) payload.expected_match_count = counted.matchCount;
 
-    const mode = decideExecutionMode(counted.matchCount, cfg);
+    const mode = decideExecutionMode(counted.matchCount, cfg, {
+      skipHardLimit: Boolean(compiled.deepSearchId)
+    });
     if (!mode.ok) return sendErr(res, mode);
 
     if (mode.mode === 'sync') {

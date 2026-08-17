@@ -43,14 +43,19 @@ function makePool() {
     created_at: '2026-08-17T00:00:00.000Z',
     updated_at: '2026-08-17T00:00:00.000Z'
   };
+  const inserts = [];
   return {
-    query: async (sql) => {
+    inserts,
+    query: async (sql, params = []) => {
       const norm = String(sql);
       if (norm.includes('FROM ioc_bulk_query_jobs') && norm.includes('COUNT(*)')) {
         return { rows: [{ n: 0 }], rowCount: 1 };
       }
       if (norm.includes('INSERT INTO ioc_bulk_query_jobs')) {
-        return { rows: [job], rowCount: 1 };
+        inserts.push({ sql: norm, params });
+        let payload = {};
+        try { payload = JSON.parse(params[4] || '{}'); } catch { payload = {}; }
+        return { rows: [{ ...job, payload }], rowCount: 1 };
       }
       return { rows: [], rowCount: 0 };
     },
@@ -58,7 +63,7 @@ function makePool() {
   };
 }
 
-function createApp({ count = 47, executeOutcome = null, queue = null } = {}) {
+function createApp({ count = 47, executeOutcome = null, queue = null, resolve = null } = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -77,23 +82,30 @@ function createApp({ count = 47, executeOutcome = null, queue = null } = {}) {
     bulkQueryQueue: queue,
     audit: { auditSuccess: async (p) => { auditCalls.push(p); } },
     deps: {
-      countMatchingIocs: async () => ({ ok: true, matchCount: count }),
+      countMatchingIocs: async (_pool, compiled) => {
+        if (compiled?.deepSearchId != null && compiled.matchCount != null) {
+          return { ok: true, matchCount: compiled.matchCount };
+        }
+        return { ok: true, matchCount: count };
+      },
       executeQueryWideBulk: async (_pool, args) => {
         executeCalls.push(args);
         return executeOutcome || {
           ok: true,
-          matchCount: count,
-          requested: count,
-          succeeded: count,
+          matchCount: args.compiled?.matchCount ?? count,
+          requested: args.compiled?.matchCount ?? count,
+          succeeded: args.compiled?.matchCount ?? count,
           skipped: 0,
           failed: 0,
           results: []
         };
-      }
+      },
+      ...(resolve ? { resolveQueryWideTarget: resolve } : {})
     }
   });
   app.__auditCalls = auditCalls;
   app.__executeCalls = executeCalls;
+  app.__pool = pool;
   return app;
 }
 
@@ -244,5 +256,89 @@ test('explicit-ID page mode max 100 is unchanged', async () => {
     });
     assert.equal(over.status, 400);
     assert.match(String(over.data.message), /100/);
+  });
+});
+
+const DS_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+test('Deep Search query-wide bulk uses stored query and match_count, not 2,000 or client IDs', async () => {
+  const resolve = async () => ({
+    ok: true,
+    originalQuery: 'ioc contains "a"',
+    normalizedQuery: 'ioc contains "a"',
+    ast: {},
+    whereSql: 'TRUE',
+    params: [],
+    deepSearchId: DS_ID,
+    matchCount: 2160030
+  });
+  const enqueued = [];
+  const queue = {
+    add: async (name, data) => {
+      enqueued.push({ name, data });
+      return { id: 'bull-ds-1' };
+    }
+  };
+  const app = createApp({ count: 2000, queue, resolve });
+  await withServer(app, async () => {
+    const res = await request(app, '/api/iocs/bulk/query/tags', {
+      body: {
+        selection_mode: 'all_matching',
+        deep_search_id: DS_ID,
+        query: 'tag contains "tampered"',
+        tag_id: 9,
+        match_count: 2000,
+        ioc_ids: Array.from({ length: 25 }, (_, i) => i + 1)
+      },
+      user: ANALYST
+    });
+    assert.equal(res.status, 202);
+    assert.equal(res.data.mode, 'async');
+    assert.equal(res.data.match_count, 2160030);
+    assert.equal(res.data.query, 'ioc contains "a"');
+    assert.equal(app.__executeCalls.length, 0);
+    assert.equal(enqueued.length, 1);
+    const audit = app.__auditCalls.find((c) => c.action === AUDIT_ACTION.IOC_BULK_QUERY_ENQUEUED);
+    assert.ok(audit);
+    assert.equal(audit.metadata.match_count, 2160030);
+    assert.equal(audit.metadata.deep_search_id, DS_ID);
+    assert.equal(audit.metadata.query, 'ioc contains "a"');
+    assert.equal(app.__pool.inserts.length, 1);
+    const stored = JSON.parse(app.__pool.inserts[0].params[4]);
+    assert.equal(stored.deep_search_id, DS_ID);
+    assert.equal(stored.expected_match_count, 2160030);
+    assert.equal(Object.prototype.hasOwnProperty.call(stored, 'ioc_ids'), false);
+  });
+});
+
+test('Deep Search query-wide bulk rejects stale or missing Deep Search context', async () => {
+  const app = createApp({
+    resolve: async () => ({
+      ok: false,
+      status: 409,
+      code: 'DEEP_SEARCH_NOT_READY',
+      message: 'Deep search results are not available for query-wide bulk'
+    })
+  });
+  await withServer(app, async () => {
+    const res = await request(app, '/api/iocs/bulk/query/tags', {
+      body: { selection_mode: 'all_matching', deep_search_id: DS_ID, tag_id: 9 },
+      user: ADMIN
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.data.code, 'DEEP_SEARCH_NOT_READY');
+  });
+});
+
+test('Deep Search query-wide bulk still requires triage role', async () => {
+  const app = createApp({
+    resolve: async () => ({ ok: true, normalizedQuery: 'ioc contains "a"', matchCount: 40, deepSearchId: DS_ID })
+  });
+  await withServer(app, async () => {
+    const res = await request(app, '/api/iocs/bulk/query/tags', {
+      body: { selection_mode: 'all_matching', deep_search_id: DS_ID, tag_id: 9 },
+      user: READONLY
+    });
+    assert.equal(res.status, 403);
   });
 });

@@ -28,6 +28,7 @@ import {
   findStaleMetadata,
   deleteMetadataRow
 } from './lib/iocDeepSearch/deepSearchStore.js';
+import { hasActiveBulkJobForDeepSearch } from './lib/iocBulkQueryJob/store.js';
 
 const { Pool } = pg;
 
@@ -283,6 +284,8 @@ async function cleanupExpired() {
     let expiredCount = 0;
     let deletedRows = 0;
     for (const row of expired) {
+      // Queued/processing query-wide jobs still stream this spool. Skip until they finish.
+      if (await hasActiveBulkJobForDeepSearch(pool, row.id)) continue;
       // Batched delete avoids a long lock on a multi-million-row result set.
       for (;;) {
         const n = await deleteResultsBatch(pool, row.id, cfg.cleanupBatchSize);
@@ -299,6 +302,7 @@ async function cleanupExpired() {
     const stale = await findStaleMetadata(pool, { olderThanDays: cfg.metadataRetentionDays, limit: 200 });
     let purged = 0;
     for (const row of stale) {
+      if (await hasActiveBulkJobForDeepSearch(pool, row.id)) continue;
       // Defensive: ensure no orphan spool rows remain before deleting the parent metadata.
       for (;;) {
         const n = await deleteResultsBatch(pool, row.id, cfg.cleanupBatchSize);

@@ -113,7 +113,9 @@ import {
   formatQueryWidePreviewLoadingLabel,
   queryWidePreviewFromSuccess,
   queryWidePreviewFromFailure,
-  shouldRequestQueryWidePreview
+  shouldRequestQueryWidePreview,
+  queryWideExecutedQuery,
+  exactCountFromDeepSearchResult
 } from './lib/iocBulkTriage.js';
 import {
   savedSearchCreatePayload,
@@ -11291,9 +11293,9 @@ function IOCListPage() {
   }
 
   const loadData = useCallback(async (targetPage, targetSize) => {
-    // When DSL search results are active, the numeric browse pager is disabled and the
-    // rows come from /api/iocs/search; do not overwrite them with a browse fetch.
-    if (dslActive) return;
+    // When DSL search results or a Deep Search result set are active, the numeric browse
+    // pager is disabled; do not overwrite those rows with a browse fetch.
+    if (dslActive || deepSearchIdParam) return;
     setListLoading(true);
     setListStatusText('Query is running. Please wait while IOC results are being processed...');
     try {
@@ -11312,7 +11314,7 @@ function IOCListPage() {
     } finally {
       setListLoading(false);
     }
-  }, [dslActive]);
+  }, [dslActive, deepSearchIdParam]);
 
   useEffect(() => {
     loadSummary().catch(() => {});
@@ -11453,22 +11455,28 @@ function IOCListPage() {
   );
   const selectedCount = activeSelectedIds.size;
   const pageSel = pageSelectionState(activeSelectedIds, pageIds);
-  const searchExactCount = isFiniteExactMatchCount(dslResult?.exact_count)
-    ? Number(dslResult.exact_count)
-    : null;
+  const deepSearchReady = Boolean(deepSearchIdParam) && deepResult?.result_state === 'ready';
+  const queryWideQuery = queryWideExecutedQuery({
+    deepSearchId: deepSearchIdParam,
+    deepResult,
+    appliedQuery
+  });
+  const searchExactCount = deepSearchReady
+    ? exactCountFromDeepSearchResult(deepResult)
+    : (isFiniteExactMatchCount(dslResult?.exact_count) ? Number(dslResult.exact_count) : null);
   const hasMoreMatches = searchHasMoreMatchesThanPage({
     searchExactCount,
     pageSelectableCount: pageIds.length,
-    hasMore: Boolean(dslResult?.has_more),
-    countDisplay: dslResult?.count_display
+    hasMore: deepSearchReady ? Boolean(deepResult?.has_more) : Boolean(dslResult?.has_more),
+    countDisplay: deepSearchReady ? '' : dslResult?.count_display
   });
-  const boundQueryWidePreview = bindQueryWidePreview(queryWidePreview, appliedQuery);
-  const exactMatchCount = resolvedExactMatchCount(searchExactCount, queryWidePreview, appliedQuery);
+  const boundQueryWidePreview = bindQueryWidePreview(queryWidePreview, queryWideQuery);
+  const exactMatchCount = resolvedExactMatchCount(searchExactCount, queryWidePreview, queryWideQuery);
   const offerSelectAllMatching = shouldOfferSelectAllMatching({
     canWrite,
     dslActive,
-    executedQuery: appliedQuery,
-    deepSearchId: deepSearchIdParam,
+    executedQuery: queryWideQuery,
+    deepSearchId: deepSearchReady ? deepSearchIdParam : '',
     pageSelectionAll: pageSel.all,
     pageSelectableCount: pageIds.length,
     exactMatchCount
@@ -11477,7 +11485,7 @@ function IOCListPage() {
     Number(canWrite),
     Number(dslActive),
     String(deepSearchIdParam || ''),
-    String(appliedQuery || ''),
+    String(queryWideQuery || ''),
     Number(pageSel.all),
     String(searchExactCount),
     Number(hasMoreMatches),
@@ -11494,7 +11502,7 @@ function IOCListPage() {
     if (!shouldRequestQueryWidePreview({
       canWrite,
       dslActive,
-      executedQuery: appliedQuery,
+      executedQuery: queryWideQuery,
       deepSearchId: deepSearchIdParam,
       pageSelectionAll: pageSel.all,
       pageSelectableCount: pageIds.length,
@@ -11502,7 +11510,7 @@ function IOCListPage() {
       hasMoreMatches,
       preview: queryWidePreview
     })) return undefined;
-    const query = String(appliedQuery || '').trim();
+    const query = String(queryWideQuery || '').trim();
     let cancelled = false;
     setQueryWidePreview({
       query,
@@ -11618,7 +11626,7 @@ function IOCListPage() {
     }
     if (isAllMatching) {
       const path = queryWideBulkPath(bulkModal);
-      if (!path || !appliedQuery.trim()) {
+      if (!path || !queryWideQuery) {
         setBulkError('Query-wide bulk requires an executed search query.');
         return;
       }
@@ -11626,11 +11634,12 @@ function IOCListPage() {
       setBulkError('');
       try {
         const body = buildQueryWideBulkPayload({
-          query: appliedQuery,
+          query: queryWideQuery,
           action: bulkModal,
           tagId: bulkTagId,
           classificationSlug: bulkClassSlug,
-          reason: bulkReason.trim()
+          reason: bulkReason.trim(),
+          deepSearchId: deepSearchReady ? deepSearchIdParam : ''
         });
         const { data } = await api.post(path, body);
         if (data?.mode === 'async') {
@@ -11642,7 +11651,10 @@ function IOCListPage() {
         setBulkToast(formatBulkTriageSummary(data || {}));
         clearIocSelection();
         setBulkModal(null);
-        if (dslActive && appliedQuery) {
+        if (deepSearchReady && deepSearchIdParam) {
+          const cursor = deepCursorStack.length ? deepCursorStack[deepCursorStack.length - 1] : null;
+          await loadDeepSearchResults(deepSearchIdParam, cursor, { prevStack: deepCursorStack });
+        } else if (dslActive && appliedQuery) {
           await runDsl(appliedQuery);
         } else {
           await loadData(page, pageSize);
@@ -11691,7 +11703,10 @@ function IOCListPage() {
       setBulkToast(formatBulkTriageSummary(data || {}));
       setSelectedIds(remainingSelectedAfterBulk(data?.results || []));
       setBulkModal(null);
-      if (dslActive && appliedQuery) {
+      if (deepSearchReady && deepSearchIdParam) {
+        const cursor = deepCursorStack.length ? deepCursorStack[deepCursorStack.length - 1] : null;
+        await loadDeepSearchResults(deepSearchIdParam, cursor, { prevStack: deepCursorStack });
+      } else if (dslActive && appliedQuery) {
         await runDsl(appliedQuery);
       } else {
         await loadData(page, pageSize);
@@ -11853,6 +11868,7 @@ function IOCListPage() {
       setSearchError(INVALID_SYNTAX_HINT);
       return;
     }
+    exitDeepSearchResults();
     setDslCursorStack([]);
     runDsl(query, null, { prevStack: [] });
   }
@@ -11875,6 +11891,7 @@ function IOCListPage() {
     const query = String(found?.original_query || '').trim();
     if (!query) return;
     setSearchInput(query);
+    exitDeepSearchResults();
     setDslCursorStack([]);
     runDsl(query, null, { prevStack: [] });
   }
@@ -12026,7 +12043,7 @@ function IOCListPage() {
       setDeepCursorStack([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deepSearchIdParam]);
+  }, [deepSearchIdParam, pageSize]);
 
   function deepResultsNextPage() {
     if (!deepResult?.next_cursor) return;
@@ -12072,6 +12089,7 @@ function IOCListPage() {
       return;
     }
     setSearchInput(dsl);
+    exitDeepSearchResults();
     setDslCursorStack([]);
     runDsl(dsl, null, { prevStack: [] });
   }
@@ -12091,6 +12109,7 @@ function IOCListPage() {
       return `${field} ${op} ${q((c.values || [])[0] ?? '')}`;
     }).join(' AND ');
     setSearchInput(dsl);
+    exitDeepSearchResults();
     setDslCursorStack([]);
     runDsl(dsl, null, { prevStack: [] });
   }
@@ -12576,7 +12595,13 @@ function IOCListPage() {
           </select>
         </div>
         <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0' }}>
-          {dslActive ? (dslResult?.timed_out ? '' : `${dslResult?.count_display || '0'} matching IOCs`) : paginationLabel}
+          {deepSearchReady
+            ? (isFiniteExactMatchCount(deepResult?.match_count)
+              ? `${Number(deepResult.match_count).toLocaleString('en-US')} matching IOCs`
+              : '')
+            : dslActive
+              ? (dslResult?.timed_out ? '' : `${dslResult?.count_display || '0'} matching IOCs`)
+              : paginationLabel}
         </div>
       </div>
       )}
@@ -12912,7 +12937,7 @@ function IOCListPage() {
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word'
                 }}>
-                  {appliedQuery}
+                  {queryWideQuery}
                 </div>
                 <div style={{ marginTop: 8, color: '#cbd5e1', fontSize: 13 }}>
                   Matching IOCs: {Number(allMatchingCount || 0).toLocaleString('en-US')}

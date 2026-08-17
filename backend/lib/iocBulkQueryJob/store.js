@@ -1,3 +1,5 @@
+import { ACTIVE_BULK_QUERY_STATUSES } from './status.js';
+
 const SELECT_COLUMNS = `
   id, action, original_query, normalized_query, normalized_ast, payload, status,
   match_count, succeeded, skipped, failed, progress, error_sample,
@@ -116,6 +118,23 @@ export async function countActiveForUser(db, userId) {
     [id]
   );
   return Number(rows[0]?.n || 0);
+}
+
+/**
+ * True when a non-terminal query-wide job is bound to this Deep Search.
+ * Cleanup must retain the spool until that job reaches a terminal status.
+ */
+export async function hasActiveBulkJobForDeepSearch(db, deepSearchId) {
+  const id = String(deepSearchId || '').trim();
+  if (!id) return false;
+  const { rows } = await db.query(
+    `SELECT 1 FROM ioc_bulk_query_jobs
+      WHERE status = ANY($2::text[])
+        AND payload->>'deep_search_id' = $1
+      LIMIT 1`,
+    [id, [...ACTIVE_BULK_QUERY_STATUSES]]
+  );
+  return Boolean(rows[0]);
 }
 
 export async function setJobId(db, id, jobId) {

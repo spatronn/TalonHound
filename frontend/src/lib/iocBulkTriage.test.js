@@ -44,7 +44,9 @@ import {
   formatQueryWidePreviewLoadingLabel,
   queryWidePreviewFromSuccess,
   queryWidePreviewFromFailure,
-  shouldRequestQueryWidePreview
+  shouldRequestQueryWidePreview,
+  queryWideExecutedQuery,
+  exactCountFromDeepSearchResult
 } from './iocBulkTriage.js';
 
 test('parseIocRowId accepts positive integers only', () => {
@@ -521,7 +523,6 @@ test('select-all-matching is hidden without an exact count, when the page holds 
   assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, exactMatchCount: 25 }), false);
   assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, pageSelectionAll: false }), false);
   assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, canWrite: false }), false);
-  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, deepSearchId: 'ds-1' }), false);
   assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, executedQuery: '   ' }), false);
 });
 
@@ -756,6 +757,163 @@ test('unexecuted search-box text does not change the query-wide context', () => 
   );
 });
 
+const DEEP_RESULT = {
+  result_state: 'ready',
+  normalized_query: 'ioc contains "a"',
+  match_count: 2160030,
+  has_more: true
+};
+const DEEP_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+const DEEP_OFFER = {
+  canWrite: true,
+  dslActive: false,
+  executedQuery: 'ioc contains "a"',
+  deepSearchId: DEEP_ID,
+  pageSelectionAll: true,
+  pageSelectableCount: 25,
+  exactMatchCount: 2160030
+};
+
+test('completed Deep Search page select-all offers the authoritative match_count, not 2,000', () => {
+  const exact = exactCountFromDeepSearchResult(DEEP_RESULT);
+  assert.equal(exact, 2160030);
+  assert.equal(shouldOfferSelectAllMatching({
+    ...DEEP_OFFER,
+    exactMatchCount: exact
+  }), true);
+  assert.equal(formatSelectAllMatchingActionLabel(exact), 'Select all 2,160,030 matching IOCs');
+  assert.equal(formatAllMatchingSelectionLabel(exact), 'All 2,160,030 matching IOCs selected');
+  assert.notEqual(formatSelectAllMatchingActionLabel(exact), 'Select all 2,000 matching IOCs');
+  assert.notEqual(formatSelectAllMatchingActionLabel(25), 'Select all 2,160,030 matching IOCs');
+});
+
+test('Deep Search query-wide payload binds deep_search_id and stored DSL, not page IDs', () => {
+  const query = queryWideExecutedQuery({
+    deepSearchId: DEEP_ID,
+    deepResult: DEEP_RESULT,
+    appliedQuery: 'tag contains "stale-interactive"'
+  });
+  assert.equal(query, 'ioc contains "a"');
+  const body = buildQueryWideBulkPayload({
+    query,
+    action: 'tag',
+    tagId: 9,
+    deepSearchId: DEEP_ID
+  });
+  assert.equal(body.selection_mode, SELECTION_MODE_ALL_MATCHING);
+  assert.equal(body.query, 'ioc contains "a"');
+  assert.equal(body.deep_search_id, DEEP_ID);
+  assert.equal(body.tag_id, 9);
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'ioc_ids'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'match_count'), false);
+});
+
+test('editing the draft textbox does not change a Deep Search query-wide target', () => {
+  const bound = queryWideExecutedQuery({
+    deepSearchId: DEEP_ID,
+    deepResult: DEEP_RESULT,
+    appliedQuery: 'ioc contains "later-edit"'
+  });
+  assert.equal(bound, 'ioc contains "a"');
+  assert.equal(
+    iocListQueryContextKey({ deepSearchId: DEEP_ID, dslActive: false, executedQuery: 'ioc contains "later-edit"' }),
+    `deep:${DEEP_ID}`
+  );
+});
+
+test('exiting Deep Search clears query-wide selection because the query context changes', () => {
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: iocListQueryContextKey({ deepSearchId: DEEP_ID }),
+    queryContextKey: iocListQueryContextKey({ dslActive: false }),
+    pageContextKey: iocListResultContextKey({ dslActive: false, page: 1, pageSize: 25 }),
+    selectionContextKey: iocListResultContextKey({ deepSearchId: DEEP_ID, pageSize: 25, cursor: '' })
+  });
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+  assert.equal(next.keepAllMatching, false);
+  assert.equal(next.clearPageSelection, true);
+});
+
+test('switching to another Deep Search result invalidates the previous query-wide target', () => {
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: iocListQueryContextKey({ deepSearchId: DEEP_ID }),
+    queryContextKey: iocListQueryContextKey({ deepSearchId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff' }),
+    pageContextKey: iocListResultContextKey({
+      deepSearchId: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+      pageSize: 25,
+      cursor: ''
+    }),
+    selectionContextKey: iocListResultContextKey({ deepSearchId: DEEP_ID, pageSize: 25, cursor: '' })
+  });
+  assert.equal(next.keepAllMatching, false);
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+});
+
+test('Deep Search pagination and page-size keep all_matching because the result id is unchanged', () => {
+  const queryKey = iocListQueryContextKey({ deepSearchId: DEEP_ID });
+  const page2 = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: queryKey,
+    queryContextKey: queryKey,
+    pageContextKey: iocListResultContextKey({ deepSearchId: DEEP_ID, pageSize: 25, cursor: 'page-2' }),
+    selectionContextKey: iocListResultContextKey({ deepSearchId: DEEP_ID, pageSize: 25, cursor: '' })
+  });
+  assert.equal(page2.selectionMode, SELECTION_MODE_ALL_MATCHING);
+  assert.equal(page2.keepAllMatching, true);
+  assert.equal(page2.clearPageSelection, false);
+  const size50 = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: queryKey,
+    queryContextKey: queryKey,
+    pageContextKey: iocListResultContextKey({ deepSearchId: DEEP_ID, pageSize: 50, cursor: '' }),
+    selectionContextKey: iocListResultContextKey({ deepSearchId: DEEP_ID, pageSize: 25, cursor: '' })
+  });
+  assert.equal(size50.keepAllMatching, true);
+});
+
+test('null or missing Deep Search match_count does not become zero and does not offer select-all', () => {
+  assert.equal(exactCountFromDeepSearchResult({ result_state: 'ready', match_count: null }), null);
+  assert.equal(exactCountFromDeepSearchResult({ result_state: 'ready' }), null);
+  assert.equal(exactCountFromDeepSearchResult({ result_state: 'expired', match_count: 2160030 }), null);
+  assert.equal(exactCountFromDeepSearchResult({ result_state: 'failed', match_count: 0 }), null);
+  assert.equal(exactCountFromDeepSearchResult(null), null);
+  assert.equal(shouldOfferSelectAllMatching({ ...DEEP_OFFER, exactMatchCount: null }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...DEEP_OFFER, exactMatchCount: undefined }), false);
+  assert.equal(shouldRequestQueryWidePreview({
+    canWrite: true,
+    dslActive: false,
+    executedQuery: 'ioc contains "a"',
+    deepSearchId: DEEP_ID,
+    pageSelectionAll: true,
+    pageSelectableCount: 25,
+    searchExactCount: null,
+    hasMoreMatches: true,
+    preview: null
+  }), false);
+});
+
+test('Deep Search exact count equal to or below the page size does not offer query-wide select', () => {
+  assert.equal(shouldOfferSelectAllMatching({ ...DEEP_OFFER, exactMatchCount: 25 }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...DEEP_OFFER, exactMatchCount: 10, pageSelectableCount: 25 }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...DEEP_OFFER, pageSelectableCount: 0 }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...DEEP_OFFER, pageSelectionAll: false }), false);
+});
+
+test('Deep Search does not request a preview count when match_count is already exact', () => {
+  assert.equal(shouldRequestQueryWidePreview({
+    canWrite: true,
+    dslActive: false,
+    executedQuery: 'ioc contains "a"',
+    deepSearchId: DEEP_ID,
+    pageSelectionAll: true,
+    pageSelectableCount: 25,
+    searchExactCount: 2160030,
+    hasMoreMatches: true,
+    preview: null
+  }), false);
+});
+
 test('IOC List wires query-wide selection, confirmation copy, and query-bound payload', async () => {
   const fs = await import('node:fs/promises');
   const path = await import('node:path');
@@ -782,4 +940,9 @@ test('IOC List wires query-wide selection, confirmation copy, and query-bound pa
   assert.match(mainJsx, /applySelectionForContexts/);
   assert.match(mainJsx, /buildQueryWideBulkPayload/);
   assert.match(mainJsx, /queryWideBulkPath\(bulkModal\)/);
+  assert.match(mainJsx, /queryWideExecutedQuery/);
+  assert.match(mainJsx, /exactCountFromDeepSearchResult/);
+  assert.match(mainJsx, /deepSearchId: deepSearchReady \? deepSearchIdParam/);
+  assert.match(mainJsx, /if \(dslActive \|\| deepSearchIdParam\) return/);
+  assert.match(mainJsx, /exitDeepSearchResults\(\)/);
 });

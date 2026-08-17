@@ -23,10 +23,14 @@ import {
 import {
   compileQueryWideTarget,
   streamMatchingIocIds,
+  streamDeepSearchIocIds,
   extraAuditMetadata,
   mergeOutcomes,
-  errorSampleFromResults
+  errorSampleFromResults,
+  deepSearchAvailableForInFlightBulk,
+  expectedCountForInFlightDeepSearchJob
 } from './lib/iocBulkQueryTriage.js';
+import { getDeepSearchById } from './lib/iocDeepSearch/deepSearchStore.js';
 import {
   bulkAddTag,
   bulkAddClassification,
@@ -96,15 +100,102 @@ async function processJob(jobId) {
     throw new Error('Failed to claim bulk job');
   }
 
-  const compiled = compileQueryWideTarget(claimed.normalized_query || claimed.original_query);
+  const payload = claimed.payload && typeof claimed.payload === 'object' ? claimed.payload : {};
+  const deepSearchId = String(payload.deep_search_id || '').trim();
+  const compiled = compileQueryWideTarget(claimed.normalized_query || claimed.original_query, {
+    allowExpensive: Boolean(deepSearchId)
+  });
   if (!compiled.ok) {
     await markFailed(pool, jobId, compiled.message);
     return;
   }
+  if (deepSearchId) compiled.deepSearchId = deepSearchId;
 
-  const payload = claimed.payload && typeof claimed.payload === 'object' ? claimed.payload : {};
   const extraMetadata = extraAuditMetadata(compiled, claimed.action);
   const user = actorFromRow(claimed);
+
+  if (deepSearchId) {
+    const ds = await getDeepSearchById(pool, deepSearchId);
+    if (!deepSearchAvailableForInFlightBulk(ds)) {
+      await markFailed(pool, jobId, 'Deep search results are not available for query-wide bulk');
+      return;
+    }
+    const expectedRaw = expectedCountForInFlightDeepSearchJob({
+      payload,
+      jobMatchCount: claimed.match_count,
+      deepSearchMatchCount: ds.match_count
+    });
+    if (expectedRaw == null) {
+      await markFailed(pool, jobId, 'Deep search exact match count is not available');
+      return;
+    }
+    let totals = { requested: 0, succeeded: 0, skipped: 0, failed: 0, results: [] };
+    try {
+      const streamed = await streamDeepSearchIocIds(pool, deepSearchId, {
+        chunkSize: cfg.chunkSize,
+        onChunk: async (page) => {
+          if (await isCancelRequested(pool, jobId)) {
+            const err = new Error('Cancelled');
+            err.code = 'CANCELLED';
+            throw err;
+          }
+          const outcome = await applyChunk(claimed.action, page, payload, user, extraMetadata);
+          if (!outcome.ok) {
+            const err = new Error(outcome.message || 'Bulk action failed');
+            err.code = 'ACTION_REJECTED';
+            throw err;
+          }
+          totals = mergeOutcomes(totals, outcome);
+          const progress = expectedRaw
+            ? Math.min(99, Math.floor((totals.requested / expectedRaw) * 100))
+            : 100;
+          await markProgress(pool, jobId, {
+            matchCount: expectedRaw,
+            succeeded: totals.succeeded,
+            skipped: totals.skipped,
+            failed: totals.failed,
+            progress
+          });
+        }
+      });
+      if (!streamed.ok) {
+        await markFailed(pool, jobId, streamed.message);
+        return;
+      }
+    } catch (err) {
+      await markFailed(pool, jobId, err.message || 'Bulk action failed');
+      return;
+    }
+    const completed = await markCompleted(pool, jobId, {
+      matchCount: totals.requested,
+      succeeded: totals.succeeded,
+      skipped: totals.skipped,
+      failed: totals.failed,
+      errorSample: errorSampleFromResults(totals.results),
+      retentionHours: cfg.retentionHours
+    });
+    await audit.auditSuccess?.({
+      action: totals.failed > 0 ? AUDIT_ACTION.IOC_BULK_QUERY_FAILED : AUDIT_ACTION.IOC_BULK_QUERY_COMPLETED,
+      entityType: AUDIT_ENTITY.IOC_BULK_QUERY,
+      entityId: jobId,
+      entityDisplay: compiled.normalizedQuery,
+      severity: totals.failed > 0 ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+      metadata: {
+        selection_mode: 'all_matching',
+        bulk_action: claimed.action,
+        query: compiled.normalizedQuery,
+        deep_search_id: deepSearchId,
+        match_count: totals.requested,
+        succeeded: totals.succeeded,
+        skipped: totals.skipped,
+        failed: totals.failed,
+        mode: 'async',
+        ...(payload.reason ? { reason: payload.reason } : {})
+      }
+    }).catch(() => {});
+    return completed;
+  }
+
   const ids = [];
   const streamed = await streamMatchingIocIds(pool, compiled, {
     chunkSize: cfg.chunkSize,

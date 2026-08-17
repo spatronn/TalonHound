@@ -204,8 +204,34 @@ function previewHasTerminalResult(preview, query) {
 }
 
 /**
+ * Canonical DSL for query-wide selection. Deep Search Result mode uses the stored
+ * executed query from that result — never the textbox draft or leftover interactive state.
+ */
+export function queryWideExecutedQuery({
+  deepSearchId = '',
+  deepResult = null,
+  appliedQuery = ''
+} = {}) {
+  if (String(deepSearchId || '').trim() && deepResult?.result_state === 'ready') {
+    return String(deepResult.normalized_query || '').trim();
+  }
+  return String(appliedQuery || '').trim();
+}
+
+/**
+ * Authoritative exact count from a completed Deep Search. Null/missing stay null
+ * (`Number(null) === 0` must not invent a zero total).
+ */
+export function exactCountFromDeepSearchResult(deepResult) {
+  if (!deepResult || deepResult.result_state !== 'ready') return null;
+  if (!isFiniteExactMatchCount(deepResult.match_count)) return null;
+  return Number(deepResult.match_count);
+}
+
+/**
  * Call POST /iocs/bulk/query/preview only when the page is fully selected, more
  * matches exist than the page, and search did not already return an exact total.
+ * Completed Deep Search already has match_count — never preview it.
  */
 export function shouldRequestQueryWidePreview({
   canWrite = false,
@@ -233,10 +259,12 @@ export function shouldRequestQueryWidePreview({
 }
 
 /**
- * Gmail-like second-stage offer. Requires an executed non-empty search, a full
- * current-page selection, a finite exact match count greater than the page, and write access.
- * Unfiltered browse, Deep Search snapshots, and `2,000+` never qualify until preview
- * (or search) provides an exact backend count.
+ * Gmail-like second-stage offer. Requires write access, a full current-page
+ * selection, a finite exact match count greater than the page, and either:
+ * - an executed interactive search (`dslActive` + DSL), or
+ * - a completed Deep Search (`deepSearchId` + that result's stored DSL).
+ * Unfiltered browse and `2,000+` without an exact count never qualify.
+ * Null/missing exact counts never coerce to 0.
  */
 export function shouldOfferSelectAllMatching({
   canWrite = false,
@@ -248,14 +276,15 @@ export function shouldOfferSelectAllMatching({
   exactMatchCount = null
 } = {}) {
   if (!canWrite) return false;
-  if (String(deepSearchId || '').trim()) return false;
-  if (!dslActive) return false;
-  if (!String(executedQuery || '').trim()) return false;
   if (!pageSelectionAll) return false;
   const pageN = Number(pageSelectableCount) || 0;
   if (pageN <= 0) return false;
-  const total = Number(exactMatchCount);
-  if (!Number.isFinite(total) || total <= pageN) return false;
+  if (!isFiniteExactMatchCount(exactMatchCount)) return false;
+  if (Number(exactMatchCount) <= pageN) return false;
+  if (!String(executedQuery || '').trim()) return false;
+  const deepId = String(deepSearchId || '').trim();
+  if (deepId) return true;
+  if (!dslActive) return false;
   return true;
 }
 
@@ -322,12 +351,15 @@ export function buildQueryWideBulkPayload({
   action,
   tagId,
   classificationSlug,
-  reason
+  reason,
+  deepSearchId
 } = {}) {
   const body = {
     selection_mode: SELECTION_MODE_ALL_MATCHING,
     query: String(query || '')
   };
+  const ds = String(deepSearchId || '').trim();
+  if (ds) body.deep_search_id = ds;
   if (action === 'tag' && tagId != null && tagId !== '') body.tag_id = Number(tagId);
   if (action === 'classification' && classificationSlug) {
     body.classification_slug = String(classificationSlug);

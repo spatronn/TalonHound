@@ -25,9 +25,47 @@ import {
 } from './iocBulkTriage.js';
 import { getBulkQueryConfig } from './iocBulkQueryJob/config.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
+import { getDeepSearchById, listDeepSearchIocIdPage } from './iocDeepSearch/deepSearchStore.js';
+import { isBrowsable } from './iocDeepSearch/deepSearchStatus.js';
+import { canAccessOwnedArtifact } from './artifactOwnership.js';
 
 export const QUERY_WIDE_ACTIONS = Object.freeze(['tag', 'classification', 'suppress', 'expire']);
 const QUERY_CANCELED = '57014';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value) {
+  return UUID_RE.test(String(value || '').trim());
+}
+
+function finiteMatchCount(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+export { finiteMatchCount };
+
+/**
+ * In-flight Deep Search bulk jobs keep using the spool after UI expiry.
+ * New HTTP jobs still go through isBrowsable / resolveQueryWideTarget.
+ */
+export function deepSearchAvailableForInFlightBulk(deepSearch) {
+  return Boolean(deepSearch && deepSearch.id);
+}
+
+/**
+ * Prefer the count captured at enqueue. Deep Search match_count is nulled by
+ * markExpired and must not abort a job that already started.
+ */
+export function expectedCountForInFlightDeepSearchJob({
+  payload = null,
+  jobMatchCount = null,
+  deepSearchMatchCount = null
+} = {}) {
+  return finiteMatchCount(payload?.expected_match_count)
+    ?? finiteMatchCount(jobMatchCount)
+    ?? finiteMatchCount(deepSearchMatchCount);
+}
 
 export function parseQueryWideRequest(body, action) {
   if (!QUERY_WIDE_ACTIONS.includes(action)) {
@@ -42,6 +80,18 @@ export function parseQueryWideRequest(body, action) {
       message: 'selection_mode must be all_matching'
     };
   }
+  const deepSearchId = String(body?.deep_search_id || '').trim();
+  if (deepSearchId) {
+    if (!isUuid(deepSearchId)) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'INVALID_DEEP_SEARCH_ID',
+        message: 'deep_search_id is not a valid id'
+      };
+    }
+    return { ok: true, action, query: String(body?.query ?? ''), deepSearchId };
+  }
   const query = String(body?.query ?? '');
   if (!query.trim()) {
     return {
@@ -51,10 +101,10 @@ export function parseQueryWideRequest(body, action) {
       message: 'Query-wide bulk requires a non-empty executed search query'
     };
   }
-  return { ok: true, action, query };
+  return { ok: true, action, query, deepSearchId: '' };
 }
 
-export function compileQueryWideTarget(rawQuery) {
+export function compileQueryWideTarget(rawQuery, { allowExpensive = false } = {}) {
   const query = String(rawQuery ?? '');
   if (!query.trim()) {
     return {
@@ -79,7 +129,7 @@ export function compileQueryWideTarget(rawQuery) {
     throw err;
   }
   const classified = classifyQuery(parsed.ast);
-  if (classified.mode === 'deep_search') {
+  if (!allowExpensive && classified.mode === 'deep_search') {
     return {
       ok: false,
       status: 409,
@@ -96,6 +146,68 @@ export function compileQueryWideTarget(rawQuery) {
     whereSql: built.sql,
     params: built.params,
     fileArtifactsReadEnabled: isFileArtifactsReadEnabled()
+  };
+}
+
+/**
+ * Bind a query-wide mutation to either an interactive DSL or a completed Deep Search.
+ * When `deep_search_id` is present, the stored Deep Search query/count win — the client
+ * query string and match count are ignored. Expensive classifier rejection is skipped
+ * because the matching set is already materialized in the spool.
+ */
+export async function resolveQueryWideTarget(pool, parsed, {
+  req,
+  getDeepSearch = getDeepSearchById,
+  canAccess = canAccessOwnedArtifact
+} = {}) {
+  const deepSearchId = String(parsed?.deepSearchId || '').trim();
+  if (!deepSearchId) {
+    return compileQueryWideTarget(parsed?.query);
+  }
+  const row = await getDeepSearch(pool, deepSearchId);
+  if (!row) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'DEEP_SEARCH_NOT_FOUND',
+      message: 'Deep search not found'
+    };
+  }
+  if (!canAccess(req, row)) {
+    return {
+      ok: false,
+      status: 403,
+      code: 'FORBIDDEN',
+      message: 'Forbidden'
+    };
+  }
+  if (!isBrowsable(row)) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'DEEP_SEARCH_NOT_READY',
+      message: 'Deep search results are not available for query-wide bulk'
+    };
+  }
+  const compiled = compileQueryWideTarget(row.normalized_query || row.original_query, {
+    allowExpensive: true
+  });
+  if (!compiled.ok) return compiled;
+  const matchCount = finiteMatchCount(row.match_count);
+  if (matchCount == null) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'COUNT_UNAVAILABLE',
+      message: 'Deep search exact match count is not available'
+    };
+  }
+  return {
+    ...compiled,
+    originalQuery: row.original_query || compiled.originalQuery,
+    normalizedQuery: row.normalized_query || compiled.normalizedQuery,
+    deepSearchId: row.id,
+    matchCount
   };
 }
 
@@ -174,11 +286,37 @@ export async function streamMatchingIocIds(pool, compiled, {
   }
 }
 
+/**
+ * Stream canonical IOC ids from a completed Deep Search spool. No 2,000 display cap
+ * and no client ID list — the HTTP/worker path pages the already-materialized set.
+ */
+export async function streamDeepSearchIocIds(pool, deepSearchId, {
+  chunkSize = BULK_TRIAGE_MAX_ITEMS,
+  onChunk,
+  listPage = listDeepSearchIocIdPage
+} = {}) {
+  const fetchSize = Math.max(1, Math.min(Math.trunc(chunkSize) || BULK_TRIAGE_MAX_ITEMS, BULK_TRIAGE_MAX_ITEMS));
+  let afterPosition = 0;
+  let collected = 0;
+  for (;;) {
+    const page = await listPage(pool, deepSearchId, { afterPosition, limit: fetchSize });
+    const ids = page?.ids || [];
+    if (!ids.length) break;
+    const nextPos = Number(page.lastPosition);
+    if (!Number.isFinite(nextPos) || nextPos <= afterPosition) break;
+    afterPosition = nextPos;
+    collected += ids.length;
+    if (typeof onChunk === 'function') await onChunk(ids);
+  }
+  return { ok: true, matchCount: collected };
+}
+
 export function extraAuditMetadata(compiled, action) {
   return {
     selection_mode: 'all_matching',
     query: compiled.normalizedQuery,
-    bulk_action: action
+    bulk_action: action,
+    ...(compiled.deepSearchId ? { deep_search_id: compiled.deepSearchId } : {})
   };
 }
 
@@ -272,7 +410,37 @@ export async function executeQueryWideBulk(pool, {
   const cfg = getBulkQueryConfig();
   const extraMetadata = extraAuditMetadata(compiled, action);
   let totals = emptyOutcome();
-  const streamed = await streamMatchingIocIds(pool, compiled, {
+  const streamed = compiled.deepSearchId
+    ? await streamDeepSearchIocIds(pool, compiled.deepSearchId, {
+      chunkSize: cfg.chunkSize,
+      onChunk: async (ids) => {
+        const outcome = await applyChunk(pool, {
+          action,
+          ids,
+          payload,
+          user,
+          req,
+          audit,
+          extraMetadata
+        });
+        if (!outcome.ok) {
+          const err = new Error(outcome.message || 'Bulk action failed');
+          err.status = outcome.status || 400;
+          err.code = 'ACTION_REJECTED';
+          throw err;
+        }
+        totals = mergeOutcomes(totals, outcome);
+        if (onProgress) {
+          await onProgress({
+            matchCount: totals.requested,
+            succeeded: totals.succeeded,
+            skipped: totals.skipped,
+            failed: totals.failed
+          });
+        }
+      }
+    })
+    : await streamMatchingIocIds(pool, compiled, {
     chunkSize: cfg.chunkSize,
     hardLimit: cfg.hardLimit,
     onChunk: async (ids) => {
@@ -315,9 +483,9 @@ export async function executeQueryWideBulk(pool, {
   };
 }
 
-export function decideExecutionMode(matchCount, cfg = getBulkQueryConfig()) {
+export function decideExecutionMode(matchCount, cfg = getBulkQueryConfig(), { skipHardLimit = false } = {}) {
   const n = Number(matchCount) || 0;
-  if (n > cfg.hardLimit) {
+  if (!skipHardLimit && n > cfg.hardLimit) {
     return {
       ok: false,
       status: 400,
@@ -363,6 +531,7 @@ export async function auditQueryWideOperation(audit, {
       skipped,
       failed,
       mode,
+      ...(compiled.deepSearchId ? { deep_search_id: compiled.deepSearchId } : {}),
       ...(reason ? { reason } : {}),
       ...(jobId ? { job_id: jobId } : {})
     }

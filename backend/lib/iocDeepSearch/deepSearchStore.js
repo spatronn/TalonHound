@@ -2,12 +2,27 @@
 // routes and the worker. Keeps all Deep Search lifecycle SQL in one place. Mirrors
 // iocSearchExport/exportStore.js conventions.
 
+import { ACTIVE_BULK_QUERY_STATUSES } from '../iocBulkQueryJob/status.js';
+
 const SELECT_COLUMNS = `
   id, original_query, normalized_query, normalized_ast, query_fingerprint,
   classification_reason, origin, status, requested_by_id, requested_by_email,
   requested_at, started_at, completed_at, snapshot_cutoff, match_count,
   duration_ms, progress, expires_at, failure_reason, cancel_requested, cancelled_at,
   job_id, created_at, updated_at`;
+
+/**
+ * Keep the materialized spool while a query-wide bulk job is still queued or
+ * processing. Expiry may still hide the result from new HTTP jobs (isBrowsable);
+ * cleanup must not delete rows out from under an in-flight mutation.
+ */
+const ACTIVE_BULK_STATUS_SQL = ACTIVE_BULK_QUERY_STATUSES.map((s) => `'${s}'`).join(', ');
+
+export const DEEP_SEARCH_ACTIVE_BULK_JOB_EXISTS_SQL = `EXISTS (
+  SELECT 1 FROM ioc_bulk_query_jobs j
+   WHERE j.status IN (${ACTIVE_BULK_STATUS_SQL})
+     AND j.payload->>'deep_search_id' = ioc_deep_searches.id::text
+)`;
 
 export async function createDeepSearch(db, {
   originalQuery,
@@ -240,6 +255,32 @@ export async function getResultsPage(db, deepSearchId, { cursor = null, limit = 
   return rows;
 }
 
+/**
+ * Bounded ID page over the complete Deep Search spool. Used by query-wide bulk so
+ * mutations target every materialized match, not the 2,000-row UI display window.
+ * Pages by `position` (primary key) rather than ioc_item_id so the 2,000 display
+ * cap cannot shrink the mutation set and the PK can serve the scan.
+ */
+export async function listDeepSearchIocIdPage(db, deepSearchId, { afterPosition = 0, limit = 100 } = {}) {
+  const fetchSize = Math.min(Math.max(Math.trunc(Number(limit) || 100), 1), 100);
+  const after = Number.isInteger(Number(afterPosition)) && Number(afterPosition) > 0
+    ? Number(afterPosition)
+    : 0;
+  const { rows } = await db.query(
+    `SELECT position, ioc_item_id FROM ioc_deep_search_results
+      WHERE deep_search_id = $1 AND position > $2
+      ORDER BY position
+      LIMIT $3`,
+    [deepSearchId, after, fetchSize]
+  );
+  return {
+    ids: rows
+      .map((r) => Number(r.ioc_item_id))
+      .filter((id) => Number.isInteger(id) && id > 0),
+    lastPosition: rows.length ? Number(rows[rows.length - 1].position) : after
+  };
+}
+
 // ---- retention / cleanup --------------------------------------------------
 
 // Find completed searches whose result-set retention window has elapsed.
@@ -247,6 +288,7 @@ export async function findExpiredCompleted(db, limit = 100) {
   const { rows } = await db.query(
     `SELECT ${SELECT_COLUMNS} FROM ioc_deep_searches
       WHERE status = 'completed' AND expires_at IS NOT NULL AND expires_at <= NOW()
+        AND NOT ${DEEP_SEARCH_ACTIVE_BULK_JOB_EXISTS_SQL}
       ORDER BY expires_at ASC
       LIMIT $1`,
     [limit]
@@ -291,6 +333,7 @@ export async function findStaleMetadata(db, { olderThanDays = 7, limit = 200 } =
       WHERE status IN ('expired', 'failed', 'cancelled')
         AND COALESCE(completed_at, cancelled_at, updated_at, created_at)
             <= NOW() - ($1::int * INTERVAL '1 day')
+        AND NOT ${DEEP_SEARCH_ACTIVE_BULK_JOB_EXISTS_SQL}
       ORDER BY created_at ASC
       LIMIT $2`,
     [days, Math.min(Math.max(limit, 1), 500)]
