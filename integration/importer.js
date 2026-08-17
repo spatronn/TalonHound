@@ -49,6 +49,12 @@ import {
   resolveMalwareBazaarAuthKey,
   sanitizeMalwareBazaarErrorMessage
 } from './lib/malwarebazaar.js';
+import { malwareBazaarFirstSeenBounds } from '../backend/lib/malwarebazaarCoverage.js';
+import {
+  applyMalwareBazaarFreshnessTick,
+  applyMalwareBazaarRecentSuccess,
+  withMalwareBazaarCoverageGuard
+} from './lib/malwarebazaarCoverageStore.js';
 import {
   THREATFOX_AUTH_REQUIRED_MSG,
   THREATFOX_SOURCE_URL_MASKED,
@@ -696,7 +702,7 @@ export async function updateMalwareBazaarObservableBySource(client, entry, sourc
   return existing;
 }
 
-async function upsertMalwareBazaarObservable(client, entry, sourceName, suppressionStats, metrics) {
+export async function upsertMalwareBazaarObservable(client, entry, sourceName, suppressionStats, metrics) {
   const note = buildMalwareBazaarNote(entry);
   const category = entry.category || 'malware';
   const sourceUrl = MALWAREBAZAAR_EXPORT_URL_MASKED;
@@ -1891,6 +1897,10 @@ export async function runMalwareBazaarImport(options = {}) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
 
+    await withMalwareBazaarCoverageGuard(() => applyMalwareBazaarFreshnessTick(client, {
+      sourceName: config.malwareBazaarSourceName
+    }));
+
     return await withImportOptimizationContext(client, async () => {
     const runInsert = await client.query(
       `INSERT INTO integration_runs (job_type, status, started_at, triggered_by)
@@ -1908,6 +1918,9 @@ export async function runMalwareBazaarImport(options = {}) {
     const interval = await assertMalwareBazaarMinFetchInterval(client, config.malwareBazaarSourceName);
     if (!interval.ok) {
       metrics.noteSkipped(0);
+      await withMalwareBazaarCoverageGuard(() => applyMalwareBazaarFreshnessTick(client, {
+        sourceName: config.malwareBazaarSourceName
+      }));
       await finalizeIntegrationRun(client, runId, metrics);
       return withSuppressionStats(
         { ok: true, runId, skipped: true, reason: interval.reason },
@@ -1926,6 +1939,7 @@ export async function runMalwareBazaarImport(options = {}) {
     const { entries, fetched, parsed, skipped } = parseMalwareBazaarRecentCsv(txt);
     // Parser already counts unmapped rows in `skipped` (= fetched - parsed). Do not add both.
     metrics.noteSkipped(skipped);
+    const { oldest, newest } = malwareBazaarFirstSeenBounds(entries);
 
     const currentHash = hashEntries(entries.map((e) => ({
       o: e.observable,
@@ -1968,15 +1982,44 @@ export async function runMalwareBazaarImport(options = {}) {
       [config.malwareBazaarSourceName, `hash:${currentHash}`]
     );
 
+    const coverageResult = await withMalwareBazaarCoverageGuard(
+      () => applyMalwareBazaarRecentSuccess(client, {
+        oldest,
+        newest,
+        now: new Date(),
+        sourceName: config.malwareBazaarSourceName
+      }),
+      { coverage: null, shouldEnqueueRecovery: false }
+    );
+
     throwIfAborted(signal);
-    await finalizeIntegrationRun(client, runId, metrics);
+    const coverageUnavailable = coverageResult?.coverageUnavailable === true;
+    const runDetails = coverageUnavailable
+      ? {
+          coverage_unavailable: true,
+          coverage_unavailable_reason: coverageResult.coverageUnavailableReason || 'coverage_error'
+        }
+      : coverageResult?.coverage?.status
+        ? { malwarebazaar_coverage_status: coverageResult.coverage.status }
+        : null;
+    await finalizeIntegrationRun(client, runId, metrics, 'success', runDetails);
     logImportSuppressionSummary('malwarebazaar_import', runId, suppressionStats, metrics.toJSON());
     console.log(
       `[integration-import] job=malwarebazaar_import runId=${runId} export=${MALWAREBAZAAR_EXPORT_URL_MASKED} fetched=${fetched} parsed=${parsed} skipped=${skipped}`
     );
-    return withSuppressionStats({ ok: true, runId }, suppressionStats, metrics);
+    return withSuppressionStats({
+      ok: true,
+      runId,
+      shouldEnqueueRecovery: Boolean(coverageResult?.shouldEnqueueRecovery),
+      coverageStatus: coverageResult?.coverage?.status || null,
+      coverageUnavailable,
+      runDetails
+    }, suppressionStats, metrics);
     });
   } catch (err) {
+    await withMalwareBazaarCoverageGuard(() => applyMalwareBazaarFreshnessTick(client, {
+      sourceName: config.malwareBazaarSourceName
+    }));
     const safeMessage = sanitizeMalwareBazaarErrorMessage(err?.message || err);
     if (runId) {
       await failIntegrationRun(client, runId, safeMessage, metrics);

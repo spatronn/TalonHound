@@ -16,6 +16,17 @@ describe('formatIntegrationJobDisplayName', () => {
   it('falls back to job name when unknown', () => {
     assert.equal(formatIntegrationJobDisplayName('custom-job'), 'custom-job');
   });
+
+  it('labels MalwareBazaar historical recovery distinctly from recent import', () => {
+    assert.equal(
+      formatIntegrationJobDisplayName('malwarebazaar-historical-recovery', 'malwarebazaar-abusech'),
+      'MalwareBazaar historical recovery'
+    );
+    assert.equal(
+      formatIntegrationJobDisplayName('malwarebazaar-import', 'malwarebazaar-abusech'),
+      'Recent malware samples import'
+    );
+  });
 });
 
 describe('withIntegrationJobDisplayName', () => {

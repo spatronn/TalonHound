@@ -39,6 +39,12 @@ export function resolveIntegrationJobTimeoutMs(integrationKey, jobName, globalTi
       source: 'FILE_ARTIFACT_RECON_JOB_TIMEOUT_MS'
     };
   }
+  if (jobName === 'malwarebazaar-historical-recovery') {
+    return {
+      timeoutMs: readPositiveInt('MALWAREBAZAAR_RECOVERY_JOB_TIMEOUT_MS', 1_800_000, 60_000),
+      source: 'MALWAREBAZAAR_RECOVERY_JOB_TIMEOUT_MS'
+    };
+  }
 
   const spec = SOURCE_JOB_TIMEOUTS[String(integrationKey || '').trim()];
   if (!spec) return { timeoutMs: globalTimeoutMs, source: 'global' };

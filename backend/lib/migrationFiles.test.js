@@ -52,6 +52,21 @@ test('158 query-wide bulk jobs migration is runnable', () => {
   assert.ok(sql.includes('all_matching') || sql.includes('selection') || sql.includes('normalized_query'));
 });
 
+test('159 MalwareBazaar coverage state migration is runnable and additive', () => {
+  assert.equal(isRunnableMigrationFile('159_malwarebazaar_coverage_state.sql'), true);
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/159_malwarebazaar_coverage_state.sql'),
+    'utf8'
+  );
+  assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS malwarebazaar_coverage_state'));
+  assert.ok(sql.includes('idx_malwarebazaar_coverage_state_status'));
+  assert.ok(sql.includes("'recovery_running'"));
+  assert.ok(sql.includes("'gap_pending'"));
+  assert.ok(sql.includes('DROP TABLE IF EXISTS malwarebazaar_coverage_state'));
+  assert.equal(/REFERENCES\s+ioc_items/i.test(sql), false);
+  assert.equal(/CREATE INDEX CONCURRENTLY/i.test(sql), false);
+});
+
 test('156 IOC read/export scopes migration is runnable and expands CHECKs', () => {
   assert.equal(isRunnableMigrationFile('156_api_ioc_read_export_scopes.sql'), true);
   const sql = readFileSync(

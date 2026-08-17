@@ -15,15 +15,19 @@ const DISPLAY_BY_JOB_NAME = {
   'urlhaus-import': 'Recent malicious URLs import',
   'threatfox-import': 'Recent IOCs import',
   'malwarebazaar-import': 'Recent malware samples import',
+  'malwarebazaar-historical-recovery': 'MalwareBazaar historical recovery',
   'phishtank-import': 'Online-valid phishing import'
 };
 
 export function formatIntegrationJobDisplayName(jobName, integrationKey = null) {
+  const name = String(jobName || '').trim();
+  if (name === 'malwarebazaar-historical-recovery') {
+    return 'MalwareBazaar historical recovery';
+  }
   const key = String(integrationKey || '').trim();
   if (key && DISPLAY_BY_INTEGRATION_KEY[key]) {
     return DISPLAY_BY_INTEGRATION_KEY[key];
   }
-  const name = String(jobName || '').trim();
   if (name && DISPLAY_BY_JOB_NAME[name]) {
     return DISPLAY_BY_JOB_NAME[name];
   }

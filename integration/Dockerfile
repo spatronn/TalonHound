@@ -35,6 +35,8 @@ COPY backend/lib/jobResultSnapshot.js ./lib/jobResultSnapshot.js
 COPY backend/lib/feedLastRunResult.js ./lib/feedLastRunResult.js
 COPY backend/lib/integrationRunCounters.js ./lib/integrationRunCounters.js
 COPY backend/lib/feedHealth.js ./lib/feedHealth.js
+COPY backend/lib/malwarebazaarCoverage.js /backend/lib/malwarebazaarCoverage.js
+COPY backend/lib/malwarebazaarCoverage.js ./lib/malwarebazaarCoverage.js
 COPY backend/lib/integrationQueueBullmqReconciliation.js ./lib/integrationQueueBullmqReconciliation.js
 COPY backend/lib/integrationQueueHealth.js ./lib/integrationQueueHealth.js
 COPY backend/lib/integrationSchedule.js ./lib/integrationSchedule.js

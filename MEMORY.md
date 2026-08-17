@@ -12,12 +12,14 @@
 - **Arşiv:** demo-runbook (2026-07 geçişi).
 - **Auth bootstrap:** `DEMO_EMAIL`/`DEMO_PASSWORD` kaldırıldı. Temiz kurulumda tek seferlik `admin@talonhound.local` — parola `INITIAL_ADMIN_PASSWORD` veya generate + `/data/backups/bootstrap-admin-password.once` (bilinen `admin` yok); `must_change_password=true`. Flag `system_settings.default_admin_bootstrapped`. JWT `auth_version` (migration `146`).
 - **File Artifacts:** Additive md5/sha1/sha256 identity layer (migration `131`). Flags `FILE_ARTIFACTS_DUAL_WRITE_ENABLED` / `FILE_ARTIFACTS_READ_ENABLED`. Docs: `docs/file-artifacts.md`.
+- **MalwareBazaar coverage:** Live ingest remains Auth-Key `recent.csv` (official last **48 hours**). Historical repair uses the official full hash dump `https://bazaar.abuse.ch/export/csv/full/` (Auth-Key header, ZIP `full.csv`, generated hourly). Durable state: `malwarebazaar_coverage_state` (migration `159`). A later successful `recent.csv` run must not erase an unrecovered hole. Hourly datalake zips are malware binaries — do not use them for hash recovery. Do not infer MB provenance from the public sample page. Aug 2026 gap dry-run (not executed): `--from=2026-08-13T13:12:00Z --to=2026-08-14T22:49:55Z`. Incident SHA256 `3e1f4124…f573` is present in that dump (`first_seen` `2026-08-14 06:50:55`).
 - **IOC Details:** Legacy Source Evidence UI section removed (Intelligence tab); memberships / feed evidence / hash canonicalization kept.
 - **API Keys / REST (2026-08-08):** General-purpose API keys with scope profiles.
   - Profiles: `published_feed` → `published_feeds:read`; `ioc_management` → `ioc:create` + `ioc:update`.
   - Management API: `POST/PATCH /api/v1/iocs` (Bearer only). Docs: `/api/docs`, `/api/openapi.json`.
   - System IOC source name `API` (not selectable in Add IOC). Shared service: `backend/lib/apiIocService.js`.
   - Migration: `145_api_key_scopes_and_ioc_management.sql` (not yet deployed until explicitly asked).
+- **IOC bulk (2026-08-17):** Page-scoped selection (`a11af00`) plus query-wide `all_matching` (`8d63293`). PAGE keeps explicit IDs max 100. ALL_MATCHING binds the executed DSL; unfiltered browse cannot enter it; backend recomputes count; sync ≤500 else Action Center job (`ioc-bulk-query` worker, migration 158). Capped `2,000+` searches resolve exact count via preview (`ca911d9`); `Number(null)===0` must not be treated as an exact total.
 - **Feed expiration (2026-08-13):** 3 modes only — `never`, `fixed_ttl` (first seen), `missing_from_feed_ttl` (UI: Expire when removed from source). `last_seen_ttl` removed; migration `154` converts leftover rows to `fixed_ttl`. Snapshot gate: `feed_update_mode`.
 - **Entegrasyon (devam):** TalonHound ↔ DNSMania DNS enrichment.
   - DNSMania local path: `C:\Proje\DNSMania`

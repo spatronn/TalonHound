@@ -25,10 +25,16 @@ import {
   markJobDeferredSourceBusy
 } from './lib/integrationQueueJobState.js';
 import { runFeedDataPurgeJob } from './lib/feedLifecycle.js';
+import { withImportOptimizationContext } from './lib/iocExpiration.js';
 import { runCustomThreatFeedImport } from './lib/customThreatFeedImport.js';
 import { runSpamhausDropSync } from './lib/spamhausDropSync.js';
 import { runFileArtifactReconciliation } from './runFileArtifactReconciliation.js';
 import { resolveWorkerJobFailureType } from './lib/job-cancellation.js';
+import { malwareBazaarJobsCanCoexist } from '../backend/lib/malwarebazaarCoverage.js';
+import {
+  enqueueMalwareBazaarHistoricalRecovery,
+  runMalwareBazaarHistoricalRecovery
+} from './lib/malwarebazaarHistoricalRecovery.js';
 
 const pool = createIntegrationPool();
 
@@ -56,6 +62,7 @@ function resolveIntegrationKey(job) {
   if (job?.name === 'urlhaus-import') return 'urlhaus-abusech';
   if (job?.name === 'threatfox-import') return 'threatfox-abusech';
   if (job?.name === 'malwarebazaar-import') return 'malwarebazaar-abusech';
+  if (job?.name === 'malwarebazaar-historical-recovery') return 'malwarebazaar-abusech';
   if (job?.name === 'phishtank-import') return 'phishtank-opendnsrr';
   if (job?.name === 'alienvault-otx-import') return 'alienvault-otx';
   return 'unknown';
@@ -67,6 +74,7 @@ const JOB_TYPE_BY_NAME = Object.freeze({
   'urlhaus-import': 'urlhaus_import',
   'threatfox-import': 'threatfox_import',
   'malwarebazaar-import': 'malwarebazaar_import',
+  'malwarebazaar-historical-recovery': 'malwarebazaar_historical_recovery',
   'phishtank-import': 'phishtank_import',
   'alienvault-otx-import': 'alienvault_otx_import',
   'custom-threat-feed-sync': 'custom_threat_feed_sync',
@@ -124,6 +132,21 @@ async function runImportForJob(job, { signal, triggeredBy } = {}) {
   if (job.name === 'urlhaus-import') return runUrlhausImport(opts);
   if (job.name === 'threatfox-import') return runThreatfoxImport(opts);
   if (job.name === 'malwarebazaar-import') return runMalwareBazaarImport(opts);
+  if (job.name === 'malwarebazaar-historical-recovery') {
+    const client = await pool.connect();
+    try {
+      return await withImportOptimizationContext(client, () => runMalwareBazaarHistoricalRecovery({
+        ...opts,
+        client,
+        sourceName: config.malwareBazaarSourceName,
+        from: job?.data?.from || null,
+        to: job?.data?.to || null,
+        dryRun: false
+      }));
+    } finally {
+      client.release();
+    }
+  }
   if (job.name === 'phishtank-import') return runPhishtankImport(opts);
   if (job.name === 'alienvault-otx-import') return runAlienvaultOtxImport(opts);
   return { skipped: true, reason: 'unknown_job' };
@@ -197,7 +220,7 @@ const worker = new Worker(
     activeJobId = String(job.id);
 
     const blocking = await findActiveRunningJobForSource(pool, integrationKey, String(job.id));
-    if (blocking) {
+    if (blocking && !malwareBazaarJobsCanCoexist(job.name, blocking.job_name)) {
       await markJobDeferredSourceBusy(pool, String(job.id));
       await job.moveToDelayed(Date.now() + QUEUE_HARDENING.sourceBusyDeferMs, job.token);
       console.log(
@@ -257,6 +280,29 @@ const worker = new Worker(
         await markJobSkipped(pool, String(job.id), metrics, result.reason, jobMeta);
       } else {
         await markJobSuccess(pool, String(job.id), metrics, jobMeta);
+      }
+
+      if (job.name === 'malwarebazaar-import' && result?.shouldEnqueueRecovery) {
+        try {
+          await enqueueMalwareBazaarHistoricalRecovery(importQueue, { triggeredBy: 'gap-detection' });
+        } catch (err) {
+          console.warn(
+            `${LOG_PREFIX} MalwareBazaar recovery enqueue failed job_id=${job.id} message=${sanitizeMalwareBazaarErrorMessage(err?.message || err)}`
+          );
+        }
+      }
+      if (job.name === 'malwarebazaar-historical-recovery' && result?.shouldRequeue) {
+        try {
+          await enqueueMalwareBazaarHistoricalRecovery(importQueue, {
+            triggeredBy: 'recovery-resume',
+            from: job?.data?.from || null,
+            to: job?.data?.to || null
+          });
+        } catch (err) {
+          console.warn(
+            `${LOG_PREFIX} MalwareBazaar recovery requeue failed job_id=${job.id} message=${sanitizeMalwareBazaarErrorMessage(err?.message || err)}`
+          );
+        }
       }
 
       const skipNote = result?.skipped ? ` skipped=${result.reason || 'true'}` : '';

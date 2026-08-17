@@ -1,4 +1,4 @@
-﻿import './lib/ensure-db-password.js';
+import './lib/ensure-db-password.js';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -250,6 +250,7 @@ import {
   testUrlhausConnection
 } from './lib/urlhausIntegration.js';
 import { MALWAREBAZAAR_FEED_KEY, testMalwareBazaarConnection } from './lib/malwarebazaarIntegration.js';
+import { mergeMalwareBazaarCoverageFields } from './lib/malwarebazaarCoverage.js';
 import {
   THREATFOX_FEED_KEY,
   testThreatFoxConnection,
@@ -1338,6 +1339,28 @@ app.get('/api/integrations', async (req, res) => {
     ]);
     integrationsTimingLog(timingEnabled, 'latest run query', latestRunStart);
 
+    let mbCoverage = null;
+    let mbCoverageUnavailable = false;
+    if (feedKeys.includes(MALWAREBAZAAR_FEED_KEY)) {
+      try {
+        const mbCoverageRes = await Promise.race([
+          pool.query(
+            'SELECT * FROM malwarebazaar_coverage_state WHERE feed_key = $1',
+            [MALWAREBAZAAR_FEED_KEY]
+          ),
+          new Promise((_, reject) => {
+            setTimeout(
+              () => reject(new Error('malwarebazaar coverage query timeout')),
+              INTEGRATIONS_META_QUERY_TIMEOUT_MS
+            );
+          })
+        ]);
+        mbCoverage = mbCoverageRes.rows[0] || null;
+      } catch {
+        mbCoverageUnavailable = true;
+      }
+    }
+
     const latestRunByJobType = new Map(latestRunsRes.rows.map((r) => [r.job_type, r]));
     const lastSuccessByJobType = new Map(lastSuccessRunsRes.rows.map((r) => [r.job_type, r]));
     const consecutiveFailures = new Map(
@@ -1357,11 +1380,16 @@ app.get('/api/integrations', async (req, res) => {
         }
       : { available: false, new: null, updated: null };
 
-    const integrations = feedsRes.rows.map((feed) => mergeUsomReconciliationFields(
-      mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey),
-      latestUsomByMode,
-      lastSuccessfulUsomByMode,
-      now
+    const integrations = feedsRes.rows.map((feed) => mergeMalwareBazaarCoverageFields(
+      mergeUsomReconciliationFields(
+        mergeIntegrationListRow(feed, latestRunByJobType, latestQueueByKey, lastSuccessByJobType, consecutiveFailures, asnLastUpdatedAt, expirationByKey, latestPurgeByKey),
+        latestUsomByMode,
+        lastSuccessfulUsomByMode,
+        now
+      ),
+      mbCoverage,
+      now,
+      { unavailable: mbCoverageUnavailable }
     ));
     const healthSummary = buildIntegrationHealthSummary(integrations, changes24h);
 
