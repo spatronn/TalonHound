@@ -6,6 +6,7 @@ import {
   canUseIncrementalRefresh,
   isProjectionReady,
   PROJECTION_STATUS,
+  PROJECTION_UPSERT_MAX_ROWS,
   upsertProjectionBatch,
   confidenceRank
 } from './publishedFeedProjection.js';
@@ -107,6 +108,36 @@ describe('upsertProjectionBatch', () => {
     assert.match(calls[0].sql, /INSERT INTO published_feed_items \(\s*feed_id, snapshot_window,/);
     assert.equal(calls[0].params[0], 1);
     assert.equal(calls[0].params[2], 'o:domain:evil.com');
+  });
+
+  it('splits oversized batches below the Postgres bind protocol limit', async () => {
+    const calls = [];
+    const db = {
+      async query(sql, params) {
+        calls.push(params.length);
+        return { rowCount: params.length / 15 };
+      }
+    };
+    const rows = Array.from({ length: 5000 }, (_, idx) => ({
+      feed_id: 1,
+      window: 'all',
+      identity_key: `o:domain:e${idx}.com`,
+      ioc_item_id: idx + 1,
+      observable: `e${idx}.com`,
+      observable_type: 'domain',
+      recency_ts: '2026-08-09T00:00:00Z',
+      confidence: 'high',
+      category: 'malware',
+      txt_value: `e${idx}.com`,
+      item_json: null,
+      content_fingerprint: 'abc'
+    }));
+    const n = await upsertProjectionBatch(db, rows);
+    assert.equal(n, 5000);
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every((count) => count <= 65535));
+    assert.equal(calls[0], PROJECTION_UPSERT_MAX_ROWS * 15);
+    assert.equal(calls[1], (5000 - PROJECTION_UPSERT_MAX_ROWS) * 15);
   });
 });
 

@@ -41,7 +41,10 @@ import {
 import { createServiceLogger } from './appLogger.js';
 
 const log = createServiceLogger('published-feeds');
-const DIRTY_BATCH = Math.max(Number(process.env.PUBLISHED_FEED_DIRTY_BATCH || 5000), 100);
+const DIRTY_BATCH = Math.min(
+  Math.max(Number(process.env.PUBLISHED_FEED_DIRTY_BATCH || 4000), 100),
+  4000
+);
 
 /**
  * Capture a cutoff watermark. Changes at/after this instant remain for the next cycle

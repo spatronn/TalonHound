@@ -21,6 +21,10 @@ export const PROJECTION_STATUS = {
   STALE: 'stale'
 };
 
+/** Postgres bind protocol uses a uint16 parameter count. 15 placeholders per row. */
+export const PROJECTION_UPSERT_PARAMS_PER_ROW = 15;
+export const PROJECTION_UPSERT_MAX_ROWS = 4000;
+
 export function confidenceRank(confidence) {
   return confidenceToScore(confidence);
 }
@@ -108,7 +112,14 @@ export function isIncrementalEnabledForFeed(feedId) {
  */
 export async function upsertProjectionBatch(db, rows) {
   if (!rows?.length) return 0;
-  // Unnest-style multi VALUES keeps batch size bounded by caller.
+  let total = 0;
+  for (let offset = 0; offset < rows.length; offset += PROJECTION_UPSERT_MAX_ROWS) {
+    total += await upsertProjectionBatchChunk(db, rows.slice(offset, offset + PROJECTION_UPSERT_MAX_ROWS));
+  }
+  return total;
+}
+
+async function upsertProjectionBatchChunk(db, rows) {
   const values = [];
   const params = [];
   let i = 1;
