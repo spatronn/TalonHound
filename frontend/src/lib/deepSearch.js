@@ -79,8 +79,8 @@ export function deepSearchActionCenterPath(id) {
  * Both serializers share the same envelope fields (id, task_type, status, created_at), so a
  * single table renders them uniformly.
  */
-export function mergeActionCenterItems(exports = [], deepSearches = []) {
-  const all = [...(exports || []), ...(deepSearches || [])];
+export function mergeActionCenterItems(...lists) {
+  const all = lists.flatMap((list) => (Array.isArray(list) ? list : [])).filter(Boolean);
   return all.sort((a, b) => {
     const ta = new Date(a?.created_at || 0).getTime();
     const tb = new Date(b?.created_at || 0).getTime();

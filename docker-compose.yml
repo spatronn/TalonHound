@@ -73,6 +73,7 @@ services:
       - FILE_ARTIFACTS_DUAL_WRITE_ENABLED=${FILE_ARTIFACTS_DUAL_WRITE_ENABLED:-0}
       - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
       - IOC_EXPORT_QUEUE_NAME=ioc-search-export
+      - IOC_BULK_QUERY_QUEUE_NAME=ioc-bulk-query
       - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_CRON=${BACKUP_CRON:-0 0 * * 0}
@@ -295,6 +296,30 @@ services:
       # Read-path flag must match the backend: the deep-search worker re-parses the stored
       # DSL and runs the same file-artifact canonical/dedup resolution as POST /api/iocs/search
       # so materialized results match the interactive preview exactly.
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  ioc-bulk-query-worker:
+    build: ./backend
+    command: ["npm", "run", "ioc-bulk-query-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - IOC_BULK_QUERY_QUEUE_NAME=ioc-bulk-query
+      - IOC_BULK_QUERY_WORKER_CONCURRENCY=${IOC_BULK_QUERY_WORKER_CONCURRENCY:-2}
+      - IOC_BULK_QUERY_SYNC_MAX=${IOC_BULK_QUERY_SYNC_MAX:-500}
+      - IOC_BULK_QUERY_HARD_LIMIT=${IOC_BULK_QUERY_HARD_LIMIT:-50000}
       - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
     depends_on:
       - db

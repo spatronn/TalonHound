@@ -88,6 +88,16 @@ test('mergeActionCenterItems sorts both task types by created_at desc', () => {
   assert.equal(merged[1].id, 'e1');
 });
 
+test('mergeActionCenterItems includes query-wide bulk jobs', () => {
+  const merged = mergeActionCenterItems(
+    [{ id: 'e1', task_type: 'ioc_search_export', created_at: '2026-08-01T00:00:00Z' }],
+    [{ id: 'd1', task_type: 'ioc_deep_search', created_at: '2026-08-05T00:00:00Z' }],
+    [{ id: 'b1', task_type: 'ioc_bulk_query', created_at: '2026-08-17T00:00:00Z' }]
+  );
+  assert.equal(merged[0].id, 'b1');
+  assert.equal(merged.length, 3);
+});
+
 test('deepSearchMatchLabel formats the exact complete count (no truncation marker)', () => {
   assert.equal(deepSearchMatchLabel({ task_type: 'ioc_deep_search', match_count: 485031 }), '485,031');
   assert.equal(deepSearchMatchLabel({ task_type: 'ioc_deep_search', match_count: 2000000 }), '2,000,000');

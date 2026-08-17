@@ -12,7 +12,8 @@ export const ACTION_CENTER_FILTERS = Object.freeze([
 
 export const TASK_TYPE_LABELS = Object.freeze({
   ioc_search_export: 'IOC Search Export',
-  ioc_deep_search: 'IOC Deep Search'
+  ioc_deep_search: 'IOC Deep Search',
+  ioc_bulk_query: 'IOC Bulk Action'
 });
 
 export function taskTypeLabel(taskType) {

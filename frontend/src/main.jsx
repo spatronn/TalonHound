@@ -87,7 +87,21 @@ import {
   iocListResultContextKey,
   selectedIdsForResultContext,
   bulkIocIdsForVisiblePage,
-  formatPageSelectionLabel
+  formatPageSelectionLabel,
+  SELECTION_MODE_NONE,
+  SELECTION_MODE_PAGE,
+  SELECTION_MODE_ALL_MATCHING,
+  iocListQueryContextKey,
+  shouldOfferSelectAllMatching,
+  formatSelectAllMatchingActionLabel,
+  formatAllMatchingSelectionLabel,
+  applySelectionForContexts,
+  queryWideBulkPath,
+  buildQueryWideBulkPayload,
+  formatQueryWideConfirmTitle,
+  formatQueryWideConfirmDescription,
+  formatQueryWideConfirmButton,
+  formatQueryWideAsyncToast
 } from './lib/iocBulkTriage.js';
 import { savedSearchCreatePayload, savedSearchErrorMessage } from './lib/iocSavedSearches.js';
 import {
@@ -10708,17 +10722,23 @@ function ActionCenterPage() {
       // page/status and merge them by created_at. (Cross-source pagination is approximate on
       // deep pages — each source paginates independently — which is acceptable for a
       // recent-activity view; totals are summed.)
-      const [exportRes, deepRes] = await Promise.all([
+      const [exportRes, deepRes, bulkRes] = await Promise.all([
         api.get('/iocs/search-exports', { params }),
-        api.get('/iocs/deep-searches', { params }).catch(() => ({ data: { items: [], total: 0 } }))
+        api.get('/iocs/deep-searches', { params }).catch(() => ({ data: { items: [], total: 0 } })),
+        api.get('/iocs/bulk/query-jobs', { params }).catch(() => ({ data: { items: [], total: 0 } }))
       ]);
       if (!mountedRef.current) return;
       const merged = mergeActionCenterItems(
         Array.isArray(exportRes.data?.items) ? exportRes.data.items : [],
-        Array.isArray(deepRes.data?.items) ? deepRes.data.items : []
+        Array.isArray(deepRes.data?.items) ? deepRes.data.items : [],
+        Array.isArray(bulkRes.data?.items) ? bulkRes.data.items : []
       );
       setItems(merged);
-      setTotal(Number(exportRes.data?.total || 0) + Number(deepRes.data?.total || 0));
+      setTotal(
+        Number(exportRes.data?.total || 0)
+        + Number(deepRes.data?.total || 0)
+        + Number(bulkRes.data?.total || 0)
+      );
     } catch (err) {
       if (!mountedRef.current) return;
       if (!silent) {
@@ -10859,6 +10879,9 @@ function ActionCenterPage() {
     if (row.task_type === 'ioc_deep_search') {
       return renderDeepSearchActions(row, busy);
     }
+    if (row.task_type === 'ioc_bulk_query') {
+      return <span style={{ color: '#64748b' }}>—</span>;
+    }
     if (row.status === 'ready') {
       return (
         <a href={`/api/iocs/search-exports/${row.id}/download`} style={{ color: '#86efac', fontWeight: 600 }}>
@@ -10996,14 +11019,16 @@ function ActionCenterPage() {
                         : '—'}
                     </td>
                     <td style={ui.td}>
-                      {row.task_type === 'ioc_deep_search'
-                        ? (deepSearchMatchLabel(row) ?? '—')
+                      {row.task_type === 'ioc_deep_search' || row.task_type === 'ioc_bulk_query'
+                        ? (deepSearchMatchLabel({ ...row, task_type: 'ioc_deep_search' }) ?? (row.record_count == null ? '—' : Number(row.record_count).toLocaleString('en-US')))
                         : (row.record_count == null ? '—' : Number(row.record_count).toLocaleString('en-US'))}
                     </td>
                     <td style={ui.td}>
                       {row.task_type === 'ioc_deep_search'
                         ? deepSearchDurationLabel(row)
-                        : formatFileSize(row.file_size)}
+                        : row.task_type === 'ioc_bulk_query'
+                          ? (row.failed ? `${Number(row.succeeded || 0).toLocaleString('en-US')} ok / ${Number(row.failed).toLocaleString('en-US')} failed` : formatActionCenterStatus(row) === 'Completed' ? `${Number(row.succeeded || 0).toLocaleString('en-US')} succeeded` : '—')
+                          : formatFileSize(row.file_size)}
                     </td>
                     <td style={{ ...ui.td, whiteSpace: 'nowrap' }} title={row.expires_at || ''}>
                       {(row.status === 'ready' || row.status === 'completed')
@@ -11096,6 +11121,10 @@ function IOCListPage() {
   const [suppressionIndexLoading, setSuppressionIndexLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [selectionContextKey, setSelectionContextKey] = useState(IOC_LIST_BROWSE_CONTEXT);
+  const [selectionMode, setSelectionMode] = useState(SELECTION_MODE_NONE);
+  const [allMatchingQueryContext, setAllMatchingQueryContext] = useState('');
+  const [allMatchingCount, setAllMatchingCount] = useState(0);
+  const [queryWidePreview, setQueryWidePreview] = useState(null);
   const [bulkToast, setBulkToast] = useState('');
   const [bulkModal, setBulkModal] = useState(null);
   const [bulkReason, setBulkReason] = useState('');
@@ -11318,14 +11347,36 @@ function IOCListPage() {
       ? (deepCursorStack[deepCursorStack.length - 1] || '')
       : (dslCursorStack[dslCursorStack.length - 1] || '')
   });
-  if (selectionContextKey !== resultContextKey) {
-    setSelectionContextKey(resultContextKey);
-    setSelectedIds(new Set());
-    if (bulkModal) {
-      setBulkModal(null);
-      setBulkError('');
+  const queryContextKey = iocListQueryContextKey({
+    dslActive,
+    executedQuery: appliedQuery,
+    deepSearchId: deepSearchIdParam
+  });
+  const selectionDecision = applySelectionForContexts({
+    selectionMode,
+    allMatchingQueryContext,
+    queryContextKey,
+    pageContextKey: resultContextKey,
+    selectionContextKey
+  });
+  if (selectionDecision.clearPageSelection || selectionDecision.selectionMode !== selectionMode) {
+    if (selectionDecision.clearPageSelection) {
+      setSelectedIds(new Set());
+      setSelectionContextKey(resultContextKey);
+      if (bulkModal) {
+        setBulkModal(null);
+        setBulkError('');
+      }
+    }
+    if (selectionDecision.selectionMode !== selectionMode) {
+      setSelectionMode(selectionDecision.selectionMode);
+      if (!selectionDecision.keepAllMatching) {
+        setAllMatchingQueryContext('');
+        setAllMatchingCount(0);
+      }
     }
   }
+  const isAllMatching = selectionMode === SELECTION_MODE_ALL_MATCHING && selectionDecision.keepAllMatching;
   const activeSelectedIds = selectedIdsForResultContext(
     selectedIds,
     selectionContextKey,
@@ -11333,12 +11384,70 @@ function IOCListPage() {
   );
   const selectedCount = activeSelectedIds.size;
   const pageSel = pageSelectionState(activeSelectedIds, pageIds);
+  const searchExactCount = Number.isFinite(Number(dslResult?.exact_count))
+    ? Number(dslResult.exact_count)
+    : null;
+  const previewExactCount = queryWidePreview?.query === appliedQuery && Number.isFinite(Number(queryWidePreview?.count))
+    ? Number(queryWidePreview.count)
+    : null;
+  const exactMatchCount = searchExactCount ?? previewExactCount;
+  const offerSelectAllMatching = shouldOfferSelectAllMatching({
+    canWrite,
+    dslActive,
+    executedQuery: appliedQuery,
+    deepSearchId: deepSearchIdParam,
+    pageSelectionAll: pageSel.all,
+    pageSelectableCount: pageIds.length,
+    exactMatchCount
+  });
+
+  useEffect(() => {
+    setQueryWidePreview(null);
+  }, [appliedQuery, dslActive, deepSearchIdParam]);
+
+  useEffect(() => {
+    if (!canWrite || !dslActive || deepSearchIdParam || !String(appliedQuery || '').trim()) return;
+    if (!pageSel.all) return;
+    if (searchExactCount != null) return;
+    if (queryWidePreview?.query === appliedQuery) return;
+    let cancelled = false;
+    api.post('/iocs/bulk/query/preview', { query: appliedQuery, selection_mode: 'all_matching' })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const n = Number(data?.match_count);
+        setQueryWidePreview({
+          query: appliedQuery,
+          count: Number.isFinite(n) ? n : null
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setQueryWidePreview({ query: appliedQuery, count: null });
+      });
+    return () => { cancelled = true; };
+  }, [canWrite, dslActive, deepSearchIdParam, appliedQuery, pageSel.all, searchExactCount, queryWidePreview]);
+
+  function clearIocSelection() {
+    setSelectedIds(new Set());
+    setSelectionMode(SELECTION_MODE_NONE);
+    setAllMatchingQueryContext('');
+    setAllMatchingCount(0);
+    setSelectionContextKey(resultContextKey);
+  }
+
+  function selectAllMatching() {
+    if (!offerSelectAllMatching) return;
+    setSelectionMode(SELECTION_MODE_ALL_MATCHING);
+    setAllMatchingQueryContext(queryContextKey);
+    setAllMatchingCount(exactMatchCount);
+  }
 
   function toggleRowSelected(id) {
     if (!id || !canWrite) return;
+    if (selectionMode === SELECTION_MODE_ALL_MATCHING) return;
     const next = toggleSelectedId(activeSelectedIds, id);
     setSelectedIds(next.selected);
     setSelectionContextKey(resultContextKey);
+    setSelectionMode(next.selected.size ? SELECTION_MODE_PAGE : SELECTION_MODE_NONE);
     if (next.capped) {
       setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
     }
@@ -11346,19 +11455,23 @@ function IOCListPage() {
 
   function togglePageSelected() {
     if (!canWrite) return;
+    if (selectionMode === SELECTION_MODE_ALL_MATCHING) {
+      clearIocSelection();
+      return;
+    }
     if (pageSel.all) {
-      setSelectedIds(new Set());
-      setSelectionContextKey(resultContextKey);
+      clearIocSelection();
       return;
     }
     const next = selectPageIds(new Set(), pageIds);
     setSelectedIds(next.selected);
     setSelectionContextKey(resultContextKey);
+    setSelectionMode(SELECTION_MODE_PAGE);
     if (next.capped) setBulkToast(`Selection is limited to ${BULK_TRIAGE_MAX} IOCs.`);
   }
 
   async function openBulkModal(kind) {
-    if (!canWrite || selectedCount === 0) return;
+    if (!canWrite || (!isAllMatching && selectedCount === 0)) return;
     setBulkError('');
     setBulkReason('');
     setBulkTagId('');
@@ -11389,6 +11502,54 @@ function IOCListPage() {
   }
 
   async function confirmBulkAction() {
+    const requireReason = bulkModal === 'suppress' || bulkModal === 'expire';
+    const requireChoice = bulkModal === 'tag' || bulkModal === 'classification';
+    const choice = bulkModal === 'tag' ? bulkTagId : bulkClassSlug;
+    if (bulkConfirmDisabled({ requireReason, reason: bulkReason, requireChoice, choice })) {
+      setBulkError(requireReason ? 'Reason is required (min 3 characters).' : 'Select a value to apply.');
+      return;
+    }
+    if (isAllMatching) {
+      const path = queryWideBulkPath(bulkModal);
+      if (!path || !appliedQuery.trim()) {
+        setBulkError('Query-wide bulk requires an executed search query.');
+        return;
+      }
+      setBulkBusy(true);
+      setBulkError('');
+      try {
+        const body = buildQueryWideBulkPayload({
+          query: appliedQuery,
+          action: bulkModal,
+          tagId: bulkTagId,
+          classificationSlug: bulkClassSlug,
+          reason: bulkReason.trim()
+        });
+        const { data } = await api.post(path, body);
+        if (data?.mode === 'async') {
+          setBulkToast(formatQueryWideAsyncToast(bulkModal, data.match_count ?? allMatchingCount));
+          clearIocSelection();
+          setBulkModal(null);
+          return;
+        }
+        setBulkToast(formatBulkTriageSummary(data || {}));
+        clearIocSelection();
+        setBulkModal(null);
+        if (dslActive && appliedQuery) {
+          await runDsl(appliedQuery);
+        } else {
+          await loadData(page, pageSize);
+        }
+        fetchActiveSuppressionIndex()
+          .then((idx) => setSuppressionIndex(idx))
+          .catch(() => {});
+      } catch (err) {
+        setBulkError(apiErrorMessage(err, 'Bulk action failed'));
+      } finally {
+        setBulkBusy(false);
+      }
+      return;
+    }
     const ids = bulkIocIdsForVisiblePage(
       { selectedIds: activeSelectedIds, contextKey: selectionContextKey },
       resultContextKey,
@@ -11397,13 +11558,6 @@ function IOCListPage() {
     if (!ids.length) {
       setSelectedIds(new Set());
       setBulkModal(null);
-      return;
-    }
-    const requireReason = bulkModal === 'suppress' || bulkModal === 'expire';
-    const requireChoice = bulkModal === 'tag' || bulkModal === 'classification';
-    const choice = bulkModal === 'tag' ? bulkTagId : bulkClassSlug;
-    if (bulkConfirmDisabled({ requireReason, reason: bulkReason, requireChoice, choice })) {
-      setBulkError(requireReason ? 'Reason is required (min 3 characters).' : 'Select a value to apply.');
       return;
     }
     setBulkBusy(true);
@@ -12273,7 +12427,7 @@ function IOCListPage() {
       </div>
       )}
 
-      {showIocListResultChrome && canWrite && selectedCount > 0 && (
+      {showIocListResultChrome && canWrite && (isAllMatching || selectedCount > 0) && (
         <div style={{
           marginBottom: 10,
           padding: '10px 12px',
@@ -12286,14 +12440,25 @@ function IOCListPage() {
           alignItems: 'center'
         }}>
           <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 13 }}>
-            {formatPageSelectionLabel(selectedCount)}
-            {selectedCount >= BULK_TRIAGE_MAX ? ` (max ${BULK_TRIAGE_MAX})` : ''}
+            {isAllMatching
+              ? formatAllMatchingSelectionLabel(allMatchingCount)
+              : formatPageSelectionLabel(selectedCount)}
+            {!isAllMatching && selectedCount >= BULK_TRIAGE_MAX ? ` (max ${BULK_TRIAGE_MAX})` : ''}
           </span>
+          {offerSelectAllMatching && !isAllMatching ? (
+            <button
+              type="button"
+              className={buttonClassName({ size: 'compact', variant: 'ghost' })}
+              onClick={selectAllMatching}
+            >
+              {formatSelectAllMatchingActionLabel(exactMatchCount)}
+            </button>
+          ) : null}
           <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('tag')}>Add tag</button>
           <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('classification')}>Add classification</button>
           <button type="button" className={buttonClassName({ size: 'compact' })} onClick={() => openBulkModal('suppress')}>Suppress</button>
           <button type="button" className={buttonClassName({ size: 'compact', variant: 'danger' })} onClick={() => openBulkModal('expire')}>Expire</button>
-          <button type="button" className={buttonClassName({ size: 'compact', variant: 'ghost' })} onClick={() => setSelectedIds(new Set())}>Clear selection</button>
+          <button type="button" className={buttonClassName({ size: 'compact', variant: 'ghost' })} onClick={clearIocSelection}>Clear selection</button>
         </div>
       )}
 
@@ -12332,8 +12497,8 @@ function IOCListPage() {
                   <input
                     type="checkbox"
                     aria-label="Select all IOCs on this page"
-                    checked={pageSel.all}
-                    ref={(el) => { if (el) el.indeterminate = pageSel.some; }}
+                    checked={isAllMatching || pageSel.all}
+                    ref={(el) => { if (el) el.indeterminate = !isAllMatching && pageSel.some; }}
                     onChange={togglePageSelected}
                   />
                 </th>
@@ -12371,7 +12536,7 @@ function IOCListPage() {
                 ? classVisible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ')
                 : 'Unknown';
               const rowId = parseIocRowId(r);
-              const isSelected = rowId != null && activeSelectedIds.has(rowId);
+              const isSelected = rowId != null && (isAllMatching || activeSelectedIds.has(rowId));
               return (
               <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #334155', background: isSelected ? 'rgba(37,99,235,0.12)' : undefined }}>
                 {canWrite ? (
@@ -12491,22 +12656,28 @@ function IOCListPage() {
       <BulkActionConfirmModal
         open={Boolean(bulkModal)}
         title={
-          bulkModal === 'tag' ? `Add tag to ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
-            : bulkModal === 'classification' ? `Add classification to ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
-              : bulkModal === 'suppress' ? `Suppress ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
-                : bulkModal === 'expire' ? `Expire ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
-                  : 'Bulk action'
+          isAllMatching
+            ? formatQueryWideConfirmTitle(bulkModal, allMatchingCount)
+            : bulkModal === 'tag' ? `Add tag to ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+              : bulkModal === 'classification' ? `Add classification to ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+                : bulkModal === 'suppress' ? `Suppress ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+                  : bulkModal === 'expire' ? `Expire ${selectedCount} IOC${selectedCount === 1 ? '' : 's'}`
+                    : 'Bulk action'
         }
         description={
-          bulkModal === 'tag' || bulkModal === 'classification'
-            ? 'This applies only to the IOCs you selected on this page. It does not apply to all search matches.'
-            : 'This applies only to the IOCs you selected on this page. It does not apply to all search matches. A reason is required and will be written to the audit log.'
+          isAllMatching
+            ? formatQueryWideConfirmDescription(bulkModal, pageIds.length)
+            : bulkModal === 'tag' || bulkModal === 'classification'
+              ? 'This applies only to the IOCs you selected on this page. It does not apply to all search matches.'
+              : 'This applies only to the IOCs you selected on this page. It does not apply to all search matches. A reason is required and will be written to the audit log.'
         }
         confirmLabel={
-          bulkModal === 'tag' ? 'Add tag'
-            : bulkModal === 'classification' ? 'Add classification'
-              : bulkModal === 'suppress' ? 'Suppress'
-                : 'Expire'
+          isAllMatching
+            ? formatQueryWideConfirmButton(bulkModal, allMatchingCount)
+            : bulkModal === 'tag' ? 'Add tag'
+              : bulkModal === 'classification' ? 'Add classification'
+                : bulkModal === 'suppress' ? 'Suppress'
+                  : 'Expire'
         }
         loading={bulkBusy}
         error={bulkError}
@@ -12522,35 +12693,57 @@ function IOCListPage() {
           choice: bulkModal === 'tag' ? bulkTagId : bulkClassSlug
         })}
         extraContent={
-          bulkModal === 'tag' ? (
-            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
-              <span style={{ color: '#94a3b8', fontSize: 13 }}>Tag</span>
-              <select
-                value={bulkTagId}
-                onChange={(e) => setBulkTagId(e.target.value)}
-                style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
-              >
-                <option value="">Select a tag…</option>
-                {bulkTagOptions.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </label>
-          ) : bulkModal === 'classification' ? (
-            <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
-              <span style={{ color: '#94a3b8', fontSize: 13 }}>Classification</span>
-              <select
-                value={bulkClassSlug}
-                onChange={(e) => setBulkClassSlug(e.target.value)}
-                style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
-              >
-                <option value="">Select a classification…</option>
-                {bulkClassOptions.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label || c.value}</option>
-                ))}
-              </select>
-            </label>
-          ) : null
+          <>
+            {bulkModal === 'tag' ? (
+              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+                <span style={{ color: '#94a3b8', fontSize: 13 }}>Tag</span>
+                <select
+                  value={bulkTagId}
+                  onChange={(e) => setBulkTagId(e.target.value)}
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                >
+                  <option value="">Select a tag…</option>
+                  {bulkTagOptions.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : bulkModal === 'classification' ? (
+              <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+                <span style={{ color: '#94a3b8', fontSize: 13 }}>Classification</span>
+                <select
+                  value={bulkClassSlug}
+                  onChange={(e) => setBulkClassSlug(e.target.value)}
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                >
+                  <option value="">Select a classification…</option>
+                  {bulkClassOptions.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label || c.value}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {isAllMatching ? (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: '1px solid #475569',
+                  background: '#020617',
+                  color: '#e2e8f0',
+                  fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+                  fontSize: 13,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word'
+                }}>
+                  {appliedQuery}
+                </div>
+                <div style={{ marginTop: 8, color: '#cbd5e1', fontSize: 13 }}>
+                  Matching IOCs: {Number(allMatchingCount || 0).toLocaleString('en-US')}
+                </div>
+              </div>
+            ) : null}
+          </>
         }
       />
       </section>

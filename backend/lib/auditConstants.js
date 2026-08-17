@@ -126,6 +126,9 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_DEEP_SEARCH_FAILED: 'ioc.deep_search.failed',
   IOC_DEEP_SEARCH_CANCELLED: 'ioc.deep_search.cancelled',
   IOC_DEEP_SEARCH_EXPIRED: 'ioc.deep_search.expired',
+  IOC_BULK_QUERY_ENQUEUED: 'ioc.bulk_query.enqueued',
+  IOC_BULK_QUERY_COMPLETED: 'ioc.bulk_query.completed',
+  IOC_BULK_QUERY_FAILED: 'ioc.bulk_query.failed',
   SETTINGS_UPDATED: 'settings.updated',
   ENRICHMENT_SETTINGS_UPDATED: 'enrichment.settings.updated',
   ENRICHMENT_KEY_REMOVED: 'enrichment.key.removed',
@@ -203,7 +206,8 @@ export const AUDIT_ENTITY = Object.freeze({
   SYSTEM_BACKUP: 'system_backup',
   SYSTEM_RESTORE: 'system_restore',
   FILE_ARTIFACT: 'file_artifact',
-  IOC_SAVED_SEARCH: 'ioc_saved_search'
+  IOC_SAVED_SEARCH: 'ioc_saved_search',
+  IOC_BULK_QUERY: 'ioc_bulk_query'
 });
 
 /** Human-readable labels for UI */
@@ -303,6 +307,9 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_SAVED_SEARCH_CREATED]: 'IOC Saved Search Created',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_UPDATED]: 'IOC Saved Search Updated',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_DELETED]: 'IOC Saved Search Deleted',
+  [AUDIT_ACTION.IOC_BULK_QUERY_ENQUEUED]: 'IOC Query-Wide Bulk Enqueued',
+  [AUDIT_ACTION.IOC_BULK_QUERY_COMPLETED]: 'IOC Query-Wide Bulk Completed',
+  [AUDIT_ACTION.IOC_BULK_QUERY_FAILED]: 'IOC Query-Wide Bulk Failed',
   [AUDIT_ACTION.SETTINGS_UPDATED]: 'Settings Updated',
   [AUDIT_ACTION.ENRICHMENT_SETTINGS_UPDATED]: 'Enrichment Settings Updated',
   [AUDIT_ACTION.ENRICHMENT_KEY_REMOVED]: 'Enrichment API Key Removed',

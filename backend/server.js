@@ -69,6 +69,8 @@ import {
 } from './routes/analystIntelligence.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { registerIocBulkTriageRoutes } from './routes/iocBulkTriage.js';
+import { registerIocBulkQueryTriageRoutes } from './routes/iocBulkQueryTriage.js';
+import { BULK_QUERY_QUEUE_NAME } from './lib/iocBulkQueryJob/config.js';
 import { registerIocDeleteRoute } from './routes/iocDelete.js';
 import { formatExpirationSummary, buildIocExpirationSummary, recomputeIocGlobalStatus } from './lib/iocExpiration.js';
 import {
@@ -351,6 +353,7 @@ const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null });
 const importQueue = new Queue(queueName, { connection: redis });
 const iocSearchExportQueue = new Queue(EXPORT_QUEUE_NAME, { connection: redis });
 const iocDeepSearchQueue = new Queue(DEEP_SEARCH_QUEUE_NAME, { connection: redis });
+const iocBulkQueryQueue = new Queue(BULK_QUERY_QUEUE_NAME, { connection: redis });
 const systemBackupQueue = new Queue(BACKUP_QUEUE_NAME, { connection: redis });
 const auditLogService = createAuditLogService(pool);
 
@@ -2731,6 +2734,10 @@ registerRouteModule('ip_enrichment');
 registerIocExpirationRoutes(app, pool, auditLogService);
 registerRouteModule('ioc_expiration');
 registerIocBulkTriageRoutes(app, pool, auditLogService);
+registerIocBulkQueryTriageRoutes(app, pool, {
+  bulkQueryQueue: iocBulkQueryQueue,
+  audit: auditLogService
+});
 registerRouteModule('ioc_bulk_triage');
 registerIocConfidenceRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache

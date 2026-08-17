@@ -18,6 +18,10 @@ import {
 
 export { BULK_TRIAGE_MAX_ITEMS };
 
+function bulkMeta(base, extraMetadata) {
+  return { bulk: true, ...(base || {}), ...(extraMetadata || {}) };
+}
+
 export function parseIocIdList(raw, { max = BULK_TRIAGE_MAX_ITEMS } = {}) {
   if (!Array.isArray(raw)) {
     return { ok: false, status: 400, message: 'ioc_ids must be an array of positive integers' };
@@ -76,7 +80,7 @@ async function loadIocsByIds(pool, ids) {
   return { rows, byId };
 }
 
-export async function bulkAddTag(pool, { iocIds, tagId, user, req, audit }) {
+export async function bulkAddTag(pool, { iocIds, tagId, user, req, audit, extraMetadata }) {
   const idNum = Number(tagId);
   if (!Number.isInteger(idNum) || idNum <= 0) {
     return { ok: false, status: 400, message: 'tag_id must be a positive integer' };
@@ -116,12 +120,11 @@ export async function bulkAddTag(pool, { iocIds, tagId, user, req, audit }) {
           subjectIocType: ioc.observable_type || null,
           subjectIocValue: ioc.observable || null,
           severity: AUDIT_SEVERITY.INFO,
-          metadata: {
-            bulk: true,
+          metadata: bulkMeta({
             ioc_id: String(id),
             tag_id: tag.id,
             tag_name: tag.name
-          }
+          }, extraMetadata)
         }).catch(() => {});
         results.push(resultRow(id, 'ok'));
       } else {
@@ -134,7 +137,7 @@ export async function bulkAddTag(pool, { iocIds, tagId, user, req, audit }) {
   return { ok: true, ...summarizeBulkResults(results) };
 }
 
-export async function bulkAddClassification(pool, { iocIds, slug, user, req, audit }) {
+export async function bulkAddClassification(pool, { iocIds, slug, user, req, audit, extraMetadata }) {
   if (!String(slug || '').trim()) {
     return { ok: false, status: 400, message: 'classification_slug is required' };
   }
@@ -187,7 +190,7 @@ export async function bulkAddClassification(pool, { iocIds, slug, user, req, aud
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(id),
         entityDisplay: `${ioc.observable_type} · ${ioc.observable}`,
-        metadata: { bulk: true, added: addSlug, observable_type: ioc.observable_type }
+        metadata: bulkMeta({ added: addSlug, observable_type: ioc.observable_type }, extraMetadata)
       }).catch(() => {});
       results.push(resultRow(id, 'ok'));
     } catch (err) {
@@ -197,7 +200,7 @@ export async function bulkAddClassification(pool, { iocIds, slug, user, req, aud
   return { ok: true, ...summarizeBulkResults(results) };
 }
 
-export async function bulkSuppress(pool, { iocIds, reason, expiresAt, user, req, audit }) {
+export async function bulkSuppress(pool, { iocIds, reason, expiresAt, user, req, audit, extraMetadata }) {
   const reasonCheck = parseRequiredReason(reason, { field: 'reason', minLength: 3, maxLength: 500 });
   if (!reasonCheck.ok) return { ok: false, status: 400, message: reasonCheck.message };
   const bulkAudit = audit?.auditSuccess
@@ -205,7 +208,7 @@ export async function bulkSuppress(pool, { iocIds, reason, expiresAt, user, req,
       ...audit,
       auditSuccess: (evt) => audit.auditSuccess({
         ...evt,
-        metadata: { ...(evt?.metadata || {}), bulk: true }
+        metadata: bulkMeta(evt?.metadata, extraMetadata)
       })
     }
     : audit;
@@ -236,7 +239,7 @@ export async function bulkSuppress(pool, { iocIds, reason, expiresAt, user, req,
   return { ok: true, ...summarizeBulkResults(results) };
 }
 
-export async function bulkExpire(pool, { iocIds, reason, user, req, audit }, deps = {}) {
+export async function bulkExpire(pool, { iocIds, reason, user, req, audit, extraMetadata }, deps = {}) {
   const recompute = deps.recomputeIocGlobalStatus || recomputeIocGlobalStatus;
   const reasonCheck = parseRequiredReason(reason, { field: 'reason', minLength: 3 });
   if (!reasonCheck.ok) return { ok: false, status: 400, message: reasonCheck.message };
@@ -277,12 +280,11 @@ export async function bulkExpire(pool, { iocIds, reason, user, req, audit }, dep
         entityType: AUDIT_ENTITY.IOC,
         entityId: String(id),
         entityDisplay: `${ioc.observable_type} · ${ioc.observable}`,
-        metadata: {
-          bulk: true,
+        metadata: bulkMeta({
           reason: reasonCheck.reason,
           manual_status: 'expired',
           observable_type: ioc.observable_type
-        }
+        }, extraMetadata)
       }).catch(() => {});
       results.push(resultRow(id, 'ok'));
     } catch (err) {

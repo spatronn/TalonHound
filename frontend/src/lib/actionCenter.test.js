@@ -58,6 +58,10 @@ test('deep-search task type has a label', () => {
   assert.equal(taskTypeLabel('ioc_deep_search'), 'IOC Deep Search');
 });
 
+test('query-wide bulk task type has a label', () => {
+  assert.equal(taskTypeLabel('ioc_bulk_query'), 'IOC Bulk Action');
+});
+
 test('deep-search statuses share export badge/status vocabulary', () => {
   // 'completed'/'running' (deep search) render like 'ready'/'processing' (export).
   assert.deepEqual(actionCenterStatusBadgeStyle('completed'), actionCenterStatusBadgeStyle('ready'));

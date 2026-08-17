@@ -75,6 +75,172 @@ export function formatPageSelectionLabel(count) {
   return n === 1 ? '1 selected on this page' : `${n} selected on this page`;
 }
 
+export const SELECTION_MODE_NONE = 'none';
+export const SELECTION_MODE_PAGE = 'page';
+export const SELECTION_MODE_ALL_MATCHING = 'all_matching';
+
+/**
+ * Executed query/mode identity only — no page, cursor, or page size.
+ * Used to bind query-wide selection and to clear it when the result set changes.
+ */
+export function iocListQueryContextKey({
+  dslActive = false,
+  executedQuery = '',
+  deepSearchId = ''
+} = {}) {
+  const deepId = String(deepSearchId || '').trim();
+  if (deepId) return `deep:${deepId}`;
+  if (dslActive) return `search:${String(executedQuery || '').trim()}`;
+  return 'browse';
+}
+
+/**
+ * Gmail-like second-stage offer. Requires an executed non-empty search, a full
+ * current-page selection, a finite exact match count greater than the page, and write access.
+ * Unfiltered browse, Deep Search snapshots, and `2,000+` (null exact count) never qualify.
+ */
+export function shouldOfferSelectAllMatching({
+  canWrite = false,
+  dslActive = false,
+  executedQuery = '',
+  deepSearchId = '',
+  pageSelectionAll = false,
+  pageSelectableCount = 0,
+  exactMatchCount = null
+} = {}) {
+  if (!canWrite) return false;
+  if (String(deepSearchId || '').trim()) return false;
+  if (!dslActive) return false;
+  if (!String(executedQuery || '').trim()) return false;
+  if (!pageSelectionAll) return false;
+  const pageN = Number(pageSelectableCount) || 0;
+  if (pageN <= 0) return false;
+  const total = Number(exactMatchCount);
+  if (!Number.isFinite(total) || total <= pageN) return false;
+  return true;
+}
+
+export function formatSelectAllMatchingActionLabel(count) {
+  const n = Number(count) || 0;
+  return `Select all ${n.toLocaleString('en-US')} matching IOCs`;
+}
+
+export function formatAllMatchingSelectionLabel(count) {
+  const n = Number(count) || 0;
+  return `All ${n.toLocaleString('en-US')} matching IOCs selected`;
+}
+
+/**
+ * PAGE selection is bound to the visible page. ALL_MATCHING is bound to the executed query.
+ * Pagination must not clear ALL_MATCHING; any query/mode change must.
+ */
+export function applySelectionForContexts({
+  selectionMode = SELECTION_MODE_NONE,
+  allMatchingQueryContext = '',
+  queryContextKey = '',
+  pageContextKey = '',
+  selectionContextKey = ''
+} = {}) {
+  if (selectionMode === SELECTION_MODE_ALL_MATCHING) {
+    if (String(allMatchingQueryContext || '') !== String(queryContextKey || '')) {
+      return {
+        selectionMode: SELECTION_MODE_NONE,
+        clearPageSelection: true,
+        keepAllMatching: false
+      };
+    }
+    return {
+      selectionMode: SELECTION_MODE_ALL_MATCHING,
+      clearPageSelection: false,
+      keepAllMatching: true
+    };
+  }
+  if (String(selectionContextKey || '') !== String(pageContextKey || '')) {
+    return {
+      selectionMode: SELECTION_MODE_NONE,
+      clearPageSelection: true,
+      keepAllMatching: false
+    };
+  }
+  return {
+    selectionMode: selectionMode || SELECTION_MODE_NONE,
+    clearPageSelection: false,
+    keepAllMatching: false
+  };
+}
+
+export function queryWideBulkPath(action) {
+  if (action === 'tag') return '/iocs/bulk/query/tags';
+  if (action === 'classification') return '/iocs/bulk/query/classifications';
+  if (action === 'suppress') return '/iocs/bulk/query/suppress';
+  if (action === 'expire') return '/iocs/bulk/query/expire';
+  return '';
+}
+
+/** Query-wide HTTP body. Never includes ioc_ids or a client-supplied match count. */
+export function buildQueryWideBulkPayload({
+  query,
+  action,
+  tagId,
+  classificationSlug,
+  reason
+} = {}) {
+  const body = {
+    selection_mode: SELECTION_MODE_ALL_MATCHING,
+    query: String(query || '')
+  };
+  if (action === 'tag' && tagId != null && tagId !== '') body.tag_id = Number(tagId);
+  if (action === 'classification' && classificationSlug) {
+    body.classification_slug = String(classificationSlug);
+  }
+  if ((action === 'suppress' || action === 'expire') && reason != null) {
+    body.reason = String(reason);
+  }
+  return body;
+}
+
+export function formatQueryWideConfirmTitle(action, count) {
+  const formatted = (Number(count) || 0).toLocaleString('en-US');
+  if (action === 'tag') return `Add tag to ${formatted} matching IOCs`;
+  if (action === 'classification') return `Add classification to ${formatted} matching IOCs`;
+  if (action === 'suppress') return `Suppress ${formatted} matching IOCs`;
+  if (action === 'expire') return `Expire ${formatted} matching IOCs`;
+  return 'Bulk action';
+}
+
+export function formatQueryWideConfirmDescription(action, pageSelectableCount) {
+  const pageN = Number(pageSelectableCount) || 0;
+  const pageBit = pageN > 0
+    ? `the ${pageN.toLocaleString('en-US')} IOCs visible on this page`
+    : 'the IOCs visible on this page';
+  const scope = `This action applies to ALL IOCs matching the current search, not only ${pageBit}.`;
+  if (action === 'suppress' || action === 'expire') {
+    return `${scope} A reason is required and will be written to the audit log.`;
+  }
+  return scope;
+}
+
+export function formatQueryWideConfirmButton(action, count) {
+  const formatted = (Number(count) || 0).toLocaleString('en-US');
+  if (action === 'tag') return `Add tag to ${formatted} IOCs`;
+  if (action === 'classification') return `Add classification to ${formatted} IOCs`;
+  if (action === 'suppress') return `Suppress ${formatted} IOCs`;
+  if (action === 'expire') return `Expire ${formatted} IOCs`;
+  return 'Confirm';
+}
+
+export function formatQueryWideAsyncToast(action, count) {
+  const formatted = (Number(count) || 0).toLocaleString('en-US');
+  const verb = action === 'tag'
+    ? 'Add tag'
+    : action === 'classification'
+      ? 'Add classification'
+      : action === 'suppress'
+        ? 'Suppress'
+        : 'Expire';
+  return `${verb} queued for ${formatted} matching IOCs. Track progress in Action Center.`;
+}
+
 export function parseIocRowId(row) {
   const n = Number(row?.id);
   return Number.isInteger(n) && n > 0 ? n : null;

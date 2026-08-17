@@ -17,7 +17,20 @@ import {
   applyIocSelectionContext,
   bulkIocIdsForContext,
   bulkIocIdsForVisiblePage,
-  formatPageSelectionLabel
+  formatPageSelectionLabel,
+  SELECTION_MODE_NONE,
+  SELECTION_MODE_PAGE,
+  SELECTION_MODE_ALL_MATCHING,
+  iocListQueryContextKey,
+  shouldOfferSelectAllMatching,
+  formatSelectAllMatchingActionLabel,
+  formatAllMatchingSelectionLabel,
+  applySelectionForContexts,
+  queryWideBulkPath,
+  buildQueryWideBulkPayload,
+  formatQueryWideConfirmTitle,
+  formatQueryWideConfirmDescription,
+  formatQueryWideConfirmButton
 } from './iocBulkTriage.js';
 
 test('parseIocRowId accepts positive integers only', () => {
@@ -300,4 +313,233 @@ test('re-running the same search after resetting to the first page clears page-2
 test('formatPageSelectionLabel is page-scoped copy', () => {
   assert.equal(formatPageSelectionLabel(1), '1 selected on this page');
   assert.equal(formatPageSelectionLabel(25), '25 selected on this page');
+});
+
+const GMAIL_OFFER = {
+  canWrite: true,
+  dslActive: true,
+  executedQuery: 'tag contains "mirai"',
+  pageSelectionAll: true,
+  pageSelectableCount: 25,
+  exactMatchCount: 2143
+};
+
+test('header select-all on a 2,143-match search offers query-wide select with page copy', () => {
+  assert.equal(formatPageSelectionLabel(25), '25 selected on this page');
+  assert.equal(shouldOfferSelectAllMatching(GMAIL_OFFER), true);
+  assert.equal(
+    formatSelectAllMatchingActionLabel(2143),
+    'Select all 2,143 matching IOCs'
+  );
+});
+
+test('clicking select-all-matching switches to all_matching copy', () => {
+  assert.equal(
+    formatAllMatchingSelectionLabel(2143),
+    'All 2,143 matching IOCs selected'
+  );
+});
+
+test('query-wide Add tag payload is the query contract, not 2,143 client IDs', () => {
+  const body = buildQueryWideBulkPayload({
+    query: 'tag contains "mirai"',
+    action: 'tag',
+    tagId: 9
+  });
+  assert.equal(body.selection_mode, SELECTION_MODE_ALL_MATCHING);
+  assert.equal(body.query, 'tag contains "mirai"');
+  assert.equal(body.tag_id, 9);
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'ioc_ids'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'match_count'), false);
+  assert.equal(queryWideBulkPath('tag'), '/iocs/bulk/query/tags');
+  assert.equal(formatQueryWideConfirmTitle('tag', 2143), 'Add tag to 2,143 matching IOCs');
+  assert.match(
+    formatQueryWideConfirmDescription('tag', 25),
+    /ALL IOCs matching the current search, not only the 25 IOCs visible on this page/
+  );
+  assert.equal(formatQueryWideConfirmButton('tag', 2143), 'Add tag to 2,143 IOCs');
+});
+
+test('query-wide Add classification uses the same safety contract', () => {
+  const body = buildQueryWideBulkPayload({
+    query: 'tag contains "mirai"',
+    action: 'classification',
+    classificationSlug: 'malware'
+  });
+  assert.equal(body.selection_mode, 'all_matching');
+  assert.equal(body.classification_slug, 'malware');
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'ioc_ids'), false);
+  assert.equal(queryWideBulkPath('classification'), '/iocs/bulk/query/classifications');
+  assert.equal(
+    formatQueryWideConfirmTitle('classification', 2143),
+    'Add classification to 2,143 matching IOCs'
+  );
+  assert.equal(formatQueryWideConfirmButton('classification', 2143), 'Add classification to 2,143 IOCs');
+});
+
+test('query-wide Suppress confirmation shows exact query, count, and required reason', () => {
+  const body = buildQueryWideBulkPayload({
+    query: 'tag contains "mirai"',
+    action: 'suppress',
+    reason: 'test cleanup'
+  });
+  assert.equal(body.selection_mode, 'all_matching');
+  assert.equal(body.query, 'tag contains "mirai"');
+  assert.equal(body.reason, 'test cleanup');
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'ioc_ids'), false);
+  assert.equal(formatQueryWideConfirmTitle('suppress', 2143), 'Suppress 2,143 matching IOCs');
+  assert.match(formatQueryWideConfirmDescription('suppress', 25), /A reason is required/);
+  assert.equal(formatQueryWideConfirmButton('suppress', 2143), 'Suppress 2,143 IOCs');
+  assert.equal(queryWideBulkPath('suppress'), '/iocs/bulk/query/suppress');
+});
+
+test('query-wide Expire uses the same safety checks as Suppress', () => {
+  const body = buildQueryWideBulkPayload({
+    query: 'tag contains "mirai"',
+    action: 'expire',
+    reason: 'stale test iocs'
+  });
+  assert.equal(body.query, 'tag contains "mirai"');
+  assert.equal(body.reason, 'stale test iocs');
+  assert.equal(formatQueryWideConfirmTitle('expire', 2143), 'Expire 2,143 matching IOCs');
+  assert.equal(formatQueryWideConfirmButton('expire', 2143), 'Expire 2,143 IOCs');
+  assert.equal(queryWideBulkPath('expire'), '/iocs/bulk/query/expire');
+});
+
+test('query-wide confirm buttons are never a generic Confirm', () => {
+  for (const action of ['tag', 'classification', 'suppress', 'expire']) {
+    assert.notEqual(formatQueryWideConfirmButton(action, 2143), 'Confirm');
+  }
+});
+
+test('executed query change clears all_matching', () => {
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: 'tag contains "mirai"'
+    }),
+    queryContextKey: iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: 'tag contains "emotet"'
+    }),
+    pageContextKey: searchContext('tag contains "emotet"'),
+    selectionContextKey: searchContext('tag contains "mirai"')
+  });
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+  assert.equal(next.keepAllMatching, false);
+  assert.equal(next.clearPageSelection, true);
+});
+
+test('Saved Search query change clears all_matching', () => {
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: 'type equals "ip"'
+    }),
+    queryContextKey: iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: 'source contains "usom"'
+    }),
+    pageContextKey: searchContext('source contains "usom"'),
+    selectionContextKey: searchContext('type equals "ip"')
+  });
+  assert.equal(next.keepAllMatching, false);
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+});
+
+test('Clear / return to browse clears all_matching', () => {
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: iocListQueryContextKey({
+      dslActive: true,
+      executedQuery: 'tag contains "mirai"'
+    }),
+    queryContextKey: iocListQueryContextKey({ dslActive: false }),
+    pageContextKey: browseContext(),
+    selectionContextKey: searchContext('tag contains "mirai"')
+  });
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+  assert.equal(next.clearPageSelection, true);
+});
+
+test('pagination while all_matching stays active because the query is unchanged', () => {
+  const query = 'tag contains "mirai"';
+  const queryKey = iocListQueryContextKey({ dslActive: true, executedQuery: query });
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_ALL_MATCHING,
+    allMatchingQueryContext: queryKey,
+    queryContextKey: queryKey,
+    pageContextKey: searchContext(query, { cursor: 'page-2' }),
+    selectionContextKey: searchContext(query)
+  });
+  assert.equal(next.selectionMode, SELECTION_MODE_ALL_MATCHING);
+  assert.equal(next.keepAllMatching, true);
+  assert.equal(next.clearPageSelection, false);
+});
+
+test('page mode pagination still clears selection', () => {
+  const next = applySelectionForContexts({
+    selectionMode: SELECTION_MODE_PAGE,
+    queryContextKey: iocListQueryContextKey({ dslActive: false }),
+    pageContextKey: browseContext({ page: 2 }),
+    selectionContextKey: browseContext({ page: 1 })
+  });
+  assert.equal(next.selectionMode, SELECTION_MODE_NONE);
+  assert.equal(next.clearPageSelection, true);
+});
+
+test('unfiltered browse never offers query-wide select-all', () => {
+  assert.equal(shouldOfferSelectAllMatching({
+    canWrite: true,
+    dslActive: false,
+    executedQuery: '',
+    pageSelectionAll: true,
+    pageSelectableCount: 25,
+    exactMatchCount: 5000
+  }), false);
+  assert.equal(iocListQueryContextKey({ dslActive: false }), 'browse');
+});
+
+test('select-all-matching is hidden without an exact count, when the page holds all matches, and for readonly', () => {
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, exactMatchCount: null }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, exactMatchCount: 25 }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, pageSelectionAll: false }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, canWrite: false }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, deepSearchId: 'ds-1' }), false);
+  assert.equal(shouldOfferSelectAllMatching({ ...GMAIL_OFFER, executedQuery: '   ' }), false);
+});
+
+test('unexecuted search-box text does not change the query-wide context', () => {
+  const executed = iocListQueryContextKey({
+    dslActive: true,
+    executedQuery: 'tag contains "mirai"',
+    searchInput: 'tag contains "emotet"'
+  });
+  assert.equal(
+    executed,
+    iocListQueryContextKey({ dslActive: true, executedQuery: 'tag contains "mirai"' })
+  );
+});
+
+test('IOC List wires query-wide selection, confirmation copy, and query-bound payload', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const mainJsx = await fs.readFile(path.join(here, '../main.jsx'), 'utf8');
+  assert.match(mainJsx, /shouldOfferSelectAllMatching/);
+  assert.match(mainJsx, /formatSelectAllMatchingActionLabel/);
+  assert.match(mainJsx, /formatAllMatchingSelectionLabel/);
+  assert.match(mainJsx, /buildQueryWideBulkPayload/);
+  assert.match(mainJsx, /queryWideBulkPath/);
+  assert.match(mainJsx, /formatQueryWideConfirmDescription/);
+  assert.match(mainJsx, /formatQueryWideConfirmTitle/);
+  assert.match(mainJsx, /Matching IOCs:/);
+  assert.match(mainJsx, /\/iocs\/bulk\/query\/preview/);
+  assert.match(mainJsx, /SELECTION_MODE_ALL_MATCHING/);
+  assert.match(mainJsx, /applySelectionForContexts/);
+  assert.match(mainJsx, /buildQueryWideBulkPayload/);
+  assert.match(mainJsx, /queryWideBulkPath\(bulkModal\)/);
 });
