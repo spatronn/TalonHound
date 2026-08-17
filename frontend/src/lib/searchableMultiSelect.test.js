@@ -2,6 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MULTI_SELECT_MAX_CHIPS,
+  MULTI_SELECT_LIST_MAX_HEIGHT,
+  MULTI_SELECT_INLINE_LIST_MAX_HEIGHT,
+  multiSelectListMaxHeight,
   filterMultiSelectOptions,
   toggleMultiSelectValue,
   summarizeMultiSelectChips
@@ -38,6 +41,23 @@ describe('filterMultiSelectOptions', () => {
   it('is null-safe', () => {
     assert.deepEqual(filterMultiSelectOptions(null, 'x'), []);
     assert.deepEqual(filterMultiSelectOptions(undefined, ''), []);
+  });
+});
+
+describe('multiSelectListMaxHeight', () => {
+  it('keeps the bounded popover height for the default (collapsed) variant', () => {
+    // Guards the page-embedded collapsed pickers (e.g. IOC Add form) against
+    // accidental resizing when the inline modal variant changes.
+    assert.equal(multiSelectListMaxHeight(false), MULTI_SELECT_LIST_MAX_HEIGHT);
+    assert.equal(multiSelectListMaxHeight(undefined), MULTI_SELECT_LIST_MAX_HEIGHT);
+    assert.equal(MULTI_SELECT_LIST_MAX_HEIGHT, 260);
+  });
+
+  it('uses the larger, viewport-aware height for the inline modal variant', () => {
+    assert.equal(multiSelectListMaxHeight(true), MULTI_SELECT_INLINE_LIST_MAX_HEIGHT);
+    // Viewport aware (vh-clamped) so short screens stay usable.
+    assert.match(String(MULTI_SELECT_INLINE_LIST_MAX_HEIGHT), /vh/);
+    assert.notEqual(MULTI_SELECT_INLINE_LIST_MAX_HEIGHT, MULTI_SELECT_LIST_MAX_HEIGHT);
   });
 });
 

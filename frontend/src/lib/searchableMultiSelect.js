@@ -11,6 +11,26 @@ export const MULTI_SELECT_MAX_CHIPS = 4;
 export const MULTI_SELECT_LIST_MAX_HEIGHT = 260;
 
 /**
+ * Bounded list height for the inline (always-open) variant used inside large
+ * taxonomy editors (Threat Classifications / Threat Actors modals). Viewport
+ * aware so short screens stay usable while desktop viewports expose ~400px of
+ * options. Kept separate from the popover height so page-embedded collapsed
+ * pickers (e.g. the IOC Add form) are unaffected.
+ */
+export const MULTI_SELECT_INLINE_LIST_MAX_HEIGHT = 'min(400px, 52vh)';
+
+/**
+ * Resolve the scrollable options-list max-height for a multi-select. The inline
+ * variant gets a larger, viewport-aware area; the default collapsed popover
+ * keeps its original bounded height.
+ * @param {boolean} [inline]
+ * @returns {number|string}
+ */
+export function multiSelectListMaxHeight(inline) {
+  return inline ? MULTI_SELECT_INLINE_LIST_MAX_HEIGHT : MULTI_SELECT_LIST_MAX_HEIGHT;
+}
+
+/**
  * Case-insensitive substring filter over option labels.
  * @template {{ value: unknown, label?: string }} T
  * @param {T[]} options

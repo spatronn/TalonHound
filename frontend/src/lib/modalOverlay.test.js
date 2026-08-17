@@ -86,6 +86,33 @@ test('resolveModalInitialFocus prefers preferredEl, then cancel, then first focu
   assert.equal(resolveModalInitialFocus(null), null);
 });
 
+test('resolveModalInitialFocus focuses the search input over an earlier chip remove button', () => {
+  // Threat Classifications / Threat Actors editors: selected chips render remove
+  // buttons before the search input in DOM order. Passing the search input as
+  // the preferred element must win so initial focus lands on search, not a chip.
+  const chipRemoveBtn = { id: 'remove-chip', focus() {} };
+  const searchInput = { id: 'search', focus() {} };
+  const container = {
+    contains(el) {
+      return el === chipRemoveBtn || el === searchInput;
+    },
+    querySelector() {
+      return null;
+    },
+    // First focusable in DOM order is the chip remove button.
+    querySelectorAll() {
+      return [chipRemoveBtn, searchInput];
+    }
+  };
+
+  assert.equal(
+    resolveModalInitialFocus(container, { preferredEl: searchInput }),
+    searchInput
+  );
+  // Without a preferred element, focus would fall to the earlier chip button.
+  assert.equal(resolveModalInitialFocus(container), chipRemoveBtn);
+});
+
 test('trapFocusKeydown ignores non-Tab keys', () => {
   const handled = trapFocusKeydown({ key: 'Escape' }, {});
   assert.equal(handled, false);

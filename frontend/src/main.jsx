@@ -44,7 +44,7 @@ import {
 } from './lib/threatClassificationOrder.js';
 import {
   MULTI_SELECT_MAX_CHIPS,
-  MULTI_SELECT_LIST_MAX_HEIGHT,
+  multiSelectListMaxHeight,
   filterMultiSelectOptions,
   toggleMultiSelectValue,
   summarizeMultiSelectChips
@@ -7130,7 +7130,9 @@ function SearchableMultiSelect({
   renderOptionMeta,
   ariaLabel,
   emptyOptionsLabel = 'No options available',
-  noMatchLabel = 'No matches'
+  noMatchLabel = 'No matches',
+  inline = false,
+  searchInputRef = null
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -7239,6 +7241,102 @@ function SearchableMultiSelect({
     cursor: disabled ? 'not-allowed' : 'pointer'
   };
 
+  const chipsContent = chips.length ? (
+    <>
+      {chips.map((chip) => (
+        <span key={chip.value} style={chipStyle}>
+          {chip.label}
+          {!disabled ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggle(chip.value); }}
+              aria-label={`Remove ${chip.label}`}
+              style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: 14 }}
+            >
+              ×
+            </button>
+          ) : null}
+        </span>
+      ))}
+      {overflowCount > 0 ? (
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>+{overflowCount} more</span>
+      ) : null}
+    </>
+  ) : (
+    <span style={{ color: '#64748b', fontSize: 13 }}>
+      {noneOption ? noneOption.label : placeholder}
+    </span>
+  );
+
+  const searchField = (
+    <input
+      ref={(el) => {
+        searchRef.current = el;
+        if (typeof searchInputRef === 'function') searchInputRef(el);
+        else if (searchInputRef) searchInputRef.current = el;
+      }}
+      type="text"
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+      placeholder={searchPlaceholder}
+      aria-label={searchPlaceholder}
+      spellCheck={false}
+      style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
+    />
+  );
+
+  const optionsList = (
+    <div
+      role="listbox"
+      id={listboxIdRef.current}
+      aria-multiselectable="true"
+      aria-label={ariaLabel}
+      style={{ maxHeight: multiSelectListMaxHeight(inline), overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}
+    >
+      {showNoneRow ? (
+        <label role="option" aria-selected={!selected.length} style={optionRowStyle}>
+          <input type="checkbox" checked={!selected.length} onChange={() => onClear?.()} disabled={disabled} />
+          <span>{noneOption.label}</span>
+        </label>
+      ) : null}
+      {filtered.map((opt) => {
+        const value = String(opt.value);
+        const checked = selected.includes(value);
+        return (
+          <label key={value} role="option" aria-selected={checked} style={optionRowStyle}>
+            <input type="checkbox" checked={checked} onChange={() => onToggle(opt.value)} disabled={disabled} />
+            <span>{opt.label}</span>
+            {typeof renderOptionMeta === 'function' ? renderOptionMeta(opt) : null}
+          </label>
+        );
+      })}
+      {!filtered.length ? (
+        <div style={{ color: '#94a3b8', fontSize: 12, padding: '6px 4px' }}>
+          {optionList.length ? noMatchLabel : emptyOptionsLabel}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  // Inline (always-open) variant: the field, search box and options list render
+  // as static modal content instead of a collapsed dropdown popover, so several
+  // options are visible immediately and only the list scrolls. Escape is left to
+  // bubble to the enclosing modal. Used by the large taxonomy editors.
+  if (inline) {
+    return (
+      <div ref={containerRef} className="msel-inline" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div
+          aria-label={ariaLabel}
+          style={{ ...fieldStyle, marginBottom: 8, cursor: disabled ? 'not-allowed' : 'default' }}
+        >
+          {chipsContent}
+        </div>
+        {searchField}
+        {optionsList}
+      </div>
+    );
+  }
+
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
       <div
@@ -7254,32 +7352,7 @@ function SearchableMultiSelect({
         onKeyDown={onTriggerKeyDown}
         style={fieldStyle}
       >
-        {chips.length ? (
-          <>
-            {chips.map((chip) => (
-              <span key={chip.value} style={chipStyle}>
-                {chip.label}
-                {!disabled ? (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onToggle(chip.value); }}
-                    aria-label={`Remove ${chip.label}`}
-                    style={{ border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: 14 }}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </span>
-            ))}
-            {overflowCount > 0 ? (
-              <span style={{ color: '#94a3b8', fontSize: 12 }}>+{overflowCount} more</span>
-            ) : null}
-          </>
-        ) : (
-          <span style={{ color: '#64748b', fontSize: 13 }}>
-            {noneOption ? noneOption.label : placeholder}
-          </span>
-        )}
+        {chipsContent}
         <span aria-hidden="true" style={{ marginLeft: 'auto', color: '#64748b', fontSize: 11, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms' }}>▾</span>
       </div>
 
@@ -7288,46 +7361,8 @@ function SearchableMultiSelect({
           onKeyDown={onMenuKeyDown}
           style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, border: '1px solid #334155', borderRadius: 10, background: '#0b1220', boxShadow: '0 12px 32px rgba(2,6,23,0.5)', padding: 8 }}
         >
-          <input
-            ref={searchRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            spellCheck={false}
-            style={{ width: '100%', marginBottom: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #475569', background: '#020617', color: '#e2e8f0', boxSizing: 'border-box' }}
-          />
-          <div
-            role="listbox"
-            id={listboxIdRef.current}
-            aria-multiselectable="true"
-            aria-label={ariaLabel}
-            style={{ maxHeight: MULTI_SELECT_LIST_MAX_HEIGHT, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}
-          >
-            {showNoneRow ? (
-              <label role="option" aria-selected={!selected.length} style={optionRowStyle}>
-                <input type="checkbox" checked={!selected.length} onChange={() => onClear?.()} disabled={disabled} />
-                <span>{noneOption.label}</span>
-              </label>
-            ) : null}
-            {filtered.map((opt) => {
-              const value = String(opt.value);
-              const checked = selected.includes(value);
-              return (
-                <label key={value} role="option" aria-selected={checked} style={optionRowStyle}>
-                  <input type="checkbox" checked={checked} onChange={() => onToggle(opt.value)} disabled={disabled} />
-                  <span>{opt.label}</span>
-                  {typeof renderOptionMeta === 'function' ? renderOptionMeta(opt) : null}
-                </label>
-              );
-            })}
-            {!filtered.length ? (
-              <div style={{ color: '#94a3b8', fontSize: 12, padding: '6px 4px' }}>
-                {optionList.length ? noMatchLabel : emptyOptionsLabel}
-              </div>
-            ) : null}
-          </div>
+          {searchField}
+          {optionsList}
         </div>
       ) : null}
     </div>
@@ -7339,7 +7374,9 @@ function ThreatClassificationMultiSelect({
   onChange,
   options,
   inactiveOptions = [],
-  disabled = false
+  disabled = false,
+  inline = false,
+  searchInputRef = null
 }) {
   const selected = normalizeSelectedThreatClasses(value);
   const allOptions = mergeThreatClassificationPickerOptions(options, inactiveOptions);
@@ -7364,6 +7401,8 @@ function ThreatClassificationMultiSelect({
       onToggle={toggle}
       onClear={() => onChange([])}
       disabled={disabled}
+      inline={inline}
+      searchInputRef={searchInputRef}
       ariaLabel="Threat classifications"
       searchPlaceholder="Search classifications…"
       noneOption={{ label: 'Unknown' }}
@@ -7424,7 +7463,9 @@ function ThreatActorMultiSelect({
   value,
   onChange,
   options = [],
-  disabled = false
+  disabled = false,
+  inline = false,
+  searchInputRef = null
 }) {
   const selected = Array.isArray(value) ? value.map(String).filter(Boolean) : [];
   const optionList = Array.isArray(options) ? options : [];
@@ -7441,6 +7482,8 @@ function ThreatActorMultiSelect({
       options={pickerOptions}
       onToggle={toggle}
       disabled={disabled}
+      inline={inline}
+      searchInputRef={searchInputRef}
       ariaLabel="Threat actors"
       placeholder="Select threat actors…"
       searchPlaceholder="Search threat actors…"
@@ -15202,10 +15245,12 @@ function IOCDetailsPage() {
   const [threatClassDraft, setThreatClassDraft] = useState([]);
   const [threatClassSaving, setThreatClassSaving] = useState(false);
   const [threatClassError, setThreatClassError] = useState('');
+  const threatClassSearchRef = useRef(null);
   const [showThreatActorModal, setShowThreatActorModal] = useState(false);
   const [threatActorDraft, setThreatActorDraft] = useState([]);
   const [threatActorSaving, setThreatActorSaving] = useState(false);
   const [threatActorError, setThreatActorError] = useState('');
+  const threatActorSearchRef = useRef(null);
 
   async function load() {
     setLoading(true);
@@ -16505,26 +16550,21 @@ function IOCDetailsPage() {
       ) : null}
 
       {showThreatClassModal ? (
-        <ModalOverlay onClose={() => {
-          if (threatClassSaving) return;
-          setShowThreatClassModal(false);
-          setThreatClassDraft([]);
-          setThreatClassError('');
-        }}
-        >
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat classifications</h3>
-          <div style={{ display: 'grid', gap: 12 }}>
-            <ThreatClassificationMultiSelect
-              value={threatClassDraft}
-              onChange={setThreatClassDraft}
-              options={threatClassModalOptions}
-              inactiveOptions={threatClassEditInactiveOptions}
-              disabled={threatClassSaving}
-            />
-            {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <ModalOverlay
+          title="Edit threat classifications"
+          size="md"
+          initialFocusRef={threatClassSearchRef}
+          onClose={() => {
+            if (threatClassSaving) return;
+            setShowThreatClassModal(false);
+            setThreatClassDraft([]);
+            setThreatClassError('');
+          }}
+          footer={(
+            <>
               <button
                 type="button"
+                data-modal-cancel
                 style={ui.btn}
                 onClick={() => {
                   setShowThreatClassModal(false);
@@ -16538,31 +16578,40 @@ function IOCDetailsPage() {
               <button type="button" style={ui.btnPrimary} onClick={() => submitThreatClassification().catch(() => {})} disabled={threatClassSaving}>
                 {threatClassSaving ? 'Saving…' : 'Save'}
               </button>
-            </div>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+            <ThreatClassificationMultiSelect
+              value={threatClassDraft}
+              onChange={setThreatClassDraft}
+              options={threatClassModalOptions}
+              inactiveOptions={threatClassEditInactiveOptions}
+              disabled={threatClassSaving}
+              inline
+              searchInputRef={threatClassSearchRef}
+            />
+            {threatClassError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatClassError}</div> : null}
           </div>
         </ModalOverlay>
       ) : null}
 
       {showThreatActorModal ? (
-        <ModalOverlay onClose={() => {
-          if (threatActorSaving) return;
-          setShowThreatActorModal(false);
-          setThreatActorDraft([]);
-          setThreatActorError('');
-        }}
-        >
-          <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Edit threat actors</h3>
-          <div style={{ display: 'grid', gap: 12 }}>
-            <ThreatActorMultiSelect
-              value={threatActorDraft}
-              onChange={setThreatActorDraft}
-              options={threatActors}
-              disabled={threatActorSaving}
-            />
-            {threatActorError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatActorError}</div> : null}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <ModalOverlay
+          title="Edit threat actors"
+          size="md"
+          initialFocusRef={threatActorSearchRef}
+          onClose={() => {
+            if (threatActorSaving) return;
+            setShowThreatActorModal(false);
+            setThreatActorDraft([]);
+            setThreatActorError('');
+          }}
+          footer={(
+            <>
               <button
                 type="button"
+                data-modal-cancel
                 style={ui.btn}
                 onClick={() => {
                   setShowThreatActorModal(false);
@@ -16576,7 +16625,19 @@ function IOCDetailsPage() {
               <button type="button" style={ui.btnPrimary} onClick={() => submitThreatActor().catch(() => {})} disabled={threatActorSaving}>
                 {threatActorSaving ? 'Saving…' : 'Save'}
               </button>
-            </div>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+            <ThreatActorMultiSelect
+              value={threatActorDraft}
+              onChange={setThreatActorDraft}
+              options={threatActors}
+              disabled={threatActorSaving}
+              inline
+              searchInputRef={threatActorSearchRef}
+            />
+            {threatActorError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatActorError}</div> : null}
           </div>
         </ModalOverlay>
       ) : null}
