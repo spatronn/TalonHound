@@ -6372,6 +6372,13 @@ function FeedUrlTemplateModal({ ui, feed, onClose }) {
           ))}
         </div>
 
+        {formats.includes('stix') ? (
+          <p style={{ ...ui.helper, marginTop: 10 }}>
+            The <strong style={{ color: '#cbd5e1' }}>TAXII</strong> endpoint is for TAXII 2.1 clients (e.g. MISP): use the collection URL above and send the key as an{' '}
+            <code style={{ color: '#cbd5e1' }}>Authorization: Bearer &lt;key&gt;</code> header. Opening it directly in a browser returns 401.
+          </p>
+        ) : null}
+
         <p style={{ ...ui.helper, marginTop: 12 }}>
           Create or reveal a Published Feed key under{' '}
           <Link to="/administration/api-keys" style={{ color: '#93c5fd', fontWeight: 600 }}>Administration › API Keys</Link>.
