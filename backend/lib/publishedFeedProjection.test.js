@@ -15,6 +15,7 @@ import {
   applyIncrementalProjectionUpdate,
   collectDirtyIocIds
 } from './publishedFeedIncremental.js';
+import { buildStreamingBaseSql, buildStreamingHashBaseSql } from './feedPublisherService.js';
 
 describe('publishedFeedProjection helpers', () => {
   it('builds stable identity keys', () => {
@@ -370,5 +371,146 @@ describe('collectDirtyIocIds / applyIncrementalProjectionUpdate', () => {
     );
     assert.equal(result.removed, 0);
     assert.ok(result.entered + result.updated + result.unchanged >= 1);
+  });
+});
+
+describe('canonical projection status semantics (suppressed vs disabled)', () => {
+  const feed = {
+    id: 11, format: 'txt', filter_mode: 'basic', ioc_types: ['domain'],
+    time_window: 'all', include_enrichment: false, exclude_expired: false
+  };
+
+  it('standard base SQL excludes only suppressed, keeping disabled/expired publishable', () => {
+    const { sql } = buildStreamingBaseSql(feed, 'all');
+    const norm = sql.replace(/\s+/g, ' ');
+    // Semantics: publish everything that is not suppressed (disabled + expired stay in).
+    assert.ok(norm.includes("<> 'suppressed'"), 'must exclude suppressed');
+    assert.ok(!/IN \('active',\s*'expired'\)/.test(norm),
+      "must NOT narrow to IN ('active','expired') — that would drop publishable disabled IOCs");
+  });
+
+  it('hash-canonical base SQL also excludes only suppressed', () => {
+    const hashFeed = { ...feed, ioc_types: ['file_hash'], canonicalize_hashes: true };
+    const { sql } = buildStreamingHashBaseSql(hashFeed, 'all');
+    const norm = sql.replace(/\s+/g, ' ');
+    assert.ok(norm.includes("<> 'suppressed'"), 'must exclude suppressed');
+    assert.ok(!/IN \('active',\s*'expired'\)/.test(norm),
+      "must NOT narrow to IN ('active','expired')");
+  });
+});
+
+describe('OPTION A identity-keyed canonical expansion (self-join removed)', () => {
+  it('collectDirtyIocIds threads observable_type into typeById for partition pruning', async () => {
+    const cutoff = new Date('2026-08-01T00:00:00Z');
+    const db = {
+      async query(sql) {
+        const s = String(sql);
+        if (s.includes('published_feed_global_watermarks')) return { rows: [] };
+        if (s.includes('published_feed_ioc_deletes')) return { rows: [] };
+        if (s.includes('FROM ioc_items') && s.includes('updated_at')) {
+          return { rows: [{ id: 5, observable_type: 'domain' }, { id: 6, observable_type: 'ip' }] };
+        }
+        if (s.includes('FROM ioc_feed_memberships')) {
+          return { rows: [{ id: 7, observable_type: 'file_hash' }] };
+        }
+        return { rows: [] };
+      }
+    };
+    const dirty = await collectDirtyIocIds(db, { include_enrichment: false }, cutoff);
+    assert.deepEqual(dirty.typeById, { 5: 'domain', 6: 'ip', 7: 'file_hash' });
+    assert.ok(dirty.ids.includes(5) && dirty.ids.includes(6) && dirty.ids.includes(7));
+  });
+
+  it('never issues the i1 JOIN i2 canonical sibling self-join', async () => {
+    const seen = [];
+    const db = {
+      async query(sql, params) {
+        const s = String(sql).replace(/\s+/g, ' ');
+        seen.push(s);
+        if (s.includes('DISTINCT lower(observable)') && s.includes('FROM ioc_items')) {
+          return { rows: [{ obs: 'win.example', otype: 'domain' }] };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('identity_key = ANY')) {
+          return { rows: [{ identity_key: 'o:domain:win.example' }] };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('ioc_item_id = ANY')) {
+          return { rows: [] };
+        }
+        if (s.includes('DISTINCT ON') || s.includes('FROM (')) return { rows: [] };
+        return { rows: [] };
+      }
+    };
+    const feed = { id: 11, format: 'txt', filter_mode: 'basic', ioc_types: ['domain'], time_window: 'all', include_enrichment: false };
+    await applyIncrementalProjectionUpdate(db, feed, 'all', ['domain'],
+      { ids: [5], typeById: { 5: 'domain' }, forceFull: false });
+    assert.ok(!seen.some((s) => /JOIN ioc_items i2/.test(s)),
+      'the million-row canonical sibling self-join must not be issued');
+    // i1 identity resolution must be partition-pruned by observable_type.
+    assert.ok(seen.some((s) => /FROM ioc_items WHERE observable_type = ANY/.test(s)),
+      'dirty-id identity resolution must prune partitions by observable_type');
+  });
+
+  it('winner-switch: keeps identity when the stored representative is a non-dirty sibling', async () => {
+    // Projected under representative T=2 (NOT dirty). Dirty candidate S=5 shares the identity.
+    const existing = [{ identity_key: 'o:domain:win.example', ioc_item_id: 2, content_fingerprint: 'old' }];
+    const db = {
+      async query(sql) {
+        const s = String(sql).replace(/\s+/g, ' ');
+        if (s.includes('DISTINCT lower(observable)') && s.includes('FROM ioc_items')) {
+          return { rows: [{ obs: 'win.example', otype: 'domain' }] };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('content_fingerprint')) {
+          // existing-rows lookup (has ioc_item_id=ANY OR identity_key=ANY) → the projected row
+          return { rows: existing };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('ioc_item_id = ANY')) {
+          // S=5 is not the stored representative → id lookup finds nothing.
+          return { rows: [] };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('identity_key = ANY')) {
+          return { rows: [{ identity_key: 'o:domain:win.example' }] };
+        }
+        if (s.includes('DISTINCT ON') || s.includes('FROM (')) {
+          // Still matches — winner is B=8 now.
+          return { rows: [{ id: 8, observable: 'win.example', observable_type: 'domain', confidence: 'high', category: null, created_at: '2026-08-01T00:00:00Z', recency_ts: '2026-08-09T00:00:00Z' }] };
+        }
+        if (s.includes('INSERT INTO published_feed_items')) return { rowCount: 1 };
+        if (s.startsWith('DELETE FROM published_feed_items')) return { rowCount: 0 };
+        return { rows: [] };
+      }
+    };
+    const feed = { id: 11, format: 'txt', filter_mode: 'basic', ioc_types: ['domain'], time_window: 'all', include_enrichment: false };
+    const result = await applyIncrementalProjectionUpdate(db, feed, 'all', ['domain'],
+      { ids: [5], typeById: { 5: 'domain' }, forceFull: false });
+    assert.equal(result.removed, 0, 'identity must NOT be dropped when representative is a non-dirty sibling');
+    assert.ok(result.updated + result.entered + result.unchanged >= 1);
+  });
+
+  it('leave via identity: removes projection when a non-dirty representative identity no longer matches', async () => {
+    const existing = [{ identity_key: 'o:domain:gone.example', ioc_item_id: 2, content_fingerprint: 'old' }];
+    let deletedKeys = null;
+    const db = {
+      async query(sql, params) {
+        const s = String(sql).replace(/\s+/g, ' ');
+        if (s.includes('DELETE FROM published_feed_items')) { deletedKeys = params?.[2] || []; return { rowCount: deletedKeys.length }; }
+        if (s.includes('DISTINCT lower(observable)') && s.includes('FROM ioc_items')) {
+          return { rows: [{ obs: 'gone.example', otype: 'domain' }] };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('content_fingerprint')) {
+          return { rows: existing };
+        }
+        if (s.includes('FROM published_feed_items') && s.includes('ioc_item_id = ANY')) return { rows: [] };
+        if (s.includes('FROM published_feed_items') && s.includes('identity_key = ANY')) {
+          return { rows: [{ identity_key: 'o:domain:gone.example' }] };
+        }
+        if (s.includes('DISTINCT ON') || s.includes('FROM (')) return { rows: [] }; // no longer matches
+        return { rows: [] };
+      }
+    };
+    const feed = { id: 11, format: 'txt', filter_mode: 'basic', ioc_types: ['domain'], time_window: 'all', include_enrichment: false };
+    const result = await applyIncrementalProjectionUpdate(db, feed, 'all', ['domain'],
+      { ids: [5], typeById: { 5: 'domain' }, forceFull: false });
+    assert.equal(result.removed, 1, 'identity must leave even though the representative was not dirty');
+    assert.ok((deletedKeys || []).includes('o:domain:gone.example'));
   });
 });

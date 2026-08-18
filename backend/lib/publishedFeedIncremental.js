@@ -67,8 +67,12 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
   limit = 100000,
   candidateCutoff = captureCutoffNow()
 } = {}) {
-  if (!cutoff) return { ids: [], truncated: false, sources: {}, deletes: [], forceFull: true };
+  if (!cutoff) return { ids: [], truncated: false, sources: {}, deletes: [], forceFull: true, typeById: {} };
   const ids = new Set();
+  // Track observable_type per dirty id so downstream identity resolution can prune the
+  // partitioned ioc_items table (PK is (observable_type, id)) instead of scanning every
+  // partition. Every collection source can supply the type cheaply.
+  const typeById = new Map();
   const deletes = [];
   const sources = {
     ioc_items: 0,
@@ -88,6 +92,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
         ids.add(id);
         sources[source] = (sources[source] || 0) + 1;
       }
+      if (r.observable_type != null && !typeById.has(id)) typeById.set(id, r.observable_type);
     }
   };
 
@@ -129,13 +134,16 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
       ids.add(id);
       sources.deletes += 1;
     }
+    if (Number.isFinite(id) && d.observable_type != null && !typeById.has(id)) {
+      typeById.set(id, d.observable_type);
+    }
   }
   if (!truncated && deletes.length) {
     const obsPairs = deletes.map((d) => [String(d.observable || '').toLowerCase(), d.observable_type]);
     const arts = [...new Set(deletes.map((d) => d.artifact_id).filter(Boolean))];
     if (obsPairs.length) {
       const { rows: sib } = await db.query(
-        `SELECT id FROM ioc_items
+        `SELECT id, observable_type FROM ioc_items
          WHERE (lower(observable), observable_type) IN (
            SELECT lower(x.obs), x.otype
            FROM unnest($1::text[], $2::text[]) AS x(obs, otype)
@@ -151,7 +159,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
     }
     if (!truncated && arts.length) {
       const { rows: artSib } = await db.query(
-        `SELECT fal.ioc_item_id AS id
+        `SELECT fal.ioc_item_id AS id, fal.ioc_observable_type AS observable_type
          FROM file_artifact_ioc_links fal
          WHERE fal.artifact_id = ANY($1::uuid[])
          LIMIT $2`,
@@ -162,7 +170,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
   }
 
   const { rows: iocRows } = await db.query(
-    `SELECT id FROM ioc_items
+    `SELECT id, observable_type FROM ioc_items
      WHERE updated_at IS NOT NULL AND updated_at > $1 AND updated_at <= $3
      ORDER BY updated_at ASC
      LIMIT $2`,
@@ -173,7 +181,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
 
   if (!truncated) {
     const { rows: memRows } = await db.query(
-      `SELECT DISTINCT m.ioc_item_id AS id
+      `SELECT DISTINCT m.ioc_item_id AS id, m.ioc_observable_type AS observable_type
        FROM ioc_feed_memberships m
        WHERE m.updated_at > $1 AND m.updated_at <= $3
        ORDER BY m.ioc_item_id
@@ -187,19 +195,19 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
   const flags = resolveJsonIncludeFlags(feed);
   if (!truncated && flags.includeEnrichment) {
     const enrichSql = [
-      `SELECT i.id FROM ioc_enrichments e
+      `SELECT i.id, i.observable_type FROM ioc_enrichments e
          JOIN ioc_items i ON lower(i.observable) = lower(e.ioc_value)
         WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
-      `SELECT i.id FROM ioc_ip_enrichment e
+      `SELECT i.id, i.observable_type FROM ioc_ip_enrichment e
          JOIN ioc_items i ON i.observable = e.ip AND i.observable_type = 'ip'
         WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
-      `SELECT i.id FROM ioc_abuseipdb_enrichment e
+      `SELECT i.id, i.observable_type FROM ioc_abuseipdb_enrichment e
          JOIN ioc_items i ON i.observable = e.ip AND i.observable_type = 'ip'
         WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
-      `SELECT i.id FROM ioc_domain_enrichment e
+      `SELECT i.id, i.observable_type FROM ioc_domain_enrichment e
          JOIN ioc_items i ON lower(i.observable) = lower(e.observable_value) AND i.observable_type = 'domain'
         WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
-      `SELECT i.id FROM ioc_spamhaus_drop_enrichment e
+      `SELECT i.id, i.observable_type FROM ioc_spamhaus_drop_enrichment e
          JOIN ioc_items i ON i.observable = e.lookup_ip AND i.observable_type = 'ip'
         WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`
     ];
@@ -216,7 +224,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
 
   if (!truncated && shouldCanonicalizePublishedHashFeed(feed)) {
     const { rows: faRows } = await db.query(
-      `SELECT fal.ioc_item_id AS id
+      `SELECT fal.ioc_item_id AS id, fal.ioc_observable_type AS observable_type
        FROM file_artifacts fa
        JOIN file_artifact_ioc_links fal ON fal.artifact_id = fa.id
        WHERE fa.updated_at > $1 AND fa.updated_at <= $3
@@ -228,6 +236,7 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
 
   return {
     ids: [...ids],
+    typeById: Object.fromEntries(typeById),
     deletes,
     truncated,
     sources,
@@ -236,20 +245,43 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
 }
 
 /**
+ * Resolve a bounded set of dirty ioc ids to their canonical identity pairs
+ * (lower(observable), observable_type). When the observable_type of every id is known
+ * (threaded from collectDirtyIocIds), constrain by observable_type so PostgreSQL prunes
+ * the ioc_items partitions and PK-seeks instead of Seq-Scanning every partition.
+ */
+export async function resolveDirtyIdentities(db, ids, typeById = {}) {
+  if (!ids?.length) return [];
+  const knownTypes = [...new Set(ids.map((id) => typeById?.[id]).filter((t) => t != null))];
+  const knowAllTypes = knownTypes.length > 0 && ids.every((id) => typeById?.[id] != null);
+  if (knowAllTypes) {
+    const { rows } = await db.query(
+      `SELECT DISTINCT lower(observable) AS obs, observable_type AS otype
+       FROM ioc_items
+       WHERE observable_type = ANY($2::text[]) AND id = ANY($1::bigint[])`,
+      [ids, knownTypes]
+    );
+    return rows;
+  }
+  const { rows } = await db.query(
+    `SELECT DISTINCT lower(observable) AS obs, observable_type AS otype
+     FROM ioc_items WHERE id = ANY($1::bigint[])`,
+    [ids]
+  );
+  return rows;
+}
+
+/**
  * Re-evaluate candidate IOC identities against the feed's full filter/query predicate.
  * Expands to lower(observable)+type and injects that restriction into the same streaming
  * base SQL (DISTINCT ON / hash collapse) so winners match full generation for those
  * identities — without scanning the rest of the feed.
  */
-export async function evaluateCandidatesAgainstFeed(db, feed, window, candidateIds, { deletes = [] } = {}) {
+export async function evaluateCandidatesAgainstFeed(db, feed, window, candidateIds, { deletes = [], typeById = {} } = {}) {
   const lowerValues = new Set();
   const types = new Set();
   if (candidateIds?.length) {
-    const { rows: idents } = await db.query(
-      `SELECT DISTINCT lower(observable) AS obs, observable_type AS otype
-       FROM ioc_items WHERE id = ANY($1::bigint[])`,
-      [candidateIds]
-    );
+    const idents = await resolveDirtyIdentities(db, candidateIds, typeById);
     for (const r of idents) {
       lowerValues.add(r.obs);
       types.add(r.otype);
@@ -269,36 +301,48 @@ export async function evaluateCandidatesAgainstFeed(db, feed, window, candidateI
 }
 
 /**
- * Expand candidate ids to sibling identities currently in the projection (for leave detection)
- * and to lower(observable) siblings that share published identity.
+ * Collect the projection identities affected by the dirty candidates, for leave/winner-switch
+ * detection. Returns `projectedKeys` (canonical identity_keys currently in the projection for
+ * these candidates — found by ioc_item_id and by canonical identity_key, without scanning
+ * ioc_items) plus `siblingIds`/`siblingTypeById` from the low-volume delete/tombstone path.
  * Optional `deletes` supplies tombstone identity when the IOC row is already gone.
  */
-export async function expandCandidateContext(db, feedId, window, candidateIds, { deletes = [] } = {}) {
+export async function expandCandidateContext(db, feedId, window, candidateIds, { deletes = [], dirtyIdentities = null, typeById = {} } = {}) {
   if (!candidateIds?.length && !deletes?.length) {
-    return { candidateIds: [], projectedKeys: [], siblingIds: [] };
+    return { candidateIds: [], projectedKeys: [], siblingIds: [], siblingTypeById: {} };
   }
   const ids = candidateIds?.length ? candidateIds : [];
   const projectedKeys = new Set();
   const siblingIds = new Set();
+  const siblingTypeById = new Map();
 
   if (ids.length) {
+    // (1) Identities currently projected under a dirty id itself (indexed by
+    // idx_pf_items_feed_ioc). Also covers the rare case where an id's observable changed:
+    // the old projected identity is still found by ioc_item_id.
     const { rows: proj } = await db.query(
-      `SELECT identity_key, ioc_item_id FROM published_feed_items
+      `SELECT identity_key FROM published_feed_items
        WHERE feed_id = $1 AND snapshot_window = $2 AND ioc_item_id = ANY($3::bigint[])`,
       [feedId, window, ids]
     );
     for (const r of proj) projectedKeys.add(r.identity_key);
 
-    const { rows: sib } = await db.query(
-      `SELECT i2.id
-       FROM ioc_items i1
-       JOIN ioc_items i2
-         ON lower(i2.observable) = lower(i1.observable)
-        AND i2.observable_type = i1.observable_type
-       WHERE i1.id = ANY($1::bigint[])`,
-      [ids]
-    );
-    for (const r of sib) siblingIds.add(Number(r.id));
+    // (2) Identities currently projected for the dirty candidates' CANONICAL keys,
+    // regardless of which sibling row is the stored representative. identity_key is a pure
+    // function of (lower(observable), observable_type) and is invariant across canonical
+    // siblings and winner-switches, so this indexed lookup on the projection PK
+    // (feed_id, snapshot_window, identity_key) replaces the old i1 JOIN i2 sibling
+    // self-join that scanned the entire partitioned ioc_items table.
+    const identities = dirtyIdentities || await resolveDirtyIdentities(db, ids, typeById);
+    const dirtyKeys = [...new Set(identities.map((r) => projectionIdentityKey(r.obs, r.otype)))];
+    if (dirtyKeys.length) {
+      const { rows: byIdentity } = await db.query(
+        `SELECT identity_key FROM published_feed_items
+         WHERE feed_id = $1 AND snapshot_window = $2 AND identity_key = ANY($3::text[])`,
+        [feedId, window, dirtyKeys]
+      );
+      for (const r of byIdentity) projectedKeys.add(r.identity_key);
+    }
   }
 
   if (deletes?.length) {
@@ -323,29 +367,36 @@ export async function expandCandidateContext(db, feedId, window, candidateIds, {
     for (const r of byKey) projectedKeys.add(r.identity_key);
 
     const { rows: byObs } = await db.query(
-      `SELECT id FROM ioc_items
+      `SELECT id, observable_type FROM ioc_items
        WHERE (lower(observable), observable_type) IN (
          SELECT x.obs, x.otype FROM unnest($1::text[], $2::text[]) AS x(obs, otype)
        )`,
       [obs, types]
     );
-    for (const r of byObs) siblingIds.add(Number(r.id));
+    for (const r of byObs) {
+      siblingIds.add(Number(r.id));
+      if (r.observable_type != null) siblingTypeById.set(Number(r.id), r.observable_type);
+    }
 
     if (arts.length) {
       const { rows: byArt } = await db.query(
-        `SELECT fal.ioc_item_id AS id
+        `SELECT fal.ioc_item_id AS id, fal.ioc_observable_type AS observable_type
          FROM file_artifact_ioc_links fal
          WHERE fal.artifact_id = ANY($1::uuid[])`,
         [arts]
       );
-      for (const r of byArt) siblingIds.add(Number(r.id));
+      for (const r of byArt) {
+        siblingIds.add(Number(r.id));
+        if (r.observable_type != null) siblingTypeById.set(Number(r.id), r.observable_type);
+      }
     }
   }
 
   return {
     candidateIds: ids,
     projectedKeys: [...projectedKeys],
-    siblingIds: [...siblingIds]
+    siblingIds: [...siblingIds],
+    siblingTypeById: Object.fromEntries(siblingTypeById)
   };
 }
 
@@ -449,9 +500,20 @@ export async function applyIncrementalProjectionUpdate(db, feed, window, formatT
   }
 
   const deletes = dirty.deletes || [];
-  const ctx = await expandCandidateContext(db, feed.id, window, dirty.ids || [], { deletes });
+  const typeById = dirty.typeById || {};
+  // Resolve the bounded dirty candidates to their canonical identities once (partition-pruned
+  // when observable_type is known), then reuse for both context expansion and evaluation.
+  const dirtyIdentities = await resolveDirtyIdentities(db, dirty.ids || [], typeById);
+  const ctx = await expandCandidateContext(db, feed.id, window, dirty.ids || [], {
+    deletes, dirtyIdentities, typeById
+  });
   const evalIds = [...new Set([...(dirty.ids || []), ...ctx.siblingIds])];
-  const matched = await evaluateCandidatesAgainstFeed(db, feed, window, evalIds, { deletes });
+  // Types for every evalId: dirty ids (from collectDirtyIocIds) + delete-path siblings
+  // (from expandCandidateContext) so the evaluation lookup can also prune partitions.
+  const evalTypeById = { ...typeById, ...(ctx.siblingTypeById || {}) };
+  const matched = await evaluateCandidatesAgainstFeed(db, feed, window, evalIds, {
+    deletes, typeById: evalTypeById
+  });
   const matchedIds = new Set(matched.map((r) => Number(r.id)));
   const newRows = await buildProjectionRowsForMatched(db, feed, window, matched, formatTypes);
   const newKeys = new Set(newRows.map((r) => r.identity_key));
