@@ -389,3 +389,86 @@ describe('runExpirationWorkerBatch audit', () => {
     assert.equal(auditCalls.length, 0);
   });
 });
+
+describe('runExpirationWorkerBatch bounded due-batch selection', () => {
+  // Recording mock: same dispatch as buildExpirationWorkerMockClient but captures
+  // the SQL text and params so we can assert on the bounded-batch query shape.
+  function buildRecordingMockClient({ membershipRows, membershipStatusesAfter = ['expired'] }) {
+    const calls = [];
+    const client = {
+      async query(sql, params) {
+        const s = String(sql);
+        calls.push({ sql: s, params: params || [] });
+        if (s.includes('FROM ioc_feed_memberships m') && s.includes('INNER JOIN ioc_items i')) {
+          return { rows: membershipStatusesAfter.map((status) => ({ status, purged_at: null })) };
+        }
+        if (s.includes('FROM ioc_feed_memberships m') && s.includes('LIMIT')) {
+          return { rows: membershipRows };
+        }
+        if (s.includes('UPDATE ioc_feed_memberships') && s.includes("status = 'expired'")) {
+          return { rowCount: 1 };
+        }
+        if (s.includes('FROM ioc_items') && s.includes('manual_status_override')) {
+          return { rows: [{
+            id: 99, observable: 'evil.example', observable_type: 'domain', status: 'active',
+            manual_status_override: false, expires_at: '2020-01-01T00:00:00Z',
+            expired_at: null, expiration_reason: null
+          }] };
+        }
+        if (s.includes('FROM ioc_suppressions')) return { rows: [] };
+        if (s.includes('MIN(expires_at)')) return { rows: [{ min_exp: null }] };
+        if (s.includes('UPDATE ioc_items')) return { rowCount: 1 };
+        return { rows: [] };
+      }
+    };
+    return { client, calls };
+  }
+
+  it('selects the due batch via a bounded FOR UPDATE SKIP LOCKED subquery, then joins ioc_items', async () => {
+    const { client, calls } = buildRecordingMockClient({ membershipRows: [] });
+    await runExpirationWorkerBatch(client, { batchSize: 500 });
+
+    const selectCall = calls.find((c) =>
+      c.sql.includes('FROM ioc_feed_memberships m') && c.sql.includes('LIMIT'));
+    assert.ok(selectCall, 'expected the bounded due-batch select to run');
+    // Bound-first: the membership scan + lock happen before the ioc_items join.
+    assert.ok(selectCall.sql.includes('FOR UPDATE OF m SKIP LOCKED'),
+      'locking clause must be preserved on ioc_feed_memberships');
+    assert.ok(selectCall.sql.includes('LIMIT $1'), 'batch must be bounded by LIMIT $1');
+    assert.match(selectCall.sql, /WITH due AS \(/,
+      'due memberships must be selected in a materialised CTE before joining ioc_items');
+    const lockIdx = selectCall.sql.indexOf('FOR UPDATE OF m SKIP LOCKED');
+    const joinIdx = selectCall.sql.indexOf('JOIN ioc_items');
+    assert.ok(lockIdx !== -1 && joinIdx !== -1 && lockIdx < joinIdx,
+      'the lock/limit must occur before the ioc_items join (bounded plan)');
+    // batchSize flows through as the LIMIT bind.
+    assert.deepEqual(selectCall.params, [500]);
+  });
+
+  it('processes an empty due batch with no mutations', async () => {
+    const { client, calls } = buildRecordingMockClient({ membershipRows: [] });
+    const res = await runExpirationWorkerBatch(client, { batchSize: 500 });
+
+    assert.deepEqual(res, { expiredMemberships: 0, iocRecomputed: 0, iocGlobalExpired: 0, batchCount: 0 });
+    assert.equal(calls.filter((c) => c.sql.includes('UPDATE ioc_feed_memberships')).length, 0);
+    assert.equal(calls.filter((c) => c.sql.includes('UPDATE ioc_items')).length, 0);
+  });
+
+  it('expires memberships across multiple ioc_items partitions (domain, file_hash, ip)', async () => {
+    const { client, calls } = buildRecordingMockClient({
+      membershipRows: [
+        { id: 1, ioc_item_id: 11, ioc_observable_type: 'domain', feed_id: 'f1', status: 'active', expires_at: '2020-01-01T00:00:00Z', expiration_reason: 'policy_ttl', observable: 'evil.example', feed_name: 'USOM' },
+        { id: 2, ioc_item_id: 22, ioc_observable_type: 'file_hash', feed_id: 'f1', status: 'active', expires_at: '2020-01-01T00:00:00Z', expiration_reason: 'policy_ttl', observable: 'abc123', feed_name: 'USOM' },
+        { id: 3, ioc_item_id: 33, ioc_observable_type: 'ip', feed_id: 'f1', status: 'active', expires_at: '2020-01-01T00:00:00Z', expiration_reason: 'policy_ttl', observable: '1.2.3.4', feed_name: 'USOM' }
+      ]
+    });
+    const res = await runExpirationWorkerBatch(client, { batchSize: 500 });
+
+    assert.equal(res.batchCount, 3);
+    assert.equal(res.expiredMemberships, 3);
+    // one membership UPDATE per due row, keyed by id + status guard
+    const membershipUpdates = calls.filter((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes("status = 'expired'"));
+    assert.equal(membershipUpdates.length, 3);
+    assert.deepEqual(membershipUpdates.map((c) => c.params[0]).sort(), [1, 2, 3]);
+  });
+});

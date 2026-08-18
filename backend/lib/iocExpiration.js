@@ -996,19 +996,34 @@ export async function runExpirationWorkerBatch(client, opts = {}) {
   const now = new Date();
   const workerActor = { actor_type: 'system', source: 'expiration-worker' };
 
+  // Select the bounded batch of due memberships FIRST, using the partial
+  // expiration index (idx_ioc_feed_memberships_expires_at), and lock them with
+  // FOR UPDATE SKIP LOCKED. Only then join the partitioned ioc_items table for
+  // that handful of rows. Because the CTE carries a locking clause, PostgreSQL
+  // materialises it (no inlining), so the outer join runs as a bounded nested
+  // loop of per-partition PK lookups instead of a Seq Scan across every
+  // ioc_items partition. Semantics (which rows are locked/returned/expired) are
+  // unchanged from the previous single-statement form.
   const { rows } = await client.query(
-    `SELECT m.id, m.ioc_item_id, m.ioc_observable_type, m.feed_id, m.status, m.expires_at, m.expiration_reason,
+    `WITH due AS (
+       SELECT m.id, m.ioc_item_id, m.ioc_observable_type, m.feed_id, m.status,
+              m.expires_at, m.expiration_reason
+       FROM ioc_feed_memberships m
+       WHERE m.status = 'active'
+         AND m.expires_at IS NOT NULL
+         AND m.expires_at <= NOW()
+       ORDER BY m.expires_at ASC
+       LIMIT $1
+       FOR UPDATE OF m SKIP LOCKED
+     )
+     SELECT due.id, due.ioc_item_id, due.ioc_observable_type, due.feed_id, due.status,
+            due.expires_at, due.expiration_reason,
             i.observable,
             f.name AS feed_name
-     FROM ioc_feed_memberships m
-     JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
-     LEFT JOIN integration_feeds f ON f.integration_id = m.feed_id
-     WHERE m.status = 'active'
-       AND m.expires_at IS NOT NULL
-       AND m.expires_at <= NOW()
-     ORDER BY m.expires_at ASC
-     LIMIT $1
-     FOR UPDATE OF m SKIP LOCKED`,
+     FROM due
+     JOIN ioc_items i ON i.id = due.ioc_item_id AND i.observable_type = due.ioc_observable_type
+     LEFT JOIN integration_feeds f ON f.integration_id = due.feed_id
+     ORDER BY due.expires_at ASC`,
     [batchSize]
   );
 
