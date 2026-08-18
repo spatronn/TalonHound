@@ -6,3 +6,6 @@ node_modules/
 
 # Frontend build output (produced by `vite build` / Docker image build)
 frontend/dist/
+
+# Generated SAST report artifacts (do not commit scan outputs)
+/sast/
