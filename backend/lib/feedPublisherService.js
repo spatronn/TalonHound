@@ -1427,7 +1427,20 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   const latestIntegrationFinishedAt = force
     ? null
     : await fetchLatestIntegrationFinishedAt(db, feed);
-  const cheapWatermark = force ? null : await fetchCheapIocWatermark(db, feed);
+  // Coarse IOC watermark (MAX id/recency + active COUNT over the feed's IOC partitions) is
+  // consulted ONLY by the non-incremental path: the skip pre-check and the full-generation
+  // snapshot metadata. Incremental (projection) feeds use the precise dirty-detection path
+  // and never read it, so computing it eagerly here ran a full active-count partition scan
+  // (e.g. ~1.3M ioc_domain rows) every cycle for nothing. Compute it lazily + memoized so it
+  // only runs when a non-incremental window actually needs it. Values/semantics unchanged.
+  let cheapWatermarkMemo;
+  const getCheapWatermark = async () => {
+    if (force) return null;
+    if (cheapWatermarkMemo === undefined) {
+      cheapWatermarkMemo = await fetchCheapIocWatermark(db, feed);
+    }
+    return cheapWatermarkMemo;
+  };
   const feedUpdatedAt = feed.updated_at instanceof Date
     ? feed.updated_at.toISOString()
     : (feed.updated_at ? String(feed.updated_at) : null);
@@ -1462,7 +1475,7 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           feed,
           window,
           latestSnapshot: latest,
-          watermark: cheapWatermark,
+          watermark: await getCheapWatermark(),
           latestIntegrationFinishedAt,
           force
         });
@@ -1559,7 +1572,7 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         filters_hash,
         export_fingerprint: fingerprintKey,
         feed_updated_at: feedUpdatedAt,
-        ioc_watermark: cheapWatermark || await fetchCheapIocWatermark(db, feed)
+        ioc_watermark: await getCheapWatermark()
       };
 
       if (shouldStreamPublishedFeed(feed)) {
