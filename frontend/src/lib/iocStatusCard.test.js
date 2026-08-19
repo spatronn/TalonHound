@@ -88,6 +88,26 @@ describe('getIocStatusCardPresentation', () => {
     assert.ok(p.buttons.includes('clear_ioc_override'));
   });
 
+  it('active IOC re-added via a manual source shows Manual Override: No and hides Clear override', () => {
+    // Reproduction: expired feed IOC re-added through a manual source. The backend reports
+    // manual_status_override=false (source bookkeeping is not a lifecycle override), even
+    // though an active manual source exists. The card must not offer to clear an override.
+    const p = getIocStatusCardPresentation({
+      status: 'active',
+      expires_at: '2026-09-18T12:00:00.000Z',
+      expired_at: null,
+      expiration_reason: null,
+      manual_status_override: false,
+      active_source_count: 1,
+      expiration_summary: { label: 'Active on 1/2 sources · Expires 2026-09-18' }
+    });
+    const override = p.fields.find((f) => f.key === 'manual_override');
+    assert.equal(override.value, 'No');
+    assert.equal(override.secondary, 'No override set');
+    assert.ok(!p.buttons.includes('clear_ioc_override'));
+    assert.deepEqual(p.buttons, ['custom_expire_ioc', 'expire_ioc']);
+  });
+
   it('false positive hides expiration actions', () => {
     const p = getIocStatusCardPresentation(activeSummary, { suppressionActive: true });
     assert.equal(p.lifecycle, 'false_positive');

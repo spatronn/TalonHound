@@ -12,6 +12,19 @@ export const MANUAL_EXPIRE_POLICIES = Object.freeze([
   'custom_date'
 ]);
 
+/**
+ * Reserved `manual_override_reason` values written by createManualIoc / iocSourceMove
+ * to describe a manual SOURCE's own expiry policy. These are source-lifecycle
+ * bookkeeping — NOT an explicit analyst lifecycle override. Genuine override actions
+ * (Expire IOC now / reactivate / set custom expiry) always carry a free-text reason and
+ * must never reuse these tokens (enforced in the status-override route). See
+ * isExplicitIocLifecycleOverride() in iocStatusOverrideGuards.js.
+ */
+export const MANUAL_SOURCE_LIFECYCLE_REASONS = Object.freeze([
+  'manual_never_expire',
+  'manual_custom_expire'
+]);
+
 import { validateThreatClassificationSlug } from './threatClassification.js';
 import { validateIocThreatClassificationSlugs } from './iocThreatClassifications.js';
 

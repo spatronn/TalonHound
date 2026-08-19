@@ -17,7 +17,7 @@ import {
   formatIocEntityDisplay
 } from '../lib/auditIocContext.js';
 import { evaluateIocStatusOverrideRequest } from '../lib/iocStatusOverrideGuards.js';
-import { parseManualExpirationInput } from '../lib/iocSourceValidation.js';
+import { parseManualExpirationInput, MANUAL_SOURCE_LIFECYCLE_REASONS } from '../lib/iocSourceValidation.js';
 import { validateExpirationTypePolicies } from '../lib/feedExpirationPolicy.js';
 
 const POLICY_AUDIT_FIELDS = ['enabled', 'expiration_mode', 'ttl_days', 'grace_days', 'observable_type'];
@@ -353,6 +353,13 @@ export function registerIocExpirationRoutes(app, pool, audit) {
 
       if (!reason) {
         return res.status(400).json({ success: false, error: 'Reason is required' });
+      }
+
+      // Reserved tokens describe a manual SOURCE's own expiry policy (createManualIoc);
+      // an explicit lifecycle override must never reuse them, otherwise it would be
+      // misread as source bookkeeping and hidden from the "Manual Override" indicator.
+      if (MANUAL_SOURCE_LIFECYCLE_REASONS.includes(reason)) {
+        return res.status(400).json({ success: false, error: 'reason is reserved; choose a different override reason' });
       }
 
       const prevStatus = String(prev.status || 'active').trim().toLowerCase();

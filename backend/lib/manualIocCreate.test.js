@@ -39,6 +39,7 @@ function makeInsertRow(overrides = {}) {
     expiration_reason: 'manual_custom_expire',
     manual_status_override: true,
     manual_status: 'active',
+    manual_override_reason: 'manual_custom_expire',
     manual_expires_at: '2026-07-28T12:00:00.000Z',
     created_at: now
   };
@@ -142,6 +143,21 @@ test('createManualIoc succeeds for domain with free-text source reference and no
   assert.equal(result.body.source_url, 'manuel hunting');
   assert.equal(result.body.threat_classification, 'unknown');
   assert.deepEqual(result.body.threat_classifications.map((x) => x.value), ['unknown']);
+});
+
+test('createManualIoc reports manual_status_override=false (manual source is not a lifecycle override)', async () => {
+  const pool = createManualIocPoolMock();
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    source_url: 'manuel hunting',
+    confidence: 'high'
+  });
+
+  assert.equal(result.status, 201);
+  // The row still carries the internal manual_status_override flag for its own expiry
+  // bookkeeping, but the analyst-facing response must not present it as an override.
+  assert.equal(result.body.manual_status_override, false);
 });
 
 test('createManualIoc accepts missing threat_classifications field', async () => {

@@ -12,6 +12,7 @@ import {
   replaceIocThreatActors,
   validateIocThreatActorIds
 } from './iocThreatActors.js';
+import { isExplicitIocLifecycleOverride } from './iocStatusOverrideGuards.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
@@ -93,7 +94,9 @@ export function serializeManualIocResponse(row, source, expiration, classificati
     expires_at: row.expires_at,
     expired_at: row.expired_at,
     expiration_reason: row.expiration_reason || null,
-    manual_status_override: Boolean(row.manual_status_override),
+    // A manual source is not a lifecycle override, even though its row carries
+    // manual_status_override for its own expiry bookkeeping. Report the analyst-facing value.
+    manual_status_override: isExplicitIocLifecycleOverride(row),
     manual_status: row.manual_status || null,
     manual_expires_at: row.manual_expires_at || null,
     expiration_policy: expiration?.policy || null,

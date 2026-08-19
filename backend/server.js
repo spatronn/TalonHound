@@ -73,6 +73,7 @@ import { registerIocBulkQueryTriageRoutes } from './routes/iocBulkQueryTriage.js
 import { BULK_QUERY_QUEUE_NAME } from './lib/iocBulkQueryJob/config.js';
 import { registerIocDeleteRoute } from './routes/iocDelete.js';
 import { formatExpirationSummary, buildIocExpirationSummary, recomputeIocGlobalStatus } from './lib/iocExpiration.js';
+import { isExplicitIocLifecycleOverride } from './lib/iocStatusOverrideGuards.js';
 import {
   archiveIntegrationFeed,
   findActivePurgeJobForFeed,
@@ -5283,6 +5284,7 @@ app.get('/api/ioc/details', async (req, res) => {
         tc.active AS threat_classification_active,
         i.manual_status_override,
         i.manual_status,
+        i.manual_override_reason,
         ${confidenceSelect}
         i.category,
         i.note,
@@ -5485,10 +5487,18 @@ app.get('/api/ioc/details', async (req, res) => {
         globalExpiresAt
       }),
       expired_at: lifecycleRow.expired_at || null,
-      expiration_reason: lifecycleRow.expiration_reason || null,
+      // expiration_reason describes WHY an IOC expired; it is meaningless while active.
+      // Suppress it for active IOCs so a manual source's lifecycle sentinel
+      // (manual_never_expire / manual_custom_expire) never leaks as an "expiration reason".
+      expiration_reason: String(lifecycleRow.status || 'active').toLowerCase() === 'expired'
+        ? (lifecycleRow.expiration_reason || null)
+        : null,
       reactivated_by_match_at: lifecycleRow.reactivated_by_match_at || null,
       ...threatMetadataFields,
-      manual_status_override: Boolean(lifecycleRow.manual_status_override),
+      // Analyst-facing "Manual Override": TRUE only for an explicit lifecycle override
+      // (Expire IOC now / reactivate / custom expiry / bulk expire). A manual *source*
+      // carries manual_status_override for its own expiry bookkeeping but is NOT an override.
+      manual_status_override: isExplicitIocLifecycleOverride(lifecycleRow),
       manual_status: lifecycleRow.manual_status || null,
       // Platform insert = earliest ioc_items.created_at (immutable). API alias: imported_at.
       ...(() => {
