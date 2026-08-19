@@ -1,0 +1,17 @@
+/*
+ * Destructive Active Sources menu item (e.g. "Expire source").
+ *
+ * Builds on the shared .br-menu-item so height, padding, base hover, focus
+ * ring and disabled behaviour stay identical to every other menu item. At
+ * rest the item blends into the dark menu like its neighbours; the subtle
+ * destructive treatment only appears on hover / keyboard focus, reusing the
+ * app's danger tokens (#fca5a5 text, rgba(248,113,113,...) surface).
+ *
+ * The .br-menu-item qualifier gives this rule higher specificity than
+ * .br-menu-item:hover so both colour and background override cleanly.
+ */
+.br-menu-item.ioc-source-menu-item--danger:hover:not(:disabled),
+.br-menu-item.ioc-source-menu-item--danger:focus-visible:not(:disabled) {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.14);
+}

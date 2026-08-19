@@ -4,6 +4,7 @@ import { IocDetailIcons } from './IocDetailIcons.jsx';
 import { formatIocDetailDateTime, listSourceMembershipActions } from '../../lib/iocDetailTimestamps.js';
 import { ACTIVE_SOURCES_COLUMNS, buildIocSummaryStripItems } from '../../lib/iocOverviewLayout.js';
 import { computeOverflowMenuPosition } from '../../lib/backupMenuPosition.js';
+import './activeSourcesMenu.css';
 
 const SOURCE_MENU_EVENT = 'ioc-source-actions-menu';
 
@@ -161,7 +162,7 @@ function SourceActionsMenu({
                 key={action.type}
                 type="button"
                 role="menuitem"
-                className={`br-menu-item${action.danger ? ' br-menu-danger' : ''}`}
+                className={`br-menu-item${action.danger ? ' ioc-source-menu-item--danger' : ''}`}
                 disabled={!action.enabled || actionLoading}
                 onClick={() => {
                   if (!action.enabled) return;
