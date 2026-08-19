@@ -7955,9 +7955,6 @@ function TagManagerPage() {
                 Do not use tags for threat classifications or threat actors — those are managed under Administration → Threat Actors and the IOC threat classification field.
               </span>
             </FeedFormField>
-            <FeedFormField ui={ui} label="Color" helper="Optional hex or CSS color for UI chips." fullWidth>
-              <input value={form.color} onChange={(e) => setForm((x) => ({ ...x, color: e.target.value }))} style={ui.input} placeholder="#ef4444" />
-            </FeedFormField>
             <FeedFormField ui={ui} label="Active" fullWidth>
               <label style={ui.checkLabel}>
                 <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((x) => ({ ...x, is_active: e.target.checked }))} />

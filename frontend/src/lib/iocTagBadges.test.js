@@ -28,6 +28,20 @@ test('buildIocTagBadges keeps manual orange priority and dedupes feed sources', 
   assert.match(feed[0].title, /URLhaus/);
 });
 
+test('buildIocTagBadges ignores legacy stored tag.color (origin drives the chip)', () => {
+  const { manual, feed } = buildIocTagBadges({
+    manualTags: [{ id: 9, name: 'ransomware', color: '#ef4444' }],
+    feedTags: [{ tag: 'botnet', normalized: 'botnet', source_name: 'URLhaus abuse.ch', color: '#10b981' }]
+  });
+  // Manual chips are orange, feed chips blue — decided by kind, never by a stored color.
+  assert.equal(manual.length, 1);
+  assert.equal(manual[0].kind, 'manual');
+  assert.ok(!('color' in manual[0]));
+  assert.equal(feed.length, 1);
+  assert.equal(feed[0].kind, 'feed');
+  assert.ok(!('color' in feed[0]));
+});
+
 test('buildIocTagBadges hides disabled catalog names from feed badges', () => {
   const { manual, feed } = buildIocTagBadges({
     manualTags: [{ id: 2, name: 'c2', is_active: false }],
