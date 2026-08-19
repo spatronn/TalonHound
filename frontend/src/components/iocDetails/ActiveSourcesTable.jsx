@@ -151,6 +151,7 @@ function SourceActionsMenu({
               border: '1px solid #334155',
               borderRadius: 8,
               background: '#0b1220',
+              color: '#e2e8f0',
               padding: 4,
               boxShadow: '0 12px 28px rgba(0,0,0,0.45)'
             }}
@@ -160,25 +161,11 @@ function SourceActionsMenu({
                 key={action.type}
                 type="button"
                 role="menuitem"
+                className={`br-menu-item${action.danger ? ' br-menu-danger' : ''}`}
                 disabled={!action.enabled || actionLoading}
                 onClick={() => {
                   if (!action.enabled) return;
                   pick(action.type);
-                }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '8px 10px',
-                  border: 'none',
-                  borderRadius: 6,
-                  background: 'transparent',
-                  color: !action.enabled
-                    ? '#475569'
-                    : (action.danger ? '#fca5a5' : '#e2e8f0'),
-                  fontSize: 12,
-                  cursor: action.enabled && !actionLoading ? 'pointer' : 'not-allowed',
-                  opacity: action.enabled ? 1 : 0.55
                 }}
               >
                 {action.label}
