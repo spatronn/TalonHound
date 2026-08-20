@@ -637,6 +637,90 @@ body {
   color: var(--th-muted);
 }
 
+/* ---------- JSON Schema 2020-12 renderer (OpenAPI 3.1 Schemas/Models) ----------
+   The API document declares openapi 3.1.0, so swagger-ui-dist 5.x renders every
+   schema — the bottom Schemas list AND each request/response body — with the
+   json-schema-2020-12 engine rather than the legacy .model tables above. Those
+   classes ship only light-theme values (near-black text #3b4151/#505050/#6b6b6b,
+   black hairline borders rgba(0,0,0,.1)) and must be re-themed here so nothing
+   collapses to dark-on-dark. Class-level specificity beats the defaults, so no
+   !important is needed. Kept generic (keyword/attribute/title/accordion) so new
+   OpenAPI schemas inherit the theme automatically. */
+
+/* Structural connector lines (dashed black by default → invisible on dark) */
+.swagger-ui .json-schema-2020-12-body,
+.swagger-ui .json-schema-2020-12-keyword__children,
+.swagger-ui .json-schema-2020-12-keyword--\$vocabulary ul {
+  border-left-color: var(--th-border);
+}
+
+/* Schema names (ApiError, IocCreateRequest …) and property keys */
+.swagger-ui .json-schema-2020-12__title,
+.swagger-ui .json-schema-2020-12-property .json-schema-2020-12__title {
+  color: var(--th-text-strong);
+}
+
+/* Keyword names/values: type, format, default, example, enum, description */
+.swagger-ui .json-schema-2020-12-keyword__name,
+.swagger-ui .json-schema-2020-12-keyword__name--primary,
+.swagger-ui .json-schema-2020-12-keyword__value--primary {
+  color: var(--th-text);
+}
+.swagger-ui .json-schema-2020-12-keyword__name--secondary,
+.swagger-ui .json-schema-2020-12-keyword__value,
+.swagger-ui .json-schema-2020-12-keyword__value--secondary,
+.swagger-ui .json-schema-2020-12-keyword--description {
+  color: var(--th-muted-soft);
+}
+
+/* Type + constraint attributes (object, string, minLength, format …) */
+.swagger-ui .json-schema-2020-12__attribute {
+  color: var(--th-muted);
+}
+.swagger-ui .json-schema-2020-12__attribute--primary {
+  color: var(--th-get);
+}
+.swagger-ui .json-schema-2020-12__attribute--muted {
+  color: var(--th-dim);
+}
+
+/* const chip + pattern-property "/" markers */
+.swagger-ui .json-schema-2020-12-keyword__value--const {
+  color: var(--th-muted-soft);
+  border-color: var(--th-border-strong);
+}
+.swagger-ui .json-schema-2020-12-keyword--patternProperties .json-schema-2020-12__title:first-of-type:after,
+.swagger-ui .json-schema-2020-12-keyword--patternProperties .json-schema-2020-12__title:first-of-type:before {
+  color: var(--th-get);
+}
+
+/* required (*) marker + warning states → palette danger */
+.swagger-ui .json-schema-2020-12-property--required > .json-schema-2020-12:first-of-type > .json-schema-2020-12-head .json-schema-2020-12__title:after,
+.swagger-ui .json-schema-2020-12__attribute--warning,
+.swagger-ui .json-schema-2020-12-keyword__value--warning {
+  color: var(--th-danger);
+}
+.swagger-ui .json-schema-2020-12-keyword__value--warning {
+  border-color: var(--th-danger);
+}
+
+/* Expand all / Collapse all + per-node accordion toggle icons */
+.swagger-ui .json-schema-2020-12-expand-deep-button {
+  color: var(--th-muted);
+  background: transparent;
+}
+.swagger-ui .json-schema-2020-12-expand-deep-button:hover,
+.swagger-ui .json-schema-2020-12-expand-deep-button:focus {
+  color: var(--th-text-strong);
+}
+.swagger-ui .json-schema-2020-12-accordion:focus-visible {
+  outline: 2px solid var(--th-focus);
+  outline-offset: 2px;
+}
+.swagger-ui .json-schema-2020-12-accordion__icon svg {
+  fill: var(--th-muted-soft);
+}
+
 /* ---------- Authorize modal ---------- */
 .swagger-ui .dialog-ux,
 .swagger-ui .modal-ux {
