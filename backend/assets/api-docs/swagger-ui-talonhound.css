@@ -519,7 +519,8 @@ body {
 /* ---------- Responses ---------- */
 .swagger-ui .responses-inner {
   background: transparent;
-  padding: 12px 0;
+  /* Keep stock-like horizontal inset so status codes clear the opblock border. */
+  padding: 12px 20px;
 }
 .swagger-ui .responses-inner h4,
 .swagger-ui .responses-inner h5,
@@ -528,17 +529,13 @@ body {
 .swagger-ui .response-control-media-type__accept-message {
   color: var(--th-muted);
 }
-.swagger-ui .response .response-col_status {
+.swagger-ui .response .response-col_status,
+.swagger-ui .responses-header .response-col_status {
   color: var(--th-text-strong);
   font-family: var(--th-mono);
-}
-/* Status/description/links share one baseline instead of the row's top edge, so the
-   smaller status code (200/400/401/403/404/413…) sits on the description baseline and
-   no longer hangs against the header separator. Baseline alignment leaves row heights
-   unchanged, so the compact response table is preserved. Applies to every response row. */
-.swagger-ui .responses-table tbody tr.response > td,
-.swagger-ui .live-responses-table tbody tr.response > td {
-  vertical-align: baseline;
+  white-space: nowrap;
+  vertical-align: top;
+  padding-right: 12px;
 }
 .swagger-ui .response-col_description {
   width: 99%;
