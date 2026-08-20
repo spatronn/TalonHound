@@ -520,6 +520,14 @@ body {
   color: var(--th-text-strong);
   font-family: var(--th-mono);
 }
+/* Status/description/links share one baseline instead of the row's top edge, so the
+   smaller status code (200/400/401/403/404/413…) sits on the description baseline and
+   no longer hangs against the header separator. Baseline alignment leaves row heights
+   unchanged, so the compact response table is preserved. Applies to every response row. */
+.swagger-ui .responses-table tbody tr.response > td,
+.swagger-ui .live-responses-table tbody tr.response > td {
+  vertical-align: baseline;
+}
 .swagger-ui .response-col_description {
   width: 99%;
 }
@@ -704,18 +712,32 @@ body {
   border-color: var(--th-danger);
 }
 
-/* Expand all / Collapse all + per-node accordion toggle icons */
+/* Expand all / Collapse all + per-node accordion toggles.
+   Both are native <button>s. The dist only flattens them via `.model-box <toggle>`,
+   which never reaches the Schemas list (it has no .model-box wrapper), so the UA
+   control background shows through as a grey rectangle under color-scheme:dark.
+   Flatten to transparent everywhere and supply dark-theme hover/focus affordances,
+   so the schema row reads as "ApiError  ^  object" with no grey button box behind it. */
+.swagger-ui .json-schema-2020-12-accordion,
+.swagger-ui .json-schema-2020-12-expand-deep-button {
+  background: transparent;
+  border: none;
+}
 .swagger-ui .json-schema-2020-12-expand-deep-button {
   color: var(--th-muted);
-  background: transparent;
 }
 .swagger-ui .json-schema-2020-12-expand-deep-button:hover,
 .swagger-ui .json-schema-2020-12-expand-deep-button:focus {
   color: var(--th-text-strong);
 }
+.swagger-ui .json-schema-2020-12-accordion:hover {
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 4px;
+}
 .swagger-ui .json-schema-2020-12-accordion:focus-visible {
   outline: 2px solid var(--th-focus);
-  outline-offset: 2px;
+  outline-offset: 1px;
+  border-radius: 4px;
 }
 .swagger-ui .json-schema-2020-12-accordion__icon svg {
   fill: var(--th-muted-soft);
