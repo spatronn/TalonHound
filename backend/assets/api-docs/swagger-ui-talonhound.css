@@ -57,6 +57,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Text selection: the page runs under color-scheme:dark with no custom selection
+   color, so the UA default renders as a washed grey box that greys out the selected
+   text (e.g. a highlighted "200" status). Give it a legible dark-theme highlight. */
+::selection {
+  background: rgba(96, 165, 250, 0.35);
+  color: var(--th-text-strong);
+}
+::-moz-selection {
+  background: rgba(96, 165, 250, 0.35);
+  color: var(--th-text-strong);
+}
+
 .swagger-ui,
 .swagger-ui .wrapper {
   background: var(--th-bg);

@@ -8,7 +8,8 @@ import {
   buildApiDocsHtml,
   hasExternalCdnReferences,
   getSwaggerUiDistPath,
-  getTalonhoundSwaggerThemePath
+  getTalonhoundSwaggerThemePath,
+  getThemeAssetVersion
 } from './apiDocs.js';
 import { buildOpenApiDocument } from '../lib/openapiDocument.js';
 
@@ -54,6 +55,21 @@ test('GET /api/docs returns 200 with local asset references only', async () => {
   assert.equal(hasExternalCdnReferences(res.text), false);
   assert.doesNotMatch(res.text, /unpkg\.com|jsdelivr|cdnjs|fonts\.googleapis/i);
   assert.match(res.text, /\/api\/docs\/static\/talonhound\.css/);
+});
+
+test('theme asset version busts the cached CSS after a deploy', async () => {
+  // Stable, non-empty token that changes with the file (size+mtime derived).
+  const v = getThemeAssetVersion();
+  assert.match(v, /^[a-f0-9]{10}$/);
+  assert.equal(v, getThemeAssetVersion());
+  // buildApiDocsHtml embeds it as a ?v= query on the theme link (and only there).
+  assert.match(buildApiDocsHtml(v), new RegExp(`/api/docs/static/talonhound\\.css\\?v=${v}`));
+  assert.doesNotMatch(buildApiDocsHtml(v), /swagger-ui\.css\?v=/);
+  // Served docs carry a version query so a plain refresh fetches the new theme.
+  const res = await http(makeApp(), 'GET', '/api/docs');
+  assert.match(res.text, /\/api\/docs\/static\/talonhound\.css\?v=[a-f0-9]{10}/);
+  // No-arg form (contract for the standalone helper) stays query-free.
+  assert.match(buildApiDocsHtml(), /\/api\/docs\/static\/talonhound\.css"/);
 });
 
 test('local Swagger UI static assets are reachable', async () => {

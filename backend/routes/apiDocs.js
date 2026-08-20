@@ -1,4 +1,6 @@
 import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import express from 'express';
@@ -12,6 +14,21 @@ export function getTalonhoundSwaggerThemePath() {
   return path.resolve(__dirname, '../assets/api-docs/swagger-ui-talonhound.css');
 }
 
+/**
+ * Short cache-busting token for the theme file. The link is served with a long
+ * max-age, so without a version query browsers keep a stale theme after a deploy.
+ * Derived from size+mtime so it changes exactly when the file does; falls back to
+ * a timestamp if the file can't be stat-ed.
+ */
+export function getThemeAssetVersion(themePath = getTalonhoundSwaggerThemePath()) {
+  try {
+    const s = fs.statSync(themePath);
+    return crypto.createHash('sha1').update(`${s.size}-${s.mtimeMs}`).digest('hex').slice(0, 10);
+  } catch {
+    return String(Date.now());
+  }
+}
+
 /** Absolute directory for locally installed swagger-ui-dist assets. */
 export function getSwaggerUiDistPath() {
   return path.dirname(require.resolve('swagger-ui-dist/package.json'));
@@ -21,7 +38,8 @@ export function getSwaggerUiDistPath() {
  * Self-contained docs HTML — all JS/CSS/favicon URLs are same-origin under /api/docs/static/.
  * No CDN / unpkg / Google Fonts references.
  */
-export function buildApiDocsHtml() {
+export function buildApiDocsHtml(themeVersion = '') {
+  const themeQuery = themeVersion ? `?v=${encodeURIComponent(themeVersion)}` : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -31,7 +49,7 @@ export function buildApiDocsHtml() {
   <link rel="icon" type="image/png" href="/api/docs/static/favicon-32x32.png" sizes="32x32" />
   <link rel="icon" type="image/png" href="/api/docs/static/favicon-16x16.png" sizes="16x16" />
   <link rel="stylesheet" href="/api/docs/static/swagger-ui.css" />
-  <link rel="stylesheet" href="/api/docs/static/talonhound.css" />
+  <link rel="stylesheet" href="/api/docs/static/talonhound.css${themeQuery}" />
 </head>
 <body>
   <div id="swagger-ui"></div>
@@ -87,7 +105,7 @@ export function registerApiDocsRoutes(app) {
   });
 
   app.get('/api/docs', (_req, res) => {
-    const html = buildApiDocsHtml();
+    const html = buildApiDocsHtml(getThemeAssetVersion(themePath));
     res.set('Cache-Control', 'public, max-age=60');
     res.type('html');
     return res.send(html);
