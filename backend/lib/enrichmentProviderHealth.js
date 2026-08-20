@@ -99,7 +99,7 @@ async function queryOne(pool, sql, params = []) {
 }
 
 async function loadRuntimeEvidence(pool) {
-  const [ipinfo, abuseipdb, rdap, dnsmania] = await Promise.all([
+  const [ipinfo, abuseipdb, rdap] = await Promise.all([
     queryOne(pool, `
       SELECT
         MAX(last_enriched_at) FILTER (WHERE provider_status = 'success') AS last_success_at,
@@ -117,15 +117,9 @@ async function loadRuntimeEvidence(pool) {
         MAX(last_success_at) AS last_success_at,
         MAX(last_attempt_at) FILTER (WHERE last_error IS NOT NULL) AS last_failure_at
       FROM ioc_domain_enrichment
-    `),
-    queryOne(pool, `
-      SELECT
-        MAX(last_success_at) AS last_success_at,
-        MAX(last_attempt_at) FILTER (WHERE provider_status = 'failed') AS last_failure_at
-      FROM ioc_dnsmania_enrichment
     `)
   ]);
-  return { ipinfo_lite: ipinfo, abuseipdb, rdap, dnsmania };
+  return { ipinfo_lite: ipinfo, abuseipdb, rdap };
 }
 
 function spamhausHealth(row, freshnessMs, now) {

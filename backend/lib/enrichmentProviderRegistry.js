@@ -9,11 +9,10 @@
 // State loaders delegate to each provider's existing config getter so the
 // enabled/configured semantics stay identical to the rest of the app (VirusTotal
 // and IPinfo default to enabled when no row exists; AbuseIPDB defaults to
-// disabled; RDAP/DNSMania are env-configured).
+// disabled; RDAP is env-configured).
 
 import { getIpinfoLiteConfig } from '../services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from '../services/abuseipdbService.js';
-import { getDnsmaniaConfig } from '../services/dnsmaniaEnrichmentService.js';
 import { getRdapProviderAdminSummary } from '../services/rdapEnrichmentService.js';
 import { getSpamhausDropConfig } from './spamhausDropSync.js';
 
@@ -44,7 +43,6 @@ const DEFAULT_PROVIDERS = [
   { key: VIRUSTOTAL_PROVIDER, displayName: 'VirusTotal', loadState: (pool) => loadVirustotalState(pool) },
   { key: 'ipinfo_lite', displayName: 'IPinfo Lite', loadState: async (pool) => pickState(await getIpinfoLiteConfig(pool)) },
   { key: 'abuseipdb', displayName: 'AbuseIPDB', loadState: async (pool) => pickState(await getAbuseIpdbConfig(pool)) },
-  { key: 'dnsmania', displayName: 'DNSMania', loadState: async () => pickState(getDnsmaniaConfig()) },
   { key: 'rdap', displayName: 'RDAP / WHOIS', loadState: async () => pickState(getRdapProviderAdminSummary()) },
   {
     key: 'spamhaus_drop',

@@ -52,8 +52,7 @@ test('Provider coverage + Analyst refs helpers still produce summary content', (
   const derivedContext = getDerivedInfrastructureContext(iocValue, 'url', { rdapEligible: false });
   const layered = computeLayeredProviderCoverage({
     directSnapshots: {
-      virustotal: { status: 'success' },
-      dnsmania: { status: 'not_run' }
+      virustotal: { status: 'success' }
     },
     derivedSnapshots: {
       ipinfo: { status: 'success' },
@@ -67,7 +66,6 @@ test('Provider coverage + Analyst refs helpers still produce summary content', (
   assert.ok(layered.derived?.length);
   assert.equal(layered.derivedHost, '203.0.113.10');
   assert.equal(layered.direct.find((p) => p.key === 'virustotal')?.state, 'available');
-  assert.equal(layered.direct.find((p) => p.key === 'dnsmania')?.state, 'not_run');
   assert.equal(layered.derived.find((p) => p.key === 'ipinfo')?.state, 'available');
   assert.equal(layered.derived.find((p) => p.key === 'abuseipdb')?.state, 'available');
   assert.equal(layered.derived.find((p) => p.key === 'spamhaus_drop')?.state, 'available');
@@ -91,8 +89,7 @@ test('domain IOC without derived IP keeps direct-only coverage layout', () => {
 
   const layered = computeLayeredProviderCoverage({
     directSnapshots: {
-      virustotal: { status: 'success' },
-      dnsmania: { status: 'completed', known: true }
+      virustotal: { status: 'success' }
     },
     derivedSnapshots: {},
     iocType: 'domain',

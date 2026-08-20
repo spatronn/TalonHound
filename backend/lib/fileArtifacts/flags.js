@@ -1,6 +1,6 @@
 /**
  * Feature flags for File Artifacts rollout.
- * Env pattern matches existing IOC_LIST_* / DNSMANIA_ENABLED style.
+ * Env pattern matches the existing IOC_LIST_* boolean-flag style.
  */
 
 function parseBoolEnv(value, defaultValue = false) {

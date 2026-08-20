@@ -40,8 +40,7 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
     { key: 'rdap', label: 'RDAP' },
-    { key: 'spamhaus_drop', label: 'Spamhaus' },
-    { key: 'dnsmania', label: 'DNSMania' }
+    { key: 'spamhaus_drop', label: 'Spamhaus' }
   ];
   let applicable;
   if (Array.isArray(providerKeys) && providerKeys.length) {
@@ -56,29 +55,9 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
     const state = providerCoverageStatus(snap);
     return {
       ...p,
-      state,
-      detail: p.key === 'dnsmania' ? dnsmaniaCoverageDetail(snap, state) : null
+      state
     };
   });
-}
-
-/** Frontend-only coverage caption for DNSMania snapshots (no risk/signal impact). */
-export function dnsmaniaCoverageDetail(snapshot, state) {
-  if (!snapshot || String(snapshot?.status || '') === 'not_run' || state === 'not_run') return 'Not run';
-  const status = String(snapshot.status || '').toLowerCase();
-  if (state === 'historical_disabled') return 'Historical · Disabled';
-  if (status === 'disabled' || status === 'not_configured' || state === 'disabled' || state === 'not_configured') {
-    return 'Disabled';
-  }
-  if (status === 'failed' || state === 'error') return 'Failed';
-  if (status === 'no_data' || (status === 'completed' && snapshot.known === false) || state === 'not_found') {
-    return 'No data';
-  }
-  if (status === 'completed' || state === 'available') {
-    // Prefer Found over Available — DNS history present is not a reputation verdict.
-    return 'Found';
-  }
-  return 'Not run';
 }
 
 export function computeLayeredProviderCoverage({

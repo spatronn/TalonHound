@@ -1,7 +1,7 @@
 import { parse as parseTld } from 'tldts';
 import { ipEnrichStripHostPort } from './ipEnrichmentTarget.js';
 
-export const PROVIDER_KEYS = Object.freeze(['virustotal', 'ipinfo', 'abuseipdb', 'rdap', 'spamhaus_drop', 'dnsmania']);
+export const PROVIDER_KEYS = Object.freeze(['virustotal', 'ipinfo', 'abuseipdb', 'rdap', 'spamhaus_drop']);
 
 /** ICANN registrable domain only — private suffixes (e.g. netlify.app) are not treated as the RDAP root. */
 const RDAP_TLD_OPTS = { allowPrivateDomains: false, detectIp: false };
@@ -159,7 +159,6 @@ export function isProviderApplicable(providerKey, iocType, { rdapEligible = fals
   if (key === 'ipinfo' || key === 'abuseipdb') return normalized === 'ip';
   if (key === 'spamhaus_drop') return normalized === 'ip';
   if (key === 'rdap') return normalized === 'domain' && Boolean(rdapEligible);
-  if (key === 'dnsmania') return normalized === 'domain' || normalized === 'url' || normalized === 'ip';
   return false;
 }
 

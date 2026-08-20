@@ -78,9 +78,7 @@ function ProviderCoverageBadges({ coverage }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {coverage.map((p) => {
         const st = providerStateStyle(p.state);
-        const caption = p.key === 'dnsmania' && p.detail
-          ? p.detail
-          : providerStateLabel(p.state);
+        const caption = providerStateLabel(p.state);
         return (
           <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: st.color }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot, display: 'inline-block' }} />
@@ -567,8 +565,7 @@ export function IntelligenceTabPanel({
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
   RdapEnrichmentCard,
-  SpamhausDropEnrichmentCard,
-  DnsmaniaEnrichmentCard
+  SpamhausDropEnrichmentCard
 }) {
   const [providerSnapshots, setProviderSnapshots] = useState({});
   const [derivedProviderSnapshots, setDerivedProviderSnapshots] = useState({});
@@ -589,7 +586,6 @@ export function IntelligenceTabPanel({
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
   const showSpamhaus = isProviderApplicable('spamhaus_drop', iocType);
-  const showDnsmania = isProviderApplicable('dnsmania', iocType);
 
   const onProviderSnapshot = useCallback((provider, snapshot) => {
     setProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
@@ -639,9 +635,6 @@ export function IntelligenceTabPanel({
           ) : null}
           {showSpamhaus && SpamhausDropEnrichmentCard ? (
             <SpamhausDropEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
-          ) : null}
-          {showDnsmania && DnsmaniaEnrichmentCard ? (
-            <DnsmaniaEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canWrite={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('dnsmania', snap)} />
           ) : null}
         </div>
       </div>

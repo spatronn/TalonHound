@@ -27,13 +27,6 @@ export const PROVIDER_META = {
     longDescription: 'Public RDAP domain registration lookups for domain and URL IOCs. No API key required.',
     editable: false
   },
-  dnsmania: {
-    key: 'dnsmania',
-    name: 'DNSMania',
-    shortDescription: 'Passive DNS history from DNSMania (DNSTAP).',
-    longDescription: 'Passive DNS history from DNSMania (DNSTAP). Manual on-demand enrichment from IOC Details > Intelligence.',
-    editable: false
-  },
   spamhaus_drop: {
     key: 'spamhaus_drop',
     name: 'Spamhaus DROP',
@@ -48,7 +41,6 @@ export const PROVIDER_ORDER = [
   'ipinfo_lite',
   'abuseipdb',
   'rdap',
-  'dnsmania',
   'spamhaus_drop'
 ];
 

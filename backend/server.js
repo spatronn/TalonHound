@@ -56,7 +56,6 @@ import {
   buildSearchProbeSql
 } from './lib/iocSearchDsl/searchPageSql.js';
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
-import { registerDnsmaniaEnrichmentRoutes } from './routes/dnsmaniaEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
 import { registerSpamhausDropEnrichmentRoutes } from './routes/spamhausDropEnrichment.js';
@@ -162,7 +161,6 @@ import { guardProviderEnabled } from './lib/enrichmentProviderRegistry.js';
 import { attachProviderHealth } from './lib/enrichmentProviderHealth.js';
 import { auditProviderConfigUpdate } from './lib/enrichmentProviderConfigAudit.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
-import { getDnsmaniaProviderAdminSummary } from './services/dnsmaniaEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence, computeInheritedEffectiveConfidence } from './lib/iocConfidence.js';
 import {
@@ -2754,8 +2752,6 @@ registerRouteModule('audit');
 
 registerRdapEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('rdap_enrichment');
-registerDnsmaniaEnrichmentRoutes(app, pool, auditLogService);
-registerRouteModule('dnsmania_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
@@ -6280,7 +6276,6 @@ async function loadEnrichmentProviderSummaries() {
         last_error_message: abuseipdb.last_error_message
       },
       getRdapProviderAdminSummary(),
-      getDnsmaniaProviderAdminSummary(),
       {
         provider: 'spamhaus_drop',
         name: 'Spamhaus DROP',

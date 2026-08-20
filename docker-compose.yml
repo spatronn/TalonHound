@@ -67,9 +67,6 @@ services:
       # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
       - IOC_LIST_TIMING=1
       - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
-      - DNSMANIA_BASE_URL=${DNSMANIA_BASE_URL:-}
-      - DNSMANIA_TIMEOUT_MS=${DNSMANIA_TIMEOUT_MS:-10000}
-      - DNSMANIA_ENABLED=${DNSMANIA_ENABLED:-true}
       - FILE_ARTIFACTS_DUAL_WRITE_ENABLED=${FILE_ARTIFACTS_DUAL_WRITE_ENABLED:-0}
       - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
       - IOC_EXPORT_QUEUE_NAME=ioc-search-export

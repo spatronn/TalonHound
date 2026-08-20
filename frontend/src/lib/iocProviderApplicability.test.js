@@ -33,32 +33,29 @@ test('hash IOC only includes VirusTotal', () => {
   assert.equal(isProviderApplicable('ipinfo', 'sha256'), false);
   assert.equal(isProviderApplicable('abuseipdb', 'sha256'), false);
   assert.equal(isProviderApplicable('rdap', 'sha256', { rdapEligible: true }), false);
-  assert.equal(isProviderApplicable('dnsmania', 'sha256'), false);
 });
 
-test('IP IOC includes VT, IPinfo, AbuseIPDB, Spamhaus DROP, and DNSMania but not RDAP', () => {
+test('IP IOC includes VT, IPinfo, AbuseIPDB, and Spamhaus DROP but not RDAP', () => {
   const providers = getApplicableProvidersForIocType('ip');
-  assert.deepEqual(providers, ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop', 'dnsmania']);
+  assert.deepEqual(providers, ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
   assert.equal(isProviderApplicable('rdap', 'ip', { rdapEligible: true }), false);
-  assert.equal(isProviderApplicable('dnsmania', 'ip'), true);
 });
 
-test('domain IOC includes RDAP only when eligible and always DNSMania', () => {
+test('domain IOC includes RDAP only when eligible', () => {
   assert.deepEqual(
     getApplicableProvidersForIocType('domain', { rdapEligible: true }),
-    ['virustotal', 'rdap', 'dnsmania']
+    ['virustotal', 'rdap']
   );
-  assert.deepEqual(getApplicableProvidersForIocType('domain', { rdapEligible: false }), ['virustotal', 'dnsmania']);
+  assert.deepEqual(getApplicableProvidersForIocType('domain', { rdapEligible: false }), ['virustotal']);
   assert.equal(isProviderApplicable('ipinfo', 'domain'), false);
   assert.equal(isProviderApplicable('abuseipdb', 'domain'), false);
 });
 
-test('URL IOC includes VirusTotal and DNSMania in direct coverage', () => {
-  assert.deepEqual(getApplicableProvidersForIocType('url'), ['virustotal', 'dnsmania']);
+test('URL IOC includes only VirusTotal in direct coverage', () => {
+  assert.deepEqual(getApplicableProvidersForIocType('url'), ['virustotal']);
   assert.equal(isProviderApplicable('ipinfo', 'url'), false);
   assert.equal(isProviderApplicable('abuseipdb', 'url'), false);
   assert.equal(isProviderApplicable('rdap', 'url', { rdapEligible: true }), false);
-  assert.equal(isProviderApplicable('dnsmania', 'url'), true);
 });
 
 test('computeProviderCoverage filters non-applicable providers for hash IOC', () => {
@@ -68,7 +65,7 @@ test('computeProviderCoverage filters non-applicable providers for hash IOC', ()
 
 test('computeProviderCoverage includes IP providers for IP IOC', () => {
   const coverage = computeProviderCoverage({}, { iocType: 'ip' });
-  assert.deepEqual(coverage.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop', 'dnsmania']);
+  assert.deepEqual(coverage.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
 });
 
 test('computeProviderCoverage omits RDAP for hash even with stale snapshots', () => {
@@ -307,8 +304,8 @@ test('computeProviderCoverage supports explicit providerKeys for derived section
 });
 
 test('getDirectApplicableProviders matches direct IOC rules', () => {
-  assert.deepEqual(getDirectApplicableProviders('url'), ['virustotal', 'dnsmania']);
-  assert.deepEqual(getDirectApplicableProviders('ip'), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop', 'dnsmania']);
+  assert.deepEqual(getDirectApplicableProviders('url'), ['virustotal']);
+  assert.deepEqual(getDirectApplicableProviders('ip'), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
 });
 
 test('getDerivedApplicableProviders returns IP providers for ip host kind', () => {
@@ -328,7 +325,7 @@ test('computeLayeredProviderCoverage splits direct and derived for URL with IP h
     iocType: 'url',
     derivedContext
   });
-  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal', 'dnsmania']);
+  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal']);
   assert.equal(layered.direct[0].state, 'available');
   assert.equal(layered.derivedHost, '196.189.3.1');
   assert.deepEqual(layered.derived.map((p) => p.key), ['ipinfo', 'abuseipdb', 'spamhaus_drop']);
@@ -342,7 +339,7 @@ test('computeLayeredProviderCoverage returns direct-only for IP IOC', () => {
     iocType: 'ip',
     derivedContext: null
   });
-  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop', 'dnsmania']);
+  assert.deepEqual(layered.direct.map((p) => p.key), ['virustotal', 'ipinfo', 'abuseipdb', 'spamhaus_drop']);
   assert.equal(layered.derived, null);
 });
 

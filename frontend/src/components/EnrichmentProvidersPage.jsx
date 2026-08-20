@@ -27,7 +27,6 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
   const [ipinfo, setIpinfo] = useState(null);
   const [abuseipdb, setAbuseipdb] = useState(null);
   const [rdap, setRdap] = useState(null);
-  const [dnsmania, setDnsmania] = useState(null);
   const [spamhaus, setSpamhaus] = useState(null);
   const [openCards, setOpenCards] = useState(() => new Set());
   const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
@@ -51,13 +50,11 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
       const ipRow = rows.find((x) => x.provider === 'ipinfo_lite') || null;
       const abuseRow = rows.find((x) => x.provider === 'abuseipdb') || null;
       const rdapRow = rows.find((x) => x.provider === 'rdap') || null;
-      const dnsRow = rows.find((x) => x.provider === 'dnsmania') || null;
       const spamRow = rows.find((x) => x.provider === 'spamhaus_drop') || null;
       setVt(vtRow);
       setIpinfo(ipRow);
       setAbuseipdb(abuseRow);
       setRdap(rdapRow);
-      setDnsmania(dnsRow);
       setSpamhaus(spamRow);
       if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
       if (ipRow) {
@@ -94,11 +91,11 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
   useEffect(() => { load().catch(() => {}); }, [load]);
 
   const providersForStats = useMemo(() => {
-    return [vt, ipinfo, abuseipdb, rdap, dnsmania, spamhaus].filter(Boolean).map((row) => ({
+    return [vt, ipinfo, abuseipdb, rdap, spamhaus].filter(Boolean).map((row) => ({
       ...row,
       status: resolveProviderStatus(row)
     }));
-  }, [vt, ipinfo, abuseipdb, rdap, dnsmania, spamhaus]);
+  }, [vt, ipinfo, abuseipdb, rdap, spamhaus]);
 
   const anyBusy = Object.values(busy).some(Boolean);
 
@@ -335,7 +332,6 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     ipinfo_lite: ipinfo,
     abuseipdb,
     rdap,
-    dnsmania,
     spamhaus_drop: spamhaus
   };
 
@@ -625,50 +621,6 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                             </div>
                             <div className="ep-note">
                               Used on-demand from <b style={{ color: '#e2e8f0' }}>IOC Details → Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain.
-                            </div>
-                          </>
-                        )}
-                        extraRight={(
-                          <div className="ep-side-row">
-                            <span className="ep-side-label">Auth</span>
-                            <div className="ep-side-value ep-side-muted">No API key</div>
-                          </div>
-                        )}
-                      />
-                    </ProviderAccordionCard>
-                  );
-                }
-
-                if (key === 'dnsmania') {
-                  const hs = headerStatus(row, row.enabled);
-                  return (
-                    <ProviderAccordionCard
-                      key={key}
-                      providerKey={key}
-                      name={meta.name}
-                      description={meta.shortDescription}
-                      status={hs.status}
-                      statusLabel={hs.label}
-                      enabled={row.enabled !== false && row.configured !== false}
-                      open={open}
-                      onToggle={() => toggleCard(key)}
-                    >
-                      <ProviderConfigForm
-                        status={hs.status}
-                        statusLabel={hs.label}
-                        enabled={row.enabled !== false && row.configured !== false}
-                        showEnabledToggle={false}
-                        health={row.health}
-                        description={row.description || meta.longDescription}
-                        left={(
-                          <>
-                            <div className="ep-readonly-grid">
-                              <div className="ep-readonly-item"><div className="k">Base URL</div><div className="v">{row.dnsmania_base_url || '—'}</div></div>
-                              <div className="ep-readonly-item"><div className="k">Timeout</div><div className="v">{row.timeout_ms || '—'} ms</div></div>
-                              <div className="ep-readonly-item"><div className="k">Max concurrency</div><div className="v">{row.max_concurrency ?? '—'}</div></div>
-                            </div>
-                            <div className="ep-note">
-                              Env-configured provider. Manual on-demand enrichment from <b style={{ color: '#e2e8f0' }}>IOC Details → Intelligence</b>. No API key required.
                             </div>
                           </>
                         )}

@@ -3,7 +3,6 @@ import abuseipdbLogo from '../../assets/provider-logos/abuseipdb.png';
 import virustotalLogo from '../../assets/provider-logos/virustotal.png';
 import ipinfoLogo from '../../assets/provider-logos/ipinfo.png';
 import rdapLogo from '../../assets/provider-logos/rdap.png';
-import dnsmaniaLogo from '../../assets/provider-logos/dnsmania.svg';
 import spamhausLogo from '../../assets/provider-logos/spamhaus.png';
 
 const LOGO_BY_KEY = {
@@ -11,7 +10,6 @@ const LOGO_BY_KEY = {
   ipinfo_lite: ipinfoLogo,
   abuseipdb: abuseipdbLogo,
   rdap: rdapLogo,
-  dnsmania: dnsmaniaLogo,
   spamhaus_drop: spamhausLogo
 };
 
