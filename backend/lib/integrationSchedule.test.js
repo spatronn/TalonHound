@@ -11,6 +11,7 @@ import {
   isWeeklyScheduleCron,
   isRunOnceSchedule,
   isAllowedScheduleCron,
+  resolveNextRunAt,
   ALLOWED_SCHEDULE_CRONS,
   RUN_ONCE_SCHEDULE
 } from './integrationSchedule.js';
@@ -135,4 +136,42 @@ test('allowed schedule crons include run_once and existing intervals', () => {
   assert.equal(ALLOWED_SCHEDULE_CRONS.includes('0 * * * *'), true);
   assert.equal(ALLOWED_SCHEDULE_CRONS.includes(RUN_ONCE_SCHEDULE), true);
   assert.equal(isAllowedScheduleCron('0 */2 * * *'), false);
+});
+
+test('resolveNextRunAt keeps a future BullMQ next', () => {
+  const now = new Date('2026-08-21T18:00:00Z');
+  const bull = new Date('2026-08-21T18:48:00Z');
+  const computed = new Date('2026-08-21T19:00:00Z');
+  assert.equal(resolveNextRunAt(bull, computed, now).toISOString(), bull.toISOString());
+});
+
+test('resolveNextRunAt falls back to computed when BullMQ next is in the past', () => {
+  const now = new Date('2026-08-21T18:00:00Z');
+  const staleBull = new Date('2026-08-20T21:00:00Z'); // frozen past iteration
+  const computed = new Date('2026-08-22T00:00:00Z');
+  assert.equal(resolveNextRunAt(staleBull, computed, now).toISOString(), computed.toISOString());
+});
+
+test('resolveNextRunAt uses computed when BullMQ next is missing', () => {
+  const now = new Date('2026-08-21T18:00:00Z');
+  const computed = new Date('2026-08-22T00:00:00Z');
+  assert.equal(resolveNextRunAt(undefined, computed, now).toISOString(), computed.toISOString());
+  assert.equal(resolveNextRunAt(null, computed, now).toISOString(), computed.toISOString());
+});
+
+test('resolveNextRunAt returns null when nothing valid is available', () => {
+  const now = new Date('2026-08-21T18:00:00Z');
+  assert.equal(resolveNextRunAt(null, null, now), null);
+  assert.equal(resolveNextRunAt(new Date('2020-01-01T00:00:00Z'), null, now), null);
+});
+
+test('resolveNextRunAt preserves Istanbul daily-schedule regression (Next Run not in past)', () => {
+  // Reproduces the incident: ET last run 21/08 00:42 Istanbul, stale Bull next 21/08 00:00.
+  const now = new Date('2026-08-21T18:11:00Z'); // ~21:11 Istanbul
+  const staleBull = new Date('2026-08-20T21:00:00Z'); // 21/08 00:00 Istanbul (past)
+  // computedNext is what the schedule layer derives for a daily feed: tonight 00:00 Istanbul.
+  const computedDaily = new Date('2026-08-21T21:00:00Z');
+  const resolved = resolveNextRunAt(staleBull, computedDaily, now);
+  assert.ok(resolved.getTime() > now.getTime(), 'Next Run must be in the future');
+  assert.equal(resolved.toISOString(), computedDaily.toISOString());
 });

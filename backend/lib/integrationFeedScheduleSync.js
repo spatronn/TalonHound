@@ -25,6 +25,70 @@ export const USOM_RUN_MODES = Object.freeze({
   FULL_RECONCILIATION: 'full_reconciliation'
 });
 
+/**
+ * How far in the past a repeatable's `next` iteration may sit before it is treated
+ * as a stalled repeat-chain (rather than a run that is merely about to be promoted).
+ *
+ * A healthy BullMQ repeatable always keeps `next` in the future — the moment an
+ * iteration fires, the next one is scheduled ahead of `now`. A `next` that stays in
+ * the past therefore means the repeat chain broke (e.g. Redis losing the delayed
+ * iteration across a restart). The grace only needs to cover the brief window between
+ * an iteration becoming due and the worker promoting it, so it is schedule-agnostic:
+ * hourly, daily and weekly repeatables all share the same "next is in the future when
+ * healthy" invariant. Configurable for defence in depth.
+ */
+export const STALLED_REPEATABLE_GRACE_MS = Math.max(
+  Number(process.env.SCHEDULER_STALLED_GRACE_MS || 90_000),
+  60_000
+);
+
+/**
+ * Collect the schedule identities (feedKey::mode) that currently have a *live*
+ * iteration in the queue — waiting, active or delayed. A stalled repeatable is only
+ * re-armed when it has no live iteration, so a run that is queued, executing, or a
+ * delayed iteration about to promote is never duplicated.
+ */
+export async function collectLiveScheduleIdentities(queue) {
+  const identities = new Set();
+  const fetch = async (method) => {
+    if (typeof queue?.[method] !== 'function') return [];
+    try {
+      return (await queue[method](0, 5000)) || [];
+    } catch {
+      return [];
+    }
+  };
+  const [waiting, active, delayed] = await Promise.all([
+    fetch('getWaiting'),
+    fetch('getActive'),
+    fetch('getDelayed')
+  ]);
+  for (const job of [...waiting, ...active, ...delayed]) {
+    const key = String(job?.data?.integration_key || '').trim();
+    if (!key) continue;
+    const mode = String(job?.data?.run_mode || USOM_RUN_MODES.INCREMENTAL).trim()
+      || USOM_RUN_MODES.INCREMENTAL;
+    identities.add(scheduleIdentity(key, mode));
+  }
+  return identities;
+}
+
+/**
+ * A repeatable is stalled when its `next` iteration is safely in the past and no live
+ * iteration (waiting/active/delayed) exists to fire it. Returns the detail used for
+ * both the decision and the recovery log.
+ */
+export function evaluateRepeatableStall(repeatable, identity, liveScheduleIdentities, now = Date.now()) {
+  const nextMs = Number(repeatable?.next);
+  if (!Number.isFinite(nextMs)) return { stalled: false };
+  const overdueMs = now - nextMs;
+  if (overdueMs <= STALLED_REPEATABLE_GRACE_MS) return { stalled: false };
+  if (liveScheduleIdentities?.has(identity)) {
+    return { stalled: false, hasLiveIteration: true, overdueMs, oldNextMs: nextMs };
+  }
+  return { stalled: true, hasLiveIteration: false, overdueMs, oldNextMs: nextMs };
+}
+
 function envEnabled(value, fallback = true) {
   if (value == null || String(value).trim() === '') return fallback;
   return !['0', 'false', 'no', 'off'].includes(String(value).trim().toLowerCase());
@@ -247,6 +311,7 @@ export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefi
   }
 
   const repeatables = await importQueue.getRepeatableJobs();
+  const liveScheduleIdentities = await collectLiveScheduleIdentities(importQueue);
   const seenPerFeed = new Set();
   const knownJobNames = new Set(Object.values(INTEGRATION_FEED_JOBS));
 
@@ -277,13 +342,20 @@ export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefi
       console.log(`${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} reason=legacy_mode_key`);
       continue;
     }
-    if (
-      desiredFeed.key === USOM_FEED_KEY
-      && Number.isFinite(Number(r.next))
-      && Number(r.next) < Date.now() - 60_000
-    ) {
+    // Generic stalled repeat-chain recovery: if a repeatable's next iteration is
+    // safely in the past and nothing live (waiting/active/delayed) will fire it, the
+    // chain broke (e.g. Redis lost the delayed iteration on restart). Remove it here so
+    // the ensure-loop below re-arms it with a fresh future iteration. Applies to every
+    // built-in feed, not just USOM, and is duplicate-safe via the live-iteration check.
+    const stall = evaluateRepeatableStall(r, identity, liveScheduleIdentities);
+    if (stall.stalled) {
       await importQueue.removeRepeatableByKey(r.key);
-      console.log(`${logPrefix} removed repeat job identity=${identity} pattern=${repeatCron || '-'} reason=overdue_iteration`);
+      console.warn(
+        `${logPrefix} repeat recovery reason=overdue_iteration identity=${identity} `
+        + `pattern=${repeatCron || '-'}${r.tz ? ` tz=${r.tz}` : ''} `
+        + `old_next=${new Date(stall.oldNextMs).toISOString()} now=${new Date().toISOString()} `
+        + `overdue_s=${Math.round(stall.overdueMs / 1000)} live_iteration=false action=removed_for_rearm`
+      );
       continue;
     }
 

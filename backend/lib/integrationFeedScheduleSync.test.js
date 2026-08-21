@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getUsomFullReconciliationScheduleConfig,
-  syncIntegrationFeedSchedules
+  syncIntegrationFeedSchedules,
+  collectLiveScheduleIdentities,
+  evaluateRepeatableStall,
+  STALLED_REPEATABLE_GRACE_MS
 } from './integrationFeedScheduleSync.js';
 
 function mockPool(rows) {
@@ -28,6 +31,169 @@ function mockQueue(repeatables = []) {
     async removeRepeatableByKey(key) { removed.push(key); }
   };
 }
+
+/** Queue mock that also exposes waiting/active/delayed live jobs for recovery tests. */
+function mockRecoveryQueue(repeatables = [], live = {}) {
+  const q = mockQueue(repeatables);
+  q.getWaiting = async () => live.waiting || [];
+  q.getActive = async () => live.active || [];
+  q.getDelayed = async () => live.delayed || [];
+  return q;
+}
+
+const HOUR_MS = 3600_000;
+function liveJob(integrationKey, runMode = 'incremental') {
+  return { data: { integration_key: integrationKey, run_mode: runMode } };
+}
+
+test('Case A — healthy future repeatable is left untouched (no remove/recreate)', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue([
+    { key: 'integration-schedule:urlhaus-abusech::incremental', id: undefined, name: 'urlhaus-import', pattern: '0 * * * *', next: now + HOUR_MS }
+  ]);
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'urlhaus-abusech', schedule_cron: '0 * * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, []);
+  assert.deepEqual(queue.added, []);
+});
+
+test('Case B — stalled repeatable with no live iteration is removed and re-armed', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue([
+    { key: 'integration-schedule:urlhaus-abusech::incremental', id: undefined, name: 'urlhaus-import', pattern: '0 * * * *', next: now - 2 * HOUR_MS }
+  ]);
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'urlhaus-abusech', schedule_cron: '0 * * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, ['integration-schedule:urlhaus-abusech::incremental']);
+  assert.equal(queue.added.length, 1);
+  assert.equal(queue.added[0].data.integration_key, 'urlhaus-abusech');
+  assert.equal(queue.added[0].options.repeat.key, 'integration-schedule:urlhaus-abusech::incremental');
+});
+
+test('Case C — overdue repeatable with an active iteration is NOT re-armed', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue(
+    [{ key: 'integration-schedule:threatfox-abusech::incremental', id: undefined, name: 'threatfox-import', pattern: '0 * * * *', next: now - 2 * HOUR_MS }],
+    { active: [liveJob('threatfox-abusech')] }
+  );
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'threatfox-abusech', schedule_cron: '0 * * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, []);
+  assert.deepEqual(queue.added, []);
+});
+
+test('Case D — overdue repeatable with a waiting iteration is NOT re-armed', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue(
+    [{ key: 'integration-schedule:threatfox-abusech::incremental', id: undefined, name: 'threatfox-import', pattern: '0 * * * *', next: now - 2 * HOUR_MS }],
+    { waiting: [liveJob('threatfox-abusech')] }
+  );
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'threatfox-abusech', schedule_cron: '0 * * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, []);
+  assert.deepEqual(queue.added, []);
+});
+
+test('Case E — overdue repeatable with a delayed iteration is NOT re-armed', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue(
+    [{ key: 'integration-schedule:threatfox-abusech::incremental', id: undefined, name: 'threatfox-import', pattern: '0 * * * *', next: now - 2 * HOUR_MS }],
+    { delayed: [liveJob('threatfox-abusech')] }
+  );
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'threatfox-abusech', schedule_cron: '0 * * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, []);
+  assert.deepEqual(queue.added, []);
+});
+
+test('Case F — USOM recovers through the generic path (no USOM-only special-case needed)', async () => {
+  const prev = process.env.USOM_FULL_RECONCILIATION_ENABLED;
+  process.env.USOM_FULL_RECONCILIATION_ENABLED = 'false';
+  try {
+    const now = Date.now();
+    const queue = mockRecoveryQueue([
+      { key: 'integration-schedule:usom-trcert::incremental', id: undefined, name: 'usom-import', pattern: '0 * * * *', next: now - 2 * HOUR_MS }
+    ]);
+    await syncIntegrationFeedSchedules(
+      mockPool([{ key: 'usom-trcert', schedule_cron: '0 * * * *' }]),
+      queue,
+      { logPrefix: '[test]' }
+    );
+    assert.deepEqual(queue.removed, ['integration-schedule:usom-trcert::incremental']);
+    const usom = queue.added.filter((e) => e.data.integration_key === 'usom-trcert');
+    assert.equal(usom.length, 1);
+    assert.equal(usom[0].options.repeat.key, 'integration-schedule:usom-trcert::incremental');
+  } finally {
+    if (prev == null) delete process.env.USOM_FULL_RECONCILIATION_ENABLED;
+    else process.env.USOM_FULL_RECONCILIATION_ENABLED = prev;
+  }
+});
+
+test('Case G — another built-in feed (EmergingThreats daily) recovers the same way', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue([
+    { key: 'integration-schedule:et-blockrules::incremental', id: undefined, name: 'hourly-import', pattern: '0 0 * * *', tz: 'Europe/Istanbul', next: now - 26 * HOUR_MS }
+  ]);
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'et-blockrules', schedule_cron: '0 0 * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, ['integration-schedule:et-blockrules::incremental']);
+  assert.equal(queue.added.length, 1);
+  assert.equal(queue.added[0].data.integration_key, 'et-blockrules');
+});
+
+test('Case H — schedule mismatch is still replaced (no regression) even when future', async () => {
+  const now = Date.now();
+  const queue = mockRecoveryQueue([
+    { key: 'integration-schedule:urlhaus-abusech::incremental', id: undefined, name: 'urlhaus-import', pattern: '30 * * * *', next: now + HOUR_MS }
+  ]);
+  await syncIntegrationFeedSchedules(
+    mockPool([{ key: 'urlhaus-abusech', schedule_cron: '0 * * * *' }]),
+    queue,
+    { logPrefix: '[test]' }
+  );
+  assert.deepEqual(queue.removed, ['integration-schedule:urlhaus-abusech::incremental']);
+  assert.equal(queue.added.length, 1);
+});
+
+test('collectLiveScheduleIdentities tolerates a queue without live-job getters', async () => {
+  const set = await collectLiveScheduleIdentities(mockQueue([]));
+  assert.equal(set.size, 0);
+});
+
+test('evaluateRepeatableStall honours grace and live-iteration guard', () => {
+  const now = 1_000_000_000_000;
+  // future next → not stalled
+  assert.equal(evaluateRepeatableStall({ next: now + HOUR_MS }, 'x::incremental', new Set(), now).stalled, false);
+  // within grace → not stalled
+  assert.equal(evaluateRepeatableStall({ next: now - (STALLED_REPEATABLE_GRACE_MS - 1) }, 'x::incremental', new Set(), now).stalled, false);
+  // safely overdue, no live → stalled
+  assert.equal(evaluateRepeatableStall({ next: now - 5 * HOUR_MS }, 'x::incremental', new Set(), now).stalled, true);
+  // safely overdue but live → not stalled
+  assert.equal(
+    evaluateRepeatableStall({ next: now - 5 * HOUR_MS }, 'x::incremental', new Set(['x::incremental']), now).stalled,
+    false
+  );
+  // non-finite next → not stalled
+  assert.equal(evaluateRepeatableStall({ next: undefined }, 'x::incremental', new Set(), now).stalled, false);
+});
 
 test('USOM gets stable incremental and weekly full schedule identities', async () => {
   const previous = {

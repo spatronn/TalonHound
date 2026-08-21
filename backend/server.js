@@ -235,7 +235,7 @@ import { createManualIoc } from './lib/manualIocCreate.js';
 import { createManualSuppression } from './lib/manualSuppressionCreate.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
-import { computeNextRunAt, computeNextWeeklyRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule } from './lib/integrationSchedule.js';
+import { computeNextRunAt, computeNextWeeklyRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule, resolveNextRunAt } from './lib/integrationSchedule.js';
 import { getUsomFullReconciliationScheduleConfig, syncSingleFeedSchedule } from './lib/integrationFeedScheduleSync.js';
 import {
   buildUsomReconciliationHealth,
@@ -1162,14 +1162,16 @@ app.get('/api/integrations', async (req, res) => {
       }
       const bullNext = repeatableNextByKey.get(`${feed.key}::${USOM_INCREMENTAL_MODE}`) || repeatableNextByKey.get(feed.key);
       const computedNext = computeNextRunAt(feed.schedule, feed.key, now, slotMap);
-      const nextRunAt = isRunOnceSchedule(feed.schedule) ? null : (bullNext || computedNext);
+      // Never surface a stale/past BullMQ next as "Next Run" — fall back to the
+      // schedule-derived future run. See resolveNextRunAt.
+      const nextRunAt = isRunOnceSchedule(feed.schedule) ? null : resolveNextRunAt(bullNext, computedNext, now);
       const fullBullNext = feed.key === 'usom-trcert'
         ? repeatableNextByKey.get(`${feed.key}::${USOM_FULL_RECONCILIATION_MODE}`)
         : null;
       const fullComputedNext = feed.key === 'usom-trcert' && usomFullSchedule.enabled
         ? computeNextWeeklyRunAt(usomFullSchedule.cron, now, usomFullSchedule.timezone)
         : null;
-      const nextFull = fullBullNext || fullComputedNext;
+      const nextFull = resolveNextRunAt(fullBullNext, fullComputedNext, now);
       return {
         ...base,
         next_run_at: nextRunAt ? nextRunAt.toISOString() : null,

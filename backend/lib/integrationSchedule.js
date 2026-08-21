@@ -285,6 +285,33 @@ export function computeNextRunAt(scheduleCron, feedKey, now = new Date(), slotMa
   return fallback;
 }
 
+/**
+ * Choose the value shown to users as "Next Run".
+ *
+ * The BullMQ repeatable's `next` (bullNext) is canonical *only while it is in the
+ * future*. A stalled or not-yet-recovered repeat chain can leave `next` frozen in the
+ * past; such a value must never surface as "Next Run" (it produces Next Run < Last Run).
+ * When bullNext is missing or in the past we fall back to the schedule-derived future
+ * `computedNext`. Timezone semantics are untouched — both inputs are absolute instants.
+ *
+ * @param {Date|string|number|null|undefined} bullNext
+ * @param {Date|null|undefined} computedNext
+ * @param {Date|number} [now]
+ * @returns {Date|null}
+ */
+export function resolveNextRunAt(bullNext, computedNext, now = new Date()) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  let bullMs = NaN;
+  if (bullNext instanceof Date) bullMs = bullNext.getTime();
+  else if (typeof bullNext === 'number') bullMs = bullNext;
+  else if (typeof bullNext === 'string' && bullNext.trim() !== '') bullMs = Date.parse(bullNext);
+
+  if (Number.isFinite(bullMs) && bullMs > nowMs) {
+    return bullNext instanceof Date ? bullNext : new Date(bullMs);
+  }
+  return computedNext || null;
+}
+
 export function buildRepeatableNextRunMap(repeatables = []) {
   const map = new Map();
   for (const row of repeatables) {
