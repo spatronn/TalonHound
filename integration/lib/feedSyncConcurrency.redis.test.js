@@ -77,12 +77,23 @@ function uniqueQueueName() {
 
 describe('global feed-sync concurrency (Redis-backed)', { skip: !REDIS_AVAILABLE }, () => {
   let connection;
+  // BullMQ does NOT close a connection the caller passes in, so every worker
+  // connection is tracked and quit here — otherwise lingering ioredis handles
+  // keep the event loop alive and `node --test` never exits.
+  const workerConnections = [];
+
+  function spawnWorker(queueName, processor, concurrency) {
+    const conn = connection.duplicate();
+    workerConnections.push(conn);
+    return new Worker(queueName, processor, { connection: conn, concurrency });
+  }
 
   before(() => {
     connection = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
   });
 
   after(async () => {
+    for (const conn of workerConnections) await conn.quit().catch(() => {});
     if (connection) await connection.quit().catch(() => {});
   });
 
@@ -119,8 +130,8 @@ describe('global feed-sync concurrency (Redis-backed)', { skip: !REDIS_AVAILABLE
 
     // Two independent Worker instances, each with local concurrency 2 => local
     // capacity 4. If the cap were merely per-worker, peak would reach 4.
-    const workerA = new Worker(queueName, processor, { connection: connection.duplicate(), concurrency: 2 });
-    const workerB = new Worker(queueName, processor, { connection: connection.duplicate(), concurrency: 2 });
+    const workerA = spawnWorker(queueName, processor, 2);
+    const workerB = spawnWorker(queueName, processor, 2);
 
     try {
       for (let i = 0; i < 6; i += 1) {
@@ -153,12 +164,12 @@ describe('global feed-sync concurrency (Redis-backed)', { skip: !REDIS_AVAILABLE
       return gates.get(id);
     };
 
-    const worker = new Worker(queueName, async (job) => {
+    const worker = spawnWorker(queueName, async (job) => {
       tracker.enter(job.data.id);
       await gateFor(job.data.id).p; // block until the test releases this job
       tracker.exit(job.data.id);
       return { ok: true };
-    }, { connection: connection.duplicate(), concurrency: 4 }); // local capacity 4 > global 2
+    }, 4); // local capacity 4 > global 2
 
     try {
       await queue.add('sync', { id: 'A' });
@@ -196,12 +207,12 @@ describe('global feed-sync concurrency (Redis-backed)', { skip: !REDIS_AVAILABLE
     await queue.setGlobalConcurrency(2);
 
     const tracker = makeTracker();
-    const worker = new Worker(queueName, async (job) => {
+    const worker = spawnWorker(queueName, async (job) => {
       tracker.enter(job.data.id);
       await sleep(120);
       tracker.exit(job.data.id);
       return { ok: true };
-    }, { connection: connection.duplicate(), concurrency: 4 });
+    }, 4);
 
     try {
       // Two scheduled jobs already queued, then a manual "Sync Now" arrives.
@@ -226,7 +237,9 @@ describe('global feed-sync concurrency (Redis-backed)', { skip: !REDIS_AVAILABLE
     await queue.setGlobalConcurrency(2);
 
     const tracker = makeTracker();
-    const worker = new Worker(queueName, async (job) => {
+    // local concurrency 4 > global 2; jobs enqueued with attempts:1 so the
+    // failure is terminal and deterministic.
+    const worker = spawnWorker(queueName, async (job) => {
       tracker.enter(job.data.id);
       try {
         if (job.data.id === 'A') {
@@ -238,9 +251,7 @@ describe('global feed-sync concurrency (Redis-backed)', { skip: !REDIS_AVAILABLE
       } finally {
         tracker.exit(job.data.id);
       }
-    }, { connection: connection.duplicate(), concurrency: 4, // local > global
-      // no retries so the failure is terminal and deterministic
-    });
+    }, 4);
 
     try {
       await queue.add('sync', { id: 'A' }, { attempts: 1 });
