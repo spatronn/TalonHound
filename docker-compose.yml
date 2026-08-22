@@ -186,7 +186,9 @@ services:
       - TZ=${SYSTEM_TIMEZONE:-}
       - FILE_ARTIFACTS_DUAL_WRITE_ENABLED=${FILE_ARTIFACTS_DUAL_WRITE_ENABLED:-0}
       - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
-      - WORKER_CONCURRENCY=1
+      # Max feed syncs running at once across the whole deployment (global,
+      # Redis-enforced). The worker fills up to this many slots itself.
+      - FEED_SYNC_CONCURRENCY=${FEED_SYNC_CONCURRENCY:-2}
       - WORKER_LOCK_DURATION_MS=900000
       - WORKER_STALLED_INTERVAL_MS=60000
       - WORKER_MAX_STALLED_COUNT=5

@@ -1,4 +1,4 @@
-import { Worker, DelayedError } from 'bullmq';
+import { Worker } from 'bullmq';
 import { config } from './config.js';
 import { createIntegrationPool } from './lib/pg-pool.js';
 import { importQueue, redis } from './queue.js';
@@ -14,23 +14,23 @@ import {
   FAILURE_TYPES,
   resolveIntegrationJobTimeoutMs
 } from './lib/integrationQueueConfig.js';
-import { findActiveRunningJobForSource, recoverStaleRunningJobs, runQueueRecovery } from './lib/integrationQueueRecovery.js';
+import { recoverStaleRunningJobs, runQueueRecovery } from './lib/integrationQueueRecovery.js';
 import {
   createWorkerIdentity,
   markJobRunning,
   startJobHeartbeat,
   markJobSuccess,
   markJobSkipped,
-  markJobFailed,
-  markJobDeferredSourceBusy
+  markJobFailed
 } from './lib/integrationQueueJobState.js';
+import { resolveFeedSyncConcurrency, feedSyncLockIdentity } from './lib/feedSyncConcurrency.js';
+import { acquireFeedSyncLock } from './lib/feedSyncLock.js';
 import { runFeedDataPurgeJob } from './lib/feedLifecycle.js';
 import { withImportOptimizationContext } from './lib/iocExpiration.js';
 import { runCustomThreatFeedImport } from './lib/customThreatFeedImport.js';
 import { runSpamhausDropSync } from './lib/spamhausDropSync.js';
 import { runFileArtifactReconciliation } from './runFileArtifactReconciliation.js';
 import { resolveWorkerJobFailureType } from './lib/job-cancellation.js';
-import { malwareBazaarJobsCanCoexist } from '../backend/lib/malwarebazaarCoverage.js';
 import {
   enqueueMalwareBazaarHistoricalRecovery,
   runMalwareBazaarHistoricalRecovery
@@ -39,7 +39,15 @@ import {
 const pool = createIntegrationPool();
 
 const LOG_PREFIX = '[integration-worker]';
-const WORKER_CONCURRENCY = Math.max(Number(process.env.WORKER_CONCURRENCY || 1), 1);
+// Global cap on simultaneous feed syncs across the whole deployment. Enforced in
+// Redis via BullMQ global concurrency (setGlobalConcurrency below), so it holds
+// across every trigger and every worker process — not just within this Node
+// process. The per-worker `concurrency` is set to the same value so a single
+// worker container can actually fill all global slots; adding more worker
+// replicas cannot exceed the global ceiling.
+const FEED_SYNC_CONCURRENCY = resolveFeedSyncConcurrency(process.env.FEED_SYNC_CONCURRENCY, {
+  logger: (msg) => console.warn(`${LOG_PREFIX} ${msg}`)
+});
 const WORKER_LOCK_DURATION_MS = Math.max(Number(process.env.WORKER_LOCK_DURATION_MS || 300000), 60000);
 const WORKER_STALLED_INTERVAL_MS = Math.max(Number(process.env.WORKER_STALLED_INTERVAL_MS || 60000), 10000);
 const WORKER_MAX_STALLED_COUNT = Math.max(Number(process.env.WORKER_MAX_STALLED_COUNT || 5), 1);
@@ -208,6 +216,18 @@ process.env.TZ = systemTz;
 process.env.SYSTEM_TIMEZONE = systemTz;
 setSystemScheduleTimezoneOverride(systemTz);
 
+// Enforce the global feed-sync concurrency ceiling in Redis. This is authoritative
+// across every worker process/container consuming this queue: BullMQ will keep
+// excess jobs in `waiting` and only move up to FEED_SYNC_CONCURRENCY into `active`
+// at once, automatically handing a freed slot to the next waiting job (FIFO/priority).
+try {
+  await importQueue.setGlobalConcurrency(FEED_SYNC_CONCURRENCY);
+  console.log(`${LOG_PREFIX} Global feed sync concurrency set concurrency_limit=${FEED_SYNC_CONCURRENCY} queue=${config.queueName}`);
+} catch (err) {
+  console.error(`${LOG_PREFIX} Failed to set global concurrency`, err?.message || err);
+  throw err;
+}
+
 const worker = new Worker(
   config.queueName,
   async (job) => {
@@ -219,14 +239,23 @@ const worker = new Worker(
     const triggeredBy = job?.data?.triggeredBy || 'scheduler';
     activeJobId = String(job.id);
 
-    const blocking = await findActiveRunningJobForSource(pool, integrationKey, String(job.id));
-    if (blocking && !malwareBazaarJobsCanCoexist(job.name, blocking.job_name)) {
-      await markJobDeferredSourceBusy(pool, String(job.id));
-      await job.moveToDelayed(Date.now() + QUEUE_HARDENING.sourceBusyDeferMs, job.token);
+    // Atomic, cross-process per-feed exclusion. A busy feed's duplicate trigger is
+    // skipped (not deferred-then-rerun) so it never causes a redundant overlapping
+    // sync or duplicate ingestion. The global concurrency ceiling is enforced
+    // upstream in Redis, so reaching here already means a global slot was free.
+    const lockIdentity = feedSyncLockIdentity(integrationKey, job.name);
+    const feedLock = await acquireFeedSyncLock(pool, lockIdentity);
+    if (!feedLock.acquired) {
+      await markJobSkipped(pool, String(job.id), {}, FAILURE_TYPES.SOURCE_BUSY, {
+        triggeredBy,
+        jobName: job.name,
+        jobType: JOB_TYPE_BY_NAME[job.name] || null
+      });
       console.log(
-        `${LOG_PREFIX} Same source already running; deferred job_id=${job.id} source=${integrationKey} blocking_job_id=${blocking.job_id}`
+        `${LOG_PREFIX} Feed sync skipped reason=already_running job_id=${job.id} source=${integrationKey} name=${job.name} triggered_by=${triggeredBy} concurrency_limit=${FEED_SYNC_CONCURRENCY}`
       );
-      throw new DelayedError();
+      activeJobId = null;
+      return { skipped: true, reason: 'source_busy' };
     }
 
     const timeoutInfo = resolveIntegrationJobTimeoutMs(
@@ -244,8 +273,9 @@ const worker = new Worker(
       workerHostname
     });
 
+    const jobStartedAtMs = Date.now();
     console.log(
-      `${LOG_PREFIX} Job started job_id=${job.id} source=${integrationKey} name=${job.name} triggered_by=${triggeredBy} worker_id=${workerId} timeout_ms=${timeoutInfo.timeoutMs} timeout_source=${timeoutInfo.source}`
+      `${LOG_PREFIX} Feed sync started job_id=${job.id} source=${integrationKey} name=${job.name} triggered_by=${triggeredBy} worker_id=${workerId} concurrency_limit=${FEED_SYNC_CONCURRENCY} timeout_ms=${timeoutInfo.timeoutMs} timeout_source=${timeoutInfo.source}`
     );
 
     const stopHeartbeat = startJobHeartbeat(pool, String(job.id), QUEUE_HARDENING.heartbeatIntervalMs);
@@ -307,17 +337,21 @@ const worker = new Worker(
 
       const skipNote = result?.skipped ? ` skipped=${result.reason || 'true'}` : '';
       console.log(
-        `${LOG_PREFIX} Job completed job_id=${job.id} source=${integrationKey}${skipNote} records_processed=${metrics.records_processed || 0}`
+        `${LOG_PREFIX} Feed sync ${result?.skipped ? 'skipped' : 'completed'} job_id=${job.id} source=${integrationKey}${skipNote} records_processed=${metrics.records_processed || 0} duration_ms=${Date.now() - jobStartedAtMs}`
       );
       return result;
     } finally {
       stopHeartbeat();
+      // Always release the per-feed exclusion lock: success, skip, parser/HTTP
+      // error, timeout, DB error, or unexpected throw all pass through here, so a
+      // failed feed can never permanently hold a slot from 2 down to 1.
+      await feedLock.release();
       activeJobId = null;
     }
   },
   {
     connection: redis,
-    concurrency: WORKER_CONCURRENCY,
+    concurrency: FEED_SYNC_CONCURRENCY,
     lockDuration: WORKER_LOCK_DURATION_MS,
     stalledInterval: WORKER_STALLED_INTERVAL_MS,
     maxStalledCount: WORKER_MAX_STALLED_COUNT
@@ -402,7 +436,7 @@ async function shutdown(signal) {
 await runQueueRecovery(pool, {
   logPrefix: LOG_PREFIX,
   queue: importQueue,
-  workerConcurrency: WORKER_CONCURRENCY
+  workerConcurrency: FEED_SYNC_CONCURRENCY
 });
 startPeriodicCleanup();
 
