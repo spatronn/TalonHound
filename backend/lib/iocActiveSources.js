@@ -55,6 +55,14 @@ export function formatFeedMembershipSource(m) {
 /** @param {object} row */
 export function formatManualHistoricalIocSource(row) {
   const movedTo = row.moved_to_source_name || null;
+  const status = String(row.status || 'moved').toLowerCase();
+  const isRemoved = status === 'removed';
+  // Manual removals reuse moved_at/moved_by/move_reason as the removal record; a
+  // removal has no destination source, so surface the removal time as the source's
+  // "last changed in source" and give it a truthful reason string.
+  const description = isRemoved
+    ? 'Manually removed from source'
+    : (movedTo ? `Moved to ${movedTo}` : null);
   return {
     id: `manual-history:${row.id}`,
     source_type: 'manual',
@@ -62,18 +70,21 @@ export function formatManualHistoricalIocSource(row) {
     name: row.source_name || row.name || 'Manual source',
     feed_key: null,
     feed_name: null,
-    status: String(row.status || 'moved').toLowerCase(),
+    status,
     first_seen_at: row.first_seen_at || row.created_at || null,
     last_seen_at: row.last_seen_at || null,
+    last_changed_at: isRemoved ? (row.moved_at || row.last_seen_at || null) : (row.moved_at || null),
     policy_expires_at: null,
     expires_at: row.manual_expires_at || null,
     override_enabled: false,
     purged_at: null,
-    purge_reason: null,
+    purge_reason: isRemoved ? 'Manually removed from source' : null,
     moved_to_source_id: row.moved_to_source_id != null ? Number(row.moved_to_source_id) : null,
     moved_to_source_name: movedTo,
     moved_at: row.moved_at || null,
-    description: movedTo ? `Moved to ${movedTo}` : null,
+    removed_at: isRemoved ? (row.moved_at || null) : null,
+    description,
+    removable: false,
     actions_enabled: false
   };
 }
@@ -97,6 +108,9 @@ export function formatManualIocSource(row) {
     override_enabled: false,
     purged_at: null,
     purge_reason: null,
+    // Active manual/custom sources can be detached from the IOC via the
+    // source-level removal endpoint. Feed sources are not removable this way.
+    removable: true,
     actions_enabled: false
   };
 }
@@ -319,7 +333,7 @@ export async function fetchObservableMembershipSummary(pool, { observable, obser
        LEFT JOIN ioc_sources ts ON ts.id = h.moved_to_source_id
        WHERE h.ioc_item_id = ANY($1::bigint[])
          AND h.ioc_observable_type = $2
-         AND h.status IN ('moved', 'superseded', 'inactive')
+         AND h.status IN ('moved', 'superseded', 'inactive', 'removed')
        ORDER BY h.moved_at DESC NULLS LAST, h.created_at DESC`,
       [ids, observableType]
     );
@@ -334,7 +348,7 @@ export async function fetchObservableMembershipSummary(pool, { observable, obser
        LEFT JOIN ioc_sources s ON s.id = h.ioc_source_id
        LEFT JOIN ioc_sources ts ON ts.id = h.moved_to_source_id
        WHERE i.observable = $1 AND i.observable_type = $2
-         AND h.status IN ('moved', 'superseded', 'inactive')
+         AND h.status IN ('moved', 'superseded', 'inactive', 'removed')
        ORDER BY h.moved_at DESC NULLS LAST, h.created_at DESC`,
       [observable, observableType]
     );

@@ -21,7 +21,9 @@ function SourceActionsMenu({
   const rootRef = useRef(null);
   const menuId = useId();
   const actions = listSourceMembershipActions(src);
-  const canShow = isAdmin && src.source_type === 'feed' && src.actions_enabled;
+  const canShowFeed = src.source_type === 'feed' && src.actions_enabled;
+  const canShowManual = src.source_type === 'manual' && src.removable;
+  const canShow = isAdmin && (canShowFeed || canShowManual);
   const menuKey = String(src.membership_id || src.id || '');
 
   const updatePosition = useCallback(() => {
@@ -108,7 +110,7 @@ function SourceActionsMenu({
   function pick(actionType) {
     setOpen(false);
     triggerRef.current?.focus();
-    onAction(actionType, src.membership_id);
+    onAction(actionType, src.membership_id, src);
   }
 
   return (

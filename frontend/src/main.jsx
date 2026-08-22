@@ -14553,6 +14553,10 @@ function IOCDetailsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  // Source-level removal (detach one manual/custom source from this IOC).
+  const [pendingSourceRemoval, setPendingSourceRemoval] = useState(null);
+  const [sourceRemovalLoading, setSourceRemovalLoading] = useState(false);
+  const [sourceRemovalError, setSourceRemovalError] = useState('');
   const [actionToast, setActionToast] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   const [pendingAction, setPendingAction] = useState(null);
@@ -14811,6 +14815,60 @@ function IOCDetailsPage() {
       setDeleteError(apiErrorMessage(err, 'Failed to delete IOC'));
     } finally {
       setDeleteLoading(false);
+    }
+  }
+
+  function openSourceRemoval(src) {
+    if (!src || src.source_type !== 'manual' || !src.removable) return;
+    const activeCount = (Array.isArray(data?.active_sources) ? data.active_sources : [])
+      .filter((s) => String(s.status || 'active').toLowerCase() === 'active').length;
+    setSourceRemovalError('');
+    setPendingSourceRemoval({
+      sourceId: src.ioc_source_id,
+      sourceName: src.name || 'this source',
+      isLastActiveSource: activeCount <= 1
+    });
+  }
+
+  function cancelSourceRemoval() {
+    if (sourceRemovalLoading) return;
+    setPendingSourceRemoval(null);
+    setSourceRemovalError('');
+  }
+
+  async function submitSourceRemoval() {
+    if (!pendingSourceRemoval || sourceRemovalLoading) return;
+    const pubId = summary?.public_id;
+    const sourceId = pendingSourceRemoval.sourceId;
+    if (!pubId || !Number.isFinite(Number(sourceId))) return;
+
+    setSourceRemovalLoading(true);
+    setSourceRemovalError('');
+    try {
+      const { data: resp } = await api.delete(`/ioc/${pubId}/sources/manual/${Number(sourceId)}`);
+      setPendingSourceRemoval(null);
+      setActionToast(`Removed from ${pendingSourceRemoval.sourceName}`);
+
+      const canonical = resp?.canonical_public_id || null;
+      if (!canonical) {
+        // Nothing survived for this observable — the IOC no longer exists. Return
+        // to the list (consistent with global delete navigation).
+        navigate('/ioc');
+        return;
+      }
+      if (canonical !== pubId) {
+        // The viewed row was the removed membership; jump to a surviving sibling
+        // so IOC details keep rendering without a manual browser reload.
+        navigate(`/ioc/details/${canonical}`, { replace: true });
+        return;
+      }
+      // Re-query canonical details in place so every panel (status, expires,
+      // source counts, active/historical sources) updates immediately.
+      await load();
+    } catch (err) {
+      setSourceRemovalError(apiErrorMessage(err, 'Failed to remove IOC from source'));
+    } finally {
+      setSourceRemovalLoading(false);
     }
   }
 
@@ -15418,7 +15476,10 @@ function IOCDetailsPage() {
                       iocSourceStatusBadge={iocSourceStatusBadge}
                       isAdmin={isAdmin}
                       actionLoading={actionLoading}
-                      onMembershipAction={(type, membershipId) => openExpirationAction(type, membershipId)}
+                      onMembershipAction={(type, membershipId, src) => {
+                        if (type === 'remove_manual_source') openSourceRemoval(src);
+                        else openExpirationAction(type, membershipId);
+                      }}
                     />
 
                     {historicalSources.length ? (
@@ -15780,10 +15841,54 @@ function IOCDetailsPage() {
         </ModalOverlay>
       ) : null}
 
+      {pendingSourceRemoval ? (
+        <ModalOverlay
+          size="sm"
+          title={`Remove IOC from ${pendingSourceRemoval.sourceName}?`}
+          onClose={cancelSourceRemoval}
+          initialFocus="cancel"
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={cancelSourceRemoval}
+                disabled={sourceRemovalLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'danger' })}
+                onClick={() => submitSourceRemoval().catch(() => {})}
+                disabled={sourceRemovalLoading}
+              >
+                {sourceRemovalLoading ? 'Removing…' : 'Remove from source'}
+              </button>
+            </>
+          )}
+        >
+          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 10 }}>
+            This removes the active association between this IOC and the{' '}
+            <b style={{ color: '#e2e8f0' }}>{pendingSourceRemoval.sourceName}</b> source.
+          </p>
+          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: pendingSourceRemoval.isLastActiveSource ? 10 : 0 }}>
+            The IOC itself and its source history will not be deleted.
+          </p>
+          {pendingSourceRemoval.isLastActiveSource ? (
+            <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #854d0e', background: 'rgba(120,53,15,0.18)', color: '#fcd34d', fontSize: 13 }}>
+              After removal, this IOC will have no active sources and its effective status will be recalculated.
+            </div>
+          ) : null}
+          {sourceRemovalError ? <div role="alert" style={{ marginTop: 10, color: '#fca5a5', fontSize: 13 }}>{sourceRemovalError}</div> : null}
+        </ModalOverlay>
+      ) : null}
+
       {showDeleteModal ? (
         <ModalOverlay
           size="sm"
-          title="Delete IOC"
+          title="Delete IOC Record"
           onClose={() => !deleteLoading && (setShowDeleteModal(false), setDeleteConfirmText(''), setDeleteError(''))}
           initialFocus="cancel"
           footer={(
@@ -15803,14 +15908,14 @@ function IOCDetailsPage() {
                 onClick={() => submitDeleteIoc().catch(() => {})}
                 disabled={deleteLoading || deleteConfirmText.trim().toLowerCase() !== 'delete'}
               >
-                {deleteLoading ? 'Deleting…' : 'Delete IOC'}
+                {deleteLoading ? 'Deleting…' : 'Delete IOC Record'}
               </button>
             </>
           )}
         >
-          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 4 }}>You are about to permanently delete this IOC from the platform.</p>
+          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 4 }}>Permanently delete this IOC record?</p>
           <div style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: '#e2e8f0', marginBottom: 12, overflowWrap: 'anywhere' }}>{summary?.observable}</div>
-          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 12 }}>This action will remove the IOC from active IOC operations and correlation lookup. This is intended for incorrectly imported or mistakenly added IOCs.</p>
+          <p style={{ color: '#cbd5e1', fontSize: 13, marginBottom: 12 }}>This is a <b style={{ color: '#fca5a5' }}>global IOC deletion</b> and is different from removing the IOC from an individual source. It removes the IOC from active IOC operations and correlation lookup. This is intended for incorrectly imported or mistakenly added IOCs.</p>
           <div style={{ marginBottom: 4 }}>
             <label htmlFor="delete-ioc-confirm-input" style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>To confirm, type: <span style={{ color: '#fca5a5', fontFamily: 'monospace' }}>delete</span></label>
             <input

@@ -110,6 +110,9 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_SOURCE_MEMBERSHIPS_MOVED: 'ioc_source.iocs_moved',
   IOC_SOURCE_MOVE_FAILED: 'ioc_source.move_failed',
   IOC_SOURCE_ARCHIVED_AFTER_MOVE: 'ioc_source.archived_after_move',
+  // Per-IOC removal of a single manual/custom source membership (distinct from
+  // deleting the source catalog entry or globally deleting the IOC).
+  IOC_SOURCE_REMOVED: 'ioc.source_removed',
   IOC_SEARCH_EXPORT_CREATED: 'ioc.search_export.created',
   IOC_SEARCH_EXPORT_STARTED: 'ioc.search_export.started',
   IOC_SEARCH_EXPORT_COMPLETED: 'ioc.search_export.completed',
@@ -301,6 +304,7 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_SOURCE_IOCS_MOVED]: 'IOC Source IOCs Moved',
   [AUDIT_ACTION.IOC_SOURCE_MOVE_FAILED]: 'IOC Source Move Failed',
   [AUDIT_ACTION.IOC_SOURCE_ARCHIVED_AFTER_MOVE]: 'IOC Source Archived After Move',
+  [AUDIT_ACTION.IOC_SOURCE_REMOVED]: 'IOC Removed From Source',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_CREATED]: 'IOC Saved Search Created',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_UPDATED]: 'IOC Saved Search Updated',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_DELETED]: 'IOC Saved Search Deleted',

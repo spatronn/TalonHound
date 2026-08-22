@@ -41,7 +41,7 @@ export function IocHeader({
             <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onMarkFalsePositive}>Mark as False Positive</button>
           ) : null}
           {showDelete ? (
-            <button type="button" className={buttonClassName({ variant: 'danger' })} onClick={onDelete} aria-label="Delete IOC">Delete IOC</button>
+            <button type="button" className={buttonClassName({ variant: 'danger' })} onClick={onDelete} aria-label="Delete IOC Record" title="Global IOC deletion (removes the IOC entirely, not just one source)">Delete IOC Record</button>
           ) : null}
           <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onBack}>Back to IOC List</button>
           <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={onRefresh} aria-label="Refresh IOC details">

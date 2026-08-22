@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildIocDetailTimestampCards,
   formatIocDetailDateTime,
+  getManualSourceActionStates,
   getSourceMembershipActionStates,
   listSourceMembershipActions,
   resolveIocDetailImportedAt,
@@ -102,4 +103,24 @@ test('source action states keep invalid actions disabled', () => {
     actions.map((a) => a.label),
     ['Reactivate source', 'Custom expire', 'Expire source', 'Clear override']
   );
+});
+
+test('removable manual/custom source exposes a single Remove from source action', () => {
+  const states = getManualSourceActionStates({ source_type: 'manual', removable: true });
+  assert.equal(states.remove_manual_source.enabled, true);
+  assert.equal(states.remove_manual_source.danger, true);
+
+  const actions = listSourceMembershipActions({ source_type: 'manual', removable: true });
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].type, 'remove_manual_source');
+  assert.equal(actions[0].label, 'Remove from source');
+  assert.equal(actions[0].enabled, true);
+});
+
+test('non-removable / historical manual source does not enable removal', () => {
+  // Manual source without the removable flag (e.g. historical) is not removable.
+  assert.equal(getManualSourceActionStates({ source_type: 'manual' }).remove_manual_source.enabled, false);
+  // Feed sources never get the manual remove action.
+  const feedActions = listSourceMembershipActions({ source_type: 'feed', status: 'active', actions_enabled: true });
+  assert.ok(!feedActions.some((a) => a.type === 'remove_manual_source'));
 });

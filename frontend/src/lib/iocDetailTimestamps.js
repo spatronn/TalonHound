@@ -148,7 +148,29 @@ export function getSourceMembershipActionStates(src = {}) {
   };
 }
 
+/**
+ * Row action for an active manual/custom source: detach it from the IOC. Distinct
+ * from feed lifecycle actions and from global IOC deletion. Only offered for
+ * removable (active) manual sources; feed / historical sources never get it.
+ */
+export function getManualSourceActionStates(src = {}) {
+  const isManual = src.source_type === 'manual';
+  const removable = isManual && Boolean(src.removable);
+  return {
+    remove_manual_source: {
+      type: 'remove_manual_source',
+      label: 'Remove from source',
+      enabled: removable,
+      danger: true
+    }
+  };
+}
+
 export function listSourceMembershipActions(src) {
+  if (src?.source_type === 'manual') {
+    const manual = getManualSourceActionStates(src);
+    return [manual.remove_manual_source];
+  }
   const states = getSourceMembershipActionStates(src);
   return [
     states.reactivate_membership,

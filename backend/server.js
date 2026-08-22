@@ -72,6 +72,7 @@ import { registerIocBulkTriageRoutes } from './routes/iocBulkTriage.js';
 import { registerIocBulkQueryTriageRoutes } from './routes/iocBulkQueryTriage.js';
 import { BULK_QUERY_QUEUE_NAME } from './lib/iocBulkQueryJob/config.js';
 import { registerIocDeleteRoute } from './routes/iocDelete.js';
+import { registerIocSourceRemovalRoute } from './routes/iocSourceRemoval.js';
 import { formatExpirationSummary, buildIocExpirationSummary, recomputeIocGlobalStatus } from './lib/iocExpiration.js';
 import { isExplicitIocLifecycleOverride } from './lib/iocStatusOverrideGuards.js';
 import {
@@ -3492,6 +3493,7 @@ app.post('/api/ioc/ip', async (req, res) => {
 });
 
 registerIocDeleteRoute(app, pool, auditLogService, { invalidateDetailsCache: invalidateIocDetailsCache });
+registerIocSourceRemovalRoute(app, pool, auditLogService, { invalidateDetailsCache: invalidateIocDetailsCache });
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
