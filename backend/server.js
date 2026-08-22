@@ -143,6 +143,7 @@ import {
 } from './lib/integrationQueueApi.js';
 import { parseActionReason } from './lib/reasonValidation.js';
 import { regenerateAllEnabledFeeds, resolvePublishedFeedTickMs, cleanupPublishedFeedLegacyArtifacts } from './lib/feedPublisherService.js';
+import { settleWithTimeout } from './lib/promiseTimeout.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import {
   resolveFeedHealthState,
@@ -291,10 +292,27 @@ const pool = new Pool({
   user: process.env.DB_USER || 'talonhound',
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'talonhound',
+  // The API process shares this pool with the in-process Published Feed
+  // regeneration scheduler, so a page-load burst must not starve behind it.
+  // `max` widens the headroom; `connectionTimeoutMillis` makes pool starvation
+  // surface as a fast, real error instead of the pg default (0 = wait forever),
+  // which is what turned a transient blip into an indefinitely hanging Feeds load.
+  max: Math.max(Number(process.env.DB_POOL_MAX || 20), 1),
+  connectionTimeoutMillis: Math.max(Number(process.env.DB_POOL_CONNECTION_TIMEOUT_MS || 10000), 1000),
+  idleTimeoutMillis: Math.max(Number(process.env.DB_POOL_IDLE_TIMEOUT_MS || 30000), 1000),
   options: `-c TimeZone=${String(process.env.SYSTEM_TIMEZONE || process.env.TZ || 'UTC').trim() || 'UTC'}`
 });
 
 const appLog = createServiceLogger('backend');
+
+// pg emits 'error' on an idle pooled client when Postgres or the network drops
+// the connection. With no listener attached, Node treats it as an unhandled
+// 'error' event and crashes the whole backend — which resets every in-flight
+// request (including a Feeds page load) before docker restarts the process.
+// Log and let the pool discard the dead client; the next query acquires a fresh one.
+pool.on('error', (err) => {
+  appLog.warn('pg pool idle client error (connection discarded)', { error: err?.message || String(err) });
+});
 
 async function syncRuntimeTimezoneFromDb() {
   try {
@@ -1063,18 +1081,11 @@ function mergeUsomReconciliationFields(feed, latestByMode, lastSuccessByMode, no
   };
 }
 
-async function queryIntegrationsMetaWithTimeout(queryPromise, fallbackRows = []) {
-  try {
-    const res = await Promise.race([
-      queryPromise,
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('integrations meta query timeout')), INTEGRATIONS_META_QUERY_TIMEOUT_MS);
-      })
-    ]);
-    return res;
-  } catch {
-    return { rows: fallbackRows };
-  }
+function queryIntegrationsMetaWithTimeout(queryPromise, fallbackRows = []) {
+  return settleWithTimeout(queryPromise, {
+    timeoutMs: INTEGRATIONS_META_QUERY_TIMEOUT_MS,
+    fallback: () => ({ rows: fallbackRows })
+  });
 }
 
 app.get('/api/integrations', async (req, res) => {
@@ -1136,11 +1147,21 @@ app.get('/api/integrations', async (req, res) => {
       LEFT JOIN threat_feed_expiration_policies p
         ON p.feed_id = f.integration_id AND p.observable_type = 'all'
     `;
+    // `getRepeatableJobs()` is a Redis (BullMQ) call on the initial-load critical
+    // path. It is only used to surface BullMQ's Next Run; when it is unavailable
+    // we fall back to the schedule-derived next run below, so it is non-critical.
+    // Bounding it with the same timeout as the meta queries keeps a Redis stall
+    // from hanging the whole Feeds request (the ioredis client uses
+    // maxRetriesPerRequest:null, so an unbounded call cannot fail fast). feedsQ
+    // and expirationPoliciesQ stay unbounded here because they are the primary
+    // data — a starved pool now fails fast via connectionTimeoutMillis rather
+    // than returning fabricated feed rows.
     const [feedsRes, repeatableNextByKey, expirationPoliciesRes] = await Promise.all([
       pool.query(feedsQ, [includeArchived]),
-      importQueue.getRepeatableJobs()
-        .then((rows) => buildRepeatableNextRunMap(rows))
-        .catch(() => new Map()),
+      settleWithTimeout(
+        importQueue.getRepeatableJobs().then((rows) => buildRepeatableNextRunMap(rows)),
+        { timeoutMs: INTEGRATIONS_META_QUERY_TIMEOUT_MS, fallback: () => new Map() }
+      ),
       pool.query(expirationPoliciesQ)
     ]);
     const expirationByKey = new Map(

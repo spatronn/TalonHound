@@ -55,6 +55,8 @@ import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/
 import { formatIocDetailDateTime } from './lib/iocDetailTimestamps.js';
 import { resolveCanonicalDetailRedirect } from './lib/fileArtifactDetailRedirect.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
+import { getWithTransientRetry } from './lib/apiRetry.js';
+import { createLatestOnly } from './lib/latestOnly.js';
 import { computeJobDurationMs, formatJobDuration } from './lib/integrationJobDuration.js';
 import {
   presentQueueJobResult,
@@ -3159,23 +3161,34 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [feedActionSuccess, setFeedActionSuccess] = useState('');
   const [showArchivedFeeds, setShowArchivedFeeds] = useState(false);
+  // Guard so a slower/older in-flight request can never overwrite the result of
+  // a newer one (e.g. a transient first load that resolves late after the user
+  // hit Refresh). Only the newest load applies state.
+  const loadGuardRef = useRef(null);
+  if (loadGuardRef.current === null) loadGuardRef.current = createLatestOnly();
 
   async function load() {
+    const isStale = loadGuardRef.current.next();
     setLoading(true);
     setLoadError('');
     try {
-      const { data } = await api.get('/integrations');
+      // One initial page load is a single idempotent GET; a brief backend/Redis/DB
+      // blip is retried a bounded number of times (transient failures only) so the
+      // page self-heals instead of forcing a manual refresh.
+      const { data } = await getWithTransientRetry(() => api.get('/integrations'));
+      if (isStale()) return [];
       const list = data?.integrations || [];
       setIntegrations(list);
       setHealthSummary(data?.health_summary || null);
       return list;
     } catch (err) {
+      if (isStale()) return [];
       setIntegrations([]);
       setHealthSummary(null);
       setLoadError(apiErrorMessage(err, 'Failed to load integrations'));
       return [];
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }
 
