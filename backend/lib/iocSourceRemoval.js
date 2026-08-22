@@ -159,9 +159,9 @@ export async function removeIocManualSource(pool, { publicId, sourceId }, opts =
        )
        VALUES (
          $1, $2, $3, COALESCE($4, $5), 'removed',
-         $6, $7, $8, $9,
+         $6, $7, $8, $9::timestamptz,
          NULL, NOW(), $10::uuid, $11,
-         $12, COALESCE($13, $12)
+         $12::timestamptz, COALESCE($13::timestamptz, $12::timestamptz)
        )
        ON CONFLICT (ioc_item_id, ioc_observable_type, ioc_source_id) DO UPDATE SET
          status = 'removed',
