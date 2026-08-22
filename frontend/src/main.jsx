@@ -156,6 +156,16 @@ import { APP_CONFIRM_INITIAL, createAppConfirmController } from './lib/appConfir
 import { createAppFeedbackController, feedbackRoleForTone } from './lib/appFeedback.js';
 import { buildEmptyStateModel } from './lib/emptyState.js';
 import {
+  AUDIT_RETENTION_KEEP_FOREVER,
+  AUDIT_RETENTION_CUSTOM,
+  AUDIT_RETENTION_PRESETS,
+  AUDIT_RETENTION_MAX_DAYS,
+  retentionSelectionFromDays,
+  describeRetention,
+  isRetentionReduction,
+  resolveTargetDays
+} from './lib/auditLogRetentionUi.js';
+import {
   API_KEYS_PAGE_DESCRIPTION,
   ACCESS_PROFILE_OPTIONS,
   apiKeyCreatePayload,
@@ -9409,7 +9419,14 @@ function SystemAdminBadge() {
 
 function AdministrationSettingsPage() {
   const { role, userId, refreshSession, isAdmin } = useSession();
+  const requestConfirm = useAppConfirm();
+  const feedback = useAppFeedback();
   const ui = PUBLISHED_FEEDS_UI;
+  const [retention, setRetention] = useState(null);
+  const [retentionSelection, setRetentionSelection] = useState('365');
+  const [retentionCustom, setRetentionCustom] = useState('');
+  const [retentionSaving, setRetentionSaving] = useState(false);
+  const [retentionError, setRetentionError] = useState('');
   const [timezoneInfo, setTimezoneInfo] = useState({
     system_timezone: getSystemTimezone(),
     timezone_restart_required: false,
@@ -9440,6 +9457,65 @@ function AdministrationSettingsPage() {
   useEffect(() => {
     loadTimezone().catch(() => {});
   }, []);
+
+  async function loadRetention() {
+    try {
+      const { data } = await api.get('/settings/audit-log-retention');
+      setRetention(data);
+      setRetentionSelection(retentionSelectionFromDays(data?.retention_days ?? null, data?.preset_days || AUDIT_RETENTION_PRESETS));
+      setRetentionCustom(
+        data?.retention_days != null && !(data?.preset_days || AUDIT_RETENTION_PRESETS).includes(Number(data.retention_days))
+          ? String(data.retention_days)
+          : ''
+      );
+    } catch {
+      /* admins without the setting available simply see nothing to edit */
+    }
+  }
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadRetention().catch(() => {});
+  }, [isAdmin]);
+
+  async function saveRetention() {
+    setRetentionError('');
+    const target = resolveTargetDays(retentionSelection, retentionCustom, retention?.max_days || AUDIT_RETENTION_MAX_DAYS);
+    if (!target.ok) {
+      setRetentionError(target.error);
+      return;
+    }
+    const currentDays = retention?.retention_days ?? null;
+    if (currentDays === target.days) {
+      setRetentionError('Retention is already set to that value.');
+      return;
+    }
+
+    if (isRetentionReduction(currentDays, target.days)) {
+      const ok = await requestConfirm({
+        title: 'Reduce audit log retention?',
+        description:
+          'Reducing the audit log retention period may permanently delete existing audit logs during the next cleanup cycle. Deleted audit logs cannot be recovered.',
+        detail: `New retention: ${describeRetention(target.days)}`,
+        variant: 'danger',
+        confirmLabel: 'Reduce retention'
+      });
+      if (!ok) return;
+    }
+
+    setRetentionSaving(true);
+    try {
+      const payload = target.days == null ? { keep_forever: true } : { retention_days: target.days };
+      const { data } = await api.put('/settings/audit-log-retention', payload);
+      setRetention(data);
+      setRetentionSelection(retentionSelectionFromDays(data?.retention_days ?? null, data?.preset_days || AUDIT_RETENTION_PRESETS));
+      feedback.success('Audit log retention updated.');
+    } catch (err) {
+      setRetentionError(apiErrorMessage(err, 'Failed to update audit log retention'));
+    } finally {
+      setRetentionSaving(false);
+    }
+  }
 
   async function loadSelfProfile() {
     if (role !== 'readonly' || userId == null) return;
@@ -9599,6 +9675,76 @@ function AdministrationSettingsPage() {
             </pre>
           ) : null}
         </div>
+
+        {isAdmin && retention ? (
+          <div style={{ ...ui.formPanel, marginTop: 16 }}>
+            <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Audit Log Retention</h2>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+              Audit log entries older than the configured retention period are permanently deleted.
+            </p>
+            <div style={{ fontSize: 14, marginBottom: 12 }}>
+              <div>
+                <strong>Current retention:</strong>{' '}
+                {describeRetention(retention.retention_days ?? null)}
+              </div>
+              {retention.last_cleanup_at ? (
+                <div style={{ color: '#94a3b8', marginTop: 4 }}>
+                  Last cleanup: {retention.last_cleanup_at}
+                </div>
+              ) : null}
+            </div>
+
+            {retention.can_edit ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+                <div>
+                  <label style={ui.label}>Retention period</label>
+                  <select
+                    value={retentionSelection}
+                    onChange={(e) => { setRetentionSelection(e.target.value); setRetentionError(''); }}
+                    style={{ ...ui.select, maxWidth: 260 }}
+                  >
+                    {(retention.preset_days || AUDIT_RETENTION_PRESETS).map((d) => (
+                      <option key={d} value={String(d)}>{d} days</option>
+                    ))}
+                    <option value={AUDIT_RETENTION_CUSTOM}>Custom…</option>
+                    <option value={AUDIT_RETENTION_KEEP_FOREVER}>Keep forever</option>
+                  </select>
+                </div>
+                {retentionSelection === AUDIT_RETENTION_CUSTOM ? (
+                  <div>
+                    <label style={ui.label}>Custom days</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={retentionCustom}
+                      onChange={(e) => { setRetentionCustom(e.target.value); setRetentionError(''); }}
+                      placeholder="e.g. 120"
+                      style={{ ...ui.input, maxWidth: 160 }}
+                    />
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  style={ui.btnPrimary}
+                  disabled={retentionSaving}
+                  onClick={() => saveRetention().catch(() => {})}
+                >
+                  {retentionSaving ? 'Saving…' : 'Save retention'}
+                </button>
+              </div>
+            ) : (
+              <p style={{ fontSize: 13, color: '#94a3b8' }}>
+                Only the System Administrator can change audit log retention.
+              </p>
+            )}
+            {retentionError ? (
+              <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+                {retentionError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {role === 'readonly' && userId != null ? (
           <div style={{ ...ui.formPanel, marginTop: 16 }}>
