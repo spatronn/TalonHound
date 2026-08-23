@@ -111,6 +111,9 @@ jobs:
           cd backend
           npm run migrate
           npm run migrate
+          cd ..
+          chmod +x scripts/test-backup-restore-partition.sh
+          RESTORE_TEST_DB=talonhound_restore_test bash scripts/test-backup-restore-partition.sh
 
   build-backend:
     name: Build backend image

@@ -109,6 +109,13 @@ jobs:
         working-directory: backend
         run: npm run migrate
 
+      - name: Partition-aware backup restore smoke
+        env:
+          RESTORE_TEST_DB: talonhound_restore_test
+        run: |
+          chmod +x scripts/test-backup-restore-partition.sh
+          bash scripts/test-backup-restore-partition.sh
+
   frontend-tests:
     name: Frontend tests
     runs-on: ubuntu-latest

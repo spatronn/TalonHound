@@ -1,7 +1,7 @@
 # Shared helpers for backup-stack.sh and restore-stack.sh (POSIX sh).
 
 # Writer services stopped during restore to avoid concurrent writes.
-WRITER_SERVICES="backend integration-scheduler integration-worker ioc-expiration-worker ioc-search-export-worker backup-worker"
+WRITER_SERVICES="backend integration-scheduler integration-worker ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker backup-worker"
 
 # Staging dirs created during resolve; cleaned on failure via cleanup_restore_work.
 RESTORE_WORK_DIRS=""
@@ -305,7 +305,119 @@ stop_writers() {
 start_writers() {
   echo "[restore] starting core services..."
   docker compose up -d db redis
-  docker compose up -d backend integration-scheduler integration-worker ioc-expiration-worker ioc-search-export-worker backup-worker frontend proxy
+  docker compose up -d backend integration-scheduler integration-worker \
+    ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker \
+    backup-worker frontend proxy
+}
+
+# --- Restore target validation (identifier-safe; no secrets in logs) ---
+
+validate_restore_db_identifier() {
+  _val="$1"
+  _label="$2"
+  case "$_val" in
+    ''|*[!a-zA-Z0-9_]*)
+      echo "[restore] invalid ${_label} identifier" >&2
+      return 1
+      ;;
+  esac
+  case "$_val" in
+    [0-9]*)
+      echo "[restore] invalid ${_label} identifier" >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+resolve_restore_db_identifiers() {
+  RESTORE_DB_USER="${DB_USER:-talonhound}"
+  RESTORE_DB_NAME="${DB_NAME:-talonhound}"
+  validate_restore_db_identifier "$RESTORE_DB_USER" "DB user" || return 1
+  validate_restore_db_identifier "$RESTORE_DB_NAME" "DB name" || return 1
+  case "$RESTORE_DB_NAME" in
+    postgres|template0|template1)
+      echo "[restore] refused: cannot restore into system database '${RESTORE_DB_NAME}'" >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+validate_backup_manifest() {
+  _manifest="$1"
+  if [ ! -f "$_manifest" ]; then
+    echo "[restore] manifest.json missing" >&2
+    return 1
+  fi
+  if ! grep -q '"application"[[:space:]]*:[[:space:]]*"TalonHound"' "$_manifest" 2>/dev/null; then
+    echo "[restore] manifest application is not TalonHound — refused" >&2
+    return 1
+  fi
+  _fv=$(sed -n 's/.*"format_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$_manifest" | head -n 1)
+  if [ -n "$_fv" ] && [ "$_fv" -gt 2 ]; then
+    echo "[restore] unsupported manifest format_version ${_fv}" >&2
+    return 1
+  fi
+  return 0
+}
+
+validate_dump_readable() {
+  _dump="$1"
+  if [ ! -s "$_dump" ]; then
+    echo "[restore] postgres dump missing or empty" >&2
+    return 1
+  fi
+  _list_err=$(mktemp)
+  if ! docker compose exec -T db pg_restore --list - < "$_dump" > /dev/null 2>"$_list_err"; then
+    echo "[restore] pg_restore --list failed — dump unreadable" >&2
+    sed -n '1,20p' "$_list_err" >&2 || true
+    rm -f "$_list_err"
+    return 1
+  fi
+  rm -f "$_list_err"
+  if ! docker compose exec -T db pg_restore --list - < "$_dump" 2>/dev/null | grep -q schema_migrations; then
+    echo "[restore] dump missing schema_migrations — incompatible backup" >&2
+    return 1
+  fi
+  return 0
+}
+
+recreate_restore_target_database() {
+  _db="$RESTORE_DB_NAME"
+  _user="$RESTORE_DB_USER"
+  echo "[restore] recreating target database '${_db}' (terminate connections, DROP DATABASE WITH FORCE, CREATE)..."
+  if ! docker compose exec -T db psql -U "$_user" -d postgres -v ON_ERROR_STOP=1 <<SQL
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = '${_db}' AND pid <> pg_backend_pid();
+DROP DATABASE IF EXISTS "${_db}" WITH (FORCE);
+CREATE DATABASE "${_db}" OWNER "${_user}";
+SQL
+  then
+    echo "[restore] failed to recreate target database '${_db}'" >&2
+    return 1
+  fi
+  return 0
+}
+
+run_pg_restore_into_target() {
+  _dump="$1"
+  _db="$RESTORE_DB_NAME"
+  _user="$RESTORE_DB_USER"
+  echo "[restore] pg_restore into ${_db} (fresh database; no --clean)..."
+  _err=$(mktemp)
+  if ! docker compose exec -T db pg_restore \
+    -U "$_user" -d "$_db" \
+    --no-owner --no-acl --exit-on-error \
+    - < "$_dump" 2>"$_err"; then
+    echo "[restore] pg_restore failed — restore aborted" >&2
+    sed -n '1,40p' "$_err" >&2 || true
+    rm -f "$_err"
+    return 1
+  fi
+  rm -f "$_err"
+  return 0
 }
 
 create_safety_backup() {

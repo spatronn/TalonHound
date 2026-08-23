@@ -183,12 +183,15 @@ Use this when the Compose stack is healthy enough to stop writers and overwrite 
    ```
 
 4. The script:
-   - resolves and validates the archive (checksums; rejects unsafe tar members)
+   - resolves and validates the archive (manifest, checksums, dump readability; rejects unsafe tar members)
    - takes a **safety backup** of the live DB when the target looks populated (skipped automatically on empty/fresh DB; override with `--skip-safety`)
    - stops writer services
-   - runs `pg_restore --clean --if-exists`
-   - runs `npm run migrate`
+   - **drops and recreates** the target PostgreSQL database (`DROP DATABASE … WITH (FORCE)` then `CREATE DATABASE`)
+   - runs `pg_restore` into the fresh database (**without** `--clean`)
+   - runs `npm run migrate` (forward-only safety net)
    - starts services again
+
+   **Note:** `pg_restore --clean` is **not** used. TalonHound’s IOC schema uses declarative partitioning under `ioc_items`; `--clean` fails when dropping inherited partition primary keys.
 5. Healthcheck:
 
    ```bash
@@ -269,7 +272,11 @@ Keep free space ≥ **2×** the PostgreSQL data directory size (dump + safety du
 | RPO | ~7 days with default weekly Sunday cron (tighten via `BACKUP_CRON`; always take a manual backup before major changes) |
 | RTO | 1–2h typical manual restore on a single VM |
 
-Run a restore drill at least quarterly: `./scripts/test-backup-restore-e2e.sh` (disposable DB) plus a full stack restore in a staging environment.
+Run a restore drill at least quarterly:
+
+- `./scripts/test-backup-restore-e2e.sh` (disposable DB)
+- `./scripts/test-backup-restore-partition.sh` (partition-aware restore against compose or CI Postgres)
+- Full stack restore in a staging environment using `./scripts/restore-stack.sh --file … --confirm`
 
 ## API (admin only)
 

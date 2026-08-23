@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Restore a TalonHound backup (CLI-only; overwrites PostgreSQL).
+# Restore a TalonHound backup (CLI-only; replaces target PostgreSQL database).
 #
 # Preferred (external / disaster recovery archive — no DB registry required):
 #   ./scripts/restore-stack.sh --file /path/to/backup-archive.tar.gz --dry-run
@@ -13,6 +13,9 @@
 #
 # Requires --confirm for mutating restore (except --dry-run).
 # Creates a safety backup of the live DB when it appears populated; skips on empty/fresh DB.
+#
+# Restore model: stop writers → DROP DATABASE + CREATE DATABASE → pg_restore (no --clean).
+# pg_restore --clean is NOT used (fails on declarative IOC partition inheritance).
 
 set -eu
 
@@ -64,10 +67,11 @@ done
 
 [ -n "$BACKUP_REF" ] || usage
 
-# Clean staging on unexpected exit (failed resolve / checksum / etc.)
 trap 'cleanup_restore_work' EXIT INT TERM
 
 load_dotenv
+resolve_restore_db_identifiers || exit 1
+
 BACKUP_ROOT="${BACKUP_ROOT:-$ROOT/backups}"
 mkdir -p "$BACKUP_ROOT"
 
@@ -83,14 +87,17 @@ PG_DUMP="$(find_postgres_dump "$BUNDLE_DIR")" || {
   exit 1
 }
 
-if [ ! -f "${BUNDLE_DIR}/manifest.json" ]; then
-  echo "[restore] warning: manifest.json missing (legacy or incomplete bundle)" >&2
-else
-  echo "[restore] manifest present"
+MANIFEST="${BUNDLE_DIR}/manifest.json"
+if [ ! -f "$MANIFEST" ]; then
+  echo "[restore] error: manifest.json required" >&2
+  exit 1
 fi
+validate_backup_manifest "$MANIFEST" || exit 1
+echo "[restore] manifest validated (TalonHound)"
 
 echo "[restore] bundle: $BUNDLE_DIR"
 echo "[restore] dump: $PG_DUMP"
+echo "[restore] target database: ${RESTORE_DB_NAME} (user ${RESTORE_DB_USER})"
 
 if [ "$SKIP_CHECKSUM" -eq 0 ]; then
   if [ -f "${BUNDLE_DIR}/checksums.sha256" ]; then
@@ -106,6 +113,9 @@ else
   echo "[restore] checksum verification skipped"
 fi
 
+echo "[restore] validating dump readability..."
+validate_dump_readable "$PG_DUMP" || exit 1
+
 SAFETY_PLAN="safety backup of current DB (skipped automatically if target DB looks empty)"
 if [ "$SKIP_SAFETY" -eq 1 ]; then
   SAFETY_PLAN="safety backup skipped (--skip-safety)"
@@ -114,15 +124,15 @@ fi
 echo "[restore] plan:"
 echo "  - $SAFETY_PLAN"
 echo "  - stop writer services"
-echo "  - PostgreSQL pg_restore --clean --if-exists (destructive)"
-echo "  - npm run migrate"
+echo "  - DROP DATABASE ${RESTORE_DB_NAME} WITH (FORCE) and CREATE DATABASE (destructive)"
+echo "  - pg_restore into fresh database (no --clean)"
+echo "  - npm run migrate (forward-only safety net)"
 echo "  - start writers"
 echo "  - Redis: not restored"
 echo "  - Note: restore does not require a system_backups DB registry row"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "[restore] dry-run complete (no changes made)"
-  # Keep staging for inspection on dry-run? Clean it — dry-run should not leave clutter.
   exit 0
 fi
 
@@ -131,7 +141,7 @@ if [ "$CONFIRM" -eq 0 ]; then
   exit 1
 fi
 
-echo "[restore] WARNING: this overwrites current PostgreSQL data."
+echo "[restore] WARNING: this replaces the PostgreSQL database '${RESTORE_DB_NAME}'."
 
 if [ "$SKIP_SAFETY" -eq 1 ]; then
   echo "[restore] safety backup skipped (--skip-safety)"
@@ -141,20 +151,25 @@ else
   create_safety_backup || exit 1
 fi
 
-# Successful path: keep extracted bundle until pg_restore reads it; clear trap after copy into restore.
-# Staging dirs under .restore-work can be removed after dump is streamed; keep until end for simplicity.
 trap - EXIT INT TERM
 
 stop_writers
 
-echo "[restore] PostgreSQL pg_restore..."
-if ! docker compose exec -T db pg_restore -U talonhound -d talonhound --clean --if-exists < "$PG_DUMP"; then
-  echo "[restore] pg_restore reported errors (some warnings are normal with --clean)." >&2
-  echo "[restore] continuing to migrate; verify application health carefully." >&2
-fi
+recreate_restore_target_database || {
+  start_writers
+  exit 1
+}
+
+run_pg_restore_into_target "$PG_DUMP" || {
+  echo "[restore] restore failed — writers not restarted automatically; inspect DB and run start manually" >&2
+  exit 1
+}
 
 echo "[restore] running migrations (forward-only safety net)..."
-docker compose run --rm backend npm run migrate
+if ! docker compose run --rm --no-deps backend npm run migrate; then
+  echo "[restore] migrate failed after restore" >&2
+  exit 1
+fi
 
 start_writers
 

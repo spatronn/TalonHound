@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Disposable-DB backup → mutate → restore smoke test.
+# Disposable-DB backup → mutate → restore smoke test (fresh-database restore model).
 # Requires: docker compose db up, psql/pg_dump/pg_restore available via compose.
 #
 # Usage (from repo root):
@@ -36,7 +36,7 @@ SQL
 
 docker compose exec -T db psql -U "$DB_USER" -d "$TEST_DB" -v ON_ERROR_STOP=1 <<SQL
 CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
-INSERT INTO schema_migrations(name) VALUES ('127_system_backups.sql') ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations(name) VALUES ('001_core.sql') ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS e2e_fixture (id SERIAL PRIMARY KEY, marker TEXT NOT NULL);
 INSERT INTO e2e_fixture(marker) VALUES ('${MARKER}');
 SQL
@@ -61,7 +61,7 @@ cat > "$WORK/manifest.json" <<EOF
   "backup_id": "e2e-${TEST_DB}",
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "application": "TalonHound",
-  "database_schema_version": "127_system_backups.sql",
+  "database_schema_version": "001_core.sql",
   "components": { "postgres": { "file": "database/postgres.dump", "format": "pg_custom", "bytes": ${BYTES} } }
 }
 EOF
@@ -69,14 +69,27 @@ EOF
 echo "[e2e] mutate fixture"
 docker compose exec -T db psql -U "$DB_USER" -d "$TEST_DB" -c "DELETE FROM e2e_fixture;"
 
-echo "[e2e] restore dump"
-docker compose exec -T db pg_restore -U "$DB_USER" -d "$TEST_DB" --clean --if-exists < "$DUMP" || true
+echo "[e2e] recreate database and restore (no --clean)"
+docker compose exec -T db psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 <<SQL
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${TEST_DB}' AND pid <> pg_backend_pid();
+DROP DATABASE IF EXISTS ${TEST_DB} WITH (FORCE);
+CREATE DATABASE ${TEST_DB};
+SQL
+
+_err=$(mktemp)
+if ! docker compose exec -T db pg_restore -U "$DB_USER" -d "$TEST_DB" --no-owner --no-acl --exit-on-error - < "$DUMP" 2>"$_err"; then
+  echo "[e2e] pg_restore failed" >&2
+  sed -n '1,20p' "$_err" >&2 || true
+  rm -f "$_err"
+  exit 1
+fi
+rm -f "$_err"
 
 echo "[e2e] assert marker restored"
 FOUND=$(docker compose exec -T db psql -U "$DB_USER" -d "$TEST_DB" -Atc "SELECT marker FROM e2e_fixture LIMIT 1;")
 test "$FOUND" = "$MARKER"
 
 SCHEMA=$(docker compose exec -T db psql -U "$DB_USER" -d "$TEST_DB" -Atc "SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1;")
-test "$SCHEMA" = "127_system_backups.sql"
+test "$SCHEMA" = "001_core.sql"
 
 echo "[e2e] OK marker=${MARKER} schema=${SCHEMA}"
