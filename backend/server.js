@@ -174,6 +174,7 @@ import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './lib/spamhausDropSync.js';
 import { guardProviderEnabled } from './lib/enrichmentProviderRegistry.js';
 import { attachProviderHealth } from './lib/enrichmentProviderHealth.js';
+import { runProviderHealthProbe } from './lib/enrichmentProviderHealthCheck.js';
 import { auditProviderConfigUpdate } from './lib/enrichmentProviderConfigAudit.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
@@ -6596,9 +6597,11 @@ app.get('/api/system/health', async (_req, res) => {
         configured: provider.configured !== false,
         status: provider.health.status,
         reason: provider.health.reason,
+        evidence: provider.health.evidence || null,
         last_success_at: provider.health.last_success_at,
         last_failure_at: provider.health.last_failure_at,
         last_checked_at: provider.health.last_checked_at,
+        last_enrichment_at: provider.last_enrichment_at || null,
         include_in_overall: provider.enabled !== false
       }))
     : [{ key: 'providers', name: 'Enrichment providers', status: 'unknown', reason: 'evidence_unavailable' }];
@@ -6663,36 +6666,35 @@ app.post('/api/admin/enrichment-providers/virustotal/remove-key', requireRole(RO
   catch { return res.status(500).json({ message: 'Failed to remove key' }); }
 });
 
+// Manual "Test Connection" — routes through the canonical provider health probe
+// so manual and scheduled checks share one implementation and one health store.
+// A successful test updates canonical health to Healthy immediately.
 app.post('/api/admin/enrichment-providers/virustotal/test', requireRole(ROLES.ADMIN), async (req, res) => {
-  const now = new Date().toISOString();
-  try {
-    const cfg = await getThreatIntelProviderConfig(VT_PROVIDER);
-    if (!cfg.apiKey) return res.status(400).json({ message: 'VirusTotal API key is not configured' });
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), cfg.timeout_ms || 12000);
-    let vtRes;
-    try { vtRes = await fetch('https://www.virustotal.com/api/v3/domains/example.com', { headers: { 'x-apikey': cfg.apiKey }, signal: ctrl.signal }); }
-    finally { clearTimeout(t); }
+  const cfg = await getThreatIntelProviderConfig(VT_PROVIDER).catch(() => ({ configured: false }));
+  if (!cfg.configured) return res.status(400).json({ message: 'VirusTotal API key is not configured' });
+  const result = await runProviderHealthProbe(pool, VT_PROVIDER, { source: 'manual' });
+  if (result.ok) return res.json({ ok: true, message: 'Connection successful' });
+  if (result.category === 'rate_limit') return res.status(429).json({ message: 'VirusTotal rate limit reached. Try again later.' });
+  if (result.category === 'auth') return res.status(400).json({ message: 'Invalid VirusTotal API key' });
+  if (result.category === 'timeout') return res.status(504).json({ message: 'VirusTotal test timeout' });
+  return res.status(502).json({ message: 'VirusTotal test failed' });
+});
 
-    if (vtRes.status === 429) {
-      await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, 'VirusTotal rate limit reached. Try again later.']);
-      return res.status(429).json({ message: 'VirusTotal rate limit reached. Try again later.' });
-    }
-    if (vtRes.status === 401 || vtRes.status === 403) {
-      await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, 'Invalid VirusTotal API key']);
-      return res.status(400).json({ message: 'Invalid VirusTotal API key' });
-    }
-    if (!vtRes.ok) {
-      await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, 'VirusTotal test failed']);
-      return res.status(502).json({ message: 'VirusTotal test failed' });
-    }
-    await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_success_at=$2,last_error_message=NULL,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now]);
-    return res.json({ ok: true, message: 'Connection successful' });
-  } catch (err) {
-    const msg = String(err?.name) === 'AbortError' ? 'VirusTotal test timeout' : 'VirusTotal test failed';
-    await pool.query(`UPDATE threat_intel_provider_configs SET last_test_at=$2,last_error_at=$2,last_error_message=$3,updated_at=NOW() WHERE provider=$1`, [VT_PROVIDER, now, msg]).catch(() => {});
-    return res.status(500).json({ message: msg });
+// RDAP / WHOIS "Test Connection". RDAP needs no API key, so an enabled RDAP is
+// always testable. The probe performs a real, UNCACHED RDAP lookup of a
+// standards-reserved domain through the production RDAP client (bootstrap + DNS
+// + TLS + HTTP + redirect + parse), and updates canonical health on success.
+app.post('/api/admin/enrichment-providers/rdap/test', requireRole(ROLES.ADMIN), async (req, res) => {
+  const result = await runProviderHealthProbe(pool, 'rdap', { source: 'manual' });
+  if (result.skipped && result.reason === 'disabled') {
+    return res.status(409).json({ message: 'RDAP provider is disabled' });
   }
+  if (result.ok) {
+    return res.json({ ok: true, message: 'Connection successful', registrar: result.detail?.registrar || null });
+  }
+  if (result.category === 'rate_limit') return res.status(429).json({ message: 'RDAP rate limit reached. Try again later.' });
+  if (result.category === 'timeout') return res.status(504).json({ message: 'RDAP test timeout' });
+  return res.status(502).json({ message: 'RDAP connection test failed' });
 });
 
 // Read-only diagnostic: source evidence coverage per feed.

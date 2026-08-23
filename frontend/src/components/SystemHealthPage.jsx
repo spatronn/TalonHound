@@ -60,7 +60,7 @@ function HealthSection({ sectionKey, items }) {
                   {item.enabled === false ? <div className="sh-muted">Disabled</div> : null}
                 </td>
                 <td><ProviderStatusBadge status={normalizeHealthStatus(item.status)} /></td>
-                <td className="sh-evidence">{reasonLabel(item.reason)}</td>
+                <td className="sh-evidence">{item.evidence || reasonLabel(item.reason)}</td>
                 <td><Timestamp value={item.last_success_at} /></td>
                 <td><Timestamp value={item.last_failure_at} /></td>
               </tr>

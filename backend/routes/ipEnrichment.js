@@ -10,12 +10,12 @@ import {
   getIpinfoLiteConfig,
   MAX_BULK_IPS,
   rowToApiPayload,
-  testIpinfoLiteConnection,
   maskToken,
   IPINFO_LITE_TRUSTED_BASE_URL
 } from '../services/ipinfoLiteService.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { runProviderHealthProbe } from '../lib/enrichmentProviderHealthCheck.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 import {
   recordEnrichmentUsage,
@@ -561,32 +561,25 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     }
   });
 
+  // Manual "Test Connection" — runs the canonical IPinfo Lite health probe so
+  // manual and scheduled checks share one implementation and one health store.
   app.post('/api/admin/enrichment-providers/ipinfo-lite/test', requireRole(ROLES.ADMIN), async (req, res) => {
-    const now = new Date().toISOString();
-    try {
-      const row = await testIpinfoLiteConnection(pool);
-      await pool.query(
-        `UPDATE threat_intel_provider_configs SET last_test_at=$2, last_success_at=$2, last_error_message=NULL, updated_at=NOW() WHERE provider=$1`,
-        [IPINFO_PROVIDER, now]
-      );
+    const cfg = await getIpinfoLiteConfig(pool).catch(() => ({ configured: false }));
+    if (!cfg.configured) return res.status(400).json({ message: 'IPinfo Lite token is not configured' });
+    const result = await runProviderHealthProbe(pool, IPINFO_PROVIDER, { source: 'manual' });
+    if (result.ok) {
       return res.json({
         ok: true,
         message: 'Connection successful',
-        asn: row.asn,
-        as_name: row.as_name,
-        country_code: row.country_code
+        asn: result.detail?.asn,
+        as_name: result.detail?.as_name,
+        country_code: result.detail?.country_code
       });
-    } catch (err) {
-      const msg = String(err?.message || 'IPinfo Lite test failed');
-      await pool.query(
-        `UPDATE threat_intel_provider_configs SET last_test_at=$2, last_error_at=$2, last_error_message=$3, updated_at=NOW() WHERE provider=$1`,
-        [IPINFO_PROVIDER, now, msg.slice(0, 500)]
-      ).catch(() => {});
-      if (err?.code === 'not_configured') return res.status(400).json({ message: msg });
-      if (err?.code === 'auth') return res.status(401).json({ message: msg });
-      if (err?.code === 'rate_limit') return res.status(429).json({ message: msg });
-      return res.status(502).json({ message: msg });
     }
+    if (result.category === 'auth') return res.status(401).json({ message: 'IPinfo Lite authentication failed' });
+    if (result.category === 'rate_limit') return res.status(429).json({ message: 'IPinfo Lite rate limit reached' });
+    if (result.category === 'timeout') return res.status(504).json({ message: 'IPinfo Lite test timeout' });
+    return res.status(502).json({ message: 'IPinfo Lite test failed' });
   });
 
   app.post('/api/admin/enrichment-providers/ipinfo-lite/remove-key', requireRole(ROLES.ADMIN), async (req, res) => {

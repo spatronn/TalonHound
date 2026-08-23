@@ -29,17 +29,24 @@ export default function ProviderConfigForm({
   enabledDisabled = false,
   showEnabledToggle = true,
   health,
-  lastTestAt,
-  lastTestLabel = 'Last successful check',
+  lastEnrichmentAt,
+  // Operational (Spamhaus) cards use dataset-sync wording instead of connection-test wording.
+  operational = false,
+  lastCheckLabel,
+  lastSuccessLabel,
   showLastTest = true,
+  showEnrichmentActivity = true,
   description,
   extraRight,
   actions,
   errorMessage
 }) {
-  const lastSuccessAt = health?.last_success_at || lastTestAt || null;
+  const lastCheckedAt = health?.last_checked_at || null;
+  const lastSuccessAt = health?.last_success_at || null;
   const lastFailureAt = health?.last_failure_at || null;
-  const noRecentEvidence = String(health?.status || status || '').toLowerCase() === 'unknown';
+  const evidence = health?.evidence || null;
+  const checkLabel = lastCheckLabel || (operational ? 'Last sync check' : 'Last health check');
+  const successLabel = lastSuccessLabel || (operational ? 'Last successful sync' : 'Last successful health check');
   return (
     <div className="ep-config">
       <div className="ep-config-grid">
@@ -74,14 +81,24 @@ export default function ProviderConfigForm({
           )}
 
           {showLastTest ? (
-            <div className="ep-side-row">
-              <span className="ep-side-label">{lastTestLabel}</span>
-              <div className="ep-side-value ep-side-muted">
-                <span title={utcIsoTooltip(lastSuccessAt)}>
-                  {lastSuccessAt ? formatRelativeTime(lastSuccessAt) : 'Never'}
-                </span>
+            <>
+              <div className="ep-side-row">
+                <span className="ep-side-label">{checkLabel}</span>
+                <div className="ep-side-value ep-side-muted">
+                  <span title={utcIsoTooltip(lastCheckedAt)}>
+                    {lastCheckedAt ? formatRelativeTime(lastCheckedAt) : 'Never'}
+                  </span>
+                </div>
               </div>
-            </div>
+              <div className="ep-side-row">
+                <span className="ep-side-label">{successLabel}</span>
+                <div className="ep-side-value ep-side-muted">
+                  <span title={utcIsoTooltip(lastSuccessAt)}>
+                    {lastSuccessAt ? formatRelativeTime(lastSuccessAt) : 'Never'}
+                  </span>
+                </div>
+              </div>
+            </>
           ) : null}
 
           {lastFailureAt ? (
@@ -93,10 +110,21 @@ export default function ProviderConfigForm({
             </div>
           ) : null}
 
-          {noRecentEvidence ? (
+          {evidence ? (
             <div className="ep-side-row">
               <span className="ep-side-label">Health evidence</span>
-              <div className="ep-side-value ep-side-muted">No recent health evidence</div>
+              <div className="ep-side-value ep-side-muted">{evidence}</div>
+            </div>
+          ) : null}
+
+          {showEnrichmentActivity && !operational ? (
+            <div className="ep-side-row">
+              <span className="ep-side-label">Last enrichment activity</span>
+              <div className="ep-side-value ep-side-muted">
+                <span title={utcIsoTooltip(lastEnrichmentAt)}>
+                  {lastEnrichmentAt ? formatRelativeTime(lastEnrichmentAt) : 'None recorded'}
+                </span>
+              </div>
             </div>
           ) : null}
 

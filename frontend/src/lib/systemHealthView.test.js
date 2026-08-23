@@ -22,3 +22,11 @@ test('summary copy prioritizes problems then unknown evidence', () => {
 test('stale provider success explains unknown health', () => {
   assert.match(reasonLabel('stale_success'), /outside the freshness window/i);
 });
+
+test('active-probe health reasons have explicit, non-usage wording', () => {
+  // "never checked" is the ONLY Unknown wording — never "no recent usage".
+  assert.match(reasonLabel('never_checked'), /no health check has been performed/i);
+  assert.match(reasonLabel('health_check_passed'), /connection test succeeded/i);
+  assert.match(reasonLabel('overdue'), /overdue/i);
+  assert.doesNotMatch(reasonLabel('never_checked'), /usage|enrichment/i);
+});

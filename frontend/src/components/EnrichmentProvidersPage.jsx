@@ -38,6 +38,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     vtSave: false, vtTest: false, vtRemove: false,
     ipSave: false, ipTest: false, ipRemove: false,
     abuseSave: false, abuseTest: false, abuseRemove: false,
+    rdapTest: false,
     spamSave: false, spamSync: false
   });
 
@@ -262,6 +263,22 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     }
   }
 
+  async function testRdap() {
+    setBusy((b) => ({ ...b, rdapTest: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const { data } = await api.post('/admin/enrichment-providers/rdap/test');
+      setFeedback({ type: 'success', text: data?.message || 'RDAP connection successful' });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Test failed';
+      setFeedback({ type: /rate limit/i.test(msg) ? 'warn' : 'error', text: msg });
+      await load();
+    } finally {
+      setBusy((b) => ({ ...b, rdapTest: false }));
+    }
+  }
+
   async function saveSpamhaus() {
     setBusy((b) => ({ ...b, spamSave: true }));
     setFeedback({ type: '', text: '' });
@@ -386,6 +403,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         onEnabledChange={(v) => handleEnabledChange('virustotal', v, setVtForm)}
                         enabledDisabled={!isAdmin}
                         health={row.health}
+                        lastEnrichmentAt={row.last_enrichment_at}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
                         left={(
@@ -456,6 +474,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         onEnabledChange={(v) => handleEnabledChange('ipinfo_lite', v, setIpForm)}
                         enabledDisabled={!isAdmin}
                         health={row.health}
+                        lastEnrichmentAt={row.last_enrichment_at}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
                         left={(
@@ -529,6 +548,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         onEnabledChange={(v) => handleEnabledChange('abuseipdb', v, setAbuseForm)}
                         enabledDisabled={!isAdmin}
                         health={row.health}
+                        lastEnrichmentAt={row.last_enrichment_at}
                         description={meta.longDescription}
                         errorMessage={row.last_error_message}
                         left={(
@@ -611,6 +631,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         enabled={row.enabled !== false}
                         showEnabledToggle={false}
                         health={row.health}
+                        lastEnrichmentAt={row.last_enrichment_at}
                         description={row.description || meta.longDescription}
                         left={(
                           <>
@@ -620,7 +641,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                               <div className="ep-readonly-item"><div className="k">Timeout</div><div className="v">{row.timeout_ms || 10000} ms</div></div>
                             </div>
                             <div className="ep-note">
-                              Used on-demand from <b style={{ color: '#e2e8f0' }}>IOC Details → Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain.
+                              Used on-demand from <b style={{ color: '#e2e8f0' }}>IOC Details → Intelligence</b> for domain and URL observables. Lookups are cached by registrable root domain. The connection test performs a real, uncached RDAP lookup.
                             </div>
                           </>
                         )}
@@ -629,6 +650,14 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                             <span className="ep-side-label">Auth</span>
                             <div className="ep-side-value ep-side-muted">No API key</div>
                           </div>
+                        )}
+                        actions={(
+                          <ProviderActionBar
+                            onTest={() => testRdap().catch(() => {})}
+                            disabled={!isAdmin || anyBusy}
+                            testDisabled={row.enabled === false}
+                            busy={{ test: busy.rdapTest }}
+                          />
                         )}
                       />
                     </ProviderAccordionCard>
@@ -656,7 +685,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                         onEnabledChange={(v) => handleEnabledChange('spamhaus_drop', v, setSpamhausForm)}
                         enabledDisabled={!isAdmin}
                         health={row.health}
-                        lastTestLabel="Last successful sync"
+                        operational
                         description={meta.longDescription}
                         left={(
                           <>

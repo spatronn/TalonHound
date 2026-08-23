@@ -7,6 +7,7 @@ import {
   AUDIT_LOG_RETENTION_DEFAULT_BATCH_SIZE
 } from './lib/auditLogRetention.js';
 import { cleanupSessions } from './lib/authSessions.js';
+import { runDueEnrichmentHealthProbes } from './lib/enrichmentHealthProbeScheduler.js';
 
 const { Pool } = pg;
 
@@ -67,6 +68,31 @@ async function maybeRunSessionCleanup() {
   }
 }
 
+// Scheduled enrichment-provider health probes. The per-provider 24h cadence and
+// retry timing are derived from persisted last_check_at, so we only need a cheap
+// throttle here to decide how often to consult the due-check (default every 15m).
+// runDueEnrichmentHealthProbes takes an advisory lock, so overlapping ticks or
+// multiple worker instances cannot double-probe a provider.
+const HEALTH_PROBE_CHECK_MS = Math.max(
+  Number(process.env.ENRICHMENT_HEALTH_PROBE_CHECK_MS || 15 * 60 * 1000),
+  60 * 1000
+);
+let lastHealthProbeCheck = 0;
+
+async function maybeRunHealthProbes() {
+  const now = Date.now();
+  if (now - lastHealthProbeCheck < HEALTH_PROBE_CHECK_MS) return;
+  lastHealthProbeCheck = now;
+  try {
+    const result = await runDueEnrichmentHealthProbes(pool, { logger: console });
+    if (result?.probed?.length) {
+      console.log(`[health-probe] probed=${result.probed.join(',')}`);
+    }
+  } catch (err) {
+    console.error('[health-probe] run failed', err?.message || err);
+  }
+}
+
 const audit = createAuditLogService(pool);
 let stopping = false;
 
@@ -106,6 +132,7 @@ async function tick() {
 
   await maybeRunAuditRetention();
   await maybeRunSessionCleanup();
+  await maybeRunHealthProbes();
 }
 
 async function main() {

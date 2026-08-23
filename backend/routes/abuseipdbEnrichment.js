@@ -16,6 +16,7 @@ import {
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
+import { recordHealthProbeResult, classifyProbeError } from '../lib/enrichmentProviderHealthCheck.js';
 
 function decodeRouteIp(raw) {
   try {
@@ -322,16 +323,19 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
   });
 
   app.post('/api/admin/enrichment-providers/abuseipdb/test', requireRole(ROLES.ADMIN), async (req, res) => {
-    const now = new Date().toISOString();
     const testIp = typeof req.body?.ip === 'string' && req.body.ip.trim()
       ? req.body.ip.trim()
       : TEST_IP;
+    // testAbuseIpdbConnection is the canonical AbuseIPDB probe shared with the
+    // scheduled health check; a successful manual test updates canonical health.
     try {
       const result = await testAbuseIpdbConnection(pool, testIp);
-      await pool.query(
-        `UPDATE threat_intel_provider_configs SET last_test_at=$2, last_success_at=$2, last_error_message=NULL, updated_at=NOW() WHERE provider=$1`,
-        [ABUSEIPDB_PROVIDER, now]
-      );
+      await recordHealthProbeResult(pool, {
+        provider: ABUSEIPDB_PROVIDER,
+        source: 'manual',
+        outcome: 'success',
+        evidence: 'Manual connection test succeeded'
+      }).catch(() => {});
       return res.json({
         ok: true,
         message: 'Connection successful',
@@ -341,10 +345,20 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
       });
     } catch (err) {
       const msg = String(err?.message || 'AbuseIPDB test failed');
-      await pool.query(
-        `UPDATE threat_intel_provider_configs SET last_test_at=$2, last_error_at=$2, last_error_message=$3, updated_at=NOW() WHERE provider=$1`,
-        [ABUSEIPDB_PROVIDER, now, msg.slice(0, 500)]
-      ).catch(() => {});
+      // Invalid test-IP inputs are a client-side validation issue, not provider
+      // health evidence — do not record them against provider health.
+      if (err?.code !== 'unsupported_private_ip' && err?.code !== 'invalid_ip') {
+        const { category, evidence } = classifyProbeError(err);
+        if (category !== 'not_configured') {
+          await recordHealthProbeResult(pool, {
+            provider: ABUSEIPDB_PROVIDER,
+            source: 'manual',
+            outcome: 'failure',
+            category,
+            evidence
+          }).catch(() => {});
+        }
+      }
       if (err?.code === 'not_configured') return res.status(400).json({ message: msg });
       if (err?.code === 'disabled') return res.status(409).json({ message: msg });
       if (err?.code === 'unsupported_private_ip' || err?.code === 'invalid_ip') {

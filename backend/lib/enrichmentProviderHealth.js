@@ -1,3 +1,5 @@
+import { readProviderHealthRows, resolveActiveProbeHealth } from './enrichmentProviderHealthCheck.js';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const PROVIDER_HEALTH_STATUSES = Object.freeze([
@@ -89,37 +91,29 @@ function maxTimestamp(...values) {
   return latest(...values)?.value || null;
 }
 
-async function queryOne(pool, sql, params = []) {
+/**
+ * Last real enrichment activity per provider, sourced from enrichment_usage_daily
+ * (day granularity). This is deliberately independent of provider health: health
+ * probes never write usage telemetry, so this cannot be inflated by a health
+ * check. Surfaced as "Last enrichment activity", never as health evidence.
+ */
+async function loadLastEnrichmentActivity(pool) {
+  const map = {};
   try {
-    const result = await pool.query(sql, params);
-    return result.rows?.[0] || {};
+    const { rows } = await pool.query(`
+      SELECT provider_key, MAX(bucket_date) AS last_activity
+      FROM enrichment_usage_daily
+      WHERE request_count > 0
+      GROUP BY provider_key
+    `);
+    for (const row of rows) {
+      const at = row.last_activity ? new Date(row.last_activity).toISOString() : null;
+      if (at) map[row.provider_key] = at;
+    }
   } catch {
-    return {};
+    /* usage table missing -> no activity info */
   }
-}
-
-async function loadRuntimeEvidence(pool) {
-  const [ipinfo, abuseipdb, rdap] = await Promise.all([
-    queryOne(pool, `
-      SELECT
-        MAX(last_enriched_at) FILTER (WHERE provider_status = 'success') AS last_success_at,
-        MAX(last_enriched_at) FILTER (WHERE provider_status IN ('failed','unavailable','auth_error','rate_limited')) AS last_failure_at
-      FROM ioc_ip_enrichment
-    `),
-    queryOne(pool, `
-      SELECT
-        MAX(last_enriched_at) FILTER (WHERE provider_status = 'success') AS last_success_at,
-        MAX(last_enriched_at) FILTER (WHERE provider_status IN ('failed','auth_error','rate_limited')) AS last_failure_at
-      FROM ioc_abuseipdb_enrichment
-    `),
-    queryOne(pool, `
-      SELECT
-        MAX(last_success_at) AS last_success_at,
-        MAX(last_attempt_at) FILTER (WHERE last_error IS NOT NULL) AS last_failure_at
-      FROM ioc_domain_enrichment
-    `)
-  ]);
-  return { ipinfo_lite: ipinfo, abuseipdb, rdap };
+  return map;
 }
 
 function spamhausHealth(row, freshnessMs, now) {
@@ -145,10 +139,19 @@ function spamhausHealth(row, freshnessMs, now) {
 
 /**
  * Attach canonical health to already-sanitized provider summaries.
+ *
+ * Health for active-probe providers (VirusTotal, IPinfo Lite, AbuseIPDB, RDAP)
+ * comes solely from explicit health-check evidence in enrichment_provider_health
+ * — manual "Test Connection" and scheduled 24h probes. Elapsed time since the
+ * last analyst *enrichment* never affects health; it is surfaced separately as
+ * `last_enrichment_at`. Spamhaus DROP keeps its operational (dataset-sync) health.
  */
 export async function attachProviderHealth(pool, providers, options = {}) {
   const freshnessMs = Number(options.freshnessMs || providerHealthFreshnessMs());
-  const runtime = await loadRuntimeEvidence(pool);
+  const [healthRows, activity] = await Promise.all([
+    readProviderHealthRows(pool),
+    loadLastEnrichmentActivity(pool)
+  ]);
 
   return providers.map((row) => {
     if (row.provider === 'spamhaus_drop') {
@@ -156,25 +159,13 @@ export async function attachProviderHealth(pool, providers, options = {}) {
       return { ...row, health, status: health.status };
     }
 
-    const extra = runtime[row.provider] || {};
-    const lastSuccessAt = maxTimestamp(row.last_success_at, extra.last_success_at);
-    const lastFailureAt = maxTimestamp(row.last_error_at, extra.last_failure_at);
-    const manualFailure = Boolean(
-      row.last_test_at && row.last_error_at
-      && Date.parse(row.last_test_at) === Date.parse(row.last_error_at)
-      && (!row.last_success_at || Date.parse(row.last_error_at) >= Date.parse(row.last_success_at))
-    );
-    const health = resolveProviderHealth({
-      configured: row.configured,
-      last_success_at: lastSuccessAt,
-      last_failure_at: lastFailureAt,
-      last_checked_at: maxTimestamp(row.last_test_at, extra.last_attempt_at, lastSuccessAt, lastFailureAt),
-      failure_authoritative: manualFailure,
-      failure_message: row.last_error_message,
-      failure_code: row.last_error_code
-    }, { freshnessMs, now: options.now });
+    const health = resolveActiveProbeHealth(healthRows.get(row.provider) || null, {
+      now: options.now,
+      staleMs: options.staleMs
+    });
+    const lastEnrichmentAt = activity[row.provider] || null;
 
-    return { ...row, health, status: health.status };
+    return { ...row, health, status: health.status, last_enrichment_at: lastEnrichmentAt };
   });
 }
 
