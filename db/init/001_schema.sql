@@ -1,5 +1,7 @@
-CREATE TABLE IF NOT EXISTS user_preferences (
-  email TEXT PRIMARY KEY,
-  timezone TEXT NOT NULL DEFAULT 'UTC',
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- TalonHound PostgreSQL container bootstrap (docker-entrypoint-initdb.d)
+--
+-- Application schema is owned exclusively by backend/migrations/001_core.sql
+-- and forward migrations. Do not create application tables here — that duplicates
+-- the canonical baseline and breaks fresh-install idempotency.
+--
+-- This file intentionally performs no DDL on first volume init.

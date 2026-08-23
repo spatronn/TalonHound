@@ -22,6 +22,20 @@ export function sortMigrationFiles(files) {
 
 /**
  * @param {string} migrationsDir
+ * @param {(dir: string) => Promise<string[]>} [readdirFn]
+ */
+export async function getLatestMigrationMeta(migrationsDir, readdirFn) {
+  const files = await listRunnableMigrationFiles(migrationsDir, readdirFn);
+  const latestFile = files.at(-1) || '';
+  const match = latestFile.match(/^(\d+)_/);
+  return {
+    latestMigrationFile: latestFile,
+    latestMigration: match ? Number(match[1]) : null
+  };
+}
+
+/**
+ * @param {string} migrationsDir
  * @param {(dir: string) => Promise<string[]>} readdirFn
  */
 export async function listRunnableMigrationFiles(migrationsDir, readdirFn) {

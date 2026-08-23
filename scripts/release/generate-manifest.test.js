@@ -22,13 +22,13 @@ test('buildReleaseManifest marks beta releases as prerelease', () => {
     gitCommit: 'abc123',
     releasedAt: '2026-08-23T12:00:00.000Z',
     images: sampleImages,
-    latestMigration: 165
+    latestMigration: 1
   });
 
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.channel, 'beta');
   assert.equal(manifest.prerelease, true);
-  assert.equal(manifest.database.latestMigration, 165);
+  assert.equal(manifest.database.latestMigration, 1);
 });
 
 test('buildReleaseManifest rejects tag/version mismatch', () => {
@@ -54,7 +54,7 @@ test('validateReleaseManifest round-trips generated manifests', () => {
         digest: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
       }
     },
-    latestMigration: 165
+    latestMigration: 1
   });
   assert.equal(manifest.channel, 'stable');
   assert.equal(manifest.prerelease, false);

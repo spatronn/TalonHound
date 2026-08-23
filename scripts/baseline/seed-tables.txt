@@ -1,0 +1,12 @@
+# Canonical product/bootstrap tables (data-only dump for 001_core.sql baseline).
+# One table name per line. Lines starting with # are ignored.
+integration_feeds
+ioc_sources
+published_feed_global_watermarks
+spamhaus_drop_sync_state
+system_settings
+tags
+threat_actors
+threat_classifications
+threat_feed_expiration_policies
+threat_intel_provider_configs

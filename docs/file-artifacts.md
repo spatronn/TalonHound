@@ -4,7 +4,7 @@ Exact file-hash IOCs (`md5`, `sha1`, `sha256`) remain stored as `ioc_items` rows
 
 ## Schema
 
-Migration: `backend/migrations/131_file_artifacts.sql`
+Schema: `backend/migrations/001_core.sql` (canonical baseline; includes file artifact tables).
 
 | Table | Purpose |
 |-------|---------|

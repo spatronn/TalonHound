@@ -6,7 +6,8 @@ Migrations **never** run automatically on container startup. They are applied in
 
 - `backend` / workers / scheduler start with `node server.js` or their worker entrypoint only — no `migrate.js` in startup chains.
 - Only files matching `backend/migrations/*.sql` (plain `.sql` suffix) are executed.
-- Quarantined files under `backend/migrations_disabled/` (e.g. `*.sql.disabled`) are never executed.
+- Files ending in `.sql.disabled`, `.bak`, `.tmp`, or `.old` are ignored.
+- The canonical public baseline is `001_core.sql` — see [database-migrations.md](./database-migrations.md).
 - A Postgres advisory lock prevents parallel `migrate` processes.
 - Run migrations **before** `backend` and **before** integration scheduler/workers when schema changes are included.
 
@@ -125,24 +126,9 @@ If two `npm run migrate` processes run concurrently, the second must exit non-ze
 
 `Another migration process is already running.`
 
-## IOC confidence schema (072)
+## IOC confidence schema
 
-The unsafe `071` migration was quarantined to `migrations_disabled/071_ioc_confidence_model.sql.disabled`.
-
-Apply the safe replacement explicitly:
-
-```bash
-docker compose run --rm backend npm run migrate
-```
-
-`072_ioc_confidence_model_safe.sql`:
-
-- Adds **nullable** columns only (no `NOT NULL DEFAULT` on large tables)
-- No `CHECK` constraints on `ioc_items`
-- No full-table backfill on `ioc_items`
-- Seeds `integration_feeds.default_confidence` for known feed keys only
-
-Backend falls back to legacy `confidence` column when new columns are not yet applied.
+The canonical baseline (`001_core.sql`) includes the safe IOC confidence model (formerly `072_ioc_confidence_model_safe.sql`). New installations receive nullable confidence columns without destructive backfills.
 
 ## Emergency rollback
 
@@ -150,7 +136,7 @@ If a migration causes lock/contention during an explicit migrate run:
 
 ```bash
 docker compose stop backend integration-worker integration-scheduler
-# Move problematic file out of backend/migrations/ into migrations_disabled/
+# Remove or fix the problematic forward migration file (002_*.sql, ...)
 docker compose build backend
 docker compose up -d backend
 ```
@@ -159,4 +145,4 @@ Investigate `pg_stat_activity` / `pg_locks` before re-attempting migrate.
 
 ## Incident reference
 
-Hotfix commit `1f71b2e` disabled startup migrations after `071` caused `AccessExclusiveLock` on `ioc_items` during parallel container startup, blocking login and workers.
+Hotfix commit `1f71b2e` disabled startup migrations after an unsafe migration caused `AccessExclusiveLock` on `ioc_items` during parallel container startup. Migrations remain explicit one-shot steps only.

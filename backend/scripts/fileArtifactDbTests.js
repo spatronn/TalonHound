@@ -275,11 +275,11 @@ async function main() {
   try {
     await runMigrations(cfg);
 
-    await assert('migration 131 applied', async () => {
+    await assert('baseline migration applied', async () => {
       const { rows } = await pool.query(
-        `SELECT 1 FROM schema_migrations WHERE name = '131_file_artifacts.sql'`
+        `SELECT 1 FROM schema_migrations WHERE name = '001_core.sql'`
       );
-      if (!rows.length) throw new Error('131_file_artifacts.sql missing from schema_migrations');
+      if (!rows.length) throw new Error('001_core.sql missing from schema_migrations');
       const tables = await pool.query(`
         SELECT COUNT(*)::int AS c FROM information_schema.tables
         WHERE table_schema = 'public'

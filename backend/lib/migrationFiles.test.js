@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { isRunnableMigrationFile, sortMigrationFiles } from './migrationFiles.js';
+import {
+  isRunnableMigrationFile,
+  sortMigrationFiles,
+  getLatestMigrationMeta
+} from './migrationFiles.js';
 
 test('isRunnableMigrationFile accepts plain .sql migrations', () => {
-  assert.equal(isRunnableMigrationFile('071_ioc_confidence_model.sql'), true);
-  assert.equal(isRunnableMigrationFile('072_ioc_confidence_model_safe.sql'), true);
+  assert.equal(isRunnableMigrationFile('001_core.sql'), true);
+  assert.equal(isRunnableMigrationFile('002_add_feature.sql'), true);
 });
 
 test('isRunnableMigrationFile rejects disabled and backup suffixes', () => {
@@ -25,98 +29,46 @@ test('sortMigrationFiles is deterministic', () => {
   assert.deepEqual(sorted, ['001_core.sql', '002_a.sql', '010_b.sql']);
 });
 
-test('155 STIX formats migration is runnable', () => {
-  assert.equal(isRunnableMigrationFile('155_published_feeds_stix_format.sql'), true);
+test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
+  const meta = await getLatestMigrationMeta(dir);
+  assert.equal(meta.latestMigrationFile, '001_core.sql');
+  assert.equal(meta.latestMigration, 1);
 });
 
-test('157 saved IOC searches migration is runnable', () => {
-  assert.equal(isRunnableMigrationFile('157_ioc_saved_searches.sql'), true);
+test('001_core baseline contains core product schema objects', () => {
   const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/157_ioc_saved_searches.sql'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/001_core.sql'),
     'utf8'
   );
-  assert.ok(sql.includes('ioc_saved_searches'));
-  assert.ok(sql.includes('owner_id'));
-  assert.ok(sql.includes('REFERENCES users(id)'));
-  assert.ok(sql.includes('lower(name)'));
+  assert.ok(sql.includes('CREATE TABLE public.ioc_items'));
+  assert.ok(sql.includes('CREATE TABLE public.users'));
+  assert.ok(sql.includes('CREATE TABLE public.file_artifacts'));
+  assert.ok(sql.includes('CREATE TABLE public.ioc_saved_searches'));
+  assert.ok(sql.includes('CREATE TABLE public.ioc_bulk_query_jobs'));
+  assert.ok(sql.includes('CREATE TABLE public.published_feed_generations'));
+  assert.ok(sql.includes('CREATE TABLE public.auth_sessions'));
+  assert.ok(sql.includes('CREATE TABLE public.enrichment_provider_health'));
+  assert.ok(!sql.includes('CREATE TABLE public.schema_migrations'));
 });
 
-test('158 query-wide bulk jobs migration is runnable', () => {
-  assert.equal(isRunnableMigrationFile('158_ioc_bulk_query_jobs.sql'), true);
+test('001_core baseline includes canonical seed data markers', () => {
   const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/158_ioc_bulk_query_jobs.sql'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/001_core.sql'),
     'utf8'
   );
-  assert.ok(sql.includes('ioc_bulk_query_jobs'));
-  assert.ok(sql.includes('ioc_bulk_query_job_targets'));
-  assert.ok(sql.includes('all_matching') || sql.includes('selection') || sql.includes('normalized_query'));
+  assert.ok(sql.includes('INSERT INTO public.threat_classifications'));
+  assert.ok(sql.includes('INSERT INTO public.tags'));
+  assert.ok(sql.includes('INSERT INTO public.integration_feeds'));
+  assert.ok(sql.includes('INSERT INTO public.threat_intel_provider_configs'));
 });
 
-test('159 MalwareBazaar coverage state migration is runnable and additive', () => {
-  assert.equal(isRunnableMigrationFile('159_malwarebazaar_coverage_state.sql'), true);
+test('001_core published feeds schema uses multi ioc_types', () => {
   const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/159_malwarebazaar_coverage_state.sql'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/001_core.sql'),
     'utf8'
   );
-  assert.ok(sql.includes('CREATE TABLE IF NOT EXISTS malwarebazaar_coverage_state'));
-  assert.ok(sql.includes('idx_malwarebazaar_coverage_state_status'));
-  assert.ok(sql.includes("'recovery_running'"));
-  assert.ok(sql.includes("'gap_pending'"));
-  assert.ok(sql.includes('DROP TABLE IF EXISTS malwarebazaar_coverage_state'));
-  assert.equal(/REFERENCES\s+ioc_items/i.test(sql), false);
-  assert.equal(/CREATE INDEX CONCURRENTLY/i.test(sql), false);
-});
-
-test('160 Published Feed chunk generation migration is additive and transaction-safe', () => {
-  const name = '160_published_feed_chunk_generations.sql';
-  assert.equal(isRunnableMigrationFile(name), true);
-  const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), `../migrations/${name}`),
-    'utf8'
-  );
-  assert.ok(sql.includes('published_feed_generations'));
-  assert.ok(sql.includes('published_feed_chunks'));
-  assert.ok(sql.includes('published_feed_generation_chunks'));
-  assert.ok(sql.includes('published_feed_active_generations'));
-  assert.ok(sql.includes('partition_identity'));
-  assert.ok(sql.includes('projection_pending_cutoff'));
-  assert.equal(/CREATE\s+INDEX\s+CONCURRENTLY/i.test(
-    sql.replace(/--.*$/gm, '')
-  ), false);
-});
-
-test('156 IOC read/export scopes migration is runnable and expands CHECKs', () => {
-  assert.equal(isRunnableMigrationFile('156_api_ioc_read_export_scopes.sql'), true);
-  const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/156_api_ioc_read_export_scopes.sql'),
-    'utf8'
-  );
-  assert.ok(sql.includes('ioc_read'));
-  assert.ok(sql.includes('ioc:read'));
-  assert.ok(sql.includes('ioc:export'));
-  assert.ok(sql.includes('chk_pf_access_keys_key_type'));
-  assert.ok(sql.includes('chk_pf_access_keys_scopes'));
-});
-
-test('155 migration allows stix in published_feeds formats CHECK', () => {
-  const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/155_published_feeds_stix_format.sql'),
-    'utf8'
-  );
-  assert.ok(sql.includes('stix'));
-  assert.ok(sql.includes('chk_published_feeds_formats'));
-  assert.ok(sql.includes("jsonb_array_length(formats) <= 3"));
-});
-
-test('154 migration converts last_seen_ttl to fixed_ttl and tightens CHECK', () => {
-  const sql = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/154_drop_last_seen_ttl_expiration.sql'),
-    'utf8'
-  );
-  assert.ok(sql.includes("WHERE expiration_mode = 'last_seen_ttl'"));
-  assert.ok(sql.includes("expiration_mode = 'fixed_ttl'"));
-  assert.ok(sql.includes('first_seen_in_feed'));
-  assert.ok(sql.includes("CHECK (expiration_mode IN ('never', 'fixed_ttl', 'missing_from_feed_ttl'))"));
-  assert.equal(sql.includes("'last_seen_ttl'") && sql.includes('IN ('), true);
-  assert.equal(/CHECK \(expiration_mode IN \([^)]*last_seen_ttl/.test(sql), false);
+  assert.match(sql, /ioc_types jsonb NOT NULL/);
+  assert.match(sql, /chk_published_feeds_ioc_types/);
+  assert.match(sql, /published_feeds_bridge_ioc_types/);
 });

@@ -26,6 +26,7 @@ import {
   markCompleted,
   markFailed
 } from './backupStore.js';
+import { getLatestMigrationMeta } from '../migrationFiles.js';
 
 function gitSha() {
   try {
@@ -39,10 +40,10 @@ function gitSha() {
 
 async function readSchemaVersion(db) {
   try {
-    const { rows } = await db.query(
-      `SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1`
-    );
-    return rows[0]?.name || null;
+    // Public schema version follows repository migration files, not legacy DB history rows.
+    const dir = path.join(process.cwd(), 'migrations');
+    const { latestMigrationFile } = await getLatestMigrationMeta(dir);
+    return latestMigrationFile || null;
   } catch {
     return null;
   }

@@ -12,6 +12,8 @@ TalonHound uses a single canonical product version stored in the repository root
 
 Git tags must use the form `v${VERSION}`. A release tag is rejected unless it exactly matches the canonical `VERSION` file.
 
+Database migrations for the first public Beta are documented in [`docs/database-migrations.md`](database-migrations.md). Release manifests record `database.latestMigration` derived from repository migration files (baseline `001_core.sql` → `1` for v0.1.0-beta.1).
+
 ## Official artifacts
 
 Each official release publishes:
