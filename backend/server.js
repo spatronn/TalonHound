@@ -147,6 +147,7 @@ import {
 } from './lib/iocListTimestamps.js';
 import { applySessionTimezoneToPool } from './lib/pgSessionTimezone.js';
 import { registerSetupRoutes, createSetupGate } from './routes/setup.js';
+import { registerSystemVersionRoutes } from './routes/systemVersion.js';
 import { createServiceLogger } from './lib/appLogger.js';
 import { setSystemScheduleTimezoneOverride } from './lib/integrationSchedule.js';
 import {
@@ -2860,6 +2861,7 @@ app.put('/api/users/me/preferences', async (req, res) => {
 });
 
 registerUserManagementRoutes(app, pool, auditLogService);
+registerSystemVersionRoutes(app);
 registerSetupRoutes(app, pool, {
   audit: auditLogService,
   onTimezoneChanged: async (tz, meta = {}) => {

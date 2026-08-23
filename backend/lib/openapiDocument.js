@@ -4,13 +4,15 @@
  */
 
 import { API_SCOPE, ACCESS_PROFILE } from '../lib/apiKeyProfiles.js';
+import { getProductVersionInfo } from './productVersion.js';
 
 export function buildOpenApiDocument({ serverUrl = '/' } = {}) {
+  const productVersion = getProductVersionInfo().version;
   return {
     openapi: '3.1.0',
     info: {
       title: 'TalonHound API',
-      version: '1.0.0',
+      version: productVersion,
       description: [
         'Programmatic access to TalonHound.',
         '',

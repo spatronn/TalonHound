@@ -12,6 +12,8 @@ Migrations **never** run automatically on container startup. They are applied in
 
 ## Standard deploy order
 
+For source-built deployments on an existing host after pulling application changes, see also [`scripts/release/deploy-application.sh`](../scripts/release/deploy-application.sh).
+
 ```bash
 # 1. Infrastructure
 docker compose up -d db redis

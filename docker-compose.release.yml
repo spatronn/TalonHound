@@ -1,0 +1,55 @@
+# Official release deployment override.
+# Use prebuilt GHCR images instead of local source builds.
+#
+# Example:
+#   export TALONHOUND_VERSION=0.1.0-beta.1
+#   export TALONHOUND_BACKEND_IMAGE=ghcr.io/spatronn/talonhound-backend:${TALONHOUND_VERSION}
+#   export TALONHOUND_FRONTEND_IMAGE=ghcr.io/spatronn/talonhound-frontend:${TALONHOUND_VERSION}
+#   export TALONHOUND_INTEGRATION_IMAGE=ghcr.io/spatronn/talonhound-integration:${TALONHOUND_VERSION}
+#   export TALONHOUND_PROXY_IMAGE=ghcr.io/spatronn/talonhound-proxy:${TALONHOUND_VERSION}
+#   docker compose -f docker-compose.yml -f docker-compose.release.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+#
+# Do not pass --build for release deployments. Image digests in the release
+# manifest are the authoritative deployment identity, not mutable tags alone.
+
+services:
+  backend:
+    image: ${TALONHOUND_BACKEND_IMAGE:?Set TALONHOUND_BACKEND_IMAGE}
+    build: !reset null
+
+  integration-scheduler:
+    image: ${TALONHOUND_INTEGRATION_IMAGE:?Set TALONHOUND_INTEGRATION_IMAGE}
+    build: !reset null
+
+  integration-worker:
+    image: ${TALONHOUND_INTEGRATION_IMAGE:?Set TALONHOUND_INTEGRATION_IMAGE}
+    build: !reset null
+
+  ioc-expiration-worker:
+    image: ${TALONHOUND_BACKEND_IMAGE:?Set TALONHOUND_BACKEND_IMAGE}
+    build: !reset null
+
+  ioc-search-export-worker:
+    image: ${TALONHOUND_BACKEND_IMAGE:?Set TALONHOUND_BACKEND_IMAGE}
+    build: !reset null
+
+  ioc-deep-search-worker:
+    image: ${TALONHOUND_BACKEND_IMAGE:?Set TALONHOUND_BACKEND_IMAGE}
+    build: !reset null
+
+  ioc-bulk-query-worker:
+    image: ${TALONHOUND_BACKEND_IMAGE:?Set TALONHOUND_BACKEND_IMAGE}
+    build: !reset null
+
+  backup-worker:
+    image: ${TALONHOUND_BACKEND_IMAGE:?Set TALONHOUND_BACKEND_IMAGE}
+    build: !reset null
+
+  frontend:
+    image: ${TALONHOUND_FRONTEND_IMAGE:?Set TALONHOUND_FRONTEND_IMAGE}
+    build: !reset null
+
+  proxy:
+    image: ${TALONHOUND_PROXY_IMAGE:?Set TALONHOUND_PROXY_IMAGE}
+    build: !reset null

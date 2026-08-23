@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, SESSION_EXPIRED_STORAGE_KEY } from './lib/api.js';
+import {
+  formatBuildDateDetail,
+  formatCommitDetail,
+  formatProductVersionLabel
+} from './lib/productVersionView.js';
 import { startSessionActivityTracking } from './lib/sessionActivity.js';
 import {
   CHANGE_PASSWORD_PATH,
@@ -9482,6 +9487,16 @@ function AdministrationSettingsPage() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
+  const [productVersion, setProductVersion] = useState(null);
+
+  async function loadProductVersion() {
+    try {
+      const { data } = await api.get('/system/version');
+      setProductVersion(data);
+    } catch {
+      setProductVersion(null);
+    }
+  }
 
   async function loadTimezone() {
     const { data } = await api.get('/system/timezone');
@@ -9493,6 +9508,7 @@ function AdministrationSettingsPage() {
 
   useEffect(() => {
     loadTimezone().catch(() => {});
+    loadProductVersion().catch(() => {});
   }, []);
 
   async function loadRetention() {
@@ -9615,6 +9631,8 @@ function AdministrationSettingsPage() {
   }
 
   const zoneOptions = timezoneInfo.common_timezones || COMMON_TIMEZONES;
+  const commitDetail = formatCommitDetail(productVersion);
+  const buildDateDetail = formatBuildDateDetail(productVersion);
 
   return (
     <AppShell>
@@ -9623,6 +9641,31 @@ function AdministrationSettingsPage() {
         <p style={ui.pageSub}>Manage platform-wide preferences and display settings.</p>
 
         <div style={{ ...ui.formPanel, marginTop: 8 }}>
+          <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Installed Version</h2>
+          <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+            Product version of this TalonHound installation. Official releases are built and published by GitHub Actions.
+          </p>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>
+            <div><strong>{formatProductVersionLabel(productVersion)}</strong></div>
+            {productVersion?.channel ? (
+              <div style={{ marginTop: 4, color: '#94a3b8' }}>
+                <strong>Channel:</strong> {productVersion.channel}
+              </div>
+            ) : null}
+            {commitDetail ? (
+              <div style={{ marginTop: 4, color: '#94a3b8' }}>
+                <strong>Build commit:</strong> {commitDetail}
+              </div>
+            ) : null}
+            {buildDateDetail ? (
+              <div style={{ marginTop: 4, color: '#94a3b8' }}>
+                <strong>Build date:</strong> {buildDateDetail}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ ...ui.formPanel, marginTop: 16 }}>
           <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>System Timezone</h2>
           <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
             Configured during initial setup. Used for every timestamp in the UI, API responses,

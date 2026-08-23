@@ -4,6 +4,31 @@
 # name so named volumes (talonhound_postgres_data, ...) are preserved across upgrades.
 name: talonhound
 
+x-talonhound-build-args: &talonhound-build-args
+  BUILD_VERSION: ${TALONHOUND_VERSION:-dev}
+  BUILD_COMMIT: ${TALONHOUND_COMMIT:-dev}
+  BUILD_DATE: ${TALONHOUND_BUILD_DATE:-unknown}
+
+x-backend-build: &backend-build
+  context: .
+  dockerfile: backend/Dockerfile
+  args: *talonhound-build-args
+
+x-frontend-build: &frontend-build
+  context: .
+  dockerfile: frontend/Dockerfile
+  args: *talonhound-build-args
+
+x-integration-build: &integration-build
+  context: .
+  dockerfile: integration/Dockerfile
+  args: *talonhound-build-args
+
+x-proxy-build: &proxy-build
+  context: .
+  dockerfile: proxy/Dockerfile
+  args: *talonhound-build-args
+
 services:
   db:
     image: postgres:16-alpine
@@ -42,7 +67,7 @@ services:
     restart: unless-stopped
 
   backend:
-    build: ./backend
+    build: *backend-build
     environment:
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars, e.g. openssl rand -hex 32)}
@@ -128,9 +153,7 @@ services:
     restart: unless-stopped
 
   integration-scheduler:
-    build:
-      context: .
-      dockerfile: integration/Dockerfile
+    build: *integration-build
     command: ["npm", "run", "scheduler"]
     environment:
       - DB_HOST=db
@@ -172,9 +195,7 @@ services:
     restart: unless-stopped
 
   integration-worker:
-    build:
-      context: .
-      dockerfile: integration/Dockerfile
+    build: *integration-build
     command: ["npm", "run", "worker"]
     stop_grace_period: 45s
     environment:
@@ -236,7 +257,7 @@ services:
     restart: unless-stopped
 
   ioc-expiration-worker:
-    build: ./backend
+    build: *backend-build
     command: ["npm", "run", "ioc-expiration-worker"]
     environment:
       - DB_HOST=db
@@ -255,7 +276,7 @@ services:
     restart: unless-stopped
 
   ioc-search-export-worker:
-    build: ./backend
+    build: *backend-build
     command: ["npm", "run", "ioc-search-export-worker"]
     environment:
       - DB_HOST=db
@@ -287,7 +308,7 @@ services:
     restart: unless-stopped
 
   ioc-deep-search-worker:
-    build: ./backend
+    build: *backend-build
     command: ["npm", "run", "ioc-deep-search-worker"]
     environment:
       - DB_HOST=db
@@ -314,7 +335,7 @@ services:
     restart: unless-stopped
 
   ioc-bulk-query-worker:
-    build: ./backend
+    build: *backend-build
     command: ["npm", "run", "ioc-bulk-query-worker"]
     environment:
       - DB_HOST=db
@@ -338,7 +359,7 @@ services:
     restart: unless-stopped
 
   backup-worker:
-    build: ./backend
+    build: *backend-build
     command: ["npm", "run", "backup-worker"]
     environment:
       - DB_HOST=db
@@ -369,13 +390,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build: *frontend-build
     depends_on:
       - backend
     restart: unless-stopped
 
   proxy:
-    build: ./proxy
+    build: *proxy-build
     ports:
       - "80:80"
       - "443:443"

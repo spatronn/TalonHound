@@ -12,6 +12,7 @@ import {
 } from './config.js';
 import { generateBackupId, archiveFilenameFor } from './ids.js';
 import { buildManifest } from './manifest.js';
+import { getProductVersionInfo } from '../productVersion.js';
 import { writeChecksumsFile, sha256File } from './checksums.js';
 import { createTarGzAtomic, safeRmRf, safeUnlink } from './archive.js';
 import { encryptFile } from './encryption.js';
@@ -125,6 +126,7 @@ export async function executeBackupJob(db, rowId, { logger = console } = {}) {
       backupId,
       createdAt: new Date().toISOString(),
       gitSha: gitSha(),
+      appVersion: getProductVersionInfo().version,
       schemaVersion,
       postgresVersion,
       triggerType: row.trigger_type,

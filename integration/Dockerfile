@@ -1,11 +1,28 @@
 FROM node:22-alpine
 
+ARG BUILD_VERSION=dev
+ARG BUILD_COMMIT=unknown
+ARG BUILD_DATE=unknown
+ARG IMAGE_SOURCE=https://github.com/spatronn/TalonHound
+
+LABEL org.opencontainers.image.title="TalonHound Integration"
+LABEL org.opencontainers.image.description="TalonHound threat feed integration scheduler and worker"
+LABEL org.opencontainers.image.source="${IMAGE_SOURCE}"
+LABEL org.opencontainers.image.version="${BUILD_VERSION}"
+LABEL org.opencontainers.image.revision="${BUILD_COMMIT}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+
+ENV TALONHOUND_VERSION=${BUILD_VERSION}
+ENV TALONHOUND_COMMIT=${BUILD_COMMIT}
+ENV TALONHOUND_BUILD_DATE=${BUILD_DATE}
+
 WORKDIR /app
 
 COPY integration/package*.json ./
 RUN npm install --omit=dev
 
 COPY integration/ ./
+COPY VERSION /VERSION
 COPY backend/lib/ioc-suppression.js ./lib/ioc-suppression.js
 COPY backend/lib/importOptimizationContext.js ./lib/importOptimizationContext.js
 COPY backend/lib/iocExpiration.js ./lib/iocExpiration.js
@@ -49,7 +66,6 @@ COPY backend/lib/fileArtifactReconciliationScheduleSync.js ./lib/fileArtifactRec
 COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 COPY backend/lib/tagHelpers.js ./lib/tagHelpers.js
 COPY backend/lib/tagCatalogService.js ./lib/tagCatalogService.js
-# File Artifacts: preserve integration/lib/fileArtifacts.js → ../../backend/lib/fileArtifacts
 COPY backend/lib/fileArtifacts /backend/lib/fileArtifacts
 
 CMD ["npm", "run", "worker"]
