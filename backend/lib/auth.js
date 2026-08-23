@@ -2,28 +2,25 @@ import './ensure-jwt-secret.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { effectiveRoleFromPayload, normalizeAppRole, ROLES } from './rbac.js';
+import { getSessionConfig } from './sessionConfig.js';
 
 const secret = process.env.JWT_SECRET;
-const expiresIn = process.env.JWT_EXPIRES_IN || '24h';
 
 export const AUTH_COOKIE_NAME = process.env.AUTH_COOKIE_NAME || 'demo_session';
 export const CSRF_COOKIE_NAME = process.env.CSRF_COOKIE_NAME || 'demo_csrf';
+export const AUTH_REFRESH_COOKIE_NAME = process.env.AUTH_REFRESH_COOKIE_NAME || 'demo_refresh';
+// Refresh cookie is only ever sent to the auth endpoints, never on every API call.
+export const REFRESH_COOKIE_PATH = '/api/auth';
 
 /** Opaque machine credential (not a JWT). Prefer API_INGEST_TOKEN; API_BEARER_TOKEN kept as alias. */
 const API_INGEST_TOKEN = String(process.env.API_INGEST_TOKEN || process.env.API_BEARER_TOKEN || '').trim();
 
-function cookieMaxAgeMs(inStr) {
-  const s = String(inStr || '24h').trim();
-  const m = s.match(/^(\d+)([smhd])$/i);
-  if (m) {
-    const n = Number(m[1]);
-    const u = m[2].toLowerCase();
-    const mult = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
-    return n * (mult[u] ?? 60 * 60 * 1000);
-  }
-  const sec = Number(s);
-  if (Number.isFinite(sec) && sec > 0) return Math.floor(sec * 1000);
-  return 24 * 60 * 60 * 1000;
+// Browser cookies live for the whole absolute session window. The access JWT inside
+// demo_session expires far sooner (ACCESS_TOKEN_TTL); its expiry — not the cookie's —
+// is what drives silent refresh. Bounding the cookie to the absolute lifetime means a
+// closed-then-reopened browser cannot present stale credentials past the hard cap.
+function sessionCookieMaxAgeMs() {
+  return getSessionConfig().absoluteMs;
 }
 
 /**
@@ -50,7 +47,7 @@ export function appendAuthCookie(req, res, token) {
     httpOnly: true,
     secure: cookieSecureFlag(req),
     sameSite: 'lax',
-    maxAge: cookieMaxAgeMs(expiresIn),
+    maxAge: sessionCookieMaxAgeMs(),
     path: '/'
   });
 }
@@ -64,13 +61,38 @@ export function clearAuthCookie(req, res) {
   });
 }
 
+/** HttpOnly refresh-token cookie, scoped to /api/auth so it never rides ordinary API calls. */
+export function appendRefreshCookie(req, res, refreshToken) {
+  res.cookie(AUTH_REFRESH_COOKIE_NAME, refreshToken, {
+    httpOnly: true,
+    secure: cookieSecureFlag(req),
+    sameSite: 'lax',
+    maxAge: sessionCookieMaxAgeMs(),
+    path: REFRESH_COOKIE_PATH
+  });
+}
+
+export function clearRefreshCookie(req, res) {
+  res.clearCookie(AUTH_REFRESH_COOKIE_NAME, {
+    path: REFRESH_COOKIE_PATH,
+    secure: cookieSecureFlag(req),
+    sameSite: 'lax',
+    httpOnly: true
+  });
+}
+
+export function readRefreshCookie(req) {
+  const v = req.cookies?.[AUTH_REFRESH_COOKIE_NAME];
+  return v && typeof v === 'string' ? v.trim() : '';
+}
+
 export function appendCsrfCookie(req, res) {
   const tok = crypto.randomBytes(32).toString('hex');
   res.cookie(CSRF_COOKIE_NAME, tok, {
     httpOnly: false,
     secure: cookieSecureFlag(req),
     sameSite: 'lax',
-    maxAge: cookieMaxAgeMs(expiresIn),
+    maxAge: sessionCookieMaxAgeMs(),
     path: '/'
   });
 }
@@ -111,8 +133,15 @@ export function signUserToken(payload) {
       throw new TypeError('signUserToken requires a positive authVersion when userId is set');
     }
     body.av = Math.floor(av);
+    // Bind the access token to a server-side session when one is supplied. Interactive
+    // logins always pass a sessionId; the per-request gate enforces the session's
+    // idle/absolute/revocation state (JWT-06 bounded sessions).
+    if (payload.sessionId != null && String(payload.sessionId).trim() !== '') {
+      body.sid = String(payload.sessionId).trim();
+    }
   }
-  return jwt.sign(body, secret, { subject: sub, expiresIn });
+  const expiresInSeconds = getSessionConfig().accessTtlSeconds;
+  return jwt.sign(body, secret, { subject: sub, expiresIn: expiresInSeconds });
 }
 
 /** Last verified JWT payload attached by tryAttachSession (for auth_version gate). */
@@ -134,6 +163,13 @@ export function getRequestTokenAuthVersion(req) {
   if (!p || p.av == null) return null;
   const n = Number(p.av);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Session id (`sid`) claim from the last verified interactive JWT, or null. */
+export function getRequestTokenSessionId(req) {
+  const p = req?.[JWT_PAYLOAD_SYM];
+  const sid = p?.sid;
+  return sid != null && String(sid).trim() !== '' ? String(sid).trim() : null;
 }
 
 function extractBearer(req) {
@@ -271,6 +307,10 @@ export function apiAuthGate(req, res, next) {
     // Optional session so we can bump auth_version (logout-all) when a cookie is present.
     return optionalAuth(req, res, next);
   }
+  // Refresh is authorized by the HttpOnly refresh cookie (validated in the handler),
+  // not by an access token — the access token is expected to be expired here. CSRF
+  // double-submit still applies downstream.
+  if (req.path === '/api/auth/refresh' && req.method === 'POST') return next();
   // Setup status/preview stay public (greenfield + read-only discovery).
   // POST /api/setup/complete: optionally authenticated — handler enforces admin
   // when timezone_configuration_required (existing install). Keep unauthenticated

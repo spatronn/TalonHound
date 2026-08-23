@@ -2,7 +2,8 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { createPortal } from 'react-dom';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api } from './lib/api.js';
+import { api, SESSION_EXPIRED_STORAGE_KEY } from './lib/api.js';
+import { startSessionActivityTracking } from './lib/sessionActivity.js';
 import {
   CHANGE_PASSWORD_PATH,
   postLoginDestination,
@@ -447,6 +448,13 @@ function SessionProvider({ children }) {
   useEffect(() => {
     refreshSession();
   }, [refreshSession]);
+
+  // Genuine-activity heartbeat: only runs while authenticated, and only emits on real
+  // user interaction (never on background polling), so an idle session expires server-side.
+  useEffect(() => {
+    if (authState !== 'authed') return undefined;
+    return startSessionActivityTracking(api);
+  }, [authState]);
 
   const canWrite = role !== 'readonly';
   const isAdmin = role === 'admin';
@@ -1856,7 +1864,21 @@ function LoginPage() {
   const navigate = useNavigate();
   const { refreshSession } = useSession();
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Surface an involuntary-logout reason (idle / absolute timeout) set by the API layer.
+  useEffect(() => {
+    try {
+      const msg = window.sessionStorage.getItem(SESSION_EXPIRED_STORAGE_KEY);
+      if (msg) {
+        setNotice(msg);
+        window.sessionStorage.removeItem(SESSION_EXPIRED_STORAGE_KEY);
+      }
+    } catch {
+      /* storage unavailable: no banner */
+    }
+  }, []);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -1894,6 +1916,8 @@ function LoginPage() {
         <div className="card">
           <h1>Sign in</h1>
           <p className="sub">Enter your credentials to access TalonHound.</p>
+
+          {notice ? <div className="msg" role="status">{notice}</div> : null}
 
           <form onSubmit={onSubmit} noValidate>
             <div className="field">

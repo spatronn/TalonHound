@@ -46,6 +46,11 @@ services:
     environment:
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars, e.g. openssl rand -hex 32)}
+      # Bounded interactive browser sessions (secure defaults; override in .env if needed).
+      # Access token is short-lived; idle expires an inactive session; absolute is the hard cap.
+      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-15m}
+      - SESSION_IDLE_TIMEOUT=${SESSION_IDLE_TIMEOUT:-60m}
+      - SESSION_ABSOLUTE_TIMEOUT=${SESSION_ABSOLUTE_TIMEOUT:-24h}
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=talonhound
@@ -243,6 +248,8 @@ services:
       - TZ=${SYSTEM_TIMEZONE:-}
       - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
       - IOC_EXPIRATION_BATCH_SIZE=500
+      # Bounded cleanup of terminal auth_sessions rows past this retention window.
+      - SESSION_CLEANUP_RETENTION_DAYS=${SESSION_CLEANUP_RETENTION_DAYS:-7}
     depends_on:
       - db
     restart: unless-stopped

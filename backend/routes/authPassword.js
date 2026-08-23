@@ -21,7 +21,16 @@ import { bumpAuthVersion } from '../lib/authVersion.js';
  * }} deps
  */
 export function registerAuthPasswordRoutes(app, pool, deps) {
-  const { bcrypt, signUserToken, appendAuthCookie, appendCsrfCookie, audit } = deps;
+  const {
+    bcrypt,
+    signUserToken,
+    appendAuthCookie,
+    appendCsrfCookie,
+    appendRefreshCookie,
+    createSession,
+    revokeAllForUser,
+    audit
+  } = deps;
 
   app.post('/api/auth/change-password', async (req, res) => {
     const userId = req.user?.id;
@@ -64,12 +73,30 @@ export function registerAuthPasswordRoutes(app, pool, deps) {
         [u.id, hash]
       );
       const next = updated.rows[0];
+      const nextAuthVersion = Number(next.auth_version) || 1;
+      // JWT-06: the auth_version bump above already invalidates every outstanding
+      // session for this user. Revoke their session rows too (belt-and-suspenders +
+      // reuse-detection cleanup), then mint a fresh bounded session for this request.
+      if (typeof revokeAllForUser === 'function') {
+        await revokeAllForUser(pool, u.id, 'password_change').catch(() => {});
+      }
+      let sessionId;
+      if (typeof createSession === 'function' && typeof appendRefreshCookie === 'function') {
+        const session = await createSession(pool, {
+          userId: u.id,
+          authVersion: nextAuthVersion,
+          userAgent: req.headers['user-agent'] || null
+        });
+        sessionId = session.sessionId;
+        appendRefreshCookie(req, res, session.refreshToken);
+      }
       const token = signUserToken({
         userId: u.id,
         username: next.username,
         email: next.username,
         role: next.role,
-        authVersion: Number(next.auth_version) || 1
+        authVersion: nextAuthVersion,
+        sessionId
       });
       appendAuthCookie(req, res, token);
       appendCsrfCookie(req, res);

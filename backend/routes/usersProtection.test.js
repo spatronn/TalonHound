@@ -62,6 +62,11 @@ function createMockDb(initialUsers) {
       users.splice(idx, 1);
       return { rows: [], rowCount: 1 };
     }
+    if (s.includes('UPDATE auth_sessions')) {
+      // JWT-06: disable/reset revokes the target user's bounded sessions.
+      opLog.push('REVOKE_SESSIONS');
+      return { rows: [], rowCount: 0 };
+    }
     if (s.includes('UPDATE users SET status')) {
       opLog.push('UPDATE_STATUS');
       const found = byId(params[0]);

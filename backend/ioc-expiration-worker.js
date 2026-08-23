@@ -6,6 +6,7 @@ import {
   runAuditLogRetentionCleanup,
   AUDIT_LOG_RETENTION_DEFAULT_BATCH_SIZE
 } from './lib/auditLogRetention.js';
+import { cleanupSessions } from './lib/authSessions.js';
 
 const { Pool } = pg;
 
@@ -34,6 +35,37 @@ const AUDIT_RETENTION_BATCH_SIZE = Math.max(
 // Throttle how often we even consult the DB gate (cheap, but avoids per-tick reads).
 const AUDIT_RETENTION_CHECK_MS = Math.min(AUDIT_RETENTION_INTERVAL_MS, 30 * 60 * 1000);
 let lastAuditRetentionCheck = 0;
+
+// Bounded cleanup of terminal (revoked / absolutely-expired) auth_sessions rows past
+// their retention window. Cheap indexed delete; runs on the same throttle as audit
+// retention so it never dominates a tick.
+const SESSION_CLEANUP_CHECK_MS = Math.max(
+  Number(process.env.SESSION_CLEANUP_INTERVAL_MS || 60 * 60 * 1000),
+  60 * 1000
+);
+const SESSION_CLEANUP_BATCH_SIZE = Math.max(
+  Number(process.env.SESSION_CLEANUP_BATCH_SIZE || 1000),
+  1
+);
+let lastSessionCleanupCheck = 0;
+
+async function maybeRunSessionCleanup() {
+  const now = Date.now();
+  if (now - lastSessionCleanupCheck < SESSION_CLEANUP_CHECK_MS) return;
+  lastSessionCleanupCheck = now;
+  try {
+    let total = 0;
+    // Drain in bounded batches so a large backlog cannot be a single heavy statement.
+    for (let i = 0; i < 20; i += 1) {
+      const { deleted } = await cleanupSessions(pool, { batchSize: SESSION_CLEANUP_BATCH_SIZE });
+      total += deleted;
+      if (deleted < SESSION_CLEANUP_BATCH_SIZE) break;
+    }
+    if (total > 0) console.log(`[session-cleanup] deleted=${total}`);
+  } catch (err) {
+    console.error('[session-cleanup] run failed', err?.message || err);
+  }
+}
 
 const audit = createAuditLogService(pool);
 let stopping = false;
@@ -73,6 +105,7 @@ async function tick() {
   }
 
   await maybeRunAuditRetention();
+  await maybeRunSessionCleanup();
 }
 
 async function main() {

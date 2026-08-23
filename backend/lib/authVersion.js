@@ -25,14 +25,27 @@ export async function bumpAuthVersion(db, userId) {
 }
 
 /**
- * Express middleware: after requireAuth attaches req.user, verify JWT auth version.
- * Ingest / API-key principals skip. Humans without userId fail closed.
+ * Express middleware: after requireAuth attaches req.user, verify JWT auth version and
+ * (when session enforcement is wired) the bounded server-side session.
+ *
+ * Ingest / API-key principals skip — they are a separate security domain. Humans without
+ * userId fail closed. When `getTokenSessionId` is provided, interactive cookie sessions
+ * MUST carry a valid, non-revoked, non-idle-expired, non-absolute-expired `sid` session;
+ * this READS the session but never advances its idle clock, so ordinary API traffic and
+ * background polling cannot keep an idle session alive. All of it is one DB round trip.
  *
  * @param {import('pg').Pool} pool
- * @param {{ getTokenAuthVersion: (req) => number|null|undefined }} deps
+ * @param {{
+ *   getTokenAuthVersion: (req) => number|null|undefined,
+ *   getTokenSessionId?: (req) => string|null|undefined,
+ *   now?: () => Date
+ * }} deps
  */
 export function createAuthVersionGate(pool, deps = {}) {
   const getTokenAuthVersion = deps.getTokenAuthVersion || (() => null);
+  const sessionEnforced = typeof deps.getTokenSessionId === 'function';
+  const getTokenSessionId = deps.getTokenSessionId || (() => null);
+  const nowFn = deps.now || (() => new Date());
 
   return async function authVersionGate(req, res, next) {
     if (!req.path?.startsWith('/api')) return next();
@@ -51,21 +64,48 @@ export function createAuthVersionGate(pool, deps = {}) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
+    // Session enforcement applies to interactive cookie logins. Legacy cookie tokens
+    // issued before this feature carry no sid → fail closed (one-time forced re-login).
+    const enforceSession = sessionEnforced && req.authVia === 'cookie';
+    const sid = enforceSession ? getTokenSessionId(req) : null;
+    if (enforceSession && !sid) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
     try {
       const { rows } = await pool.query(
-        `SELECT auth_version, status FROM users WHERE id = $1`,
-        [Number(userId)]
+        `SELECT u.auth_version, u.status,
+                s.session_id, s.revoked_at, s.idle_expires_at, s.absolute_expires_at
+           FROM users u
+           LEFT JOIN auth_sessions s ON s.session_id = $2 AND s.user_id = u.id
+          WHERE u.id = $1`,
+        [Number(userId), sid]
       );
       if (!rows.length) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      if (String(rows[0].status || 'active') === 'passive') {
+      const row = rows[0];
+      if (String(row.status || 'active') === 'passive') {
         return res.status(401).json({ message: 'Unauthorized' });
       }
-      const current = Number(rows[0].auth_version);
+      const current = Number(row.auth_version);
       if (!Number.isFinite(current) || current !== Number(claimAv)) {
         return res.status(401).json({ message: 'Unauthorized' });
       }
+
+      if (enforceSession) {
+        const now = nowFn();
+        if (!row.session_id || row.revoked_at) {
+          return res.status(401).json({ message: 'Unauthorized' });
+        }
+        if (new Date(row.absolute_expires_at).getTime() <= now.getTime()) {
+          return res.status(401).json({ message: 'Session expired', code: 'SESSION_EXPIRED_ABSOLUTE' });
+        }
+        if (new Date(row.idle_expires_at).getTime() <= now.getTime()) {
+          return res.status(401).json({ message: 'Session expired', code: 'SESSION_EXPIRED_IDLE' });
+        }
+      }
+
       return next();
     } catch (err) {
       return res.status(500).json({ message: 'Session validation failed' });

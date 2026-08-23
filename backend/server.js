@@ -15,10 +15,22 @@ import {
   clearAuthCookie,
   appendCsrfCookie,
   clearCsrfCookie,
-  getRequestTokenAuthVersion
+  appendRefreshCookie,
+  clearRefreshCookie,
+  readRefreshCookie,
+  getRequestTokenAuthVersion,
+  getRequestTokenSessionId
 } from './lib/auth.js';
 import { createPasswordChangeGate } from './lib/passwordChangeGate.js';
 import { bumpAuthVersion, createAuthVersionGate } from './lib/authVersion.js';
+import { validateSessionConfig } from './lib/sessionConfig.js';
+import {
+  createSession,
+  rotateRefresh,
+  revokeSession,
+  revokeAllForUser,
+  touchActivity
+} from './lib/authSessions.js';
 import { ensureDefaultAdminBootstrap } from './lib/defaultAdminBootstrap.js';
 import { ensureSystemAdminAccount, SYSTEM_ADMIN_MANUAL_INSTRUCTION } from './lib/systemAdminBootstrap.js';
 import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
@@ -420,7 +432,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(createSetupGate(pool));
 app.use(apiAuthGate);
-app.use(createAuthVersionGate(pool, { getTokenAuthVersion: getRequestTokenAuthVersion }));
+app.use(createAuthVersionGate(pool, {
+  getTokenAuthVersion: getRequestTokenAuthVersion,
+  getTokenSessionId: getRequestTokenSessionId
+}));
 app.use(csrfProtection);
 app.use(createPasswordChangeGate(pool));
 app.use(ingestCapabilityPolicy);
@@ -2575,14 +2590,22 @@ app.post('/api/auth/login', async (req, res) => {
           }).catch(() => {});
           return res.status(401).json({ message: 'Invalid email or password' });
         }
+        const authVersion = Number(u.auth_version) || 1;
+        const session = await createSession(pool, {
+          userId: u.id,
+          authVersion,
+          userAgent: req.headers['user-agent'] || null
+        });
         const token = signUserToken({
           userId: u.id,
           username: u.username,
           email: u.username,
           role: u.role,
-          authVersion: Number(u.auth_version) || 1
+          authVersion,
+          sessionId: session.sessionId
         });
         appendAuthCookie(req, res, token);
+        appendRefreshCookie(req, res, session.refreshToken);
         appendCsrfCookie(req, res);
         await auditLogService.auditSuccess({
           req,
@@ -2625,8 +2648,21 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/logout', async (req, res) => {
   // JWT-03: logout invalidates all outstanding JWTs for this user (version bump).
+  // JWT-06: also revoke the server-side session so the refresh token dies immediately.
   if (req.user?.id != null && Number.isFinite(Number(req.user.id)) && req.authVia !== 'ingest') {
     await bumpAuthVersion(pool, req.user.id).catch(() => {});
+    await revokeAllForUser(pool, req.user.id, 'logout').catch(() => {});
+  } else {
+    // No valid access token (e.g. it already expired) but a refresh cookie may remain:
+    // revoke that specific session by its refresh secret so logout is always effective.
+    const raw = readRefreshCookie(req);
+    if (raw) {
+      const { parseRefreshToken } = await import('./lib/authSessions.js');
+      const parsed = parseRefreshToken(raw);
+      if (parsed?.sessionId) {
+        await revokeSession(pool, parsed.sessionId, 'logout').catch(() => {});
+      }
+    }
   }
   await auditLogService.auditSuccess({
     req,
@@ -2637,15 +2673,109 @@ app.post('/api/auth/logout', async (req, res) => {
     metadata: { auth_via: req.authVia || 'web', sessions: 'all' }
   }).catch(() => {});
   clearAuthCookie(req, res);
+  clearRefreshCookie(req, res);
   clearCsrfCookie(req, res);
   res.status(204).end();
+});
+
+// JWT-06: silent access-token renewal via rotating refresh token. Enforces idle +
+// absolute limits and replay detection server-side. Does NOT extend the idle clock
+// (refresh is not user activity), so background polling that merely triggers refresh
+// cannot keep an idle session alive.
+app.post('/api/auth/refresh', async (req, res) => {
+  const raw = readRefreshCookie(req);
+  if (!raw) return res.status(401).json({ message: 'Unauthorized', code: 'SESSION_INVALID' });
+
+  let result;
+  try {
+    result = await rotateRefresh(pool, {
+      rawRefresh: raw,
+      userAgent: req.headers['user-agent'] || null
+    });
+  } catch (err) {
+    appLog.warn('session refresh failed', { error: err?.message || String(err) });
+    return res.status(500).json({ message: 'Session refresh failed' });
+  }
+
+  if (!result.ok) {
+    clearAuthCookie(req, res);
+    clearRefreshCookie(req, res);
+    clearCsrfCookie(req, res);
+    if (result.reason === 'reuse') {
+      await auditLogService.auditFailure({
+        req,
+        action: AUDIT_ACTION.AUTH_SESSION_REFRESH_REUSE,
+        entityType: AUDIT_ENTITY.AUTH,
+        entityDisplay: 'session',
+        severity: AUDIT_SEVERITY.CRITICAL,
+        metadata: { reason: 'refresh_reuse' }
+      }).catch(() => {});
+    } else if (result.reason === 'idle' || result.reason === 'absolute') {
+      await auditLogService.auditSuccess({
+        req,
+        action: AUDIT_ACTION.AUTH_SESSION_EXPIRED,
+        entityType: AUDIT_ENTITY.AUTH,
+        entityDisplay: 'session',
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: { reason: result.reason }
+      }).catch(() => {});
+    }
+    const code =
+      result.reason === 'idle' ? 'SESSION_EXPIRED_IDLE'
+      : result.reason === 'absolute' ? 'SESSION_EXPIRED_ABSOLUTE'
+      : 'SESSION_INVALID';
+    return res.status(401).json({ message: 'Session expired', code });
+  }
+
+  const { rows } = await pool.query(
+    'SELECT id, public_id, username, role FROM users WHERE id = $1',
+    [result.userId]
+  );
+  if (!rows.length) {
+    clearAuthCookie(req, res);
+    clearRefreshCookie(req, res);
+    clearCsrfCookie(req, res);
+    return res.status(401).json({ message: 'Unauthorized', code: 'SESSION_INVALID' });
+  }
+  const u = rows[0];
+  const token = signUserToken({
+    userId: u.id,
+    username: u.username,
+    email: u.username,
+    role: u.role,
+    authVersion: result.authVersion,
+    sessionId: result.sessionId
+  });
+  appendAuthCookie(req, res, token);
+  // On a grace-window hit a concurrent tab already rotated the shared cookie; leave it.
+  if (result.refreshToken) {
+    appendRefreshCookie(req, res, result.refreshToken);
+  }
+  return res.json({
+    user: { email: u.username, username: u.username, id: u.public_id, role: u.role }
+  });
+});
+
+// JWT-06: explicit genuine-activity heartbeat. The frontend calls this (throttled)
+// ONLY in response to real user interaction — never from background polling. Runs after
+// the auth-version/session gate, so it can only extend a session that is still valid.
+app.post('/api/auth/activity', async (req, res) => {
+  const sid = getRequestTokenSessionId(req);
+  if (sid) {
+    await touchActivity(pool, sid).catch(() => {});
+  }
+  return res.status(204).end();
 });
 
 registerAuthPasswordRoutes(app, pool, {
   bcrypt,
   signUserToken,
   appendAuthCookie,
+  appendRefreshCookie,
   appendCsrfCookie,
+  createSession,
+  revokeAllForUser,
+  pool,
   audit: auditLogService
 });
 
@@ -6598,6 +6728,16 @@ app.get('/api/admin/ioc-evidence-coverage', async (req, res) => {
 
 app.listen(port, async () => {
   console.log(`Backend listening on :${port}`);
+  try {
+    const { config: sessionCfg, warnings } = validateSessionConfig();
+    console.log(
+      `[session] bounded sessions: access_ttl=${sessionCfg.accessTtlSeconds}s idle=${Math.round(sessionCfg.idleMs / 60000)}m absolute=${Math.round(sessionCfg.absoluteMs / 3600000)}h`
+    );
+    for (const w of warnings) appLog.warn('session config warning', { warning: w });
+  } catch (err) {
+    appLog.error('invalid session configuration', { error: err?.message || String(err) });
+    process.exit(1);
+  }
   logRegisteredRouteModules();
   await syncRuntimeTimezoneFromDb();
   if (IOC_LIST_TIMING) {

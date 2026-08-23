@@ -91,6 +91,98 @@ test('JWT-03: signUserToken refuses userId without authVersion', () => {
   );
 });
 
+// --- JWT-06: bounded-session enforcement in the gate --------------------------------
+
+function runGate(gate, req) {
+  return new Promise((resolve) => {
+    let status = null;
+    let body = null;
+    gate(
+      req,
+      {
+        status(c) {
+          status = c;
+          return { json(b) { body = b; resolve({ status, body, next: false }); } };
+        }
+      },
+      () => resolve({ status, body, next: true })
+    );
+  });
+}
+
+const now = () => new Date('2026-08-23T12:00:00Z');
+const future = new Date('2026-08-23T13:00:00Z').toISOString();
+const past = new Date('2026-08-23T11:00:00Z').toISOString();
+
+function sessionPool(sessionFields) {
+  let calls = 0;
+  const pool = {
+    async query(sql) {
+      calls += 1;
+      // Gate must READ only — never UPDATE — so polling can't extend the idle clock.
+      assert.doesNotMatch(String(sql), /UPDATE|INSERT|DELETE/i);
+      return { rows: [{ auth_version: 2, status: 'active', ...sessionFields }] };
+    }
+  };
+  return { pool, getCalls: () => calls };
+}
+
+const baseReq = { path: '/api/ioc/list', method: 'GET', authVia: 'cookie', user: { id: 1, role: ROLES.ADMIN } };
+
+test('JWT-06: valid session passes the gate', async () => {
+  const { pool } = sessionPool({ session_id: 's1', revoked_at: null, idle_expires_at: future, absolute_expires_at: future });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => 's1', now });
+  const out = await runGate(gate, { ...baseReq });
+  assert.equal(out.next, true);
+});
+
+test('JWT-06: idle-expired session is rejected — and repeated polling never revives it', async () => {
+  const { pool } = sessionPool({ session_id: 's1', revoked_at: null, idle_expires_at: past, absolute_expires_at: future });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => 's1', now });
+  // Simulate a burst of background polling requests against an idle session.
+  for (let i = 0; i < 5; i += 1) {
+    const out = await runGate(gate, { ...baseReq });
+    assert.equal(out.status, 401);
+    assert.equal(out.body.code, 'SESSION_EXPIRED_IDLE');
+  }
+});
+
+test('JWT-06: absolute-expired session is rejected even if idle window is open', async () => {
+  const { pool } = sessionPool({ session_id: 's1', revoked_at: null, idle_expires_at: future, absolute_expires_at: past });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => 's1', now });
+  const out = await runGate(gate, { ...baseReq });
+  assert.equal(out.status, 401);
+  assert.equal(out.body.code, 'SESSION_EXPIRED_ABSOLUTE');
+});
+
+test('JWT-06: revoked session (logout/password/disable) is rejected', async () => {
+  const { pool } = sessionPool({ session_id: 's1', revoked_at: past, idle_expires_at: future, absolute_expires_at: future });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => 's1', now });
+  const out = await runGate(gate, { ...baseReq });
+  assert.equal(out.status, 401);
+});
+
+test('JWT-06: cookie session without sid claim fails closed (legacy token → re-login)', async () => {
+  const { pool } = sessionPool({ session_id: 's1', revoked_at: null, idle_expires_at: future, absolute_expires_at: future });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => null, now });
+  const out = await runGate(gate, { ...baseReq });
+  assert.equal(out.status, 401);
+});
+
+test('JWT-06: unknown/missing session row is rejected', async () => {
+  const { pool } = sessionPool({ session_id: null, revoked_at: null, idle_expires_at: null, absolute_expires_at: null });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => 's-missing', now });
+  const out = await runGate(gate, { ...baseReq });
+  assert.equal(out.status, 401);
+});
+
+test('JWT-06: bearer principal (no sid) keeps av/status checks, skips session enforcement', async () => {
+  const { pool } = sessionPool({ session_id: null, revoked_at: null, idle_expires_at: null, absolute_expires_at: null });
+  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => null, now });
+  const out = await runGate(gate, { ...baseReq, authVia: 'bearer' });
+  assert.equal(out.next, true);
+});
+
 test('JWT-03: gate skips logout and ingest', async () => {
   const gate = createAuthVersionGate({
     async query() {

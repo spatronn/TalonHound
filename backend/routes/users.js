@@ -5,6 +5,7 @@ import { pickSafeFields } from '../lib/auditRedaction.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
 import { generateTemporaryPassword } from '../lib/temporaryPassword.js';
 import { evaluateProtectedMutation } from '../lib/adminProtection.js';
+import { revokeAllForUser } from '../lib/authSessions.js';
 
 /** Prevent any caching of a response that carries a one-time secret. */
 function applyNoStoreHeaders(res) {
@@ -436,6 +437,11 @@ export function registerUserManagementRoutes(app, pool, audit) {
          RETURNING public_id, username, first_name, last_name, role, status, is_system_admin, created_at`,
         [id, next]
       );
+      // JWT-06: disabling a user immediately kills their bounded sessions. The
+      // auth_version bump above already blocks access/refresh; revoke the rows too.
+      if (next === 'passive') {
+        await revokeAllForUser(client, id, 'user_disabled');
+      }
       await client.query('COMMIT');
 
       const user = toPublicUser(rows[0]);
@@ -548,6 +554,10 @@ export function registerUserManagementRoutes(app, pool, audit) {
            RETURNING public_id, username, first_name, last_name, role, status, created_at`,
           [id, hash]
         );
+        // JWT-06: admin reset revokes every existing session for the target user
+        // (they also set must_change_password); the user must log in with the new
+        // temporary password.
+        await revokeAllForUser(client, id, 'admin_password_reset');
         await client.query('COMMIT');
       } catch (txErr) {
         await client.query('ROLLBACK').catch(() => {});
