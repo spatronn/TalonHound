@@ -362,6 +362,63 @@ validate_backup_manifest() {
   return 0
 }
 
+# docker compose exec does not reliably pass host stdin to pg_restore on all hosts;
+# copy the dump into the db container and use a file path instead of "-".
+stage_dump_in_db_container() {
+  _host_dump="$1"
+  _suffix="${2:-$$}"
+  STAGED_DUMP_CONTAINER_PATH="/tmp/talonhound-restore-${_suffix}.dump"
+  if ! docker compose cp "$_host_dump" "db:${STAGED_DUMP_CONTAINER_PATH}"; then
+    echo "[restore] failed to copy dump into db container" >&2
+    STAGED_DUMP_CONTAINER_PATH=""
+    return 1
+  fi
+  return 0
+}
+
+unstage_dump_in_db_container() {
+  _path="${1:-${STAGED_DUMP_CONTAINER_PATH:-}}"
+  [ -n "$_path" ] || return 0
+  docker compose exec -T db rm -f "$_path" 2>/dev/null || true
+  STAGED_DUMP_CONTAINER_PATH=""
+}
+
+compose_pg_restore_list() {
+  _dump="$1"
+  if ! stage_dump_in_db_container "$_dump"; then
+    return 1
+  fi
+  docker compose exec -T db pg_restore --list "$STAGED_DUMP_CONTAINER_PATH"
+  _rc=$?
+  unstage_dump_in_db_container
+  return "$_rc"
+}
+
+compose_pg_restore_into_db() {
+  _dump="$1"
+  _db="$2"
+  _user="$3"
+  shift 3
+  if ! stage_dump_in_db_container "$_dump"; then
+    return 1
+  fi
+  _err=$(mktemp)
+  if ! docker compose exec -T db pg_restore \
+    -U "$_user" -d "$_db" \
+    --no-owner --no-acl --exit-on-error \
+    "$@" \
+    "$STAGED_DUMP_CONTAINER_PATH" 2>"$_err"; then
+    echo "[restore] pg_restore failed — restore aborted" >&2
+    sed -n '1,40p' "$_err" >&2 || true
+    rm -f "$_err"
+    unstage_dump_in_db_container
+    return 1
+  fi
+  rm -f "$_err"
+  unstage_dump_in_db_container
+  return 0
+}
+
 validate_dump_readable() {
   _dump="$1"
   if [ ! -s "$_dump" ]; then
@@ -369,17 +426,24 @@ validate_dump_readable() {
     return 1
   fi
   _list_err=$(mktemp)
-  if ! docker compose exec -T db pg_restore --list - < "$_dump" > /dev/null 2>"$_list_err"; then
-    echo "[restore] pg_restore --list failed — dump unreadable" >&2
-    sed -n '1,20p' "$_list_err" >&2 || true
+  if ! stage_dump_in_db_container "$_dump"; then
     rm -f "$_list_err"
     return 1
   fi
-  rm -f "$_list_err"
-  if ! docker compose exec -T db pg_restore --list - < "$_dump" 2>/dev/null | grep -q schema_migrations; then
-    echo "[restore] dump missing schema_migrations — incompatible backup" >&2
+  if ! docker compose exec -T db pg_restore --list "$STAGED_DUMP_CONTAINER_PATH" > /dev/null 2>"$_list_err"; then
+    echo "[restore] pg_restore --list failed — dump unreadable" >&2
+    sed -n '1,20p' "$_list_err" >&2 || true
+    rm -f "$_list_err"
+    unstage_dump_in_db_container
     return 1
   fi
+  rm -f "$_list_err"
+  if ! docker compose exec -T db pg_restore --list "$STAGED_DUMP_CONTAINER_PATH" 2>/dev/null | grep -q schema_migrations; then
+    echo "[restore] dump missing schema_migrations — incompatible backup" >&2
+    unstage_dump_in_db_container
+    return 1
+  fi
+  unstage_dump_in_db_container
   return 0
 }
 
@@ -406,18 +470,7 @@ run_pg_restore_into_target() {
   _db="$RESTORE_DB_NAME"
   _user="$RESTORE_DB_USER"
   echo "[restore] pg_restore into ${_db} (fresh database; no --clean)..."
-  _err=$(mktemp)
-  if ! docker compose exec -T db pg_restore \
-    -U "$_user" -d "$_db" \
-    --no-owner --no-acl --exit-on-error \
-    - < "$_dump" 2>"$_err"; then
-    echo "[restore] pg_restore failed — restore aborted" >&2
-    sed -n '1,40p' "$_err" >&2 || true
-    rm -f "$_err"
-    return 1
-  fi
-  rm -f "$_err"
-  return 0
+  compose_pg_restore_into_db "$_dump" "$_db" "$_user"
 }
 
 create_safety_backup() {

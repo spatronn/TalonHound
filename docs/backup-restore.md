@@ -192,6 +192,8 @@ Use this when the Compose stack is healthy enough to stop writers and overwrite 
    - starts services again
 
    **Note:** `pg_restore --clean` is **not** used. TalonHound’s IOC schema uses declarative partitioning under `ioc_items`; `--clean` fails when dropping inherited partition primary keys.
+
+   **Implementation:** Host-side dumps are copied into the `db` container with `docker compose cp` and restored from a file path. `docker compose exec … pg_restore -` does not reliably receive stdin on all hosts.
 5. Healthcheck:
 
    ```bash

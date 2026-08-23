@@ -11,6 +11,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+. "$ROOT/scripts/lib/backup-common.sh"
 
 DB_USER="${DB_USER:-talonhound}"
 TEST_DB="talonhound_backup_test_$$"
@@ -77,7 +78,7 @@ CREATE DATABASE ${TEST_DB};
 SQL
 
 _err=$(mktemp)
-if ! docker compose exec -T db pg_restore -U "$DB_USER" -d "$TEST_DB" --no-owner --no-acl --exit-on-error - < "$DUMP" 2>"$_err"; then
+if ! compose_pg_restore_into_db "$DUMP" "$TEST_DB" "$DB_USER" 2>"$_err"; then
   echo "[e2e] pg_restore failed" >&2
   sed -n '1,20p' "$_err" >&2 || true
   rm -f "$_err"
