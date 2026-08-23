@@ -10,7 +10,7 @@ if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).trim().length < 32
   process.env.JWT_SECRET = 'test-jwt-secret-for-unit-tests-only!!';
 }
 
-const { signUserToken, requireAuth, AUTH_COOKIE_NAME } = await import('./auth.js');
+const { signUserToken, requireAuth, apiAuthGate, AUTH_COOKIE_NAME } = await import('./auth.js');
 const { ROLES } = await import('./rbac.js');
 
 const secret = process.env.JWT_SECRET;
@@ -176,4 +176,32 @@ test('JWT-01: Bearer path uses the same role rejection (when enabled)', async ()
     if (prev === undefined) delete process.env.ALLOW_JWT_BEARER;
     else process.env.ALLOW_JWT_BEARER = prev;
   }
+});
+
+function invokeApiAuthGate({ method = 'GET', path }) {
+  return new Promise((resolve) => {
+    const req = { method, path, headers: {}, cookies: {} };
+    const res = {
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(body) {
+        resolve({ statusCode: this.statusCode, body, next: false });
+        return this;
+      }
+    };
+    apiAuthGate(req, res, () => resolve({ statusCode: null, body: null, next: true }));
+  });
+}
+
+test('apiAuthGate allows unauthenticated GET /api/system/timezones', async () => {
+  const result = await invokeApiAuthGate({ path: '/api/system/timezones' });
+  assert.equal(result.next, true);
+});
+
+test('apiAuthGate still requires auth for PUT /api/system/timezone', async () => {
+  const result = await invokeApiAuthGate({ method: 'PUT', path: '/api/system/timezone' });
+  assert.equal(result.next, false);
+  assert.equal(result.statusCode, 401);
 });

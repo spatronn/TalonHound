@@ -318,6 +318,9 @@ export function apiAuthGate(req, res, next) {
   if (req.path === '/api/setup/status' || req.path === '/api/setup/preview') {
     return next();
   }
+  if (req.path === '/api/system/timezones' && req.method === 'GET') {
+    return next();
+  }
   if (req.path === '/api/setup/complete' && req.method === 'POST') {
     return optionalAuth(req, res, next);
   }
