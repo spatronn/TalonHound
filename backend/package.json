@@ -41,7 +41,7 @@
     "test:ioc-sources": "node --test lib/iocSourceLifecycle.test.js lib/manualIocCreate.test.js",
     "test:custom-threat-feeds": "node --test lib/customThreatFeed.test.js lib/customThreatFeedSsrf.test.js lib/customThreatFeedFingerprint.test.js lib/iocExpiration.customFeedFingerprint.test.js lib/integrationSchedule.test.js",
     "test:migrate": "node --test lib/migrationFiles.test.js",
-    "test:release": "node --test lib/releaseSemver.test.js lib/productVersion.test.js routes/systemVersion.test.js ../scripts/release/generate-manifest.test.js",
+    "test:release": "node --test lib/releaseSemver.test.js lib/productVersion.test.js routes/systemVersion.test.js",
     "test:integration-queue": "node --test lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/jobResultSnapshot.test.js lib/feedLastRunResult.test.js",
     "test:rbac": "node --test lib/rbac.test.js",
     "test:auth-bootstrap": "node --test lib/defaultAdminBootstrap.test.js lib/passwordChangeGate.test.js lib/auth.test.js lib/cookieSecure.test.js lib/artifactOwnership.test.js routes/integrationCredentialsAuthz.test.js",

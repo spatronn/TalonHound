@@ -89,6 +89,9 @@ jobs:
         working-directory: backend
         run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke
 
+      - name: Run release manifest tests
+        run: node --test scripts/release/generate-manifest.test.js
+
       - name: Apply database init scripts
         run: |
           sudo apt-get update

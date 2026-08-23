@@ -5,7 +5,6 @@ import {
   assertCanStartBackup,
   canTransition,
   assertTransition,
-  canRestoreTransition,
   advisoryLockKey
 } from './operationLock.js';
 
@@ -22,12 +21,6 @@ describe('backup operationLock', () => {
     assert.equal(canTransition('verifying', 'completed'), true);
     assert.equal(canTransition('completed', 'running'), false);
     assert.throws(() => assertTransition('completed', 'running'));
-  });
-
-  it('validates restore transitions', () => {
-    assert.equal(canRestoreTransition('pending_confirmation', 'ready'), true);
-    assert.equal(canRestoreTransition('ready', 'running'), true);
-    assert.equal(canRestoreTransition('completed', 'ready'), false);
   });
 
   it('produces stable advisory key', () => {

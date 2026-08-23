@@ -90,6 +90,9 @@ jobs:
           npm run test:migrate
           npm run test:sprint-smoke
 
+      - name: Release manifest tests
+        run: node --test scripts/release/generate-manifest.test.js
+
       - name: Frontend tests
         working-directory: frontend
         run: |
