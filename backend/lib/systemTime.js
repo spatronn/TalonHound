@@ -18,6 +18,26 @@ let supportedTimezonesCache = null;
 /** @type {Set<string>|null} */
 let supportedTimezonesSetCache = null;
 
+/**
+ * Valid IANA zones omitted from Intl.supportedValuesOf on some Node/ICU builds.
+ * Kept minimal — not a curated dropdown list.
+ */
+const SUPPLEMENTAL_IANA_TIMEZONES = Object.freeze(['Asia/Kathmandu']);
+
+function isIanaTimezoneId(tz) {
+  if (tz === 'UTC') return true;
+  return /^[A-Za-z]+(?:_[A-Za-z0-9+-]+)*\/[A-Za-z0-9_+-]+(?:\/[A-Za-z0-9_+-]+)*$/.test(tz);
+}
+
+function isRecognizedByIntlDateTimeFormat(tz) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Process-level immutable IANA timezone list (Node ICU via Intl.supportedValuesOf). */
 export function getSupportedIanaTimezones() {
   if (supportedTimezonesCache) return supportedTimezonesCache;
@@ -31,6 +51,11 @@ export function getSupportedIanaTimezones() {
 
   const unique = new Set(zones.map((z) => String(z)));
   unique.add('UTC');
+  for (const tz of SUPPLEMENTAL_IANA_TIMEZONES) {
+    if (isIanaTimezoneId(tz) && isRecognizedByIntlDateTimeFormat(tz)) {
+      unique.add(tz);
+    }
+  }
   const sorted = [...unique].sort((a, b) => a.localeCompare(b));
   const withoutUtc = sorted.filter((z) => z !== 'UTC');
   supportedTimezonesCache = Object.freeze(['UTC', ...withoutUtc]);

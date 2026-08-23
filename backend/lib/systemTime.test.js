@@ -47,6 +47,12 @@ test('getSupportedIanaTimezones includes required regions', () => {
   }
 });
 
+test('getSupportedIanaTimezones includes ICU supplement zones when valid', () => {
+  clearSupportedIanaTimezonesCache();
+  const zones = new Set(getSupportedIanaTimezones());
+  assert.ok(zones.has('Asia/Kathmandu'));
+});
+
 test('assertValidIanaTimezone accepts IANA zones', () => {
   assert.equal(assertValidIanaTimezone('Europe/Istanbul'), 'Europe/Istanbul');
   assert.equal(assertValidIanaTimezone('Europe/London'), 'Europe/London');
