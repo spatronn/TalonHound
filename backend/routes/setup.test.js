@@ -194,3 +194,44 @@ test('non-admin cannot request pending timezone change', async () => {
   await requestSystemTimezoneChange(pool, 'Europe/London', { confirm: true, updatedBy: 'a@b.c' });
   assert.equal(state.pending_system_timezone, 'Europe/London');
 });
+
+test('GET /api/system/timezones returns canonical sorted list', async () => {
+  const { registerSetupRoutes } = await import('../routes/setup.js');
+  const { getSupportedIanaTimezones } = await import('../lib/systemTime.js');
+  const app = express();
+  app.use(express.json());
+  registerSetupRoutes(app, mockPool({
+    initial_setup_completed: false,
+    active_system_timezone: null
+  }), {});
+
+  const result = await new Promise((resolve) => {
+    const server = app.listen(0, async () => {
+      const { port } = server.address();
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/system/timezones`);
+        const body = await res.json().catch(() => ({}));
+        resolve({ status: res.status, body });
+      } finally {
+        server.close();
+      }
+    });
+  });
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.timezones, getSupportedIanaTimezones());
+  assert.ok(result.body.timezones.includes('Asia/Kathmandu'));
+});
+
+test('setup gate allows timezone list before initial setup completes', async () => {
+  clearSystemTimeCache();
+  const { registerSetupRoutes } = await import('../routes/setup.js');
+  const pool = mockPool({ initial_setup_completed: false, active_system_timezone: null });
+  const app = express();
+  app.use(createSetupGate(pool));
+  registerSetupRoutes(app, pool, {});
+  const tz = await request(app, '/api/system/timezones');
+  assert.equal(tz.status, 200);
+  assert.ok(Array.isArray(tz.body.timezones));
+  assert.ok(tz.body.timezones.length > 50);
+});

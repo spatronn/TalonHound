@@ -4,21 +4,11 @@ import {
   requestSystemTimezoneChange,
   currentTimeParts,
   assertValidIanaTimezone,
+  getSupportedIanaTimezones,
   SystemTimeError,
   clearSystemTimeCache,
   isTimezoneRuntimeReady
 } from '../lib/systemTime.js';
-
-const COMMON_TIMEZONES = Object.freeze([
-  'UTC',
-  'Europe/Istanbul',
-  'Europe/London',
-  'Europe/Berlin',
-  'America/New_York',
-  'Asia/Dubai',
-  'Asia/Tokyo',
-  'Australia/Sydney'
-]);
 
 function sendSystemTimeError(res, err) {
   if (err instanceof SystemTimeError) {
@@ -58,8 +48,7 @@ function publicTimezonePayload(config, now = new Date()) {
         ? 'configuration_required'
         : isTimezoneRuntimeReady(config)
           ? 'healthy'
-          : 'setup_required',
-    common_timezones: COMMON_TIMEZONES
+          : 'setup_required'
   };
 }
 
@@ -73,6 +62,14 @@ export function registerSetupRoutes(app, pool, deps = {}) {
     try {
       const config = await loadSystemTimeConfig(pool, { force: true });
       return res.json(publicTimezonePayload(config));
+    } catch (err) {
+      return sendSystemTimeError(res, err);
+    }
+  });
+
+  app.get('/api/system/timezones', (_req, res) => {
+    try {
+      return res.json({ timezones: getSupportedIanaTimezones() });
     } catch (err) {
       return sendSystemTimeError(res, err);
     }
@@ -224,6 +221,7 @@ export function createSetupGate(pool) {
     '/api/setup/status',
     '/api/setup/preview',
     '/api/setup/complete',
+    '/api/system/timezones',
     '/api/auth/login',
     '/api/auth/logout',
     '/api/auth/me',
@@ -270,4 +268,4 @@ export function createSetupGate(pool) {
   };
 }
 
-export { clearSystemTimeCache, COMMON_TIMEZONES };
+export { clearSystemTimeCache };

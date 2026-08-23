@@ -195,6 +195,7 @@ import EnrichmentUsagePageView from './components/EnrichmentUsagePage.jsx';
 import SystemHealthPageView from './components/SystemHealthPage.jsx';
 import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import InitialSetupPage from './components/InitialSetupPage.jsx';
+import TimezoneSelector from './components/TimezoneSelector.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
 import { IocHeader } from './components/iocDetails/IocHeader.jsx';
 import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
@@ -483,15 +484,6 @@ function SessionProvider({ children }) {
 function useSession() {
   return useContext(SessionContext);
 }
-
-const COMMON_TIMEZONES = [
-  'UTC',
-  'Europe/Istanbul',
-  'Europe/Berlin',
-  'Europe/London',
-  'America/New_York',
-  'Asia/Dubai'
-];
 
 const FILE_HASH_TYPES = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
 
@@ -9473,8 +9465,7 @@ function AdministrationSettingsPage() {
     system_timezone: getSystemTimezone(),
     timezone_restart_required: false,
     current_utc_time: '',
-    current_system_time: '',
-    common_timezones: COMMON_TIMEZONES
+    current_system_time: ''
   });
   const [changeOpen, setChangeOpen] = useState(false);
   const [newTimezone, setNewTimezone] = useState('');
@@ -9630,7 +9621,6 @@ function AdministrationSettingsPage() {
     }
   }
 
-  const zoneOptions = timezoneInfo.common_timezones || COMMON_TIMEZONES;
   const commitDetail = formatCommitDetail(productVersion);
   const buildDateDetail = formatBuildDateDetail(productVersion);
 
@@ -9706,15 +9696,21 @@ function AdministrationSettingsPage() {
                     values are not rewritten. A full application restart (Docker Compose recreate or Kubernetes
                     rollout) is required. Type CHANGE SYSTEM TIMEZONE to confirm.
                   </p>
-                  <label style={ui.label}>New timezone</label>
-                  <select
+                  <TimezoneSelector
                     value={newTimezone}
-                    onChange={(e) => setNewTimezone(e.target.value)}
-                    style={{ ...ui.select, maxWidth: 400, marginBottom: 10 }}
-                  >
-                    <option value="">Select…</option>
-                    {zoneOptions.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-                  </select>
+                    onChange={setNewTimezone}
+                    id="admin-system-timezone"
+                    filterId="admin-system-timezone-filter"
+                    placeholder="Select…"
+                    selectLabel="New timezone"
+                    styles={{
+                      label: ui.label,
+                      input: { ...ui.input, maxWidth: 400, marginBottom: 10 },
+                      select: { ...ui.select, maxWidth: 400, marginBottom: 10 },
+                      error: { color: '#fca5a5', marginBottom: 10, fontSize: 13 },
+                      muted: { color: '#94a3b8', marginBottom: 10, fontSize: 13 }
+                    }}
+                  />
                   <label style={ui.label}>Confirmation</label>
                   <input
                     value={confirmText}

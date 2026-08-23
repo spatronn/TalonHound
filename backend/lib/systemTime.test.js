@@ -12,8 +12,40 @@ import {
   promotePendingSystemTimezone,
   completeInitialSetup,
   clearSystemTimeCache,
+  getSupportedIanaTimezones,
+  clearSupportedIanaTimezonesCache,
   SystemTimeError
 } from './systemTime.js';
+
+test('getSupportedIanaTimezones returns sorted unique list with UTC first', () => {
+  clearSupportedIanaTimezonesCache();
+  const zones = getSupportedIanaTimezones();
+  assert.ok(zones.length > 100, 'expected full IANA list');
+  assert.equal(zones[0], 'UTC');
+  assert.equal(new Set(zones).size, zones.length, 'no duplicates');
+  const sortedTail = [...zones.slice(1)].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(zones.slice(1), sortedTail);
+});
+
+test('getSupportedIanaTimezones includes required regions', () => {
+  clearSupportedIanaTimezonesCache();
+  const zones = new Set(getSupportedIanaTimezones());
+  for (const tz of [
+    'UTC',
+    'Europe/Istanbul',
+    'Europe/London',
+    'America/New_York',
+    'America/Los_Angeles',
+    'Asia/Tokyo',
+    'Asia/Kathmandu',
+    'Asia/Dubai',
+    'Australia/Sydney',
+    'Pacific/Auckland',
+    'Africa/Johannesburg'
+  ]) {
+    assert.ok(zones.has(tz), `missing ${tz}`);
+  }
+});
 
 test('assertValidIanaTimezone accepts IANA zones', () => {
   assert.equal(assertValidIanaTimezone('Europe/Istanbul'), 'Europe/Istanbul');
@@ -25,6 +57,7 @@ test('assertValidIanaTimezone rejects fixed offsets and garbage', () => {
   assert.throws(() => assertValidIanaTimezone('UTC+3'), (err) => err instanceof SystemTimeError);
   assert.throws(() => assertValidIanaTimezone('GMT+1'), (err) => err instanceof SystemTimeError);
   assert.throws(() => assertValidIanaTimezone('Not/AZone'), (err) => err.code === 'INVALID_TIMEZONE');
+  assert.throws(() => assertValidIanaTimezone('Invalid/FooBar'), (err) => err.code === 'INVALID_TIMEZONE');
   assert.equal(isValidIanaTimezone('UTC+3'), false);
 });
 

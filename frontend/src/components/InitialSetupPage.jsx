@@ -1,37 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { setSystemTimezoneCache, notifyTimezoneChanged } from '../lib/formatDate.js';
-
-const FALLBACK_ZONES = [
-  'UTC',
-  'Europe/Istanbul',
-  'Europe/London',
-  'Europe/Berlin',
-  'America/New_York',
-  'Asia/Dubai',
-  'Asia/Tokyo',
-  'Australia/Sydney'
-];
-
-function listIanaTimezones() {
-  try {
-    if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function') {
-      return Intl.supportedValuesOf('timeZone');
-    }
-  } catch {
-    // ignore
-  }
-  return FALLBACK_ZONES;
-}
+import TimezoneSelector from './TimezoneSelector.jsx';
 
 /**
  * Mandatory first-run System Timezone setup.
  * Blocks access to the rest of the app until completed.
  */
 export default function InitialSetupPage({ onCompleted }) {
-  const [zones, setZones] = useState(() => listIanaTimezones());
   const [timezone, setTimezone] = useState('');
-  const [filter, setFilter] = useState('');
   const [utcNow, setUtcNow] = useState('');
   const [systemNow, setSystemNow] = useState('');
   const [saving, setSaving] = useState(false);
@@ -51,12 +28,6 @@ export default function InitialSetupPage({ onCompleted }) {
           return;
         }
         setConfigRequired(Boolean(data.timezone_configuration_required));
-        if (Array.isArray(data.common_timezones) && data.common_timezones.length) {
-          const all = listIanaTimezones();
-          const preferred = data.common_timezones.filter((z) => all.includes(z) || FALLBACK_ZONES.includes(z));
-          const rest = all.filter((z) => !preferred.includes(z));
-          setZones([...preferred, ...rest]);
-        }
         setUtcNow(data.current_utc_time || new Date().toISOString());
       } catch (err) {
         if (!cancelled) setError(err?.response?.data?.message || err.message || 'Failed to load setup status');
@@ -90,12 +61,6 @@ export default function InitialSetupPage({ onCompleted }) {
       clearInterval(id);
     };
   }, [timezone]);
-
-  const filteredZones = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return zones;
-    return zones.filter((z) => z.toLowerCase().includes(q));
-  }, [zones, filter]);
 
   async function confirm() {
     if (!timezone || saving) return;
@@ -138,27 +103,13 @@ export default function InitialSetupPage({ onCompleted }) {
           </p>
         ) : null}
 
-        <label style={styles.label} htmlFor="setup-tz-filter">Search IANA timezones</label>
-        <input
-          id="setup-tz-filter"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="e.g. London, Istanbul, New_York"
-          style={styles.input}
-        />
-
-        <label style={styles.label} htmlFor="setup-tz">System Timezone</label>
-        <select
-          id="setup-tz"
+        <TimezoneSelector
           value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-          style={styles.select}
-        >
-          <option value="">Select a timezone…</option>
-          {filteredZones.map((z) => (
-            <option key={z} value={z}>{z}</option>
-          ))}
-        </select>
+          onChange={setTimezone}
+          id="setup-tz"
+          filterId="setup-tz-filter"
+          styles={styles}
+        />
 
         <div style={styles.times}>
           <div><span style={styles.muted}>Current UTC time</span><div style={styles.mono}>{utcNow || '—'}</div></div>

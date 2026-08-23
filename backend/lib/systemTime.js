@@ -13,6 +13,41 @@ const ADOPTION_LOCK_KEY = 72900129;
 /** @type {{ loadedAt: number, config: SystemTimeConfig | null }} */
 let cache = { loadedAt: 0, config: null };
 
+/** @type {readonly string[]|null} */
+let supportedTimezonesCache = null;
+/** @type {Set<string>|null} */
+let supportedTimezonesSetCache = null;
+
+/** Process-level immutable IANA timezone list (Node ICU via Intl.supportedValuesOf). */
+export function getSupportedIanaTimezones() {
+  if (supportedTimezonesCache) return supportedTimezonesCache;
+
+  let zones;
+  if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function') {
+    zones = Intl.supportedValuesOf('timeZone');
+  } else {
+    zones = ['UTC'];
+  }
+
+  const unique = new Set(zones.map((z) => String(z)));
+  unique.add('UTC');
+  const sorted = [...unique].sort((a, b) => a.localeCompare(b));
+  const withoutUtc = sorted.filter((z) => z !== 'UTC');
+  supportedTimezonesCache = Object.freeze(['UTC', ...withoutUtc]);
+  supportedTimezonesSetCache = new Set(supportedTimezonesCache);
+  return supportedTimezonesCache;
+}
+
+function getSupportedIanaTimezoneSet() {
+  if (!supportedTimezonesSetCache) getSupportedIanaTimezones();
+  return supportedTimezonesSetCache;
+}
+
+export function clearSupportedIanaTimezonesCache() {
+  supportedTimezonesCache = null;
+  supportedTimezonesSetCache = null;
+}
+
 /**
  * @typedef {object} SystemTimeConfig
  * @property {boolean} initial_setup_completed
@@ -57,9 +92,7 @@ export function assertValidIanaTimezone(value) {
       'Fixed UTC/GMT offsets are not allowed; use an IANA timezone (e.g. Europe/Istanbul)'
     );
   }
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz });
-  } catch {
+  if (!getSupportedIanaTimezoneSet().has(tz)) {
     throw new SystemTimeError('INVALID_TIMEZONE', `Invalid IANA timezone: ${tz}`);
   }
   return tz;
