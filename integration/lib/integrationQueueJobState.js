@@ -10,25 +10,40 @@ export function createWorkerIdentity() {
   return { workerId, hostname };
 }
 
+export function coerceQueuedAt(queuedAt) {
+  if (queuedAt instanceof Date && !Number.isNaN(queuedAt.getTime())) return queuedAt.toISOString();
+  if (typeof queuedAt === 'number' && Number.isFinite(queuedAt) && queuedAt > 0) {
+    return new Date(queuedAt).toISOString();
+  }
+  if (typeof queuedAt === 'string' && queuedAt.trim()) {
+    const parsed = new Date(queuedAt);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return null;
+}
+
 export async function markJobRunning(pool, {
   jobId,
   integrationKey,
   jobName,
   triggeredBy,
   workerId,
-  workerHostname
+  workerHostname,
+  queuedAt
 }) {
+  const queuedAtIso = coerceQueuedAt(queuedAt);
   await pool.query(
     `INSERT INTO integration_queue_jobs (
        job_id, integration_key, job_name, status, triggered_by,
        queued_at, started_at, heartbeat_at, worker_id, worker_hostname,
        failure_type, error_message, updated_at
      )
-     VALUES ($1, $2, $3, 'running', $4, NOW(), NOW(), NOW(), $5, $6, NULL, NULL, NOW())
+     VALUES ($1, $2, $3, 'running', $4, COALESCE($7::timestamptz, NOW()), NOW(), NOW(), $5, $6, NULL, NULL, NOW())
      ON CONFLICT (job_id)
      DO UPDATE SET
        status = 'running',
        started_at = COALESCE(integration_queue_jobs.started_at, NOW()),
+       queued_at = COALESCE(integration_queue_jobs.queued_at, EXCLUDED.queued_at),
        heartbeat_at = NOW(),
        worker_id = EXCLUDED.worker_id,
        worker_hostname = EXCLUDED.worker_hostname,
@@ -36,7 +51,7 @@ export async function markJobRunning(pool, {
        error_message = NULL,
        finished_at = NULL,
        updated_at = NOW()`,
-    [String(jobId), integrationKey, jobName, triggeredBy || 'scheduler', workerId, workerHostname]
+    [String(jobId), integrationKey, jobName, triggeredBy || 'scheduler', workerId, workerHostname, queuedAtIso]
   );
 }
 

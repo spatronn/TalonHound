@@ -270,7 +270,8 @@ const worker = new Worker(
       jobName: job.name,
       triggeredBy,
       workerId,
-      workerHostname
+      workerHostname,
+      queuedAt: job.timestamp
     });
 
     const jobStartedAtMs = Date.now();

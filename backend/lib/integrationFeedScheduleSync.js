@@ -104,6 +104,13 @@ export function getUsomFullReconciliationScheduleConfig(env = process.env) {
 }
 
 function deriveFeedKeyFromRepeatable(repeatable, desiredByKey, desiredKeysByJobName) {
+  const repeatKey = String(repeatable?.key || '').trim();
+  if (repeatKey.startsWith('integration-schedule:')) {
+    const identity = repeatKey.slice('integration-schedule:'.length);
+    const feedKey = identity.split('::')[0];
+    if (feedKey && desiredByKey.has(feedKey)) return feedKey;
+  }
+
   const idRaw = String(repeatable.id || '').trim();
   const idKey = idRaw.replace(/-scheduled$/, '');
   if (idKey && desiredByKey.has(idKey)) return idKey;
@@ -156,21 +163,31 @@ export async function loadCustomThreatFeedSchedules(pool) {
 
 async function ensureCustomFeedSchedule(importQueue, feed, slotMap) {
   const jobId = `${feed.key}-scheduled`;
-  const repeat = desiredRepeatConfig(feed.key, feed.cron, slotMap);
+  const identity = scheduleIdentity(feed.key, USOM_RUN_MODES.INCREMENTAL);
+  const repeat = {
+    ...desiredRepeatConfig(feed.key, feed.cron, slotMap),
+    key: customFeedRepeatableKey(feed.key)
+  };
   await importQueue.add(
     CUSTOM_THREAT_FEED_JOB,
-    { triggeredBy: 'scheduler', integration_key: feed.key },
+    {
+      triggeredBy: 'scheduler',
+      integration_key: feed.key,
+      run_mode: USOM_RUN_MODES.INCREMENTAL
+    },
     { jobId, repeat }
   );
+  return identity;
 }
 
-export async function syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix = '[scheduler]' } = {}) {
+export async function syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix = '[scheduler]', liveScheduleIdentities = null } = {}) {
   const desired = await loadCustomThreatFeedSchedules(pool);
   const slotMap = buildHourlySlotMap(desired.map((d) => ({ key: d.key, schedule: d.cron })));
   const desiredByKey = new Map(desired.map((d) => [d.key, d]));
   const desiredKeysByJobName = new Map([[CUSTOM_THREAT_FEED_JOB, desired.map((d) => d.key)]]);
 
   const repeatables = await importQueue.getRepeatableJobs();
+  const live = liveScheduleIdentities || await collectLiveScheduleIdentities(importQueue);
   const seenPerFeed = new Set();
 
   for (const r of repeatables) {
@@ -190,6 +207,19 @@ export async function syncCustomThreatFeedSchedules(pool, importQueue, { logPref
     if (!desiredFeed) {
       await importQueue.removeRepeatableByKey(r.key);
       console.log(`${logPrefix} removed custom repeat job key=${mappedKey} pattern=${repeatCron || '-'} reason=inactive_or_missing`);
+      continue;
+    }
+
+    const identity = scheduleIdentity(mappedKey, USOM_RUN_MODES.INCREMENTAL);
+    const stall = evaluateRepeatableStall(r, identity, live);
+    if (stall.stalled) {
+      await importQueue.removeRepeatableByKey(r.key);
+      console.warn(
+        `${logPrefix} repeat recovery reason=overdue_iteration identity=${identity} `
+        + `pattern=${repeatCron || '-'}${r.tz ? ` tz=${r.tz}` : ''} `
+        + `old_next=${new Date(stall.oldNextMs).toISOString()} now=${new Date().toISOString()} `
+        + `overdue_s=${Math.round(stall.overdueMs / 1000)} live_iteration=false action=removed_for_rearm`
+      );
       continue;
     }
 
@@ -262,6 +292,10 @@ async function ensureFeedSchedule(importQueue, feed, slotMap) {
 
 function scheduleIdentity(feedKey, mode = USOM_RUN_MODES.INCREMENTAL) {
   return `${feedKey}::${mode}`;
+}
+
+export function customFeedRepeatableKey(feedKey) {
+  return `integration-schedule:${scheduleIdentity(feedKey, USOM_RUN_MODES.INCREMENTAL)}`;
 }
 
 function deriveFeedScheduleIdentity(repeatable, desiredByIdentity, desiredKeysByJobName) {
@@ -391,7 +425,7 @@ export async function syncIntegrationFeedSchedules(pool, importQueue, { logPrefi
   }
 
   console.log(`${logPrefix} schedule sync complete, active=${activeFeeds.length} schedules=${desired.length}`);
-  await syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix });
+  await syncCustomThreatFeedSchedules(pool, importQueue, { logPrefix, liveScheduleIdentities });
   return { active: activeFeeds.length, schedules: desired.length };
 }
 

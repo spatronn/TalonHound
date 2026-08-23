@@ -3,15 +3,18 @@ import assert from 'node:assert/strict';
 import {
   getUsomFullReconciliationScheduleConfig,
   syncIntegrationFeedSchedules,
+  syncCustomThreatFeedSchedules,
+  customFeedRepeatableKey,
   collectLiveScheduleIdentities,
   evaluateRepeatableStall,
-  STALLED_REPEATABLE_GRACE_MS
+  STALLED_REPEATABLE_GRACE_MS,
+  CUSTOM_THREAT_FEED_JOB
 } from './integrationFeedScheduleSync.js';
 
-function mockPool(rows) {
+function mockPool(rows, customRows = []) {
   return {
     async query(sql) {
-      if (String(sql).includes('custom_threat_feeds')) return { rows: [] };
+      if (String(sql).includes('custom_threat_feeds')) return { rows: customRows };
       return { rows };
     }
   };
@@ -278,4 +281,85 @@ test('full reconciliation schedule can be disabled without affecting incremental
     if (previous == null) delete process.env.USOM_FULL_RECONCILIATION_ENABLED;
     else process.env.USOM_FULL_RECONCILIATION_ENABLED = previous;
   }
+});
+
+test('custom feeds get a stable integration-schedule repeat key', async () => {
+  const queue = mockQueue();
+  const custom = [
+    { key: 'ctf-aaaa', schedule_cron: '0 0 * * *' },
+    { key: 'ctf-bbbb', schedule_cron: '0 0 * * *' },
+    { key: 'ctf-cccc', schedule_cron: '0 0 * * *' }
+  ];
+  await syncCustomThreatFeedSchedules(mockPool([], custom), queue, { logPrefix: '[test]' });
+  assert.equal(queue.added.length, 3);
+  assert.deepEqual(
+    queue.added.map((entry) => entry.options.repeat.key).sort(),
+    [
+      customFeedRepeatableKey('ctf-aaaa'),
+      customFeedRepeatableKey('ctf-bbbb'),
+      customFeedRepeatableKey('ctf-cccc')
+    ].sort()
+  );
+  assert.ok(queue.added.every((entry) => entry.name === CUSTOM_THREAT_FEED_JOB));
+  assert.ok(queue.added.every((entry) => entry.data.run_mode === 'incremental'));
+});
+
+test('stable custom repeatables are not deleted and recreated every scheduler tick', async () => {
+  const custom = [
+    { key: 'ctf-one', schedule_cron: '0 0 * * *' },
+    { key: 'ctf-two', schedule_cron: '0 0 * * *' }
+  ];
+  const first = mockQueue();
+  await syncCustomThreatFeedSchedules(mockPool([], custom), first, { logPrefix: '[test]' });
+  assert.equal(first.added.length, 2);
+
+  const repeatables = first.added.map((entry) => ({
+    key: entry.options.repeat.key,
+    id: entry.options.jobId,
+    name: entry.name,
+    pattern: entry.options.repeat.pattern,
+    tz: entry.options.repeat.tz || '',
+    next: Date.now() + 3600_000
+  }));
+  const second = mockQueue(repeatables);
+  await syncCustomThreatFeedSchedules(mockPool([], custom), second, { logPrefix: '[test]' });
+  assert.deepEqual(second.removed, []);
+  assert.deepEqual(second.added, []);
+});
+
+test('legacy unmapped custom hash keys are replaced with stable keys once', async () => {
+  const custom = [{ key: 'ctf-legacy', schedule_cron: '0 0 * * *' }];
+  const queue = mockQueue([
+    {
+      key: 'fc328681c34f463c3ffb28f1e40ccf18',
+      name: CUSTOM_THREAT_FEED_JOB,
+      pattern: '0 0 * * *',
+      tz: 'UTC',
+      next: Date.now() + 3600_000
+    }
+  ]);
+  await syncCustomThreatFeedSchedules(mockPool([], custom), queue, { logPrefix: '[test]' });
+  assert.deepEqual(queue.removed, ['fc328681c34f463c3ffb28f1e40ccf18']);
+  assert.equal(queue.added.length, 1);
+  assert.equal(queue.added[0].options.repeat.key, customFeedRepeatableKey('ctf-legacy'));
+  assert.equal(queue.added[0].options.jobId, 'ctf-legacy-scheduled');
+});
+
+test('scheduler enqueues every due custom feed without waiting for a previous sync to finish', async () => {
+  let processed = 0;
+  const queue = mockQueue();
+  queue.waitUntilFinished = async () => { processed += 1; };
+  queue.process = async () => { processed += 1; };
+  const custom = [
+    { key: 'ctf-1', schedule_cron: '0 0 * * *' },
+    { key: 'ctf-2', schedule_cron: '0 0 * * *' },
+    { key: 'ctf-3', schedule_cron: '0 0 * * *' }
+  ];
+  await syncCustomThreatFeedSchedules(mockPool([], custom), queue, { logPrefix: '[test]' });
+  assert.equal(queue.added.length, 3);
+  assert.equal(processed, 0);
+  assert.deepEqual(
+    queue.added.map((entry) => entry.data.integration_key).sort(),
+    ['ctf-1', 'ctf-2', 'ctf-3']
+  );
 });

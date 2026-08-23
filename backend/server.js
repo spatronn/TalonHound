@@ -1636,6 +1636,14 @@ app.get('/api/integrations', async (req, res) => {
         last_failure_at: lastFailed?.finished_at || null,
         last_failure_integration_key: lastFailed?.integration_key || null
       };
+      if (snapshot.bull_counts) {
+        queue.counts = {
+          ...queue.counts,
+          waiting: Number(snapshot.bull_counts.waiting || 0),
+          active: Number(snapshot.bull_counts.active || 0),
+          delayed: Number(snapshot.bull_counts.delayed || 0)
+        };
+      }
     } catch (err) {
       console.warn('[integrations] queue health snapshot failed', err.message);
     }
