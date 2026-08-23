@@ -9,6 +9,7 @@ import {
   clearSystemTimeCache,
   isTimezoneRuntimeReady
 } from '../lib/systemTime.js';
+import { isCallerSystemAdmin } from './auditRetention.js';
 
 function sendSystemTimeError(res, err) {
   if (err instanceof SystemTimeError) {
@@ -121,25 +122,29 @@ export function registerSetupRoutes(app, pool, deps = {}) {
     }
   });
 
-  app.get('/api/system/timezone', async (_req, res) => {
+  app.get('/api/system/timezone', async (req, res) => {
     try {
       const config = await loadSystemTimeConfig(pool, { force: true });
+      const canEdit = await isCallerSystemAdmin(pool, req);
       if (config.timezone_configuration_required) {
         return res.status(428).json({
           code: 'TIMEZONE_CONFIGURATION_REQUIRED',
           message: 'An existing installation requires an administrator to configure the system timezone',
-          ...publicTimezonePayload(config)
+          ...publicTimezonePayload(config),
+          can_edit: canEdit
         });
       }
       if (!isTimezoneRuntimeReady(config)) {
         return res.status(428).json({
           code: 'INITIAL_SETUP_REQUIRED',
           message: 'Initial setup is required before the application can run',
-          ...publicTimezonePayload(config)
+          ...publicTimezonePayload(config),
+          can_edit: canEdit
         });
       }
       return res.json({
         ...publicTimezonePayload(config),
+        can_edit: canEdit,
         configured_during_initial_setup: config.adoption_source === 'initial_setup'
       });
     } catch (err) {
@@ -149,9 +154,14 @@ export function registerSetupRoutes(app, pool, deps = {}) {
 
   app.put('/api/system/timezone', async (req, res) => {
     try {
-      const role = String(req.user?.role || 'admin').toLowerCase();
-      if (role !== 'admin') {
-        return res.status(403).json({ code: 'FORBIDDEN', message: 'Only admins can change the system timezone' });
+      // Mutation is System Administrator only (users.is_system_admin), matching
+      // Audit Log Retention. Role=admin alone is not sufficient.
+      const systemAdmin = await isCallerSystemAdmin(pool, req);
+      if (!systemAdmin) {
+        return res.status(403).json({
+          code: 'FORBIDDEN',
+          message: 'Only the System Administrator can change the system timezone'
+        });
       }
       const timezone = req.body?.timezone;
       const confirm = Boolean(req.body?.confirm);

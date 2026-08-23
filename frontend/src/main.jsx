@@ -173,6 +173,7 @@ import {
   isRetentionReduction,
   resolveTargetDays
 } from './lib/auditLogRetentionUi.js';
+import { canChangeSystemTimezone } from './lib/systemTimezoneUi.js';
 import {
   API_KEYS_PAGE_DESCRIPTION,
   ACCESS_PROFILE_OPTIONS,
@@ -9465,7 +9466,8 @@ function AdministrationSettingsPage() {
     system_timezone: getSystemTimezone(),
     timezone_restart_required: false,
     current_utc_time: '',
-    current_system_time: ''
+    current_system_time: '',
+    can_edit: false
   });
   const [changeOpen, setChangeOpen] = useState(false);
   const [newTimezone, setNewTimezone] = useState('');
@@ -9683,7 +9685,7 @@ function AdministrationSettingsPage() {
               </div>
             ) : null}
           </div>
-          {isAdmin ? (
+          {canChangeSystemTimezone(timezoneInfo) ? (
             <div style={{ marginTop: 12 }}>
               {!changeOpen ? (
                 <button type="button" style={ui.btnPrimary} onClick={() => setChangeOpen(true)}>
@@ -9732,9 +9734,7 @@ function AdministrationSettingsPage() {
                 </div>
               )}
             </div>
-          ) : (
-            <p style={{ fontSize: 13, color: '#94a3b8' }}>Only administrators can change the system timezone.</p>
-          )}
+          ) : null}
           {timezoneError ? (
             <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
               {timezoneError}
