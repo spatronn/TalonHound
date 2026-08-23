@@ -138,6 +138,10 @@ jobs:
   compose-validation:
     name: Compose validation
     runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ci-test-password
+      REDIS_PASSWORD: ci-test-password
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-characters-long
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
