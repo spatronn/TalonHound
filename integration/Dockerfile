@@ -19,7 +19,12 @@ ENV TALONHOUND_BUILD_DATE=${BUILD_DATE}
 WORKDIR /app
 
 COPY integration/package*.json ./
-RUN npm install --omit=dev
+# Build toolchain for compiling optional native deps (e.g. msgpackr-extract) from source on
+# architectures without a published prebuilt for node:22-alpine/musl (e.g. arm64). Removed in
+# the same layer to keep the runtime image slim.
+RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+ && npm install --omit=dev \
+ && apk del .build-deps
 
 COPY integration/ ./
 COPY VERSION /VERSION
