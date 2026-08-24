@@ -206,6 +206,12 @@ start_infra_and_migrate() {
   info "Starting PostgreSQL and Redis..."
   $COMPOSE --env-file "$ENV_FILE" up -d db redis
 
+  # Stamp the canonical product version (and best-effort commit/date) into the images so the
+  # running app reports the real version instead of the "dev" build-arg default.
+  export TALONHOUND_VERSION="${PRODUCT_VERSION}"
+  export TALONHOUND_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  export TALONHOUND_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+
   info "Building application images (first run can take several minutes)..."
   $COMPOSE --env-file "$ENV_FILE" build backend frontend integration-worker integration-scheduler proxy
 
