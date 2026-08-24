@@ -52,14 +52,14 @@ async function resetGreenfield(codeHash = null) {
     `UPDATE system_settings
         SET setup_completed_at = NULL,
             setup_completed_by = NULL,
-            setup_code_hash = $2,
+            setup_code_hash = $1::text,
             initial_setup_completed = FALSE,
             timezone_configuration_required = FALSE,
             active_system_timezone = NULL,
             pending_system_timezone = NULL,
             default_admin_bootstrapped = FALSE
       WHERE id = 1`,
-    [1, codeHash]
+    [codeHash]
   );
   clearSystemTimeCache();
 }
