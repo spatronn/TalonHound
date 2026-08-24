@@ -1,5 +1,13 @@
 # Deployment workflow
 
+> **Normal installation** (operators): clone the repo and run `sudo ./installation.sh`, then
+> finish in the browser-based **Setup Wizard** (see the root [README](../README.md)). The
+> installer handles Docker, secrets, migrations, service ordering, and the one-time setup code.
+>
+> **This document** covers the manual developer/operator flow: explicit Docker Compose,
+> one-shot migrations, and source rebuilds. Use it when you build from source or operate an
+> existing install — not as the primary install path for new users.
+
 Migrations **never** run automatically on container startup. They are applied in a controlled one-shot step before bringing up application services.
 
 ## Principles
@@ -100,17 +108,30 @@ Expected: `lock_waiters = 0` during steady state.
 
 See [system-timezone.md](./system-timezone.md) for NTP responsibility, initial setup, and timezone change / restart procedures.
 
-### Login smoke test
+### First run: the Setup Wizard
 
-**Clean first install only:** the backend creates a default local admin when the `users` table is empty and bootstrap has never run:
+**There is no default administrator password.** On a fresh install the first System
+Administrator is created through the browser-based **Setup Wizard** (`https://<server-ip>` →
+`/setup`), which also selects the system timezone. The wizard is protected by the one-time
+**Setup Code** printed by `installation.sh` (stored server-side only as a SHA-256 hash in
+`SETUP_CODE_HASH`; plaintext is never persisted). Setup completes atomically and permanently
+locks the setup endpoints.
 
-```text
-admin@talonhound.local
-```
+State that drives first-run is DB-backed (`system_settings.setup_completed_at` /
+`setup_code_hash` + the `users` table) and survives restarts, rebuilds, and upgrades. An
+existing install that already has a user is never sent through the wizard.
 
-Initial password: set `INITIAL_ADMIN_PASSWORD` (min 12 chars), or allow the backend to generate one and write it once to `BOOTSTRAP_ADMIN_PASSWORD_FILE` (default `/data/backups/bootstrap-admin-password.once`). There is no repository-known default password. Password change is required on first login. This account is **not** recreated on later restarts or after deletion.
+Manual (non-installer) bring-up on a **trusted** network works without a setup code: if
+`SETUP_CODE_HASH` is unset the wizard's code step is skipped (open first-run). Set it (or use
+`installation.sh`) to require the code.
 
-On existing installs, create users via **Administration → Users**.
+**Legacy default-admin bootstrap (opt-in, automation/CI only):** the historical
+`admin@talonhound.local` bootstrap now runs only when explicitly enabled — set
+`INITIAL_ADMIN_PASSWORD`/`SYSTEM_ADMIN_PASSWORD` (min 12 chars) or `TALONHOUND_LEGACY_DEFAULT_ADMIN=1`.
+It never uses a repository-known password, sets `must_change_password=true`, and is not
+recreated after deletion. Normal public installs leave this **disabled** and use the wizard.
+
+On existing installs, create additional users via **Administration → Users**.
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:3000/api/auth/login \

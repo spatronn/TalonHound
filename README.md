@@ -2,47 +2,94 @@
 
 Self-hosted threat intelligence and IOC management platform.
 
-## Quick Links
+TalonHound ingests, deduplicates, enriches, and republishes indicators of compromise (IOCs)
+from community and custom feeds, and lets analysts search, triage, and export them — all on
+infrastructure you control.
+
+## Features
+
+- IOC ingestion from community and custom threat feeds, with per-source provenance and canonical deduplication
+- Analyst search, triage, suppression, and bulk operations over large IOC sets
+- Enrichment providers (VirusTotal, AbuseIPDB, IPinfo Lite, RDAP) — all optional and configured after install
+- Published feeds (JSON / CSV / STIX / TAXII 2.1) with per-key access and rate limiting
+- Role-based access control, audit logging, and a protected System Administrator account
+- Scheduled backups with restore, and a single canonical system timezone across the whole stack
+
+## Requirements
+
+- Ubuntu 24.04 (tested; other Linux may work)
+- Docker Engine + Docker Compose plugin (the installer sets these up if missing)
+- 4 GB RAM minimum (8 GB recommended), 2 vCPU, ~20 GB free disk
+- Root access on the host
+
+## Installation
+
+```bash
+git clone https://github.com/spatronn/TalonHound.git
+cd TalonHound
+sudo ./installation.sh
+```
+
+The installer generates all required secrets, applies database migrations, starts the stack,
+and prints the URL plus a **one-time Setup Code**:
+
+```text
+TalonHound installed successfully.
+
+Open the following URL to complete setup:
+
+    https://<server-ip>
+
+Setup Code:
+
+    XXXX-XXXX-XXXX-XXXX
+```
+
+Open `https://<server-ip>` in a browser and complete the Setup Wizard. The browser will show a
+certificate warning on first run because TalonHound uses a self-signed certificate initially
+(see [`proxy/README.md`](proxy/README.md) for Let's Encrypt / production certificates).
+
+Re-running `sudo ./installation.sh` is safe: it never overwrites secrets, the `.env` file, the
+database, or the completed setup state.
+
+## First Run
+
+There is **no default administrator password.** The Setup Wizard guides you through:
+
+1. **Setup Code** — the one-time code printed by the installer (proves you control the host)
+2. **System validation** — PostgreSQL, Redis, schema, and application readiness
+3. **Create System Administrator** — you choose the username and password; it is valid immediately
+4. **System timezone** — the single IANA timezone used across logs, schedules, exports, and the UI
+
+After completing setup you are redirected to the login page. The setup code is permanently
+invalidated and the setup endpoints refuse further initialization.
+
+Lost the setup code before finishing setup? Run `sudo ./installation.sh --rotate-setup-code`.
+
+## Update / Release status
+
+Current version: [`VERSION`](VERSION) (`0.1.0-beta.1`). This is a pre-release beta; the
+repository is private and no public GitHub Release or GHCR package has been published yet.
+
+To update an existing installation, see [`docs/deployment.md`](docs/deployment.md). Official
+beta/stable releases will be published through GitHub Releases and GHCR — see
+[`docs/release.md`](docs/release.md).
+
+## Documentation
 
 - **Deployment & migrations:** [`docs/deployment.md`](docs/deployment.md)
+- **System timezone:** [`docs/system-timezone.md`](docs/system-timezone.md)
+- **Backup & restore:** [`docs/backup-restore.md`](docs/backup-restore.md)
 - **Release & versioning:** [`docs/release.md`](docs/release.md)
-- System diagram: [`docs/system-diagram.md`](docs/system-diagram.md)
-- Container operations & tuning: [`docs/container-operations-and-tuning.md`](docs/container-operations-and-tuning.md)
+- **System diagram:** [`docs/system-diagram.md`](docs/system-diagram.md)
+- **Container operations & tuning:** [`docs/container-operations-and-tuning.md`](docs/container-operations-and-tuning.md)
 
-## Run (development / source build)
+The installed version is shown in **Administration → Settings** and via authenticated
+`GET /api/system/version`.
 
-```bash
-cd /opt/TalonHound
-docker compose up -d db redis
-docker compose run --rm backend npm run migrate   # explicit one-shot — see docs/deployment.md
-docker compose up -d --build
-```
+## Development (build from source)
 
-For production-style ordering (migrate before backend/workers), see [`docs/deployment.md`](docs/deployment.md).
-
-**Clean install login** (first empty database only): `admin@talonhound.local` / `admin` — password change is required on first login. Not recreated after deletion or on later restarts.
-
-The **proxy** service terminates TLS on **443** and redirects **80 → HTTPS**. UI: `https://localhost` (first run uses a self-signed cert from `proxy/certs/`; browser warning is expected). See [`proxy/README.md`](proxy/README.md) for Let’s Encrypt / prod certs.
-
-## Check
-
-```bash
-docker compose ps
-docker compose logs --tail=100 proxy
-docker compose logs --tail=100 backend
-curl -sk https://localhost/readyz
-```
-
-## Version
-
-Canonical product version: [`VERSION`](VERSION)
-
-Installed version is shown in **Administration → Settings** and via authenticated `GET /api/system/version`.
-
-Official beta/stable releases are published through GitHub Releases and GHCR. See [`docs/release.md`](docs/release.md).
-
-## IP Enrichment (IPinfo Lite)
-
-- On-demand only: configure **Administration → Enrichment Providers → IPinfo Lite** (or set `IPINFO_LITE_TOKEN` in env).
-- Used for IP IOCs and URL observables whose host is a public IP address.
-- Results are cached per IP for 24 hours in `ioc_ip_enrichment`.
+`installation.sh` is the supported path for operators. Developers who build and run from source
+directly (manual Docker Compose, explicit migrations, source rebuilds) should follow
+[`docs/deployment.md`](docs/deployment.md), which documents the manual bring-up and migration
+commands.

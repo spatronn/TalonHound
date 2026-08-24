@@ -33,6 +33,7 @@ import {
 } from './lib/authSessions.js';
 import { ensureDefaultAdminBootstrap } from './lib/defaultAdminBootstrap.js';
 import { ensureSystemAdminAccount, SYSTEM_ADMIN_MANUAL_INSTRUCTION } from './lib/systemAdminBootstrap.js';
+import { seedSetupCodeHash } from './lib/firstRunSetup.js';
 import { rbacHttpPolicy, requireRole, ROLES } from './lib/rbac.js';
 import { ingestCapabilityPolicy, isHumanAdmin, isIngestAuth } from './lib/ingestPrincipal.js';
 import { registerUserManagementRoutes } from './routes/users.js';
@@ -5989,11 +5990,34 @@ app.post('/api/ioc/stats/refresh', requireRole(ROLES.ADMIN, ROLES.ANALYST), asyn
 });
 
 
+/**
+ * Legacy default-admin bootstrap runs ONLY when explicitly opted in. A normal public
+ * installation creates its first System Administrator through the first-run Setup Wizard,
+ * so no default account is auto-created. Opt-in remains for automated/CI flows that supply
+ * their own initial password.
+ */
+function legacyDefaultAdminEnabled(env = process.env) {
+  const provided = String(env.INITIAL_ADMIN_PASSWORD || env.SYSTEM_ADMIN_PASSWORD || '').trim();
+  const flag = String(env.TALONHOUND_LEGACY_DEFAULT_ADMIN || '').trim();
+  return Boolean(provided) || flag === '1' || flag.toLowerCase() === 'true';
+}
+
 async function ensureDefaultAdmin() {
+  // Register the installer's one-time setup code (hash only) for the first-run wizard.
   try {
-    await ensureDefaultAdminBootstrap(pool, { logger: appLog });
+    await seedSetupCodeHash(pool, { logger: appLog });
   } catch (err) {
-    appLog.warn('default admin bootstrap skipped', { error: err?.message || String(err) });
+    appLog.warn('setup code seed skipped', { error: err?.message || String(err) });
+  }
+
+  if (legacyDefaultAdminEnabled()) {
+    try {
+      await ensureDefaultAdminBootstrap(pool, { logger: appLog });
+    } catch (err) {
+      appLog.warn('default admin bootstrap skipped', { error: err?.message || String(err) });
+    }
+  } else {
+    appLog.info('[users] legacy default admin bootstrap disabled; first-run Setup Wizard creates the System Administrator');
   }
 
   // Reconcile the protected system administrator flag on every startup. This NEVER creates an

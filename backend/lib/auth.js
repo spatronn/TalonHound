@@ -275,7 +275,7 @@ export function csrfProtection(req, res, next) {
   if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return next();
   const p = req.path || '';
   if (p === '/api/auth/login' || p === '/api/auth/logout') return next();
-  if (p === '/api/setup/complete') return next();
+  if (p === '/api/setup/complete' || p === '/api/setup/verify-code') return next();
   if (!p.startsWith('/api')) return next();
   // Machine API key clients and public docs have no CSRF cookie.
   if (p === '/api/v1' || p.startsWith('/api/v1/')) return next();
@@ -323,6 +323,11 @@ export function apiAuthGate(req, res, next) {
   }
   if (req.path === '/api/setup/complete' && req.method === 'POST') {
     return optionalAuth(req, res, next);
+  }
+  // First-run setup-code pre-check: unauthenticated (greenfield). Handler rate-limits and
+  // refuses once setup is complete.
+  if (req.path === '/api/setup/verify-code' && req.method === 'POST') {
+    return next();
   }
 
   // OpenAPI docs are public (contract discovery); management calls still need API keys.
