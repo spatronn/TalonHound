@@ -20,7 +20,12 @@ RUN apk add --no-cache postgresql16-client tar
 
 WORKDIR /app
 COPY backend/package*.json ./
-RUN npm install --omit=dev
+# Build toolchain is needed to compile native deps (bcrypt) from source on architectures
+# without a published prebuilt binary for node:20-alpine/musl (e.g. arm64). Installed as a
+# virtual package and removed in the same layer so the runtime image stays slim.
+RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+ && npm install --omit=dev \
+ && apk del .build-deps
 COPY backend/ ./
 COPY VERSION /VERSION
 
