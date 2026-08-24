@@ -87,7 +87,10 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke
+        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard
+
+      - name: Lint installation.sh
+        run: bash -n installation.sh
 
       - name: Run release manifest tests
         run: node --test scripts/release/generate-manifest.test.js
@@ -108,6 +111,10 @@ jobs:
       - name: Verify migrations are idempotent
         working-directory: backend
         run: npm run migrate
+
+      - name: First-run setup wizard integration tests (real Postgres)
+        working-directory: backend
+        run: npm run test:setup-wizard-integration
 
       - name: Partition-aware backup restore smoke
         env:

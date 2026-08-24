@@ -1878,6 +1878,25 @@ function LoginPage() {
     }
   }, []);
 
+  // First-run routing: a fresh install (no administrator yet) or an existing install missing
+  // a system timezone must go to the Setup Wizard rather than the login form. Backend-driven —
+  // /api/auth/me is allowlisted pre-setup and would otherwise leave the visitor stuck here.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { data } = await api.get('/setup/status');
+        if (!mounted) return;
+        if (data?.admin_setup_required || data?.timezone_configuration_required) {
+          navigate('/setup', { replace: true });
+        }
+      } catch {
+        /* status unavailable: stay on login */
+      }
+    })();
+    return () => { mounted = false; };
+  }, [navigate]);
+
   async function onSubmit(e) {
     e.preventDefault();
     setError('');
