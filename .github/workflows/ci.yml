@@ -169,6 +169,9 @@ jobs:
           TALONHOUND_PROXY_IMAGE=ghcr.io/example/talonhound-proxy:0.0.0 \
             docker compose -f docker-compose.yml -f docker-compose.release.yml config >/dev/null
 
+      - name: Proxy dynamic-upstream regression guard
+        run: bash scripts/test-proxy-dynamic-upstreams.sh
+
   docker-build-smoke:
     name: Docker build smoke (no push)
     runs-on: ubuntu-latest
