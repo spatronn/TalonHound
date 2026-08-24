@@ -179,10 +179,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Setup QEMU (for emulated linux/arm64 builds)
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
-      - name: Build TalonHound images locally
+      - name: Report runner architecture
+        run: |
+          echo "Runner uname -m: $(uname -m)"   # GitHub-hosted ubuntu-latest is x86_64 (amd64)
+          echo "Docker platform: $(docker version --format '{{.Server.Arch}}')"
+
+      - name: Build images (linux/amd64, native)
         env:
           BUILD_VERSION: ${{ github.sha }}
           BUILD_COMMIT: ${{ github.sha }}
@@ -197,11 +205,37 @@ jobs:
             file="${spec%%:*}"
             tag="${spec##*:}"
             docker buildx build \
+              --platform linux/amd64 \
               --load \
               --file "$file" \
               --build-arg BUILD_VERSION="$version" \
               --build-arg BUILD_COMMIT="$BUILD_COMMIT" \
               --build-arg BUILD_DATE="${BUILD_DATE:-unknown}" \
               --tag "local/${tag}:ci" \
+              .
+          done
+
+      - name: Build images (linux/arm64, QEMU-emulated — build only, no load)
+        env:
+          BUILD_VERSION: ${{ github.sha }}
+          BUILD_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+        run: |
+          # Validates the Dockerfiles build for arm64 (e.g. bcrypt native compile under emulation)
+          # so architecture regressions are caught. This is an EMULATED build, not a real arm64
+          # host; native arm64 runtime is validated separately on real hardware.
+          version="$(tr -d '\r\n' < VERSION)"
+          for spec in \
+            "backend/Dockerfile" \
+            "frontend/Dockerfile" \
+            "integration/Dockerfile" \
+            "proxy/Dockerfile"; do
+            docker buildx build \
+              --platform linux/arm64 \
+              --file "$spec" \
+              --build-arg BUILD_VERSION="$version" \
+              --build-arg BUILD_COMMIT="$BUILD_COMMIT" \
+              --build-arg BUILD_DATE="${BUILD_DATE:-unknown}" \
+              --output type=cacheonly \
               .
           done

@@ -22,6 +22,16 @@ infrastructure you control.
 - 4 GB RAM minimum (8 GB recommended), 2 vCPU, ~20 GB free disk
 - Root access on the host
 
+### Architecture support
+
+| Platform | Status |
+| --- | --- |
+| **Ubuntu 24.04 / `linux/arm64`** (aarch64) | **Tested** — real clean-host install, runtime, reboot, and deploy validated on ARM64 hardware |
+| **`linux/amd64`** (x86_64) | **Build- and test-validated in CI** (native amd64 build + tests; emulated arm64 build). No clean-host amd64 install has been performed yet |
+
+Official container images are published as multi-architecture OCI indexes covering
+`linux/amd64` and `linux/arm64`, so `docker` pulls the image matching the host automatically.
+
 ## Installation
 
 ```bash
