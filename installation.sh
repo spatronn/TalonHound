@@ -150,7 +150,7 @@ prepare_env() {
   env_ensure API_INGEST_TOKEN "$(rand_hex 32)"
   env_ensure API_KEY_ENCRYPTION_KEY "$(rand_hex 32)"
 
-  [ "$fresh_env" -eq 1 ] && ok ".env created (permissions 600)."
+  if [ "$fresh_env" -eq 1 ]; then ok ".env created (permissions 600)."; fi
 }
 
 # Is setup already completed in the database? Prints "yes"/"no"/"unknown".
@@ -256,7 +256,7 @@ print_final() {
     echo
     echo "    ${c_bold}https://<server-ip>${c_reset}"
     candidates=$(hostname -I 2>/dev/null || true)
-    [ -n "$candidates" ] && echo "    (detected addresses: ${candidates})"
+    if [ -n "$candidates" ]; then echo "    (detected addresses: ${candidates})"; fi
   fi
   echo
   if [ -n "${SETUP_CODE:-}" ]; then
