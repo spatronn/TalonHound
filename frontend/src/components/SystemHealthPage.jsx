@@ -98,7 +98,6 @@ export default function SystemHealthPage({ AppShell }) {
         <div className="sh-header">
           <div>
             <h2 className="ep-page-title">System Health</h2>
-            <p className="ep-page-subtitle">Operational evidence for TalonHound services, workers, feeds, queues, and providers.</p>
           </div>
           <button type="button" className="th-btn th-btn--secondary" onClick={() => load().catch(() => {})} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}

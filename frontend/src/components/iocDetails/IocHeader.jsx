@@ -4,7 +4,6 @@ import { buttonClassName } from '../../lib/uiButtons.js';
 
 export function IocHeader({
   title = 'IOC Details',
-  subtitle = 'Analyst-focused detail page for faster triage',
   observable,
   statusBadge,
   ui,
@@ -34,7 +33,6 @@ export function IocHeader({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ minWidth: 0 }}>
           <h2 style={{ margin: 0, color: '#f1f5f9', fontSize: 22 }}>{title}</h2>
-          <div style={{ marginTop: 6, color: '#94a3b8', fontSize: 13 }}>{subtitle}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {showMarkFalsePositive ? (

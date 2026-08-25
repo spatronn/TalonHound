@@ -576,7 +576,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
           <div className="br-header-text">
             <h1 className="br-title">Backup &amp; Restore</h1>
             <p className="br-subtitle">
-              Create, verify and download PostgreSQL backups. Restore operations are performed through the host CLI.
+              Restore operations are performed through the host CLI.
             </p>
           </div>
           <button

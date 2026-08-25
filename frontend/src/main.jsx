@@ -1932,7 +1932,6 @@ function LoginPage() {
 
         <div className="card">
           <h1>Sign in</h1>
-          <p className="sub">Enter your credentials to access TalonHound.</p>
 
           {notice ? <div className="msg" role="status">{notice}</div> : null}
 
@@ -1940,7 +1939,6 @@ function LoginPage() {
             <div className="field">
               <label htmlFor="login-user">Username or email</label>
               <input id="login-user" name="email" type="text" autoComplete="username" required />
-              <span className="field-hint">You can sign in with either your username or your email address.</span>
             </div>
 
             <div className="field">
@@ -3706,10 +3704,7 @@ function IntegrationsPage({ title = 'Feeds', onlyKeys = null, hideKeys = null, s
       <section className="integrations-feeds-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div>
-            <h2 style={{ marginTop: 0, marginBottom: 4, color: '#f1f5f9' }}>{title}</h2>
-            {showHealthDashboard ? (
-              <div style={{ color: '#94a3b8', fontSize: 13 }}>Feed health and last import results at a glance</div>
-            ) : null}
+            <h2 style={{ marginTop: 0, color: '#f1f5f9' }}>{title}</h2>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {showRunAll ? <button onClick={runNowAll} disabled={runningNowAll || !canWrite}>{runningNowAll ? 'Queueing...' : 'Run now (all)'}</button> : null}
@@ -4694,7 +4689,7 @@ function CustomFeedLifecycleFields({
 }
 
 function CustomThreatFeedsPage() {
-  const { canWrite, isAdmin, role } = useSession();
+  const { canWrite, isAdmin } = useSession();
   const canRunActions = canWrite;
   const [loading, setLoading] = useState(true);
   const [feeds, setFeeds] = useState([]);
@@ -4973,7 +4968,7 @@ function CustomThreatFeedsPage() {
             <div>
               <h2 style={{ margin: 0, color: '#f1f5f9' }}>Custom Threat Feeds</h2>
               <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: 13 }}>
-                Sync IOCs from purchased TI feed URLs (TXT/CSV). Role: {role}.
+                Sync IOCs from TI feed URLs (TXT/CSV).
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -6007,9 +6002,6 @@ function PublishedFeedsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
           <div>
             <h2 style={ui.pageTitle}>Published Feeds</h2>
-            <p style={ui.pageSub}>
-              Publish filtered IOC snapshots as pull-based threat feeds for internal tools such as firewalls, proxies, DNS security, EDR, SIEM, or SOAR platforms.
-            </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             <button type="button" style={ui.btn} onClick={() => loadFeeds().catch(() => {})}>Refresh</button>
@@ -6619,7 +6611,6 @@ function AuditLogsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Audit Logs</h1>
-            <p style={ui.pageSub}>Search a time-bounded window of security and operational change history.</p>
           </div>
           <button type="button" style={ui.btn} onClick={exportCsv}>Export CSV</button>
         </div>
@@ -7838,7 +7829,6 @@ function TagManagerPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Tag Manager</h1>
-            <p style={ui.pageSub}>Manage operational/context IOC tags. Threat classifications and threat actors are managed separately.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
@@ -8208,7 +8198,7 @@ function ThreatClassificationManagerPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Threat Classifications</h1>
-            <p style={ui.pageSub}>Manage platform threat classifications used on IOCs. Drag rows to control picker and list sorting. Unknown is always first, active, and cannot be disabled.</p>
+            <p style={ui.pageSub}>Drag rows to control picker and list sorting. Unknown is always first, active, and cannot be disabled.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
@@ -8459,7 +8449,6 @@ function ThreatActorManagerPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Threat Actors</h1>
-            <p style={ui.pageSub}>Manage named threat actors linked to IOCs. Classifications are configured separately.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <label style={ui.checkLabel}>
@@ -8996,12 +8985,9 @@ function IocSourcesPage() {
           zIndex={1100}
           onClose={iocSourceFormModalOnClose({ saving, onClose: closeFormModal })}
         >
-          <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 6 }}>
+          <h3 style={{ ...ui.formTitle, fontSize: 18, marginTop: 0, marginBottom: 16 }}>
             {editing ? 'Edit IOC Source' : 'Add IOC Source'}
           </h3>
-          <p style={{ ...ui.pageSub, marginTop: 0, marginBottom: 16 }}>
-            {editing ? 'Update defaults for manual IOC provenance.' : 'Create a provenance label used when adding manual IOCs.'}
-          </p>
           <form onSubmit={submitForm} style={{ display: 'grid', gap: 14 }}>
               {!editing ? (
                 <FeedFormField ui={ui} label="Name" helper="3–64 chars: letters, numbers, underscore, hyphen." fullWidth>
@@ -9649,12 +9635,11 @@ function AdministrationSettingsPage() {
     <AppShell>
       <section style={ui.section}>
         <h1 style={ui.pageTitle}>Settings</h1>
-        <p style={ui.pageSub}>Manage platform-wide preferences and display settings.</p>
 
-        <div style={{ ...ui.formPanel, marginTop: 8 }}>
+        <div style={{ ...ui.formPanel, marginTop: 16 }}>
           <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Installed Version</h2>
           <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
-            Product version of this TalonHound installation. Official releases are built and published by GitHub Actions.
+            Official releases are built and published by GitHub Actions.
           </p>
           <div style={{ fontSize: 14, marginBottom: 8 }}>
             <div><strong>{formatProductVersionLabel(productVersion)}</strong></div>
@@ -9845,10 +9830,7 @@ function AdministrationSettingsPage() {
 
         {role === 'readonly' && userId != null ? (
           <div style={{ ...ui.formPanel, marginTop: 16 }}>
-            <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Your profile</h2>
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
-              Update the name shown on your account.
-            </p>
+            <h2 style={{ ...ui.formTitle, marginBottom: 16 }}>Your profile</h2>
             <form onSubmit={saveProfile} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, maxWidth: 560 }}>
               <div>
                 <label htmlFor="profile-fn" style={ui.label}>First name</label>
@@ -10362,7 +10344,6 @@ function UsersPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Users</h1>
-            <p style={ui.pageSub}>Manage platform accounts, roles, and account status.</p>
           </div>
           <button type="button" className={buttonClassName({ variant: 'primary' })} onClick={openCreateModal}>+ Create User</button>
         </div>
@@ -10847,7 +10828,6 @@ function IOCSuppressionsPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h2 style={ui.pageTitle}>IOC Suppressions</h2>
-            <p style={ui.pageSub}>Manage false positives and suppressed indicators to prevent recurring feed noise.</p>
           </div>
           {isAdmin ? (
             <button type="button" style={ui.btnPrimary} onClick={() => { resetAddForm(); setShowAdd(true); }}>Add Suppression</button>
@@ -11300,7 +11280,7 @@ function ActionCenterPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={ui.pageTitle}>Action Center</h1>
-            <p style={ui.pageSub}>Track asynchronous jobs such as IOC Deep Searches and Search exports. More task types can appear here over time.</p>
+            <p style={ui.pageSub}>Track asynchronous jobs such as IOC Deep Searches and Search exports.</p>
           </div>
           <button type="button" style={ui.btn} onClick={() => load().catch(() => {})} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
@@ -16467,8 +16447,7 @@ function IOCAddPage() {
     <AppShell>
       <section style={{ display: 'grid', gap: 14 }}>
         <div style={{ border: '1px solid #334155', borderRadius: 14, background: '#0f172a', padding: 18, boxShadow: '0 8px 28px rgba(2, 6, 23, 0.35)' }}>
-          <h2 style={{ marginTop: 0, marginBottom: 4 }}>Add IOC</h2>
-          <p style={{ marginTop: 0, marginBottom: 14, color: '#94a3b8', fontSize: 13 }}>Insert indicator data with confidence and source metadata.</p>
+          <h2 style={{ marginTop: 0, marginBottom: 14 }}>Add IOC</h2>
           {!canWrite && (
             <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: '1px solid #475569', color: '#94a3b8', fontSize: 14 }}>
               Read-only role: adding IOCs is disabled.

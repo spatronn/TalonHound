@@ -149,7 +149,6 @@ export default function EnrichmentUsagePage({ AppShell }) {
     <AppShell>
       <section className="ep-page">
         <h2 className="ep-page-title">Enrichment Usage</h2>
-        <p className="ep-page-subtitle">Monitor enrichment provider consumption, cache efficiency, reliability, and quota usage.</p>
 
         {/* Filters */}
         <div className="eu-toolbar">

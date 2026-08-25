@@ -112,7 +112,6 @@ export function IntelligenceSummarySection({
     <div style={sectionShellStyle}>
       <div style={{ marginBottom: 12 }}>
         <div style={sectionTitleStyle}>Intelligence Summary</div>
-        <div style={sectionDescStyle}>At-a-glance provider coverage and analyst references.</div>
       </div>
       <div style={summaryLayoutStyle}>
         <div style={summaryCoverageCardStyle}>
@@ -413,7 +412,6 @@ export function AnalystIntelligenceSection({ iocId, canWrite, active, onSummaryC
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
         <div>
           <div style={sectionTitleStyle}>Analyst Intelligence</div>
-          <div style={sectionDescStyle}>External references, OSINT findings, and analyst-added context for this IOC.</div>
         </div>
         {canWrite ? (
           <button type="button" onClick={() => { setEditing(null); setModalOpen(true); }}>+ Add Reference</button>
@@ -618,7 +616,6 @@ export function IntelligenceTabPanel({
       <div style={sectionShellStyle}>
         <div style={{ marginBottom: 12 }}>
           <div style={sectionTitleStyle}>Automated Intelligence</div>
-          <div style={sectionDescStyle}>Provider-backed enrichment and reputation checks.</div>
         </div>
         <div style={providerGridStyle}>
           {showVt ? (

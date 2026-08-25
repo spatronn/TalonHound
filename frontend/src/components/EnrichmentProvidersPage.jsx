@@ -358,8 +358,6 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     <AppShell>
       <section className="ep-page">
         <h2 className="ep-page-title">Enrichment Providers</h2>
-        <p className="ep-page-subtitle">Manage external intelligence providers used for on-demand IOC enrichment.</p>
-
         {!isAdmin ? (
           <div className="ep-banner ep-banner--info">
             Provider credentials and security-sensitive settings require the admin role. Other signed-in users can view status only.
