@@ -52,6 +52,59 @@ describe('getIocStatusCardPresentation', () => {
     assert.equal(summary.secondary, 'No expiration');
   });
 
+  it('formats the expiration summary date with the canonical DD/MM/YYYY, HH:mm:ss formatter', () => {
+    const p = getIocStatusCardPresentation({
+      ...activeSummary,
+      expiration_summary: {
+        // Backend label truncates to YYYY-MM-DD; the card must ignore that and
+        // format the real timestamp in the system timezone (UTC in tests).
+        label: 'Active on 1/1 source · Expires 2027-08-25',
+        global_expires_at: '2027-08-25T19:48:00.000Z'
+      }
+    });
+    const summary = p.fields.find((f) => f.key === 'expiration_summary');
+    assert.equal(summary.value, 'Active on 1/1 source');
+    assert.equal(summary.secondary, 'Expires 25/08/2027, 19:48:00');
+    // Regression guard: the truncated date must never reach the UI.
+    assert.doesNotMatch(summary.secondary, /Expires 2027-08-25$/);
+  });
+
+  it('uses the next-source-expires wording when the earliest source expiry differs from global', () => {
+    const p = getIocStatusCardPresentation({
+      ...activeSummary,
+      active_source_count: 2,
+      expiration_summary: {
+        label: 'Active on 2/2 sources · Next source expires 2027-08-20',
+        global_expires_at: '2027-08-25T19:48:00.000Z',
+        next_expiration_at: '2027-08-20T08:00:00.000Z'
+      }
+    });
+    const summary = p.fields.find((f) => f.key === 'expiration_summary');
+    assert.equal(summary.secondary, 'Next source expires 20/08/2027, 08:00:00');
+  });
+
+  it('expiration reason still takes precedence over the formatted date', () => {
+    const p = getIocStatusCardPresentation({
+      ...activeSummary,
+      expiration_reason: 'manual',
+      expiration_summary: {
+        label: 'Active on 1/1 source · Expires 2027-08-25',
+        global_expires_at: '2027-08-25T19:48:00.000Z'
+      }
+    });
+    const summary = p.fields.find((f) => f.key === 'expiration_summary');
+    assert.equal(summary.secondary, 'manual');
+  });
+
+  it('falls back to the label secondary when no expiry timestamp is present', () => {
+    const p = getIocStatusCardPresentation({
+      ...activeSummary,
+      expiration_summary: { label: 'Active on 1/1 source · No expiration' }
+    });
+    const summary = p.fields.find((f) => f.key === 'expiration_summary');
+    assert.equal(summary.secondary, 'No expiration');
+  });
+
   it('does not show empty expiration reason as its own field', () => {
     const p = getIocStatusCardPresentation({
       ...activeSummary,

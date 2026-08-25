@@ -1,3 +1,5 @@
+import { formatUserDateTime } from './formatDate.js';
+
 export function normalizeIocLifecycleStatus(status, { suppressionActive } = {}) {
   if (suppressionActive) return 'false_positive';
   const s = String(status || 'active').trim().toLowerCase();
@@ -14,6 +16,25 @@ function splitExpirationSummaryLabel(label) {
   const parts = raw.split(/\s·\s/);
   if (parts.length < 2) return { primary: raw, secondary: null };
   return { primary: parts[0], secondary: parts.slice(1).join(' · ') };
+}
+
+/**
+ * Build the date-bearing secondary line for the Expiration Summary using the
+ * canonical system-timezone formatter (DD/MM/YYYY, HH:mm:ss) applied to the
+ * real timestamps in the payload — never the backend's truncated YYYY-MM-DD
+ * label. Returns null when there is no global expiry timestamp so the caller
+ * falls back to the label text (e.g. "No expiration").
+ * @param {{ global_expires_at?: string|null, next_expiration_at?: string|null }|null} es
+ * @returns {string|null}
+ */
+function buildExpirationDateSecondary(es) {
+  const globalExpiresAt = es?.global_expires_at || null;
+  if (!globalExpiresAt) return null;
+  const nextExpirationAt = es?.next_expiration_at || null;
+  if (nextExpirationAt && nextExpirationAt !== globalExpiresAt) {
+    return `Next source expires ${formatUserDateTime(nextExpirationAt)}`;
+  }
+  return `Expires ${formatUserDateTime(globalExpiresAt)}`;
 }
 
 /**
@@ -85,12 +106,13 @@ export function getIocStatusCardPresentation(summary, { suppressionActive } = {}
   if (summary?.expiration_summary?.label && lifecycle === 'active') {
     const { primary, secondary } = splitExpirationSummaryLabel(summary.expiration_summary.label);
     const expirationReason = String(summary?.expiration_reason || '').trim();
+    const dateSecondary = buildExpirationDateSecondary(summary.expiration_summary);
     fields.push({
       key: 'expiration_summary',
       label: 'Expiration Summary',
       kind: 'text',
       value: primary || summary.expiration_summary.label,
-      secondary: expirationReason || secondary || null,
+      secondary: expirationReason || dateSecondary || secondary || null,
       icon: 'clock'
     });
   } else if (lifecycle !== 'false_positive') {
