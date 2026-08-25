@@ -114,3 +114,7 @@ The installed version is shown in **Administration → Settings** and via authen
 directly (manual Docker Compose, explicit migrations, source rebuilds) should follow
 [`docs/deployment.md`](docs/deployment.md), which documents the manual bring-up and migration
 commands.
+
+## License
+
+TalonHound is licensed under the Apache License 2.0. See [`LICENSE`](LICENSE).
