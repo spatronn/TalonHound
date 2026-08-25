@@ -57,4 +57,18 @@ describe('formatDate (system timezone)', () => {
     const iso = systemLocalInputToUtcIso('2026-07-25T21:10:55', 'Europe/Istanbul');
     assert.equal(iso, '2026-07-25T18:10:55.000Z');
   });
+
+  it('formats an offset-bearing audit "Last cleanup" instant canonically', () => {
+    // Settings → Audit Log Retention: last_cleanup_at arrives with +03:00 offset.
+    const out = formatUserDateTime('2026-08-25T16:40:04+03:00', 'Europe/Istanbul');
+    assert.equal(out, '25/08/2026, 16:40:04');
+    assert.ok(!out.includes('+03:00') && !out.includes('T'));
+  });
+
+  it('never emits Invalid Date / NaN / epoch for null or invalid input', () => {
+    for (const bad of [null, undefined, '', 'not-a-date']) {
+      const out = formatUserDateTime(bad, 'Europe/Istanbul');
+      assert.equal(out, '-');
+    }
+  });
 });

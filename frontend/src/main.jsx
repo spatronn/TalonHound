@@ -173,7 +173,7 @@ import {
   isRetentionReduction,
   resolveTargetDays
 } from './lib/auditLogRetentionUi.js';
-import { canChangeSystemTimezone } from './lib/systemTimezoneUi.js';
+import { canChangeSystemTimezone, formatCurrentUtc, formatCurrentSystemTime } from './lib/systemTimezoneUi.js';
 import {
   API_KEYS_PAGE_DESCRIPTION,
   ACCESS_PROFILE_OPTIONS,
@@ -9694,9 +9694,11 @@ function AdministrationSettingsPage() {
                 ? 'Restart required'
                 : (timezoneInfo.timezone_configuration_required ? 'Configuration required' : 'Healthy')}
             </div>
-            <div style={{ color: '#94a3b8', marginTop: 6 }}>Current UTC: {timezoneInfo.current_utc_time || '—'}</div>
+            <div style={{ color: '#94a3b8', marginTop: 6 }}>
+              Current UTC: {formatCurrentUtc(timezoneInfo)}
+            </div>
             <div style={{ color: '#94a3b8' }}>
-              Current active system time: {timezoneInfo.current_system_time || '—'}
+              Current active system time: {formatCurrentSystemTime(timezoneInfo)}
             </div>
             {timezoneInfo.timezone_restart_required ? (
               <div style={{ marginTop: 10, color: '#fbbf24' }}>
@@ -9784,7 +9786,7 @@ function AdministrationSettingsPage() {
               </div>
               {retention.last_cleanup_at ? (
                 <div style={{ color: '#94a3b8', marginTop: 4 }}>
-                  Last cleanup: {retention.last_cleanup_at}
+                  Last cleanup: {formatUserDateTime(retention.last_cleanup_at)}
                 </div>
               ) : null}
             </div>
