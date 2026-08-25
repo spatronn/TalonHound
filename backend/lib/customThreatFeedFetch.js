@@ -15,7 +15,7 @@ export const DEFAULT_MAX_FETCH_BYTES = Math.max(
 );
 
 const BASE_ACCEPT = 'text/plain,text/csv,*/*';
-const USER_AGENT = 'demo-runbook-custom-threat-feed/1.0';
+const USER_AGENT = 'talonhound-custom-threat-feed/1.0';
 
 /**
  * @param {import('http').IncomingMessage} res

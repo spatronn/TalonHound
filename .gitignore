@@ -3,6 +3,8 @@ node_modules/
 
 # Local environment (do not commit real secrets; .env.example is tracked)
 .env
+.env.*
+!.env.example
 
 # Frontend build output (produced by `vite build` / Docker image build)
 frontend/dist/
@@ -12,3 +14,38 @@ frontend/dist/
 
 # Legacy AI-agent/session memory notes (do not commit)
 /memory/
+
+# Logs, coverage, and test output
+*.log
+coverage/
+.nyc_output/
+*.lcov
+
+# Database dumps and backup archives (runtime artifacts under backups/ are also ignored there)
+*.dump
+*.sql.gz
+*.tar.gz
+!docs/**/*.tar.gz
+
+# Generated TLS material (proxy generates self-signed certs at first run)
+*.pem
+*.key
+*.p12
+*.pfx
+!proxy/certs/.gitkeep
+
+# Editor / IDE / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local AI / agent scratch (never publish)
+.claude/
+.cursor/
+
+# One-off investigation / host scratch scripts and outputs
+scripts/_tmp_*
+**/_tmp_*

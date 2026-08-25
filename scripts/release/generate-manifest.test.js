@@ -22,13 +22,13 @@ test('buildReleaseManifest marks beta releases as prerelease', () => {
     gitCommit: 'abc123',
     releasedAt: '2026-08-23T12:00:00.000Z',
     images: sampleImages,
-    latestMigration: 1
+    latestMigration: 2
   });
 
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.channel, 'beta');
   assert.equal(manifest.prerelease, true);
-  assert.equal(manifest.database.latestMigration, 1);
+  assert.equal(manifest.database.latestMigration, 2);
 });
 
 test('buildReleaseManifest rejects tag/version mismatch', () => {

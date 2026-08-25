@@ -2079,7 +2079,7 @@ export async function runPhishtankImport(options = {}) {
     currentPhase = 'fetch';
     const tfetch = Date.now();
     const response = await fetchWithSignal(config.phishTankCsvUrl, {
-      headers: { 'User-Agent': 'demo-runbook-integration/1.0' }
+      headers: { 'User-Agent': 'talonhound-integration/1.0' }
     }, signal);
     if (!response.ok) throw new Error(`Failed to fetch PhishTank CSV: ${response.status}`);
 

@@ -1,15 +1,14 @@
 # Container Operations & Tuning Guide
 
-This document tracks container responsibilities, key functions, and tuning/maintenance notes for the demo environment.
+This document tracks container responsibilities, key functions, and tuning/maintenance notes for a TalonHound deployment.
 
 ## Environment
 
-- Host: `192.168.1.251`
-- Project path: `/opt/demo-runbook`
-- Startup command:
+- Install path (installer / Compose default): `/opt/TalonHound` or the directory where you cloned the repository
+- Startup (source build):
 
 ```bash
-cd /opt/demo-runbook
+cd /opt/TalonHound   # or your clone path
 docker compose up -d --build
 ```
 
@@ -152,9 +151,9 @@ docker compose up -d --build
 **Key env vars**
 - `LLM_RISK_QUEUE_NAME` (default `llm-risk-jobs`)
 - `LLM_RISK_ADVISOR_ENABLED` (default `false`)
-- `OLLAMA_BASE_URL` (default `http://192.168.1.14:11434`)
+- `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`)
 - `OLLAMA_MODEL` (default `qwen2.5:14b`)
-- `LLM_RISK_ADVISOR_URL` (Ollama generate endpoint; default `http://192.168.1.14:11434/api/generate`)
+- `LLM_RISK_ADVISOR_URL` (Ollama generate endpoint; default `http://127.0.0.1:11434/api/generate`)
 - `LLM_RISK_ADVISOR_MODEL` (default `qwen2.5:14b`; falls back to `OLLAMA_MODEL`)
 - `LLM_RISK_ADVISOR_TIMEOUT_MS` (default `8000`)
 - `LLM_RISK_ADVISOR_MANUAL_TIMEOUT_MS` (default `25000`)
@@ -257,7 +256,7 @@ flowchart LR
 ## Daily Ops Commands
 
 ```bash
-cd /opt/demo-runbook
+cd /opt/TalonHound   # or your clone path
 
 docker compose ps
 docker compose logs --tail=100 backend

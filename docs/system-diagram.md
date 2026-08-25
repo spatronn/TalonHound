@@ -30,7 +30,7 @@ flowchart LR
 flowchart TB
     IOC[External IOC Feeds\nET / USOM / URLhaus]
 
-    subgraph HOST[Linux Host 192.168.1.190]
+    subgraph HOST[Linux Host]
       subgraph COMPOSE[Docker Compose: /opt/TalonHound]
         RP[proxy\n:80 / :443 TLS]
         FE[frontend\n:80 internal]

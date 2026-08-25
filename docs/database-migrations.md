@@ -6,11 +6,14 @@ TalonHound uses forward-only SQL migrations executed explicitly via `npm run mig
 
 `backend/migrations/001_core.sql` is the **canonical database baseline** for the first public Beta release. It contains the complete TalonHound application schema and required product/bootstrap seed data.
 
-Fresh installations apply only:
+Fresh installations apply the public forward migrations present in the repository, currently:
 
 ```text
 001_core.sql
+002_first_run_setup.sql
 ```
+
+`002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. Private-development migration history before this baseline is **not** part of the public repository.
 
 ## After the first public release
 
@@ -19,7 +22,7 @@ Shipped migration files are **immutable upgrade history**:
 - Do **not** edit a migration that has been included in a public release.
 - Do **not** delete a released migration file.
 - Do **not** squash public migrations.
-- Add schema changes as new sequential files: `002_*.sql`, `003_*.sql`, …
+- Add schema changes as new sequential files: `003_*.sql`, `004_*.sql`, …
 
 Migration identity is the **full filename** stored in `schema_migrations.name`. There are no checksums; already-applied files are skipped by exact name match.
 

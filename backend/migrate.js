@@ -7,7 +7,7 @@ import { listRunnableMigrationFiles } from './lib/migrationFiles.js';
 
 const { Pool } = pg;
 
-export const MIGRATION_ADVISORY_LOCK_KEY = 'demo-runbook:migrations';
+export const MIGRATION_ADVISORY_LOCK_KEY = 'talonhound:migrations';
 
 const DEFAULT_LOCK_TIMEOUT = process.env.MIGRATION_LOCK_TIMEOUT || '5s';
 const DEFAULT_STATEMENT_TIMEOUT = process.env.MIGRATION_STATEMENT_TIMEOUT || '120s';

@@ -6,6 +6,9 @@ TalonHound ingests, deduplicates, enriches, and republishes indicators of compro
 from community and custom feeds, and lets analysts search, triage, and export them — all on
 infrastructure you control.
 
+TalonHound is **not** a SIEM, EDR, or XDR replacement. It focuses on IOC lifecycle management
+and threat-feed workflows for self-hosted deployments.
+
 ## Features
 
 - IOC ingestion from community and custom threat feeds, with per-source provenance and canonical deduplication
@@ -14,6 +17,14 @@ infrastructure you control.
 - Published feeds (JSON / CSV / STIX / TAXII 2.1) with per-key access and rate limiting
 - Role-based access control, audit logging, and a protected System Administrator account
 - Scheduled backups with restore, and a single canonical system timezone across the whole stack
+
+## Beta status
+
+Current version: [`VERSION`](VERSION) (`0.1.0-beta.1`).
+
+This is a **Beta** release. Core install and day-to-day workflows are usable, but interfaces,
+configuration, and APIs may still evolve. Review release notes before upgrading, and keep
+backups (see [`docs/backup-restore.md`](docs/backup-restore.md)).
 
 ## Requirements
 
@@ -26,7 +37,7 @@ infrastructure you control.
 
 | Platform | Status |
 | --- | --- |
-| **Ubuntu 24.04 / `linux/arm64`** (aarch64) | **Tested** — real clean-host install, runtime, reboot, and deploy validated on ARM64 hardware |
+| **Ubuntu 24.04 / `linux/arm64`** (aarch64) | **Tested** — clean-host install, runtime, Setup Wizard, reboot, and source build validated |
 | **`linux/amd64`** (x86_64) | **Build- and test-validated in CI** (native amd64 build + tests; emulated arm64 build). No clean-host amd64 install has been performed yet |
 
 Official container images are published as multi-architecture OCI indexes covering
@@ -62,7 +73,7 @@ certificate warning on first run because TalonHound uses a self-signed certifica
 Re-running `sudo ./installation.sh` is safe: it never overwrites secrets, the `.env` file, the
 database, or the completed setup state.
 
-## First Run
+## First run
 
 There is **no default administrator password.** The Setup Wizard guides you through:
 
@@ -76,18 +87,18 @@ invalidated and the setup endpoints refuse further initialization.
 
 Lost the setup code before finishing setup? Run `sudo ./installation.sh --rotate-setup-code`.
 
-## Update / Release status
-
-Current version: [`VERSION`](VERSION) (`0.1.0-beta.1`). This is a pre-release beta; the
-repository is private and no public GitHub Release or GHCR package has been published yet.
+## Updates
 
 To update an existing installation, see [`docs/deployment.md`](docs/deployment.md). Official
-beta/stable releases will be published through GitHub Releases and GHCR — see
+beta and stable releases are published through GitHub Releases and GHCR — see
 [`docs/release.md`](docs/release.md).
 
 ## Documentation
 
+- **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- **Security:** [`SECURITY.md`](SECURITY.md)
 - **Deployment & migrations:** [`docs/deployment.md`](docs/deployment.md)
+- **Database migrations:** [`docs/database-migrations.md`](docs/database-migrations.md)
 - **System timezone:** [`docs/system-timezone.md`](docs/system-timezone.md)
 - **Backup & restore:** [`docs/backup-restore.md`](docs/backup-restore.md)
 - **Release & versioning:** [`docs/release.md`](docs/release.md)

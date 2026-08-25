@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatSidebarRoleLabel, userInitialsFromEmail } from './sidebarAccount.js';
 
 test('user initials from email', () => {
-  assert.equal(userInitialsFromEmail('safa@safa.com'), 'SA');
+  assert.equal(userInitialsFromEmail('sam@example.com'), 'SA');
   assert.equal(userInitialsFromEmail('jane.doe@example.com'), 'JD');
   assert.equal(userInitialsFromEmail(''), '?');
 });

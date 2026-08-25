@@ -45,12 +45,12 @@ test('getIocConfidencePresentation manual override', () => {
     analyst_override: 'high',
     source: 'analyst_override',
     baseline_effective: 'medium',
-    overridden_by: 'safa@safa.com',
+    overridden_by: 'analyst@example.com',
     overridden_at: '2026-05-27T16:55:00.000Z',
     override_reason: 'Confirmed malicious sample'
   });
   assert.equal(p.hasOverride, true);
-  assert.match(p.overrideLine, /safa@safa\.com/);
+  assert.match(p.overrideLine, /analyst@example\.com/);
   assert.equal(p.reasonLine, 'Reason: Confirmed malicious sample');
 });
 
@@ -75,7 +75,7 @@ test('formatConfidenceAuditMetadata', () => {
     old_effective_confidence: 'medium',
     new_effective_confidence: 'high',
     reason: 'Verified',
-    user: 'safa@safa.com'
+    user: 'analyst@example.com'
   });
   assert.match(text, /medium → high/);
   assert.match(text, /Verified/);

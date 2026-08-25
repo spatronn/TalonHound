@@ -11,7 +11,7 @@ const FORCE_COOLDOWN_MS = 5 * 60 * 1000;
 const FAILED_CACHE_MS = 60 * 60 * 1000;
 const MAX_CONCURRENCY = Math.min(Math.max(Number(process.env.RDAP_MAX_CONCURRENCY || 3), 1), 5);
 const RDAP_USER_AGENT = String(
-  process.env.RDAP_USER_AGENT || 'demo-runbook-rdap/1.0 (+https://github.com/spatronn/demo-runbook)'
+  process.env.RDAP_USER_AGENT || 'talonhound-rdap/1.0 (+https://github.com/spatronn/TalonHound)'
 ).trim();
 
 const RDAP_BASE = String(process.env.RDAP_BASE_URL || 'https://rdap.org').replace(/\/$/, '');

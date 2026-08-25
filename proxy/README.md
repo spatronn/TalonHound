@@ -1,10 +1,10 @@
 # TLS reverse proxy
 
-- **443 / 443:** TLS burada sonlanır; trafik içeride `frontend:80` (nginx + statik) üzerinden gider.
-- **80:** Varsayılan olarak **HTTPS’e yönlendirir**. Let’s Encrypt HTTP-01 için `/.well-known/acme-challenge/` klasörü ayrıldı; üretimde certbot ile doldurup gerçek sertifika dosyalarını `certs/` altına koyabilirsin.
+- **443:** TLS terminates here; traffic is forwarded internally to `frontend:80` (nginx + static UI) and the backend API paths.
+- **80:** Redirects to HTTPS by default. The `/.well-known/acme-challenge/` location is reserved for Let's Encrypt HTTP-01; in production, place real certificate files under `certs/`.
 
-İlk çalıştırmada `certs/` boşsa entrypoint **self-signed** üretir (tarayıcı uyarısı normal).
+On first run, if `certs/` is empty, the entrypoint generates a **self-signed** certificate (browser warning is expected).
 
-Üretim: `cert.pem` / `key.pem` dosyalarını bu dizine mount edin (veya volume).
+For production, mount `cert.pem` / `key.pem` into this directory (or a volume). Generated keys must not be committed to Git; see `proxy/certs/.gitignore`.
 
-`nginx.conf` içinde özetle: **TLS 1.2+**, AEAD cipher seti, **HTTP/2**, oturum önbelleği, **HSTS** (`includeSubDomains`), **OCSP stapling** (stapling doğrulaması self-signed ile uyum için `off`; Let’s Encrypt kullanırken `fullchain.pem`’i `cert.pem` olarak verip istersen `ssl_stapling_verify on` + `ssl_trusted_certificate` ile sıkılaştırabilirsin), birkaç güvenlik başlığı (`nosniff`, `Referrer-Policy`, `X-Frame-Options`).
+`nginx.conf` enables TLS 1.2+, an AEAD cipher suite, HTTP/2, session cache, HSTS (`includeSubDomains`), and common security headers. OCSP stapling verification is off for self-signed certs; when using Let's Encrypt (`fullchain.pem` as `cert.pem`), you can tighten stapling with `ssl_stapling_verify on` and `ssl_trusted_certificate`.

@@ -1,0 +1,54 @@
+# Keep Docker build contexts (repo root) free of local secrets and junk.
+# Dockerfiles COPY only the paths they need; this limits what is sent to the daemon.
+
+.git
+.github
+.claude
+.cursor
+.gitignore
+.gitattributes
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+
+# Dependencies and build outputs
+**/node_modules
+frontend/dist
+**/coverage
+**/.nyc_output
+
+# Logs, dumps, backups, scratch
+**/*.log
+**/*.dump
+**/*.sql.gz
+**/backups/**
+!backups/.gitignore
+scripts/_tmp_*
+**/_tmp_*
+/sast/
+/memory/
+/tmp/
+*.tmp
+*.swp
+*~
+
+# Certificates / keys (generated at runtime under proxy/certs)
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_rsa.pub
+
+# Docs and operator notes are not needed inside runtime images
+docs
+*.md
+!proxy/README.md
+
+# Local IDE / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db

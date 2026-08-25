@@ -149,7 +149,7 @@ jobs:
           push: true
           # Multi-platform OCI index. amd64 builds natively on the runner; arm64 builds via
           # QEMU emulation (native npm modules like bcrypt are compiled from source under
-          # emulation — see backend/Dockerfile). Both real deployment hosts are arm64.
+          # emulation — see backend/Dockerfile).
           platforms: linux/amd64,linux/arm64
           # Keep the pushed artifact a clean amd64+arm64 index; provenance is attested
           # explicitly below on the index digest via attest-build-provenance.
