@@ -30,7 +30,8 @@ test('prune removes expired and returns remaining size', () => {
   cache.set('live', 1);
   now = 1_010;
   cache.set('fresh', 2);
-  now = 1_100;
+  // live expires at 1050; fresh at 1060 — prune while only live is stale.
+  now = 1_055;
   assert.equal(cache.prune(), 1);
   assert.equal(cache.get('live'), null);
   assert.ok(cache.get('fresh'));

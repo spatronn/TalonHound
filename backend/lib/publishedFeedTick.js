@@ -94,7 +94,8 @@ export async function runPublishedFeedSchedulerTick(pool, options = {}) {
   });
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(timeoutErr), timeoutMs);
-  if (typeof timer.unref === 'function') timer.unref();
+  // Do not unref the deadline timer — an unref'd timer will not keep the event
+  // loop alive, which breaks unit tests and can skip the deadline in idle processes.
 
   try {
     const work = (async () => {
