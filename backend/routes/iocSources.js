@@ -303,7 +303,8 @@ export function registerIocSourceRoutes(app, pool, audit) {
     try {
       const beforeQ = await client.query('SELECT * FROM ioc_sources WHERE id = $1', [id]);
       if (!beforeQ.rows.length) {
-        client.release();
+        // Do not release here — `finally` owns the single release path.
+        // Early release + finally release crashed the process (pg-pool throwOnDoubleRelease).
         return res.status(404).json({ message: 'IOC source not found' });
       }
       const before = serializeIocSourceRow(beforeQ.rows[0]);

@@ -51,6 +51,15 @@ import {
 } from './lib/malwarebazaar.js';
 import { malwareBazaarFirstSeenBounds } from '../backend/lib/malwarebazaarCoverage.js';
 import {
+  ET_ADVISORY_LOCK,
+  USOM_ADVISORY_LOCK,
+  URLHAUS_ADVISORY_LOCK,
+  THREATFOX_ADVISORY_LOCK,
+  MALWAREBAZAAR_IMPORT_ADVISORY_LOCK,
+  PHISHTANK_ADVISORY_LOCK,
+  OTX_ADVISORY_LOCK
+} from '../backend/lib/advisoryLocks.js';
+import {
   applyMalwareBazaarFreshnessTick,
   applyMalwareBazaarRecentSuccess,
   withMalwareBazaarCoverageGuard
@@ -306,6 +315,46 @@ function hashEntries(entries) {
 function hashContent(text) {
   return createHash('sha256').update(String(text || '')).digest('hex');
 }
+
+/** Compact PhishTank checkpoint: sha256 of `type|observable` (full list not needed for mark-missing). */
+function phishTankKeyHash(observableType, observable) {
+  return createHash('sha256').update(`${observableType}|${observable}`).digest('hex');
+}
+
+/**
+ * Build previous-key Set from items_json.
+ * Supports legacy full `{observable,observableType}[]` and compact `{v,key_hashes}`.
+ * Add-diff only (PhishTank does not mark missing memberships from this list).
+ */
+function buildPhishTankPreviousKeySet(itemsJson) {
+  const set = new Set();
+  if (Array.isArray(itemsJson)) {
+    for (const x of itemsJson) {
+      if (x && typeof x === 'object' && x.observable != null && x.observableType != null) {
+        set.add(phishTankKeyHash(x.observableType, x.observable));
+      } else if (typeof x === 'string' && x) {
+        set.add(x);
+      }
+    }
+    return set;
+  }
+  if (itemsJson && typeof itemsJson === 'object' && Array.isArray(itemsJson.key_hashes)) {
+    for (const h of itemsJson.key_hashes) {
+      if (h) set.add(String(h));
+    }
+  }
+  return set;
+}
+
+function buildPhishTankCheckpoint(entries) {
+  const key_hashes = entries.map((e) => phishTankKeyHash(e.observableType, e.observable));
+  return { v: 1, key_hashes, count: key_hashes.length };
+}
+
+const PHISHTANK_CHECKPOINT_WARN_BYTES = Math.max(
+  Number(process.env.PHISHTANK_CHECKPOINT_WARN_BYTES || 2_000_000),
+  100_000
+);
 
 const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
 
@@ -1387,7 +1436,7 @@ export async function runHourlyImport(options = {}) {
 
   try {
     throwIfAborted(signal);
-    const lockResult = await client.query('SELECT pg_try_advisory_lock(942001) AS acquired');
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [ET_ADVISORY_LOCK]);
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
@@ -1491,7 +1540,7 @@ export async function runHourlyImport(options = {}) {
     throw err;
   } finally {
     try {
-      await client.query('SELECT pg_advisory_unlock(942001)');
+      await client.query('SELECT pg_advisory_unlock($1)', [ET_ADVISORY_LOCK]);
     } catch {
       // ignore
     }
@@ -1525,7 +1574,7 @@ export async function runUsomImport(options = {}) {
 
   try {
     throwIfAborted(signal);
-    const lockResult = await client.query('SELECT pg_try_advisory_lock(942002) AS acquired');
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [USOM_ADVISORY_LOCK]);
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
@@ -1590,7 +1639,7 @@ export async function runUsomImport(options = {}) {
     throw err;
   } finally {
     try {
-      await client.query('SELECT pg_advisory_unlock(942002)');
+      await client.query('SELECT pg_advisory_unlock($1)', [USOM_ADVISORY_LOCK]);
     } catch {
       // ignore
     }
@@ -1610,7 +1659,7 @@ export async function runUrlhausImport(options = {}) {
 
   try {
     throwIfAborted(signal);
-    const lockResult = await client.query('SELECT pg_try_advisory_lock(942003) AS acquired');
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [URLHAUS_ADVISORY_LOCK]);
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
@@ -1760,7 +1809,7 @@ export async function runUrlhausImport(options = {}) {
     throw wrapped;
   } finally {
     try {
-      await client.query('SELECT pg_advisory_unlock(942003)');
+      await client.query('SELECT pg_advisory_unlock($1)', [URLHAUS_ADVISORY_LOCK]);
     } catch {
       // ignore
     }
@@ -1779,7 +1828,7 @@ export async function runThreatfoxImport(options = {}) {
 
   try {
     throwIfAborted(signal);
-    const lockResult = await client.query('SELECT pg_try_advisory_lock(942004) AS acquired');
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [THREATFOX_ADVISORY_LOCK]);
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
@@ -1873,7 +1922,7 @@ export async function runThreatfoxImport(options = {}) {
     throw wrapped;
   } finally {
     try {
-      await client.query('SELECT pg_advisory_unlock(942004)');
+      await client.query('SELECT pg_advisory_unlock($1)', [THREATFOX_ADVISORY_LOCK]);
     } catch {
       // ignore
     }
@@ -1892,7 +1941,7 @@ export async function runMalwareBazaarImport(options = {}) {
 
   try {
     throwIfAborted(signal);
-    const lockResult = await client.query('SELECT pg_try_advisory_lock(942005) AS acquired');
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [MALWAREBAZAAR_IMPORT_ADVISORY_LOCK]);
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
@@ -2028,7 +2077,7 @@ export async function runMalwareBazaarImport(options = {}) {
     throw Object.assign(new Error(safeMessage), { cause: err });
   } finally {
     try {
-      await client.query('SELECT pg_advisory_unlock(942005)');
+      await client.query('SELECT pg_advisory_unlock($1)', [MALWAREBAZAAR_IMPORT_ADVISORY_LOCK]);
     } catch {
       // ignore
     }
@@ -2061,7 +2110,7 @@ export async function runPhishtankImport(options = {}) {
 
   try {
     throwIfAborted(signal);
-    const lockResult = await client.query('SELECT pg_try_advisory_lock(942006) AS acquired');
+    const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [PHISHTANK_ADVISORY_LOCK]);
     if (!lockResult.rows[0]?.acquired) {
       return { skipped: true, reason: 'lock_not_acquired' };
     }
@@ -2133,8 +2182,7 @@ export async function runPhishtankImport(options = {}) {
       [config.phishTankSourceName]
     );
     const previousHash = prevState.rows[0]?.content_hash || null;
-    const previousItems = Array.isArray(prevState.rows[0]?.items_json) ? prevState.rows[0].items_json : [];
-    const previousSet = new Set(previousItems.map((x) => `${x.observableType}|${x.observable}`));
+    const previousSet = buildPhishTankPreviousKeySet(prevState.rows[0]?.items_json);
 
     if (previousHash === currentHash) {
       metrics.noteSkipped(entries.length);
@@ -2145,7 +2193,9 @@ export async function runPhishtankImport(options = {}) {
       return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
-    const addedEntries = entries.filter((e) => !previousSet.has(`${e.observableType}|${e.observable}`));
+    const addedEntries = entries.filter(
+      (e) => !previousSet.has(phishTankKeyHash(e.observableType, e.observable))
+    );
     metrics.noteSkipped(entries.length - addedEntries.length);
 
     const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 2000), 100);
@@ -2183,12 +2233,19 @@ export async function runPhishtankImport(options = {}) {
     currentPhase = 'finalize';
     const tfinal = Date.now();
     throwIfAborted(signal);
+    const checkpoint = buildPhishTankCheckpoint(entries);
+    const checkpointJson = JSON.stringify(checkpoint);
+    if (checkpointJson.length >= PHISHTANK_CHECKPOINT_WARN_BYTES) {
+      console.warn(
+        `[integration-import][phishtank] large checkpoint bytes=${checkpointJson.length} count=${checkpoint.count} run_id=${runId || '-'}`
+      );
+    }
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, $3::jsonb, NOW())
        ON CONFLICT (source_name)
        DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [config.phishTankSourceName, currentHash, JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))]
+      [config.phishTankSourceName, currentHash, checkpointJson]
     );
     await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
       await finalizeIntegrationRun(tx, runId, metrics);
@@ -2212,12 +2269,11 @@ export async function runPhishtankImport(options = {}) {
     }
     throw err;
   } finally {
-    try { await client.query('SELECT pg_advisory_unlock(942006)'); } catch {}
+    try { await client.query('SELECT pg_advisory_unlock($1)', [PHISHTANK_ADVISORY_LOCK]); } catch {}
     client.release();
   }
 }
 
-const OTX_ADVISORY_LOCK = 942007;
 const OTX_CHECKPOINT_SOURCE = ALIENVAULT_OTX_SOURCE_NAME;
 
 async function upsertOtxObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence) {

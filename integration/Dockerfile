@@ -59,6 +59,8 @@ COPY backend/lib/integrationRunCounters.js ./lib/integrationRunCounters.js
 COPY backend/lib/feedHealth.js ./lib/feedHealth.js
 COPY backend/lib/malwarebazaarCoverage.js /backend/lib/malwarebazaarCoverage.js
 COPY backend/lib/malwarebazaarCoverage.js ./lib/malwarebazaarCoverage.js
+COPY backend/lib/advisoryLocks.js /backend/lib/advisoryLocks.js
+COPY backend/lib/advisoryLocks.js ./lib/advisoryLocks.js
 COPY backend/lib/integrationQueueBullmqReconciliation.js ./lib/integrationQueueBullmqReconciliation.js
 COPY backend/lib/integrationQueueHealth.js ./lib/integrationQueueHealth.js
 COPY backend/lib/integrationSchedule.js ./lib/integrationSchedule.js
@@ -68,6 +70,7 @@ COPY backend/lib/appLogger.js ./lib/appLogger.js
 COPY backend/lib/spamhausDropSync.js ./lib/spamhausDropSync.js
 COPY backend/lib/spamhausDropScheduleSync.js ./lib/spamhausDropScheduleSync.js
 COPY backend/lib/fileArtifactReconciliationScheduleSync.js ./lib/fileArtifactReconciliationScheduleSync.js
+COPY backend/lib/workerHeartbeat.js ./lib/workerHeartbeat.js
 COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 COPY backend/lib/tagHelpers.js ./lib/tagHelpers.js
 COPY backend/lib/tagCatalogService.js ./lib/tagCatalogService.js
