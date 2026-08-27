@@ -174,3 +174,27 @@ export function systemLocalInputToUtcIso(localValue, timeZone) {
   }
   return new Date(guess).toISOString();
 }
+
+/**
+ * Format a UTC instant as a datetime-local wall-clock string in the system timezone.
+ * Inverse of systemLocalInputToUtcIso for populating datetime-local inputs.
+ * @param {string|number|Date|null|undefined} value
+ * @param {string} [timeZone]
+ * @returns {string} "YYYY-MM-DDTHH:mm" or "" when invalid
+ */
+export function utcIsoToSystemLocalInput(value, timeZone) {
+  const dt = parseUserInstant(value);
+  if (!dt) return '';
+  const tz = normalizeSystemTimezone(timeZone) || getSystemTimezone();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(dt);
+  const pick = (type) => parts.find((p) => p.type === type)?.value || '00';
+  return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}`;
+}

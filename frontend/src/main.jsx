@@ -211,6 +211,7 @@ import {
   getSystemTimezone,
   setSystemTimezoneCache,
   systemLocalInputToUtcIso,
+  utcIsoToSystemLocalInput,
   TIMEZONE_CHANGED_EVENT
 } from './lib/formatDate.js';
 import {
@@ -639,9 +640,7 @@ function expiresAtFromPreset(preset, customDate) {
     return d.toISOString();
   }
   if (preset === 'custom' && customDate) {
-    const d = new Date(customDate);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toISOString();
+    return systemLocalInputToUtcIso(customDate);
   }
   return null;
 }
@@ -875,9 +874,7 @@ function IocExpirationActionModal({
     boxSizing: 'border-box'
   };
   const confirmStyle = ui.btn;
-  const minDateTimeLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  const minDateTimeLocal = utcIsoToSystemLocalInput(new Date().toISOString());
 
   return (
     <ModalOverlay onClose={loading ? undefined : onCancel}>
@@ -4716,6 +4713,10 @@ function CustomThreatFeedsPage() {
   const [deleteModal, setDeleteModal] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [draftAuth, setDraftAuth] = useState({ auth_type: 'none' });
+  const loadFeedsGuardRef = useRef(null);
+  if (loadFeedsGuardRef.current === null) loadFeedsGuardRef.current = createLatestOnly();
+  const openEditGuardRef = useRef(null);
+  if (openEditGuardRef.current === null) openEditGuardRef.current = createLatestOnly();
 
   const emptyForm = {
     name: '', url: '', format: 'auto', ioc_type_mode: 'auto', fixed_ioc_type: 'domain', description: '', color: ''
@@ -4724,16 +4725,19 @@ function CustomThreatFeedsPage() {
   const emptyAuth = { auth_type: 'none' };
 
   async function loadFeeds() {
+    const isStale = loadFeedsGuardRef.current.next();
     setLoading(true);
     setError('');
     try {
       const { data } = await api.get('/custom-threat-feeds');
+      if (isStale()) return;
       setFeeds(data?.feeds || []);
     } catch (err) {
+      if (isStale()) return;
       setFeeds([]);
       setError(apiErrorMessage(err, 'Failed to load Custom Threat Feeds'));
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }
 
@@ -4752,6 +4756,7 @@ function CustomThreatFeedsPage() {
 
   async function openEdit(feed) {
     if (!isAdmin) return;
+    const isStale = openEditGuardRef.current.next();
     setEditingFeed(feed);
     const currentUrl = String(feed.url_display || feed.url || '').trim();
     const urlMissing = !currentUrl || currentUrl === '[invalid-url]';
@@ -4776,15 +4781,17 @@ function CustomThreatFeedsPage() {
     if (feedKey) {
       try {
         const { data } = await api.get(`/threat-feeds/${encodeURIComponent(feedKey)}/expiration-policy`);
+        if (isStale()) return;
         setDraftExpiration(defaultExpirationDraft(data?.policy, data?.expiration_type_policies));
       } catch {
+        if (isStale()) return;
         setDraftExpiration(defaultExpirationDraft(feed.expiration_policy));
       }
     }
   }
 
   async function saveFeed() {
-    if (!isAdmin) return;
+    if (!isAdmin || saving) return;
     setSaving(true);
     setFormError('');
     try {
@@ -5882,16 +5889,22 @@ function PublishedFeedsPage() {
   const [formError, setFormError] = useState('');
   const [feedSyntaxHelpOpen, setFeedSyntaxHelpOpen] = useState(false);
   const [form, setForm] = useState(emptyFeedForm);
+  const [saving, setSaving] = useState(false);
+  const loadFeedsGuardRef = useRef(null);
+  if (loadFeedsGuardRef.current === null) loadFeedsGuardRef.current = createLatestOnly();
 
   async function loadFeeds() {
+    const isStale = loadFeedsGuardRef.current.next();
     setLoading(true);
     try {
       const { data } = await api.get('/published-feeds');
+      if (isStale()) return;
       setFeeds(data?.feeds || []);
     } catch {
+      if (isStale()) return;
       setFeeds([]);
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }
 
@@ -5937,7 +5950,7 @@ function PublishedFeedsPage() {
 
   async function saveFeed(e) {
     e.preventDefault();
-    if (!canWrite) return;
+    if (!canWrite || saving) return;
     const validationError = validateFeedForm(form);
     if (validationError) {
       setFormError(validationError);
@@ -5945,6 +5958,7 @@ function PublishedFeedsPage() {
     }
     const payload = buildFeedPayload(form);
     setFormError('');
+    setSaving(true);
     try {
       if (editing?.id) {
         await api.patch(`/published-feeds/${editing.id}`, payload);
@@ -5960,6 +5974,8 @@ function PublishedFeedsPage() {
       }
     } catch (err) {
       setFormError(err.response?.data?.message || 'Failed to save feed');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -6313,8 +6329,8 @@ function PublishedFeedsPage() {
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, paddingTop: 16, borderTop: '1px solid #334155' }}>
               <button type="button" style={ui.btn} onClick={closeFormModal} data-modal-cancel>Cancel</button>
-              <button type="submit" style={ui.btnPrimary} disabled={!canWrite}>
-                {editing ? 'Save changes' : 'Create Feed'}
+              <button type="submit" style={ui.btnPrimary} disabled={!canWrite || saving}>
+                {saving ? 'Saving…' : (editing ? 'Save changes' : 'Create Feed')}
               </button>
             </div>
           </form>
@@ -6775,6 +6791,7 @@ function ApiKeysPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -6855,7 +6872,8 @@ function ApiKeysPage() {
 
   async function createKey(e) {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (!isAdmin || saving) return;
+    setSaving(true);
     setFormError('');
     const parsed = apiKeyCreatePayload({
       name: form.name,
@@ -6864,6 +6882,7 @@ function ApiKeysPage() {
     });
     if (!parsed.ok) {
       setFormError(parsed.errors.includes('name') ? 'Enter a key name.' : 'Select an access profile.');
+      setSaving(false);
       return;
     }
     try {
@@ -6878,6 +6897,8 @@ function ApiKeysPage() {
       await loadAll();
     } catch (err) {
       setFormError(err.response?.data?.message || 'Failed to create API key');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -7085,7 +7106,7 @@ function ApiKeysPage() {
               </FeedFormField>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
                 <button type="button" style={ui.btn} onClick={() => setShowCreateModal(false)}>Cancel</button>
-                <button type="submit" style={ui.btnPrimary} disabled={!isAdmin}>Create API Key</button>
+                <button type="submit" style={ui.btnPrimary} disabled={!isAdmin || saving}>{saving ? 'Creating…' : 'Create API Key'}</button>
               </div>
             </form>
           </div>
@@ -10757,13 +10778,7 @@ function IOCSuppressionsPage() {
       setEditCustomDate('');
     } else {
       setEditPreset('custom');
-      const d = new Date(item.expires_at);
-      if (!Number.isNaN(d.getTime())) {
-        const pad = (n) => String(n).padStart(2, '0');
-        setEditCustomDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
-      } else {
-        setEditCustomDate('');
-      }
+      setEditCustomDate(utcIsoToSystemLocalInput(item.expires_at));
     }
   }
 
@@ -14661,16 +14676,22 @@ function IOCDetailsPage() {
   const [threatActorSaving, setThreatActorSaving] = useState(false);
   const [threatActorError, setThreatActorError] = useState('');
   const threatActorSearchRef = useRef(null);
+  const loadGuardRef = useRef(null);
+  if (loadGuardRef.current === null) loadGuardRef.current = createLatestOnly();
 
   async function load() {
+    const isStale = loadGuardRef.current.next();
     setLoading(true);
     if (!detailsPublicId) {
-      setData({ summary: null, sources: [], matches: [] });
-      setLoading(false);
+      if (!isStale()) {
+        setData({ summary: null, sources: [], matches: [] });
+        setLoading(false);
+      }
       return { ok: false };
     }
     try {
       const res = await api.get('/ioc/details', { params: { public_id: detailsPublicId } });
+      if (isStale()) return { ok: false, stale: true };
       const payload = res.data || { summary: null, sources: [], matches: [], suppression: { active: false } };
       const redirect = resolveCanonicalDetailRedirect({
         requestedPublicId: detailsPublicId,
@@ -14686,10 +14707,11 @@ function IOCDetailsPage() {
       setData(payload);
       return { ok: true };
     } catch {
+      if (isStale()) return { ok: false, stale: true };
       setData({ summary: null, sources: [], matches: [] });
       return { ok: false };
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }
 
@@ -15296,16 +15318,16 @@ function IOCDetailsPage() {
         setActionError('Expire date/time is required');
         return;
       }
-      const d = new Date(actionExpireAt);
-      if (Number.isNaN(d.getTime())) {
+      const iso = systemLocalInputToUtcIso(actionExpireAt);
+      if (!iso) {
         setActionError('Enter a valid date/time');
         return;
       }
-      if (d.getTime() <= Date.now()) {
+      if (Date.parse(iso) <= Date.now()) {
         setActionError('Expire date/time must be in the future');
         return;
       }
-      manualExpiresAt = d.toISOString();
+      manualExpiresAt = iso;
     }
 
     if (pendingAction.requiresExpirationPolicy) {
@@ -15326,12 +15348,12 @@ function IOCDetailsPage() {
           setActionError('Custom expire date is required');
           return;
         }
-        const d = new Date(actionExpireAt);
-        if (Number.isNaN(d.getTime())) {
+        const iso = systemLocalInputToUtcIso(actionExpireAt);
+        if (!iso) {
           setActionError('Enter a valid custom expire date');
           return;
         }
-        if (d.getTime() <= Date.now()) {
+        if (Date.parse(iso) <= Date.now()) {
           setActionError('Custom expire date must be in the future');
           return;
         }
@@ -15367,7 +15389,7 @@ function IOCDetailsPage() {
           payload.expire_days = Number(actionExpireDays);
         }
         if (actionExpirationPolicy === 'custom_date') {
-          payload.expires_at = new Date(actionExpireAt).toISOString();
+          payload.expires_at = systemLocalInputToUtcIso(actionExpireAt);
         }
         const { data } = await api.patch(`/ioc/${iocId}/status-override`, payload);
         patchData = data;

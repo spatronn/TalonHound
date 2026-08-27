@@ -42,7 +42,9 @@ export function formatThreatFoxCredentialsSummary(credentials) {
 export async function testThreatFoxConnection({
   authKey,
   apiUrl = process.env.THREATFOX_API_URL || THREATFOX_API_URL_DEFAULT,
-  days = 1
+  days = 1,
+  timeoutMs = Number(process.env.THREATFOX_TEST_TIMEOUT_MS || 15000),
+  signal
 }) {
   const key = String(authKey || process.env.THREATFOX_AUTH_KEY || '').trim();
   if (!key) {
@@ -50,15 +52,36 @@ export async function testThreatFoxConnection({
   }
 
   const url = String(apiUrl || THREATFOX_API_URL_DEFAULT).trim().replace(/\/?$/, '/');
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Auth-Key': key,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
-    body: JSON.stringify({ query: 'get_iocs', days: validateThreatFoxRecentDays(days, 1) })
-  });
+  const ms = Math.max(Number(timeoutMs) || 15000, 1000);
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), ms);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Auth-Key': key,
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({ query: 'get_iocs', days: validateThreatFoxRecentDays(days, 1) }),
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      return { ok: false, message: `ThreatFox API request timed out after ${ms}ms` };
+    }
+    return { ok: false, message: sanitizeThreatFoxErrorMessage(err?.message || 'ThreatFox API request failed') };
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
+  }
 
   const text = await res.text();
   let json = {};

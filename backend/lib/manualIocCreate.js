@@ -67,6 +67,33 @@ function normalizeConfidence(value) {
   return 'medium';
 }
 
+/**
+ * Canonical identity for the WHERE NOT EXISTS duplicate predicate.
+ * Used as pg_advisory_xact_lock(hashtext(...)) key so concurrent creates serialize.
+ */
+export function manualIocDuplicateLockKey({
+  observable,
+  observableType,
+  sourceName,
+  confidence,
+  category,
+  sourceUrl,
+  threatClassification,
+  threatActorId
+}) {
+  return [
+    'manual_ioc',
+    String(observable || ''),
+    String(observableType || ''),
+    String(sourceName || ''),
+    String(confidence || ''),
+    String(category ?? ''),
+    String(sourceUrl ?? ''),
+    String(threatClassification ?? 'unknown'),
+    threatActorId == null || threatActorId === '' ? '' : String(threatActorId)
+  ].join('\u0000');
+}
+
 export function serializeManualIocResponse(row, source, expiration, classificationFields = null, tags = null, actorFields = null) {
   if (!row) return null;
   const classFields = classificationFields || buildMultiThreatClassificationResponseFields([]);
@@ -252,7 +279,35 @@ export async function createManualIoc(pool, body, opts = {}) {
     createdByUserId
   ];
 
-  const { rows } = await pool.query(insertQ, insertParams);
+  const lockKey = manualIocDuplicateLockKey({
+    observable: value,
+    observableType,
+    sourceName,
+    confidence,
+    category,
+    sourceUrl,
+    threatClassification: legacyThreatClass,
+    threatActorId
+  });
+
+  const client = await pool.connect();
+  let rows;
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)',
+      [lockKey]
+    );
+    const insertResult = await client.query(insertQ, insertParams);
+    rows = insertResult.rows;
+    await client.query('COMMIT');
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    throw err;
+  } finally {
+    client.release();
+  }
+
   if (!rows.length) {
     return { status: 200, body: { skipped: true, reason: 'duplicate_tuple' } };
   }

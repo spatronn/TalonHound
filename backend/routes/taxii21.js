@@ -32,9 +32,13 @@ import {
   loadStixObjectsFromFeed,
   isValidTaxiiCollectionId
 } from '../lib/taxii21.js';
+import { createSlidingWindowRateLimit } from '../lib/slidingWindowRateLimit.js';
 
 const TAXII_RATE_LIMIT_PER_MIN = Math.max(Number(process.env.FEED_PUBLIC_RATE_LIMIT_PER_MIN || 60), 1);
-const rateBuckets = new Map();
+const rateLimit = createSlidingWindowRateLimit({
+  windowMs: 60 * 1000,
+  maxBuckets: Math.max(Number(process.env.FEED_PUBLIC_RATE_MAX_BUCKETS || 10_000), 100)
+});
 
 function clientIp(req) {
   const fwd = String(req?.headers?.['x-forwarded-for'] || '')
@@ -44,15 +48,7 @@ function clientIp(req) {
 }
 
 function checkRateLimit(bucketKey) {
-  const now = Date.now();
-  const windowMs = 60 * 1000;
-  let bucket = rateBuckets.get(bucketKey);
-  if (!bucket || now - bucket.start >= windowMs) {
-    bucket = { start: now, count: 0 };
-    rateBuckets.set(bucketKey, bucket);
-  }
-  bucket.count += 1;
-  return bucket.count <= TAXII_RATE_LIMIT_PER_MIN;
+  return rateLimit.check(bucketKey, TAXII_RATE_LIMIT_PER_MIN);
 }
 
 function extractTaxiiKey(req) {

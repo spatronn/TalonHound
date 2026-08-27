@@ -10,6 +10,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FORCE_COOLDOWN_MS = 5 * 60 * 1000;
 const FAILED_CACHE_MS = 60 * 60 * 1000;
 const MAX_CONCURRENCY = Math.min(Math.max(Number(process.env.RDAP_MAX_CONCURRENCY || 3), 1), 5);
+const MAX_WAITERS = Math.min(Math.max(Number(process.env.RDAP_MAX_WAITERS || 50), 1), 500);
 const RDAP_USER_AGENT = String(
   process.env.RDAP_USER_AGENT || 'talonhound-rdap/1.0 (+https://github.com/spatronn/TalonHound)'
 ).trim();
@@ -17,12 +18,18 @@ const RDAP_USER_AGENT = String(
 const RDAP_BASE = String(process.env.RDAP_BASE_URL || 'https://rdap.org').replace(/\/$/, '');
 
 let activeLookups = 0;
+/** @type {Array<() => void>} */
 const waiters = [];
 
 function acquireSlot() {
   if (activeLookups < MAX_CONCURRENCY) {
     activeLookups += 1;
     return Promise.resolve();
+  }
+  if (waiters.length >= MAX_WAITERS) {
+    const err = new Error('RDAP enrichment queue is full');
+    err.code = 'RDAP_QUEUE_FULL';
+    return Promise.reject(err);
   }
   return new Promise((resolve) => waiters.push(resolve));
 }
@@ -34,6 +41,24 @@ function releaseSlot() {
     activeLookups += 1;
     next();
   }
+}
+
+/** @internal test helpers */
+export function getRdapQueueStatsForTests() {
+  return { active: activeLookups, waiting: waiters.length, maxWaiters: MAX_WAITERS, maxConcurrency: MAX_CONCURRENCY };
+}
+
+export function resetRdapQueueForTests() {
+  activeLookups = 0;
+  waiters.length = 0;
+}
+
+export function acquireRdapSlotForTests() {
+  return acquireSlot();
+}
+
+export function releaseRdapSlotForTests() {
+  releaseSlot();
 }
 
 function parseIsoDate(value) {

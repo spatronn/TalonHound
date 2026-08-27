@@ -37,9 +37,14 @@ import {
   streamChunkGeneration
 } from '../lib/publishedFeedChunkGeneration.js';
 
+import { createSlidingWindowRateLimit } from '../lib/slidingWindowRateLimit.js';
+
 const feedLog = createServiceLogger('published-feeds');
 const FEED_PUBLIC_RATE_LIMIT_PER_MIN = Math.max(Number(process.env.FEED_PUBLIC_RATE_LIMIT_PER_MIN || 60), 1);
-const rateBuckets = new Map();
+const rateLimit = createSlidingWindowRateLimit({
+  windowMs: 60 * 1000,
+  maxBuckets: Math.max(Number(process.env.FEED_PUBLIC_RATE_MAX_BUCKETS || 10_000), 100)
+});
 
 function clientIp(req) {
   const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -47,16 +52,7 @@ function clientIp(req) {
 }
 
 function checkRateLimit(bucketKey) {
-  const now = Date.now();
-  const windowMs = 60 * 1000;
-  let bucket = rateBuckets.get(bucketKey);
-  if (!bucket || now - bucket.start >= windowMs) {
-    bucket = { start: now, count: 0 };
-    rateBuckets.set(bucketKey, bucket);
-  }
-  bucket.count += 1;
-  if (bucket.count > FEED_PUBLIC_RATE_LIMIT_PER_MIN) return false;
-  return true;
+  return rateLimit.check(bucketKey, FEED_PUBLIC_RATE_LIMIT_PER_MIN);
 }
 
 function parseLimitParam(raw, feedMaxItems) {

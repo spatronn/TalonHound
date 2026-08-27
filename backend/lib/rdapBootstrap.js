@@ -1,7 +1,8 @@
 import { parse as parseTld } from 'tldts';
 
-const IANA_BOOTSTRAP_URL = String(process.env.RDAP_IANA_BOOTSTRAP_URL || 'https://data.iana.org/rdap/dns.json');
-const BOOTSTRAP_TTL_MS = Number(process.env.RDAP_IANA_BOOTSTRAP_TTL_MS || 6 * 60 * 60 * 1000);
+const DEFAULT_IANA_BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
+const DEFAULT_BOOTSTRAP_TTL_MS = 6 * 60 * 60 * 1000;
+const DEFAULT_BOOTSTRAP_FETCH_TIMEOUT_MS = 15000;
 const DEFAULT_FALLBACK_BASE = String(process.env.RDAP_BASE_URL || 'https://rdap.org').replace(/\/$/, '');
 
 /** @type {{ loadedAt: number, tldToBases: Map<string, string[]> }} */
@@ -38,15 +39,42 @@ export function buildTldBootstrapMap(payload) {
   return map;
 }
 
+function bootstrapUrl() {
+  return String(process.env.RDAP_IANA_BOOTSTRAP_URL || DEFAULT_IANA_BOOTSTRAP_URL);
+}
+
+function bootstrapTtlMs() {
+  return Number(process.env.RDAP_IANA_BOOTSTRAP_TTL_MS || DEFAULT_BOOTSTRAP_TTL_MS);
+}
+
+function bootstrapFetchTimeoutMs() {
+  return Math.max(Number(process.env.RDAP_IANA_BOOTSTRAP_TIMEOUT_MS || DEFAULT_BOOTSTRAP_FETCH_TIMEOUT_MS), 1000);
+}
+
 async function loadIanaBootstrapMap() {
   const now = Date.now();
-  if (bootstrapCache.tldToBases.size && (now - bootstrapCache.loadedAt) < BOOTSTRAP_TTL_MS) {
+  const ttlMs = bootstrapTtlMs();
+  if (bootstrapCache.tldToBases.size && (now - bootstrapCache.loadedAt) < ttlMs) {
     return bootstrapCache.tldToBases;
   }
 
-  const res = await fetch(IANA_BOOTSTRAP_URL, {
-    headers: { Accept: 'application/json' }
-  });
+  const timeoutMs = bootstrapFetchTimeoutMs();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(bootstrapUrl(), {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`IANA RDAP bootstrap fetch timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     throw new Error(`IANA RDAP bootstrap fetch failed (${res.status})`);
   }

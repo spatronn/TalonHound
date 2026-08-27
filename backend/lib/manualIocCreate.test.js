@@ -5,7 +5,7 @@ import {
   validateSourceName,
   parseManualExpirationInput
 } from './iocSourceValidation.js';
-import { createManualIoc, inferObservableType, resolveManualExpirationFromSource } from './manualIocCreate.js';
+import { createManualIoc, inferObservableType, resolveManualExpirationFromSource, manualIocDuplicateLockKey } from './manualIocCreate.js';
 
 const THREAT_HUNTING_SOURCE = {
   id: 7,
@@ -48,13 +48,22 @@ function makeInsertRow(overrides = {}) {
 function createManualIocPoolMock({
   sourceRow = THREAT_HUNTING_SOURCE,
   insertRow = makeInsertRow(),
-  enabledTags = []
+  enabledTags = [],
+  onAdvisoryLock = null,
+  insertDelayMs = 0
 } = {}) {
   const queries = [];
   const query = async (sql, params = []) => {
     queries.push({ sql: String(sql), params: [...params] });
     const normalized = String(sql).replace(/\s+/g, ' ').trim();
 
+    if (normalized.startsWith('BEGIN') || normalized.startsWith('COMMIT') || normalized.startsWith('ROLLBACK')) {
+      return { rows: [] };
+    }
+    if (normalized.includes('pg_advisory_xact_lock')) {
+      if (typeof onAdvisoryLock === 'function') await onAdvisoryLock(params[0]);
+      return { rows: [] };
+    }
     if (normalized.includes('FROM ioc_sources WHERE id = $1')) {
       return { rows: sourceRow ? [sourceRow] : [] };
     }
@@ -82,6 +91,9 @@ function createManualIocPoolMock({
       // Durable provenance: created_origin ($16) + created_by_user_id ($17).
       assert.match(normalized, /created_origin, created_by_user_id/);
       assert.match(normalized, /\$16, \$17::uuid/);
+      if (insertDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, insertDelayMs));
+      }
       return { rows: [insertRow] };
     }
     if (normalized.includes('FROM ioc_items WHERE id = $1 AND observable_type = $2')) {
@@ -109,9 +121,6 @@ function createManualIocPoolMock({
       return { rows: [] };
     }
     if (normalized.includes('UPDATE ioc_items') && normalized.includes('SET status = $3')) {
-      return { rows: [] };
-    }
-    if (normalized.startsWith('BEGIN') || normalized.startsWith('COMMIT') || normalized.startsWith('ROLLBACK')) {
       return { rows: [] };
     }
     throw new Error(`Unexpected query: ${normalized.slice(0, 160)}`);
@@ -353,4 +362,141 @@ test('inferObservableType detects ip domain url hash', () => {
   assert.equal(inferObservableType('evil.com'), 'domain');
   assert.equal(inferObservableType('https://evil.com/x'), 'url');
   assert.equal(inferObservableType('a'.repeat(64)), 'hash');
+});
+
+test('manualIocDuplicateLockKey is stable for nullable fields', () => {
+  const a = manualIocDuplicateLockKey({
+    observable: 'evil.com',
+    observableType: 'domain',
+    sourceName: 'Threat-Hunting',
+    confidence: 'high',
+    category: null,
+    sourceUrl: null,
+    threatClassification: 'unknown',
+    threatActorId: null
+  });
+  const b = manualIocDuplicateLockKey({
+    observable: 'evil.com',
+    observableType: 'domain',
+    sourceName: 'Threat-Hunting',
+    confidence: 'high',
+    category: undefined,
+    sourceUrl: '',
+    threatClassification: 'unknown',
+    threatActorId: ''
+  });
+  assert.equal(a, b);
+  assert.match(a, /^manual_ioc\u0000/);
+});
+
+test('createManualIoc takes advisory xact lock before INSERT', async () => {
+  const events = [];
+  const pool = createManualIocPoolMock({
+    onAdvisoryLock: async (key) => {
+      events.push(`lock:${String(key).slice(0, 20)}`);
+    }
+  });
+  const origConnect = pool.connect;
+  pool.connect = async () => {
+    const client = await origConnect();
+    const origQuery = client.query;
+    client.query = async (sql, params) => {
+      const n = String(sql).replace(/\s+/g, ' ').trim();
+      if (n.startsWith('BEGIN')) events.push('BEGIN');
+      if (n.includes('pg_advisory_xact_lock')) events.push('LOCK');
+      if (n.includes('INSERT INTO ioc_items')) events.push('INSERT');
+      if (n.startsWith('COMMIT')) events.push('COMMIT');
+      return origQuery(sql, params);
+    };
+    return client;
+  };
+
+  const result = await createManualIoc(pool, {
+    ip: 'deneme.ekhtelalattabrizi.xyz',
+    source_id: 7,
+    confidence: 'high'
+  });
+  assert.equal(result.status, 201);
+  assert.deepEqual(
+    events.filter((e) => ['BEGIN', 'LOCK', 'INSERT', 'COMMIT'].includes(e)),
+    ['BEGIN', 'LOCK', 'INSERT', 'COMMIT']
+  );
+});
+
+test('concurrent createManualIoc serializes on advisory lock', async () => {
+  let lockHeld = false;
+  const lockWaiters = [];
+  const order = [];
+
+  async function takeLock() {
+    if (!lockHeld) {
+      lockHeld = true;
+      return;
+    }
+    await new Promise((resolve) => lockWaiters.push(resolve));
+    lockHeld = true;
+  }
+
+  function releaseLock() {
+    lockHeld = false;
+    const next = lockWaiters.shift();
+    if (next) next();
+  }
+
+  function makeSerialPool(label) {
+    const pool = createManualIocPoolMock({
+      insertDelayMs: 30,
+      onAdvisoryLock: async () => {
+        order.push(`${label}:lock-wait`);
+        await takeLock();
+        order.push(`${label}:lock-held`);
+      }
+    });
+    const origConnect = pool.connect;
+    pool.connect = async () => {
+      const client = await origConnect();
+      const origQuery = client.query;
+      client.query = async (sql, params) => {
+        const n = String(sql).replace(/\s+/g, ' ').trim();
+        const result = await origQuery(sql, params);
+        if (n.startsWith('COMMIT') || n.startsWith('ROLLBACK')) {
+          order.push(`${label}:release`);
+          releaseLock();
+        }
+        return result;
+      };
+      return client;
+    };
+    return pool;
+  }
+
+  const body = {
+    ip: 'race.example.com',
+    source_id: 7,
+    confidence: 'high',
+    threat_classifications: []
+  };
+
+  const [a, b] = await Promise.all([
+    createManualIoc(makeSerialPool('A'), body),
+    createManualIoc(makeSerialPool('B'), body)
+  ]);
+
+  assert.equal(a.status, 201);
+  assert.equal(b.status, 201);
+  // Second lock-held must not occur before the first release.
+  const firstHeld = order.indexOf('A:lock-held');
+  const secondHeld = order.indexOf('B:lock-held');
+  const firstRelease = order.indexOf('A:release');
+  const altFirstHeld = order.indexOf('B:lock-held') < order.indexOf('A:lock-held')
+    ? order.indexOf('B:lock-held')
+    : firstHeld;
+  const altFirstRelease = order.indexOf('B:lock-held') < order.indexOf('A:lock-held')
+    ? order.indexOf('B:release')
+    : firstRelease;
+  const altSecondHeld = order.indexOf('B:lock-held') < order.indexOf('A:lock-held')
+    ? order.indexOf('A:lock-held')
+    : secondHeld;
+  assert.ok(altFirstHeld >= 0 && altFirstRelease >= 0 && altSecondHeld >= 0);
+  assert.ok(altSecondHeld > altFirstRelease, `expected serialization, order=${JSON.stringify(order)}`);
 });

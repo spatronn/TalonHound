@@ -7,6 +7,7 @@ import {
   normalizeUserTimezone,
   utcIsoTooltip,
   systemLocalInputToUtcIso,
+  utcIsoToSystemLocalInput,
   setSystemTimezoneCache,
   getSystemTimezone
 } from './formatDate.js';
@@ -56,6 +57,16 @@ describe('formatDate (system timezone)', () => {
     // 21:10 Europe/Istanbul = 18:10 UTC
     const iso = systemLocalInputToUtcIso('2026-07-25T21:10:55', 'Europe/Istanbul');
     assert.equal(iso, '2026-07-25T18:10:55.000Z');
+  });
+
+  it('utcIsoToSystemLocalInput formats wall clock in system TZ not browser', () => {
+    const local = utcIsoToSystemLocalInput('2026-07-25T18:10:55.000Z', 'Europe/Istanbul');
+    assert.equal(local, '2026-07-25T21:10');
+  });
+
+  it('systemLocalInputToUtcIso round-trips with utcIsoToSystemLocalInput', () => {
+    const iso = systemLocalInputToUtcIso('2026-07-25T21:10', 'Europe/Istanbul');
+    assert.equal(utcIsoToSystemLocalInput(iso, 'Europe/Istanbul'), '2026-07-25T21:10');
   });
 
   it('formats an offset-bearing audit "Last cleanup" instant canonically', () => {
