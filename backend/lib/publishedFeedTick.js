@@ -39,14 +39,24 @@ export function resetPublishedFeedTickStateForTests() {
   lastTickCompletedAt = null;
 }
 
-function rejectAfter(timeoutMs, message, code) {
+function abortPromise(signal) {
   return new Promise((_, reject) => {
-    const timer = setTimeout(() => {
-      const err = new Error(message);
-      err.code = code;
-      reject(err);
-    }, timeoutMs);
-    if (typeof timer.unref === 'function') timer.unref();
+    if (signal.aborted) {
+      reject(signal.reason || Object.assign(new Error('aborted'), { code: 'PUBLISHED_FEED_TICK_TIMEOUT' }));
+      return;
+    }
+    signal.addEventListener(
+      'abort',
+      () => {
+        reject(
+          signal.reason
+            || Object.assign(new Error('published feed tick timed out'), {
+              code: 'PUBLISHED_FEED_TICK_TIMEOUT'
+            })
+        );
+      },
+      { once: true }
+    );
   });
 }
 
@@ -55,16 +65,12 @@ function rejectAfter(timeoutMs, message, code) {
  *
  * Acquires an in-process guard, runs regenerate (+ optional cleanup) under an overall
  * deadline, then always clears the guard so the next poll can start. A timed-out tick
- * does not cancel in-flight per-feed generation (advisory locks still serialize those);
- * it only unblocks the process flag.
+ * aborts via AbortSignal (cooperative) and clears the process flag; in-flight per-feed
+ * generation that ignores the signal may still finish under advisory locks /
+ * statement_timeout, but it will not permanently freeze future ticks.
  *
  * @param {import('pg').Pool} pool
  * @param {object} [options]
- * @param {number} [options.timeoutMs]
- * @param {typeof regenerateAllEnabledFeeds} [options.regenerateAllEnabledFeeds]
- * @param {Function} [options.cleanupPublishedFeedChunkGenerations]
- * @param {typeof cleanupPublishedFeedLegacyArtifacts} [options.cleanupPublishedFeedLegacyArtifacts]
- * @param {boolean} [options.skipCleanup]
  */
 export async function runPublishedFeedSchedulerTick(pool, options = {}) {
   if (tickInProgress) {
@@ -83,9 +89,17 @@ export async function runPublishedFeedSchedulerTick(pool, options = {}) {
   const cleanupChunks = options.cleanupPublishedFeedChunkGenerations || null;
   const skipCleanup = Boolean(options.skipCleanup);
 
+  const timeoutErr = Object.assign(new Error('published feed tick timed out'), {
+    code: 'PUBLISHED_FEED_TICK_TIMEOUT'
+  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(timeoutErr), timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+
   try {
     const work = (async () => {
-      const regenerateResult = await regenerate(pool, options);
+      const regenerateResult = await regenerate(pool, { ...options, signal: ac.signal });
+      if (ac.signal.aborted) throw ac.signal.reason || timeoutErr;
       if (!skipCleanup) {
         if (typeof cleanupChunks === 'function') {
           await cleanupChunks(pool);
@@ -94,20 +108,17 @@ export async function runPublishedFeedSchedulerTick(pool, options = {}) {
       }
       return regenerateResult;
     })();
-    // If the overall deadline wins, in-flight work may still finish later; swallow
-    // late rejection so a timed-out tick does not surface as unhandled.
+    // If the deadline wins while regenerate ignores AbortSignal, swallow late
+    // settlement so it cannot become an unhandledRejection.
     work.catch(() => {});
 
-    const regenerateResult = await Promise.race([
-      work,
-      rejectAfter(timeoutMs, 'published feed tick timed out', 'PUBLISHED_FEED_TICK_TIMEOUT')
-    ]);
+    const regenerateResult = await Promise.race([work, abortPromise(ac.signal)]);
 
     lastTickCompletedAt = Date.now();
     return { ok: true, skipped: false, regenerateResult };
   } catch (err) {
     lastTickCompletedAt = Date.now();
-    const timedOut = err?.code === 'PUBLISHED_FEED_TICK_TIMEOUT';
+    const timedOut = err?.code === 'PUBLISHED_FEED_TICK_TIMEOUT' || ac.signal.aborted;
     if (timedOut) {
       tickLog.error('published feed tick timed out', {
         timeout_ms: timeoutMs,
@@ -125,6 +136,7 @@ export async function runPublishedFeedSchedulerTick(pool, options = {}) {
       error: String(err?.message || err)
     };
   } finally {
+    clearTimeout(timer);
     tickInProgress = false;
   }
 }

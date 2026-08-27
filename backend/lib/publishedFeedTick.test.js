@@ -67,10 +67,15 @@ test('flag cleared after error', async () => {
 
 test('flag cleared after timeout (mocked stuck regenerate)', async () => {
   const result = await runPublishedFeedSchedulerTick({}, {
-    regenerateAllEnabledFeeds: () => new Promise((resolve) => {
-      // Never resolve for the race, but unref so the test runner can exit.
-      const t = setTimeout(resolve, 60_000);
-      if (typeof t.unref === 'function') t.unref();
+    regenerateAllEnabledFeeds: (_pool, { signal } = {}) => new Promise((_resolve, reject) => {
+      const onAbort = () => {
+        const err = Object.assign(new Error('published feed tick timed out'), {
+          code: 'PUBLISHED_FEED_TICK_TIMEOUT'
+        });
+        reject(err);
+      };
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener('abort', onAbort, { once: true });
     }),
     skipCleanup: true,
     timeoutMs: 30
@@ -83,9 +88,14 @@ test('flag cleared after timeout (mocked stuck regenerate)', async () => {
 
 test('subsequent tick can run after timeout', async () => {
   const stuck = await runPublishedFeedSchedulerTick({}, {
-    regenerateAllEnabledFeeds: () => new Promise((resolve) => {
-      const t = setTimeout(resolve, 60_000);
-      if (typeof t.unref === 'function') t.unref();
+    regenerateAllEnabledFeeds: (_pool, { signal } = {}) => new Promise((_resolve, reject) => {
+      const onAbort = () => {
+        reject(Object.assign(new Error('published feed tick timed out'), {
+          code: 'PUBLISHED_FEED_TICK_TIMEOUT'
+        }));
+      };
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener('abort', onAbort, { once: true });
     }),
     skipCleanup: true,
     timeoutMs: 20
