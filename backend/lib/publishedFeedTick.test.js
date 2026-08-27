@@ -67,7 +67,11 @@ test('flag cleared after error', async () => {
 
 test('flag cleared after timeout (mocked stuck regenerate)', async () => {
   const result = await runPublishedFeedSchedulerTick({}, {
-    regenerateAllEnabledFeeds: () => new Promise(() => { /* never settles */ }),
+    regenerateAllEnabledFeeds: () => new Promise((resolve) => {
+      // Never resolve for the race, but unref so the test runner can exit.
+      const t = setTimeout(resolve, 60_000);
+      if (typeof t.unref === 'function') t.unref();
+    }),
     skipCleanup: true,
     timeoutMs: 30
   });
@@ -79,7 +83,10 @@ test('flag cleared after timeout (mocked stuck regenerate)', async () => {
 
 test('subsequent tick can run after timeout', async () => {
   const stuck = await runPublishedFeedSchedulerTick({}, {
-    regenerateAllEnabledFeeds: () => new Promise(() => {}),
+    regenerateAllEnabledFeeds: () => new Promise((resolve) => {
+      const t = setTimeout(resolve, 60_000);
+      if (typeof t.unref === 'function') t.unref();
+    }),
     skipCleanup: true,
     timeoutMs: 20
   });

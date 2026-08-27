@@ -11,7 +11,11 @@
  * }} [opts]
  */
 export function createIocDetailsCache(opts = {}) {
-  const ttlMs = Math.max(Number(opts.ttlMs) || 15_000, 1_000);
+  const rawTtl = Number(opts.ttlMs);
+  // Allow sub-second TTLs in tests; production callers pass >= 15s via env default.
+  const ttlMs = Number.isFinite(rawTtl) && rawTtl > 0
+    ? Math.max(rawTtl, 1)
+    : 15_000;
   const maxEntries = Math.max(Number(opts.maxEntries) || 500, 1);
   const nowFn = opts.now || (() => Date.now());
 
