@@ -1,13 +1,21 @@
 import './lib/ensure-db-password.js';
+import './lib/ensure-redis-password.js';
 import pg from 'pg';
+import IORedis from 'ioredis';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { runExpirationWorkerBatch } from './lib/iocExpiration.js';
 import {
   runAuditLogRetentionCleanup,
   AUDIT_LOG_RETENTION_DEFAULT_BATCH_SIZE
 } from './lib/auditLogRetention.js';
+import {
+  runOperationalHistoryRetentionCleanup,
+  OPERATIONAL_HISTORY_RETENTION_DEFAULT_BATCH_SIZE
+} from './lib/operationalHistoryRetention.js';
 import { cleanupSessions } from './lib/authSessions.js';
 import { runDueEnrichmentHealthProbes } from './lib/enrichmentHealthProbeScheduler.js';
+import { getRedisUrl } from './lib/redis-url.js';
+import { HEARTBEAT_KEYS, touchWorkerHeartbeat } from './lib/workerHeartbeat.js';
 
 const { Pool } = pg;
 
@@ -16,7 +24,14 @@ const pool = new Pool({
   port: Number(process.env.DB_PORT || 5432),
   user: process.env.DB_USER || 'talonhound',
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'talonhound'
+  database: process.env.DB_NAME || 'talonhound',
+  connectionTimeoutMillis: Math.max(Number(process.env.DB_POOL_CONNECTION_TIMEOUT_MS || 10000), 1000)
+});
+
+const redis = new IORedis(getRedisUrl(), {
+  maxRetriesPerRequest: 1,
+  enableReadyCheck: true,
+  lazyConnect: false
 });
 
 const POLL_MS = Math.max(Number(process.env.IOC_EXPIRATION_POLL_INTERVAL_MS || 60000), 5000);
@@ -36,6 +51,20 @@ const AUDIT_RETENTION_BATCH_SIZE = Math.max(
 // Throttle how often we even consult the DB gate (cheap, but avoids per-tick reads).
 const AUDIT_RETENTION_CHECK_MS = Math.min(AUDIT_RETENTION_INTERVAL_MS, 30 * 60 * 1000);
 let lastAuditRetentionCheck = 0;
+
+// Operational history retention (integration_runs / queue jobs / ip geo cache).
+// Same throttle pattern as audit retention so restarts cannot hammer DELETE.
+const OPS_RETENTION_INTERVAL_MS = Math.max(
+  Number(process.env.OPS_HISTORY_RETENTION_INTERVAL_HOURS || 24) * 60 * 60 * 1000,
+  60 * 1000
+);
+const OPS_RETENTION_BATCH_SIZE = Math.max(
+  Number(process.env.OPS_HISTORY_RETENTION_BATCH_SIZE || OPERATIONAL_HISTORY_RETENTION_DEFAULT_BATCH_SIZE),
+  1
+);
+const OPS_RETENTION_CHECK_MS = Math.min(OPS_RETENTION_INTERVAL_MS, 30 * 60 * 1000);
+let lastOpsRetentionCheck = 0;
+let lastOpsRetentionRunAtMs = 0;
 
 // Bounded cleanup of terminal (revoked / absolutely-expired) auth_sessions rows past
 // their retention window. Cheap indexed delete; runs on the same throttle as audit
@@ -111,7 +140,30 @@ async function maybeRunAuditRetention() {
   }
 }
 
+async function maybeRunOpsRetention() {
+  const now = Date.now();
+  if (now - lastOpsRetentionCheck < OPS_RETENTION_CHECK_MS) return;
+  lastOpsRetentionCheck = now;
+  try {
+    const result = await runOperationalHistoryRetentionCleanup(pool, {
+      batchSize: OPS_RETENTION_BATCH_SIZE,
+      minIntervalMs: OPS_RETENTION_INTERVAL_MS,
+      lastRunAtMs: lastOpsRetentionRunAtMs || null,
+      logger: console
+    });
+    if (result?.lastRunAtMs) lastOpsRetentionRunAtMs = result.lastRunAtMs;
+  } catch (err) {
+    console.error('[ops-retention] run failed', err?.message || err);
+  }
+}
+
 async function tick() {
+  try {
+    await touchWorkerHeartbeat(redis, HEARTBEAT_KEYS.ioc_expiration_worker);
+  } catch (err) {
+    console.error('[ioc-expiration] heartbeat failed', err?.message || err);
+  }
+
   const client = await pool.connect();
   try {
     const res = await runExpirationWorkerBatch(client, {
@@ -131,6 +183,7 @@ async function tick() {
   }
 
   await maybeRunAuditRetention();
+  await maybeRunOpsRetention();
   await maybeRunSessionCleanup();
   await maybeRunHealthProbes();
 }
@@ -144,6 +197,9 @@ async function main() {
   console.log(
     `[audit-retention] scheduled interval_ms=${AUDIT_RETENTION_INTERVAL_MS} batch_size=${AUDIT_RETENTION_BATCH_SIZE}`
   );
+  console.log(
+    `[ops-retention] scheduled interval_ms=${OPS_RETENTION_INTERVAL_MS} batch_size=${OPS_RETENTION_BATCH_SIZE}`
+  );
   while (!stopping) {
     await tick();
     await new Promise((r) => setTimeout(r, POLL_MS));
@@ -153,7 +209,14 @@ async function main() {
 process.on('SIGINT', () => { stopping = true; });
 process.on('SIGTERM', () => { stopping = true; });
 
-main().catch((err) => {
-  console.error('[ioc-expiration] fatal', err);
-  process.exit(1);
-});
+async function shutdown() {
+  try { await redis.quit(); } catch { /* ignore */ }
+  try { await pool.end(); } catch { /* ignore */ }
+}
+
+main()
+  .catch((err) => {
+    console.error('[ioc-expiration] fatal', err);
+    process.exitCode = 1;
+  })
+  .finally(() => shutdown());

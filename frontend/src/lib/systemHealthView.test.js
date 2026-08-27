@@ -19,6 +19,12 @@ test('summary copy prioritizes problems then unknown evidence', () => {
   assert.equal(summaryLabel({ total: 2, healthy: 2 }), '2 healthy');
 });
 
+test('worker heartbeat reasons have explicit wording', () => {
+  assert.match(reasonLabel('heartbeat_fresh'), /recent worker heartbeat/i);
+  assert.match(reasonLabel('heartbeat_stale'), /stale/i);
+  assert.match(reasonLabel('heartbeat_missing'), /no recent heartbeat/i);
+});
+
 test('stale provider success explains unknown health', () => {
   assert.match(reasonLabel('stale_success'), /outside the freshness window/i);
 });

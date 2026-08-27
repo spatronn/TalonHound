@@ -19,8 +19,10 @@ import {
   clearRefreshCookie,
   readRefreshCookie,
   getRequestTokenAuthVersion,
-  getRequestTokenSessionId
+  getRequestTokenSessionId,
+  getRequestTokenExp
 } from './lib/auth.js';
+import { createIocDetailsCache } from './lib/iocDetailsCache.js';
 import { createPasswordChangeGate } from './lib/passwordChangeGate.js';
 import { bumpAuthVersion, createAuthVersionGate } from './lib/authVersion.js';
 import { validateSessionConfig } from './lib/sessionConfig.js';
@@ -156,7 +158,16 @@ import {
   runIntegrationQueueRecover
 } from './lib/integrationQueueApi.js';
 import { parseActionReason } from './lib/reasonValidation.js';
-import { regenerateAllEnabledFeeds, resolvePublishedFeedTickMs, cleanupPublishedFeedLegacyArtifacts } from './lib/feedPublisherService.js';
+import { resolvePublishedFeedTickMs } from './lib/feedPublisherService.js';
+import {
+  runPublishedFeedSchedulerTick,
+  getPublishedFeedTickState
+} from './lib/publishedFeedTick.js';
+import {
+  HEARTBEAT_KEYS,
+  readWorkerHeartbeat,
+  workerHeartbeatHealthEntry
+} from './lib/workerHeartbeat.js';
 import { settleWithTimeout } from './lib/promiseTimeout.js';
 import { buildFeedMetricsHints } from './lib/feedMetricsHints.js';
 import {
@@ -410,10 +421,14 @@ const IOC_LIST_USE_CTE_FOR_HASH = process.env.IOC_LIST_USE_CTE_FOR_HASH === '1' 
 // In-memory cache for IOC stats/summary (status-scoped; invalidated on feed purge).
 
 const IOC_DETAILS_CACHE_TTL_MS = Math.max(Number(process.env.IOC_DETAILS_CACHE_TTL_MS || 15000), 1000);
-const iocDetailsCache = new Map();
+const IOC_DETAILS_CACHE_MAX_ENTRIES = Math.max(Number(process.env.IOC_DETAILS_CACHE_MAX_ENTRIES || 500), 1);
+const iocDetailsCache = createIocDetailsCache({
+  ttlMs: IOC_DETAILS_CACHE_TTL_MS,
+  maxEntries: IOC_DETAILS_CACHE_MAX_ENTRIES
+});
 
 function invalidateIocDetailsCache(publicId) {
-  if (publicId) iocDetailsCache.delete(String(publicId));
+  iocDetailsCache.delete(publicId);
 }
 
 /** Same observable+source may have duplicate ioc_items rows (e.g. category change on re-import). Prefer MIN(id) for lifecycle display â€” matches IOC list public_id. */
@@ -437,7 +452,8 @@ app.use(createSetupGate(pool));
 app.use(apiAuthGate);
 app.use(createAuthVersionGate(pool, {
   getTokenAuthVersion: getRequestTokenAuthVersion,
-  getTokenSessionId: getRequestTokenSessionId
+  getTokenSessionId: getRequestTokenSessionId,
+  getTokenExp: getRequestTokenExp
 }));
 app.use(csrfProtection);
 app.use(createPasswordChangeGate(pool));
@@ -5411,11 +5427,10 @@ app.get('/api/ioc/details', async (req, res) => {
   let pgMs = 0;
 
   const cached = iocDetailsCache.get(requestedPublicId);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (cached) {
     console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=hit total_ms=${Date.now() - startedAt} pg_ms=0`);
     return res.json(cached.payload);
   }
-  if (cached) iocDetailsCache.delete(requestedPublicId);
 
   try {
     const confidenceColumnsReady = await hasIocConfidenceColumns(pool);
@@ -5475,7 +5490,7 @@ app.get('/api/ioc/details', async (req, res) => {
     const rows = itemRes.rows;
     if (!rows.length) {
       const payload = { summary: null, sources: [], matches: [], incidents: [], impact: null };
-      iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
+      iocDetailsCache.set(requestedPublicId, payload);
       console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} rows=0 matches=0`);
       return res.json(payload);
     }
@@ -5848,7 +5863,7 @@ app.get('/api/ioc/details', async (req, res) => {
       file_artifact: fileArtifact || null
     };
 
-    iocDetailsCache.set(requestedPublicId, { expiresAt: Date.now() + IOC_DETAILS_CACHE_TTL_MS, payload });
+    iocDetailsCache.set(requestedPublicId, payload);
     console.log(`[perf][ioc-details] public_id=${requestedPublicId} cache=miss total_ms=${Date.now() - startedAt} pg_ms=${pgMs} rows=${rows.length} incidents=${incidents.length}`);
 
     return res.json(payload);
@@ -6051,7 +6066,6 @@ async function ensureDefaultAdmin() {
 // expensive generation only runs for feeds that pass isPublishedFeedDue.
 const PUBLISHED_FEED_TICK_MS = resolvePublishedFeedTickMs();
 const IOC_LIST_STATS_REFRESH_MS = Math.max(Number(process.env.IOC_LIST_STATS_REFRESH_MS || IOC_LIST_STATS_CACHE_TTL_MS), 60 * 60 * 1000);
-let publishedFeedTickInProgress = false;
 let iocListStatsRefreshScheduled = false;
 
 async function runIocListStatsRefreshTick() {
@@ -6608,7 +6622,7 @@ app.get('/api/system/health', async (_req, res) => {
     }
   ];
 
-  const [providerResult, feedResult, workerResult, queueResult] = await Promise.all([
+  const [providerResult, feedResult, workerResult, queueResult, schedulerHb, expirationHb] = await Promise.all([
     loadEnrichmentProviderSummaries().catch(() => null),
     readiness.checks.postgres === 'ok' ? loadSystemFeedHealth().catch(() => null) : Promise.resolve(null),
     Promise.all([
@@ -6620,6 +6634,12 @@ app.get('/api/system/health', async (_req, res) => {
     ]),
     readiness.ok
       ? loadIntegrationQueueHealthSnapshot(pool, importQueue).catch(() => null)
+      : Promise.resolve(null),
+    readiness.checks.redis === 'ok'
+      ? readWorkerHeartbeat(redis, HEARTBEAT_KEYS.integration_scheduler).catch(() => null)
+      : Promise.resolve(null),
+    readiness.checks.redis === 'ok'
+      ? readWorkerHeartbeat(redis, HEARTBEAT_KEYS.ioc_expiration_worker).catch(() => null)
       : Promise.resolve(null)
   ]);
 
@@ -6640,10 +6660,19 @@ app.get('/api/system/health', async (_req, res) => {
       }))
     : [{ key: 'providers', name: 'Enrichment providers', status: 'unknown', reason: 'evidence_unavailable' }];
   const feeds = feedResult || [{ key: 'feeds', name: 'Threat feeds', status: 'unknown', reason: 'evidence_unavailable' }];
+  const publishedFeedTick = getPublishedFeedTickState();
   const workers = [
     ...workerResult,
-    { key: 'integration_scheduler', name: 'Integration scheduler', status: 'unknown', reason: 'heartbeat_unavailable' },
-    { key: 'ioc_expiration_worker', name: 'IOC expiration worker', status: 'unknown', reason: 'heartbeat_unavailable' }
+    workerHeartbeatHealthEntry(
+      'integration_scheduler',
+      'Integration scheduler',
+      schedulerHb || { lastSeen: null, ageMs: null, status: 'unknown' }
+    ),
+    workerHeartbeatHealthEntry(
+      'ioc_expiration_worker',
+      'IOC expiration worker',
+      expirationHb || { lastSeen: null, ageMs: null, status: 'unknown' }
+    )
   ];
   const queues = queueResult
     ? [{
@@ -6669,7 +6698,16 @@ app.get('/api/system/health', async (_req, res) => {
       providers: summarizeHealth(providers.filter((provider) => provider.enabled !== false)),
       queues: summarizeHealth(queues)
     },
-    sections: { core, workers, feeds, providers, queues }
+    sections: { core, workers, feeds, providers, queues },
+    published_feed_tick: {
+      in_progress: publishedFeedTick.inProgress,
+      last_started_at: publishedFeedTick.lastTickStartedAt
+        ? new Date(publishedFeedTick.lastTickStartedAt).toISOString()
+        : null,
+      last_completed_at: publishedFeedTick.lastTickCompletedAt
+        ? new Date(publishedFeedTick.lastTickCompletedAt).toISOString()
+        : null
+    }
   });
 });
 
@@ -6794,19 +6832,18 @@ app.listen(port, async () => {
     .then(({ cleanupPublishedFeedChunkGenerations }) =>
       cleanupPublishedFeedChunkGenerations(pool))
     .catch(() => {});
-  regenerateAllEnabledFeeds(pool).catch(() => {});
+  runPublishedFeedSchedulerTick(pool, {
+    cleanupPublishedFeedChunkGenerations: async (p) => {
+      const { cleanupPublishedFeedChunkGenerations } = await import('./lib/publishedFeedChunkGeneration.js');
+      return cleanupPublishedFeedChunkGenerations(p);
+    }
+  }).catch(() => {});
   setInterval(() => {
-    if (publishedFeedTickInProgress) return;
-    publishedFeedTickInProgress = true;
-    regenerateAllEnabledFeeds(pool)
-      .catch((err) => console.error('[published-feeds] tick failed', err?.message || err))
-      .then(() => import('./lib/publishedFeedChunkGeneration.js'))
-      .then(({ cleanupPublishedFeedChunkGenerations }) =>
-        cleanupPublishedFeedChunkGenerations(pool))
-      .then(() => cleanupPublishedFeedLegacyArtifacts(pool))
-      .catch((err) => console.error('[published-feeds] cleanup failed', err?.message || err))
-      .finally(() => {
-        publishedFeedTickInProgress = false;
-      });
+    runPublishedFeedSchedulerTick(pool, {
+      cleanupPublishedFeedChunkGenerations: async (p) => {
+        const { cleanupPublishedFeedChunkGenerations } = await import('./lib/publishedFeedChunkGeneration.js');
+        return cleanupPublishedFeedChunkGenerations(p);
+      }
+    }).catch(() => {});
   }, PUBLISHED_FEED_TICK_MS);
 });

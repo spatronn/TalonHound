@@ -44,6 +44,9 @@ export function reasonLabel(reason) {
     no_registered_worker: 'No registered worker evidence',
     worker_lookup_failed: 'Worker evidence unavailable',
     heartbeat_unavailable: 'No heartbeat is implemented',
+    heartbeat_missing: 'No recent heartbeat',
+    heartbeat_fresh: 'Recent worker heartbeat',
+    heartbeat_stale: 'Worker heartbeat is stale',
     snapshot_unavailable: 'Queue evidence unavailable',
     evidence_unavailable: 'Evidence unavailable'
   };

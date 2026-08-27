@@ -1037,6 +1037,46 @@ export async function releasePublishedFeedGenerationLock(client, feedId) {
   await client.query('SELECT pg_advisory_unlock($1::int, $2::int)', [classId, objId]);
 }
 
+/** Per-generation statement budget (default 30 minutes). */
+export const PUBLISHED_FEED_STATEMENT_TIMEOUT_MS_DEFAULT = 30 * 60 * 1000;
+/** Bound time waiting on locks during generation (default 5s). */
+export const PUBLISHED_FEED_LOCK_TIMEOUT_MS_DEFAULT = 5_000;
+
+export function resolvePublishedFeedStatementTimeoutMs(
+  envValue = process.env.PUBLISHED_FEED_STATEMENT_TIMEOUT_MS
+) {
+  if (envValue == null || envValue === '') return PUBLISHED_FEED_STATEMENT_TIMEOUT_MS_DEFAULT;
+  const n = Number(envValue);
+  if (!Number.isFinite(n) || n <= 0) return PUBLISHED_FEED_STATEMENT_TIMEOUT_MS_DEFAULT;
+  return Math.trunc(n);
+}
+
+export function resolvePublishedFeedLockTimeoutMs(
+  envValue = process.env.PUBLISHED_FEED_LOCK_TIMEOUT_MS
+) {
+  if (envValue == null || envValue === '') return PUBLISHED_FEED_LOCK_TIMEOUT_MS_DEFAULT;
+  const n = Number(envValue);
+  if (!Number.isFinite(n) || n <= 0) return PUBLISHED_FEED_LOCK_TIMEOUT_MS_DEFAULT;
+  return Math.trunc(n);
+}
+
+/**
+ * Apply session statement/lock timeouts on the dedicated generation client.
+ * Caller must RESET before releasing the client back to the pool.
+ */
+export async function applyPublishedFeedGenerationClientTimeouts(client, {
+  statementTimeoutMs = resolvePublishedFeedStatementTimeoutMs(),
+  lockTimeoutMs = resolvePublishedFeedLockTimeoutMs()
+} = {}) {
+  await client.query(`SET statement_timeout = ${Math.trunc(statementTimeoutMs)}`);
+  await client.query(`SET lock_timeout = ${Math.trunc(lockTimeoutMs)}`);
+}
+
+export async function resetPublishedFeedGenerationClientTimeouts(client) {
+  await client.query('RESET statement_timeout');
+  await client.query('RESET lock_timeout');
+}
+
 export async function persistPublishedFeedSnapshot(pool, snapshot) {
   const feedId = Number(snapshot.feedId);
   const paramsJson = snapshot.paramsJson || {};
@@ -1339,6 +1379,7 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
 
   const client = await pool.connect();
   let locked = false;
+  let timeoutsApplied = false;
   try {
     locked = await tryAcquirePublishedFeedGenerationLock(client, id);
     if (!locked) {
@@ -1363,8 +1404,23 @@ export async function generatePublishedFeedSnapshot(pool, feedId, options = {}) 
       });
       return result;
     }
+    await applyPublishedFeedGenerationClientTimeouts(client, {
+      statementTimeoutMs: options.statementTimeoutMs,
+      lockTimeoutMs: options.lockTimeoutMs
+    });
+    timeoutsApplied = true;
     return await runPublishedFeedGeneration(client, id, { ...options, force, startedAt });
   } finally {
+    if (timeoutsApplied) {
+      try {
+        await resetPublishedFeedGenerationClientTimeouts(client);
+      } catch (err) {
+        feedLog.warn('published feed generation timeout reset failed', {
+          feed_id: id,
+          error: String(err?.message || err)
+        });
+      }
+    }
     if (locked) {
       try {
         await releasePublishedFeedGenerationLock(client, id);

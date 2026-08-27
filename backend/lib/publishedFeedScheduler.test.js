@@ -6,8 +6,12 @@ import {
   publishedFeedDueAtMs,
   resolvePublishedFeedMaxConcurrency,
   resolvePublishedFeedTickMs,
+  resolvePublishedFeedStatementTimeoutMs,
+  resolvePublishedFeedLockTimeoutMs,
   PUBLISHED_FEED_TICK_MS_DEFAULT,
-  PUBLISHED_FEED_TICK_MS_MIN
+  PUBLISHED_FEED_TICK_MS_MIN,
+  PUBLISHED_FEED_STATEMENT_TIMEOUT_MS_DEFAULT,
+  PUBLISHED_FEED_LOCK_TIMEOUT_MS_DEFAULT
 } from './feedPublisherService.js';
 
 const MIN = 60 * 1000;
@@ -23,6 +27,15 @@ describe('resolvePublishedFeedTickMs', () => {
     assert.equal(resolvePublishedFeedTickMs('60000'), 60_000);
     assert.equal(resolvePublishedFeedTickMs('120000'), 120_000);
     assert.equal(resolvePublishedFeedTickMs('1000'), PUBLISHED_FEED_TICK_MS_MIN);
+  });
+});
+
+describe('generation client timeouts', () => {
+  it('defaults statement_timeout to 30m and lock_timeout to 5s', () => {
+    assert.equal(resolvePublishedFeedStatementTimeoutMs(undefined), PUBLISHED_FEED_STATEMENT_TIMEOUT_MS_DEFAULT);
+    assert.equal(resolvePublishedFeedLockTimeoutMs(undefined), PUBLISHED_FEED_LOCK_TIMEOUT_MS_DEFAULT);
+    assert.equal(resolvePublishedFeedStatementTimeoutMs('600000'), 600_000);
+    assert.equal(resolvePublishedFeedLockTimeoutMs('10000'), 10_000);
   });
 });
 

@@ -4,6 +4,12 @@
 # name so named volumes (talonhound_postgres_data, ...) are preserved across upgrades.
 name: talonhound
 
+x-talonhound-logging: &talonhound-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 x-talonhound-build-args: &talonhound-build-args
   BUILD_VERSION: ${TALONHOUND_VERSION:-dev}
   BUILD_COMMIT: ${TALONHOUND_COMMIT:-dev}
@@ -60,11 +66,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
+    logging: *talonhound-logging
 
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
     restart: unless-stopped
+    logging: *talonhound-logging
 
   backend:
     build: *backend-build
@@ -158,6 +166,7 @@ services:
       retries: 3
       start_period: 20s
     restart: unless-stopped
+    logging: *talonhound-logging
 
   integration-scheduler:
     build: *integration-build
@@ -200,6 +209,7 @@ services:
       - db
       - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   integration-worker:
     build: *integration-build
@@ -262,6 +272,7 @@ services:
       - db
       - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   ioc-expiration-worker:
     build: *backend-build
@@ -276,11 +287,16 @@ services:
       - TZ=${SYSTEM_TIMEZONE:-}
       - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
       - IOC_EXPIRATION_BATCH_SIZE=500
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       # Bounded cleanup of terminal auth_sessions rows past this retention window.
       - SESSION_CLEANUP_RETENTION_DAYS=${SESSION_CLEANUP_RETENTION_DAYS:-7}
     depends_on:
       - db
+      - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   ioc-search-export-worker:
     build: *backend-build
@@ -313,6 +329,7 @@ services:
       - db
       - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   ioc-deep-search-worker:
     build: *backend-build
@@ -340,6 +357,7 @@ services:
       - db
       - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   ioc-bulk-query-worker:
     build: *backend-build
@@ -364,6 +382,7 @@ services:
       - db
       - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   backup-worker:
     build: *backend-build
@@ -395,12 +414,14 @@ services:
       - db
       - redis
     restart: unless-stopped
+    logging: *talonhound-logging
 
   frontend:
     build: *frontend-build
     depends_on:
       - backend
     restart: unless-stopped
+    logging: *talonhound-logging
 
   proxy:
     build: *proxy-build
@@ -413,6 +434,7 @@ services:
     depends_on:
       - frontend
     restart: unless-stopped
+    logging: *talonhound-logging
 
 volumes:
   postgres_data:
