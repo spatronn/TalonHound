@@ -26,6 +26,8 @@ test('isForbiddenFeedDestinationIp rejects loopback / unspecified / link-local /
     '192.168.255.255',
     '169.254.169.254',
     '169.254.0.1',
+    '100.64.0.1',
+    '100.127.255.254',
     '224.0.0.1',
     '255.255.255.255'
   ]) {
@@ -33,6 +35,8 @@ test('isForbiddenFeedDestinationIp rejects loopback / unspecified / link-local /
   }
   assert.equal(isForbiddenFeedDestinationIp('8.8.8.8'), false);
   assert.equal(isForbiddenFeedDestinationIp('1.1.1.1'), false);
+  assert.equal(isForbiddenFeedDestinationIp('100.63.255.255'), false);
+  assert.equal(isForbiddenFeedDestinationIp('100.128.0.1'), false);
 });
 
 test('isForbiddenFeedDestinationIp rejects IPv6 ULA / link-local / loopback / unspecified', () => {

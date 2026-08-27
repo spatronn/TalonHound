@@ -172,6 +172,14 @@ export function getRequestTokenSessionId(req) {
   return sid != null && String(sid).trim() !== '' ? String(sid).trim() : null;
 }
 
+/** Absolute expiry (`exp`, seconds since epoch) from the last verified JWT, or null. */
+export function getRequestTokenExp(req) {
+  const p = req?.[JWT_PAYLOAD_SYM];
+  if (!p || p.exp == null) return null;
+  const n = Number(p.exp);
+  return Number.isFinite(n) ? n : null;
+}
+
 function extractBearer(req) {
   const h = req.headers.authorization;
   if (!h || typeof h !== 'string') return null;

@@ -17,6 +17,7 @@ FORBIDDEN_DESTINATIONS.addSubnet('127.0.0.0', 8, 'ipv4');      // loopback
 FORBIDDEN_DESTINATIONS.addSubnet('169.254.0.0', 16, 'ipv4');   // link-local / metadata
 FORBIDDEN_DESTINATIONS.addSubnet('172.16.0.0', 12, 'ipv4');    // RFC1918
 FORBIDDEN_DESTINATIONS.addSubnet('192.168.0.0', 16, 'ipv4');   // RFC1918
+FORBIDDEN_DESTINATIONS.addSubnet('100.64.0.0', 10, 'ipv4');    // RFC6598 CGNAT / shared address space
 FORBIDDEN_DESTINATIONS.addSubnet('224.0.0.0', 4, 'ipv4');      // multicast
 FORBIDDEN_DESTINATIONS.addSubnet('240.0.0.0', 4, 'ipv4');      // reserved
 FORBIDDEN_DESTINATIONS.addSubnet('::', 128, 'ipv6');           // unspecified

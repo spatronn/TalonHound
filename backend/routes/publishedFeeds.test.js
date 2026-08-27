@@ -394,3 +394,36 @@ describe('publishedFeeds output format API', () => {
     assert.equal(res.body.feed.format, 'json');
   });
 });
+
+describe('published feed access-keys RBAC', () => {
+  function makeRoleApp(pool, role) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = { id: 1, role, email: `${role}@test` };
+      next();
+    });
+    registerPublishedFeedRoutes(app, pool, { auditSuccess() {} });
+    return app;
+  }
+
+  it('GET access-keys requires admin (SEC-1)', async () => {
+    const pool = {
+      async query(sql) {
+        const s = String(sql);
+        if (s.includes('FROM published_feed_access_keys')) {
+          return { rows: [] };
+        }
+        throw new Error(`Unexpected query: ${s.slice(0, 120)}`);
+      }
+    };
+    const analyst = makeRoleApp(pool, 'analyst');
+    const denied = await req(analyst, 'GET', '/api/published-feeds/1/access-keys');
+    assert.equal(denied.status, 403);
+
+    const admin = makeRoleApp(pool, 'admin');
+    const ok = await req(admin, 'GET', '/api/published-feeds/1/access-keys');
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.body.access_keys, []);
+  });
+});

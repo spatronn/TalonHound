@@ -38,13 +38,20 @@ export async function bumpAuthVersion(db, userId) {
  * @param {{
  *   getTokenAuthVersion: (req) => number|null|undefined,
  *   getTokenSessionId?: (req) => string|null|undefined,
+ *   getTokenExp?: (req) => number|null|undefined,
  *   now?: () => Date
  * }} deps
+ *
+ * Bearer JWTs (ALLOW_JWT_BEARER=1): idle/session revoke via `sid` does not apply when
+ * the token has no sid. Absolute expiry (`exp`), auth_version, and user status MUST
+ * still hold — this gate enforces those three for bearer the same as for cookies
+ * (session row checks remain cookie-only).
  */
 export function createAuthVersionGate(pool, deps = {}) {
   const getTokenAuthVersion = deps.getTokenAuthVersion || (() => null);
   const sessionEnforced = typeof deps.getTokenSessionId === 'function';
   const getTokenSessionId = deps.getTokenSessionId || (() => null);
+  const getTokenExp = deps.getTokenExp || (() => null);
   const nowFn = deps.now || (() => new Date());
 
   return async function authVersionGate(req, res, next) {
@@ -70,6 +77,18 @@ export function createAuthVersionGate(pool, deps = {}) {
     const sid = enforceSession ? getTokenSessionId(req) : null;
     if (enforceSession && !sid) {
       return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    // Bearer (and any non-cookie human principal): still require absolute JWT expiry.
+    // Without sid, idle timeout / server-side session revoke do not apply.
+    if (req.authVia === 'bearer') {
+      const exp = getTokenExp(req);
+      if (exp == null || !Number.isFinite(Number(exp))) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      if (Number(exp) * 1000 <= nowFn().getTime()) {
+        return res.status(401).json({ message: 'Session expired', code: 'TOKEN_EXPIRED' });
+      }
     }
 
     try {

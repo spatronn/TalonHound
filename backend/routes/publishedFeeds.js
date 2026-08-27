@@ -527,7 +527,7 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     }
   });
 
-  app.get('/api/published-feeds/:id/access-keys', async (req, res) => {
+  app.get('/api/published-feeds/:id/access-keys', requireRole(ROLES.ADMIN), async (req, res) => {
     const feedId = Number(req.params.id);
     if (!Number.isFinite(feedId)) return res.status(400).json({ message: 'Invalid id' });
     try {

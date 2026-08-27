@@ -66,7 +66,7 @@ export function requireTriageRole() {
 
 /**
  * Read-only users: GET/HEAD only, except:
- *   - PUT /api/users/:id (handler enforces self + fields)
+ *   - PUT /api/users/:publicId (UUID public id; handler enforces self + fields)
  *   - PUT /api/users/me/preferences (self timezone preference)
  *
  * Authentication transport must not bypass authorization (AUTH-03):
@@ -101,7 +101,14 @@ export function rbacHttpPolicy(req, res, next) {
     return next();
   }
 
-  if (m === 'PUT' && (/^\/api\/users\/\d+$/.test(req.path) || req.path === '/api/users/me/preferences')) {
+  // User public ids are UUIDs — numeric /:id never matched real self-edit routes.
+  if (
+    m === 'PUT'
+    && (
+      /^\/api\/users\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.path)
+      || req.path === '/api/users/me/preferences'
+    )
+  ) {
     return next();
   }
 

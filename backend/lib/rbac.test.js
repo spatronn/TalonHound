@@ -124,3 +124,17 @@ test('JWT-01: requireRole denies missing/unknown role instead of elevating to ad
   assert.equal(adminOk.nextCalled, true);
   assert.equal(adminOk.statusCode, null);
 });
+
+test('readonly self-edit allowlist uses UUID public ids (not numeric)', () => {
+  const uuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const ok = runPolicy({ method: 'PUT', path: `/api/users/${uuid}`, role: ROLES.READONLY });
+  assert.equal(ok.nextCalled, true);
+  assert.equal(ok.statusCode, null);
+
+  const numeric = runPolicy({ method: 'PUT', path: '/api/users/42', role: ROLES.READONLY });
+  assert.equal(numeric.nextCalled, false);
+  assert.equal(numeric.statusCode, 403);
+
+  const prefs = runPolicy({ method: 'PUT', path: '/api/users/me/preferences', role: ROLES.READONLY });
+  assert.equal(prefs.nextCalled, true);
+});

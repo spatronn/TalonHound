@@ -178,7 +178,71 @@ test('JWT-06: unknown/missing session row is rejected', async () => {
 
 test('JWT-06: bearer principal (no sid) keeps av/status checks, skips session enforcement', async () => {
   const { pool } = sessionPool({ session_id: null, revoked_at: null, idle_expires_at: null, absolute_expires_at: null });
-  const gate = createAuthVersionGate(pool, { getTokenAuthVersion: () => 2, getTokenSessionId: () => null, now });
+  const gate = createAuthVersionGate(pool, {
+    getTokenAuthVersion: () => 2,
+    getTokenSessionId: () => null,
+    getTokenExp: () => Math.floor(now().getTime() / 1000) + 3600,
+    now
+  });
+  const out = await runGate(gate, { ...baseReq, authVia: 'bearer' });
+  assert.equal(out.next, true);
+});
+
+test('JWT-06: bearer rejects expired JWT exp claim', async () => {
+  const { pool } = sessionPool({ session_id: null, revoked_at: null, idle_expires_at: null, absolute_expires_at: null });
+  const gate = createAuthVersionGate(pool, {
+    getTokenAuthVersion: () => 2,
+    getTokenSessionId: () => null,
+    getTokenExp: () => Math.floor(now().getTime() / 1000) - 10,
+    now
+  });
+  const out = await runGate(gate, { ...baseReq, authVia: 'bearer' });
+  assert.equal(out.status, 401);
+  assert.equal(out.body.code, 'TOKEN_EXPIRED');
+});
+
+test('JWT-06: bearer rejects missing exp claim', async () => {
+  const { pool } = sessionPool({ session_id: null, revoked_at: null, idle_expires_at: null, absolute_expires_at: null });
+  const gate = createAuthVersionGate(pool, {
+    getTokenAuthVersion: () => 2,
+    getTokenSessionId: () => null,
+    getTokenExp: () => null,
+    now
+  });
+  const out = await runGate(gate, { ...baseReq, authVia: 'bearer' });
+  assert.equal(out.status, 401);
+});
+
+test('JWT-06: bearer rejects passive/disabled user even with valid exp', async () => {
+  const pool = {
+    async query() {
+      return { rows: [{ auth_version: 2, status: 'passive', session_id: null, revoked_at: null, idle_expires_at: null, absolute_expires_at: null }] };
+    }
+  };
+  const gate = createAuthVersionGate(pool, {
+    getTokenAuthVersion: () => 2,
+    getTokenSessionId: () => null,
+    getTokenExp: () => Math.floor(now().getTime() / 1000) + 3600,
+    now
+  });
+  const out = await runGate(gate, { ...baseReq, authVia: 'bearer' });
+  assert.equal(out.status, 401);
+});
+
+test('JWT-06: bearer without sid documents idle/session revoke does not apply (av+status+exp hold)', async () => {
+  // No sid → session row checks skipped; revoked session fields are ignored.
+  const { pool } = sessionPool({
+    session_id: 'ignored',
+    revoked_at: past,
+    idle_expires_at: past,
+    absolute_expires_at: past
+  });
+  const gate = createAuthVersionGate(pool, {
+    getTokenAuthVersion: () => 2,
+    getTokenSessionId: () => null,
+    getTokenExp: () => Math.floor(now().getTime() / 1000) + 60,
+    now
+  });
   const out = await runGate(gate, { ...baseReq, authVia: 'bearer' });
   assert.equal(out.next, true);
 });
