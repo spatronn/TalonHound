@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '002_first_run_setup.sql');
-  assert.equal(meta.latestMigration, 2);
+  assert.equal(meta.latestMigrationFile, '003_reliability_retention.sql');
+  assert.equal(meta.latestMigration, 3);
 });
 
 test('001_core baseline contains core product schema objects', () => {
