@@ -8,7 +8,8 @@ import {
   PROJECTION_STATUS,
   PROJECTION_UPSERT_MAX_ROWS,
   upsertProjectionBatch,
-  confidenceRank
+  confidenceRank,
+  clearFeedProjection
 } from './publishedFeedProjection.js';
 import {
   decideRefreshMode,
@@ -512,5 +513,38 @@ describe('OPTION A identity-keyed canonical expansion (self-join removed)', () =
       { ids: [5], typeById: { 5: 'domain' }, forceFull: false });
     assert.equal(result.removed, 1, 'identity must leave even though the representative was not dirty');
     assert.ok((deletedKeys || []).includes('o:domain:gone.example'));
+  });
+});
+
+describe('clearFeedProjection batching', () => {
+  it('deletes across multiple LIMIT batches until drained', async () => {
+    let remaining = 23;
+    const calls = [];
+    const db = {
+      async query(sql, params) {
+        calls.push({ sql: String(sql), params });
+        assert.match(String(sql), /WITH doomed AS/);
+        assert.match(String(sql), /LIMIT \$2/);
+        assert.match(String(sql), /p\.ctid = d\.ctid/);
+        const batchSize = Number(params[1]);
+        const n = Math.min(remaining, batchSize);
+        remaining -= n;
+        return { rowCount: n };
+      }
+    };
+    const total = await clearFeedProjection(db, 42, { batchSize: 10 });
+    assert.equal(total, 23);
+    assert.equal(calls.length, 3); // 10 + 10 + 3
+    assert.equal(calls[0].params[0], 42);
+    assert.equal(calls[0].params[1], 10);
+  });
+
+  it('returns 0 when feed has no projection rows', async () => {
+    const db = {
+      async query() {
+        return { rowCount: 0 };
+      }
+    };
+    assert.equal(await clearFeedProjection(db, 7, { batchSize: 100 }), 0);
   });
 });

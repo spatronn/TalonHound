@@ -6,7 +6,8 @@ import {
   finalizeUsomImport,
   loadUsomLookupCache,
   saveUsomLookupCache,
-  stageUsomEntries
+  stageUsomEntries,
+  markMissingMemberships
 } from './usomImportStore.js';
 
 test('bulk staging uses a temp table and ignores run-local duplicates', async () => {
@@ -217,4 +218,63 @@ test('unstable full pagination merges seen rows without absence reconciliation o
   assert.equal(result.runDetails.absent_reconciliation_skip_reason, 'pagination_changed');
   assert.equal(calls.some((call) => call.sql.includes('SELECT COUNT(*)::int AS count FROM usom_import_stage')), false);
   assert.equal(calls.some((call) => call.sql.includes('INSERT INTO usom_import_state')), false);
+});
+
+test('markMissingMemberships updates across multiple id-keyset batches', async () => {
+  const feedId = '11111111-1111-1111-1111-111111111111';
+  const seenAt = new Date('2026-08-01T00:00:00.000Z');
+  // Simulate 5 matching membership ids for domain; batchSize=2 => 3 UPDATE loops.
+  const domainIds = [10, 20, 30, 40, 50];
+  let cursor = 0;
+  const updateCalls = [];
+
+  const client = {
+    async query(sql, params = []) {
+      const s = String(sql);
+      if (s.includes('SELECT COUNT(*)::int AS count FROM usom_import_stage')) {
+        return { rows: [{ count: 1 }] };
+      }
+      if (s.includes('FROM threat_feed_expiration_policies')) {
+        const obsType = params[1];
+        if (obsType === 'domain') {
+          return {
+            rows: [{
+              feed_id: feedId,
+              observable_type: 'domain',
+              enabled: true,
+              expiration_mode: 'missing_from_feed_ttl',
+              grace_days: 7,
+              ttl_days: 7
+            }]
+          };
+        }
+        return { rows: [] };
+      }
+      if (s.includes('FROM integration_feed_expiration_type_policies')) {
+        return { rows: [] };
+      }
+      if (s.includes('AS newly_missing')) {
+        return { rows: [{ newly_missing: 3 }] };
+      }
+      if (s.includes('WITH doomed AS') && s.includes('UPDATE ioc_feed_memberships')) {
+        updateCalls.push([...params]);
+        const afterId = Number(params[4]);
+        const limit = Number(params[5]);
+        const batch = domainIds.filter((id) => id > afterId).slice(0, limit);
+        cursor += batch.length;
+        return { rowCount: batch.length, rows: batch.map((id) => ({ id })) };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  };
+
+  const result = await markMissingMemberships(client, feedId, seenAt, { batchSize: 2 });
+  assert.equal(result.newlyMissing, 3);
+  assert.equal(result.markedMissing, 5);
+  assert.equal(updateCalls.length, 3); // 2 + 2 + 1
+  assert.equal(updateCalls[0][4], 0);
+  assert.equal(updateCalls[0][5], 2);
+  assert.equal(updateCalls[1][4], 20); // after max of first batch
+  assert.equal(updateCalls[2][4], 40);
+  assert.equal(cursor, 5);
 });

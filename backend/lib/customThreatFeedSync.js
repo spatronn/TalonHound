@@ -9,8 +9,55 @@ import {
   withImportOptimizationContext
 } from './iocExpiration.js';
 import { normalizeConfidence, resolveImportConfidenceFields } from './iocConfidence.js';
+import { QUEUE_HARDENING } from './integrationQueueConfig.js';
 
 const OBSERVABLE_INDEX_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash', 'ip', 'ipv6', 'domain', 'url']);
+
+/** Error stamped onto custom_threat_feed_runs left `running` past the stale window. */
+export const STALE_CUSTOM_THREAT_FEED_RUN_MESSAGE = 'interrupted: stale running run reconciled';
+
+/**
+ * Mark custom_threat_feed_runs still `running` with started_at older than the
+ * threshold as failed. Mirrors recoverStaleRunningJobs / integration_runs reconcile.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} pool
+ * @param {{ staleAfterMs?: number, dryRun?: boolean, logPrefix?: string }} [opts]
+ */
+export async function reconcileStaleCustomThreatFeedRuns(pool, {
+  staleAfterMs = QUEUE_HARDENING.staleAfterMs,
+  dryRun = false,
+  logPrefix = '[integration-worker]'
+} = {}) {
+  const ms = Math.max(Number(staleAfterMs) || QUEUE_HARDENING.staleAfterMs, 60_000);
+
+  if (dryRun) {
+    const q = await pool.query(
+      `SELECT id
+         FROM custom_threat_feed_runs
+        WHERE status = 'running'
+          AND started_at < NOW() - ($1::text || ' milliseconds')::interval`,
+      [String(ms)]
+    );
+    return { fixedCount: q.rowCount || 0, dryRun: true };
+  }
+
+  const res = await pool.query(
+    `UPDATE custom_threat_feed_runs
+        SET status = 'failed',
+            finished_at = COALESCE(finished_at, NOW()),
+            error_message = COALESCE(error_message, $1)
+      WHERE status = 'running'
+        AND started_at < NOW() - ($2::text || ' milliseconds')::interval
+      RETURNING id`,
+    [STALE_CUSTOM_THREAT_FEED_RUN_MESSAGE, String(ms)]
+  );
+
+  const fixedCount = res.rowCount || 0;
+  if (fixedCount > 0) {
+    console.log(`${logPrefix} Reconciled stale custom_threat_feed_runs count=${fixedCount}`);
+  }
+  return { fixedCount, dryRun: false };
+}
 
 async function insertObservablesIndex(client, iocPublicId, observableType, observable) {
   const t = String(observableType || '').toLowerCase();

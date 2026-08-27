@@ -185,8 +185,34 @@ export async function deleteProjectionIdentities(db, feedId, window, identityKey
   return res.rowCount || 0;
 }
 
-export async function clearFeedProjection(db, feedId) {
-  await db.query(`DELETE FROM published_feed_items WHERE feed_id = $1`, [feedId]);
+/** Default rows per DELETE batch when clearing a feed projection. */
+export const CLEAR_FEED_PROJECTION_BATCH_SIZE = 5000;
+
+/**
+ * Delete all projection rows for a feed in bounded batches (avoids one huge DELETE).
+ * @returns {Promise<number>} total rows deleted
+ */
+export async function clearFeedProjection(db, feedId, { batchSize = CLEAR_FEED_PROJECTION_BATCH_SIZE } = {}) {
+  const limit = Math.max(Number(batchSize) || CLEAR_FEED_PROJECTION_BATCH_SIZE, 1);
+  let total = 0;
+  for (;;) {
+    const res = await db.query(
+      `WITH doomed AS (
+         SELECT ctid
+           FROM published_feed_items
+          WHERE feed_id = $1
+          LIMIT $2
+       )
+       DELETE FROM published_feed_items p
+        USING doomed d
+        WHERE p.ctid = d.ctid`,
+      [feedId, limit]
+    );
+    const n = Number(res.rowCount || 0);
+    total += n;
+    if (n < limit) break;
+  }
+  return total;
 }
 
 export async function setFeedProjectionState(db, feedId, patch) {

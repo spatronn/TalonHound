@@ -4,6 +4,7 @@ import {
   QUEUE_HARDENING,
   resolveIntegrationJobTimeoutMs
 } from './integrationQueueConfig.js';
+import { reconcileStaleCustomThreatFeedRuns } from './customThreatFeedSync.js';
 
 export function getJobLastSeenMs(job) {
   const raw = job?.heartbeat_at || job?.updated_at || job?.started_at;
@@ -160,6 +161,12 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
     console.log(`${logPrefix} Reconciled stale integration_runs count=${runsFixed.rowCount}`);
   }
 
+  const customFeedReconcile = await reconcileStaleCustomThreatFeedRuns(pool, {
+    staleAfterMs: QUEUE_HARDENING.staleAfterMs,
+    dryRun,
+    logPrefix
+  });
+
   if (queue && recovered.length && !dryRun) {
     const { failBullmqJobsForDbRecovered } = await import('./integrationQueueBullmqReconciliation.js');
     await failBullmqJobsForDbRecovered(pool, queue, recovered, { dryRun, logPrefix });
@@ -169,7 +176,8 @@ export async function recoverStaleRunningJobs(pool, { logPrefix = '[integration-
     staleCount,
     recovered,
     fixedFinishedCount: fixedFinished.rowCount || 0,
-    fixedRunsCount: runsFixed.rowCount || 0
+    fixedRunsCount: runsFixed.rowCount || 0,
+    fixedCustomThreatFeedRunsCount: customFeedReconcile.fixedCount || 0
   };
 }
 
@@ -226,7 +234,7 @@ export async function runQueueRecovery(pool, {
   const totalReconciled = result.staleCount + bullReconcile.reconciled_count + lockRelease.released_count;
 
   console.log(
-    `${logPrefix} Queue recovery completed stale_db=${result.staleCount} reconciled_bull=${bullReconcile.reconciled_count} released_locks=${lockRelease.released_count} stale_queued=${staleQueued.stale_queued_count} fixed_finished=${result.fixedFinishedCount} fixed_runs=${result.fixedRunsCount}`
+    `${logPrefix} Queue recovery completed stale_db=${result.staleCount} reconciled_bull=${bullReconcile.reconciled_count} released_locks=${lockRelease.released_count} stale_queued=${staleQueued.stale_queued_count} fixed_finished=${result.fixedFinishedCount} fixed_runs=${result.fixedRunsCount} fixed_custom_feed_runs=${result.fixedCustomThreatFeedRunsCount || 0}`
   );
 
   const concurrency = workerConcurrency != null ? workerConcurrency : '-';

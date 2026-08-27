@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
   classifyRunningJobForRecovery,
   getJobLastSeenMs,
-  isSourceActivelyRunning
+  isSourceActivelyRunning,
+  recoverStaleRunningJobs
 } from './integrationQueueRecovery.js';
 import { FAILURE_TYPES, QUEUE_HARDENING } from './integrationQueueConfig.js';
+import { STALE_CUSTOM_THREAT_FEED_RUN_MESSAGE } from './customThreatFeedSync.js';
 
 const NOW = Date.parse('2026-05-27T12:00:00.000Z');
 const config = {
@@ -118,5 +120,35 @@ describe('QUEUE_HARDENING defaults', () => {
     assert.equal(QUEUE_HARDENING.jobTimeoutMs, 600_000);
     assert.equal(QUEUE_HARDENING.staleAfterMs, 900_000);
     assert.equal(QUEUE_HARDENING.heartbeatIntervalMs, 30_000);
+  });
+});
+
+describe('recoverStaleRunningJobs custom threat feed reconcile', () => {
+  it('marks stale custom_threat_feed_runs failed during recovery', async () => {
+    const updates = [];
+    const pool = {
+      async query(sql, params = []) {
+        const s = String(sql);
+        if (s.includes('FROM integration_queue_jobs') && s.includes("status = 'running'")) {
+          return { rows: [] };
+        }
+        if (s.includes('UPDATE integration_queue_jobs') && s.includes('finished_at IS NOT NULL')) {
+          return { rowCount: 0, rows: [] };
+        }
+        if (s.includes('UPDATE integration_runs')) {
+          return { rowCount: 0, rows: [] };
+        }
+        if (s.includes('UPDATE custom_threat_feed_runs')) {
+          updates.push(params);
+          return { rowCount: 1, rows: [{ id: 'run-1' }] };
+        }
+        return { rows: [], rowCount: 0 };
+      }
+    };
+
+    const result = await recoverStaleRunningJobs(pool, { logPrefix: '[test]' });
+    assert.equal(result.fixedCustomThreatFeedRunsCount, 1);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0][0], STALE_CUSTOM_THREAT_FEED_RUN_MESSAGE);
   });
 });

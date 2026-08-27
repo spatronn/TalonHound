@@ -643,6 +643,9 @@ async function applyPoliciesForSeenMemberships(client, feedId, seenAt) {
   }
 }
 
+/** Bounded UPDATE batch size for absence reconciliation. */
+export const MARK_MISSING_MEMBERSHIPS_BATCH_SIZE = 5000;
+
 /**
  * Mark memberships absent from a successful full snapshot as missing.
  *
@@ -656,11 +659,17 @@ async function applyPoliciesForSeenMemberships(client, feedId, seenAt) {
  * predicate plus `missing_since IS NULL`, so `records_removed` reflects genuine
  * active -> missing transitions only.
  *
+ * Updates run in bounded LIMIT batches keyed by id (rows still match after UPDATE,
+ * so keyset pagination is required to avoid re-touching the same batch forever).
+ *
  * @returns {Promise<{markedMissing:number,newlyMissing:number}>}
  */
-async function markMissingMemberships(client, feedId, seenAt) {
+export async function markMissingMemberships(client, feedId, seenAt, {
+  batchSize = MARK_MISSING_MEMBERSHIPS_BATCH_SIZE
+} = {}) {
   const { rows: stageRows } = await client.query(`SELECT COUNT(*)::int AS count FROM ${STAGE_TABLE}`);
   if (numberFromRow(stageRows[0], 'count') === 0) return { markedMissing: 0, newlyMissing: 0 };
+  const limit = Math.max(Number(batchSize) || MARK_MISSING_MEMBERSHIPS_BATCH_SIZE, 1);
   let markedMissing = 0;
   let newlyMissing = 0;
   for (const observableType of STORED_IOC_TYPES) {
@@ -690,32 +699,49 @@ async function markMissingMemberships(client, feedId, seenAt) {
     );
     newlyMissing += numberFromRow(transitionRows[0], 'newly_missing');
 
-    const { rowCount } = await client.query(
-      `UPDATE ioc_feed_memberships m
-       SET missing_since = COALESCE(m.missing_since, $3::timestamptz),
-           policy_expires_at = COALESCE(m.missing_since, $3::timestamptz) + ($4::int * INTERVAL '1 day'),
-           expires_at = CASE
-             WHEN m.override_enabled AND m.override_status = 'expired' THEN 'epoch'::timestamptz
-             WHEN m.override_enabled AND m.override_status = 'active' THEN NULL
-             WHEN m.override_enabled THEN m.override_expires_at
-             ELSE COALESCE(m.missing_since, $3::timestamptz) + ($4::int * INTERVAL '1 day')
-           END,
-           updated_at = NOW()
-       WHERE m.feed_id = $1::uuid
-         AND m.ioc_observable_type = $2
-         AND m.status = 'active'
-         AND NOT EXISTS (
-           SELECT 1
-           FROM ioc_items i
-           JOIN ${STAGE_TABLE} s
-             ON s.observable_type = i.observable_type
-            AND s.observable = i.observable
-           WHERE i.id = m.ioc_item_id
-             AND i.observable_type = m.ioc_observable_type
-         )`,
-      [feedId, observableType, seenAt, grace]
-    );
-    markedMissing += Number(rowCount || 0);
+    let afterId = 0;
+    for (;;) {
+      const { rowCount, rows } = await client.query(
+        `WITH doomed AS (
+           SELECT m.id
+             FROM ioc_feed_memberships m
+            WHERE m.feed_id = $1::uuid
+              AND m.ioc_observable_type = $2
+              AND m.status = 'active'
+              AND m.id > $5
+              AND NOT EXISTS (
+                SELECT 1
+                FROM ioc_items i
+                JOIN ${STAGE_TABLE} s
+                  ON s.observable_type = i.observable_type
+                 AND s.observable = i.observable
+                WHERE i.id = m.ioc_item_id
+                  AND i.observable_type = m.ioc_observable_type
+              )
+            ORDER BY m.id ASC
+            LIMIT $6
+         )
+         UPDATE ioc_feed_memberships m
+            SET missing_since = COALESCE(m.missing_since, $3::timestamptz),
+                policy_expires_at = COALESCE(m.missing_since, $3::timestamptz) + ($4::int * INTERVAL '1 day'),
+                expires_at = CASE
+                  WHEN m.override_enabled AND m.override_status = 'expired' THEN 'epoch'::timestamptz
+                  WHEN m.override_enabled AND m.override_status = 'active' THEN NULL
+                  WHEN m.override_enabled THEN m.override_expires_at
+                  ELSE COALESCE(m.missing_since, $3::timestamptz) + ($4::int * INTERVAL '1 day')
+                END,
+                updated_at = NOW()
+           FROM doomed d
+          WHERE m.id = d.id
+          RETURNING m.id`,
+        [feedId, observableType, seenAt, grace, afterId, limit]
+      );
+      const n = Number(rowCount || 0);
+      markedMissing += n;
+      if (n === 0) break;
+      afterId = rows.reduce((max, r) => Math.max(max, Number(r.id) || 0), afterId);
+      if (n < limit) break;
+    }
   }
   return { markedMissing, newlyMissing };
 }
